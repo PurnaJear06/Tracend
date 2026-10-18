@@ -543,7 +543,7 @@ function cutUnits(
 // turn "skip these", "only if it doesn't hurt" or "stop at 17 days" into a plain recommendation, so
 // a cut that would remove one gives up and the turn ends in the data summary.
 const cautionWord = new RegExp(
-  `${prohibitionWord.source}|\\b(?:stop\\w*|avoid\\w*|skip\\w*|limit\\w*|careful\\w*|caution\\w*|pain\\w*|hurt\\w*|pinch\\w*|sharp|swell\\w*|dizz\\w*|numb\\w*|injur\\w*|sore\\w*|off the table|steer clear)\\b`,
+  `${prohibitionWord.source}|\\b(?:stop\\w*|avoid\\w*|skip\\w*|limit\\w*|careful\\w*|caution\\w*|pain\\w*|hurt\\w*|pinch\\w*|sharp|swell\\w*|dizz\\w*|numb\\w*|injur\\w*|sore\\w*|off the table|steer clear|below|under|beneath|lower|less|fewer|cap\\w*|ceiling|within|ease off|back off|ach(?:e|es|ed|ing)|flare\\w*)\\b`,
   "i",
 );
 const conditionWord =

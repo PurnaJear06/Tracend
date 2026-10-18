@@ -928,27 +928,22 @@ routes stay available by settings alone for two weeks after the cutover.
   direction of the trend. Questions and target suggestions ("Would 70 kg be a target you want to
   aim for?") are the reply the prompt requires and pass. A weight the athlete wrote in their own
   question and a weight directly governed by a limit word ("do not go below 60 kg") are not
-  claims. A figure is read as a body weight unless a clear load cue clears it
-  (`goal_phase/weight_figures.ts`): the sentence is tokenised into words and weight figures, and
-  the nearest cue within five words decides. A figure written with rep notation ("55 kg x 6", "50
-  kg for 8", "60 kg per side") is a load; so is one nearest an exercise name or catalog slug
-  ("overhead press is 55 kg", "your curl will go to 32.5 kg"), a barbell word (plate, bar, rack) or
-  a lifting word (reps, load, 1RM). A word about the person (weigh, body weight, scale, BMI, height,
-  target, goal), a movement of the person ("get down to", "drop to"), projection or pace wording
-  ("at this pace", "would put you at", "on track for", "heading to", "you'd land at") or "you" as
-  the subject of a verb that lands on a weight ("you'll be at", "you will hit", "you could reach")
-  makes it a body weight when it is nearer than any load cue; a tie goes to the load. "Pull" is a lifting verb on its own. The
-  ambiguous progression verbs ("try", "add", "attempt", "move up to", "work up to", "go to") are
-  load cues only when a lift is in context: the sentence, an earlier sentence of its paragraph or
-  list, or the athlete's question for the turn ("How should I progress my bench?"); with no lift
-  anywhere "you could go to 55 kg" is a body weight. Where a lift is in context, a figure with no load cue of its own
-  is read as that lift's load ("Your bench is moving well. Next week you'll try 40 kg.") unless
-  wording about the person's weight (weigh, scale, body weight, "at this pace", "put you at",
-  "land at", "get down to") is within two words of it. Weaker projection wording ("heading to",
-  "if you keep this up", "you will hit") does not override a carried lift. A figure
-  with no load cue near it is a body weight even with no body cue: this is a safety check and an
-  unclear figure fails closed. Look-ahead wording for the floor rule includes "heading", "would
-  put you", "land", "expect" and "ends at" beside the older cues. Both rules read only body
+  claims. A figure is a body weight unless it is attached to a lift
+  (`goal_phase/weight_figures.ts`): a kg figure is a load only when its own sentence or list item
+  carries rep or set notation beside it ("55 kg x 6", "50 kg for 8", "3x5", "sets of", per-side
+  wording) or an exercise name, catalog slug or bar or plate word within five words of it. Every
+  other figure is a body weight, so an unclear figure fails closed. A sentence with a time horizon
+  ("by March", "in 8 weeks", "soon", "next week") or cut, deficit, loss, drop, target, goal or
+  pace wording is never a load on an exercise name alone; it needs rep or set notation ("your
+  goal could be 48 kg", "bench is going well, you'll be 50 kg by March"). A word about the
+  person's weight (weigh, scale, body weight, BMI, height) nearer than the lift word makes it a
+  body weight. Nothing carries from one sentence to the next and the athlete's question carries
+  nothing; progression verbs ("try", "add", "move up to", "go to", "pull") are never load cues.
+  The model is told to write every load next to its exercise and reps ("bench 45 kg x 6"), and
+  the repair for `weight_below_healthy_floor` and `projection_without_target` says so: "you'll
+  move up to 45 kg next week" fails once and is rewritten as "bench 45 kg x 6 next week". The
+  floor rule's look-ahead wording includes "drop to", "dropping down to", "lose ... to", "get
+  down to", "aim for" and "until you reach" beside the older cues. Both rules read only body
   weights, so a lift's load below the floor (an overhead press at 55 kg for an athlete whose floor
   is 57 kg) never sends the athlete to the data summary. The rejection is
   an ordinary validation failure (`weight_below_healthy_floor`, `projection_without_target`) that
@@ -1255,7 +1250,7 @@ plan:") goes too. The cut reply must pass the whole check again (`parseCoachChat
 least half of the answer's sentences and at least 40 characters, or the turn ends in the data
 summary as before. A sentence that introduces a list takes its whole list with it when it is cut. A cut also gives
 up, and the turn ends in the data summary, when it would remove a sentence that sets a rule or
-a limit or puts a condition on advice (a prohibition or stop word, a symptom, "until", "unless",
+a limit or puts a condition on advice (a prohibition, stop or limit word (below, under, lower, less, cap, ceiling, within, "ease off"), a symptom (including aches and flare-ups), "until", "unless",
 "only", "if", "but", "however", "up to", "instead"), because without it "for the next 13 days,
 skip all of these:" would leave a bare list of what to avoid; only a repeated closing question,
 which sets no rule, and a repeated plain sentence are cut without that test. A cut never applies
@@ -1281,7 +1276,7 @@ stands, and referral wording (doctor, physio, professional, clearance, "get it c
 when the turn needs it: the health check is not cleared, today's pain is 7 or more, or the
 question or the previous exchange may be about a health risk (`mayConcernHealthRisk`); on such a
 turn every caution or limit stands too. A stop rule for pain or another symptom ("stop if it
-hurts", "if the knee pinches or swells, stop and rest") always stands, whatever the turn. The
+hurts", "if the knee aches, end the session", "ease off if the shoulder flares up") always stands, whatever the turn. The
 repair instruction never asks Coach to drop a safety caution. Otherwise the same "when to get it
 looked at" line is an ordinary repeat. An athlete asking the same thing again (their question
 and their previous one at least 0.7 similar) gets the same answer again. A repeat gets the one

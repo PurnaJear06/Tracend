@@ -9,7 +9,7 @@
 import { calculateCoachNumbers } from "../../coach_calculations.ts";
 import { hasGoalTarget, healthyFloorWeightKg } from "./bmi.ts";
 import { type GoalTarget, noGoalTarget } from "./types.ts";
-import { namesLift, weightFiguresIn } from "./weight_figures.ts";
+import { weightFiguresIn } from "./weight_figures.ts";
 
 export type WeightClaimRule = "weight_below_healthy_floor" | "projection_without_target";
 
@@ -48,7 +48,7 @@ const paceCue =
 
 // Where the sentence looks ahead at all (used for the healthy-floor rule).
 const lookAhead = new RegExp(
-  `${timeCue.source}|\\bwill\\b|\\bwould\\b|'ll\\b|\\bcould\\b|\\bgoing to\\b|\\breach(?:ing)?\\b|\\bhit(?:ting)?\\b|\\bend(?:ing)? up\\b|\\bends? at\\b|\\bdown to\\b|\\bget(?:ting)? to\\b|\\bhead(?:ing|ed|s)\\b|\\btrend(?:ing|s)? (?:to|toward|towards)\\b|\\b(?:put|puts|putting|leave|leaves|leaving) you\\b|\\bland(?:s|ing)?\\b|\\bexpect(?:ed|ing)?\\b|\\bwhere (?:it|this|that) (?:goes|ends|leads)\\b`,
+  `${timeCue.source}|\\bwill\\b|\\bwould\\b|'ll\\b|\\bcould\\b|\\bgoing to\\b|\\breach(?:ing)?\\b|\\bhit(?:ting)?\\b|\\bend(?:ing)? up\\b|\\bends? at\\b|\\bdown to\\b|\\bget(?:ting)? to\\b|\\bhead(?:ing|ed|s)\\b|\\btrend(?:ing|s)? (?:to|toward|towards)\\b|\\b(?:put|puts|putting|leave|leaves|leaving) you\\b|\\bland(?:s|ing)?\\b|\\bexpect(?:ed|ing)?\\b|\\bwhere (?:it|this|that) (?:goes|ends|leads)\\b|\\bdrop(?:ping)?(?: down)? to\\b|\\blos(?:e|ing) [^.!?]{0,40}\\bto\\b|\\baim(?:ing)? for\\b|\\buntil you (?:reach|hit|get)\\b`,
   "i",
 );
 
@@ -64,34 +64,14 @@ const limitBefore =
  * A figure counts only when its surroundings say it is a body weight (weight_figures.ts): a load
  * on the bar ("overhead press is 55 kg x 6") is not one.
  */
-function bodyWeightsIn(sentence: string, carriedLoad: boolean): number[] {
+function bodyWeightsIn(sentence: string): number[] {
   const found: number[] = [];
-  for (const figure of weightFiguresIn(sentence, carriedLoad)) {
+  for (const figure of weightFiguresIn(sentence)) {
     if (!figure.bodyWeight) continue;
     if (limitBefore.test(figure.before)) continue;
     for (const kg of figure.kgs) if (kg >= 30 && kg <= 300) found.push(kg);
   }
   return found;
-}
-
-/**
- * The answer's sentences, each with whether an earlier sentence of its paragraph (or list) names a
- * lift, or the athlete's question names one: a figure there is read as that lift's load unless wording about the person's weight is
- * as near as two words away ("Your bench is moving well. Next week you'll try 40 kg.").
- */
-function* sentencesWithLift(
-  answer: string,
-  question: string,
-): Generator<readonly [string, boolean]> {
-  // A lift the athlete's question names is in context for every sentence of the answer.
-  const asked = namesLift(question);
-  for (const paragraph of answer.split(/\n\s*\n/)) {
-    let carried = asked;
-    for (const sentence of paragraph.split(/(?<=[.!?])\s+|\n+/)) {
-      yield [sentence, carried];
-      carried ||= namesLift(sentence);
-    }
-  }
 }
 
 /** The first rule the answer text breaks, or null. */
@@ -103,11 +83,11 @@ export function weightClaimViolation(
   // Every figure the athlete wrote is theirs, whatever it measures.
   const own = weightFiguresIn(question).flatMap((figure) => [...figure.kgs]);
   const theirs = (kg: number) => own.some((value) => Math.abs(value - kg) < 0.5);
-  for (const [sentence, carriedLoad] of sentencesWithLift(answer, question)) {
+  for (const sentence of answer.split(/(?<=[.!?])\s+|\n+/)) {
     const asksOrProposes = sentence.trim().endsWith("?") ||
       (targetProposal.test(sentence) && !paceCue.test(sentence));
     const forwardLooking = lookAhead.test(sentence) || targetProposal.test(sentence);
-    for (const kg of bodyWeightsIn(sentence, carriedLoad)) {
+    for (const kg of bodyWeightsIn(sentence)) {
       if (theirs(kg)) continue;
       if (forwardLooking && context.floorKg !== null && kg < context.floorKg - 0.05) {
         return "weight_below_healthy_floor";

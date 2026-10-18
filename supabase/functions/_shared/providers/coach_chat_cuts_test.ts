@@ -7,7 +7,11 @@ import { captureLogs, claudeMessage, fakeFetch, jsonResponse, routeFor } from ".
 import { ownerContext } from "../coach_safety/fixtures.ts";
 import { type CoachContributions, noCoachContributions } from "../coach_context/host.ts";
 import { generateCoachChatViaGateway } from "./coach_chat_provider_gateway.ts";
-import { CoachChatUnavailableError } from "./coach_chat_provider.ts";
+import {
+  coachChatInstructions,
+  CoachChatUnavailableError,
+  repairContractText,
+} from "./coach_chat_provider.ts";
 
 const route = () =>
   routeFor("coach_chat", {
@@ -254,4 +258,28 @@ Deno.test("a cut with a full list of missing-data notes still passes the contrac
     result.answer.missing_data.at(-1),
     "Left out lines with figures that are not in your data.",
   );
+});
+
+Deno.test("a load without its exercise and reps is repaired into one that has them", async () => {
+  const planned: CoachContributions = {
+    ...noCoachContributions,
+    texts: { training_plan: "Planned next week: bench 45 kg x 6." },
+  };
+  const { result } = await run([
+    { answer: "Your bench is moving well. You'll move up to 45 kg next week." },
+    { answer: "Your bench is moving well. Next week: bench 45 kg x 6." },
+  ], { contributions: planned, question: "How should I progress my bench?" });
+  if (result instanceof Error) throw result;
+  assertEquals(result.attempts.map((attempt) => attempt.rule), [
+    "weight_below_healthy_floor",
+    undefined,
+  ]);
+  assertEquals(result.answer.answer, "Your bench is moving well. Next week: bench 45 kg x 6.");
+  for (const rule of ["weight_below_healthy_floor", "projection_without_target"] as const) {
+    assertStringIncludes(
+      repairContractText({ rule, path: "answer" }, []),
+      "write it next to its exercise and reps",
+    );
+  }
+  assertStringIncludes(coachChatInstructions([]), "Write every lifting load next to its exercise");
 });

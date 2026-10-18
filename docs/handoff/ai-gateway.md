@@ -1242,9 +1242,14 @@ to, instead), and a cut lead-in takes its whole list with it; a repeated closing
 (2) Pain stop rules are never repeats; on a turn that needs referral wording (also when the previous
 exchange was about a health risk) every caution stands; the repair hint never asks to drop a caution.
 (3) Institution initials with no year match only a source's id or title acronyms (case-sensitive), never
-its excerpt. (4) Lift progression: "pull" is a load cue; "go to", "move up to", "try", "add" are load cues only with a lift in the sentence, the paragraph or the athlete's question (else the figure is a body weight); a lift named earlier in the
-paragraph or list carries to a sentence with no cue of its own unless weight-of-the-person wording is
-within two words; weaker projection wording does not override it. (5) A session duration is exempt only as
+its excerpt. (4) Body weight fails closed: a kg figure is a load only with rep or set notation, per-side wording or an
+exercise, slug, bar or plate word in its own sentence or list item, and never when the sentence has a time
+horizon or cut, deficit, target, goal or pace wording unless it has rep or set notation. Nothing carries
+across sentences or from the question, and progression verbs are not load cues. The gateway prompt and the
+repair hints tell Coach to write every load as "bench 45 kg x 6". The floor rule's look-ahead gained "drop
+to", "lose ... to", "aim for" and "until you reach". The cut's limit words gained below, under, lower, less,
+cap, ceiling, within, ease off, back off, aches and flare-ups; the repeat guard's stop words gained ease
+off, pull back, end the session, leave ... out and call it a day. (5) A session duration is exempt only as
 advice (an imperative, or "you" with a modal): "you normally walk 45 minutes" and "your plan is a 45-minute
 walk" must be in the data.
 

@@ -627,3 +627,45 @@ Deno.test("repeats_previous_turn: a pain stop rule is never a repeat, on any tur
   const reply = `Your sleep looks steady this week. ${rule}`;
   assertEquals(coachReplyCheck(inputsFor({ repetition }))(reply, [], reply), null);
 });
+
+Deno.test("a cut gives up rather than drop a limit on effort or time", () => {
+  const base = {
+    evidence: [],
+    missing_data: [],
+    safety_state: "allowed",
+    suggested_follow_ups: [],
+    reasoning_chain: [],
+  };
+  const lead = "Do 3 sets of leg presses today and keep the weight comfortable throughout. ";
+  const tail = " That keeps the week simple and realistic for your recovery.";
+  // The control: the same figure in a sentence with no limit is cut.
+  assertEquals(
+    cutReply(inputsFor(), { ...base, answer: `${lead}Spend 37 minutes on the warm-up.${tail}` }, [
+      "numbers_not_grounded",
+    ])?.cuts,
+    ["numbers_stripped"],
+  );
+  for (
+    const limit of [
+      "Keep your heart rate below 163 bpm the whole time.",
+      "Keep every set at RPE 7.3 or lower today.",
+      "Cap it at 37 minutes in total.",
+      "Stay under 37 minutes in total.",
+      "Hold the load at or beneath 163 bpm effort.",
+      "Do 37 minutes or less.",
+      "Stay within 163 bpm.",
+      "Ease off if the knee aches after 37 minutes.",
+      "Back off at 163 bpm.",
+      "Set a ceiling of 163 bpm.",
+      "If the knee flares up, stop at minute 37.",
+    ]
+  ) {
+    assertEquals(
+      cutReply(inputsFor(), { ...base, answer: `${lead}${limit}${tail}` }, [
+        "numbers_not_grounded",
+      ]),
+      null,
+      limit,
+    );
+  }
+});

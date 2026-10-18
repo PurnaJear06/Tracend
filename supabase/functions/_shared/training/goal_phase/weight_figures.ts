@@ -1,17 +1,20 @@
 // The weights in a sentence of Coach's reply, and which of them are the athlete's body weight.
 // A "kg" figure is not always a body weight: "overhead press is 55 kg x 6" is a load. The goal
-// phase check (guard.ts) must read only body weights, so the sentence is tokenised into words and
-// figures and each figure is classified from its surroundings:
-//   - a figure written with rep notation ("55 kg x 6", "50 kg for 8", "60 kg per side") is a load;
-//   - otherwise the nearest cue within a few words decides. A load cue is an exercise name or
-//     catalog slug, a barbell word (plate, bar, rack), a lifting word (reps, load, 1RM). A body
-//     cue is a word about the person (weigh, body weight, scale, BMI, height, target, goal), a
-//     movement of the person toward a weight ("get down to", "drop to"), projection or pace
-//     wording ("at this pace", "would put you at", "on track for", "heading to", "you'd land
-//     at"), or "you" as the subject of a verb that lands on a weight ("you'll be at", "you will
-//     hit", "you could reach"). The nearer cue wins and a tie goes to the load;
-//   - a figure with no load cue within reach is a body weight, with or without a body cue: this is
-//     a safety check, so an unclear figure fails closed. Only a clear load cue clears a figure.
+// phase check (guard.ts) reads only body weights, and it is a safety check, so the rule is strict
+// and fails closed:
+//   - a figure is a LOAD only when it is attached to a lift in its own sentence or list item: rep
+//     or set notation ("55 kg x 6", "50 kg for 8", "3x5", "sets of"), per-side wording, or an
+//     exercise name, catalog slug, or bar or plate word within a few words of it;
+//   - every other figure is a BODY WEIGHT;
+//   - a sentence with a time horizon ("by March", "in 8 weeks", "soon", "next week") or cut,
+//     deficit, loss, drop, target, goal or pace wording is never a load on an exercise name alone:
+//     it needs rep or set notation, because "your goal could be 48 kg" and "bench is going well,
+//     you'll be 50 kg by March" are about the person;
+//   - a word about the person's weight (weigh, scale, body weight, BMI, height) nearer than the
+//     lift word makes it a body weight.
+// Nothing carries from one sentence to the next, and the athlete's question carries nothing: a
+// load Coach writes without its exercise and reps ("you'll move up to 45 kg") is a figure the
+// guard cannot clear, so the reply is repaired to write it as "bench 45 kg x 6".
 // The distance counts the words between the cue and the figure, not the small function words
 // ("on", "the", "to"), so "55 kg on overhead press" and "weigh about 70 kg" both read as adjacent.
 import { exerciseCatalogV1 } from "../../onboarding/catalog.ts";
@@ -38,6 +41,7 @@ function toKg(amount: number, unit: string): number {
 }
 
 type Word = Readonly<{ text: string; start: number; end: number }>;
+type Cue = Readonly<{ from: number; to: number }>;
 
 function wordsOf(sentence: string): Word[] {
   const lower = sentence.toLowerCase().replaceAll("’", "'");
@@ -107,7 +111,7 @@ const catalogLiftWords = exerciseCatalogV1.flatMap((exercise) =>
   `${exercise.name} ${exercise.slug}`.toLowerCase().split(/[^a-z0-9']+/)
 ).filter((word) => word !== "" && !notALiftWord.has(word));
 
-// Lifts and lifting words a coach writes whether or not the catalog holds them.
+// Exercise names and catalog slugs, and the barbell words that mean a load on a bar.
 const loadWords = new Set([
   ...catalogLiftWords,
   ...[
@@ -129,19 +133,10 @@ const loadWords = new Set([
     "fly",
     "kettlebell",
     "kettlebells",
-    "lift",
-    "lifted",
-    "lifting",
-    "lifts",
-    "load",
-    "loaded",
-    "loading",
-    "loads",
     "lunge",
     "lunges",
     "plate",
     "plates",
-    "pr",
     "press",
     "presses",
     "pressdown",
@@ -151,11 +146,8 @@ const loadWords = new Set([
     "rdl",
     "rep",
     "reps",
-    "rir",
-    "rm",
     "row",
     "rows",
-    "rpe",
     "shrug",
     "shrugs",
     "snatch",
@@ -166,7 +158,6 @@ const loadWords = new Set([
     "thrusts",
   ],
 ]);
-const oneRepMax = /^\d+rm$/;
 // "the next set", "top set": a set of a lift. A bare "set" is also a verb ("set a target"), so it
 // counts only after one of these.
 const setQualifier = new Set([
@@ -180,62 +171,20 @@ const setQualifier = new Set([
   "third",
 ]);
 
-// Verbs that put a load on the bar. "pull" is a lift by itself. The others read as a load only
-// when a lift is in context (the sentence, an earlier sentence of the paragraph, or the athlete's
-// question): "you'll try 40 kg" after "your bench is moving well" is a load, and "you could go to
-// 55 kg" with no lift anywhere is a body weight (fail closed).
-const liftVerbs = new Set(["pull", "pulls"]);
-const progressionWords = new Set([
-  "add",
-  "adds",
-  "adding",
-  "try",
-  "tries",
-  "trying",
-  "attempt",
-  "attempts",
-  "attempting",
-]);
-const progressionPhrases: readonly (readonly RegExp[])[] = [
-  [/^(?:move|moves|moving|work|works|working)$/, /^up$/, /^to$/],
-  [/^(?:go|goes|going)$/, /^to$/],
-];
-
-/** Whether the sentence names a lift or lifting (an exercise, a bar, reps, a load). */
-export function namesLift(sentence: string): boolean {
-  const words = wordsOf(sentence);
-  return words.some((_, index) => isLoadWord(words, index));
-}
-
-function loadCuesIn(words: readonly Word[], liftInContext: boolean): Cue[] {
-  const cues: Cue[] = [];
-  for (let i = 0; i < words.length; i++) {
-    if (isLoadWord(words, i) || liftVerbs.has(words[i].text)) cues.push({ from: i, to: i });
-    if (!liftInContext) continue;
-    if (progressionWords.has(words[i].text)) cues.push({ from: i, to: i });
-    for (const phrase of progressionPhrases) {
-      if (
-        phrase.every((pattern, offset) => words[i + offset] && pattern.test(words[i + offset].text))
-      ) {
-        cues.push({ from: i, to: i + phrase.length - 1 });
-      }
-    }
-  }
-  return cues;
-}
-
 function isLoadWord(words: readonly Word[], index: number): boolean {
   const word = words[index].text;
-  if (loadWords.has(word) || oneRepMax.test(word)) return true;
+  if (loadWords.has(word)) return true;
   return word === "set" && index > 0 && setQualifier.has(words[index - 1].text);
 }
 
-// Rep notation straight after or before the figure: "x 6", "for 8 reps", "per side", "reps".
+// Rep or set notation straight after or before the figure: "x 6", "3x5", "for 8 reps", "sets of",
+// "per side", "reps".
 const timeUnitWord =
   /^(?:weeks?|wks?|days?|months?|years?|hours?|hrs?|minutes?|mins?|seconds?|secs?|kg|kgs|lbs?|%|percent)$/;
 const repsAfter =
-  /^\s*(?:[x×*]\s*\d|(?:reps?|sets?|rm)\b|(?:per|a|each)\s+(?:side|hand|arm|leg)\b)/i;
-const repsBefore = /\d\s*[x×*]\s*$/i;
+  /^\s*(?:[x×*]\s*\d|\d+\s*[x×]\s*\d|(?:reps?|sets?|rm)\b|(?:per|a|each)\s+(?:side|hand|arm|leg)\b|(?:at|@)\s*\d+\s*reps?\b)/i;
+const repsBefore =
+  /(?:\d\s*[x×*]\s*|\bsets? of \d+(?:\s*(?:-|–|to)\s*\d+)?\s*(?:at|@|with)\s*|\d\s*[x×]\s*\d+\s*(?:at|@)\s*)$/i;
 
 function hasRepNotation(sentence: string, index: number, length: number): boolean {
   const after = sentence.slice(index + length);
@@ -244,10 +193,7 @@ function hasRepNotation(sentence: string, index: number, length: number): boolea
   return forReps !== null && !timeUnitWord.test(forReps[2].toLowerCase());
 }
 
-// ---- body cues ---------------------------------------------------------------------------
-
-/** A cue's place in the sentence; a strong body cue is a word or phrase that is about the person's weight. */
-type Cue = Readonly<{ from: number; to: number; strong?: true }>;
+// ---- the person's weight --------------------------------------------------------------------
 
 // A weight that is not the body's: "the weight on the bar", "add weight", "the same weight".
 const notBodyBefore = new Set([
@@ -272,77 +218,39 @@ const notBodyBefore = new Set([
   "plate",
   "bar",
 ]);
-
-// Single words about the person's weight (strong) or what they aim for (weak: a lift has targets).
-const strongBodyWord =
+const bodyWord =
   /^(?:weigh|weighs|weighed|weighing|weighin|weighins|scales?|bmi|height|bodyweight)$/;
-const weakBodyWord = /^(?:target|targets|aim|aims|aiming|goal|goals)$/;
 
-// "get down to", "drop to", "at this pace", "put you at", "land at": wording that is about the
-// person's weight. These (and the words above) win over a load cue carried from an earlier
-// sentence when they are as near as it.
-const strongPhrases: readonly (readonly RegExp[])[] = [
-  [
-    /^(?:get|getting|go|going|come|coming|slim|slimming|cut|cutting|bring|bringing)$/,
-    /^down$/,
-    /^to$/,
-  ],
-  [/^(?:drop|dropping|dip|dipping|fall|falling|sink|sinking)$/, /^to$/],
-  [/^(?:drop|dropping|dip|dipping|fall|falling|sink|sinking)$/, /^down$/, /^to$/],
-  [/^at$/, /^(?:this|that|the|your|current|same)$/, /^(?:pace|rate)$/],
-  [/^(?:put|putting|puts|leave|leaves|leaving|take|takes|taking|bring|brings)$/, /^(?:you|your)$/],
-  [/^(?:on|off)$/, /^(?:track|course|pace)$/],
-  [
-    /^(?:land|lands|landing|end|ends|ending|finish|finishes|finishing|settle|settles|settling)$/,
-    /^(?:at|on|around)$/,
-  ],
-];
-
-// Weaker projection wording, which a lift's progression can share ("if you keep this up you will
-// hit 52.5 kg"): it counts unless a load cue is as near, or one is carried from the sentence before.
-const weakPhrases: readonly (readonly RegExp[])[] = [
-  [/^(?:heading|headed|trending|tracking|moving|going|aiming)$/, /^(?:to|toward|towards)$/],
-  [/^(?:project|projects|projected|projecting|projection|extrapolate|extrapolated)$/],
-  [/^(?:if|when)$/, /^you$/, /^(?:keep|continue|carry|stay|maintain)$/],
-];
-
-// "you" as the subject of a verb that lands on a weight.
-const landsOnWeight =
-  /^(?:be|been|being|reach|reaching|hit|hitting|weigh|weighing|get|getting|drop|dropping|fall|falling|dip|dipping|land|end|sit|come|hover|stay|slim|shrink)$/;
-const youSubject = /^you(?:'ll|'d|'re|'ve)?$/;
-
+/** Words about the person's weight: weigh, scale, body weight, BMI, height. */
 function bodyCuesIn(words: readonly Word[]): Cue[] {
   const cues: Cue[] = [];
   for (let i = 0; i < words.length; i++) {
     const word = words[i].text;
-    if (strongBodyWord.test(word)) cues.push({ from: i, to: i, strong: true });
-    if (weakBodyWord.test(word)) cues.push({ from: i, to: i });
+    if (bodyWord.test(word)) cues.push({ from: i, to: i });
     if (word === "weight" || word === "weights") {
-      if (i === 0 || !notBodyBefore.has(words[i - 1].text)) {
-        cues.push({ from: i, to: i, strong: true });
-      }
-    }
-    const matches = (phrase: readonly RegExp[]) =>
-      phrase.every((pattern, offset) => words[i + offset] && pattern.test(words[i + offset].text));
-    for (const phrase of strongPhrases) {
-      if (matches(phrase)) cues.push({ from: i, to: i + phrase.length - 1, strong: true });
-    }
-    for (const phrase of weakPhrases) {
-      if (matches(phrase)) cues.push({ from: i, to: i + phrase.length - 1 });
-    }
-    if (youSubject.test(word)) {
-      // "you", then up to three words (will, could, just ...), then the verb.
-      for (let j = i + 1; j <= i + 4 && j < words.length; j++) {
-        if (/^\d/.test(words[j].text)) break;
-        if (landsOnWeight.test(words[j].text)) {
-          cues.push({ from: j, to: j });
-          break;
-        }
-      }
+      if (i === 0 || !notBodyBefore.has(words[i - 1].text)) cues.push({ from: i, to: i });
     }
   }
   return cues;
 }
+
+// Wording that makes a sentence about the person and not a lift: a time horizon, or a cut, a
+// loss, a target or a pace.
+const months =
+  "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+const aboutThePerson = new RegExp(
+  [
+    String
+      .raw`\b(?:by|before|until|till)\s+(?:the |next |this |then\b|end\b|christmas|summer|winter|spring|autumn|fall|\d|week|month|year|${months}\b)`,
+    String
+      .raw`\bin\s+(?:about |around |roughly |another |just |only |the next )?(?:\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|a few|a couple of)\s*(?:-\s*\d+\s*)?(?:days?|weeks?|months?|years?)\b`,
+    String
+      .raw`\bwithin\b|\bsoon\b|\beventually\b|\bsomeday\b|\bnext (?:week|month|year|block)\b|\bthis (?:week|month|year)\b|\bin time\b`,
+    String
+      .raw`\b(?:cut|cuts|cutting|deficit|lose|loses|losing|loss|lost|shed|shedding|drop|drops|dropping|dip|dips|dipping|fall|falls|falling|slim|slimming|leaner|lean|target|targets|goal|goals|aim|aims|aiming|pace|rate|trend|trending|project\w*|extrapolat\w*|heading|on track)\b`,
+  ].join("|"),
+  "i",
+);
 
 // ---- classification ----------------------------------------------------------------------
 
@@ -374,9 +282,6 @@ const skipWord = new Set([
   "only",
 ]);
 
-/** A load carried from the sentence before counts as a load cue this many words away. */
-const carriedDistance = 2;
-
 /** Cues farther than this many words from the figure do not govern it. */
 const reach = 5;
 
@@ -393,14 +298,13 @@ function nearest(distances: readonly (number | null)[]): number | null {
 }
 
 /**
- * Every weight figure in the sentence, in kg, each marked as the athlete's body weight or not.
- * `bodyWeight` is true when a body cue is closer to the figure than any load cue.
+ * Every weight figure in the sentence, in kg, each marked as the athlete's body weight or not
+ * (see the top of this file for the rule).
  */
-export function weightFiguresIn(sentence: string, carriedLoad = false): WeightFigure[] {
+export function weightFiguresIn(sentence: string): WeightFigure[] {
   const words = wordsOf(sentence);
   const bodyCues = bodyCuesIn(words);
-  // A lift in context: this sentence names one, or an earlier sentence or the question did.
-  const loadCues = loadCuesIn(words, carriedLoad || namesLift(sentence));
+  const aboutPerson = aboutThePerson.test(sentence);
   const found: WeightFigure[] = [];
   for (const match of sentence.matchAll(weightPattern)) {
     const kgs = [match[1], match[2]].filter((raw): raw is string => raw !== undefined)
@@ -416,21 +320,20 @@ export function weightFiguresIn(sentence: string, carriedLoad = false): WeightFi
         : firstAfter !== -1 && cue.from >= firstAfter
         ? distance(words, firstAfter, cue.from - 1)
         : null;
+    const notation = hasRepNotation(sentence, start, match[0].length);
     const body = nearest(bodyCues.map(cueDistance));
-    const strongBody = nearest(bodyCues.filter((cue) => cue.strong).map(cueDistance));
-    const load = hasRepNotation(sentence, start, match[0].length)
-      ? 0
-      : nearest(loadCues.map(cueDistance));
+    const lift = nearest(
+      words.flatMap((_, index) =>
+        isLoadWord(words, index) ? [cueDistance({ from: index, to: index })] : []
+      ),
+    );
+    const load = notation ||
+      (lift !== null && !aboutPerson && (body === null || lift <= body));
     found.push({
       kgs,
       index: start,
       before: sentence.slice(0, start),
-      // A figure fails closed: it is a body weight unless a load cue is as near as any body cue.
-      // Where the sentence before names a lift and this one has no load cue of its own, the lift
-      // carries over: only wording about the person's weight, as near as two words away, overrides it.
-      bodyWeight: carriedLoad && load === null
-        ? strongBody !== null && strongBody <= carriedDistance
-        : load === null || (body !== null && body < load),
+      bodyWeight: !load,
     });
   }
   return found;

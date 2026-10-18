@@ -69,8 +69,9 @@ const referralWording =
 // A stop rule for pain or another symptom ("stop if it hurts", "skip it when the knee pinches",
 // "sharp pain means rest and see a physio"): always safety wording, whatever the turn.
 const symptom = String
-  .raw`(?:pain\w*|hurt\w*|pinch\w*|sharp|swell\w*|swollen|dizz\w*|light-?headed|numb\w*|tingl\w*|injur\w*|sore\w*)`;
-const stopWord = String.raw`(?:stop|skip|avoid|rest|back off|don'?t|do not|never|doctor|physio\w*)`;
+  .raw`(?:pain\w*|hurt\w*|pinch\w*|sharp|swell\w*|swollen|dizz\w*|light-?headed|numb\w*|tingl\w*|injur\w*|sore\w*|ach(?:e|es|ed|ing)|flare\w*)`;
+const stopWord = String
+  .raw`(?:stop|skip|avoid|rest|back off|ease off|pull back|end (?:the|your|this) session|leave\b[^.!?]{0,30}\bout|call it a day|don'?t|do not|never|doctor|physio\w*)`;
 const symptomStopRule = new RegExp(
   String.raw`\b${stopWord}\b[^.!?]*\b${symptom}\b|\b${symptom}\b[^.!?]*\b${stopWord}\b`,
   "i",

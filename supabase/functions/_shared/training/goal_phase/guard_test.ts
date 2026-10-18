@@ -159,39 +159,6 @@ Deno.test("a warning word only excuses the weight it governs", () => {
   );
 });
 
-Deno.test("a load on a lift is never read as a body weight", () => {
-  const ask = "What is my next Upper B?";
-  for (
-    const sentence of [
-      "Next Upper B, overhead press is 55 kg x 6, and you will hit it if you keep the reps clean.",
-      "Your curl will go to 32.5 kg.",
-      "Next Upper B, overhead press is 55 kg × 6, and you will hit it if you keep the reps clean.",
-      "You will hit 55 kg for 6 on the overhead press.",
-      "You can get 50 kg for 8 reps on the lat pulldown next week.",
-      "You could reach 45 kg on overhead press in 6 weeks.",
-      "Your next target is 100 kg on the deadlift, and you will get there in 12 weeks.",
-      "Aim for a 100 kg deadlift in 16 weeks.",
-      "Your goal is a 100 kg deadlift by December.",
-      "You will squat 55 kg per side by March.",
-      "Load 20 kg plates and a 15 kg plate to make 55 kg on the bar.",
-      "Two 25 kg plates plus the bar gives you 70 kg, and next week you will add 2.5 kg.",
-      "Drop the load to 50 kg for the back-off set.",
-      "Drop the weight to 50 kg on the last set.",
-      "Back off to 40 kg for 10 reps, then work back up to 55 kg.",
-      "Your 1RM bench could be 60 kg by the end of the block.",
-      "Romanian deadlift: 55 kg this week and 62.5 kg in 3 weeks.",
-      "Hold 50 kg on the incline dumbbell press until all sets hit 8 reps.",
-    ]
-  ) {
-    assertEquals(weightClaimViolation(sentence, ask, noTarget), null, sentence);
-    assertEquals(
-      weightClaimViolation(sentence, ask, { ...noTarget, hasTarget: true }),
-      null,
-      sentence,
-    );
-  }
-});
-
 Deno.test("a body weight with a cue is still read, next to a lift", () => {
   const ask = "How am I doing?";
   assertEquals(
@@ -232,17 +199,6 @@ Deno.test("a body weight with a cue is still read, next to a lift", () => {
   );
 });
 
-Deno.test("a lift's load does not trip the projection rule either", () => {
-  assertEquals(
-    weightClaimViolation(
-      "Your squat will be 70 kg in 8 weeks if you keep adding 2.5 kg.",
-      "How am I doing?",
-      noTarget,
-    ),
-    null,
-  );
-});
-
 Deno.test("projection and pace wording is a body-weight claim, and an unclear figure fails closed", () => {
   const ask = "How am I doing?";
   for (
@@ -277,86 +233,83 @@ Deno.test("projection and pace wording is a body-weight claim, and an unclear fi
   );
 });
 
-Deno.test("normal lift progression passes, and real body projection is still caught beside it", () => {
-  const ask = "How should I progress my bench?";
-  const floor = { currentKg: 74.8, floorKg: 59.9, hasTarget: false, direction: -1 } as const;
+const lifting = "What is my next Upper B?";
+
+Deno.test("a load attached to a lift in its own sentence is never read as a body weight", () => {
+  for (
+    const sentence of [
+      "Next Upper B, overhead press is 55 kg x 6, and you will hit it if you keep the reps clean.",
+      "Next Upper B, overhead press is 55 kg × 6, and you will hit it if you keep the reps clean.",
+      "Your curl will go to 32.5 kg.",
+      "You will hit 55 kg for 6 on the overhead press.",
+      "You can get 50 kg for 8 reps on the lat pulldown next week.",
+      "You could reach 45 kg x 6 on overhead press in 6 weeks.",
+      "Your next target is 100 kg on the deadlift, and you will get there in 12 weeks.",
+      "Aim for a 100 kg deadlift in 16 weeks.",
+      "Your goal is a 100 kg deadlift by December.",
+      "You will squat 55 kg per side by March.",
+      "Load 20 kg plates and a 15 kg plate to make 55 kg on the bar.",
+      "Two 25 kg plates plus the 20 kg bar gives you 70 kg.",
+      "Drop the load to 50 kg for 8 reps on the back-off set.",
+      "Back off to 40 kg for 10 reps, then work back up to 55 kg.",
+      "Hold 50 kg on the incline dumbbell press until all sets hit 8 reps.",
+      "Bench 45 kg x 6 next week.",
+      "Add 32.5 kg per side next week.",
+      "Squat 100 kg for 5.",
+      "Deadlift 140 kg 3x3.",
+      "Squat 3x5 at 50 kg.",
+      "Do sets of 5 at 55 kg.",
+      "Your squat will be 70 kg x 5 in 8 weeks if you keep adding weight.",
+      "Plan:\n- Bench 40 kg x 8\n- Row 45 kg x 10",
+    ]
+  ) {
+    assertEquals(weightClaimViolation(sentence, lifting, noTarget), null, sentence);
+    assertEquals(weightClaimViolation(sentence, lifting, withTarget), null, sentence);
+  }
+});
+
+Deno.test("a figure not attached to a lift in its own sentence is a body weight, whatever came before", () => {
+  const cutting = "Should I keep benching while I cut?";
+  const floor = { currentKg: 74.8, floorKg: 59.9, hasTarget: true, direction: -1 } as const;
   for (
     const answer of [
+      "If you hold this deficit you will hit 52 kg by December.",
+      "You'll be down at 50 kg.",
+      "Keep cutting until you reach 50 kg.",
+      "Your goal could be 48 kg.",
+      "A target of 50 kg is realistic.",
+      "You could reach 50 kg by March.",
+      "Your weight in March will likely be close to 50 kg.",
+      "Plan:\n- Bench 40 kg x 8\n- Aim for 50 kg by March",
+      "Bench is going well. You'll be 50 kg by March.",
       "Your bench is moving well. Next week you'll try 40 kg.",
       "Your bench is moving well. You'll move up to 45 kg next week.",
       "Your bench is moving well. Then you could go to 50 kg.",
       "Your bench is moving well. If you keep this up you will hit 52.5 kg soon.",
-      "Your bench is moving well. Next week you'll try 40 kg. You'll move up to 45 kg after that. Then you could go to 50 kg. If you keep this up you will hit 52.5 kg soon.",
-      "Bench plan:\n- Week 1: 40 kg x 8\n- Week 2: you could add 2.5 kg and attempt 42.5 kg\n- Week 3: work up to 45 kg",
-      "Your squat is strong.\n- Next: try 50 kg",
-      "You'll move up to 45 kg next week.",
-      "Then you could go to 50 kg.",
-      "Next week you'll try 40 kg.",
-    ]
-  ) {
-    assertEquals(weightClaimViolation(answer, ask, floor), null, answer);
-    assertEquals(weightClaimViolation(answer, ask, { ...floor, hasTarget: true }), null, answer);
-  }
-  for (
-    const answer of [
-      "Your bench is moving well. At this pace you'll be at 45 kg.",
-      "Your bench is moving well. I would put you at 45 kg.",
-      "Your bench is moving well. You will weigh 50 kg in 12 weeks.",
-      "Your bench is moving well. Your body weight will drop to 52 kg.",
-      "Your bench is moving well. You'd land at 50 kg.",
-      "Your bench is moving well. You could get down to 52 kg by March.",
-    ]
-  ) {
-    assertEquals(
-      weightClaimViolation(answer, ask, { ...floor, hasTarget: true }),
-      "weight_below_healthy_floor",
-      answer,
-    );
-  }
-});
-
-Deno.test("a paragraph break ends the carried lift when the question names none", () => {
-  const floor = { currentKg: 74.8, floorKg: 59.9, hasTarget: true, direction: -1 } as const;
-  assertEquals(
-    weightClaimViolation(
       "Your bench is moving well.\n\nIf you keep this up you will hit 52.5 kg soon.",
-      "How am I doing?",
-      floor,
-    ),
-    "weight_below_healthy_floor",
-  );
-  assertEquals(
-    weightClaimViolation(
       "Your bench is moving well.\nIf you keep this up you will hit 52.5 kg soon.",
-      "How am I doing?",
-      floor,
-    ),
-    null,
-  );
-});
-
-Deno.test("an ambiguous progression verb is a load only when a lift is in context", () => {
-  const floor = { currentKg: 74.8, floorKg: 59.9, hasTarget: true, direction: -1 } as const;
-  // No lift in the sentence, the paragraph or the question: a body weight, fail closed.
-  for (
-    const [answer, ask] of [
-      ["You could go to 55 kg.", "How am I doing?"],
-      ["You could go to 55 kg.", "How can I cut weight faster?"],
-      ["You'll move up to 45 kg next week.", "How am I doing?"],
-      ["Next week you'll try 40 kg.", "What should I do next?"],
-      ["Then you could work up to 50 kg.", "How is my cut going?"],
-      ["You could add 55 kg.", "How am I doing?"],
-    ] as const
+      "You could go to 55 kg.",
+      "You could pull 55 kg.",
+      "You could add 55 kg.",
+      "Your bench goal could be 48 kg by March.",
+      "Dropping down to 52 kg would suit your bench.",
+      "Drop to 50 kg.",
+      "Lose a few more kilos to get to 55 kg.",
+      "Aim for 52 kg.",
+      "Get down to 52 kg.",
+      "Keep going until you reach 52 kg.",
+    ]
   ) {
-    assertEquals(weightClaimViolation(answer, ask, floor), "weight_below_healthy_floor", answer);
+    for (const ask of [cutting, "How should I progress my bench?"]) {
+      assertEquals(weightClaimViolation(answer, ask, floor), "weight_below_healthy_floor", answer);
+    }
   }
-  // A lift in the question puts the whole answer in context.
+  // Written with its exercise and reps, the same load passes.
   for (
     const answer of [
-      "You'll move up to 45 kg next week.",
-      "You could go to 55 kg.",
-      "Next week you'll try 40 kg.",
-      "Then you could work up to 50 kg.",
+      "Bench 45 kg x 6 next week.",
+      "Next week, bench 40 kg x 8, then bench 45 kg x 6.",
+      "Your bench is moving well. Next week: bench 45 kg x 6.",
     ]
   ) {
     assertEquals(
@@ -365,10 +318,4 @@ Deno.test("an ambiguous progression verb is a load only when a lift is in contex
       answer,
     );
   }
-  // A lift in the same sentence, or an unambiguous lifting verb, is a load on its own.
-  assertEquals(
-    weightClaimViolation("Your squat could go to 55 kg.", "How am I doing?", floor),
-    null,
-  );
-  assertEquals(weightClaimViolation("You could pull 55 kg.", "How am I doing?", floor), null);
 });

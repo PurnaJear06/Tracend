@@ -125,3 +125,24 @@ Deno.test("asking the same thing again is not a repeat", () => {
     true,
   );
 });
+
+Deno.test("more ways to say stop for a symptom are never repeats", () => {
+  for (
+    const rule of [
+      "If the knee aches, end the session and go home.",
+      "When your shoulder flares up, ease off and rest it for the day.",
+      "If the back aches at all, pull back and leave the heavy pulls out this week.",
+      "If the knee hurts, call it a day and rest it properly tonight.",
+    ]
+  ) {
+    assertEquals(
+      repeatsOf(rule, {
+        previousReply: `${rule} Want me to plan around it?`,
+        referralNeeded: false,
+      })
+        .sentences,
+      [],
+      rule,
+    );
+  }
+});
