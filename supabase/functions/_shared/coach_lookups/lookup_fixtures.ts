@@ -184,24 +184,34 @@ export const scheduleLookupPayload = {
   truncated: false,
   plan: { version: 3, starts_on: "2026-09-28", sessions_per_week: 3 },
   sessions: [
-    { name: "Chest priority", weekday: 1, exercises: chestDay },
-    { name: "Legs A", weekday: 2, exercises: legDay },
-    { name: "Chest volume", weekday: 4, exercises: chestDay },
+    { id: "w-chest-a", name: "Chest priority", weekday: 1, exercises: chestDay },
+    { id: "w-legs", name: "Legs A", weekday: 2, exercises: legDay },
+    { id: "w-chest-b", name: "Chest volume", weekday: 4, exercises: chestDay },
   ],
   days: [
-    { date: "2026-10-15", weekday: 4, planned: [{ name: "Chest volume", minutes: 90 }], done: [] },
+    {
+      date: "2026-10-15",
+      weekday: 4,
+      planned: [{ id: "w-chest-b", name: "Chest volume", minutes: 90 }],
+      done: [],
+    },
     {
       date: "2026-10-18",
       weekday: 7,
       planned: [],
-      done: [{ name: "Chest volume", exercises: chestDay }],
+      done: [{ planned_workout_id: "w-chest-b", name: "Chest volume", exercises: chestDay }],
     },
     {
       date: "2026-10-19",
       weekday: 1,
-      planned: [{ name: "Chest priority", minutes: 90 }],
+      planned: [{ id: "w-chest-a", name: "Chest priority", minutes: 90 }],
       done: [],
     },
-    { date: "2026-10-20", weekday: 2, planned: [{ name: "Legs A", minutes: 90 }], done: [] },
+    {
+      date: "2026-10-20",
+      weekday: 2,
+      planned: [{ id: "w-legs", name: "Legs A", minutes: 90 }],
+      done: [],
+    },
   ],
 };

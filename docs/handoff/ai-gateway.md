@@ -1246,6 +1246,13 @@ when an overlap exists; the data index grows by about 250 when a plan exists.
   finished sessions report the sets actually logged (`private.coach_session_exercises`), falling
   back to the planned sets.
 - The schedule lookup shows the unknown-exercise caveat; duplicate date helper removed.
+- Second review: a substituted exercise (`performance_kind` substituted or extra) has no catalog
+  slug by design (`private.exercise_performance_slug`), so `private.coach_session_exercises`
+  reports its slug as null and the "muscles unknown" caveat shows; it never borrows the planned
+  exercise's slug. Planned workouts are keyed by id everywhere (RPC `id` and `planned_workout_id`,
+  contributor `isSameWorkout`, lookup render): names are not unique, and a name only matches a
+  workout finished under an earlier plan version whose id the active plan does not hold. A schedule
+  lookup that finds more than 8 overlaps lists 8 and says how many more there are.
 
 **Open.** A pgTAP run in CI covers the SQL; it was not run locally. After the deploy, ask Coach on a
 Sunday what is coming up and check `model_runs` and the `lookups` column for `plan_history`.

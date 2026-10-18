@@ -171,17 +171,30 @@ const prescription = (exercise: PlanExercise) =>
   }`;
 
 /**
+ * Whether a finished workout (`row`: its id, name, day and order) is this session of the active
+ * plan. The id decides when the active plan holds it. A workout finished under an earlier plan
+ * version has an id the active plan does not hold; only then is it matched by name, else by day and
+ * order. Names are not unique, so a name never overrides an id the plan knows.
+ */
+export function isSameWorkout(
+  state: PlanState,
+  row: Readonly<{ id: string; name: string; weekday?: number | null; order?: number | null }>,
+  session: PlanSession,
+): boolean {
+  if (row.id === session.id) return true;
+  if (state.sessions.some((item) => item.id === row.id)) return false;
+  return (row.name !== "" && row.name.toLowerCase() === session.name.toLowerCase()) ||
+    (row.weekday != null && row.weekday === session.weekday && row.order != null &&
+      row.order === session.order);
+}
+
+/**
  * The date a session was finished this week, or null. A workout finished under an earlier plan
- * version (the plan changed mid-week) is matched to the active plan's session by its id, else by
- * name, else by day and order, so it is not prescribed again.
+ * version (the plan changed mid-week) is matched to the active plan's session (`isSameWorkout`),
+ * so it is not prescribed again.
  */
 export function finishedOn(state: PlanState, session: PlanSession): string | null {
-  const row = state.completed.find((item) =>
-    item.id === session.id ||
-    (item.name !== "" && item.name.toLowerCase() === session.name.toLowerCase()) ||
-    (item.weekday !== null && item.weekday === session.weekday && item.order !== null &&
-      item.order === session.order)
-  );
+  const row = state.completed.find((item) => isSameWorkout(state, item, session));
   return row?.localDate ?? null;
 }
 
@@ -340,9 +353,7 @@ export function resolveSchedule(
   const yesterday = addDays(state.localDate, -1);
   for (const row of state.recent) {
     if (row.localDate !== yesterday && row.localDate !== state.localDate) continue;
-    const planned = state.sessions.find((session) =>
-      session.id === row.id || (row.name !== "" && session.name === row.name)
-    );
+    const planned = state.sessions.find((session) => isSameWorkout(state, row, session));
     points.push({
       date: row.localDate,
       kind: "done",

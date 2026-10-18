@@ -16,18 +16,20 @@
 -- 0 ----------------------------------------------------------------------------------------------
 
 -- The exercises of a finished session as {slug, sets}: the sets the athlete logged as completed
--- for each exercise performed (the exercise actually done), else, when nothing was logged (a
--- session completed without sets), the sets it was planned with. Like the other private helpers it
--- is not SECURITY DEFINER: the public functions that call it are.
+-- for each exercise performed, else, when nothing was logged (a session completed without sets),
+-- the sets it was planned with. The slug is the performed exercise's own: the trigger
+-- private.exercise_performance_slug gives a performance a catalog slug only while it is the
+-- prescribed exercise, so a substitution or an extra exercise has none and reports a null slug
+-- (Coach then says its muscles are unknown). The planned exercise's slug is never used for a
+-- substitute. Like the other private helpers it is not SECURITY DEFINER: the public functions that
+-- call it are.
 create function private.coach_session_exercises(p_user_id uuid, p_session_id uuid)
 returns jsonb language sql stable set search_path = '' as $$
   select case when jsonb_array_length(logged.items) > 0 then logged.items else planned.items end
   from (
-    select coalesce(jsonb_agg(jsonb_build_object(
-        'slug', coalesce(p.exercise_slug, e.exercise_slug), 'sets', n.sets)
+    select coalesce(jsonb_agg(jsonb_build_object('slug', p.exercise_slug, 'sets', n.sets)
         order by p.exercise_order), '[]'::jsonb) as items
     from public.exercise_performances p
-    left join public.planned_exercises e on e.id = p.planned_exercise_id and e.user_id = p.user_id
     cross join lateral (select count(*)::integer as sets from public.exercise_sets es
       where es.exercise_performance_id = p.id and es.user_id = p.user_id and es.completed) n
     where p.workout_session_id = p_session_id and p.user_id = p_user_id
@@ -191,7 +193,8 @@ returns jsonb language sql stable set search_path = '' as $$
     from public.planned_workouts w join active a on a.id = w.plan_version_id
     where w.user_id = p_user_id and w.preferred_weekday is not null
   ), done as (
-    select s.local_date, cw.name, private.coach_session_exercises(p_user_id, s.id) as exercises
+    select s.local_date, cw.id as workout_id, cw.name,
+      private.coach_session_exercises(p_user_id, s.id) as exercises
     from public.workout_sessions s
     join public.planned_workouts cw on cw.id = s.planned_workout_id and cw.user_id = s.user_id
     cross join bounds b
@@ -202,12 +205,12 @@ returns jsonb language sql stable set search_path = '' as $$
     from bounds b, generate_series(0, b.last_day - b.first_day) g
   ), days as (
     select sp.day, extract(isodow from sp.day)::integer as weekday,
-      (select jsonb_agg(jsonb_build_object('name', pl.name, 'minutes', pl.estimated_minutes)
-          order by pl.workout_order)
+      (select jsonb_agg(jsonb_build_object('id', pl.id, 'name', pl.name,
+          'minutes', pl.estimated_minutes) order by pl.workout_order)
         from planned pl cross join active a
         where pl.weekday = extract(isodow from sp.day)::integer and sp.day >= a.starts_on) as planned,
-      (select jsonb_agg(jsonb_build_object('name', dn.name, 'exercises', dn.exercises)
-          order by dn.name)
+      (select jsonb_agg(jsonb_build_object('planned_workout_id', dn.workout_id, 'name', dn.name,
+          'exercises', dn.exercises) order by dn.name, dn.workout_id)
         from done dn where dn.local_date = sp.day) as done
     from span sp
   )
@@ -218,7 +221,7 @@ returns jsonb language sql stable set search_path = '' as $$
     'truncated', false,
     'plan', (select jsonb_build_object('version', a.version_number, 'starts_on', a.starts_on,
         'sessions_per_week', a.sessions_per_week) from active a),
-    'sessions', coalesce((select jsonb_agg(jsonb_build_object('name', pl.name,
+    'sessions', coalesce((select jsonb_agg(jsonb_build_object('id', pl.id, 'name', pl.name,
         'weekday', pl.weekday, 'exercises', (select coalesce(jsonb_agg(jsonb_build_object(
             'slug', e.exercise_slug, 'sets', e.set_count) order by e.exercise_order), '[]'::jsonb)
           from public.planned_exercises e

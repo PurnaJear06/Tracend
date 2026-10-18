@@ -202,12 +202,16 @@ function recovery(body: Json): Parts {
   return singles(lines);
 }
 
+/** Most overlaps one schedule result lists; the rest are counted, never dropped silently. */
+const maxListedOverlaps = 8;
+
 /** The plan laid over a range of dates: one line per day with a session, and the overlaps. */
 function planSchedule(body: Json): Parts {
   const plan = rec(body.plan);
+  // Planned workouts are keyed by id: names are not unique.
   const sessions = new Map(
     list(body.sessions).map((session) => [
-      String(session.name),
+      String(session.id),
       list(session.exercises).map((exercise): DayExercise => ({
         slug: typeof exercise.slug === "string" ? exercise.slug : null,
         sets: Number(exercise.sets) || 0,
@@ -224,6 +228,7 @@ function planSchedule(body: Json): Parts {
     const offset = dayOf(date) - dayOf(today);
     const done = list(row.done).map((item) => ({
       kind: "done" as SessionKind,
+      id: String(item.planned_workout_id),
       name: String(item.name),
       exercises: list(item.exercises).map((exercise): DayExercise => ({
         slug: typeof exercise.slug === "string" ? exercise.slug : null,
@@ -231,30 +236,40 @@ function planSchedule(body: Json): Parts {
       })),
     }));
     const doneNames = done.map((item) => item.name);
-    const planned = list(row.planned).map((item) => String(item.name))
-      .filter((name) => !doneNames.includes(name));
+    // A finished session answers the planned one with its id; one finished under an earlier plan
+    // version (an id the active plan does not hold) is matched by its name.
+    const isDone = (id: string, name: string) =>
+      done.some((item) => item.id === id || (!sessions.has(item.id) && item.name === name));
+    const planned = list(row.planned).map((item) => ({
+      id: String(item.id),
+      name: String(item.name),
+    })).filter((item) => !isDone(item.id, item.name));
     // A planned session that was not logged on a day before today did not happen.
     const upcoming = offset >= 0 ? planned : [];
     const day = scheduleDay(date, weekday, offset, [
       ...done,
-      ...upcoming.map((name) => ({
+      ...upcoming.map((item) => ({
         kind: "planned" as SessionKind,
-        name,
-        exercises: sessions.get(name) ?? [],
+        name: item.name,
+        exercises: sessions.get(item.id) ?? [],
       })),
     ]);
     scheduleDays.push(day);
     const parts = [
       done.length ? `done ${doneNames.join(" + ")}` : null,
-      upcoming.length ? `planned ${upcoming.join(" + ")}` : null,
-      offset < 0 && planned.length ? `planned ${planned.join(" + ")}, not logged` : null,
+      upcoming.length ? `planned ${upcoming.map((item) => item.name).join(" + ")}` : null,
+      offset < 0 && planned.length
+        ? `planned ${planned.map((item) => item.name).join(" + ")}, not logged`
+        : null,
     ].filter(Boolean).join("; ");
     const muscles = day.muscles.length ? ` (${day.muscles.join(", ")})` : "";
     lines.push(
       `- ${stamp(day)}${offset === 0 ? " (today)" : ""}: ${parts}${muscles}${unknownNote(day)}`,
     );
   }
-  const overlaps = renderOverlapFact(consecutiveOverlaps(scheduleDays).slice(0, 8));
+  const found = consecutiveOverlaps(scheduleDays);
+  const overlaps = renderOverlapFact(found.slice(0, maxListedOverlaps));
+  const omitted = found.length - maxListedOverlaps;
   return {
     preface: [
       has(plan.version)
@@ -264,7 +279,12 @@ function planSchedule(body: Json): Parts {
         : "There is no active training plan: only logged sessions are shown.",
     ],
     units: lines.map((line) => [line]),
-    trailer: overlaps === null ? [] : [overlaps],
+    trailer: [
+      ...(overlaps === null ? [] : [overlaps]),
+      ...(omitted > 0
+        ? [`${omitted} more overlaps in this range are not listed; ask for a narrower range.`]
+        : []),
+    ],
     keepFirst: true,
   };
 }

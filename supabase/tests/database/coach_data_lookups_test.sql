@@ -478,6 +478,50 @@ select is((select e from jsonb_array_elements(public.coach_lookup_plan_history_v
       ->'done') d, jsonb_array_elements(d->'exercises') e where e->>'slug' = 'barbell-bench-press'),
   '{"slug":"barbell-bench-press","sets":2}'::jsonb, 'and so does the schedule lookup');
 
+-- A substituted exercise is not the planned one: it carries no catalog slug, so the helper reports
+-- a null slug (Coach says its muscles are unknown) and never the planned exercise's slug.
+with sess as (
+  insert into public.workout_sessions(user_id, plan_version_id, planned_workout_id, local_date,
+    timezone, state, idempotency_key, completed_at, duration_seconds, session_effort,
+    session_effort_source, completion_source)
+  select 'a1000000-0000-4000-8000-000000000001', w.plan_version_id, w.id, current_date - 1, 'UTC',
+    'completed', gen_random_uuid(), now() - interval '1 day', 3000, 8, 'athlete', 'manual'
+  from public.planned_workouts w where w.id = 'a1300000-0000-4000-8000-000000000001'
+  returning id
+), perf as (
+  insert into public.exercise_performances(user_id, workout_session_id, planned_exercise_id,
+    exercise_order, status, performance_kind, performed_name, substitution_reason)
+  select 'a1000000-0000-4000-8000-000000000001', sess.id, 'a1400000-0000-4000-8000-000000000002',
+    1, 'performed', 'substituted', 'Machine fly', 'The cable stack was taken'
+  from sess
+  returning id
+)
+insert into public.exercise_sets(user_id, exercise_performance_id, set_number, repetitions, load_kg,
+  rir, completed)
+select 'a1000000-0000-4000-8000-000000000001', perf.id, n, 12, 30, 2, true
+from perf, generate_series(1, 3) n;
+select is((select e from jsonb_array_elements(public.get_coach_plan_state_v1(
+      'a1000000-0000-4000-8000-000000000001', current_date)->'recent_completed') r,
+      jsonb_array_elements(r->'exercises') e),
+  '{"slug":null,"sets":3}'::jsonb,
+  'a substituted exercise reports its logged sets with no slug, not the planned exercise''s');
+select is((select e from jsonb_array_elements(public.coach_lookup_plan_history_v1(
+      'a1000000-0000-4000-8000-000000000001', current_date - 1, current_date - 1, 'schedule')
+      ->'days'->0->'done') d, jsonb_array_elements(d->'exercises') e),
+  '{"slug":null,"sets":3}'::jsonb, 'and so does the schedule lookup');
+
+-- Planned workouts are identified by id in the schedule lookup, because names are not unique.
+select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
+    current_date - 7, current_date + 7, 'schedule')->'sessions'->0->>'id',
+  'a1300000-0000-4000-8000-000000000001', 'the plan''s sessions carry their workout id');
+select is((select count(*) from jsonb_array_elements(public.coach_lookup_plan_history_v1(
+    'a1000000-0000-4000-8000-000000000001', current_date - 7, current_date + 7, 'schedule')->'days') d,
+    jsonb_array_elements(d->'planned') p where p->>'id' is null), 0::bigint,
+  'every planned entry has one');
+select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
+    current_date - 1, current_date - 1, 'schedule')->'days'->0->'done'->0->>'planned_workout_id',
+  'a1300000-0000-4000-8000-000000000001', 'and every finished entry names its workout');
+
 -- The private helpers are not callable by the app's roles.
 select is(has_function_privilege('anon', 'private.coach_plan_schedule(uuid,date,date)', 'execute'),
   false, 'anon cannot run the schedule helper');

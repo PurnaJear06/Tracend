@@ -2,6 +2,7 @@ import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.
 import { cutNote, renderCoachContext } from "../host.ts";
 import {
   createTrainingPlanContributor,
+  finishedOn,
   parsePlanState,
   pickFocusSession,
   renderTrainingPlan,
@@ -487,4 +488,25 @@ Deno.test("when a block is cut for size the rules and the week stay: only the tr
   assertStringIncludes(body, "Sets a week by main muscle in the plan");
   assert(body.endsWith(cutNote));
   assertEquals(squeezed.outcomes[0].clipped, true);
+});
+
+Deno.test("two sessions with one name are told apart by id: finishing one does not finish the other", () => {
+  // Two sessions called "Upper" on Monday and Thursday; Monday's was done.
+  const payload = splitPlanPayload(3, []);
+  const sessions = payload.sessions as Record<string, unknown>[];
+  sessions[0].name = "Upper";
+  sessions[3].name = "Upper";
+  payload.completed_this_week = [{
+    planned_workout_id: "w-chest-a",
+    local_date: "2026-10-12",
+    name: "Upper",
+    weekday: 1,
+    order: 1,
+  }];
+  const state = parsePlanState(payload)!;
+  assertEquals(finishedOn(state, state.sessions[0]), "2026-10-12");
+  assertEquals(finishedOn(state, state.sessions[3]), null);
+  const text = renderTrainingPlan(state)!;
+  assertStringIncludes(lineOf(text, "- Thu 2026-10-15"), "Upper (");
+  assert(!lineOf(text, "- Thu 2026-10-15").includes("already done"));
 });

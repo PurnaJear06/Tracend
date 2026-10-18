@@ -320,7 +320,7 @@ Deno.test("plan schedule: the earliest rows are kept when the range is cut for s
     return {
       date,
       weekday: (index % 7) + 1,
-      planned: [{ name: "Chest priority", minutes: 90 }],
+      planned: [{ id: "w-chest-a", name: "Chest priority", minutes: 90 }],
       done: [],
     };
   });
@@ -357,6 +357,7 @@ Deno.test("plan schedule: a session with exercises the catalog has no muscles fo
         weekday: 7,
         planned: [],
         done: [{
+          planned_workout_id: "w-custom",
           name: "Custom day",
           exercises: [{ slug: null, sets: 4 }, { slug: "barbell-bench-press", sets: 4 }],
         }],
@@ -364,4 +365,126 @@ Deno.test("plan schedule: a session with exercises the catalog has no muscles fo
     },
   );
   assertStringIncludes(text, "[muscles of 1 exercises unknown]");
+});
+
+Deno.test("plan schedule: two workouts with one name keep their own exercises, keyed by id", () => {
+  const { text } = renderLookup(
+    request("plan_history", "2026-10-19", "2026-10-20", "schedule"),
+    {
+      ...scheduleLookupPayload,
+      to: "2026-10-20",
+      sessions: [
+        {
+          id: "w-a",
+          name: "Session",
+          weekday: 1,
+          exercises: [{ slug: "barbell-bench-press", sets: 4 }],
+        },
+        {
+          id: "w-b",
+          name: "Session",
+          weekday: 2,
+          exercises: [{ slug: "barbell-back-squat", sets: 4 }],
+        },
+      ],
+      days: [
+        {
+          date: "2026-10-19",
+          weekday: 1,
+          planned: [{ id: "w-a", name: "Session", minutes: 60 }],
+          done: [],
+        },
+        {
+          date: "2026-10-20",
+          weekday: 2,
+          planned: [{ id: "w-b", name: "Session", minutes: 60 }],
+          done: [],
+        },
+      ],
+    },
+  );
+  assertStringIncludes(text, "- Mon 2026-10-19: planned Session (chest, triceps)");
+  assertStringIncludes(text, "- Tue 2026-10-20: planned Session (glutes, quads)");
+  assert(!text.includes("Same muscles on consecutive days"));
+});
+
+Deno.test("plan schedule: a finished session answers the planned one with the same id, not the same name", () => {
+  const { text } = renderLookup(
+    request("plan_history", "2026-10-15", "2026-10-20", "schedule"),
+    {
+      ...scheduleLookupPayload,
+      to: "2026-10-20",
+      today: "2026-10-20",
+      sessions: [
+        {
+          id: "w-a",
+          name: "Session",
+          weekday: 1,
+          exercises: [{ slug: "barbell-bench-press", sets: 4 }],
+        },
+        {
+          id: "w-b",
+          name: "Session",
+          weekday: 2,
+          exercises: [{ slug: "barbell-back-squat", sets: 4 }],
+        },
+      ],
+      days: [{
+        date: "2026-10-19",
+        weekday: 1,
+        planned: [{ id: "w-a", name: "Session", minutes: 60 }],
+        // The other workout named Session was done that day: Monday's own was not.
+        done: [{
+          planned_workout_id: "w-b",
+          name: "Session",
+          exercises: [{ slug: "barbell-back-squat", sets: 4 }],
+        }],
+      }],
+    },
+  );
+  assertStringIncludes(text, "done Session; planned Session, not logged (glutes, quads)");
+  // A workout finished under an earlier plan version (an id the plan does not hold) is matched by name.
+  const earlier = renderLookup(
+    request("plan_history", "2026-10-15", "2026-10-20", "schedule"),
+    {
+      ...scheduleLookupPayload,
+      to: "2026-10-20",
+      today: "2026-10-20",
+      days: [{
+        date: "2026-10-19",
+        weekday: 1,
+        planned: [{ id: "w-chest-a", name: "Chest priority", minutes: 90 }],
+        done: [{
+          planned_workout_id: "old-id",
+          name: "Chest priority",
+          exercises: [{ slug: "barbell-bench-press", sets: 4 }],
+        }],
+      }],
+    },
+  ).text;
+  assert(!earlier.includes("not logged"));
+});
+
+Deno.test("plan schedule: overlaps past the listed limit are counted, never dropped silently", () => {
+  const days = Array.from({ length: 12 }, (_, index) => ({
+    date: new Date(Date.UTC(2026, 9, 19 + index)).toISOString().slice(0, 10),
+    weekday: (index % 7) + 1,
+    planned: [{ id: "w-chest-a", name: "Chest priority", minutes: 90 }],
+    done: [],
+  }));
+  const { text } = renderLookup(
+    request("plan_history", "2026-10-19", "2026-10-30", "schedule"),
+    { ...scheduleLookupPayload, to: "2026-10-30", today: "2026-10-18", days },
+  );
+  // 12 consecutive chest days make 11 overlaps; 8 are listed.
+  assertEquals(text.split(" then ").length - 1, 8);
+  assertStringIncludes(
+    text,
+    "3 more overlaps in this range are not listed; ask for a narrower range.",
+  );
+  const few = renderLookup(
+    request("plan_history", "2026-10-19", "2026-10-21", "schedule"),
+    { ...scheduleLookupPayload, to: "2026-10-21", today: "2026-10-18", days: days.slice(0, 3) },
+  ).text;
+  assert(!few.includes("more overlaps"));
 });
