@@ -15,6 +15,8 @@ import 'package:tracend/features/account/widgets/consent_history_screen.dart';
 import 'package:tracend/features/account/widgets/notification_settings.dart';
 import 'package:tracend/features/account/widgets/profile_goals_screen.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
+import 'package:tracend/features/coach/memory/coach_memory_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
@@ -39,6 +41,7 @@ class AccountScreen extends StatefulWidget {
     this.onSignOut,
     this.health = const ManualHealthRepository(),
     this.coach = const FixtureCoachRepository(),
+    this.memory = const FixtureCoachMemoryRepository(),
     this.notifications = const FixtureNotificationRepository(),
     this.exports = const FixturePrivacyExportRepository(),
     this.deletion = const FixtureAccountDeletionRepository(),
@@ -50,6 +53,10 @@ class AccountScreen extends StatefulWidget {
   final Future<void> Function()? onSignOut;
   final HealthRepository health;
   final CoachRepository coach;
+
+  /// What Coach remembers about the athlete: facts they confirmed and Coach's
+  /// notes.
+  final CoachMemoryRepository memory;
   final NotificationRepository notifications;
   final PrivacyExportRepository exports;
   final AccountDeletionRepository deletion;
@@ -190,6 +197,15 @@ class _AccountScreenState extends State<AccountScreen> {
                             showAiCoachingConsentSheet(context, aiConsent),
                       ),
                     _usageRow(context, snapshot),
+                    if (configured)
+                      TracendListRow(
+                        title: 'What Coach remembers',
+                        subtitle: 'Facts you confirmed and Coach’s notes',
+                        leading: const TracendRowIcon(
+                          icon: CupertinoIcons.bookmark,
+                        ),
+                        onTap: _openMemory,
+                      ),
                     if (configured && widget.coach is CoachChatRepository)
                       TracendListRow(
                         title: 'Coach conversations',
@@ -393,6 +409,12 @@ class _AccountScreenState extends State<AccountScreen> {
     await widget.onSignOut?.call();
     if (mounted) Navigator.of(context).pop();
   }
+
+  Future<void> _openMemory() => Navigator.of(context).push<void>(
+    CupertinoPageRoute(
+      builder: (_) => CoachMemoryScreen(repository: widget.memory),
+    ),
+  );
 
   Future<void> _openCoachThreads() async {
     final repository = widget.coach;

@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "fact": {
+    "id": "6a1f3c52-7d0e-4b8a-9c21-5e4d3b2a1f00",
+    "lineage_id": "6a1f3c52-7d0e-4b8a-9c21-5e4d3b2a1f00",
+    "version": 1,
+    "kind": "injury_limitation",
+    "subject": "left knee",
+    "statement": "Left knee hurts on deep squats",
+    "source": "coach_suggestion_confirmed",
+    "confirmed_at": "2026-10-02T09:00:00+00:00",
+    "reconfirm_at": "2026-10-30T09:00:00+00:00",
+    "reconfirm_due": false
+  }
+}

@@ -40,6 +40,8 @@ export const dataTables = [
   "model_runs",
   "coach_decisions",
   "change_proposals",
+  "coach_facts",
+  "coach_notes",
   "change_responses",
   "onboarding_generations",
   "onboarding_questions",

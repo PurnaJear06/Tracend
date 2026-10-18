@@ -93,6 +93,14 @@ class _CoachScreenState extends State<CoachScreen> {
   /// created by the first send, so opening Coach never leaves an empty thread.
   String? _threadId;
 
+  /// The choice on a new conversation: Coach does not remember it. Applied
+  /// when the first send creates the thread, and fixed from then on.
+  bool _rememberChat = true;
+
+  /// Whether the open conversation is remembered. False shows the notice at
+  /// the top of the conversation.
+  bool _threadRemembered = true;
+
   /// Changes whenever the user switches conversations (New or opening one).
   /// A send finishes only in the conversation it started in: if the user has
   /// moved on, its new thread is not selected and its reply is not shown
@@ -207,6 +215,9 @@ class _CoachScreenState extends State<CoachScreen> {
       setState(() {
         _threads = threads;
         _threadId = threadId;
+        _threadRemembered = threads
+            .where((thread) => thread.id == threadId)
+            .every((thread) => thread.remember);
         _messages = messages;
         _loadingChat = false;
       });
@@ -229,6 +240,9 @@ class _CoachScreenState extends State<CoachScreen> {
       _view++;
       _loadingChat = true;
       _threadId = id;
+      _threadRemembered = _threads
+          .where((thread) => thread.id == id)
+          .every((thread) => thread.remember);
       _error = null;
       _turnFailure = null;
       _preferencePrompt = null;
@@ -258,6 +272,8 @@ class _CoachScreenState extends State<CoachScreen> {
   void _newThread() => setState(() {
     _view++;
     _threadId = null;
+    _rememberChat = true;
+    _threadRemembered = true;
     _messages = const [];
     _error = null;
     _turnFailure = null;
@@ -273,16 +289,23 @@ class _CoachScreenState extends State<CoachScreen> {
     int view,
     String question,
   ) async {
-    final id = await chat.createThread();
+    final remember = _rememberChat;
+    final id = await chat.createThread(remember: remember);
     if (mounted && _view == view) {
       unawaited(widget.threadMemory.remember(id));
       setState(() {
         _threadId = id;
+        _threadRemembered = remember;
         // A list requested before this thread existed would drop it, so it
         // no longer applies; this send's own refresh brings the server list.
         _threadsRequest++;
         _threads = [
-          CoachThread(id: id, title: question, updatedAt: DateTime.now()),
+          CoachThread(
+            id: id,
+            title: question,
+            updatedAt: DateTime.now(),
+            remember: remember,
+          ),
           ..._threads,
         ];
       });
@@ -743,6 +766,10 @@ class _CoachScreenState extends State<CoachScreen> {
         ),
         const SizedBox(height: TracendSpacing.lg),
       ],
+      if (!_loadingChat && !_threadRemembered) ...[
+        const _NotRememberedNotice(),
+        const SizedBox(height: TracendSpacing.md),
+      ],
       if (_loadingChat)
         const _ConversationSkeleton()
       else if (_messages.isEmpty) ...[
@@ -753,6 +780,28 @@ class _CoachScreenState extends State<CoachScreen> {
           style: textTheme.bodyLarge?.copyWith(color: colors.textSecondary),
         ),
         const SizedBox(height: TracendSpacing.md),
+        // The choice is made before the first message and cannot change after.
+        if (_threadId == null)
+          TracendGroupedList(
+            children: [
+              TracendListRow(
+                title: 'Don’t remember this chat',
+                subtitle:
+                    'Coach saves no notes or facts from it, never searches it '
+                    'and no other chat sees it.',
+                trailing: Semantics(
+                  label: 'Don’t remember this chat',
+                  child: CupertinoSwitch(
+                    value: !_rememberChat,
+                    onChanged: _sending
+                        ? null
+                        : (value) => setState(() => _rememberChat = !value),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        if (_threadId == null) const SizedBox(height: TracendSpacing.md),
         // What the Coach can see, shown once on a new conversation rather
         // than above every one. Today's decision lives on Today.
         if (_contextStatus != null) ...[
@@ -917,10 +966,50 @@ class _ThreadRow extends StatelessWidget {
           color: colors.surface,
           child: TracendListRow(
             title: _title(thread.title),
-            subtitle: open ? 'Open now · $updated' : updated,
+            subtitle: [
+              if (open) 'Open now',
+              updated,
+              if (!thread.remember) 'Not remembered',
+            ].join(' · '),
             onTap: onOpen,
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Shown at the top of a conversation the athlete asked Coach not to
+/// remember.
+class _NotRememberedNotice extends StatelessWidget {
+  const _NotRememberedNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    return MergeSemantics(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(
+              CupertinoIcons.eye_slash,
+              size: 18,
+              color: colors.textSecondary,
+            ),
+          ),
+          const SizedBox(width: TracendSpacing.xs),
+          Expanded(
+            child: Text(
+              'This chat isn’t remembered. Coach saves no notes or facts from '
+              'it, and other chats can’t see it.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -17,6 +17,11 @@ Deno.test("the export includes the pre-exercise screening answers", () => {
   assert(dataTables.includes("onboarding_screenings"));
 });
 
+Deno.test("the export includes the facts the athlete confirmed and the Coach's notes", () => {
+  assert(dataTables.includes("coach_facts"));
+  assert(dataTables.includes("coach_notes"));
+});
+
 Deno.test("export bytes are encrypted and contain no plaintext payload", async () => {
   const plaintext = new TextEncoder().encode("private-health-export-marker");
   const encrypted = await encrypt(plaintext, "correct horse battery staple");

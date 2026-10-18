@@ -9,6 +9,7 @@ import 'package:tracend/features/account/account_screen.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/account/privacy_export_repository.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
 import 'package:tracend/features/coach/proposals/coach_proposal_repository.dart';
 import 'package:tracend/features/coach/coach_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
@@ -187,6 +188,9 @@ class _AppShellState extends State<AppShell> {
         onSignOut: widget.onSignOut,
         health: _health,
         coach: _coach,
+        memory: widget.environment.hasSupabaseConfiguration
+            ? SupabaseCoachMemoryRepository(Supabase.instance.client)
+            : const FixtureCoachMemoryRepository(),
         notifications: widget.environment.hasSupabaseConfiguration
             ? SupabaseNotificationRepository(Supabase.instance.client)
             : const FixtureNotificationRepository(),

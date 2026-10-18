@@ -9,6 +9,7 @@ import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/account/privacy_export_repository.dart';
 import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/health/health_models.dart';
@@ -502,6 +503,9 @@ class _TodayScreenState extends State<TodayScreen> {
         onSignOut: widget.onSignOut,
         health: widget.health,
         coach: widget.coach,
+        memory: widget.environment.hasSupabaseConfiguration
+            ? SupabaseCoachMemoryRepository(Supabase.instance.client)
+            : const FixtureCoachMemoryRepository(),
         notifications: widget.environment.hasSupabaseConfiguration
             ? SupabaseNotificationRepository(Supabase.instance.client)
             : const FixtureNotificationRepository(),

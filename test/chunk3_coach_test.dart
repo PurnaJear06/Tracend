@@ -206,7 +206,7 @@ class _ChatRepository
   @override
   Future<List<CoachThread>> loadThreads() async => const [];
   @override
-  Future<String> createThread() async => 'thread-1';
+  Future<String> createThread({bool remember = true}) async => 'thread-1';
   @override
   Future<List<CoachMessage>> loadMessages(String threadId) async => const [];
 

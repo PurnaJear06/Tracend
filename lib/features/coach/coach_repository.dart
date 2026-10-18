@@ -80,17 +80,24 @@ class CoachThread {
     required this.id,
     required this.title,
     required this.updatedAt,
+    this.remember = true,
   });
 
   factory CoachThread.fromJson(Map<String, dynamic> json) => CoachThread(
     id: json['id'] as String,
     title: json['title'] as String,
     updatedAt: DateTime.parse(json['updated_at'] as String),
+    remember: json['remember'] as bool? ?? true,
   );
 
   final String id;
   final String title;
   final DateTime updatedAt;
+
+  /// False for a conversation the athlete chose not to have remembered: Coach
+  /// saves no notes or suggested facts from it, it is never searched, and no
+  /// other conversation sees it.
+  final bool remember;
 }
 
 class CoachContextSource {
@@ -261,7 +268,10 @@ class CoachMessage {
 
 abstract interface class CoachChatRepository {
   Future<List<CoachThread>> loadThreads();
-  Future<String> createThread();
+
+  /// Opens a conversation. With [remember] false it is one Coach does not
+  /// remember; the choice is made here and cannot change afterwards.
+  Future<String> createThread({bool remember = true});
   Future<List<CoachMessage>> loadMessages(String threadId);
 
   /// Asks the Coach. A [idempotencyKey] repeats an earlier attempt of the same
@@ -321,12 +331,19 @@ class SupabaseCoachRepository
   }
 
   @override
-  Future<String> createThread() async =>
+  Future<String> createThread({bool remember = true}) async {
+    final created = Map<String, dynamic>.from(
       await _client.rpc(
-            'create_coach_thread',
-            params: {'thread_title': 'New conversation'},
+            'create_coach_thread_v2',
+            params: {
+              'thread_title': 'New conversation',
+              'remember_chat': remember,
+            },
           )
-          as String;
+          as Map,
+    );
+    return created['thread_id'] as String;
+  }
 
   @override
   Future<List<CoachMessage>> loadMessages(String threadId) async {
@@ -516,7 +533,7 @@ class FixtureCoachRepository implements CoachRepository, CoachChatRepository {
   @override
   Future<List<CoachThread>> loadThreads() async => const [];
   @override
-  Future<String> createThread() async => 'fixture-thread';
+  Future<String> createThread({bool remember = true}) async => 'fixture-thread';
   @override
   Future<List<CoachMessage>> loadMessages(String threadId) async => const [];
   @override
