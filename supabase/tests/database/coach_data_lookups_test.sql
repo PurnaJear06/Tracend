@@ -522,9 +522,8 @@ select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000
     current_date - 1, current_date - 1, 'schedule')->'days'->0->'done'->0->>'planned_workout_id',
   'a1300000-0000-4000-8000-000000000001', 'and every finished entry names its workout');
 
--- Each date uses the plan version in force on it. Athlete 3 changed plan 5 days ago (version 1 was
--- "Old day", version 2 is "New day", both on today's weekday); athlete 4 is in a temporary block
--- that ends in 3 days and hands back to version 1 ("Regular").
+-- Each date uses the plan version in force on it. Athlete 3 changed plan 5 days ago; athlete 4 is in
+-- a temporary block that ends in 3 days and hands back to version 1.
 insert into auth.users(id, role) values
   ('a1000000-0000-4000-8000-000000000003', 'authenticated'),
   ('a1000000-0000-4000-8000-000000000004', 'authenticated');
@@ -548,47 +547,84 @@ insert into public.training_plan_versions(id, user_id, plan_id, version_number, 
   ('a1200000-0000-4000-8000-000000000014', 'a1000000-0000-4000-8000-000000000004',
    'a1100000-0000-4000-8000-000000000004', 2, 'draft', 6, 1, '{}', 'Block plan', now(),
    current_date - 2, current_date + 3, 'temporary_block', 'a1200000-0000-4000-8000-000000000004');
+-- Weekdays are today's (D) and the next ones, so the boundary days carry a session in both versions.
+-- Athlete 3: version 1 has "Old day" (D), "Old X" (D+1) and "Old Y" (D+2); version 2, effective 5
+-- days ago (the weekday D+2), has "New day", "New X" and "New Y" on the same weekdays.
+-- Athlete 4: version 1 "Reg A" (D), "Reg B" (D+3), "Reg C" (D+4), "Reg D" (D+5); the block, effective
+-- 2 days ago (D+5) and ending in 3 days (D+3), has "Block A" to "Block D" on the same weekdays.
+create function pg_temp.wd(k integer) returns smallint language sql as
+  $$ select (((extract(isodow from current_date)::integer - 1 + k) % 7) + 1)::smallint $$;
 insert into public.planned_workouts(id, user_id, plan_version_id, workout_order, name, objective,
   preferred_weekday, estimated_minutes, warm_up_guidance, cool_down_guidance) values
-  ('a1300000-0000-4000-8000-000000000003', 'a1000000-0000-4000-8000-000000000003',
-   'a1200000-0000-4000-8000-000000000003', 1, 'Old day', 'Old', extract(isodow from current_date)::integer,
-   50, 'Warm up', 'Cool down'),
-  ('a1300000-0000-4000-8000-000000000013', 'a1000000-0000-4000-8000-000000000003',
-   'a1200000-0000-4000-8000-000000000013', 1, 'New day', 'New', extract(isodow from current_date)::integer,
-   50, 'Warm up', 'Cool down'),
-  ('a1300000-0000-4000-8000-000000000004', 'a1000000-0000-4000-8000-000000000004',
-   'a1200000-0000-4000-8000-000000000004', 1, 'Regular', 'Regular', extract(isodow from current_date)::integer,
-   50, 'Warm up', 'Cool down'),
-  ('a1300000-0000-4000-8000-000000000014', 'a1000000-0000-4000-8000-000000000004',
-   'a1200000-0000-4000-8000-000000000014', 1, 'Block day', 'Block', extract(isodow from current_date)::integer,
-   50, 'Warm up', 'Cool down');
+  ('a1300000-0000-4000-8000-000000000031', 'a1000000-0000-4000-8000-000000000003',
+   'a1200000-0000-4000-8000-000000000003', 1, 'Old day', 'Old', pg_temp.wd(0), 50, 'Warm up', 'Cool down'),
+  ('a1300000-0000-4000-8000-000000000032', 'a1000000-0000-4000-8000-000000000003',
+   'a1200000-0000-4000-8000-000000000003', 2, 'Old X', 'Old', pg_temp.wd(1), 50, 'Warm up', 'Cool down'),
+  ('a1300000-0000-4000-8000-000000000033', 'a1000000-0000-4000-8000-000000000003',
+   'a1200000-0000-4000-8000-000000000003', 3, 'Old Y', 'Old', pg_temp.wd(2), 50, 'Warm up', 'Cool down'),
+  ('a1300000-0000-4000-8000-000000000041', 'a1000000-0000-4000-8000-000000000003',
+   'a1200000-0000-4000-8000-000000000013', 1, 'New day', 'New', pg_temp.wd(0), 50, 'Warm up', 'Cool down'),
+  ('a1300000-0000-4000-8000-000000000042', 'a1000000-0000-4000-8000-000000000003',
+   'a1200000-0000-4000-8000-000000000013', 2, 'New X', 'New', pg_temp.wd(1), 50, 'Warm up', 'Cool down'),
+  ('a1300000-0000-4000-8000-000000000043', 'a1000000-0000-4000-8000-000000000003',
+   'a1200000-0000-4000-8000-000000000013', 3, 'New Y', 'New', pg_temp.wd(2), 50, 'Warm up', 'Cool down'),
+  ('a1300000-0000-4000-8000-000000000051', 'a1000000-0000-4000-8000-000000000004',
+   'a1200000-0000-4000-8000-000000000004', 1, 'Reg A', 'Regular', pg_temp.wd(0), 50, 'Warm up', 'Cool down'),
+  ('a1300000-0000-4000-8000-000000000052', 'a1000000-0000-4000-8000-000000000004',
+   'a1200000-0000-4000-8000-000000000004', 2, 'Reg B', 'Regular', pg_temp.wd(3), 50, 'Warm up', 'Cool down'),
+  ('a1300000-0000-4000-8000-000000000053', 'a1000000-0000-4000-8000-000000000004',
+   'a1200000-0000-4000-8000-000000000004', 3, 'Reg C', 'Regular', pg_temp.wd(4), 50, 'Warm up', 'Cool down'),
+  ('a1300000-0000-4000-8000-000000000054', 'a1000000-0000-4000-8000-000000000004',
+   'a1200000-0000-4000-8000-000000000004', 4, 'Reg D', 'Regular', pg_temp.wd(5), 50, 'Warm up', 'Cool down'),
+  ('a1300000-0000-4000-8000-000000000061', 'a1000000-0000-4000-8000-000000000004',
+   'a1200000-0000-4000-8000-000000000014', 1, 'Block A', 'Block', pg_temp.wd(0), 50, 'Warm up', 'Cool down'),
+  ('a1300000-0000-4000-8000-000000000062', 'a1000000-0000-4000-8000-000000000004',
+   'a1200000-0000-4000-8000-000000000014', 2, 'Block B', 'Block', pg_temp.wd(3), 50, 'Warm up', 'Cool down'),
+  ('a1300000-0000-4000-8000-000000000063', 'a1000000-0000-4000-8000-000000000004',
+   'a1200000-0000-4000-8000-000000000014', 3, 'Block C', 'Block', pg_temp.wd(4), 50, 'Warm up', 'Cool down'),
+  ('a1300000-0000-4000-8000-000000000064', 'a1000000-0000-4000-8000-000000000004',
+   'a1200000-0000-4000-8000-000000000014', 4, 'Block D', 'Block', pg_temp.wd(5), 50, 'Warm up', 'Cool down');
 update public.training_plan_versions set status = 'active'
 where id in ('a1200000-0000-4000-8000-000000000013', 'a1200000-0000-4000-8000-000000000014');
 
+-- A plan change mid-range, with sessions on the day before it took effect and on the day it did:
+-- dates before the effective date keep version 1, the effective date itself is version 2.
 select is((select jsonb_agg(jsonb_build_array(d->>'date', d->>'version', d->'planned'->0->>'name')
     order by d->>'date')
   from jsonb_array_elements(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000003',
-    current_date - 14, current_date + 7, 'schedule')->'days') d),
+    current_date - 7, current_date + 2, 'schedule')->'days') d),
   jsonb_build_array(
-    jsonb_build_array((current_date - 14)::text, '1', 'Old day'),
     jsonb_build_array((current_date - 7)::text, '1', 'Old day'),
+    jsonb_build_array((current_date - 6)::text, '1', 'Old X'),
+    jsonb_build_array((current_date - 5)::text, '2', 'New Y'),
     jsonb_build_array(current_date::text, '2', 'New day'),
-    jsonb_build_array((current_date + 7)::text, '2', 'New day')),
-  'a plan change mid-range: dates before it keep the version superseded then, dates from it use the new one');
+    jsonb_build_array((current_date + 1)::text, '2', 'New X'),
+    jsonb_build_array((current_date + 2)::text, '2', 'New Y')),
+  'a plan change mid-range: the day before it keeps version 1, its effective date is version 2');
+
+-- A temporary block that ends inside the range, with sessions on its first day, on its last day
+-- (current_date + 3) and on the day after it, each a different workout in the two versions: the
+-- day before the block still belongs to version 1, the block covers its first and its last day,
+-- the day after the last day is the restored version.
 select is((select jsonb_agg(jsonb_build_array(d->>'date', d->>'version', d->'block',
       d->'planned'->0->>'name') order by d->>'date')
   from jsonb_array_elements(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000004',
     current_date - 3, current_date + 8, 'schedule')->'days') d),
   jsonb_build_array(
-    jsonb_build_array(current_date::text, '2', 'true'::jsonb, 'Block day'),
-    jsonb_build_array((current_date + 7)::text, '1', 'false'::jsonb, 'Regular')),
-  'a temporary block that ends inside the range: its days are marked, the days after use the restored plan');
+    jsonb_build_array((current_date - 3)::text, '1', 'false'::jsonb, 'Reg C'),
+    jsonb_build_array((current_date - 2)::text, '2', 'true'::jsonb, 'Block D'),
+    jsonb_build_array(current_date::text, '2', 'true'::jsonb, 'Block A'),
+    jsonb_build_array((current_date + 3)::text, '2', 'true'::jsonb, 'Block B'),
+    jsonb_build_array((current_date + 4)::text, '1', 'false'::jsonb, 'Reg C'),
+    jsonb_build_array((current_date + 5)::text, '1', 'false'::jsonb, 'Reg D'),
+    jsonb_build_array((current_date + 7)::text, '1', 'false'::jsonb, 'Reg A')),
+  'a block ending in range: first and last day are the block''s, the day after is the restored plan''s');
 select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000004', current_date)
     ->'after_block'->>'ends_on', (current_date + 3)::text, 'the plan state says when the block ends');
 select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000004', current_date)
-    ->'after_block'->'sessions'->0->>'name', 'Regular', 'and which sessions follow it');
+    ->'after_block'->'sessions'->0->>'name', 'Reg A', 'and which sessions follow it');
 select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000004', current_date)
-    ->'sessions'->0->>'name', 'Block day', 'while its own sessions are the block''s');
+    ->'sessions'->0->>'name', 'Block A', 'while its own sessions are the block''s');
 select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000003', current_date)
     ->'after_block', 'null'::jsonb, 'an ordinary plan has no block to hand back from');
 select is(has_function_privilege('anon', 'private.coach_plan_sessions(uuid,uuid)', 'execute'), false,

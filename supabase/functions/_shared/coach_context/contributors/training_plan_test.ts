@@ -543,3 +543,73 @@ Deno.test("a temporary block ending this week: the days after it show the plan i
   assertStringIncludes(lineOf(text, "- Mon 2026-10-19"), "Chest priority and side delts");
   assert(!lineOf(text, "- Sun 2026-10-18").includes("Home block"));
 });
+
+// A plan state whose active version is a "Home block" with a session every weekday, ending on
+// `endsOn`, and which hands back to the six-day split.
+const blockPayload = (weekday: number, endsOn: string, done: readonly string[] = []) => {
+  const payload = splitPlanPayload(weekday, done);
+  const restored = payload.sessions as Record<string, unknown>[];
+  const base = restored[0];
+  payload.sessions = [1, 2, 3, 4, 5, 6, 7].map((day) => ({
+    ...base,
+    planned_workout_id: `w-block-${day}`,
+    name: "Home block",
+    weekday: day,
+    order: day,
+    exercises: [{
+      planned_exercise_id: `e-block-${day}`,
+      order: 1,
+      name: "Push-up",
+      slug: "push-up",
+      sets: 3,
+      rep_min: 8,
+      rep_max: 12,
+    }],
+  }));
+  payload.after_block = { ends_on: endsOn, version_number: 2, sessions: restored };
+  return payload;
+};
+
+Deno.test("a block ending this week: today's prescription and the lists never read the block after its last day", () => {
+  // Saturday, the day after the block's last day (the hourly job has not swapped the version yet).
+  const text = renderTrainingPlan(parsePlanState(blockPayload(6, "2026-10-16")))!;
+  assertStringIncludes(text, "Today's planned session: Shoulder width");
+  assertStringIncludes(lineOf(text, "- Sat 2026-10-17 (today)"), "Shoulder width");
+  assert(
+    !text.split("\n").slice(text.split("\n").findIndex((l) => l.startsWith("Today's planned")))
+      .some((l) => /^- (Saturday|Sunday), Home block/.test(l)),
+  );
+});
+
+Deno.test("a block ending this week: the other sessions mix the block's days and the restored plan's, and the way back is named", () => {
+  const text = renderTrainingPlan(parsePlanState(blockPayload(3, "2026-10-15")))!;
+  // Wednesday: Mon to Thu are the block's, Fri to Sun the restored plan's.
+  assertStringIncludes(text, "- Thursday, Home block: Push-up");
+  assertStringIncludes(text, "- Friday, Legs B: ");
+  assertStringIncludes(text, "- Saturday, Shoulder width: ");
+  assert(!text.includes("- Friday, Home block"));
+  assertStringIncludes(
+    text,
+    "After the temporary block (last day 2026-10-15) the plan returns to: Monday Chest priority and side delts; Tuesday Legs A;",
+  );
+});
+
+Deno.test("a block that ended before this week: the next-week fallback is the restored plan's first session", () => {
+  const text = renderTrainingPlan(
+    parsePlanState(
+      blockPayload(7, "2026-10-11", [
+        "w-chest-a",
+        "w-legs-a",
+        "w-pull",
+        "w-chest-b",
+        "w-legs-b",
+        "w-shoulders",
+      ]),
+    ),
+  )!;
+  assertStringIncludes(
+    text,
+    "No session is set for the rest of this week; the next one is next week's first: Chest priority and side delts (Monday",
+  );
+  assert(!text.includes("Home block"));
+});

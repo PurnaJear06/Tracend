@@ -1252,6 +1252,13 @@ when an overlap exists; the data index grows by about 250 when a plan exists.
   hands the 7-day contributor the same restored sessions (`after_block`). The overlap line says
   "consecutive days, with no rest day between": the data are dates, not times, so no wording
   claims an hour or a part of a day.
+- Fourth review: the schedule render decides whether a finished workout answers a planned one against
+  that day's own plan version (a workout logged under the old version the morning a new one takes
+  effect is done once, not done and planned); versions are compared by id, since numbers repeat
+  across plans; `pickFocusSession`, the "Other sessions" list and the next-week fallback read the
+  plan in force on each date (after a block's `ends_on`, the restored sessions), and a line names
+  where the block hands back to. pgTAP pins the boundary days: the plan change's effective date and
+  the day before it, the block's first day, its last day and the day after.
 - Second review: a substituted exercise (`performance_kind` substituted or extra) has no catalog
   slug by design (`private.exercise_performance_slug`), so `private.coach_session_exercises`
   reports its slug as null and the "muscles unknown" caveat shows; it never borrows the planned

@@ -358,6 +358,8 @@ Deno.test("plan schedule: a session with exercises the catalog has no muscles fo
       days: [{
         date: "2026-10-18",
         weekday: 7,
+        version_id: "v-3",
+        version: 3,
         planned: [],
         done: [{
           planned_workout_id: "w-custom",
@@ -379,12 +381,14 @@ Deno.test("plan schedule: two workouts with one name keep their own exercises, k
       sessions: [
         {
           id: "w-a",
+          version_id: "v-3",
           name: "Session",
           weekday: 1,
           exercises: [{ slug: "barbell-bench-press", sets: 4 }],
         },
         {
           id: "w-b",
+          version_id: "v-3",
           name: "Session",
           weekday: 2,
           exercises: [{ slug: "barbell-back-squat", sets: 4 }],
@@ -394,13 +398,17 @@ Deno.test("plan schedule: two workouts with one name keep their own exercises, k
         {
           date: "2026-10-19",
           weekday: 1,
-          planned: [{ id: "w-a", name: "Session", minutes: 60 }],
+          version_id: "v-3",
+          version: 3,
+          planned: [{ id: "w-a", version_id: "v-3", name: "Session", minutes: 60 }],
           done: [],
         },
         {
           date: "2026-10-20",
           weekday: 2,
-          planned: [{ id: "w-b", name: "Session", minutes: 60 }],
+          version_id: "v-3",
+          version: 3,
+          planned: [{ id: "w-b", version_id: "v-3", name: "Session", minutes: 60 }],
           done: [],
         },
       ],
@@ -421,12 +429,14 @@ Deno.test("plan schedule: a finished session answers the planned one with the sa
       sessions: [
         {
           id: "w-a",
+          version_id: "v-3",
           name: "Session",
           weekday: 1,
           exercises: [{ slug: "barbell-bench-press", sets: 4 }],
         },
         {
           id: "w-b",
+          version_id: "v-3",
           name: "Session",
           weekday: 2,
           exercises: [{ slug: "barbell-back-squat", sets: 4 }],
@@ -435,10 +445,13 @@ Deno.test("plan schedule: a finished session answers the planned one with the sa
       days: [{
         date: "2026-10-19",
         weekday: 1,
-        planned: [{ id: "w-a", name: "Session", minutes: 60 }],
+        version_id: "v-3",
+        version: 3,
+        planned: [{ id: "w-a", version_id: "v-3", name: "Session", minutes: 60 }],
         // The other workout named Session was done that day: Monday's own was not.
         done: [{
           planned_workout_id: "w-b",
+          version_id: "v-3",
           name: "Session",
           exercises: [{ slug: "barbell-back-squat", sets: 4 }],
         }],
@@ -456,6 +469,8 @@ Deno.test("plan schedule: a finished session answers the planned one with the sa
       days: [{
         date: "2026-10-19",
         weekday: 1,
+        version_id: "v-3",
+        version: 3,
         planned: [{ id: "w-chest-a", name: "Chest priority", minutes: 90 }],
         done: [{
           planned_workout_id: "old-id",
@@ -472,6 +487,8 @@ Deno.test("plan schedule: overlaps past the listed limit are counted, never drop
   const days = Array.from({ length: 12 }, (_, index) => ({
     date: new Date(Date.UTC(2026, 9, 19 + index)).toISOString().slice(0, 10),
     weekday: (index % 7) + 1,
+    version_id: "v-3",
+    version: 3,
     planned: [{ id: "w-chest-a", name: "Chest priority", minutes: 90 }],
     done: [],
   }));
@@ -504,6 +521,7 @@ Deno.test("plan schedule: a day from another plan version or a temporary block i
         {
           date: "2026-10-05",
           weekday: 1,
+          version_id: "v-2",
           version: 2,
           block: false,
           planned: [{ id: "w-chest-a", name: "Chest priority", minutes: 90 }],
@@ -512,6 +530,7 @@ Deno.test("plan schedule: a day from another plan version or a temporary block i
         {
           date: "2026-10-19",
           weekday: 1,
+          version_id: "v-4",
           version: 4,
           block: true,
           planned: [{ id: "w-chest-a", name: "Chest priority", minutes: 90 }],
@@ -520,6 +539,7 @@ Deno.test("plan schedule: a day from another plan version or a temporary block i
         {
           date: "2026-10-26",
           weekday: 1,
+          version_id: "v-3",
           version: 3,
           block: false,
           planned: [{ id: "w-chest-a", name: "Chest priority", minutes: 90 }],
@@ -538,4 +558,97 @@ Deno.test("plan schedule: a day from another plan version or a temporary block i
   );
   // The current version, outside a block, carries no mark.
   assert(text.split("\n").some((l) => l.startsWith("- Mon 2026-10-26") && l.endsWith(")")));
+});
+
+Deno.test("plan schedule: a session logged under the old version the morning a new one takes effect is done once", () => {
+  // "Upper A" (workout a1, version V1) was logged this morning; version V2 took effect today with
+  // its own "Upper A" (workout b1). The day is done, not done and planned.
+  const upper = [{ slug: "barbell-bench-press", sets: 4 }];
+  const { text } = renderLookup(
+    request("plan_history", "2026-10-18", "2026-10-19", "schedule"),
+    {
+      ...scheduleLookupPayload,
+      from: "2026-10-18",
+      to: "2026-10-19",
+      today: "2026-10-18",
+      plan: { id: "v-2", version: 2, starts_on: "2026-10-18", sessions_per_week: 1 },
+      sessions: [
+        { id: "a1", version_id: "v-1", name: "Upper A", weekday: 7, exercises: upper },
+        { id: "b1", version_id: "v-2", name: "Upper A", weekday: 7, exercises: upper },
+      ],
+      days: [{
+        date: "2026-10-18",
+        weekday: 7,
+        version_id: "v-2",
+        version: 2,
+        block: false,
+        planned: [{ id: "b1", name: "Upper A", minutes: 60 }],
+        done: [{ planned_workout_id: "a1", name: "Upper A", exercises: upper }],
+      }],
+    },
+  );
+  const line = text.split("\n").find((l) => l.startsWith("- Sun 2026-10-18"))!;
+  assertStringIncludes(line, "done Upper A");
+  assert(!line.includes("planned"), line);
+  // The same workout name still does not hide a different workout of the day's own version.
+  const other = renderLookup(
+    request("plan_history", "2026-10-18", "2026-10-19", "schedule"),
+    {
+      ...scheduleLookupPayload,
+      from: "2026-10-18",
+      to: "2026-10-19",
+      today: "2026-10-18",
+      plan: { id: "v-2", version: 2, starts_on: "2026-10-18", sessions_per_week: 1 },
+      sessions: [
+        { id: "b1", version_id: "v-2", name: "Upper A", weekday: 7, exercises: upper },
+        { id: "b2", version_id: "v-2", name: "Upper A", weekday: 7, exercises: upper },
+      ],
+      days: [{
+        date: "2026-10-18",
+        weekday: 7,
+        version_id: "v-2",
+        version: 2,
+        block: false,
+        planned: [{ id: "b1", name: "Upper A", minutes: 60 }],
+        done: [{ planned_workout_id: "b2", name: "Upper A", exercises: upper }],
+      }],
+    },
+  ).text;
+  assertStringIncludes(other, "done Upper A; planned Upper A");
+});
+
+Deno.test("plan schedule: versions are compared by id, because version numbers repeat across plans", () => {
+  const { text } = renderLookup(
+    request("plan_history", "2026-10-19", "2026-10-26", "schedule"),
+    {
+      ...scheduleLookupPayload,
+      from: "2026-10-19",
+      to: "2026-10-26",
+      today: "2026-10-18",
+      plan: { id: "v-main", version: 1, starts_on: "2026-09-28", sessions_per_week: 1 },
+      days: [
+        {
+          date: "2026-10-19",
+          weekday: 1,
+          version_id: "v-main",
+          version: 1,
+          block: false,
+          planned: [{ id: "w-chest-a", name: "Chest priority", minutes: 90 }],
+          done: [],
+        },
+        {
+          date: "2026-10-26",
+          weekday: 1,
+          version_id: "v-of-another-plan",
+          version: 1,
+          block: false,
+          planned: [{ id: "w-chest-a", name: "Chest priority", minutes: 90 }],
+          done: [],
+        },
+      ],
+    },
+  );
+  const lines = text.split("\n");
+  assert(!lines.find((l) => l.startsWith("- Mon 2026-10-19"))!.includes("[version"));
+  assert(lines.find((l) => l.startsWith("- Mon 2026-10-26"))!.endsWith("[version 1]"));
 });

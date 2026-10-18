@@ -216,6 +216,26 @@ const exercisesOf = (session: PlanSession): DayExercise[] =>
   session.exercises.map((exercise) => ({ slug: exercise.slug, sets: exercise.sets }));
 
 /**
+ * The plan's sessions in force on a date. After a temporary block's last day they are those of the
+ * plan the block hands back to, so nothing dated after `ends_on` is read from the block.
+ */
+function poolOn(state: PlanState, date: string): readonly PlanSession[] {
+  return state.afterBlock !== null && date > state.afterBlock.endsOn
+    ? state.afterBlock.sessions
+    : state.sessions;
+}
+
+/** The sessions in force on each day of the athlete's ISO week; the plan's own list without a block. */
+export function weekSessions(state: PlanState): readonly PlanSession[] {
+  if (state.afterBlock === null) return state.sessions;
+  const monday = addDays(state.localDate, 1 - state.weekday);
+  const week = [1, 2, 3, 4, 5, 6, 7].flatMap((weekday) =>
+    poolOn(state, addDays(monday, weekday - 1)).filter((session) => session.weekday === weekday)
+  );
+  return [...week, ...state.sessions.filter((session) => session.weekday === null)];
+}
+
+/**
  * The plan's sessions on the day `offset` days after today (1 to 6), resolved against the athlete's
  * ISO week. Inside the current week a session already finished is not planned again: its slot
  * reads done (`doneEarly`). From the next ISO week on, every session is planned again. Days after a
@@ -226,12 +246,9 @@ export function sessionsOn(state: PlanState, offset: number): Readonly<{
   doneEarly: readonly Readonly<{ session: PlanSession; doneOn: string }>[];
 }> {
   const weekday = ((state.weekday - 1 + offset) % 7) + 1;
-  // After a temporary block's last day the athlete is back on the plan it replaced.
-  const pool =
-    state.afterBlock !== null && addDays(state.localDate, offset) > state.afterBlock.endsOn
-      ? state.afterBlock.sessions
-      : state.sessions;
-  const onDay = pool.filter((session) => session.weekday === weekday);
+  const onDay = poolOn(state, addDays(state.localDate, offset)).filter((session) =>
+    session.weekday === weekday
+  );
   if (offset > 7 - state.weekday) return { planned: onDay, doneEarly: [] };
   return {
     planned: onDay.filter((session) => finishedOn(state, session) === null),
@@ -277,7 +294,10 @@ export type FocusSession = Readonly<{
  */
 export function pickFocusSession(state: PlanState): FocusSession {
   const byDay = (a: PlanSession, b: PlanSession) => a.weekday! - b.weekday!;
-  const dated = state.sessions.filter((session) => session.weekday !== null).sort(byDay);
+  const dated = weekSessions(state).filter((session) => session.weekday !== null).sort(byDay);
+  // Next week's first session, from the plan in force then.
+  const nextFirst = poolOn(state, addDays(state.localDate, 8 - state.weekday))
+    .filter((session) => session.weekday !== null).sort(byDay)[0] ?? null;
   const todays = dated.find((session) => session.weekday === state.weekday) ?? null;
   const slotDone = todays && finishedOn(state, todays) !== null ? todays : null;
   const unfinished = (session: PlanSession) => finishedOn(state, session) === null;
@@ -303,13 +323,13 @@ export function pickFocusSession(state: PlanState): FocusSession {
     return {
       ...base,
       deferred: { session: candidate, shared },
-      session: dated[0] ?? null,
+      session: nextFirst,
       isToday: false,
       missed: false,
       nextWeek: true,
     };
   }
-  return { ...base, session: dated[0] ?? null, isToday: false, missed: false, nextWeek: true };
+  return { ...base, session: nextFirst, isToday: false, missed: false, nextWeek: true };
 }
 
 function exerciseLine(
@@ -506,13 +526,22 @@ export function renderTrainingPlan(state: PlanState | null): string | null {
       ),
     );
   }
-  const rest = state.sessions.filter((session) =>
+  const rest = weekSessions(state).filter((session) =>
     session.id !== focus.session?.id && session.id !== focus.doneToday?.id
   );
   if (rest.length) {
     lines.push("Other sessions in the plan (a day-by-day list; home options in brackets):");
     lines.push(
       ...rest.map((session) => compactSession(session, state, finishedOn(state, session))),
+    );
+  }
+  if (state.afterBlock !== null && state.localDate <= state.afterBlock.endsOn) {
+    const back = state.afterBlock.sessions.filter((session) => session.weekday !== null)
+      .sort((a, b) => a.weekday! - b.weekday!);
+    lines.push(
+      `After the temporary block (last day ${state.afterBlock.endsOn}) the plan returns to: ${
+        back.map((session) => `${dayName(session.weekday)} ${session.name}`).join("; ")
+      }.`,
     );
   }
   return lines.join("\n");

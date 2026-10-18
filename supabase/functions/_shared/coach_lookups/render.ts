@@ -218,6 +218,11 @@ function planSchedule(body: Json): Parts {
       })),
     ]),
   );
+  const idsByVersion = new Map<string, Set<string>>();
+  for (const session of list(body.sessions)) {
+    const version = String(session.version_id);
+    idsByVersion.set(version, (idsByVersion.get(version) ?? new Set()).add(String(session.id)));
+  }
   const to = String(body.to ?? "");
   const today = String(has(body.today) ? body.today : to);
   const scheduleDays: ScheduleDay[] = [];
@@ -236,10 +241,12 @@ function planSchedule(body: Json): Parts {
       })),
     }));
     const doneNames = done.map((item) => item.name);
-    // A finished session answers the planned one with its id; one finished under an earlier plan
-    // version (an id the active plan does not hold) is matched by its name.
+    // A finished session answers the planned one with its id. One whose id is not a workout of
+    // that day's own plan version (it was finished under another version, for instance logged this
+    // morning before a change took effect today) is matched by its name.
+    const dayWorkouts = idsByVersion.get(String(row.version_id)) ?? new Set<string>();
     const isDone = (id: string, name: string) =>
-      done.some((item) => item.id === id || (!sessions.has(item.id) && item.name === name));
+      done.some((item) => item.id === id || (!dayWorkouts.has(item.id) && item.name === name));
     const planned = list(row.planned).map((item) => ({
       id: String(item.id),
       name: String(item.name),
@@ -264,7 +271,9 @@ function planSchedule(body: Json): Parts {
     ].filter(Boolean).join("; ");
     const muscles = day.muscles.length ? ` (${day.muscles.join(", ")})` : "";
     const block = row.block === true;
-    const version = has(row.version) && (block || row.version !== plan.version)
+    // Version numbers repeat across plans (a block is a new plan at version 1), so versions are
+    // compared by id and the number is only shown.
+    const version = has(row.version) && (block || row.version_id !== plan.id)
       ? ` [version ${row.version}${block ? ", temporary block" : ""}]`
       : "";
     lines.push(

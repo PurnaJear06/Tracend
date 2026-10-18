@@ -196,7 +196,8 @@ $$;
 -- shows from its effective date; earlier dates keep the version superseded then). When that
 -- version is a temporary block (ends_on set), the dates after its last day use the version it
 -- restores, which is what the athlete returns to. A date before the first version shows only what
--- was logged. Every day names its version and says if it is a block. The plan repeats weekly on
+-- was logged. Every day names its version (id and number) and says if it is a block; every session
+-- names the version it belongs to. The plan repeats weekly on
 -- each session's weekday. Every finished session in the range is listed with the sets it logged
 -- per exercise, so the muscles can be worked out from sets. Days with neither a planned nor a
 -- finished session are left out. `today` is the athlete's own date, which tells a missed session
@@ -246,7 +247,8 @@ returns jsonb language sql stable set search_path = '' as $$
     where s.user_id = p_user_id and s.state = 'completed'
       and s.local_date between b.first_day and b.last_day
   ), days as (
-    select r.day, extract(isodow from r.day)::integer as weekday, rv.version_number, r.in_block,
+    select r.day, extract(isodow from r.day)::integer as weekday, r.version_id, rv.version_number,
+      r.in_block,
       (select jsonb_agg(jsonb_build_object('id', pl.id, 'name', pl.name,
           'minutes', pl.estimated_minutes) order by pl.workout_order)
         from planned pl
@@ -263,16 +265,17 @@ returns jsonb language sql stable set search_path = '' as $$
     'from', (select first_day from bounds), 'to', (select last_day from bounds),
     'today', private.local_date_for(p_user_id),
     'truncated', false,
-    'plan', (select jsonb_build_object('version', a.version_number, 'starts_on', a.starts_on,
-        'sessions_per_week', a.sessions_per_week) from active a),
-    'sessions', coalesce((select jsonb_agg(jsonb_build_object('id', pl.id, 'name', pl.name,
+    'plan', (select jsonb_build_object('id', a.id, 'version', a.version_number,
+        'starts_on', a.starts_on, 'sessions_per_week', a.sessions_per_week) from active a),
+    'sessions', coalesce((select jsonb_agg(jsonb_build_object('id', pl.id,
+        'version_id', pl.plan_version_id, 'name', pl.name,
         'weekday', pl.weekday, 'exercises', (select coalesce(jsonb_agg(jsonb_build_object(
             'slug', e.exercise_slug, 'sets', e.set_count) order by e.exercise_order), '[]'::jsonb)
           from public.planned_exercises e
           where e.planned_workout_id = pl.id and e.user_id = p_user_id))
         order by pl.plan_version_id, pl.workout_order) from planned pl), '[]'::jsonb),
     'days', coalesce((select jsonb_agg(jsonb_build_object('date', d.day, 'weekday', d.weekday,
-        'version', d.version_number, 'block', d.in_block,
+        'version_id', d.version_id, 'version', d.version_number, 'block', d.in_block,
         'planned', coalesce(d.planned, '[]'::jsonb), 'done', coalesce(d.done, '[]'::jsonb))
         order by d.day) from days d where d.planned is not null or d.done is not null), '[]'::jsonb));
 $$;
