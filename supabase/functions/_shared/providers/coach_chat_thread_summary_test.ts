@@ -7,17 +7,24 @@ import { coachReplyCheckFor, renderCoachContextParts } from "./coach_chat_provid
 
 const summary =
   "I couldn't put together a full coaching answer just now, so here is what your data shows.\n\nLatest weight: 74.4 kg on 2026-10-14. 4-week trend: -0.07 kg/week.";
-const withSummary = (marked: boolean) =>
+// The owner context's coaching date is 2026-10-14.
+const withSummary = (marked: boolean, localDate: string | null = "2026-10-14") =>
   ownerContext({
     recent_messages: [
       { role: "user", content: "How is my weight trending?" },
-      { role: "assistant", content: summary, ...(marked ? { answer_source: "data_summary" } : {}) },
+      {
+        role: "assistant",
+        content: summary,
+        ...(marked
+          ? { answer_source: "data_summary", ...(localDate ? { local_date: localDate } : {}) }
+          : {}),
+      },
     ],
   });
 
 Deno.test("the summary is shown to the Coach as the app's reply, not as its own words", () => {
   const { recent } = renderCoachContextParts(withSummary(true), 96_000, true);
-  assertStringIncludes(recent, "TRACEND DATA SUMMARY (the app's own reply");
+  assertStringIncludes(recent, "TRACEND DATA SUMMARY of 2026-10-14 (the app's own reply");
   assertStringIncludes(recent, "4-week trend: -0.07 kg/week");
   assert(!recent.includes("**ASSISTANT:** I couldn't put together"));
 });
@@ -29,6 +36,21 @@ Deno.test("a figure the app showed counts as given on the next turn; Coach's own
   const unmarked = coachReplyCheckFor(withSummary(false), "And since then?", null);
   const found = unmarked(answer);
   assert(found !== null && typeof found !== "string" && found.rule === "numbers_not_grounded");
+});
+
+Deno.test("a summary from an earlier day, or with no date, grounds nothing today", () => {
+  const answer = "The app showed a 4-week trend of -0.07 kg/week, so you are almost flat.";
+  for (const localDate of ["2026-10-13", null]) {
+    const found = coachReplyCheckFor(withSummary(true, localDate), "And since then?", null)(answer);
+    assert(
+      found !== null && typeof found !== "string" && found.rule === "numbers_not_grounded",
+      String(localDate),
+    );
+  }
+  // It stays in the thread as text, dated.
+  const { recent } = renderCoachContextParts(withSummary(true, "2026-10-13"), 96_000, true);
+  assertStringIncludes(recent, "TRACEND DATA SUMMARY of 2026-10-13");
+  assertStringIncludes(recent, "4-week trend: -0.07 kg/week");
 });
 
 Deno.test("a data summary is not a previous reply of the Coach to repeat", () => {

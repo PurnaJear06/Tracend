@@ -196,12 +196,12 @@ export type CoachChatAnswerCheck = (
  * action or an unsupported figure cannot sit in a field the check skips. Call after the shape is
  * validated.
  */
-export function visibleText(answer: Record<string, unknown>): string[] {
+export function visibleText(answer: Record<string, unknown>, withLabels = true): string[] {
   const texts: string[] = [answer.answer as string];
   const strings = (value: unknown) =>
     Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
   texts.push(...strings(answer.suggested_follow_ups), ...strings(answer.missing_data));
-  for (const item of Array.isArray(answer.evidence) ? answer.evidence : []) {
+  for (const item of withLabels && Array.isArray(answer.evidence) ? answer.evidence : []) {
     texts.push(...strings([(item as Record<string, unknown>).label]));
   }
   for (const item of Array.isArray(answer.reasoning_chain) ? answer.reasoning_chain : []) {
@@ -386,7 +386,9 @@ export function parseCoachChatAnswer(
   // A shown source the text names ("Maughan 2018") but the evidence does not cite is cited for
   // the reply: the server adds its evidence item, so the app shows the source, and the check
   // reads the reply as citing it. Only while the evidence has room.
-  const named = namedShownSources(text, shownLibrarySources)
+  // Only the reply's own words can name a source: an evidence label is the model's wording of a
+  // citation, not a claim in the answer, and must not attach a source the answer never names.
+  const named = namedShownSources(visibleText(answer, false).join("\n"), shownLibrarySources)
     .filter((id) => !declared.includes(id))
     .slice(0, Math.max(0, coachChatAnswerLimits.evidenceMaxItems - answer.evidence.length));
   const cited = [...declared, ...named];

@@ -1165,7 +1165,9 @@ export function renderCoachContextParts(
         ? `${content.slice(0, 300)} … ${content.slice(-900)}`
         : content;
       s += m.answer_source === appSummarySource
-        ? `**TRACEND DATA SUMMARY (the app's own reply, calculated from the athlete's data; not your words):** ${shown}\n`
+        ? `**TRACEND DATA SUMMARY${
+          typeof m.local_date === "string" ? ` of ${m.local_date}` : ""
+        } (the app's own reply, calculated from the athlete's data on that day; not your words):** ${shown}\n`
         : `**${role}:** ${shown}\n`;
     }
     return s;
@@ -1293,11 +1295,15 @@ const appSummarySource = "data_summary";
 /**
  * The app's labelled data summaries in this conversation's memory. Tracend wrote them from the
  * athlete's own data and showed them as such, so their figures are the athlete's and ground a
- * reply's numbers on the next turn; Coach's own earlier words never do.
+ * reply's numbers on a later turn of the same coaching date; Coach's own earlier words never do.
  */
 function appSummaries(context: Record<string, unknown>): string[] {
+  // A summary from an earlier day shows the figures of that day: they ground nothing today, or
+  // yesterday's "Recovery today: 13/100" would make today's identical claim pass. A summary with
+  // no date (an older context) grounds nothing either.
   return arr(context.recent_messages).map(obj).filter((message) =>
-    message.answer_source === appSummarySource && typeof message.content === "string"
+    message.answer_source === appSummarySource && typeof message.content === "string" &&
+    typeof message.local_date === "string" && message.local_date === context.coaching_date
   ).map((message) => message.content as string);
 }
 

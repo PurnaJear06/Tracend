@@ -146,3 +146,44 @@ Deno.test("more ways to say stop for a symptom are never repeats", () => {
     );
   }
 });
+
+Deno.test("an opposite sentence is not a repeat: negation is kept", () => {
+  const plain = "Should we increase training volume this week?";
+  const opposite = "Should we not increase training volume this week?";
+  assertEquals(similarity(contentWords(plain), contentWords(opposite)), 0);
+  assertEquals(similarity(contentWords(plain), contentWords(plain)), 1);
+  assertEquals(
+    repeatsOf(`Sleep is steady. ${opposite}`, {
+      previousReply: `Fine. ${plain}`,
+      referralNeeded: false,
+    })
+      .closing,
+    null,
+  );
+  assertEquals(
+    repeatsOf(`Sleep is steady. ${plain}`, {
+      previousReply: `Fine. ${plain}`,
+      referralNeeded: false,
+    })
+      .closing,
+    `${plain}`,
+  );
+  for (
+    const [a, b] of [
+      [
+        "Do increase the weekly training volume across all your upper days.",
+        "Don't increase the weekly training volume across all your upper days.",
+      ],
+      [
+        "You can skip the warm-up sets on your accessory movements today.",
+        "You can't skip the warm-up sets on your accessory movements today.",
+      ],
+      [
+        "Eat protein before training sessions on your heaviest leg days.",
+        "Never eat protein before training sessions on your heaviest leg days.",
+      ],
+    ]
+  ) {
+    assertEquals(repeatsOf(a, { previousReply: b, referralNeeded: false }).sentences, [], a);
+  }
+});

@@ -30,17 +30,29 @@ const stopWords = new Set(
     "ill ive youre youll dont wont cant").split(" "),
 );
 
-/** The content words of a sentence: letters only, no function words, endings trimmed. */
+/** Marks a negated sentence among its content words. */
+export const negation = "¬";
+const negated = /\b(?:not|no|never|without|cannot|neither|nor)\b|n['’]t\b/i;
+
+/**
+ * The content words of a sentence: letters only, no function words, endings trimmed. A negated
+ * sentence also carries the `negation` mark, because "increase volume" and "do not increase
+ * volume" have the same words and opposite meanings.
+ */
 export function contentWords(sentence: string): Set<string> {
-  return new Set(
+  const words = new Set(
     sentence.toLowerCase().replaceAll("’", "'").replace(/[^\p{L}\s]+/gu, " ").split(/\s+/)
       .filter((word) => word.length > 2 && !stopWords.has(word))
       .map((word) => word.replace(/(?:ing|ed|es|s)$/, "")).filter((word) => word.length > 2),
   );
+  if (negated.test(sentence)) words.add(negation);
+  return words;
 }
 
 export function similarity(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
   if (a.size === 0 || b.size === 0) return 0;
+  // Opposite polarity is never a repeat.
+  if (a.has(negation) !== b.has(negation)) return 0;
   let shared = 0;
   for (const word of a) if (b.has(word)) shared += 1;
   return 2 * shared / (a.size + b.size);

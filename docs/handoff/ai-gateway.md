@@ -1392,6 +1392,11 @@ when an overlap exists; the data index grows by about 250 when a plan exists.
 **Open.** A pgTAP run in CI covers the SQL; it was not run locally. After the deploy, ask Coach on a
 Sunday what is coming up and check `model_runs` and the `lookups` column for `plan_history`.
 
+**Last review round (same PR).** (1) v10 carries `local_date` on a summary; its figures ground only a turn on the
+same coaching date; older summaries stay as dated text (pgTAP asserts the date). (2) An athlete-named study
+exempts only the same reference (surname and year, or institution initials and document kind). (3) Evidence
+labels never attach a source. (4) The repeat comparison keeps negation (opposite polarity is never a repeat).
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in

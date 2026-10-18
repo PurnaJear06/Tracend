@@ -1228,7 +1228,10 @@ and shows Coach the chunks it found. The library never decides a number; it grou
   the reply is read as citing it, so a figure only that source holds is grounded. When it matches
   no shown source (or the year differs), the reply breaks `citation_not_retrieved` and the repair
   tells Coach to drop the claim or name only the sources it was shown. A study the athlete named in
-  this conversation is theirs to ask about and is not refused.
+  this conversation is theirs to ask about and is not refused, but only the same reference: their
+  message must carry the same surname and year, or the same institution's initials beside a kind of
+  document (a surname alone, "a Smith machine", names no study). Only the reply's own words (the
+  answer, chips, notes and reasoning) can attach a source; an evidence label never does.
 - **Numbers.** The library is kept out of the main numbers ground. A figure that only the library
   holds is accepted only when the reply cites, in `evidence`, the source whose shown chunks contain
   it (`coachReplyCheckFor` passes the cited ids to the check). In a sentence that states the
@@ -1319,7 +1322,8 @@ question or the previous exchange may be about a health risk (`mayConcernHealthR
 turn every caution or limit stands too. A stop rule for pain or another symptom ("stop if it
 hurts", "if the knee aches, end the session", "ease off if the shoulder flares up", "pause if it throbs", "switch to the bike", "lay off squats while it's tender", "keep it pain-free") always stands, whatever the turn. The
 repair instruction never asks Coach to drop a safety caution. Otherwise the same "when to get it
-looked at" line is an ordinary repeat. An athlete asking the same thing again (their question
+looked at" line is an ordinary repeat. A negated sentence never matches an unnegated one ("increase volume" and "do not increase volume" share
+every content word), so the negation is kept in the comparison. An athlete asking the same thing again (their question
 and their previous one at least 0.7 similar) gets the same answer again. A repeat gets the one
 repair with the instruction to drop it; if it repeats again, or no repair can be sent, the
 repeated closing question and sentences are cut. There is no limit on the length of a reply here;
@@ -1335,8 +1339,11 @@ from the prepared context (no estimates), cites only permitted evidence, and car
 model. It stays in the conversation the model reads (`prepare_coach_chat_v10`, 2026-10-18), marked
 `answer_source: "data_summary"` and shown to the model as "TRACEND DATA SUMMARY (the app's own
 reply, calculated from the athlete's data; not your words)", so the next turn can refer to a
-number the app just showed. Its figures count as the athlete's data for the next turn's numbers
-check (Coach's own earlier words never do), it is not a previous reply for the repeats rule, and a
+number the app just showed. Its figures count as the athlete's data for a later turn of the same
+coaching date only: v10 carries the athlete's local date of the summary (`local_date`), an older
+summary stays in the thread as text, shown with its date, and grounds nothing (yesterday's "Recovery
+today: 13/100" must not make today's identical claim pass), and nothing grounds Coach's own earlier
+words, it is not a previous reply for the repeats rule, and a
 question that fell back to one still reads as unanswered when the athlete sends it again. After
 that retry the failed question is marked superseded (`safety_state` "unavailable" on that user
 message); v10 carries that state on user messages only (a summary is stored "unavailable" too and

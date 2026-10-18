@@ -1,5 +1,5 @@
 begin;
-select plan(14);
+select plan(16);
 
 -- The app's data summary stays in the conversation the Coach reads (migration 20261018210031).
 -- prepare_coach_chat_v10 wraps v9 and rebuilds recent_messages with the summaries in, marked.
@@ -55,6 +55,13 @@ select is((select e ->> 'answer_source' from r, jsonb_array_elements(j -> 'conte
 select is((select count(*)::int from r, jsonb_array_elements(j -> 'context' -> 'recent_messages') e
     where name = 'v10' and e ? 'answer_source'),
   2, 'no other message carries the mark');
+select is((select e ->> 'local_date' from r, jsonb_array_elements(j -> 'context' -> 'recent_messages') e
+    where name = 'v10' and e ->> 'content' like 'SUMMARY_MARKER%'),
+  ((now() - interval '3 minutes') at time zone 'UTC')::date::text,
+  'a summary carries the athlete''s local date of its creation, so it grounds only that day');
+select is((select count(*)::int from r, jsonb_array_elements(j -> 'context' -> 'recent_messages') e
+    where name = 'v10' and e ? 'local_date'),
+  2, 'and only a summary does');
 select is((select jsonb_agg(e ->> 'role' order by ord) from r,
     jsonb_array_elements(j -> 'context' -> 'recent_messages') with ordinality as t(e, ord)
     where name = 'v10'),

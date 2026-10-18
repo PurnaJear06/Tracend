@@ -447,8 +447,40 @@ Deno.test("citation_not_retrieved: a study named by authors and year that was no
   // Shown, or named by the athlete, or a date and not a study.
   assertEquals(run("Maughan 2018 found creatine helps."), []);
   assertEquals(
-    run("Kreider 2017 found creatine helps.", { athleteText: ["What does Kreider say?"] }),
+    run("Kreider 2017 found creatine helps.", { athleteText: ["What does Kreider 2017 say?"] }),
     [],
+  );
+  assertEquals(
+    run("The WHO guidelines say to move more.", {
+      athleteText: ["What do the WHO guidelines say?"],
+    }),
+    [],
+  );
+  // The athlete has to have named the same reference: a surname alone, another year or another
+  // institution names no study.
+  for (
+    const athleteText of [
+      "What does Kreider say?",
+      "I train on a Smith machine.",
+      "What does Kreider 2019 say?",
+      "What do the NIH guidelines say?",
+    ]
+  ) {
+    assertEquals(
+      run("Smith 2020 found creatine helps.", { athleteText: [athleteText] }),
+      ["citation_not_retrieved"],
+    );
+    assertEquals(
+      run("Kreider 2017 found creatine helps.", { athleteText: [athleteText] }),
+      ["citation_not_retrieved"],
+      athleteText,
+    );
+  }
+  assertEquals(
+    run("The WHO guidelines say to move more.", {
+      athleteText: ["What do the NIH guidelines say?"],
+    }),
+    ["citation_not_retrieved"],
   );
   assertEquals(run("Since 2018 you have trained a lot."), []);
 });

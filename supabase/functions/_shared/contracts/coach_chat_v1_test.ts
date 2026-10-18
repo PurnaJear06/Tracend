@@ -214,3 +214,25 @@ Deno.test("a shown library id is not a permitted code for data evidence", () => 
   );
   assertEquals(error.rule, "evidence_code_not_permitted");
 });
+
+Deno.test("only the reply's own words attach a source it names, never an evidence label", () => {
+  const shown = {
+    maughan_2018_ioc_supplements: { label: "IOC consensus statement (2018)", text: "" },
+  };
+  const base = {
+    answer: "Creatine is a well studied supplement.",
+    evidence: [{ code: "APPROVED_PLAN_ACTIVE", label: "Maughan 2018", source: "coach_context" }],
+    missing_data: [],
+    safety_state: "allowed",
+    suggested_follow_ups: [],
+  };
+  const labelOnly = parseCoachChatAnswer(base, ["APPROVED_PLAN_ACTIVE"], undefined, shown);
+  assertEquals(labelOnly.evidence.map((item) => item.source), ["coach_context"]);
+  const named = parseCoachChatAnswer(
+    { ...base, answer: "Maughan 2018 calls creatine well studied." },
+    ["APPROVED_PLAN_ACTIVE"],
+    undefined,
+    shown,
+  );
+  assertEquals(named.evidence.map((item) => item.source), ["coach_context", "library"]);
+});

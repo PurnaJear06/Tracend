@@ -34,7 +34,13 @@ import {
   visibleText,
 } from "../contracts/coach_chat_v1.ts";
 import type { ScreeningState } from "../coach_context/contributors/screening.ts";
-import { namedShownSources, type ShownSources, unshownStudies } from "../library/mentions.ts";
+import {
+  namedShownSources,
+  type ShownSources,
+  type StudyMention,
+  studyMentions,
+  unshownStudies,
+} from "../library/mentions.ts";
 import { unshownKeysIn } from "../library/retrieval.ts";
 import {
   mergeGrounds,
@@ -382,15 +388,22 @@ function libraryGrounder(inputs: ReplyCheckInputs): (ids: readonly string[]) => 
 
 /**
  * Studies and sources a text names that Coach was not shown this turn. A study the athlete named
- * in this conversation is theirs to ask about and is left out.
+ * in this conversation is theirs to ask about and is left out, but only the same reference: the
+ * athlete's own message has to carry the same surname and year ("What does Kreider 2017 say?"), or
+ * the same institution's initials beside a kind of document ("the NIH fact sheet"). A surname alone
+ * ("I train on a Smith machine") names no study.
  */
 function unshownNames(inputs: ReplyCheckInputs, text: string, shown: ShownSources): string[] {
-  const athlete = new Set(
-    (inputs.athleteText ?? []).flatMap((message) => message.toLowerCase().split(/[^a-z0-9]+/)),
+  const athlete = studyMentions((inputs.athleteText ?? []).join("\n"));
+  const named = (mention: StudyMention) =>
+    athlete.some((theirs) =>
+      (mention.initials === true) === (theirs.initials === true) &&
+      mention.year === theirs.year &&
+      mention.authors.some((author) => theirs.authors.includes(author))
+    );
+  const names = unshownStudies(text, shown).filter((mention) => !named(mention)).map((mention) =>
+    [...mention.authors, mention.year ?? ""].join(" ").trim()
   );
-  const names = unshownStudies(text, shown).filter((mention) =>
-    !mention.authors.some((author) => athlete.has(author))
-  ).map((mention) => [...mention.authors, mention.year ?? ""].join(" ").trim());
   return [...names, ...unshownKeysIn(text, new Set(Object.keys(shown)))];
 }
 
@@ -614,7 +627,10 @@ export function cutReply(
     item.code as string
   );
   const cited = [
-    ...new Set([...declared, ...namedShownSources(visibleText(candidate).join("\n"), shown)]),
+    ...new Set([
+      ...declared,
+      ...namedShownSources(visibleText(candidate, false).join("\n"), shown),
+    ]),
   ];
   const merged = mergeGrounds(inputs.ground, ...libraryGround(cited));
   const repeats = rules.includes("repeats_previous_turn") && inputs.repetition
