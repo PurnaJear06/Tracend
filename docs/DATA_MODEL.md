@@ -833,6 +833,11 @@ unexpired notes. A note for a conversation with `coach_threads.remember = false`
 a conversation deletes its notes. Forced RLS, read-only for authenticated; the athlete deletes a note
 with `delete_coach_note_v1`. Notes are untrusted when read back.
 
+`change_proposals` gains `memory_noted_at` (set once, never cleared) and `source_remembered` (copied
+from the conversation by a trigger when `source_message_id` is set, default true). "Forget
+everything" also marks answered proposals noted and removes the older preference, journal and
+narrative sections from the athlete's stored `coach_context_snapshots` (with their checksum).
+
 `coach_threads.remember` (default true) marks a conversation the athlete asked Coach not to remember
 (`create_coach_thread_v2`): no notes, no suggested facts, excluded from `coach_lookup_past_messages_v1`
 and `search_coach_messages`, and left out of every other conversation's context by

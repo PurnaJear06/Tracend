@@ -37,7 +37,7 @@ export type TurnSuggestions = Readonly<{
   dropped: number;
 }>;
 
-const none: TurnSuggestions = { wire: [], dropped: 0 };
+export const noSuggestions: TurnSuggestions = { wire: [], dropped: 0 };
 
 /**
  * The fact suggestions for one answered turn: the athlete's own statements read by rules, then
@@ -50,15 +50,17 @@ export function suggestionsForTurn(
     remembered: boolean;
     referral: boolean;
     question: string;
+    /** The athlete's date. */
+    today: string;
     memory: MemoryContext | null;
     modelSuggestions: unknown;
   }>,
 ): TurnSuggestions {
-  if (!input.remembered || input.referral || input.memory === null) return none;
+  if (!input.remembered || input.referral || input.memory === null) return noSuggestions;
   const facts = input.memory.facts;
   const checked = sanitizeModelSuggestions(input.modelSuggestions, facts);
   const merged = mergeSuggestions(
-    suggestFromStatement(input.question, facts),
+    suggestFromStatement(input.question, facts, input.today),
     checked.suggestions,
   );
   return { wire: merged.map(suggestionToWire), dropped: checked.dropped };
@@ -101,26 +103,29 @@ export function turnForNote(
   };
 }
 
-/** How long a reply waits for its notes before it goes out without knowing how they went. */
-export const memoryWriteWaitMs = 2_000;
-
 type EdgeRuntimeGlobal = { EdgeRuntime?: { waitUntil(work: Promise<unknown>): void } };
 
 /**
- * Waits for work for at most `ms`. The work carries on after that: the Edge runtime is asked to
- * keep the function alive until it finishes.
+ * Runs work after the reply has gone out. The Edge runtime is asked to keep the function alive
+ * until it finishes (`runtime` is injectable for tests). The work can never fail the reply: a
+ * failure, thrown or rejected, is handed to `onDone` as an error and nothing else.
  */
-export async function waitBriefly<T>(work: Promise<T>, ms: number): Promise<T | "pending"> {
-  (globalThis as EdgeRuntimeGlobal).EdgeRuntime?.waitUntil(work);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      work,
-      new Promise<"pending">((resolve) => {
-        timer = setTimeout(() => resolve("pending"), ms);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
+export function runInBackground<T>(
+  work: () => Promise<T>,
+  onDone: (outcome: Readonly<{ ok: true; value: T }> | Readonly<{ ok: false }>) => void,
+  runtime: EdgeRuntimeGlobal["EdgeRuntime"] = (globalThis as EdgeRuntimeGlobal).EdgeRuntime,
+): Promise<void> {
+  const done = (async () => {
+    try {
+      onDone({ ok: true, value: await work() });
+    } catch {
+      try {
+        onDone({ ok: false });
+      } catch {
+        // Logging must not fail either.
+      }
+    }
+  })();
+  runtime?.waitUntil(done);
+  return done;
 }

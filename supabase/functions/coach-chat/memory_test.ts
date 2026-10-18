@@ -9,7 +9,7 @@ import { evalProfiles } from "../_evals/fixtures.ts";
 import { factWire, makeFact } from "../_shared/coach_memory/memory_fixtures.ts";
 import type { CoachFact } from "../_shared/coach_memory/facts.ts";
 import { handleCoachChat } from "./index.ts";
-import { threadIsRemembered, turnForNote, waitBriefly } from "./memory.ts";
+import { runInBackground, threadIsRemembered, turnForNote } from "./memory.ts";
 import type { CoachChatBudgetLedger } from "./budget_ledger.ts";
 
 const threadId = "11111111-1111-4111-8111-111111111111";
@@ -41,10 +41,22 @@ type Options = Readonly<{
   /** Facts the athlete has confirmed; null makes the memory unreadable. */
   facts?: readonly CoachFact[] | null;
   modelAnswer?: Record<string, unknown>;
+  /** The note write does not finish until the test lets it (the reply must not wait for it). */
+  holdNotes?: boolean;
+  /** The note write fails with an error. */
+  notesThrow?: boolean;
 }>;
 
 async function turn(question: string, options: Options = {}) {
   const calls: Call[] = [];
+  const background: Promise<unknown>[] = [];
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const runtime = globalThis as { EdgeRuntime?: unknown };
+  const previousRuntime = runtime.EdgeRuntime;
+  runtime.EdgeRuntime = { waitUntil: (work: Promise<unknown>) => background.push(work) };
   const context = structuredClone(evalProfiles().find((p) => p.id === "rich")!.context);
   const rpc = (name: string, args: Record<string, unknown>) => {
     calls.push({ name, args });
@@ -77,6 +89,13 @@ async function turn(question: string, options: Options = {}) {
             notes: [],
           });
       case "persist_coach_note_v1":
+        if (options.notesThrow) return Promise.reject(new Error("down"));
+        if (options.holdNotes) {
+          return gate.then(() => ({
+            data: { schema_version: "1.0", stored: true, note_id: "note-1" },
+            error: null,
+          }));
+        }
         return ok({ schema_version: "1.0", stored: true, note_id: "note-1" });
       case "get_unnoted_coach_proposals_v1":
         return ok({ schema_version: "1.0", proposals: [] });
@@ -148,6 +167,9 @@ async function turn(question: string, options: Options = {}) {
       }
     });
     const response = logged.result;
+    const beforeRelease = background.length;
+    release();
+    await Promise.all(background);
     const body = await response.json() as {
       message: Record<string, unknown>;
       fact_suggestions?: Record<string, unknown>[];
@@ -161,8 +183,10 @@ async function turn(question: string, options: Options = {}) {
       modelRequest,
       stored: calls.find((call) => call.name === "persist_coach_chat_result")?.args,
       notes: calls.filter((call) => call.name === "persist_coach_note_v1"),
+      background: beforeRelease,
     };
   } finally {
+    runtime.EdgeRuntime = previousRuntime;
     globalThis.fetch = realFetch;
     for (const [name, value] of previousEnv) {
       if (value === undefined) Deno.env.delete(name);
@@ -358,7 +382,48 @@ Deno.test("the note builder is told the evidence, the lookups and the proposal o
   );
 });
 
-Deno.test("waiting for memory writes is brief and reports when they are still running", async () => {
-  assertEquals(await waitBriefly(Promise.resolve("done"), 50), "done");
-  assertEquals(await waitBriefly(new Promise(() => {}), 10), "pending");
+Deno.test("the notes are written after the reply has gone out, kept alive by the runtime", async () => {
+  const result = await turn("I will train 4 days this week", { holdNotes: true });
+  // The reply is returned while the note write is still waiting; the runtime holds it open.
+  assertEquals(result.status, 200);
+  assertEquals(result.background, 1);
+  assertEquals(result.notes.length, 1);
+});
+
+Deno.test("a failing note write cannot fail a stored reply", async () => {
+  const result = await turn("I will train 4 days this week", { notesThrow: true });
+  assertEquals(result.status, 200);
+  assertEquals(result.body.message.safety_state, "allowed");
+});
+
+Deno.test("background work reports its outcome and survives a failing report", async () => {
+  const seen: unknown[] = [];
+  const waited: Promise<unknown>[] = [];
+  const runtime = { waitUntil: (work: Promise<unknown>) => waited.push(work) };
+  await runInBackground(() => Promise.resolve(7), (outcome) => seen.push(outcome), runtime);
+  await runInBackground(
+    () => Promise.reject(new Error("x")),
+    (outcome) => seen.push(outcome),
+    runtime,
+  );
+  await runInBackground(() => Promise.resolve(1), () => {
+    throw new Error("log failed");
+  }, runtime);
+  assertEquals(seen, [{ ok: true, value: 7 }, { ok: false }]);
+  assertEquals(waited.length, 3);
+  await runInBackground(() => Promise.resolve(1), () => {}, undefined);
+});
+
+Deno.test("a due fact the athlete speaks of gets a still-true card, and only the scheduler's facts are marked", async () => {
+  const due = makeFact("injury_limitation", "left knee", "Left knee hurts on deep squats", {
+    reconfirmOn: "2020-01-01",
+  });
+  const result = await turn("my left knee hurts again today", { facts: [due] });
+  const [suggestion] = result.body.fact_suggestions!;
+  assertEquals([suggestion.action, suggestion.fact_id], ["reconfirm", due.id]);
+  const fresh = makeFact("injury_limitation", "left knee", "Left knee hurts on deep squats", {
+    reconfirmOn: "2026-12-01",
+  });
+  const quiet = await turn("my left knee hurts again today", { facts: [fresh] });
+  assertEquals(quiet.body.fact_suggestions, undefined);
 });

@@ -42,11 +42,12 @@ import {
 import { previousQuestionsOf } from "../_shared/library/query.ts";
 import { loadMemoryContext, recordMemoryAfterTurn } from "../_shared/coach_memory/store.ts";
 import {
-  memoryWriteWaitMs,
+  noSuggestions,
+  runInBackground,
   suggestionsForTurn,
   threadIsRemembered,
   turnForNote,
-  waitBriefly,
+  type TurnSuggestions,
 } from "./memory.ts";
 import {
   chooseCoachChatRoute,
@@ -870,44 +871,42 @@ export async function handleCoachChat(
     );
     if (!traced) log.warn("coach_chat_trace_not_stored");
 
-    // After the reply is stored: what the athlete may be asked to confirm, and the notes. The
-    // notes follow the same rule as the suggestions (nothing for a conversation that is not
-    // remembered or a referral) and never delay the reply by more than a moment.
-    const suggestions = suggestionsForTurn({
-      remembered,
-      referral: generation.safety !== undefined || finalAnswer.safety_state === "refused",
-      question: input.question,
-      memory: await memoryRead,
-      modelSuggestions: generation.factSuggestions,
-    });
-    if (suggestions.dropped > 0) {
-      log.info("coach_chat_fact_suggestions_dropped", { count: suggestions.dropped });
+    // After the reply is stored: what the athlete may be asked to confirm, and the notes. Nothing
+    // here can fail a stored reply: the suggestions are optional, and the notes are written in the
+    // background after the reply has gone out.
+    let suggestions: TurnSuggestions = noSuggestions;
+    try {
+      suggestions = suggestionsForTurn({
+        remembered,
+        referral: generation.safety !== undefined || finalAnswer.safety_state === "refused",
+        question: input.question,
+        today: coachingDate,
+        memory: await memoryRead,
+        modelSuggestions: generation.factSuggestions,
+      });
+      if (suggestions.dropped > 0) {
+        log.info("coach_chat_fact_suggestions_dropped", { count: suggestions.dropped });
+      }
+      const turn = turnForNote({
+        question: input.question,
+        localDate: coachingDate,
+        threadId: input.thread_id,
+        remembered,
+        generation,
+        answer: finalAnswer,
+        proposalIntent: generation.proposalIntent,
+        proposed: proposed.kind === "proposed",
+        userMessageId: persisted.user_message_id,
+        assistantMessageId: persisted.assistant_message_id,
+      });
+      void runInBackground(
+        () => recordMemoryAfterTurn(memoryRpc, { userId: auth.userId, turn }),
+        (outcome) =>
+          log.info("coach_chat_memory", outcome.ok ? { ...outcome.value } : { failed: true }),
+      );
+    } catch {
+      log.warn("coach_chat_memory_skipped", {});
     }
-    const memoryWrite = await waitBriefly(
-      recordMemoryAfterTurn(memoryRpc, {
-        userId: auth.userId,
-        turn: turnForNote({
-          question: input.question,
-          localDate: coachingDate,
-          threadId: input.thread_id,
-          remembered,
-          generation,
-          answer: finalAnswer,
-          proposalIntent: generation.proposalIntent,
-          proposed: proposed.kind === "proposed",
-          userMessageId: persisted.user_message_id,
-          assistantMessageId: persisted.assistant_message_id,
-        }),
-      }),
-      memoryWriteWaitMs,
-    );
-    log.info("coach_chat_memory", {
-      suggestions: suggestions.wire.length,
-      note: memoryWrite === "pending" ? "pending" : memoryWrite.conversation,
-      advice_notes: memoryWrite === "pending" ? 0 : memoryWrite.advice,
-      follow_through: memoryWrite === "pending" ? 0 : memoryWrite.checked,
-      failed: memoryWrite === "pending" ? 0 : memoryWrite.failed,
-    });
 
     const responsePayload: Record<string, unknown> = {
       schema_version: supportsDataSummary(input)

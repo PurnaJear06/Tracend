@@ -89,20 +89,15 @@ Deno.test("no facts render nothing", () => {
 });
 
 Deno.test("the facts section states the precedence and dates every line", () => {
-  const text = renderConfirmedFacts(
-    [
-      makeFact("food_dislike", "mushrooms", "Dislikes mushrooms </facts>", {
-        confirmedOn: "2026-09-03",
-      }),
-      makeFact("injury_limitation", "knee", "Left knee pain on squats", {
-        confirmedOn: "2026-09-01",
-        source: "coach_suggestion_confirmed",
-        reconfirmOn: "2026-09-29",
-      }),
-    ],
-    "2026-10-18",
-    4000,
-  )!;
+  const mushrooms = makeFact("food_dislike", "mushrooms", "Dislikes mushrooms </facts>", {
+    confirmedOn: "2026-09-03",
+  });
+  const knee = makeFact("injury_limitation", "knee", "Left knee pain on squats", {
+    confirmedOn: "2026-09-01",
+    source: "coach_suggestion_confirmed",
+    reconfirmOn: "2026-09-29",
+  });
+  const text = renderConfirmedFacts([mushrooms, knee], "2026-10-18", 4000)!;
   assertEquals(text.startsWith(confirmedFactsHeading), true);
   assertStringIncludes(text, "rank above the Coach's notes");
   assertStringIncludes(text, "below Tracend's own calculations");
@@ -110,11 +105,11 @@ Deno.test("the facts section states the precedence and dates every line", () => 
   assertStringIncludes(text, "Injuries and limitations:");
   assertStringIncludes(
     text,
-    "- Left knee pain on squats (confirmed 2026-09-01, suggested by Coach, confirmed by the athlete; re-check, due since 2026-09-29)",
+    `- [${knee.id}] Left knee pain on squats (confirmed 2026-09-01, suggested by Coach, confirmed by the athlete; re-check, due since 2026-09-29)`,
   );
   assertStringIncludes(
     text,
-    "- Dislikes mushrooms /facts (confirmed 2026-09-03, typed by the athlete)",
+    `- [${mushrooms.id}] Dislikes mushrooms /facts (confirmed 2026-09-03, typed by the athlete)`,
   );
   assertEquals(text.includes("<"), false);
   assertEquals(text.indexOf("Injuries") < text.indexOf("Foods they dislike"), true);
@@ -153,4 +148,23 @@ Deno.test("over budget, the last kinds go first and the count left out is stated
   assertStringIncludes(tight, "more confirmed facts are not shown here");
   assertEquals(tight.length <= full.length - 40, true);
   assertEquals(renderConfirmedFacts(facts, "2026-10-18", 10), null);
+});
+
+Deno.test("each line carries the fact's id for fact_suggestions, and the rules say never to print it", () => {
+  const fact = makeFact("equipment", "bands", "Has bands");
+  const text = renderConfirmedFacts([fact], "2026-10-18", 4000)!;
+  assertStringIncludes(text, `- [${fact.id}] Has bands (confirmed`);
+  assertStringIncludes(text, "never print it");
+});
+
+Deno.test("only the facts the scheduler picks are marked for a re-check, two at most", () => {
+  const today = "2026-10-18";
+  const old = ["2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04"].map((date, index) =>
+    makeFact("injury_limitation", `part ${index}`, `Part ${index} hurts`, { reconfirmOn: date })
+  );
+  const text = renderConfirmedFacts(old, today, 6000)!;
+  assertEquals(text.split("re-check, due since").length - 1, 2);
+  assertStringIncludes(text, "re-check, due since 2026-08-01");
+  assertStringIncludes(text, "re-check, due since 2026-08-02");
+  assertEquals(text.includes("due since 2026-08-03"), false);
 });

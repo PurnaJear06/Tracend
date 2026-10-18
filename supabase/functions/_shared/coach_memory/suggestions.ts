@@ -4,9 +4,9 @@
 // (Architecture 2 and 3). Two things produce suggestions: the deterministic reading of the
 // athlete's message (statements.ts, contradictions.ts) and, optionally, the model's own
 // `fact_suggestions`, which is checked against the closed vocabulary here.
-import { judgeClaim, oppositeKind } from "./contradictions.ts";
-import type { CoachFact } from "./facts.ts";
-import { claimToFact, extractClaims } from "./statements.ts";
+import { type ClaimVerdict, judgeClaim, oppositeKind } from "./contradictions.ts";
+import { type CoachFact, factsDueForReconfirm } from "./facts.ts";
+import { type ClaimFact, claimToFact, extractClaims, type StatementClaim } from "./statements.ts";
 import { flatten, normalizeText, sameSubject } from "./text.ts";
 import {
   type FactKind,
@@ -15,10 +15,10 @@ import {
   maxFactSubjectChars,
 } from "./vocabulary.ts";
 
-export const suggestionActions = ["add", "update", "resolve", "review"] as const;
+export const suggestionActions = ["add", "update", "resolve", "review", "reconfirm"] as const;
 export type SuggestionAction = typeof suggestionActions[number];
 
-/** What the model may ask for: it can add, update or close a fact, never "review" one. */
+/** What the model may ask for: it can add, update or close a fact, never "review" or "reconfirm". */
 const modelActions: readonly SuggestionAction[] = ["add", "update", "resolve"];
 
 export type FactSuggestion = Readonly<{
@@ -39,69 +39,109 @@ export type FactSuggestion = Readonly<{
 export const maxSuggestionsPerTurn = 2;
 export const maxModelSuggestions = 3;
 
+type Origin = FactSuggestion["origin"];
+
 /**
- * Suggestions from an athlete's message. A new fact is offered as "add"; a statement that
- * contradicts a confirmed fact is offered as "update" (or "resolve" when it says an injury has
- * healed, or "review" when it cuts across an allergy). A fact already saved is never offered again.
+ * The suggestion a claim's verdict calls for, or null when nothing needs the athlete's answer: a
+ * new fact is an "add"; a contradiction an "update" (a "resolve" when an injury has healed, a
+ * "review" when it cuts across an allergy); a fact already saved is not offered again, unless it
+ * is one of those due to be asked about and the athlete has just spoken of it ("reconfirm").
+ */
+function suggestionForVerdict(
+  claim: StatementClaim,
+  wanted: ClaimFact,
+  verdict: ClaimVerdict,
+  origin: Origin,
+  dueIds: ReadonlySet<string>,
+): FactSuggestion | null {
+  if (verdict.verdict === "known") {
+    const { fact } = verdict;
+    if (!fact || !dueIds.has(fact.id)) return null;
+    return {
+      action: "reconfirm",
+      kind: fact.kind,
+      subject: fact.subject,
+      statement: fact.statement,
+      factId: fact.id,
+      previous: fact.statement,
+      reason: `You confirmed “${
+        flatten(fact.statement, 120)
+      }” on ${fact.confirmedOn}. Is it still true?`,
+      origin,
+    };
+  }
+  if (verdict.verdict === "new") {
+    return {
+      action: "add",
+      ...wanted,
+      factId: null,
+      previous: null,
+      reason: origin === "coach"
+        ? "Coach noticed this in your conversation."
+        : "You said this in your message.",
+      origin,
+    };
+  }
+  const { fact } = verdict;
+  const saved = `“${flatten(fact.statement, 120)}”`;
+  if (verdict.resolves) {
+    return {
+      action: "resolve",
+      kind: fact.kind,
+      subject: fact.subject,
+      statement: fact.statement,
+      factId: fact.id,
+      previous: fact.statement,
+      reason: `You said this has healed. You confirmed ${saved} on ${fact.confirmedOn}.`,
+      origin,
+    };
+  }
+  if (verdict.review) {
+    return {
+      action: "review",
+      kind: fact.kind,
+      subject: fact.subject,
+      statement: fact.statement,
+      factId: fact.id,
+      previous: fact.statement,
+      reason: `This may not match ${saved}, which you confirmed on ${fact.confirmedOn}.`,
+      origin,
+    };
+  }
+  return {
+    action: "update",
+    ...wanted,
+    // Saying the opposite of a saved like or dislike stays in that fact's own domain.
+    kind: (claim.type === "like" || claim.type === "dislike") && oppositeKind[fact.kind]
+      ? oppositeKind[fact.kind]!
+      : wanted.kind,
+    factId: fact.id,
+    previous: fact.statement,
+    reason: `This differs from ${saved}, which you confirmed on ${fact.confirmedOn}.`,
+    origin,
+  };
+}
+
+/**
+ * Suggestions from an athlete's message (see suggestionForVerdict). `today` is the athlete's date:
+ * a statement about a saved fact that is due to be asked about again offers "still true?".
  */
 export function suggestFromStatement(
   message: string,
   facts: readonly CoachFact[],
+  today: string,
 ): FactSuggestion[] {
+  const dueIds = new Set(factsDueForReconfirm(facts, today).map((fact) => fact.id));
   const suggestions: FactSuggestion[] = [];
   for (const claim of extractClaims(message)) {
-    const verdict = judgeClaim(claim, facts);
-    if (verdict.verdict === "known") continue;
-    const wanted = claimToFact(claim);
-    if (verdict.verdict === "new") {
-      suggestions.push({
-        action: "add",
-        ...wanted,
-        factId: null,
-        previous: null,
-        reason: "You said this in your message.",
-        origin: "athlete_statement",
-      });
-      continue;
-    }
-    const { fact } = verdict;
-    const saved = `“${flatten(fact.statement, 120)}”`;
-    if (verdict.resolves) {
-      suggestions.push({
-        action: "resolve",
-        kind: fact.kind,
-        subject: fact.subject,
-        statement: fact.statement,
-        factId: fact.id,
-        previous: fact.statement,
-        reason: `You said this has healed. You confirmed ${saved} on ${fact.confirmedOn}.`,
-        origin: "athlete_statement",
-      });
-    } else if (verdict.review) {
-      suggestions.push({
-        action: "review",
-        kind: fact.kind,
-        subject: fact.subject,
-        statement: fact.statement,
-        factId: fact.id,
-        previous: fact.statement,
-        reason: `This may not match ${saved}, which you confirmed on ${fact.confirmedOn}.`,
-        origin: "athlete_statement",
-      });
-    } else {
-      suggestions.push({
-        action: "update",
-        ...wanted,
-        // Saying the opposite of a saved like or dislike stays in that fact's own domain.
-        kind: (claim.type === "like" || claim.type === "dislike") && oppositeKind[fact.kind]
-          ? oppositeKind[fact.kind]!
-          : wanted.kind,
-        factId: fact.id,
-        previous: fact.statement,
-        reason: `This differs from ${saved}, which you confirmed on ${fact.confirmedOn}.`,
-        origin: "athlete_statement",
-      });
-    }
+    const suggestion = suggestionForVerdict(
+      claim,
+      claimToFact(claim),
+      judgeClaim(claim, facts),
+      "athlete_statement",
+      dueIds,
+    );
+    if (suggestion) suggestions.push(suggestion);
   }
   return dedupe(suggestions).slice(0, maxSuggestionsPerTurn);
 }
@@ -135,6 +175,26 @@ export type ModelSuggestionsCheck = Readonly<{
   /** How many entries were refused, for the turn's log. */
   dropped: number;
 }>;
+
+const noDueFacts: ReadonlySet<string> = new Set();
+
+/** The claim a model's liking, dislike or allergy stands for, so it is judged like a statement. */
+function claimOfModelFact(kind: FactKind, subject: string): StatementClaim | null {
+  switch (kind) {
+    case "food_like":
+      return { type: "like", target: "food", subject };
+    case "food_dislike":
+      return { type: "dislike", target: "food", subject };
+    case "exercise_like":
+      return { type: "like", target: "exercise", subject };
+    case "exercise_dislike":
+      return { type: "dislike", target: "exercise", subject };
+    case "allergy":
+      return { type: "allergy", subject };
+    default:
+      return null;
+  }
+}
 
 const modelKeys = ["action", "kind", "subject", "statement", "fact_id"];
 const subjectText = /^[\p{L}\p{N}][\p{L}\p{N} '\-]*$/u;
@@ -179,24 +239,44 @@ function checkModelSuggestion(item: unknown, facts: readonly CoachFact[]): FactS
     : undefined;
   if (action === "add") {
     if (entry.fact_id !== undefined && entry.fact_id !== null) return null;
+    const wanted = { kind: entry.kind, subject, statement };
+    // A taste or an allergy is judged like the athlete's own statement: already saved is dropped,
+    // the opposite of a saved taste becomes an update, and one that cuts across an allergy is a
+    // review card, never an add.
+    const claim = claimOfModelFact(entry.kind, subject);
+    if (claim) {
+      return suggestionForVerdict(claim, wanted, judgeClaim(claim, facts), "coach", noDueFacts);
+    }
     const saved = facts.some((fact) =>
       fact.kind === entry.kind && sameSubject(fact.subject, subject)
     );
     if (saved) return null;
-    return {
-      action,
-      kind: entry.kind,
-      subject,
-      statement,
-      factId: null,
-      previous: null,
-      reason: "Coach noticed this in your conversation.",
-      origin: "coach",
-    };
+    return suggestionForVerdict(
+      { type: "equipment_has", subject },
+      wanted,
+      { verdict: "new" },
+      "coach",
+      noDueFacts,
+    );
   }
   if (!target) return null;
   if (action === "update" && normalizeText(statement) === normalizeText(target.statement)) {
     return null;
+  }
+  // An allergy is never changed or closed on the model's word: the athlete is asked to check it.
+  if (target.kind === "allergy") {
+    return {
+      action: "review",
+      kind: target.kind,
+      subject: target.subject,
+      statement: target.statement,
+      factId: target.id,
+      previous: target.statement,
+      reason: `Coach asks you to check “${
+        flatten(target.statement, 120)
+      }”, which you confirmed on ${target.confirmedOn}.`,
+      origin: "coach",
+    };
   }
   return {
     action,

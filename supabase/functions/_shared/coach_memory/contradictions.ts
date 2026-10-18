@@ -5,7 +5,6 @@
 // subject words, the opposite polarity, the other side of a number.
 import type { CoachFact } from "./facts.ts";
 import {
-  claimToFact,
   daysPerWeekIn,
   minutesIn,
   type StatementClaim,
@@ -18,7 +17,11 @@ import type { FactKind } from "./vocabulary.ts";
 
 export type ClaimVerdict =
   | Readonly<{ verdict: "new" }>
-  | Readonly<{ verdict: "known" }>
+  | Readonly<{
+    verdict: "known";
+    /** The saved fact that already holds this (null when there is nothing to save). */
+    fact: CoachFact | null;
+  }>
   | Readonly<{
     verdict: "conflict";
     fact: CoachFact;
@@ -27,6 +30,12 @@ export type ClaimVerdict =
     /** The claim cuts across a safety fact (an allergy): the athlete is asked, nothing replaces it. */
     review: boolean;
   }>;
+
+/** "Known" through the saved fact that holds it; one with a re-confirm date is preferred. */
+function knownVia(facts: readonly CoachFact[]): ClaimVerdict {
+  if (facts.length === 0) return { verdict: "new" };
+  return { verdict: "known", fact: facts.find((fact) => fact.reconfirmOn !== null) ?? facts[0] };
+}
 
 const conflict = (fact: CoachFact, resolves = false, review = false): ClaimVerdict => ({
   verdict: "conflict",
@@ -85,30 +94,38 @@ const preferenceKinds: Readonly<Record<string, readonly FactKind[]>> = {
   ],
 };
 
+/** Whether a saved vague preference reads as a like or a dislike, from the words Tracend writes. */
+function statedPolarity(fact: CoachFact): "like" | "dislike" | null {
+  const text = normalizeText(fact.statement);
+  if (/^(?:dislikes|hates|avoids|doesn't like|does not like)\b/.test(text)) return "dislike";
+  if (/^(?:likes|loves|enjoys|prefers)\b/.test(text)) return "like";
+  return null;
+}
+
 function judgePreference(
   claim: Extract<StatementClaim, { type: "like" | "dislike" }>,
   facts: readonly CoachFact[],
 ): ClaimVerdict {
-  const wanted = claimToFact(claim);
-  let known = false;
+  const known: CoachFact[] = [];
   for (const fact of facts) {
     if (!preferenceKinds[claim.target].includes(fact.kind)) continue;
     if (!sameSubject(fact.subject, claim.subject)) continue;
     if (fact.kind === "allergy") {
       if (claim.type === "like") return conflict(fact, false, true);
-      known = true;
+      known.push(fact);
     } else if (fact.kind === "other_preference") {
-      if (normalizeText(fact.statement) !== normalizeText(wanted.statement)) {
-        return conflict(fact);
-      }
-      known = true;
+      // A migrated or typed preference has no like or dislike of its own: only one that says so
+      // can be contradicted, and the same subject alone is not a contradiction.
+      const stated = statedPolarity(fact);
+      if (stated !== null && stated !== claim.type) return conflict(fact);
+      known.push(fact);
     } else if (polarityOf(fact.kind) === claim.type) {
-      known = true;
+      known.push(fact);
     } else {
       return conflict(fact);
     }
   }
-  return { verdict: known ? "known" : "new" };
+  return knownVia(known);
 }
 
 function judgeEquipment(
@@ -117,18 +134,18 @@ function judgeEquipment(
 ): ClaimVerdict {
   const setting = claimSetting(claim);
   const wantsHas = claim.type === "equipment_has";
-  let known = false;
+  const known: CoachFact[] = [];
   for (const fact of facts.filter((candidate) => candidate.kind === "equipment")) {
     const factSetting = settingOf(fact);
     if (setting !== null && factSetting !== null && factSetting !== setting) return conflict(fact);
     if (sameSubject(fact.subject, claim.subject)) {
       if (lacks(fact) === wantsHas) return conflict(fact);
-      known = true;
+      known.push(fact);
     } else if (setting !== null && factSetting === setting) {
-      known = true;
+      known.push(fact);
     }
   }
-  return { verdict: known ? "known" : "new" };
+  return knownVia(known);
 }
 
 const negativeSchedule =
@@ -141,41 +158,41 @@ function judgeSchedule(
   >,
   facts: readonly CoachFact[],
 ): ClaimVerdict {
-  let known = false;
+  const known: CoachFact[] = [];
   for (const fact of facts.filter((candidate) => candidate.kind === "schedule_constraint")) {
     const text = factText(fact);
     if (claim.type === "schedule_days") {
       const days = daysPerWeekIn(text);
       if (days === null) continue;
       if (days !== claim.days) return conflict(fact);
-      known = true;
+      known.push(fact);
     } else if (claim.type === "schedule_minutes") {
       const minutes = minutesIn(text);
       if (minutes === null) continue;
       if (minutes !== claim.minutes) return conflict(fact);
-      known = true;
+      known.push(fact);
     } else {
       const named = weekdaysIn(text);
       const overlap = claim.weekdays.filter((day) => named.includes(day));
       if (overlap.length === 0) continue;
       if (!negativeSchedule.test(normalizeText(text))) return conflict(fact);
-      known = known || overlap.length === claim.weekdays.length;
+      if (overlap.length === claim.weekdays.length) known.push(fact);
     }
   }
-  return { verdict: known ? "known" : "new" };
+  return knownVia(known);
 }
 
 function judgeStyle(
   claim: Extract<StatementClaim, { type: "style" }>,
   facts: readonly CoachFact[],
 ): ClaimVerdict {
-  let known = false;
+  const known: CoachFact[] = [];
   for (const fact of facts.filter((candidate) => candidate.kind === "coaching_style")) {
     const styles = stylesOf(factText(fact));
     if (styles.includes(styleOpposite[claim.style])) return conflict(fact);
-    if (styles.includes(claim.style)) known = true;
+    if (styles.includes(claim.style)) known.push(fact);
   }
-  return { verdict: known ? "known" : "new" };
+  return knownVia(known);
 }
 
 /** What one claim means against the facts the athlete has confirmed. */
@@ -185,25 +202,26 @@ export function judgeClaim(claim: StatementClaim, facts: readonly CoachFact[]): 
     case "dislike":
       return judgePreference(claim, facts);
     case "allergy": {
-      let known = false;
+      const known: CoachFact[] = [];
       for (const fact of facts) {
         if (!sameSubject(fact.subject, claim.subject)) continue;
-        if (fact.kind === "allergy") known = true;
+        if (fact.kind === "allergy") known.push(fact);
         else if (fact.kind === "food_like") return conflict(fact);
       }
-      return { verdict: known ? "known" : "new" };
+      return knownVia(known);
     }
     case "injury": {
-      const saved = facts.some((fact) =>
-        fact.kind === "injury_limitation" && sameSubject(fact.subject, claim.subject)
+      return knownVia(
+        facts.filter((fact) =>
+          fact.kind === "injury_limitation" && sameSubject(fact.subject, claim.subject)
+        ),
       );
-      return { verdict: saved ? "known" : "new" };
     }
     case "injury_resolved": {
       const saved = facts.find((fact) =>
         fact.kind === "injury_limitation" && sameSubject(fact.subject, claim.subject)
       );
-      return saved ? conflict(saved, true) : { verdict: "known" };
+      return saved ? conflict(saved, true) : { verdict: "known", fact: null };
     }
     case "equipment_has":
     case "equipment_lacks":

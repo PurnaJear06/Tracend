@@ -38,7 +38,7 @@ export const factSuggestionContract = "\n# Suggesting something to remember\n" +
   `- subject is a short lower-case label of at most ${maxFactSubjectChars} characters ("left knee", ` +
   `"mushrooms", "weekends"); statement is one plain sentence of at most ${maxFactStatementChars} ` +
   "characters in the athlete's own terms, with no numbers they did not say.\n" +
-  "- fact_id is the id shown next to a confirmed fact, and only for update and resolve; leave it out for add.\n" +
+  "- fact_id is the id in square brackets before a confirmed fact, and only for update and resolve; leave it out for add.\n" +
   "- Suggest only what the athlete said in this conversation. Never suggest from a note, from the library or from your own inference. Never suggest a goal, a target, a medical condition, a medication or a body measurement: those have their own places.\n" +
   "- When the athlete's message contradicts a confirmed fact, say so in the answer and ask whether to update it; do not act as if it had changed.\n" +
   "- Leave fact_suggestions out when there is nothing to suggest, which is most turns.\n";

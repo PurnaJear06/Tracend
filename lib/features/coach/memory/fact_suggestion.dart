@@ -13,7 +13,11 @@ enum CoachFactSuggestionAction {
 
   /// The message may not match a saved fact (an allergy). Nothing is offered
   /// to save; the athlete is told so and can change the fact in Account.
-  review;
+  review,
+
+  /// A saved fact that is due to be asked about again and that the athlete
+  /// has just spoken of: "is it still true?".
+  reconfirm;
 
   static CoachFactSuggestionAction? fromWire(Object? wire) {
     for (final action in values) {

@@ -54,11 +54,20 @@ Deno.test("an unclassified liking is judged against food and exercise facts alik
   assertEquals(kind(verdict("I love early mornings", dislike)), "conflict");
 });
 
-Deno.test("an older vague preference is replaced by a clearer statement, not repeated", () => {
+Deno.test("a migrated preference with no like or dislike in it is never contradicted by its subject alone", () => {
   const legacy = makeFact("other_preference", "mushrooms", "mushrooms");
-  assertEquals(kind(verdict("I hate mushrooms", legacy)), "conflict");
+  assertEquals(kind(verdict("I hate mushrooms", legacy)), "known");
+  assertEquals(kind(verdict("I love mushrooms", legacy)), "known");
+  const typed = makeFact("other_preference", "mushrooms", "I don't eat mushrooms");
+  assertEquals(kind(verdict("I don't eat mushrooms", typed)), "known");
+});
+
+Deno.test("a vague preference that says like or dislike is judged by it", () => {
   const same = makeFact("other_preference", "early mornings", "Dislikes early mornings");
   assertEquals(kind(verdict("I can't stand early mornings", same)), "known");
+  assertEquals(kind(verdict("I love early mornings", same)), "conflict");
+  const liked = makeFact("other_preference", "early mornings", "Likes early mornings");
+  assertEquals(kind(verdict("I can't stand early mornings", liked)), "conflict");
 });
 
 Deno.test("an allergy is never overridden by a liking: the athlete is asked", () => {

@@ -104,13 +104,13 @@ const preface = "The athlete confirmed these facts about themselves; each line s
   "They rank above the Coach's notes, earlier chat messages and the library, and below Tracend's " +
   "own calculations. Respect them in every answer. When the athlete's message contradicts one, " +
   "say so and ask whether to update it; never act as if it had changed. Only the athlete can " +
-  'change a fact; you cannot. A line marked "re-check" is old: ask about it once, briefly, if it ' +
-  "matters to the question.";
+  "change a fact; you cannot. The id in square brackets is for fact_suggestions only: never " +
+  'print it. A line marked "re-check" is old: ask about it once, briefly, if it matters to the ' +
+  "question.";
 
-function factLine(fact: CoachFact, today: string): string {
-  const due = fact.reconfirmOn !== null && fact.reconfirmOn <= today;
+function factLine(fact: CoachFact, due: boolean): string {
   const marker = due ? `; re-check, due since ${fact.reconfirmOn}` : "";
-  return `- ${flatten(fact.statement, 200)} (confirmed ${fact.confirmedOn}, ${
+  return `- [${fact.id}] ${flatten(fact.statement, 200)} (confirmed ${fact.confirmedOn}, ${
     factSourceLabels[fact.source]
   }${marker})`;
 }
@@ -127,10 +127,12 @@ export function renderConfirmedFacts(
   budgetChars: number,
 ): string | null {
   if (facts.length === 0) return null;
+  // Only the facts the scheduler picks (at most two) are marked for a re-check.
+  const dueIds = new Set(factsDueForReconfirm(facts, today).map((fact) => fact.id));
   const entries = renderOrder.flatMap((kind) =>
     facts.filter((fact) => fact.kind === kind).toSorted((a, b) =>
       a.confirmedOn.localeCompare(b.confirmedOn) || a.id.localeCompare(b.id)
-    ).map((fact) => ({ kind, line: factLine(fact, today) }))
+    ).map((fact) => ({ kind, line: factLine(fact, dueIds.has(fact.id)) }))
   );
   const render = (count: number) => {
     const lines: string[] = [];

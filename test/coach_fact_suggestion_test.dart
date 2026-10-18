@@ -108,7 +108,20 @@ class _Memory implements CoachMemoryRepository {
   }
 
   @override
-  Future<CoachFact> reconfirmFact(String factId) => throw UnimplementedError();
+  Future<CoachFact> reconfirmFact(String factId) async {
+    calls.add('reconfirm $factId');
+    if (failure != null) throw failure!;
+    return CoachFact(
+      id: factId,
+      lineageId: factId,
+      version: 2,
+      kind: CoachFactKind.injuryLimitation,
+      subject: 'left knee',
+      statement: 'Left knee pain',
+      source: CoachFactSource.athleteTyped,
+      confirmedAt: _when,
+    );
+  }
 
   @override
   Future<void> deleteFact(String factId) async {
@@ -254,6 +267,27 @@ void main() {
       expect(find.text('“Left knee pain”'), findsOneWidget);
     });
 
+    testWidgets('a still-true card names the saved words and asks', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        _wire(
+          action: 'reconfirm',
+          kind: 'injury_limitation',
+          statement: 'Left knee pain',
+          factId: 'f1',
+          previous: 'Left knee pain',
+          reason:
+              'You confirmed “Left knee pain” on 2026-09-02. Is it still true?',
+        ),
+      );
+      expect(find.text('Still true?'), findsOneWidget);
+      expect(find.text('“Left knee pain”'), findsOneWidget);
+      expect(find.textContaining('Is it still true?'), findsOneWidget);
+      expect(find.text('Confirm'), findsOneWidget);
+    });
+
     testWidgets('a review offers nothing to save, only OK', (tester) async {
       await show(
         tester,
@@ -357,6 +391,27 @@ void main() {
       expect(memory.calls, ['delete f9']);
       await tester.pumpAndSettle(TracendToast.visibleFor);
     });
+
+    testWidgets(
+      'a still-true card confirms the fact again, saving no new words',
+      (tester) async {
+        final memory = _Memory();
+        await _ask(tester, [
+          _wire(
+            action: 'reconfirm',
+            kind: 'injury_limitation',
+            statement: 'Left knee pain',
+            factId: 'f7',
+            previous: 'Left knee pain',
+          ),
+        ], memory);
+        await tester.tap(find.text('Confirm'));
+        await tester.pumpAndSettle();
+        expect(memory.calls, ['reconfirm f7']);
+        expect(find.text('Still true?'), findsNothing);
+        await tester.pumpAndSettle(TracendToast.visibleFor);
+      },
+    );
 
     testWidgets('a failed save keeps the card and says nothing was changed', (
       tester,

@@ -16,7 +16,8 @@
 --    create_coach_thread_v2         opens one; get_my_coach_threads reports the flag
 -- 2. coach_facts                    the confirmed facts, RLS, athlete RPCs and the backfill of the
 --                                   confirmed preferences
--- 3. coach_notes                    the notes, RLS, service RPCs, cap and decay, follow-through
+-- 3. coach_notes                    the notes, RLS, service RPCs, cap and decay, follow-through;
+--                                   change_proposals.memory_noted_at and source_remembered
 -- 4. get_my_coach_memory_v1 and the athlete's controls (edit, re-confirm, delete, forget all)
 -- 5. get_coach_memory_context_v1    what the Coach contributors read (service role)
 -- 6. coach_lookup_past_messages_v1  raw message search, a Coach lookup (service role)
@@ -391,11 +392,29 @@ begin
   on conflict (proposal_id) where proposal_id is not null do nothing
   returning id into new_id;
 
+  if p_proposal_id is not null then
+    update public.change_proposals set memory_noted_at = coalesce(memory_noted_at, now())
+    where id = p_proposal_id and user_id = p_user_id;
+  end if;
+
+  -- The 20 newest notes stay. A note still waiting for its follow-through check (a training-days
+  -- commitment under 35 days old) stays too, up to the 10 newest, so a busy athlete's commitments
+  -- are not pushed out before the week they promised has been checked.
   delete from public.coach_notes n
   where n.user_id = p_user_id and (
     n.expires_at <= statement_timestamp()
-    or n.id in (select k.id from public.coach_notes k where k.user_id = p_user_id
-      order by k.created_at desc, k.id desc offset 20));
+    or n.id in (
+      select ranked.id from (
+        select k.id, k.waiting,
+          row_number() over (partition by k.waiting order by k.created_at desc, k.id desc) as place
+        from (
+          select c.id, c.created_at,
+            (c.follow_through is null and c.note_date >= statement_timestamp()::date - 35
+              and exists (select 1 from jsonb_array_elements(c.commitments || c.advice) e
+                where e ->> 'kind' = 'train_days')) as waiting
+          from public.coach_notes c where c.user_id = p_user_id) k
+      ) ranked
+      where (ranked.waiting and ranked.place > 10) or (not ranked.waiting and ranked.place > 20)));
 
   return jsonb_build_object('schema_version', '1.0', 'stored', new_id is not null,
     'note_id', new_id, 'reason', case when new_id is null then 'already_noted' end);
@@ -405,8 +424,35 @@ revoke all on function public.persist_coach_note_v1(uuid, uuid, text, date, text
 grant execute on function public.persist_coach_note_v1(uuid, uuid, text, date, text, text[], text[],
   jsonb, jsonb, uuid[], uuid) to service_role;
 
--- Proposals the athlete has answered (or that lapsed) in the last 30 days and that have no note
--- yet, newest first. A proposal made in a conversation that is not remembered is skipped.
+-- Whether a proposal has been turned into a note, and whether it was made in a conversation Coach
+-- may remember. memory_noted_at is set when the note is first written (or when the athlete forgets
+-- everything) and never cleared, so deleting a note, the 20-note cap or "Forget everything" can
+-- never bring a note back. source_remembered is copied from the conversation when the proposal is
+-- linked to its reply, so it still holds after the conversation is deleted.
+alter table public.change_proposals
+  add column memory_noted_at timestamptz,
+  add column source_remembered boolean not null default true;
+
+create function private.copy_proposal_source_remembered()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if new.source_message_id is not null then
+    new.source_remembered := coalesce((
+      select t.remember from public.coach_messages m
+      join public.coach_threads t on t.id = m.thread_id and t.user_id = m.user_id
+      where m.id = new.source_message_id and m.user_id = new.user_id), new.source_remembered);
+  end if;
+  return new;
+end $$;
+revoke all on function private.copy_proposal_source_remembered() from public, anon, authenticated;
+
+create trigger change_proposals_source_remembered
+  before insert or update of source_message_id on public.change_proposals
+  for each row execute function private.copy_proposal_source_remembered();
+
+-- Proposals the athlete has answered (or that lapsed) in the last 30 days and that have not been
+-- turned into a note, newest first. A proposal made in a conversation that is not remembered is
+-- skipped, even after that conversation is deleted.
 create function public.get_unnoted_coach_proposals_v1(p_user_id uuid, p_limit integer default 5)
 returns jsonb language sql stable security definer set search_path = '' as $$
   select jsonb_build_object('schema_version', '1.0', 'proposals', coalesce(jsonb_agg(
@@ -433,12 +479,10 @@ returns jsonb language sql stable security definer set search_path = '' as $$
     from public.change_proposals c
     left join public.change_responses resp on resp.proposal_id = c.id and resp.user_id = c.user_id
     left join public.coach_messages m on m.id = c.source_message_id and m.user_id = c.user_id
-    left join public.coach_threads t on t.id = m.thread_id and t.user_id = m.user_id
     where c.user_id = p_user_id and c.schema_version = '3.0'
       and (c.status <> 'pending' or c.expires_at <= statement_timestamp())
       and c.created_at > statement_timestamp() - interval '30 days'
-      and not exists (select 1 from public.coach_notes n where n.proposal_id = c.id)
-      and (t.id is null or t.remember)
+      and c.memory_noted_at is null and c.source_remembered
     order by c.created_at desc
     limit greatest(1, least(coalesce(p_limit, 5), 10))
   ) r;
@@ -448,7 +492,7 @@ revoke all on function public.get_unnoted_coach_proposals_v1(uuid, integer)
 grant execute on function public.get_unnoted_coach_proposals_v1(uuid, integer) to service_role;
 
 -- Notes that carry a checkable training commitment (the athlete's "I'll train 4 days" or an approved
--- schedule), a full week old and not yet checked, with the sessions completed in the week after the
+-- schedule), whose week after the note has fully passed, not yet checked, with the sessions completed in the week after the
 -- note. Only training days are checked; every other commitment stays unchecked.
 create function public.get_coach_follow_through_inputs_v1(p_user_id uuid, p_today date)
 returns jsonb language sql stable security definer set search_path = '' as $$
@@ -471,7 +515,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
     where t.target is not null
       and n.user_id = p_user_id and n.follow_through is null
       and n.expires_at > statement_timestamp()
-      and n.note_date + 7 <= p_today and n.note_date >= p_today - 28
+      and n.note_date + 7 < p_today and n.note_date >= p_today - 28
     order by n.note_date
     limit 5
   ) c;
@@ -552,6 +596,18 @@ begin
   delete from public.user_preferences where user_id = me;
   delete from public.coach_session_summaries where user_id = me;
   delete from public.coach_narrative_entries where user_id = me;
+  -- Answered proposals are not turned into notes again, and the stored copies of the older memory
+  -- sections are removed from the athlete's prepared contexts.
+  update public.change_proposals set memory_noted_at = coalesce(memory_noted_at, now())
+  where user_id = me and schema_version = '3.0' and memory_noted_at is null
+    and (status <> 'pending' or expires_at <= statement_timestamp());
+  update public.coach_context_snapshots s
+  set context = s.context - 'session_journal' - 'active_preferences' - 'coaching_narrative',
+    context_checksum = encode(extensions.digest(convert_to(
+      (s.context - 'session_journal' - 'active_preferences' - 'coaching_narrative')::text,
+      'UTF8'), 'sha256'), 'hex')
+  where s.user_id = me and s.context ?| array['session_journal', 'active_preferences',
+    'coaching_narrative'];
   insert into public.audit_events(user_id, action_code, target_type, target_id, outcome, metadata)
   values (me, 'coach.memory.forgotten', 'coach_memory', me, 'succeeded',
     jsonb_build_object('schema_version', '1.0', 'facts', facts_removed, 'notes', notes_removed));

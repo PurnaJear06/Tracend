@@ -1,5 +1,5 @@
 begin;
-select plan(137);
+select plan(151);
 
 -- A10 part 2: Coach memory with athlete controls (migration 20261018150020).
 -- Confirmed facts (versioned, athlete-written), Coach notes (server-written, capped), conversations
@@ -332,6 +332,40 @@ select is((select count(*) from public.coach_notes where proposal_id = 'a1020000
   'in one row');
 select is(jsonb_array_length(public.get_unnoted_coach_proposals_v1('a1020000-0000-4000-8000-000000000001') -> 'proposals'), 0,
   'and it is no longer waiting');
+select ok((select memory_noted_at is not null from public.change_proposals where id = 'a1020000-0000-4000-8000-0000000000c1'),
+  'the proposal remembers that it was turned into a note');
+
+-- A note the athlete deletes, or the cap drops, is not made again.
+reset role;
+delete from public.coach_notes where proposal_id = 'a1020000-0000-4000-8000-0000000000c1';
+set local role service_role;
+select is(jsonb_array_length(public.get_unnoted_coach_proposals_v1('a1020000-0000-4000-8000-000000000001') -> 'proposals'), 0,
+  'a deleted advice note does not come back');
+
+-- A proposal made in a conversation that is not remembered stays out after that conversation is deleted.
+reset role;
+insert into public.coach_threads(id, user_id, title, remember)
+values ('a1020000-0000-4000-8000-0000000000c9', 'a1020000-0000-4000-8000-000000000001', 'Private two', false);
+insert into public.coach_messages(id, user_id, thread_id, role, content)
+values ('a1020000-0000-4000-8000-0000000000c8', 'a1020000-0000-4000-8000-000000000001',
+  'a1020000-0000-4000-8000-0000000000c9', 'assistant', 'A private proposal');
+insert into public.change_proposals(id, user_id, feature_snapshot_id, schema_version, proposed_training,
+  proposed_nutrition, evidence, rationale, expected_benefit, downside, confidence, effective_date, expires_at,
+  status, proposal_kind, proposal_payload, before_snapshot, after_snapshot, basis, source_message_id)
+values ('a1020000-0000-4000-8000-0000000000c5', 'a1020000-0000-4000-8000-000000000001', null, '3.0',
+  '{"proposal_kind": "nutrition_targets", "title": "Private two change"}',
+  '{"calories": 2000, "protein_g": 150, "carbohydrate_g": 200, "fat_g": 60}', '[]', 'Why', 'Benefit',
+  'Downside', 'medium', current_date, now() + interval '3 days', 'accepted', 'nutrition_targets',
+  '{"nutrition": {"calories": 2000, "protein_g": 150, "carbohydrate_g": 200, "fat_g": 60, "rationale": "Because"}}',
+  '{}', '{}', '{}', 'a1020000-0000-4000-8000-0000000000c8');
+select ok(not (select source_remembered from public.change_proposals where id = 'a1020000-0000-4000-8000-0000000000c5'),
+  'a proposal copies whether its conversation is remembered');
+delete from public.coach_threads where id = 'a1020000-0000-4000-8000-0000000000c9';
+select ok((select source_message_id is null and not source_remembered from public.change_proposals
+    where id = 'a1020000-0000-4000-8000-0000000000c5'), 'and keeps it after the conversation is deleted');
+set local role service_role;
+select is(jsonb_array_length(public.get_unnoted_coach_proposals_v1('a1020000-0000-4000-8000-000000000001') -> 'proposals'), 0,
+  'so it is never turned into a note');
 
 -- Follow-through ---------------------------------------------------------------------------------------------
 
@@ -369,6 +403,20 @@ select is((select jsonb_array_length(j -> 'checks') from r where name = 'checks'
   'and only notes with a checkable training target are listed');
 select is(jsonb_array_length(public.get_coach_follow_through_inputs_v1('a1020000-0000-4000-8000-000000000001', current_date - 3) -> 'checks'),
   0, 'a week that has not passed is not checked yet');
+insert into r select 'edge_note', public.persist_coach_note_v1('a1020000-0000-4000-8000-000000000001', null, 'advice',
+  current_date - 7, 'Edge week', '{}', '{}',
+  '[{"code": "training_schedule", "summary": "Edge", "outcome": "accepted", "kind": "train_days", "target": 2}]', '[]', '{}');
+select is((select count(*) from jsonb_array_elements(public.get_coach_follow_through_inputs_v1(
+    'a1020000-0000-4000-8000-000000000001', current_date) -> 'checks') c
+    where c ->> 'note_id' = (select j ->> 'note_id' from r where name = 'edge_note')), 0::bigint,
+  'the week after a note is checked only once its last day is over');
+select is((select count(*) from jsonb_array_elements(public.get_coach_follow_through_inputs_v1(
+    'a1020000-0000-4000-8000-000000000001', current_date + 1) -> 'checks') c
+    where c ->> 'note_id' = (select j ->> 'note_id' from r where name = 'edge_note')), 1::bigint,
+  'and the day after it is');
+reset role;
+delete from public.coach_notes where summary = 'Edge week';
+set local role service_role;
 insert into r select 'recorded', public.record_coach_note_follow_through_v1('a1020000-0000-4000-8000-000000000001',
   (select (j ->> 'note_id')::uuid from r where name = 'train_note'), 'partly', current_date, '2 of 3 sessions');
 select is((select j ->> 'recorded' from r where name = 'recorded'), 'true', 'a result is recorded once');
@@ -378,6 +426,21 @@ select is(jsonb_array_length(public.get_coach_follow_through_inputs_v1('a1020000
   0, 'and the note is not checked again');
 select throws_ok($$select public.record_coach_note_follow_through_v1('a1020000-0000-4000-8000-000000000001',
     gen_random_uuid(), 'unknown', current_date, 'x')$$, '22023', null, 'a status outside the list is refused');
+
+-- A commitment waiting for its check survives the cap ----------------------------------------------------------
+
+insert into r select 'promise', public.persist_coach_note_v1('a1020000-0000-4000-8000-000000000001', null, 'advice',
+  current_date - 1, 'Promised four days', '{}', '{}', '[]',
+  '[{"text": "train 4 days this week", "kind": "train_days", "target": 4}]', '{}');
+insert into r select 'filler ' || n, public.persist_coach_note_v1('a1020000-0000-4000-8000-000000000001', null, 'advice',
+  current_date, 'Filler ' || n, '{}', '{}', '[]', '[]', '{}') from generate_series(1, 25) n;
+select is((select count(*) from public.coach_notes where summary = 'Promised four days'), 1::bigint,
+  'a note awaiting its follow-through check is kept when 25 newer notes arrive');
+select is((select count(*) from public.coach_notes where summary like 'Filler %'), 20::bigint,
+  'and the other notes still stop at the 20 newest');
+reset role;
+delete from public.coach_notes where summary in ('Promised four days') or summary like 'Filler %';
+set local role service_role;
 
 -- Raw message search ----------------------------------------------------------------------------------------
 
@@ -467,11 +530,50 @@ insert into public.user_preferences(user_id, category, key, value, provenance)
 values ('a1020000-0000-4000-8000-000000000001', 'food', 'old', 'old preference', 'chat_statement');
 insert into public.coach_session_summaries(user_id, coaching_date, summary)
 values ('a1020000-0000-4000-8000-000000000001', current_date, 'old summary');
+reset role;
+update public.coach_context_snapshots
+set context = context || '{"session_journal": [{"summary": "old"}], "active_preferences": [{"value": "x"}], "coaching_narrative": {"phase": "x"}}'::jsonb
+where user_id = 'a1020000-0000-4000-8000-000000000003';
+select ok((select bool_and(context ?& array['session_journal', 'active_preferences', 'coaching_narrative'])
+    from public.coach_context_snapshots where user_id = 'a1020000-0000-4000-8000-000000000003'),
+  'a stored context holds the older memory sections');
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'a1020000-0000-4000-8000-000000000003';
+insert into r select 'forgot3', public.forget_coach_memory_v1();
+reset role;
+select ok((select not bool_or(context ?| array['session_journal', 'active_preferences', 'coaching_narrative'])
+    from public.coach_context_snapshots where user_id = 'a1020000-0000-4000-8000-000000000003'),
+  'forgetting everything removes them from the stored contexts');
+select ok((select bool_and(context_checksum = encode(extensions.digest(convert_to(context::text, 'UTF8'), 'sha256'), 'hex'))
+    from public.coach_context_snapshots where user_id = 'a1020000-0000-4000-8000-000000000003'),
+  'and the stored checksum still matches');
 set local role authenticated;
 set local "request.jwt.claim.sub" = 'a1020000-0000-4000-8000-000000000002';
 insert into r select 'rice', public.save_coach_fact_v1('food_like', 'rice', 'Likes rice');
 set local "request.jwt.claim.sub" = 'a1020000-0000-4000-8000-000000000001';
+reset role;
+insert into public.change_proposals(id, user_id, feature_snapshot_id, schema_version, proposed_training,
+  proposed_nutrition, evidence, rationale, expected_benefit, downside, confidence, effective_date, expires_at,
+  status, proposal_kind, proposal_payload, before_snapshot, after_snapshot, basis, source_message_id)
+values ('a1020000-0000-4000-8000-0000000000c6', 'a1020000-0000-4000-8000-000000000001', null, '3.0',
+  '{"proposal_kind": "nutrition_targets", "title": "Answered before forgetting"}',
+  '{"calories": 2000, "protein_g": 150, "carbohydrate_g": 200, "fat_g": 60}', '[]', 'Why', 'Benefit',
+  'Downside', 'medium', current_date, now() + interval '3 days', 'accepted', 'nutrition_targets',
+  '{"nutrition": {"calories": 2000, "protein_g": 150, "carbohydrate_g": 200, "fat_g": 60, "rationale": "Because"}}',
+  '{}', '{}', '{}', null);
+set local role service_role;
+select is(jsonb_array_length(public.get_unnoted_coach_proposals_v1('a1020000-0000-4000-8000-000000000001') -> 'proposals'), 1,
+  'an answered proposal is waiting for its note');
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'a1020000-0000-4000-8000-000000000001';
 insert into r select 'forgot', public.forget_coach_memory_v1();
+reset role;
+set local role service_role;
+select is(jsonb_array_length(public.get_unnoted_coach_proposals_v1('a1020000-0000-4000-8000-000000000001') -> 'proposals'), 0,
+  'forgetting everything does not leave it to be written afterwards');
+reset role;
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'a1020000-0000-4000-8000-000000000001';
 select is((select array_agg(k order by k) from jsonb_object_keys((select j from r where name = 'forgot')) k),
   array['facts_deleted', 'notes_deleted', 'schema_version'], 'forgetting answers with exactly its contract keys');
 select ok((select (j ->> 'facts_deleted')::int > 0 and (j ->> 'notes_deleted')::int > 0 from r where name = 'forgot'),

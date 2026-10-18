@@ -89,14 +89,18 @@ Deno.test("injuries name the body part and its side", () => {
   assertEquals(claims("I have knee pain"), [{ type: "injury", subject: "knee" }]);
   assertEquals(claims("I have a pain in my wrist"), [{ type: "injury", subject: "wrist" }]);
   assertEquals(claims("I strained my hamstring"), [{ type: "injury", subject: "hamstring" }]);
-  assertEquals(claims("my elbow is sore"), [{ type: "injury", subject: "elbow" }]);
+  assertEquals(claims("my elbow aches"), [{ type: "injury", subject: "elbow" }]);
+  // Plain soreness is not an injury.
+  assertEquals(claims("my quads are sore"), []);
+  assertEquals(claims("I have a sore back"), []);
 });
 
 Deno.test("a healed injury is a resolution, not a new injury", () => {
   const resolved = (text: string, subject: string) =>
     assertEquals(claims(text), [{ type: "injury_resolved", subject }], text);
   resolved("my knee is fine now", "knee");
-  resolved("my left knee feels better", "left knee");
+  // "Better" is not healed.
+  assertEquals(claims("my left knee feels better"), []);
   resolved("my shoulder doesn't hurt anymore", "shoulder");
   resolved("no more back pain", "back");
   resolved("my ankle injury has healed", "ankle");

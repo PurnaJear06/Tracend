@@ -12,8 +12,12 @@ import {
   suggestionToWire,
 } from "./suggestions.ts";
 
+const today = "2026-10-18";
+const suggest = (message: string, facts: Parameters<typeof suggestFromStatement>[1]) =>
+  suggestFromStatement(message, facts, today);
+
 Deno.test("a new statement is offered as an add and nothing is stored", () => {
-  const [suggestion] = suggestFromStatement("I hate mushrooms", []);
+  const [suggestion] = suggest("I hate mushrooms", []);
   assertEquals(
     [suggestion.action, suggestion.kind, suggestion.subject, suggestion.statement],
     ["add", "food_dislike", "mushrooms", "Dislikes mushrooms"],
@@ -26,10 +30,10 @@ Deno.test("a new statement is offered as an add and nothing is stored", () => {
 });
 
 Deno.test("the owner's cases: squats are an exercise, weekends are a schedule", () => {
-  assertEquals(suggestFromStatement("I don't like squats", []).map((s) => s.kind), [
+  assertEquals(suggest("I don't like squats", []).map((s) => s.kind), [
     "exercise_dislike",
   ]);
-  assertEquals(suggestFromStatement("I don't have time on weekends", []).map((s) => s.kind), [
+  assertEquals(suggest("I don't have time on weekends", []).map((s) => s.kind), [
     "schedule_constraint",
   ]);
 });
@@ -38,7 +42,7 @@ Deno.test("a statement that contradicts a confirmed fact is an update that names
   const saved = makeFact("food_dislike", "mushrooms", "Dislikes mushrooms", {
     confirmedOn: "2026-09-02",
   });
-  const [suggestion] = suggestFromStatement("Actually I love mushrooms now", [saved]);
+  const [suggestion] = suggest("Actually I love mushrooms now", [saved]);
   assertEquals(suggestion.action, "update");
   assertEquals(suggestion.kind, "food_like");
   assertEquals(suggestion.statement, "Likes mushrooms");
@@ -50,13 +54,13 @@ Deno.test("a statement that contradicts a confirmed fact is an update that names
 
 Deno.test("an update to a liking about something unclassified keeps the saved fact's domain", () => {
   const saved = makeFact("exercise_dislike", "early mornings", "Dislikes early mornings");
-  const [suggestion] = suggestFromStatement("I love early mornings", [saved]);
+  const [suggestion] = suggest("I love early mornings", [saved]);
   assertEquals([suggestion.action, suggestion.kind], ["update", "exercise_like"]);
 });
 
 Deno.test("a healed injury is offered as a resolve of the saved fact", () => {
   const saved = makeFact("injury_limitation", "left knee", "Left knee pain on deep squats");
-  const [suggestion] = suggestFromStatement("good news, my knee is fine now", [saved]);
+  const [suggestion] = suggest("good news, my knee is fine now", [saved]);
   assertEquals(suggestion.action, "resolve");
   assertEquals(suggestion.factId, saved.id);
   assertEquals(suggestion.statement, saved.statement);
@@ -64,34 +68,34 @@ Deno.test("a healed injury is offered as a resolve of the saved fact", () => {
 
 Deno.test("a liking that cuts across an allergy is a review, never a replacement", () => {
   const saved = makeFact("allergy", "peanuts", "Allergy or intolerance: peanuts");
-  const [suggestion] = suggestFromStatement("I love peanuts", [saved]);
+  const [suggestion] = suggest("I love peanuts", [saved]);
   assertEquals([suggestion.action, suggestion.factId], ["review", saved.id]);
 });
 
 Deno.test("a fact already saved is not offered again", () => {
   const saved = makeFact("food_dislike", "mushrooms", "Dislikes mushrooms");
-  assertEquals(suggestFromStatement("I hate mushrooms", [saved]), []);
+  assertEquals(suggest("I hate mushrooms", [saved]), []);
 });
 
 Deno.test("no claim, no suggestion", () => {
-  assertEquals(suggestFromStatement("what should I eat today?", []), []);
-  assertEquals(suggestFromStatement("", []), []);
+  assertEquals(suggest("what should I eat today?", []), []);
+  assertEquals(suggest("", []), []);
 });
 
 Deno.test("at most two suggestions follow one message, without repeats for one fact", () => {
-  const found = suggestFromStatement(
+  const found = suggest(
     "I hate mushrooms. I love running. I hate rice. I hate fish.",
     [],
   );
   assertEquals(found.length, maxSuggestionsPerTurn);
   const saved = makeFact("food_like", "pizza", "Likes pizza");
-  const twice = suggestFromStatement("I hate pizza. I really dislike pizza.", [saved]);
+  const twice = suggest("I hate pizza. I really dislike pizza.", [saved]);
   assertEquals(twice.length, 1);
 });
 
 Deno.test("merge puts the athlete's own statement first and drops repeats", () => {
   const saved = makeFact("food_like", "pizza", "Likes pizza");
-  const fromStatement = suggestFromStatement("I hate pizza", [saved]);
+  const fromStatement = suggest("I hate pizza", [saved]);
   const fromModel = sanitizeModelSuggestions(
     [
       {
@@ -205,7 +209,7 @@ Deno.test("model suggestions: a missing field is fine, a non-list or an overlong
 });
 
 Deno.test("the wire shape has a fixed set of keys", () => {
-  const [suggestion] = suggestFromStatement("I hate mushrooms", []);
+  const [suggestion] = suggest("I hate mushrooms", []);
   assertEquals(Object.keys(suggestionToWire(suggestion)).sort(), [
     "action",
     "fact_id",
@@ -219,9 +223,80 @@ Deno.test("the wire shape has a fixed set of keys", () => {
 });
 
 Deno.test("the wire shape is the one the app's contract fixture holds", () => {
-  const [suggestion] = suggestFromStatement("I hate mushrooms", []);
+  const [suggestion] = suggest("I hate mushrooms", []);
   assertEquals(
     Object.keys(suggestionToWire(suggestion)).sort(),
     Object.keys(appFixture.fact_suggestions[0]).sort(),
   );
+});
+
+Deno.test("a due fact the athlete speaks of gets a still-true suggestion, one that is not due does not", () => {
+  const due = makeFact("injury_limitation", "left knee", "Left knee pain", {
+    reconfirmOn: "2026-10-01",
+  });
+  const [suggestion] = suggest("my left knee hurts again", [due]);
+  assertEquals([suggestion.action, suggestion.factId, suggestion.previous], [
+    "reconfirm",
+    due.id,
+    "Left knee pain",
+  ]);
+  assertEquals(suggestion.reason.includes("Is it still true?"), true);
+  const later = makeFact("injury_limitation", "left knee", "Left knee pain", {
+    reconfirmOn: "2026-12-01",
+  });
+  assertEquals(suggest("my left knee hurts again", [later]), []);
+  // Only the two the scheduler picks are asked about.
+  const many = ["a", "b", "c"].map((part, index) =>
+    makeFact("injury_limitation", `${part}knee`, `${part}knee pain`, {
+      reconfirmOn: `2026-09-0${index + 1}`,
+    })
+  );
+  assertEquals(suggest("my cknee hurts", many), []);
+});
+
+Deno.test("the model's taste that cuts across an allergy is a review card, not an add", () => {
+  const allergy = makeFact("allergy", "peanuts", "Allergy or intolerance: peanuts");
+  const result = sanitizeModelSuggestions(
+    [{ action: "add", kind: "food_like", subject: "peanuts", statement: "Likes peanuts" }],
+    [allergy],
+  );
+  assertEquals(result.suggestions.map((s) => [s.action, s.factId, s.origin]), [
+    ["review", allergy.id, "coach"],
+  ]);
+});
+
+Deno.test("the model's add of the opposite of a saved taste becomes an update, and a repeat is dropped", () => {
+  const like = makeFact("food_like", "pizza", "Likes pizza");
+  const opposite = sanitizeModelSuggestions(
+    [{ action: "add", kind: "food_dislike", subject: "pizza", statement: "Dislikes pizza" }],
+    [like],
+  );
+  assertEquals(opposite.suggestions.map((s) => [s.action, s.kind, s.factId]), [
+    ["update", "food_dislike", like.id],
+  ]);
+  const repeat = sanitizeModelSuggestions(
+    [{ action: "add", kind: "food_like", subject: "pizza", statement: "Likes pizza" }],
+    [like],
+  );
+  assertEquals(repeat.suggestions, []);
+  assertEquals(repeat.dropped, 1);
+});
+
+Deno.test("the model can never update or close an allergy: the athlete is asked to check it", () => {
+  const allergy = makeFact("allergy", "peanuts", "Allergy or intolerance: peanuts");
+  for (const action of ["update", "resolve"]) {
+    const result = sanitizeModelSuggestions(
+      [{
+        action,
+        kind: "allergy",
+        subject: "peanuts",
+        statement: "Not allergic to peanuts",
+        fact_id: allergy.id,
+      }],
+      [allergy],
+    );
+    assertEquals(result.suggestions.map((s) => [s.action, s.statement]), [
+      ["review", "Allergy or intolerance: peanuts"],
+    ]);
+  }
 });

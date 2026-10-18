@@ -29,6 +29,7 @@ class FactSuggestionChip extends StatelessWidget {
     CoachFactSuggestionAction.update => 'Update what Coach remembers?',
     CoachFactSuggestionAction.resolve => 'Forget this?',
     CoachFactSuggestionAction.review => 'Check what Coach remembers',
+    CoachFactSuggestionAction.reconfirm => 'Still true?',
   };
 
   @override
@@ -66,7 +67,9 @@ class FactSuggestionChip extends StatelessWidget {
               ),
             ),
           Text(
-            review || suggestion.action == CoachFactSuggestionAction.resolve
+            review ||
+                    suggestion.action == CoachFactSuggestionAction.resolve ||
+                    suggestion.action == CoachFactSuggestionAction.reconfirm
                 ? '“${previous ?? suggestion.statement}”'
                 : '“${suggestion.statement}”',
             style: textTheme.bodyMedium,

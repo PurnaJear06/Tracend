@@ -309,7 +309,7 @@ const injuryRules: Rule[] = [
   (clause) => {
     const m = clause.match(
       new RegExp(
-        `\\bmy ${part} (?:is |has been |keeps |feels |gets )?(?:hurting|hurts|sore|aching|aches|injured|painful|inflamed|swollen|bothering me|tweaked|killing me|giving me (?:pain|trouble|problems))`,
+        `\\bmy ${part} (?:is |has been |keeps |feels |gets )?(?:hurting|hurts|aching|aches|injured|painful|inflamed|swollen|bothering me|tweaked|killing me|giving me (?:pain|trouble|problems))`,
       ),
     );
     const subject = m && bodyPartIn(m[1]);
@@ -331,7 +331,7 @@ const injuryRules: Rule[] = [
   },
   (clause) => {
     const m = clause.match(
-      /\bi have (?:a |an )?(?:bad|sore|weak|dodgy|painful|injured|stiff) ([a-z ]{3,24})/,
+      /\bi have (?:a |an )?(?:bad|weak|dodgy|painful|injured) ([a-z ]{3,24})/,
     );
     const subject = m && bodyPartIn(m[1]);
     return subject ? { type: "injury", subject } : null;
@@ -342,7 +342,7 @@ const resolvedRules: Rule[] = [
   (clause) => {
     const m = clause.match(
       new RegExp(
-        `\\bmy ${part} (?:is |feels |has |seems )?(?:fine|healed|better|ok|okay|good|normal|recovered|back to normal|100%)(?: now| again)?\\b`,
+        `\\bmy ${part} (?:is |feels |has |seems )?(?:fine|healed|ok|okay|good|normal|recovered|back to normal|100%)(?: now| again)?\\b`,
       ),
     );
     const subject = m && bodyPartIn(m[1]);

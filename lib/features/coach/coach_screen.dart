@@ -528,6 +528,8 @@ class _CoachScreenState extends State<CoachScreen> {
     try {
       if (suggestion.action == CoachFactSuggestionAction.resolve) {
         await memory.deleteFact(suggestion.factId!);
+      } else if (suggestion.action == CoachFactSuggestionAction.reconfirm) {
+        await memory.reconfirmFact(suggestion.factId!);
       } else {
         await memory.saveFact(
           kind: suggestion.kind,
@@ -542,6 +544,8 @@ class _CoachScreenState extends State<CoachScreen> {
         context,
         suggestion.action == CoachFactSuggestionAction.resolve
             ? 'Coach forgot it'
+            : suggestion.action == CoachFactSuggestionAction.reconfirm
+            ? 'Confirmed again'
             : 'Saved to what Coach remembers',
       );
       setState(() {
