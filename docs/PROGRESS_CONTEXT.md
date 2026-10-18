@@ -35,7 +35,9 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
 - ios-widgets: D0 live (#112). D1 merged (#121: Done, Skip and +30s on the Lock Screen and in the
   Dynamic Island); the owner's device check is pending. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
 - research-library: E1 live (#109: pgvector, library tables, `search_library_v1`, D3 doc rule). E2 merged (#135): 35 sources, 122 chunks embedded in production
-  by `library-embed`, retrieval test set (hybrid recall 0.93). Handoff: [`research-library.md`](./handoff/research-library.md).
+  by `library-embed`, retrieval test set (hybrid recall 0.93). E2.1 merged (14 gap sources). E2.2 in review (2026-10-18): 57 more
+  verified sources (106 in all, 351 chunks) and machine-readable licences with a verbatim flag, review date and supersession
+  (migration `20261018170042_library_expansion.sql`). Handoff: [`research-library.md`](./handoff/research-library.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.

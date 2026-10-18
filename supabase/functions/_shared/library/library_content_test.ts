@@ -44,7 +44,9 @@ Deno.test("every source records what the database requires, including its licenc
       `${where} lastReviewed`,
     );
     assert(
-      /Summarised from the (full text|full document|official summary|abstract only)\b[^.]*\.$/.test(source.chosenBecause),
+      /Summarised from the (full text|full document|official summary|abstract only)\b[^.]*\.$/.test(
+        source.chosenBecause,
+      ),
       `${where} chosenBecause must end with what the summary was written from`,
     );
     assert(source.region.length > 0, where);
@@ -137,11 +139,40 @@ Deno.test("the sources cover every area the knowledge base was asked to cover", 
       "older-adults",
       "menstrual-cycle",
       "india",
+      "periodisation",
+      "autoregulation",
+      "rpe",
+      "tapering",
+      "free-weights",
+      "range-of-motion",
+      "exercise-substitution",
+      "injury-risk",
+      "acwr",
+      "hiit",
+      "cardio-fitness",
+      "energy-surplus",
+      "recomposition",
+      "cold-water-immersion",
+      "beta-alanine",
+      "nitrate",
+      "plant-protein",
+      "vegetarian",
+      "sleep-loss",
+      "sex-differences",
+      "oral-contraceptives",
+      "bodyweight",
+      "minimal-dose",
+      "travel",
+      "bmi",
+      "food-composition",
     ]
   ) {
     assert(count(topic) >= 1, `no source covers ${topic}`);
   }
   assert(count("screening") >= 2 && count("joint-friendly") >= 3 && count("sleep") >= 2);
+  assert(count("india") >= 5 && count("older-adults") >= 3 && count("supplements") >= 5);
+  const regions = new Set(librarySources.flatMap((source) => source.region));
+  for (const region of ["global", "US", "GB", "IN"]) assert(regions.has(region), region);
 });
 
 Deno.test("the newest migration that loads each source carries its current content", async () => {
