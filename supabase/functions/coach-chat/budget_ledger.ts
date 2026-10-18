@@ -7,8 +7,8 @@ import {
 
 /**
  * The budget places one Coach chat request holds. The legacy path holds one (the purpose's fixed
- * ceiling). The gateway path holds one per attempt, each at that attempt's worst case, so no
- * request is sent without a place that covers it. Each place is its own `AiBudget`, so one can
+ * ceiling). The gateway path holds one per attempt (including the retry of a timed-out first
+ * attempt), each at that attempt's worst case, so no request is sent without a place that covers it. Each place is its own `AiBudget`, so one can
  * stay open (`keepAttempt`) while the others are given back.
  *
  * Nothing is given back while a turn runs: the first attempt's place keeps counting while a
@@ -41,7 +41,10 @@ export class CoachChatBudgetLedger {
     return this.#take("initial", (budget) => budget.reserve("coach_chat", ceilingUsd));
   }
 
-  /** A repair's or a lookup round's place, taken before the call is sent. */
+  /**
+   * A repair's, a lookup round's or a first-attempt retry's place (kind "initial"), taken before the
+   * call is sent.
+   */
   reserveAttempt(ceilingUsd: number, kind: CoachChatAttempt): Promise<boolean> {
     return this.#take(kind, (budget) => budget.reserve("coach_chat", ceilingUsd));
   }
@@ -70,7 +73,8 @@ export class CoachChatBudgetLedger {
   /**
    * A request of this attempt kind may have been billed with no usage known: its place stays open.
    * Only the newest place of that kind is the request in flight; an earlier one (the first lookup
-   * round, when the second timed out) was answered and settles with the rest.
+   * round, when the second timed out) was answered and settles with the rest. A first attempt that
+   * timed out is kept when it happens, before its retry takes the newest place.
    */
   keepAttempt(attempt: CoachChatAttempt): void {
     const inFlight = this.#places.findLast((place) => place.attempt === attempt);

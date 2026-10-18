@@ -29,6 +29,20 @@ const route = () =>
 
 const reply = (text: string) =>
   JSON.stringify({
+    data_requests: [],
+    proposal_intent: [],
+    fact_suggestions: [],
+    answer: text,
+    evidence: [],
+    missing_data: [],
+    safety_state: "allowed",
+    suggested_follow_ups: [],
+    reasoning_chain: [],
+  });
+
+// Today's DeepSeek path has none of the gateway's extra keys.
+const legacyReply = (text: string) =>
+  JSON.stringify({
     answer: text,
     evidence: [],
     missing_data: [],
@@ -229,7 +243,7 @@ Deno.test("the legacy DeepSeek path repairs an ungrounded figure the same way", 
       systemPrompts.push(request.messages[0].content);
       return Promise.resolve(
         jsonResponse({
-          choices: [{ message: { content: reply(answers[index++]) }, finish_reason: "stop" }],
+          choices: [{ message: { content: legacyReply(answers[index++]) }, finish_reason: "stop" }],
           usage: { prompt_tokens: 100, completion_tokens: 20 },
         }),
       );

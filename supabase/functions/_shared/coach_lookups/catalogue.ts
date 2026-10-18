@@ -131,6 +131,28 @@ export type DataRequest = Readonly<{
   filter: string | null;
 }>;
 
+/**
+ * The `data_requests` key of the gateway answer, for structured output. The key is always
+ * present: an empty list means no request. Every field is required (Claude compiles a grammar
+ * for each optional field), so `filter` is "" when the lookup takes none; validateDataRequests
+ * reads "" as no filter. The range limits, the lookup's own needs and the date checks are the
+ * validator's, not the schema's.
+ */
+export const dataRequestsJsonSchema = {
+  type: "array",
+  items: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      lookup: { type: "string", enum: [...coachLookupNames] },
+      from: { type: "string" },
+      to: { type: "string" },
+      filter: { type: "string" },
+    },
+    required: ["lookup", "from", "to", "filter"],
+  },
+} as const;
+
 export type DataRequestsCheck =
   | Readonly<{ ok: true; requests: readonly DataRequest[] }>
   | Readonly<{ ok: false; reason: string }>;

@@ -246,9 +246,10 @@ no proposal is stored, every sentence of the reply that promises one ("Here's a 
 approve below", "Tracend works out…") is removed, and the refusal's reason takes its place, so a
 reply never points at a card that is not there.
 
-**In chat.** On the gateway route the answer may carry an optional `proposal_intent` (closed
-vocabulary above; the schema enumerates the kinds, reasons and settings, the parser checks every
-range). The persona no longer says Coach "has no tools": it says Coach cannot change anything
+**In chat.** On the gateway route the answer carries a `proposal_intent` list, empty when no change is
+asked for and one item otherwise (closed vocabulary above; the schema enumerates the kinds, reasons
+and field names, the intent's fields are `{name, value}` text pairs that one function turns into the
+object form, and the parser checks every range). The persona no longer says Coach "has no tools": it says Coach cannot change anything
 itself and may *propose*, in words like "Here's a proposal you can approve below", never "I've
 changed it". The deterministic `claimed_action` guard is unchanged and still rejects a reply that
 says a change was made. After the reply has passed every guard, and only for an ordinary `allowed`
@@ -755,7 +756,11 @@ that need analysis (§11); unset, `coach_chat` answers them.
   only on their own hosts. An eval router (`AI_<FEATURE>_VENDOR=router`) is named by no notice, so
   no athlete's data reaches it; features ignore it on athlete requests.
 - Requests to Claude 5 models never carry `temperature`, `top_p`, tools or a forced
-  `tool_choice`; structured output uses `output_config.format`. The stable prompt prefix carries
+  `tool_choice`; structured output uses `output_config.format`. The Coach answer schema is one fixed
+  shape for every athlete and day, with no optional property and no union (Claude compiles a schema
+  once and caches the grammar, and a changing or branching schema ran past the timeout on every
+  Coach turn on 2026-10-18); the permitted evidence codes live in the prompt and the parser checks
+  them, and a test fails if the schema changes shape. The stable prompt prefix carries
   `cache_control`, so repeated Coach questions read the prefix from the cache. DeepSeek, Groq and
   Gemini routes send what today's providers send (temperature 0.1 without thinking, the schema
   restated in JSON mode), so a rollback by settings behaves as before. Every JSON answer is
@@ -1062,7 +1067,7 @@ adapter still sends no tools.
 
 ### 11.1a Coach memory (A10 part 2)
 
-- **Only the athlete writes a durable fact.** The model may return an optional `fact_suggestions`
+- **Only the athlete writes a durable fact.** The model may return a `fact_suggestions` list, empty for none
   (add, update or resolve, a kind from the closed list, a short subject, one plain statement, and the
   id of the fact it concerns). The server checks each entry against the closed vocabulary and the
   facts the athlete has saved, drops what does not fit, and sends the rest to the app as a card. A

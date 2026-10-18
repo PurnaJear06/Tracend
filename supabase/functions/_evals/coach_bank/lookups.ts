@@ -1,5 +1,5 @@
 // On-demand data lookups (A10): the answer may carry `data_requests: [{lookup, from, to,
-// filter?}]`; coach-chat validates them against the catalogue (`_shared/coach_lookups/`), runs
+// filter}]` (filter "" for none); coach-chat validates them against the catalogue (`_shared/coach_lookups/`), runs
 // them read-only and calls the model again, at most two rounds. The bank uses that same loop
 // (generateCoachChatViaGateway) and only replaces what runs the lookups: a runner that serves the
 // case's rows instead of the database and records the requests the loop passed it, so the bank

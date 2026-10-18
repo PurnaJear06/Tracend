@@ -28,12 +28,17 @@ const settings: Record<string, string> = {
 
 type Call = Readonly<{ name: string; args: Record<string, unknown> }>;
 
+// A model answer in the gateway's shape: every key present, "nothing" written as [].
 const reply = {
+  data_requests: [],
+  proposal_intent: [],
+  fact_suggestions: [],
   answer: "Noted, I'll keep that in mind when I suggest meals.",
   evidence: [],
   missing_data: [],
   safety_state: "allowed",
   suggested_follow_ups: [],
+  reasoning_chain: [],
 };
 
 type Options = Readonly<{
@@ -256,7 +261,7 @@ Deno.test("the model's own suggestions are checked, merged and kept out of the s
   ]);
   assertEquals("fact_suggestions" in (result.stored!.answer_payload as object), false);
   assertEquals("fact_suggestions" in result.body.message, false);
-  assert(result.modelRequest.includes("fact_suggestions"));
+  assert(result.modelRequest.includes("Suggesting something to remember"));
 });
 
 Deno.test("a model suggestion that fits the vocabulary is offered", async () => {
@@ -268,6 +273,7 @@ Deno.test("a model suggestion that fits the vocabulary is offered", async () => 
         kind: "equipment",
         subject: "kettlebells",
         statement: "Has kettlebells at home",
+        fact_id: "",
       }],
     },
   });
@@ -281,7 +287,9 @@ Deno.test("a conversation that is not remembered gets no suggestions, no notes a
     remember: false,
     modelAnswer: {
       ...reply,
-      fact_suggestions: [{ action: "add", kind: "equipment", subject: "x", statement: "Has x" }],
+      fact_suggestions: [
+        { action: "add", kind: "equipment", subject: "x", statement: "Has x", fact_id: "" },
+      ],
     },
   });
   assertEquals(result.status, 200);
@@ -294,8 +302,9 @@ Deno.test("a conversation that is not remembered gets no suggestions, no notes a
       "get_coach_follow_through_inputs_v1",
     ]
   ) assert(!result.names.includes(name), name);
-  // The model is not even offered the field.
-  assertEquals(result.modelRequest.includes("fact_suggestions"), false);
+  // The schema is the same for every conversation, so the key is in it; the rules that offer the
+  // field are not in the prompt, and what the model wrote is dropped.
+  assertEquals(result.modelRequest.includes("Suggesting something to remember"), false);
 });
 
 Deno.test("a remembered conversation gets a note built from the message and the turn, linked to its messages", async () => {

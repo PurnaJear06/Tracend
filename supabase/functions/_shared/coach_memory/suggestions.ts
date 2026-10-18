@@ -234,11 +234,11 @@ function checkModelSuggestion(item: unknown, facts: readonly CoachFact[]): FactS
     subject.length < 1 || subject.length > maxFactSubjectChars || !subjectText.test(subject) ||
     statement.length < 1 || statement.length > maxFactStatementChars || /[<>]/.test(statement)
   ) return null;
-  const target = typeof entry.fact_id === "string"
-    ? facts.find((fact) => fact.id === entry.fact_id)
-    : undefined;
+  // The model writes "" for no fact (its schema has no null).
+  const factId = entry.fact_id === "" ? null : entry.fact_id;
+  const target = typeof factId === "string" ? facts.find((fact) => fact.id === factId) : undefined;
   if (action === "add") {
-    if (entry.fact_id !== undefined && entry.fact_id !== null) return null;
+    if (factId !== undefined && factId !== null) return null;
     const wanted = { kind: entry.kind, subject, statement };
     // A taste or an allergy is judged like the athlete's own statement: already saved is dropped,
     // the opposite of a saved taste becomes an update, and one that cuts across an allergy is a

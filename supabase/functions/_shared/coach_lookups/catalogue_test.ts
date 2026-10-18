@@ -2,6 +2,7 @@ import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
 import {
   coachLookupCatalogue,
   coachLookupNames,
+  dataRequestsJsonSchema,
   dayNumber,
   describeLookupCatalogue,
   maxLookupRangeDays,
@@ -143,4 +144,32 @@ Deno.test("past_messages needs words to search for and takes plain words only", 
     refused([{ lookup: "past_messages", from: "2026-09-01", to: today, filter: "knee; drop" }]),
     "plain words",
   );
+});
+
+Deno.test("the schema's form: an empty filter is no filter, and a required filter still has to be written", () => {
+  // The schema has no optional field and no null, so a lookup without a filter carries "".
+  assertEquals(ok([{ lookup: "body", from: "2026-08-01", to: "2026-10-17", filter: "" }]), [
+    { lookup: "body", from: "2026-08-01", to: "2026-10-17", filter: null },
+  ]);
+  assertEquals(
+    ok([{ lookup: "meals", from: "2026-08-01", to: "2026-10-17", filter: "  " }])[0].filter,
+    null,
+  );
+  assertStringIncludes(
+    refused([{ lookup: "exercise_history", from: "2026-08-01", to: today, filter: "" }]),
+    "a filter is required",
+  );
+  assertEquals(
+    ok([{ lookup: "exercise_history", from: "2026-08-01", to: today, filter: "bench" }])[0].filter,
+    "bench",
+  );
+});
+
+Deno.test("the data_requests schema: every field required, no union, every lookup name", () => {
+  const item = dataRequestsJsonSchema.items;
+  assertEquals(item.required, ["lookup", "from", "to", "filter"]);
+  assertEquals(Object.keys(item.properties), [...item.required]);
+  assertEquals(item.properties.lookup.enum, [...coachLookupNames]);
+  assertEquals(item.properties.filter, { type: "string" });
+  assertEquals(JSON.stringify(dataRequestsJsonSchema).includes("anyOf"), false);
 });

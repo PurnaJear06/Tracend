@@ -56,6 +56,7 @@ import {
 } from "../_shared/providers/coach_chat_provider_gateway.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { captureException } from "../_shared/sentry.ts";
+import { attemptLogFields, reportSlowTurn, sentryAttemptsOf } from "./attempt_telemetry.ts";
 import {
   aiCoachingConsent,
   type AiConsentWithProvider,
@@ -459,6 +460,7 @@ export async function handleCoachChat(
   const correlationId = extractCorrelationId(request);
   const log = createLogger(correlationId);
   const started = performance.now();
+  const startedAtMs = Date.now();
   if (request.method !== "POST") {
     return reply(405, versionedResponse({ error: "method_not_allowed" }));
   }
@@ -753,6 +755,7 @@ export async function handleCoachChat(
         lookups: createLookupRunner((name, params) => coachServiceRpc(name, params), auth.userId),
         proposals: true,
         factSuggestions: remembered,
+        requestStartedAt: startedAtMs,
       })
       : await generateCoachChat(
         input.question,
@@ -926,8 +929,20 @@ export async function handleCoachChat(
       replayed: false,
     };
     if (suggestions.wire.length) responsePayload.fact_suggestions = suggestions.wire;
+    const turnMs = Math.round(performance.now() - started);
+    reportSlowTurn(turnMs, {
+      userId: auth.userId,
+      functionName: "coach-chat",
+      correlationId,
+      runtime: "edge",
+      provider: generation.provider,
+      model: generation.model,
+      contextKind,
+      coachingDate,
+      attempts: sentryAttemptsOf(generation.attempts),
+    });
     log.info("coach_chat_complete", {
-      latency_ms: Math.round(performance.now() - started),
+      latency_ms: turnMs,
       provider: generation.provider,
       model: generation.model,
       context_kind: contextKind,
@@ -935,18 +950,7 @@ export async function handleCoachChat(
       route_feature: coachRoute?.feature ?? "none",
       lookups: lookupTrace(generation.lookups),
       replayed: false,
-      attempts: generation.attempts.map((attempt) => ({
-        attempt: attempt.attempt,
-        outcome: attempt.outcome,
-        rule: attempt.rule ?? "none",
-        also_rules: attempt.alsoRules ?? [],
-        path: attempt.path ?? "none",
-        limit: attempt.limit ?? null,
-        actual: attempt.actual ?? null,
-        latency_ms: attempt.latencyMs,
-        finish_reason: attempt.finishReason ?? "unknown",
-        completion_tokens: attempt.completionTokens,
-      })),
+      attempts: generation.attempts.map(attemptLogFields),
     });
     return reply(200, responsePayload);
   } catch (error) {
@@ -976,6 +980,7 @@ export async function handleCoachChat(
       repairValidationRule: unavailable.metadata.repairRule,
       answerSource: servesDataSummary ? "data_summary" : "none",
       coachingDate,
+      attempts: sentryAttemptsOf(unavailable.metadata.attempts ?? []),
     });
     log.error("coach_chat_failure", {
       failure_code: unavailable.failureReason,
@@ -989,18 +994,7 @@ export async function handleCoachChat(
       repair_rule: unavailable.metadata.repairRule ?? "none",
       repair_skipped: unavailable.metadata.repairSkipped ?? "none",
       route_feature: coachRoute?.feature ?? "none",
-      attempts: (unavailable.metadata.attempts ?? []).map((attempt) => ({
-        attempt: attempt.attempt,
-        outcome: attempt.outcome,
-        rule: attempt.rule ?? "none",
-        also_rules: attempt.alsoRules ?? [],
-        path: attempt.path ?? "none",
-        limit: attempt.limit ?? null,
-        actual: attempt.actual ?? null,
-        latency_ms: attempt.latencyMs,
-        finish_reason: attempt.finishReason ?? "unknown",
-        completion_tokens: attempt.completionTokens,
-      })),
+      attempts: (unavailable.metadata.attempts ?? []).map(attemptLogFields),
       latency_ms: Math.round(performance.now() - started),
     });
     // supabase-js reports RPC failures in `error` rather than throwing, so the

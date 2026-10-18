@@ -1,6 +1,6 @@
 # Tracend Current State
 
-**As of:** 2026-10-15
+**As of:** 2026-10-18
 
 **Lifecycle:** owner-only private beta; not approved for public production. Production Auth
 sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
@@ -45,6 +45,17 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   cover-sized photo decoding). Device speed budgets still to record.
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
+
+**Incident 2026-10-18: every Coach chat turn timed out (Refs FLUTTER-K). Fixed by #155 (deploy pending verification: confirm `schema_sha` `274ee4fafead` and a first successful turn in production).** The gateway's answer
+schema had grown to 24 optional properties and 4 unions and listed the day's evidence codes, so
+Claude recompiled its grammar on every turn and passed the 30 s route timeout (`model_runs`:
+`provider_timeout`, about 31.7 s, 0 tokens). Fix (`claude/coach-schema-flatten`): one fixed
+schema with every key required and no union (0 optional, 0 unions, 2,818 bytes, same bytes for every
+athlete), the evidence codes checked by the parser instead of the schema, one retry of a timed-out
+first call, per-attempt timing and schema-hash telemetry in the logs and Sentry, a CI guard on the
+schema's shape, and a turn deadline counted from the request's start so the data summary still
+returns inside the app's 45 s. Nothing changes for the app. Details: "Coach answer schema: one stable grammar" in
+[`ai-gateway.md`](./handoff/ai-gateway.md).
 
 **Authority docs rewritten (2026-10-15):** the 13 authority docs were checked against `main` after
 Iteration 1. The addenda were folded in and the contradictions and stale facts were removed. Planned

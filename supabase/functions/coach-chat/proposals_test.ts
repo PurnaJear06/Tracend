@@ -26,6 +26,38 @@ const settings: Record<string, string> = {
 
 type Call = Readonly<{ name: string; args: Record<string, unknown> }>;
 
+/**
+ * The intent as the model writes it: a list of one item whose fields are name/value pairs, every
+ * value as text. The tests below state each intent as the engine reads it; this is the only
+ * place that turns it into the model's shape.
+ */
+function asModelIntent(intent: Record<string, unknown>) {
+  const { kind, reason, note, ...fields } = intent;
+  return [{
+    kind,
+    reason,
+    note: note ?? "",
+    params: Object.entries(fields).map(([name, value]) => ({
+      name,
+      value: Array.isArray(value) ? value.join(",") : String(value),
+    })),
+  }];
+}
+
+/** A model answer in the gateway's shape: every key present, "nothing" written as [] . */
+function asModelAnswer(answer: Record<string, unknown>) {
+  const intent = answer.proposal_intent;
+  return {
+    data_requests: [],
+    fact_suggestions: [],
+    reasoning_chain: [],
+    ...answer,
+    proposal_intent: intent && !Array.isArray(intent)
+      ? asModelIntent(intent as Record<string, unknown>)
+      : intent ?? [],
+  };
+}
+
 const answerText = (overrides: Record<string, unknown> = {}) =>
   JSON.stringify({
     answer: "Here's a proposal you can approve below. Tracend checks it against your limits first.",
@@ -95,7 +127,7 @@ async function turn(question: string, modelAnswer: Record<string, unknown>) {
     if (String(input).includes("anthropic")) {
       modelCalls++;
       return Promise.resolve(jsonResponse(claudeMessage({
-        content: [{ type: "text", text: JSON.stringify(modelAnswer) }],
+        content: [{ type: "text", text: JSON.stringify(asModelAnswer(modelAnswer)) }],
       })));
     }
     return Promise.reject(new Error(`unexpected request to ${String(input)}`));
