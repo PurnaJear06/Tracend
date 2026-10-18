@@ -928,18 +928,21 @@ routes stay available by settings alone for two weeks after the cutover.
   direction of the trend. Questions and target suggestions ("Would 70 kg be a target you want to
   aim for?") are the reply the prompt requires and pass. A weight the athlete wrote in their own
   question and a weight directly governed by a limit word ("do not go below 60 kg") are not
-  claims. A figure counts as a body weight only when its surroundings say so
+  claims. A figure is read as a body weight unless a clear load cue clears it
   (`goal_phase/weight_figures.ts`): the sentence is tokenised into words and weight figures, and
   the nearest cue within five words decides. A figure written with rep notation ("55 kg x 6", "50
   kg for 8", "60 kg per side") is a load; so is one nearest an exercise name or catalog slug
   ("overhead press is 55 kg", "your curl will go to 32.5 kg"), a barbell word (plate, bar, rack) or
-  a lifting word (reps, load, 1RM); a tie goes to the load. A word about the person (weigh, body
-  weight, scale, BMI, height, target, goal), a movement of the person ("get down to", "drop to"),
-  "you" as the subject of a verb that lands on a weight ("you'll be at", "you will hit", "you
-  could reach") or, weakest, a time frame straight after the figure ("66.5 kg in 12 weeks") makes
-  it a body weight; with no cue it is not one. Both rules read only body weights, so a lift's
-  load below the floor (an overhead press at 55 kg for an athlete whose floor is 57 kg) never
-  sends the athlete to the data summary. The rejection is
+  a lifting word (reps, load, 1RM). A word about the person (weigh, body weight, scale, BMI, height,
+  target, goal), a movement of the person ("get down to", "drop to"), projection or pace wording
+  ("at this pace", "would put you at", "on track for", "heading to", "you'd land at") or "you" as
+  the subject of a verb that lands on a weight ("you'll be at", "you will hit", "you could reach")
+  makes it a body weight when it is nearer than any load cue; a tie goes to the load. A figure
+  with no load cue near it is a body weight even with no body cue: this is a safety check and an
+  unclear figure fails closed. Look-ahead wording for the floor rule includes "heading", "would
+  put you", "land", "expect" and "ends at" beside the older cues. Both rules read only body
+  weights, so a lift's load below the floor (an overhead press at 55 kg for an athlete whose floor
+  is 57 kg) never sends the athlete to the data summary. The rejection is
   an ordinary validation failure (`weight_below_healthy_floor`, `projection_without_target`) that
   gets the one repair with a rule-specific instruction, then the existing unavailable path.
   Coach has no tools: it never says it changed, saved, updated, logged or set anything, and says
@@ -1007,10 +1010,13 @@ routes stay available by settings alone for two weeks after the cutover.
   length of a session item in a plan: a whole number of minutes from 10 to 90 in steps of five
   that says how long to do a named activity, such as "30 min easy walk", "walk for 20-30
   minutes", "walk 20 min after dinner" or "a 45-minute session"; the named activity is what makes
-  it advice, so a duration of the athlete's own past or data ("your
-  walk was 30 min", "you did a 30 minute walk yesterday"), a duration with no activity beside it
-  ("you slept 450 minutes"), a dose over time ("walk 45 minutes a day"), a figure that is not a
-  round number of minutes, and anything over 90 minutes are still checked). Loads in kg, calories,
+  it advice, so a duration the wording gives to the athlete's past or records ("your walk was 30
+  min", "you did a 30 minute walk yesterday", "your average walk is 30 min": was, did, last,
+  logged, average, usual and similar words), a duration with no activity beside it ("you slept 450
+  minutes"), a dose or recurring period ("walk 45 minutes a day", "every morning", "each
+  evening", "per session", "nightly", "three times a week", "every other day"), a figure that is
+  not a round number of minutes, and anything over 90 minutes are still checked; "Your plan is a
+  30-minute walk after dinner" is advice). Loads in kg, calories,
   body weights, percentages and every other measurement are never exempt: a load Coach did not get
   from the athlete's logged or planned loads in the context is a figure it invented. One repair
   names the unsupported figures (in the repair instruction only: they are athlete content and
@@ -1230,7 +1236,11 @@ removes, deterministically, the sentences (and list lines) that hold a figure th
 athlete's data, that name a source Coach was not shown, or that repeat the previous reply, from the
 answer, the follow-up chips, the missing-data notes, the reasoning steps and the evidence labels.
 Nothing is rewritten, nothing is added except one note in `missing_data` ("Left out lines with
-figures that are not in your data."), and a lead-in line left with nothing under it ("Here is the
+figures that are not in your data."; the notes take their place first, so when the model already
+wrote twelve its last ones are dropped to stay within the contract's twelve), a library citation's
+label is written again from the retrieved source's title and year before anything is read (the
+server writes it anyway; a figure in the model's wording of it cannot make the cut give up, and the
+citation stays; entry `salvage:label_rebuilt`), and a lead-in line left with nothing under it ("Here is the
 plan:") goes too. The cut reply must pass the whole check again (`parseCoachChatAnswer`), keep at
 least half of the answer's sentences and at least 40 characters, or the turn ends in the data
 summary as before. A cut never applies when any other rule failed (calorie floor, loss ceiling,
@@ -1272,7 +1282,11 @@ model. It stays in the conversation the model reads (`prepare_coach_chat_v10`, 2
 reply, calculated from the athlete's data; not your words)", so the next turn can refer to a
 number the app just showed. Its figures count as the athlete's data for the next turn's numbers
 check (Coach's own earlier words never do), it is not a previous reply for the repeats rule, and a
-question that fell back to one still reads as unanswered when the athlete sends it again. The
+question that fell back to one still reads as unanswered when the athlete sends it again. After
+that retry the failed question is marked superseded (`safety_state` "unavailable" on that user
+message); v10 carries that state on user messages only (a summary is stored "unavailable" too and
+would always be dropped), and the reader drops the superseded question and the data summary that
+followed it, on every later turn and, for the question being asked again, on that turn. The
 summary shows the weight trend in kg a week (the unit Coach speaks in): the calculated 4-week
 trend of the readings, else the scoring engine's per-day trend times seven. Request schema 1.0
 builds keep the 503.

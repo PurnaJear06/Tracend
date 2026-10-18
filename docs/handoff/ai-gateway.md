@@ -1187,8 +1187,10 @@ is unchanged.
    kg" returned `weight_below_healthy_floor` for a 58.6 kg floor and sent the athlete to the data
    summary. The sentence is now tokenised into words and weight figures; a figure is a body weight
    only when a body cue is nearer than any load cue (rep notation, an exercise name or catalog slug, a
-   barbell or lifting word). A time frame after the figure ("66.5 kg in 12 weeks") is the weakest body
-   cue and any load cue beats it. The old regex-only reading is gone; `guard.ts` keeps the two rules.
+   barbell or lifting word). Review fix: a figure with no load cue near it fails closed (it is a body
+   weight even with no body cue), and projection and pace wording ("at this pace", "would put you at",
+   "on track for", "heading to", "you'd land at") is a body cue; the floor rule's look-ahead cues include
+   them. The old regex-only reading is gone; `guard.ts` keeps the two rules.
 2. **A requested plan keeps its answer** (`numbers_check.ts`, `reply_guard.ts` `cutReply`, gateway).
    (a) A round whole number of minutes (10 to 90, in fives) beside a named activity ("30 min easy
    walk", "walk 20 min", "a 45-minute session") is advice like rest seconds, not a claim about the
@@ -1196,7 +1198,10 @@ is unchanged.
    minutes are still checked. Loads in kg stay checked. (b) When the repair still fails only
    cuttable rules, or no repair can be sent, `cutReply` removes the sentences at fault and the
    result must pass the whole check again and keep at least half the sentences, else the summary.
-   Guard fault `salvage:numbers_stripped` (also `study_stripped`, `closing_question_stripped`,
+   Review fixes: salvage notices take their place first in `missing_data` (the contract's 12), library labels
+   are rebuilt from the retrieved title and year before the cut reads them (`salvage:label_rebuilt`), and a
+   plan item is exempt unless the wording gives the duration to the athlete's past or records, or makes it
+   a recurring dose ("every morning", "per session", "nightly", "three times a week"). Guard fault `salvage:numbers_stripped` (also `study_stripped`, `closing_question_stripped`,
    `repeat_stripped`) is written to `coach_messages.guard_faults`. Gateway only: today's DeepSeek path
    keeps one repair and the summary.
 3. **Named studies** (`library/mentions.ts`, `parseCoachChatAnswer`). A shown source named in the text
@@ -1209,7 +1214,9 @@ is unchanged.
    `prepare_coach_chat_v10`, context `schema_version` 8.1). v10 wraps v9 and rebuilds `recent_messages`
    with summaries in, each marked `answer_source: "data_summary"`; the prompt shows it as "TRACEND DATA
    SUMMARY (the app's own reply ...)", its figures ground the next turn's numbers check, and the app's
-   weight trend is in kg/week (4-week calculated trend, else per-day times seven). Flutter reads
+   weight trend is in kg/week (4-week calculated trend, else per-day times seven). Review fix: v10 carries
+   `safety_state: "unavailable"` on a superseded user question, and `withoutSupersededMemory` drops it with the
+   data summary that followed it (later turns), as `withoutSupersededQuestions` does for the retry itself. Flutter reads
    `answer_source` only, so `test/contract` fixtures are unchanged. The edge function now calls v10: merge
    order is migration, then functions (deploy.yml does this); v8 and v9 stay callable.
 5. **No repeated closing question or sentence** (`coach_safety/repeats.ts`, rule

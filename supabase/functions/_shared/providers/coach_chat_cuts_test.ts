@@ -242,3 +242,16 @@ Deno.test("a study that was not shown is repaired, and cut when the repair repea
   assert(!cut.result.answer.answer.includes("Kreider"));
   assertStringIncludes(cut.result.answer.answer, "Ask your doctor");
 });
+
+Deno.test("a cut with a full list of missing-data notes still passes the contract", async () => {
+  const { result } = await run([{
+    answer: travelPlan,
+    missing_data: Array.from({ length: 12 }, (_, index) => `Note ${"abcdefghijkl"[index]}`),
+  }]);
+  if (result instanceof Error) throw result;
+  assertEquals(result.answer.missing_data.length, 12);
+  assertEquals(
+    result.answer.missing_data.at(-1),
+    "Left out lines with figures that are not in your data.",
+  );
+});

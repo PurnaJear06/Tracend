@@ -1,5 +1,5 @@
 begin;
-select plan(11);
+select plan(14);
 
 -- The app's data summary stays in the conversation the Coach reads (migration 20261018190031).
 -- prepare_coach_chat_v10 wraps v9 and rebuilds recent_messages with the summaries in, marked.
@@ -19,6 +19,13 @@ insert into public.coach_messages(user_id, thread_id, role, content, answer_sour
     'Thanks, and my sleep?', null, now() - interval '2 minutes'),
   ('a1910000-0000-4000-8000-000000000001', 'a1910000-0000-4000-8000-0000000000f1', 'assistant',
     'MODEL_MARKER Your sleep is steady.', 'model', now() - interval '2 minutes');
+
+-- A question the athlete sent again after it failed: marked superseded, its summary follows it.
+insert into public.coach_messages(user_id, thread_id, role, content, answer_source, safety_state, created_at) values
+  ('a1910000-0000-4000-8000-000000000001', 'a1910000-0000-4000-8000-0000000000f1', 'user',
+    'SUPERSEDED_MARKER how is my protein?', null, 'unavailable', now() - interval '1 minute'),
+  ('a1910000-0000-4000-8000-000000000001', 'a1910000-0000-4000-8000-0000000000f1', 'assistant',
+    'ORPHAN_SUMMARY_MARKER Protein target: 150 g.', 'data_summary', 'unavailable', now() - interval '1 minute');
 
 select has_function('public'::name, 'prepare_coach_chat_v10',
   array['uuid', 'uuid', 'text', 'text', 'uuid', 'text'], 'v10 exists');
@@ -47,11 +54,21 @@ select is((select e ->> 'answer_source' from r, jsonb_array_elements(j -> 'conte
   'data_summary', 'and marks it as the app''s summary');
 select is((select count(*)::int from r, jsonb_array_elements(j -> 'context' -> 'recent_messages') e
     where name = 'v10' and e ? 'answer_source'),
-  1, 'no other message carries the mark');
+  2, 'no other message carries the mark');
 select is((select jsonb_agg(e ->> 'role' order by ord) from r,
     jsonb_array_elements(j -> 'context' -> 'recent_messages') with ordinality as t(e, ord)
     where name = 'v10'),
-  '["user", "assistant", "user", "assistant"]'::jsonb, 'the thread reads in order, each question before its reply');
+  '["user", "assistant", "user", "assistant", "user", "assistant"]'::jsonb,
+  'the thread reads in order, each question before its reply');
+select is((select e ->> 'safety_state' from r, jsonb_array_elements(j -> 'context' -> 'recent_messages') e
+    where name = 'v10' and e ->> 'content' like 'SUPERSEDED_MARKER%'),
+  'unavailable', 'a superseded question carries its state, so the reader can drop it');
+select is((select count(*)::int from r, jsonb_array_elements(j -> 'context' -> 'recent_messages') e
+    where name = 'v10' and e ? 'safety_state'),
+  1, 'and no other message does, the summaries included');
+select is((select e ->> 'answer_source' from r, jsonb_array_elements(j -> 'context' -> 'recent_messages') e
+    where name = 'v10' and e ->> 'content' like 'ORPHAN_SUMMARY_MARKER%'),
+  'data_summary', 'the summary that followed it is marked, so the reader can drop it with the question');
 select is((select j -> 'context' ->> 'schema_version' from r where name = 'v10'), '8.1',
   'the context schema version moves from 8.0 to 8.1');
 select ok((select (j -> 'context') ?& array['permitted_evidence', 'omitted_sections', 'coaching_date']

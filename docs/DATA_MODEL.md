@@ -846,7 +846,7 @@ and `search_coach_messages`, and left out of every other conversation's context 
 `prepare_coach_chat_v9`. `prepare_coach_chat_v10` (migration `20261018190031`, context
 `schema_version` 8.1) wraps v9 and rebuilds `recent_messages` with the app's labelled data summaries
 in, each carrying `answer_source: "data_summary"` beside `role` and `content`; every other message
-keeps its shape. It rewrites the stored snapshot to match, as v9 does.
+keeps its shape, except that a superseded user question (`safety_state` 'unavailable') carries that state. It rewrites the stored snapshot to match, as v9 does.
 
 ### `coach_narrative_entries` (never written)
 

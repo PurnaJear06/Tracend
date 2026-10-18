@@ -506,3 +506,46 @@ Deno.test("a cut removes the sentences at fault and nothing else", () => {
   assertEquals(cut(plan, ["numbers_not_grounded", "claimed_action"]), null);
   assertEquals(cut(plan, ["calories_below_floor"]), null);
 });
+
+Deno.test("a cut keeps the missing-data notes within the contract and rebuilds library labels", () => {
+  const base = {
+    evidence: [],
+    missing_data: Array.from({ length: 12 }, (_, index) => `Note ${"abcdefghijkl"[index]}`),
+    safety_state: "allowed",
+    suggested_follow_ups: [],
+    reasoning_chain: [],
+  };
+  const plan =
+    "Here is your plan:\n1. Walk for 20 min after dinner.\n2. Squat 61.5 kg x 8 today.\n3. Sleep early.\nThat keeps the week simple and realistic for travel.";
+  const crowded = cutReply(inputsFor(), { ...base, answer: plan }, ["numbers_not_grounded"])!;
+  const notes = crowded.answer.missing_data as string[];
+  assertEquals(notes.length, 12);
+  assertEquals(notes.at(-1), "Left out lines with figures that are not in your data.");
+  assertEquals(notes[0], "Note a");
+
+  // The model's wording of a library label (a figure, an unshown study) is replaced by the title
+  // and year of the retrieved source, and the citation stays.
+  const labelled = cutReply(inputsFor(), {
+    ...base,
+    missing_data: [],
+    answer: plan,
+    evidence: [{
+      code: "maughan_2018_ioc_supplements",
+      label: "Kreider 2017 says 61.5 kg",
+      source: "library",
+    }],
+  }, ["numbers_not_grounded"])!;
+  assertEquals(labelled.answer.evidence, [{
+    code: "maughan_2018_ioc_supplements",
+    label: "IOC consensus statement (2018)",
+    source: "library",
+  }]);
+  // A fault only in a label is mended, and says so.
+  const onlyLabel = cutReply(inputsFor(), {
+    ...base,
+    missing_data: [],
+    answer: "Creatine is well studied and safe for most healthy adults who train.",
+    evidence: [{ code: "maughan_2018_ioc_supplements", label: "Kreider 2017", source: "library" }],
+  }, ["citation_not_retrieved"])!;
+  assertEquals(onlyLabel.cuts, ["label_rebuilt"]);
+});

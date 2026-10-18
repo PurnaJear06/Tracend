@@ -223,11 +223,13 @@ const activityBeforeMinutes = new RegExp(
   String
     .raw`\b${sessionActivity}\s+(?:(?:for|of|about|around|roughly|~)\s*(?:about |around |roughly |up to )?)?(?:\d+\s*(?:-|–|to)\s*)?$`,
 );
-// A dose over time ("walk 45 minutes a day") is guidance with a figure, not one session item.
-const aRate = /\b(?:a|per|each|every)\s+(?:day|week|month)\b|\b(?:daily|weekly)\b/;
-// A duration said of the athlete's own past or data is a claim, however round it is.
+// A dose over time ("walk 45 minutes a day", "every morning", "per session", "nightly", "three times
+// a week") is guidance with a figure, not one session item.
+const aRate =
+  /\b(?:a|per|each|every)\s+(?:other\s+)?(?:day|week|month|morning|afternoon|evening|night|session|workout|training day)\b|\b(?:daily|weekly|monthly|nightly)\b|\bmost days\b|\b(?:times|x)\s+(?:a|per)\s+week\b|\b(?:once|twice)\b/;
+// A duration said of the athlete's own past or records is a claim, however round it is.
 const aboutTheAthlete =
-  /\b(?:did|was|were|had|has|have|been|logged|averaged|completed|last|yesterday|previous|recorded|lasted|took|your)\b/;
+  /\b(?:did|was|were|had|has|have|been|logged|averag\w*|completed|last|yesterday|previous|recorded|lasted|took|usual|typical|so far)\b/;
 const prescriptionUnit = /^\s*(?:sets?\b|reps?\b|repetitions?\b|rounds?\b|seconds?\b|secs?\b|s\b)/;
 const measuredBefore = /\b(?:bmi|rhr|hrv)\s*(?:of|is|was|at|about|around|~|:)?\s*$/;
 const scaleBefore = /\b(?:rpe|rir)\s*(?:of|is|was|at|about|around|~|:)?\s*$/;

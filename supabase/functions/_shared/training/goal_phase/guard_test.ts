@@ -242,3 +242,37 @@ Deno.test("a lift's load does not trip the projection rule either", () => {
     null,
   );
 });
+
+Deno.test("projection and pace wording is a body-weight claim, and an unclear figure fails closed", () => {
+  const ask = "How am I doing?";
+  for (
+    const sentence of [
+      "At this pace, I would put you at 45 kg.",
+      "On track for 48 kg by March.",
+      "You are heading to 50 kg.",
+      "Heading toward 52 kg if nothing changes.",
+      "You'd land at 47 kg.",
+      "That would leave you at 45 kg.",
+      "If you keep this up, 49 kg is where it ends.",
+      "Projected: 46 kg.",
+      "The trend ends at 50 kg.",
+      "45 kg is where this goes.",
+      "Expect 44 kg soon.",
+    ]
+  ) {
+    assertEquals(
+      weightClaimViolation(sentence, ask, withTarget),
+      "weight_below_healthy_floor",
+      sentence,
+    );
+  }
+  assertEquals(
+    weightClaimViolation("At this pace, I would put you at 66 kg.", ask, noTarget),
+    "projection_without_target",
+  );
+  // A clear load cue still clears the figure, even beside pace wording.
+  assertEquals(
+    weightClaimViolation("At this pace your squat reaches 50 kg x 8.", ask, withTarget),
+    null,
+  );
+});

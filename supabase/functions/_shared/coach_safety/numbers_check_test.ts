@@ -157,6 +157,8 @@ Deno.test("the length of a session item in a plan is advice, not a claim about t
       "Warm up for 10 minutes.",
       "Walk 20 min after dinner.",
       "Jog 15 minutes, then stretch.",
+      "Your plan is a 30-minute walk after dinner.",
+      "Your warm-up is 10 minutes of easy cycling.",
     ]
   ) {
     assertEquals(missing(reply), [], reply);
@@ -175,6 +177,14 @@ Deno.test("a duration that is not a round session item still has to be in the da
       ["Walk for 45 hours.", "45"],
       ["Sleep 8 hours.", "8"],
       ["Walk 45 minutes a day.", "45"],
+      ["Walk 30 minutes every morning.", "30"],
+      ["Do a 20 min walk each evening.", "20"],
+      ["Jog 20 min per session.", "20"],
+      ["Walk 30 minutes nightly.", "30"],
+      ["Walk 30 minutes three times a week.", "30"],
+      ["Walk 30 minutes every other day.", "30"],
+      ["Your average walk is 30 min.", "30"],
+      ["Your last walk was 30 min.", "30"],
       ["Do a 30 min walk daily.", "30"],
     ] as const
   ) {

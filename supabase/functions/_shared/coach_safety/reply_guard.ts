@@ -29,6 +29,7 @@
 import {
   type CoachChatAnswerBreak,
   type CoachChatAnswerCheck,
+  coachChatAnswerLimits,
   type CoachChatValidationRule,
   visibleText,
 } from "../contracts/coach_chat_v1.ts";
@@ -466,15 +467,18 @@ export function isCuttable(rules: readonly CoachChatValidationRule[]): boolean {
   return rules.length > 0 && rules.every((rule) => cuttableRules.includes(rule));
 }
 
+/** What a cut removed or changed; `label_rebuilt` is a library label written again from the source. */
+export type CutName =
+  | "numbers_stripped"
+  | "study_stripped"
+  | "closing_question_stripped"
+  | "repeat_stripped"
+  | "label_rebuilt";
+
 export type CutReply = Readonly<{
   answer: Record<string, unknown>;
   /** Finite names of what was cut, for the turn trace. */
-  cuts: readonly (
-    | "numbers_stripped"
-    | "study_stripped"
-    | "closing_question_stripped"
-    | "repeat_stripped"
-  )[];
+  cuts: readonly CutName[];
 }>;
 
 const noticeFor = {
@@ -532,11 +536,23 @@ export function cutReply(
   rules: readonly CoachChatValidationRule[],
 ): CutReply | null {
   if (!isCuttable(rules) || typeof candidate.answer !== "string") return null;
+  const original = candidate.answer;
   const libraryGround = libraryGrounder(inputs);
   const shown = shownOf(inputs);
-  const evidence = Array.isArray(candidate.evidence)
-    ? candidate.evidence as Record<string, unknown>[]
-    : [];
+  // A library citation is labelled by the server from the retrieved title and year, never by the
+  // model, so its label is rebuilt before anything is read: a figure or an unshown study in the
+  // model's wording must not make the cut give up, and the citation stays.
+  let relabelled = false;
+  const evidence =
+    (Array.isArray(candidate.evidence) ? candidate.evidence as Record<string, unknown>[] : []).map(
+      (item) => {
+        const label = item.source === "library" ? shown[String(item.code)]?.label : undefined;
+        if (label === undefined || label === item.label) return item;
+        relabelled = true;
+        return { ...item, label };
+      },
+    );
+  candidate = { ...candidate, evidence };
   const declared = evidence.filter((item) => item.source === "library").map((item) =>
     item.code as string
   );
@@ -545,12 +561,10 @@ export function cutReply(
   ];
   const merged = mergeGrounds(inputs.ground, ...libraryGround(cited));
   const repeats = rules.includes("repeats_previous_turn") && inputs.repetition
-    ? repeatsOf(candidate.answer, inputs.repetition)
+    ? repeatsOf(original, inputs.repetition)
     : null;
   const flaggedBy = (unit: string, answerText: boolean) => {
-    const reasons:
-      ("numbers_stripped" | "study_stripped" | "closing_question_stripped" | "repeat_stripped")[] =
-        [];
+    const reasons: CutName[] = [];
     if (rules.includes("numbers_not_grounded")) {
       const ground = statesOwnTarget(unit) ? inputs.athleteGround ?? inputs.ground : merged;
       if (ungroundedNumbers(unit, ground).length > 0) reasons.push("numbers_stripped");
@@ -565,13 +579,13 @@ export function cutReply(
     return reasons;
   };
 
-  const cuts = new Set<CutReply["cuts"][number]>();
+  const cuts = new Set<CutName>();
   const mark = (unit: string, answerText: boolean) => {
     const reasons = flaggedBy(unit, answerText);
     for (const reason of reasons) cuts.add(reason);
     return reasons.length > 0;
   };
-  const main = cutUnits(candidate.answer, (unit) => mark(unit, true));
+  const main = cutUnits(original, (unit) => mark(unit, true));
   const answerText = withoutDanglingLead(main.text);
   const keptUnits = answerText === "" ? 0 : cutUnits(answerText, () => false).units;
   if (answerText.length < 40 || keptUnits * 2 < main.units) return null;
@@ -592,11 +606,20 @@ export function cutReply(
     ...candidate,
     answer: answerText,
     suggested_follow_ups: strings(candidate.suggested_follow_ups).filter(keepString),
-    missing_data: [...missingData, ...notes],
+    // The notices take their place first: the contract allows a fixed number of notes, so the
+    // last of the model's own are the ones to go.
+    missing_data: [
+      ...missingData.slice(
+        0,
+        Math.max(0, coachChatAnswerLimits.missingDataMaxItems - notes.length),
+      ),
+      ...notes,
+    ],
     evidence: evidence.filter((item) =>
       item.source === "library" || keepString(String(item.label ?? ""))
     ),
   };
   if (Array.isArray(candidate.reasoning_chain)) cut.reasoning_chain = reasoning;
+  if (relabelled) cuts.add("label_rebuilt");
   return cuts.size === 0 ? null : { answer: cut, cuts: [...cuts] };
 }

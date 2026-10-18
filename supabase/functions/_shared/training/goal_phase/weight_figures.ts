@@ -6,11 +6,12 @@
 //   - otherwise the nearest cue within a few words decides. A load cue is an exercise name or
 //     catalog slug, a barbell word (plate, bar, rack), a lifting word (reps, load, 1RM). A body
 //     cue is a word about the person (weigh, body weight, scale, BMI, height, target, goal), a
-//     movement of the person toward a weight ("get down to", "drop to"), "you" as the subject of
-//     a verb that lands on a weight ("you'll be at", "you will hit", "you could reach"), or a
-//     time frame right after the figure ("66.5 kg in 12 weeks", "70 kg by March"), which is a
-//     forecast of where something will be (the weakest cue: any load cue beats it);
-//   - a figure with no body cue nearby is not a body weight, and a tie goes to the load.
+//     movement of the person toward a weight ("get down to", "drop to"), projection or pace
+//     wording ("at this pace", "would put you at", "on track for", "heading to", "you'd land
+//     at"), or "you" as the subject of a verb that lands on a weight ("you'll be at", "you will
+//     hit", "you could reach"). The nearer cue wins and a tie goes to the load;
+//   - a figure with no load cue within reach is a body weight, with or without a body cue: this is
+//     a safety check, so an unclear figure fails closed. Only a clear load cue clears a figure.
 // The distance counts the words between the cue and the figure, not the small function words
 // ("on", "the", "to"), so "55 kg on overhead press" and "weigh about 70 kg" both read as adjacent.
 import { exerciseCatalogV1 } from "../../onboarding/catalog.ts";
@@ -240,6 +241,17 @@ const movementPhrases: readonly (readonly RegExp[])[] = [
   ],
   [/^(?:drop|dropping|dip|dipping|fall|falling|sink|sinking)$/, /^to$/],
   [/^(?:drop|dropping|dip|dipping|fall|falling|sink|sinking)$/, /^down$/, /^to$/],
+  // Projection and pace wording.
+  [/^at$/, /^(?:this|that|the|your|current|same)$/, /^(?:pace|rate)$/],
+  [/^(?:put|putting|puts|leave|leaves|leaving|take|takes|taking|bring|brings)$/, /^(?:you|your)$/],
+  [/^(?:on|off)$/, /^(?:track|course|pace)$/],
+  [/^(?:heading|headed|trending|tracking|moving|going|aiming)$/, /^(?:to|toward|towards)$/],
+  [
+    /^(?:land|lands|landing|end|ends|ending|finish|finishes|finishing|settle|settles|settling)$/,
+    /^(?:at|on|around)$/,
+  ],
+  [/^(?:project|projects|projected|projecting|projection|extrapolate|extrapolated)$/],
+  [/^(?:if|when)$/, /^you$/, /^(?:keep|continue|carry|stay|maintain)$/],
 ];
 
 // "you" as the subject of a verb that lands on a weight.
@@ -275,16 +287,6 @@ function bodyCuesIn(words: readonly Word[]): Cue[] {
   }
   return cues;
 }
-
-// A time frame straight after the figure: a forecast of a weight, "in 12 weeks", "by March".
-const countWord =
-  "(?:\\d+(?:\\s*(?:-|–|to)\\s*\\d+)?|a|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|a few|a couple of)";
-const monthWord =
-  "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
-const timeFrameAfter = new RegExp(
-  `^\\s*(?:or so\\s*)?(?:(?:in|within|after|over)\\s+(?:about |around |roughly |another |just |only |the next )?${countWord}\\s*(?:days?|weeks?|months?|years?)\\b|by\\s+(?:the )?(?:end|then|next|christmas|summer|winter|spring|autumn|fall|\\d|${monthWord}\\b))`,
-  "i",
-);
 
 // ---- classification ----------------------------------------------------------------------
 
@@ -363,10 +365,8 @@ export function weightFiguresIn(sentence: string): WeightFigure[] {
       kgs,
       index: start,
       before: sentence.slice(0, start),
-      // A time frame is a weaker cue than a word about the person: any load cue beats it.
-      bodyWeight: body !== null
-        ? load === null || body < load
-        : load === null && timeFrameAfter.test(sentence.slice(end)),
+      // A figure fails closed: it is a body weight unless a load cue is as near as any body cue.
+      bodyWeight: load === null || (body !== null && body < load),
     });
   }
   return found;
