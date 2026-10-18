@@ -568,6 +568,8 @@ insert into public.planned_workouts(id, user_id, plan_version_id, workout_order,
    'a1200000-0000-4000-8000-000000000013', 2, 'New X', 'New', pg_temp.wd(1), 50, 'Warm up', 'Cool down'),
   ('a1300000-0000-4000-8000-000000000043', 'a1000000-0000-4000-8000-000000000003',
    'a1200000-0000-4000-8000-000000000013', 3, 'New Y', 'New', pg_temp.wd(2), 50, 'Warm up', 'Cool down'),
+  ('a1300000-0000-4000-8000-000000000044', 'a1000000-0000-4000-8000-000000000003',
+   'a1200000-0000-4000-8000-000000000013', 4, 'Floating', 'New', null, 50, 'Warm up', 'Cool down'),
   ('a1300000-0000-4000-8000-000000000051', 'a1000000-0000-4000-8000-000000000004',
    'a1200000-0000-4000-8000-000000000004', 1, 'Reg A', 'Regular', pg_temp.wd(0), 50, 'Warm up', 'Cool down'),
   ('a1300000-0000-4000-8000-000000000052', 'a1000000-0000-4000-8000-000000000004',
@@ -619,6 +621,78 @@ select is((select jsonb_agg(jsonb_build_array(d->>'date', d->>'version', d->'blo
     jsonb_build_array((current_date + 5)::text, '1', 'false'::jsonb, 'Reg D'),
     jsonb_build_array((current_date + 7)::text, '1', 'false'::jsonb, 'Reg A')),
   'a block ending in range: first and last day are the block''s, the day after is the restored plan''s');
+-- The identity keys the TypeScript reads: plan.id, days[].version_id and sessions[].version_id, and
+-- the ids of workouts with no weekday (a finished session is told apart from a planned one by id).
+select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
+    current_date - 7, current_date + 7, 'schedule')->'plan'->>'id',
+  'a1200000-0000-4000-8000-000000000001', 'plan.id is the active version''s id');
+select is((select count(*) from jsonb_array_elements(public.coach_lookup_plan_history_v1(
+    'a1000000-0000-4000-8000-000000000001', current_date - 7, current_date + 7, 'schedule')->'days') d
+    where d->>'version_id' = 'a1200000-0000-4000-8000-000000000001'), 6::bigint,
+  'every listed day names the version in force (the id)');
+select is((select count(*) from jsonb_array_elements(public.coach_lookup_plan_history_v1(
+    'a1000000-0000-4000-8000-000000000001', current_date - 7, current_date + 7, 'schedule')->'sessions') x
+    where x->>'version_id' is null), 0::bigint, 'every session names its version');
+select is((select x->>'version_id' from jsonb_array_elements(public.coach_lookup_plan_history_v1(
+    'a1000000-0000-4000-8000-000000000003', current_date - 7, current_date + 2, 'schedule')->'sessions') x
+    where x->>'name' = 'Floating'), 'a1200000-0000-4000-8000-000000000013',
+  'a workout with no weekday is listed with its version');
+select is((select count(*) from jsonb_array_elements(public.coach_lookup_plan_history_v1(
+    'a1000000-0000-4000-8000-000000000003', current_date - 7, current_date + 2, 'schedule')->'days') d,
+    jsonb_array_elements(d->'planned') p where p->>'name' = 'Floating'), 0::bigint,
+  'but it is never planned on a date');
+
+-- The five points of a temporary block, every day carrying a session in every version: before it,
+-- during it, its last day, the day after it (the hourly job has not swapped the version yet) and
+-- after the job's clone. Athlete 5: version 1 (regular), version 2 (block, 10 days ago to 5 days
+-- ago), version 3 (the clone of version 1, effective 3 days ago).
+insert into auth.users(id, role) values ('a1000000-0000-4000-8000-000000000005', 'authenticated');
+insert into public.training_plans(id, user_id, title, source) values
+  ('a1100000-0000-4000-8000-000000000005', 'a1000000-0000-4000-8000-000000000005', 'History', 'imported');
+insert into public.training_plan_versions(id, user_id, plan_id, version_number, status, block_weeks,
+  sessions_per_week, prescription, rationale, approved_at, effective_date, ends_on, block_kind,
+  restores_version_id) values
+  ('a1200000-0000-4000-8000-000000000005', 'a1000000-0000-4000-8000-000000000005',
+   'a1100000-0000-4000-8000-000000000005', 1, 'superseded', 6, 7, '{}', 'Regular', now(),
+   current_date - 30, null, null, null),
+  ('a1200000-0000-4000-8000-000000000015', 'a1000000-0000-4000-8000-000000000005',
+   'a1100000-0000-4000-8000-000000000005', 2, 'superseded', 6, 7, '{}', 'Block', now(),
+   current_date - 10, current_date - 5, 'temporary_block', 'a1200000-0000-4000-8000-000000000005'),
+  ('a1200000-0000-4000-8000-000000000025', 'a1000000-0000-4000-8000-000000000005',
+   'a1100000-0000-4000-8000-000000000005', 3, 'draft', 6, 7, '{}', 'Clone', now(),
+   current_date - 3, null, null, null);
+insert into public.planned_workouts(user_id, plan_version_id, workout_order, name, objective,
+  preferred_weekday, estimated_minutes, warm_up_guidance, cool_down_guidance)
+select 'a1000000-0000-4000-8000-000000000005', v.id, k + 1, v.prefix || ' ' || k, 'Plan',
+  pg_temp.wd(k), 50, 'Warm up', 'Cool down'
+from (values ('a1200000-0000-4000-8000-000000000005'::uuid, 'Reg'),
+  ('a1200000-0000-4000-8000-000000000015'::uuid, 'Block'),
+  ('a1200000-0000-4000-8000-000000000025'::uuid, 'Clone')) v(id, prefix),
+  generate_series(0, 6) k;
+update public.training_plan_versions set status = 'active'
+where id = 'a1200000-0000-4000-8000-000000000025';
+select is((select count(*) from jsonb_array_elements(public.coach_lookup_plan_history_v1(
+    'a1000000-0000-4000-8000-000000000005', current_date - 12, current_date, 'schedule')->'days') d),
+  13::bigint, 'every date of the history has a session');
+select is((select count(*) from jsonb_array_elements(public.coach_lookup_plan_history_v1(
+    'a1000000-0000-4000-8000-000000000005', current_date - 12, current_date, 'schedule')->'days') d
+  where (d->>'version')::integer is distinct from case
+      when (d->>'date')::date < current_date - 10 then 1
+      when (d->>'date')::date <= current_date - 5 then 2
+      when (d->>'date')::date = current_date - 4 then 1
+      else 3 end
+    or (d->'block')::boolean is distinct from ((d->>'date')::date between current_date - 10
+      and current_date - 5)), 0::bigint,
+  'before the block: version 1; during and on its last day: the block; the day after: version 1 again; after the clone: version 3');
+select is((select d->'planned'->0->>'name' from jsonb_array_elements(public.coach_lookup_plan_history_v1(
+    'a1000000-0000-4000-8000-000000000005', current_date - 5, current_date - 5, 'schedule')->'days') d),
+  'Block ' || ((extract(isodow from current_date - 5)::integer - extract(isodow from current_date)::integer + 7) % 7),
+  'the last day is the block''s session');
+select is((select d->'planned'->0->>'name' from jsonb_array_elements(public.coach_lookup_plan_history_v1(
+    'a1000000-0000-4000-8000-000000000005', current_date - 4, current_date - 4, 'schedule')->'days') d),
+  'Reg ' || ((extract(isodow from current_date - 4)::integer - extract(isodow from current_date)::integer + 7) % 7),
+  'the day after is the restored version''s session');
+
 select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000004', current_date)
     ->'after_block'->>'ends_on', (current_date + 3)::text, 'the plan state says when the block ends');
 select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000004', current_date)

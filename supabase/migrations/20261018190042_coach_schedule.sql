@@ -236,7 +236,9 @@ returns jsonb language sql stable set search_path = '' as $$
     select w.id, w.plan_version_id, w.name, w.preferred_weekday as weekday, w.workout_order,
       w.estimated_minutes
     from public.planned_workouts w
-    where w.user_id = p_user_id and w.preferred_weekday is not null
+    -- Every workout of the versions in the range, including one with no weekday: a finished
+    -- session is told apart from a planned one by workout id, so the ids must all be here.
+    where w.user_id = p_user_id
       and w.plan_version_id in (select r.version_id from resolved r where r.version_id is not null)
   ), done as (
     select s.local_date, cw.id as workout_id, cw.name,

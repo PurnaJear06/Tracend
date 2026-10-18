@@ -1259,6 +1259,13 @@ when an overlap exists; the data index grows by about 250 when a plan exists.
   plan in force on each date (after a block's `ends_on`, the restored sessions), and a line names
   where the block hands back to. pgTAP pins the boundary days: the plan change's effective date and
   the day before it, the block's first day, its last day and the day after.
+- Fifth review: the id guard in `isSameWorkout` also knows the restored plan's workout ids (restored
+  sessions sharing a name are not finished by each other); only sessions in force on today's date
+  can be undone or made up; the sets a week and the fallback for a finished session's exercises read
+  the plan in force; the schedule SQL returns every workout of a version, weekday or not, so the
+  render never falls back to a name for a weekday-less one. pgTAP asserts `plan.id`,
+  `days[].version_id`, `sessions[].version_id`, and walks a block's five points (before, during, last
+  day, day after, after the clone); the contributor has the same five-point table.
 - Second review: a substituted exercise (`performance_kind` substituted or extra) has no catalog
   slug by design (`private.exercise_performance_slug`), so `private.coach_session_exercises`
   reports its slug as null and the "muscles unknown" caveat shows; it never borrows the planned

@@ -400,7 +400,7 @@ Deno.test("plan schedule: two workouts with one name keep their own exercises, k
           weekday: 1,
           version_id: "v-3",
           version: 3,
-          planned: [{ id: "w-a", version_id: "v-3", name: "Session", minutes: 60 }],
+          planned: [{ id: "w-a", name: "Session", minutes: 60 }],
           done: [],
         },
         {
@@ -408,7 +408,7 @@ Deno.test("plan schedule: two workouts with one name keep their own exercises, k
           weekday: 2,
           version_id: "v-3",
           version: 3,
-          planned: [{ id: "w-b", version_id: "v-3", name: "Session", minutes: 60 }],
+          planned: [{ id: "w-b", name: "Session", minutes: 60 }],
           done: [],
         },
       ],
@@ -447,7 +447,7 @@ Deno.test("plan schedule: a finished session answers the planned one with the sa
         weekday: 1,
         version_id: "v-3",
         version: 3,
-        planned: [{ id: "w-a", version_id: "v-3", name: "Session", minutes: 60 }],
+        planned: [{ id: "w-a", name: "Session", minutes: 60 }],
         // The other workout named Session was done that day: Monday's own was not.
         done: [{
           planned_workout_id: "w-b",
@@ -651,4 +651,34 @@ Deno.test("plan schedule: versions are compared by id, because version numbers r
   const lines = text.split("\n");
   assert(!lines.find((l) => l.startsWith("- Mon 2026-10-19"))!.includes("[version"));
   assert(lines.find((l) => l.startsWith("- Mon 2026-10-26"))!.endsWith("[version 1]"));
+});
+
+Deno.test("plan schedule: a workout with no weekday is known by its id, so it is not matched by name", () => {
+  // "Upper A" has a floating workout in the same version (no weekday, so never planned on a date)
+  // that was finished on Sunday. Sunday's planned "Upper A" is a different workout and is still due.
+  const upper = [{ slug: "barbell-bench-press", sets: 4 }];
+  const { text } = renderLookup(
+    request("plan_history", "2026-10-18", "2026-10-19", "schedule"),
+    {
+      ...scheduleLookupPayload,
+      from: "2026-10-18",
+      to: "2026-10-19",
+      today: "2026-10-18",
+      plan: { id: "v-2", version: 2, starts_on: "2026-10-18", sessions_per_week: 2 },
+      sessions: [
+        { id: "b1", version_id: "v-2", name: "Upper A", weekday: 7, exercises: upper },
+        { id: "b-float", version_id: "v-2", name: "Upper A", weekday: null, exercises: upper },
+      ],
+      days: [{
+        date: "2026-10-18",
+        weekday: 7,
+        version_id: "v-2",
+        version: 2,
+        block: false,
+        planned: [{ id: "b1", name: "Upper A", minutes: 60 }],
+        done: [{ planned_workout_id: "b-float", name: "Upper A", exercises: upper }],
+      }],
+    },
+  );
+  assertStringIncludes(text, "done Upper A; planned Upper A");
 });

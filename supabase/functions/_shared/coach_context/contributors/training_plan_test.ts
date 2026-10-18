@@ -613,3 +613,148 @@ Deno.test("a block that ended before this week: the next-week fallback is the re
   );
   assert(!text.includes("Home block"));
 });
+
+// A block of "Home block" sessions on the given weekdays that ends on `endsOn`, handing back to
+// "Full body" on Thursday, Friday and Saturday. Each restored session has its own id.
+const blockToFullBody = (
+  weekday: number,
+  blockDays: readonly number[],
+  endsOn: string,
+  done: readonly Readonly<{ id: string; date: string; weekday: number }>[] = [],
+) => {
+  const payload = splitPlanPayload(weekday, []);
+  const base = (payload.sessions as Record<string, unknown>[])[0];
+  const session = (id: string, name: string, day: number) => ({
+    ...base,
+    planned_workout_id: id,
+    name,
+    weekday: day,
+    order: day,
+    exercises: [{
+      planned_exercise_id: `e-${id}`,
+      order: 1,
+      name: "Squat",
+      slug: "barbell-back-squat",
+      sets: 3,
+      rep_min: 8,
+      rep_max: 12,
+    }],
+  });
+  payload.sessions = blockDays.map((day) => session(`b-${day}`, "Home block", day));
+  payload.after_block = {
+    ends_on: endsOn,
+    version_number: 2,
+    sessions: [4, 5, 6].map((day) => session(`r-${day}`, "Full body", day)),
+  };
+  payload.completed_this_week = done.map((row) => ({
+    planned_workout_id: row.id,
+    local_date: row.date,
+    name: row.id.startsWith("r-") ? "Full body" : "Home block",
+    weekday: row.weekday,
+    order: row.weekday,
+  }));
+  payload.recent_completed = [];
+  return payload;
+};
+
+Deno.test("restored sessions with one name are told apart by id: Thursday's does not finish Friday's or Saturday's", () => {
+  // The block ended Wednesday 2026-10-14; Thursday's Full body was logged. On Friday, Friday's is
+  // today's and Saturday's is still to do.
+  const payload = blockToFullBody(5, [1, 2, 3], "2026-10-14", [
+    { id: "r-4", date: "2026-10-15", weekday: 4 },
+  ]);
+  const text = renderTrainingPlan(parsePlanState(payload))!;
+  assertStringIncludes(text, "Today's planned session: Full body (Friday");
+  assert(!text.includes("was already done this week"), "no restored session is done early");
+  assertStringIncludes(lineOf(text, "- Sat 2026-10-17"), "Full body (");
+  assert(!lineOf(text, "- Sat 2026-10-17").includes("already done"));
+});
+
+Deno.test("a block session left undone is not made up after the block's last day", () => {
+  // The block (Monday to Wednesday) ended on Wednesday 2026-10-14; the restored Thursday, Friday and
+  // Saturday sessions are done, today is Saturday. Monday's Home block lapsed: nothing is undone.
+  const payload = blockToFullBody(6, [1, 2, 3], "2026-10-14", [
+    { id: "r-4", date: "2026-10-15", weekday: 4 },
+    { id: "r-5", date: "2026-10-16", weekday: 5 },
+    { id: "r-6", date: "2026-10-17", weekday: 6 },
+  ]);
+  const text = renderTrainingPlan(parsePlanState(payload))!;
+  assert(!text.includes("A session from earlier this week is still undone"));
+  assert(!lineOf(text, "- Sat 2026-10-17 (today)").includes("Home block"));
+  assert(!text.includes("undone earlier this week"));
+  // The same plan during the block (Wednesday, its last day) does count Monday's as undone.
+  const during = blockToFullBody(3, [1, 2, 3], "2026-10-14");
+  assertStringIncludes(
+    renderTrainingPlan(parsePlanState(during))!,
+    "undone earlier this week: Home block (Monday), Home block (Tuesday)",
+  );
+});
+
+// The five points of a temporary block as the contributor sees them: before it (an ordinary plan),
+// during it, its last day, the day after it (the hourly job has not swapped the version yet) and
+// after the job's clone (an ordinary plan again). Each row is [what the state holds, the weekday
+// and date of today, today's session, tomorrow's session].
+Deno.test("a temporary block, five points: today's and tomorrow's sessions come from the plan in force", () => {
+  const regular = (weekday: number) => {
+    const payload = blockToFullBody(weekday, [], "2026-10-14");
+    payload.sessions = (payload.after_block as { sessions: unknown[] }).sessions;
+    payload.after_block = null;
+    return payload;
+  };
+  const rows: readonly (readonly [string, Record<string, unknown>, string, string])[] = [
+    [
+      "before the block",
+      regular(4),
+      "- Thu 2026-10-15 (today): Full body",
+      "- Fri 2026-10-16 (tomorrow): Full body",
+    ],
+    [
+      "during the block",
+      blockToFullBody(2, [1, 2, 3], "2026-10-14"),
+      "- Tue 2026-10-13 (today): Home block",
+      "- Wed 2026-10-14 (tomorrow): Home block",
+    ],
+    [
+      "its last day",
+      blockToFullBody(3, [1, 2, 3], "2026-10-14"),
+      "- Wed 2026-10-14 (today): Home block",
+      "- Thu 2026-10-15 (tomorrow): Full body",
+    ],
+    [
+      "the day after",
+      blockToFullBody(4, [1, 2, 3, 4, 5, 6], "2026-10-14"),
+      "- Thu 2026-10-15 (today): Full body",
+      "- Fri 2026-10-16 (tomorrow): Full body",
+    ],
+    [
+      "after the clone",
+      regular(5),
+      "- Fri 2026-10-16 (today): Full body",
+      "- Sat 2026-10-17 (tomorrow): Full body",
+    ],
+  ];
+  for (const [point, payload, today, tomorrow] of rows) {
+    const text = renderTrainingPlan(parsePlanState(payload))!;
+    assertStringIncludes(text, today, point);
+    assertStringIncludes(text, tomorrow, point);
+    // Nothing dated after the block's last day is read from the block.
+    if (point === "the day after") {
+      assert(!/^- (Thu|Fri|Sat|Sun) 2026-10-\d\d[^\n]*Home block/m.test(text), point);
+      assertStringIncludes(text, "Today's planned session: Full body (Thursday", point);
+      // The sets a week are those of the plan in force (3 restored sessions of 3 squat sets).
+      assertStringIncludes(text, "Sets a week by main muscle in the plan: quads 9", point);
+    }
+  }
+});
+
+Deno.test("a restored session finished yesterday with no logged exercises falls back to the restored plan's sets", () => {
+  const payload = blockToFullBody(5, [1, 2, 3], "2026-10-14");
+  payload.recent_completed = [{
+    planned_workout_id: "r-4",
+    local_date: "2026-10-15",
+    name: "Full body",
+    exercises: [],
+  }];
+  const text = renderTrainingPlan(parsePlanState(payload))!;
+  assertStringIncludes(lineOf(text, "- Thu 2026-10-15"), "done: Full body (glutes, quads)");
+});
