@@ -1277,6 +1277,14 @@ when an overlap exists; the data index grows by about 250 when a plan exists.
   version) and asserts: nothing finished is undone, no make-up for a finished workout, nothing dated
   after `ends_on` is the block's, and the contributor and the schedule lookup agree on done and
   planned for every date.
+- Seventh review: `matchFinished` is two-phase across all leftover workouts. First every leftover
+  takes the free session of the same name nearest to the day it was done; a name that exists but is
+  taken finishes nothing. Only then does a workout whose name no session has take the session in its
+  day and place. So after an ordinary mid-week reshuffle a renamed or repeated workout can no longer
+  spill onto another session (Pull stays undone). Pinned by the three reviewer scenarios, nearest-day,
+  order-of-doing and duplicate-log unit tests, and an invariant over every reshuffle of the plan that
+  also asserts which session each leftover finishes; each of slot-before-name, no nearest-day sort,
+  unsorted rows and a dropped taken check fails a test.
 - Second review: a substituted exercise (`performance_kind` substituted or extra) has no catalog
   slug by design (`private.exercise_performance_slug`), so `private.coach_session_exercises`
   reports its slug as null and the "muscles unknown" caveat shows; it never borrows the planned

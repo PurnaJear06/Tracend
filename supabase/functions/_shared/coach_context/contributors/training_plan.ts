@@ -199,8 +199,9 @@ const isoWeekday = (date: string) => ((dayOf(date) + 3) % 7) + 1;
  * - A workout finishes the session with its own id.
  * - Otherwise it was finished under another plan version, and counts for a session of the plan in
  *   force whose pool does not hold its id (inside a plan, a different id is a different workout,
- *   whatever its name): the session with the same name, nearest to the day it was done, else the
- *   one with the same day and order.
+ *   whatever its name): first every such workout takes the session with the same name nearest to
+ *   the day it was done (a name that exists but is taken finishes nothing), then a workout whose
+ *   name no session has takes the session with the same day and order.
  * Names are not unique and are never the only evidence against an id the plan knows.
  */
 export function matchFinished(state: PlanState): ReadonlyMap<string, FinishedWorkout> {
@@ -221,26 +222,40 @@ export function matchFinished(state: PlanState): ReadonlyMap<string, FinishedWor
       placed.add(row);
     }
   }
-  for (const row of rows) {
-    if (placed.has(row)) continue;
-    const eligible = candidates.filter((session) =>
+  const sameName = (session: PlanSession, row: FinishedWorkout) =>
+    row.name !== "" && session.name.toLowerCase() === row.name.toLowerCase();
+  const eligibleFor = (row: FinishedWorkout) =>
+    candidates.filter((session) =>
       !result.has(session.id) && !poolHolding(session).some((item) => item.id === row.id)
     );
+  // Phase 1: every leftover workout counts for a session of the same name, nearest to the day it
+  // was done. A workout whose name exists in the plan but whose sessions are all taken finishes
+  // nothing: it must not spill onto another session.
+  for (const row of rows) {
+    if (placed.has(row)) continue;
     const doneWeekday = isoWeekday(row.localDate);
-    const sameName = row.name === ""
-      ? []
-      : eligible.filter((session) => session.name.toLowerCase() === row.name.toLowerCase());
-    const nearest = [...sameName].sort((a, b) =>
+    const nearest = eligibleFor(row).filter((session) =>
+      sameName(session, row)
+    ).sort((a, b) =>
       Math.abs((a.weekday ?? 99) - doneWeekday) - Math.abs((b.weekday ?? 99) - doneWeekday) ||
       (a.weekday ?? 99) - (b.weekday ?? 99)
     )[0];
-    const sameSlot = eligible.find((session) =>
+    if (nearest) {
+      result.set(nearest.id, row);
+      placed.add(row);
+    }
+  }
+  // Phase 2: only a workout whose name no session of the plan in force has (the session was
+  // renamed) counts for the session in the same day and place.
+  for (const row of rows) {
+    if (placed.has(row) || candidates.some((session) => sameName(session, row))) continue;
+    const sameSlot = eligibleFor(row).find((session) =>
       row.weekday != null && row.weekday === session.weekday && row.order != null &&
       row.order === session.order
     );
-    const pick = nearest ?? sameSlot;
-    if (pick) {
-      result.set(pick.id, row);
+    if (sameSlot) {
+      result.set(sameSlot.id, row);
+      placed.add(row);
     }
   }
   finishedCache.set(state, result);

@@ -370,3 +370,110 @@ Deno.test("invariant (d): the contributor and the schedule lookup agree on done 
   }
   assert(checked > 300, `${checked} scenarios`);
 });
+
+Deno.test("an ordinary plan change mid-week, no block: each leftover workout finishes the right session, or none", () => {
+  const oldNames = ["Push", "Pull", "Legs"];
+  const newPlans: readonly (readonly string[])[] = [
+    ["Push", "Pull", "Legs"],
+    ["Push", "Legs", "Pull"],
+    ["Pull", "Push", "Legs"],
+    ["Pull", "Legs", "Push"],
+    ["Legs", "Push", "Pull"],
+    ["Legs", "Pull", "Push"],
+    ["Push", "Push", "Legs"],
+    ["Upper", "Upper", "Upper"],
+    ["Push", "Pull", "Core"],
+  ];
+  const options = ["none", "old", "new", "both"] as const;
+  let checked = 0;
+  for (const names of newPlans) {
+    for (let today = 1; today <= 7; today += 1) {
+      for (const a of options) {
+        for (const b of options) {
+          for (const c of options) {
+            const choices = [a, b, c];
+            const label = `new ${names.join("/")}, today ${today}, ${choices.join("/")}`;
+            const payload = splitPlanPayload(today, []);
+            const base = (payload.sessions as Record<string, unknown>[])[0];
+            payload.sessions = planWeekdays.map((day, index) => ({
+              ...base,
+              planned_workout_id: `n-${day}`,
+              name: names[index],
+              weekday: day,
+              order: index + 1,
+            }));
+            payload.after_block = null;
+            const rows = planWeekdays.flatMap((day, index) => {
+              if (day > today || choices[index] === "none") return [];
+              const old = { id: `o-${day}`, name: oldNames[index] };
+              const current = { id: `n-${day}`, name: names[index] };
+              const made = (who: { id: string; name: string }) => ({
+                planned_workout_id: who.id,
+                local_date: dateOf(day),
+                name: who.name,
+                weekday: day,
+                order: index + 1,
+              });
+              return choices[index] === "both"
+                ? [made(old), made(current)]
+                : [made(choices[index] === "old" ? old : current)];
+            });
+            payload.completed_this_week = rows;
+            payload.recent_completed = [];
+            const state = parsePlanState(payload) as PlanState;
+            const matches = matchFinished(state);
+            const sessions = weekSessions(state);
+            const used = [...matches.values()];
+            checked += 1;
+
+            assertEquals(new Set(used).size, used.length, `${label}: a workout finished two`);
+            for (const session of pickFocusSession(state).undone) {
+              assert(!matches.has(session.id), `${label}: ${session.id} finished and undone`);
+            }
+            const nameExists = (name: string) =>
+              sessions.some((session) => session.name.toLowerCase() === name.toLowerCase());
+            // WHICH session each leftover finishes: the same name when the plan has the name, the
+            // same day and place only when it does not.
+            for (const [id, row] of matches) {
+              if (row.id === id) continue;
+              const session = sessions.find((item) => item.id === id) as PlanSession;
+              if (nameExists(row.name)) {
+                assertEquals(
+                  session.name.toLowerCase(),
+                  row.name.toLowerCase(),
+                  `${label}: ${row.id} -> ${id}`,
+                );
+              } else {
+                assert(
+                  session.weekday === row.weekday && session.order === row.order,
+                  `${label}: ${row.id} -> ${id} by place`,
+                );
+              }
+            }
+            // A leftover that finished nothing found no free session of its name (or, without
+            // that name, of its place): it never leaves a free session it could have taken.
+            for (const row of state.completed.filter((item) => !used.includes(item))) {
+              const ownPlan = state.sessions.some((session) => session.id === row.id);
+              if (ownPlan) continue;
+              const free = sessions.filter((session) => !matches.has(session.id));
+              if (nameExists(row.name)) {
+                assert(
+                  !free.some((session) => session.name.toLowerCase() === row.name.toLowerCase()),
+                  `${label}: ${row.id} left a free session of its name`,
+                );
+              } else {
+                assert(
+                  !free.some((session) =>
+                    session.weekday === row.weekday && session.order === row.order
+                  ),
+                  `${label}: ${row.id} left its free slot`,
+                );
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  assert(checked > 3_000, `${checked} scenarios`);
+});

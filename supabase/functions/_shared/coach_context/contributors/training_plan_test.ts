@@ -824,3 +824,108 @@ Deno.test("weekday-less sessions follow the plan in force too: after the block's
   assertStringIncludes(text, "no set day, Restored extra");
   assert(!text.includes("Block extra"));
 });
+
+// An ordinary plan change in the middle of a week: the new plan's sessions and the workouts
+// finished this week, some of them under the old plan. Today is Saturday 2026-10-17.
+type Slot = readonly [id: string, name: string, weekday: number, order: number];
+type Done = readonly [id: string, name: string, weekday: number, order: number, date: string];
+const reshuffled = (slots: readonly Slot[], done: readonly Done[]) => {
+  const payload = splitPlanPayload(6, []);
+  const base = (payload.sessions as Record<string, unknown>[])[0];
+  payload.sessions = slots.map(([id, name, weekday, order]) => ({
+    ...base,
+    planned_workout_id: id,
+    name,
+    weekday,
+    order,
+  }));
+  payload.after_block = null;
+  payload.completed_this_week = done.map(([id, name, weekday, order, date]) => ({
+    planned_workout_id: id,
+    local_date: date,
+    name,
+    weekday,
+    order,
+  }));
+  payload.recent_completed = [];
+  return parsePlanState(payload)!;
+};
+const finishedNames = (state: ReturnType<typeof reshuffled>) =>
+  state.sessions.filter((session) => finishedOn(state, session) !== null).map((session) =>
+    session.name
+  );
+const mon = "2026-10-12";
+const tue = "2026-10-13";
+const wed = "2026-10-14";
+const thu = "2026-10-15";
+const fri = "2026-10-16";
+
+Deno.test("plan change (a): old Push done Monday and Wednesday, new Monday Pull and Wednesday Push: Pull stays undone", () => {
+  const state = reshuffled([["n-1", "Pull", 1, 1], ["n-3", "Push", 3, 2]], [
+    ["o-1", "Push", 1, 1, mon],
+    ["o-3", "Push", 3, 2, wed],
+  ]);
+  assertEquals(finishedNames(state), ["Push"]);
+  assertEquals(pickFocusSession(state).undone.map((session) => session.name), ["Pull"]);
+});
+
+Deno.test("plan change (b): old Push done Monday plus the new Push done Wednesday: Pull stays undone", () => {
+  const state = reshuffled([["n-1", "Pull", 1, 1], ["n-3", "Push", 3, 2]], [
+    ["o-1", "Push", 1, 1, mon],
+    ["n-3", "Push", 3, 2, wed],
+  ]);
+  assertEquals(finishedNames(state), ["Push"]);
+  assertEquals(finishedOn(state, state.sessions[1]), wed);
+  assertEquals(pickFocusSession(state).undone.map((session) => session.name), ["Pull"]);
+});
+
+Deno.test("plan change (c): a renamed workout takes its slot only after names are matched: Pull stays undone", () => {
+  // Old "Squat day" (Monday, slot 1) and old Push (Tuesday, slot 2); the new plan has Push on
+  // Monday and Pull on Tuesday. Push is finished by the old Push; the old Squat day, whose name no
+  // session has, finds its slot (Monday) taken and finishes nothing.
+  const state = reshuffled([["n-1", "Push", 1, 1], ["n-2", "Pull", 2, 2]], [
+    ["o-1", "Squat day", 1, 1, mon],
+    ["o-2", "Push", 2, 2, tue],
+  ]);
+  assertEquals(finishedNames(state), ["Push"]);
+  assertEquals(finishedOn(state, state.sessions[0]), tue);
+  assertEquals(pickFocusSession(state).undone.map((session) => session.name), ["Pull"]);
+});
+
+Deno.test("a renamed workout still finds its slot when no name competes", () => {
+  const state = reshuffled([["n-1", "Push", 1, 1], ["n-2", "Pull", 2, 2]], [
+    ["o-1", "Squat day", 1, 1, mon],
+  ]);
+  assertEquals(finishedNames(state), ["Push"]);
+});
+
+Deno.test("a workout done off its own weekday counts for the same-name session nearest to the day it was done", () => {
+  const upper = (done: Done) =>
+    reshuffled([["n-1", "Upper", 1, 1], ["n-5", "Upper", 5, 2]], [done]);
+  // Done on a Thursday: Friday's Upper is nearer than Monday's.
+  const thursday = upper(["o-9", "Upper", 4, 1, thu]);
+  assertEquals(finishedOn(thursday, thursday.sessions[1]), thu);
+  assertEquals(finishedOn(thursday, thursday.sessions[0]), null);
+  // Done on a Tuesday: Monday's is nearer.
+  const tuesday = upper(["o-9", "Upper", 2, 1, tue]);
+  assertEquals(finishedOn(tuesday, tuesday.sessions[0]), tue);
+  assertEquals(finishedOn(tuesday, tuesday.sessions[1]), null);
+});
+
+Deno.test("workouts are matched in the order they were done, whatever order they arrive in", () => {
+  // One session called Upper, and two old Upper workouts (Monday, Friday) listed newest first: the
+  // first to be done counts, the second finishes nothing.
+  const state = reshuffled([["n-3", "Upper", 3, 1]], [
+    ["o-5", "Upper", 5, 1, fri],
+    ["o-1", "Upper", 1, 1, mon],
+  ]);
+  assertEquals(finishedOn(state, state.sessions[0]), mon);
+});
+
+Deno.test("a workout logged twice finishes its session once, on its first date", () => {
+  const state = reshuffled([["n-1", "Upper", 1, 1]], [
+    ["n-1", "Upper", 1, 1, mon],
+    ["n-1", "Upper", 1, 1, wed],
+  ]);
+  assertEquals(finishedOn(state, state.sessions[0]), mon);
+});
