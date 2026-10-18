@@ -349,3 +349,22 @@ Deno.test("a projection never goes below the healthy BMI floor", () => {
   for (const row of projection.targets) assert(row.target_kg >= 47.4, `${row.target_kg}`);
   for (const row of projection.horizons) assert(row.kg_low >= 47.4, `${row.kg_low}`);
 });
+
+Deno.test("memory cases: the real contributors put the facts and notes in the turn, in the right part", () => {
+  const knee = prepared.get("fact-knee-contradicted")!.firstRound;
+  assertStringIncludes(knee.stable, "Knee surgery in 2025: shallow squats only");
+  assertStringIncludes(knee.stable, "Injuries and limitations:");
+  assertEquals(knee.volatile.includes("Knee surgery"), false);
+  const followed = prepared.get("memory-follow-through")!.firstRound;
+  assertStringIncludes(followed.volatile, "Follow-through, checked 2026-10-13: not followed");
+  assertStringIncludes(followed.volatile, "not confirmed by the athlete");
+  assertEquals(followed.stable.includes("Coach's notes"), false);
+  const none = prepared.get("memory-not-remembered-chat")!.firstRound;
+  assertEquals(none.stable.includes("Confirmed by the athlete"), false);
+  assertEquals(none.volatile.includes("Coach's notes"), false);
+});
+
+Deno.test("a case for a chat that is not remembered turns fact suggestions off", () => {
+  const off = prepared.get("memory-not-remembered-chat")!.bank.athlete().contributors.memory;
+  assertEquals(off?.remember, false);
+});

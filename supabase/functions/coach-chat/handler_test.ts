@@ -40,7 +40,7 @@ type Setup = Readonly<{
   stored?: StoredRow[];
   /** What each attempt produced, by idempotency key (coach_chat_turn). */
   turns?: Record<string, unknown>;
-  /** `prepare_coach_chat_v8` raises this message (for example "approved plan required"). */
+  /** `prepare_coach_chat_v9` raises this message (for example "approved plan required"). */
   prepareFails?: string;
   /** The reply cannot be stored. */
   persistFails?: boolean;
@@ -76,7 +76,7 @@ async function run(question: string, setup: Setup) {
             ? { data: null, error: { message: setup.refuse } }
             : { data: "reservation-1", error: null },
         );
-      case "prepare_coach_chat_v8":
+      case "prepare_coach_chat_v9":
         return Promise.resolve(
           setup.prepareFails
             ? { data: null, error: { message: setup.prepareFails, code: "P0001" } }
@@ -235,7 +235,7 @@ Deno.test("a finished turn is replayed without budget or context work, even at t
   assertEquals(result.body.replayed, true);
   assertEquals(result.body.message!.answer, "Keep today's session as planned.");
   assert(!result.calls.includes("reserve_ai_budget"), result.calls.join());
-  assert(!result.calls.includes("prepare_coach_chat_v8"), result.calls.join());
+  assert(!result.calls.includes("prepare_coach_chat_v9"), result.calls.join());
   assert(result.calls.includes("coach_chat_turn"));
 });
 
@@ -255,7 +255,7 @@ Deno.test("a new turn at a limit gets 429 with the reason and never runs context
     assertEquals(result.body.error, "ai_usage_limit");
     assertEquals(result.body.reason, reason);
     assert(result.calls.includes("reserve_ai_budget"));
-    assert(!result.calls.includes("prepare_coach_chat_v8"), result.calls.join());
+    assert(!result.calls.includes("prepare_coach_chat_v9"), result.calls.join());
     assert(!result.calls.includes("record_coach_chat_question"), "the turn never started");
   }
 });
@@ -287,7 +287,7 @@ Deno.test("a turn still running answers 409; a lost one answers 503 turn_lost", 
     assertEquals(lost.body.code, "turn_lost");
     assertEquals(lost.body.replayed, true);
     assert(!lost.calls.includes("reserve_ai_budget"));
-    assert(!lost.calls.includes("prepare_coach_chat_v8"));
+    assert(!lost.calls.includes("prepare_coach_chat_v9"));
   }
 });
 
@@ -537,7 +537,7 @@ Deno.test("a failed read of the saved question is unknown, not 'not saved': a lo
   assertEquals(result.status, 503);
   assertEquals(result.body.code, "turn_lost");
   assert(result.calls.includes("reserve_ai_budget"), "unknown does not skip the normal path");
-  assert(result.calls.includes("prepare_coach_chat_v8"));
+  assert(result.calls.includes("prepare_coach_chat_v9"));
 });
 
 Deno.test("a referral without context keeps its own safety state", async () => {

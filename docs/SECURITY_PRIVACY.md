@@ -520,8 +520,9 @@ history.
   provenance, and timestamps. It includes the onboarding profile fields, `onboarding_generations`,
   `onboarding_questions`, `onboarding_screenings` (the pre-plan health check answers),
   `health_history_months`, `ai_usage_events`, physique analyses and every
-  set-timing column. Known gap: the table list in `privacy-export` does not yet include Coach
-  threads and messages, `user_preferences`, Coach memory tables, nutrition schedules, HealthKit
+  set-timing column. `coach_facts` (what the athlete confirmed for Coach) and `coach_notes` (Coach's own
+  notes) are included. Known gap: the table list in `privacy-export` does not yet include Coach
+  threads and messages, `user_preferences`, nutrition schedules, HealthKit
   workout references and reconciliations, or the feature-engine tables.
 - It is encrypted, delivered through a short-lived authorization, and deleted within seven days.
 - Export jobs and downloads are audited without logging content.

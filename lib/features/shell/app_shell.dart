@@ -71,6 +71,7 @@ class AppShellRepositories {
     this.goalTargets,
     this.brief,
     this.proposals,
+    this.memory,
   });
 
   final WorkoutRepository? workouts;
@@ -86,6 +87,9 @@ class AppShellRepositories {
   /// The Coach proposals repository; built from the environment (and absent
   /// without a backend) when not given.
   final CoachProposalRepository? proposals;
+
+  /// What Coach remembers; built from the environment when not given.
+  final CoachMemoryRepository? memory;
 }
 
 class _AppShellState extends State<AppShell> {
@@ -104,6 +108,7 @@ class _AppShellState extends State<AppShell> {
   late final GoalTargetRepository _goalTargets;
   late final DailyBriefRepository _brief;
   late final CoachProposalRepository? _proposals;
+  late final CoachMemoryRepository _memory;
 
   /// Today's morning check-in gate: while it is required, the tab bar gives
   /// way to "Check in to start your day".
@@ -151,6 +156,11 @@ class _AppShellState extends State<AppShell> {
         (live
             ? SupabaseCoachProposalRepository(Supabase.instance.client)
             : null);
+    _memory =
+        injected?.memory ??
+        (live
+            ? SupabaseCoachMemoryRepository(Supabase.instance.client)
+            : const FixtureCoachMemoryRepository());
     _nutrition =
         injected?.nutrition ??
         (live
@@ -188,9 +198,7 @@ class _AppShellState extends State<AppShell> {
         onSignOut: widget.onSignOut,
         health: _health,
         coach: _coach,
-        memory: widget.environment.hasSupabaseConfiguration
-            ? SupabaseCoachMemoryRepository(Supabase.instance.client)
-            : const FixtureCoachMemoryRepository(),
+        memory: _memory,
         notifications: widget.environment.hasSupabaseConfiguration
             ? SupabaseNotificationRepository(Supabase.instance.client)
             : const FixtureNotificationRepository(),
@@ -247,6 +255,7 @@ class _AppShellState extends State<AppShell> {
         aiConsent: widget.aiConsent,
         proposals: _proposals,
         planChanges: _planChanges,
+        memory: _memory,
       ),
       () => NutritionScreen(
         key: const ValueKey('tab_nutrition'),

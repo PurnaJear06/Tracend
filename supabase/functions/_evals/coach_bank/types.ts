@@ -3,6 +3,8 @@
 // and what a good reply must and must not do. Nothing here is a real athlete.
 import type { RedFlagCategory } from "../../_shared/coach_safety/red_flags.ts";
 import type { ProposalKind, RefusalCode } from "../../_shared/coach_proposals/types.ts";
+import type { CoachFact } from "../../_shared/coach_memory/facts.ts";
+import type { CoachNote } from "../../_shared/coach_memory/notes.ts";
 
 export type Turn = Readonly<{ role: "user" | "assistant"; content: string }>;
 
@@ -58,6 +60,17 @@ export type Contributors = Readonly<{
    * empty list is a search that found nothing. Absent: the turn has no library block.
    */
   library?: readonly string[];
+  /**
+   * What the athlete's memory holds (A10 part 2): the facts they confirmed, rendered by the real
+   * confirmed-facts contributor, and the Coach's notes, rendered by the real notes contributor.
+   * `remember: false` is a conversation the athlete asked Coach not to remember: the model is not
+   * offered fact suggestions.
+   */
+  memory?: Readonly<{
+    facts?: readonly CoachFact[];
+    notes?: readonly CoachNote[];
+    remember?: boolean;
+  }>;
 }>;
 
 export type Athlete = Readonly<{

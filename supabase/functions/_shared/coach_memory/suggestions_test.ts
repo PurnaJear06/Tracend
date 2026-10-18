@@ -1,4 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1.0.14";
+import appFixture from "../../../../test/contract/fixtures/coach_fact_suggestions_v1_0.json" with {
+  type: "json",
+};
 import { makeFact } from "./memory_fixtures.ts";
 import {
   maxModelSuggestions,
@@ -213,4 +216,12 @@ Deno.test("the wire shape has a fixed set of keys", () => {
     "statement",
     "subject",
   ]);
+});
+
+Deno.test("the wire shape is the one the app's contract fixture holds", () => {
+  const [suggestion] = suggestFromStatement("I hate mushrooms", []);
+  assertEquals(
+    Object.keys(suggestionToWire(suggestion)).sort(),
+    Object.keys(appFixture.fact_suggestions[0]).sort(),
+  );
 });

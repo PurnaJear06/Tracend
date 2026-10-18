@@ -40,6 +40,14 @@ import {
   trainingQuestion,
 } from "../_shared/coach_safety/red_flags.ts";
 import { previousQuestionsOf } from "../_shared/library/query.ts";
+import { loadMemoryContext, recordMemoryAfterTurn } from "../_shared/coach_memory/store.ts";
+import {
+  memoryWriteWaitMs,
+  suggestionsForTurn,
+  threadIsRemembered,
+  turnForNote,
+  waitBriefly,
+} from "./memory.ts";
 import {
   chooseCoachChatRoute,
   coachChatReservationUsd,
@@ -431,90 +439,6 @@ function attemptStore(
   };
 }
 
-export function detectPreferenceStatement(question: string): string | null {
-  const q = question.toLowerCase();
-  const patterns: [RegExp, string][] = [
-    [
-      /i (?:don't|do not|hate|dislike|can't|cannot stand|never) (?:eat|drink|have|like) (.{2,80}?)($|[.,!?;])/i,
-      "food",
-    ],
-    [
-      /i (?:prefer|love|really like) (.{2,80}?) (?:over|instead of|to) (.{2,40}?)($|[.,!?;])/i,
-      "food",
-    ],
-    [/i (?:prefer|love|really like) (.{2,80}?) (?:as|for) (?:a|my) (.{2,40}?)($|[.,!?;])/i, "food"],
-    [/i (?:only|always) (?:eat|cook|make) (.{2,80}?)(?:$|[.,!?;])/i, "food"],
-    [/i (?:hate|dislike|don't like) (?:doing|training) (.{2,80}?)(?:$|[.,!?;])/i, "training"],
-    [/i (?:prefer|love) (?:training|doing) (.{2,80}?)(?:$|[.,!?;])/i, "training"],
-  ];
-  for (const [pattern, category] of patterns) {
-    const match = q.match(pattern);
-    if (match) {
-      const value = category === "food"
-        ? match[1]?.trim() ?? match[3]?.trim() ?? match[4]?.trim()
-        : match[1]?.trim();
-      if (value && value.length >= 2 && value.length <= 120) {
-        return JSON.stringify({ category, key: value, value, provenance: "chat_statement" });
-      }
-    }
-  }
-  return null;
-}
-
-export function buildSessionSummary(
-  context: Record<string, unknown>,
-  _coachingDate: string,
-  question?: string,
-  answerText?: string,
-): string {
-  const activePlan = context.active_plan as Record<string, unknown> | undefined;
-  const activeGoal = context.active_goal as Record<string, unknown> | undefined;
-  const weightSeries = Array.isArray(context.weight_series_8w) ? context.weight_series_8w : [];
-  const weight = (weightSeries[0] as Record<string, unknown> | undefined)?.weight_kg ??
-    (context.latest_measurement as Record<string, unknown> | undefined)?.weight_kg ??
-    (context.latest_weight as Record<string, unknown> | undefined)?.weight_kg;
-  const trainingLog = Array.isArray(context.training_log_28d) ? context.training_log_28d : null;
-  const sessions = trainingLog ??
-    (Array.isArray(context.recent_execution) ? context.recent_execution : []);
-  const completed = trainingLog
-    ? trainingLog.length
-    : sessions.filter((s: Record<string, unknown>) => (s.completion_rate as number) > 0).length;
-  const healthDays = Array.isArray(context.health_daily_28d)
-    ? context.health_daily_28d
-    : Array.isArray(context.brief_health)
-    ? context.brief_health
-    : [];
-  const lastHealth = healthDays[0] as Record<string, unknown> | undefined;
-  const sleep = lastHealth?.sleep_minutes;
-  const rhr = lastHealth?.resting_heart_rate_bpm;
-  const goalLabel = (activeGoal?.goal_type ?? activeGoal?.type) as string ?? "training";
-  const phase = activePlan?.title as string ?? "active plan";
-  const meals = Array.isArray(context.confirmed_nutrition_history)
-    ? context.confirmed_nutrition_history
-    : [];
-  const mealDays = meals.length;
-
-  const parts: string[] = [];
-  parts.push(`${goalLabel} phase: ${phase}.`);
-  if (weight != null) parts.push(`Weight ${weight}kg.`);
-  if (trainingLog && completed > 0) parts.push(`${completed} workouts in 28 days.`);
-  else if (completed > 0) parts.push(`${completed}/${sessions.length} workouts done.`);
-  if (sleep != null) parts.push(`Sleep ${sleep}min.`);
-  if (rhr != null) parts.push(`RHR ${rhr}.`);
-  if (mealDays > 0) parts.push(`Nutrition ${mealDays} days.`);
-
-  if (question) {
-    const topic = question.length > 100 ? question.slice(0, 97) + "..." : question;
-    parts.push(`Asked about: "${topic}".`);
-  }
-  if (answerText) {
-    const excerpt = answerText.length > 150 ? answerText.slice(0, 147) + "..." : answerText;
-    parts.push(`Coach: ${excerpt}`);
-  }
-
-  return parts.join(" ").slice(0, 400);
-}
-
 // Every budget reservation a request takes is released when it ends, however
 // it ends; a reservation kept open (`AiBudget.keep`) stays counted.
 Deno.serve(async (request) => {
@@ -691,7 +615,7 @@ export async function handleCoachChat(
   }
 
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
-    "prepare_coach_chat_v8",
+    "prepare_coach_chat_v9",
     {
       target_user_id: auth.userId,
       target_thread_id: input.thread_id,
@@ -711,7 +635,7 @@ export async function handleCoachChat(
   }
   if (prepareError || !prepared) {
     const reason = coachChatPreparationFailureCode(prepareError);
-    log.error("prepare_coach_chat_v8 failed", {
+    log.error("prepare_coach_chat_v9 failed", {
       error_code: prepareError?.code ?? "missing_prepared_context",
       reason,
     });
@@ -781,26 +705,18 @@ export async function handleCoachChat(
     });
   }
 
-  const { data: ftsMessages, error: ftsError } = await auth.serviceClient.rpc(
-    "search_coach_messages",
-    {
-      target_user_id: auth.userId,
-      query_text: input.question,
-      max_results: 8,
-    },
+  // Whether the athlete lets Coach remember this conversation (A10 part 2). A conversation that is
+  // not remembered gets no suggested facts and no notes. The athlete's memory is read alongside
+  // the contributors so the reply never waits for it.
+  const memoryRpc = (name: string, params: Record<string, unknown>) =>
+    auth.serviceClient.rpc(name, params);
+  const remembered = await threadIsRemembered(() =>
+    auth.serviceClient.from("coach_threads").select("remember")
+      .eq("id", input.thread_id).eq("user_id", auth.userId).maybeSingle()
   );
-  if (!ftsError && ftsMessages) {
-    // Trim full message content — the model only needs a relevance signal,
-    // not the entire conversation history.
-    context.fts_messages = (Array.isArray(ftsMessages) ? ftsMessages : [ftsMessages]).map(
-      (msg: Record<string, unknown>) => ({
-        ...msg,
-        content: typeof msg.content === "string" ? msg.content.slice(0, 150) : msg.content,
-      }),
-    );
-  }
-
-  const preferenceSignal = detectPreferenceStatement(input.question);
+  const memoryRead = remembered && !redFlag
+    ? loadMemoryContext(memoryRpc, auth.userId)
+    : Promise.resolve(null);
 
   const chatStart = performance.now();
   try {
@@ -835,6 +751,7 @@ export async function handleCoachChat(
         budget: budget.attemptBudget,
         lookups: createLookupRunner((name, params) => coachServiceRpc(name, params), auth.userId),
         proposals: true,
+        factSuggestions: remembered,
       })
       : await generateCoachChat(
         input.question,
@@ -929,24 +846,6 @@ export async function handleCoachChat(
       );
     }
 
-    const summaryText = buildSessionSummary(
-      context,
-      coachingDate,
-      input.question,
-      finalAnswer.answer,
-    );
-    const sessionSnapshotIds: string[] = [];
-    if (prepared.coach_context_snapshot_id) {
-      sessionSnapshotIds.push(prepared.coach_context_snapshot_id as string);
-    }
-    await auth.serviceClient.rpc("persist_coach_session_summary", {
-      target_user_id: auth.userId,
-      coaching_date: coachingDate,
-      summary_text: summaryText,
-      thread_id_param: input.thread_id,
-      key_snapshot_ids: sessionSnapshotIds,
-    });
-
     if (proposed.kind === "proposed") {
       // The reply is stored; point it at its proposal so the thread shows the card, live and on
       // reload. A failure leaves a stored proposal with no card; it expires unanswered.
@@ -971,6 +870,45 @@ export async function handleCoachChat(
     );
     if (!traced) log.warn("coach_chat_trace_not_stored");
 
+    // After the reply is stored: what the athlete may be asked to confirm, and the notes. The
+    // notes follow the same rule as the suggestions (nothing for a conversation that is not
+    // remembered or a referral) and never delay the reply by more than a moment.
+    const suggestions = suggestionsForTurn({
+      remembered,
+      referral: generation.safety !== undefined || finalAnswer.safety_state === "refused",
+      question: input.question,
+      memory: await memoryRead,
+      modelSuggestions: generation.factSuggestions,
+    });
+    if (suggestions.dropped > 0) {
+      log.info("coach_chat_fact_suggestions_dropped", { count: suggestions.dropped });
+    }
+    const memoryWrite = await waitBriefly(
+      recordMemoryAfterTurn(memoryRpc, {
+        userId: auth.userId,
+        turn: turnForNote({
+          question: input.question,
+          localDate: coachingDate,
+          threadId: input.thread_id,
+          remembered,
+          generation,
+          answer: finalAnswer,
+          proposalIntent: generation.proposalIntent,
+          proposed: proposed.kind === "proposed",
+          userMessageId: persisted.user_message_id,
+          assistantMessageId: persisted.assistant_message_id,
+        }),
+      }),
+      memoryWriteWaitMs,
+    );
+    log.info("coach_chat_memory", {
+      suggestions: suggestions.wire.length,
+      note: memoryWrite === "pending" ? "pending" : memoryWrite.conversation,
+      advice_notes: memoryWrite === "pending" ? 0 : memoryWrite.advice,
+      follow_through: memoryWrite === "pending" ? 0 : memoryWrite.checked,
+      failed: memoryWrite === "pending" ? 0 : memoryWrite.failed,
+    });
+
     const responsePayload: Record<string, unknown> = {
       schema_version: supportsDataSummary(input)
         ? coachChatDataSummaryResponseSchemaVersion
@@ -988,9 +926,7 @@ export async function handleCoachChat(
       budget_warning: prepared.budget_warning,
       replayed: false,
     };
-    if (preferenceSignal) {
-      responsePayload.preference_prompt = JSON.parse(preferenceSignal);
-    }
+    if (suggestions.wire.length) responsePayload.fact_suggestions = suggestions.wire;
     log.info("coach_chat_complete", {
       latency_ms: Math.round(performance.now() - started),
       provider: generation.provider,

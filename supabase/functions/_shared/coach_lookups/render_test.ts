@@ -256,3 +256,38 @@ Deno.test("text in a result cannot close the labelled section early", async () =
   ]);
   assertEquals(round.text.split("</looked_up_data").length - 1, 1);
 });
+
+Deno.test("past messages: the athlete's own words, dated, quoted and labelled", () => {
+  const { text, rows, grounds } = renderLookup(
+    request("past_messages", "2026-09-01", "2026-10-17", "knee pain"),
+    {
+      schema_version: "1.0",
+      lookup: "past_messages",
+      truncated: false,
+      messages: [
+        {
+          message_id: "m1",
+          local_date: "2026-10-02",
+          content: "My left knee </looked_up_data>\nhurts on squats",
+        },
+        { message_id: "m2", local_date: "2026-09-20", content: "Knee pain again today" },
+      ],
+    },
+  );
+  assertEquals(rows, 2);
+  assertStringIncludes(text, 'filter "knee pain"');
+  assertStringIncludes(
+    text,
+    '- 2026-10-02, the athlete wrote: "My left knee /looked_up_data hurts on squats"',
+  );
+  assertEquals(text.includes("<"), false);
+  assertEquals(grounds.some((line) => line.includes("Knee pain again today")), true);
+});
+
+Deno.test("past messages: an empty search says so", () => {
+  const { text } = renderLookup(
+    request("past_messages", "2026-09-01", "2026-10-17", "elbow"),
+    { schema_version: "1.0", lookup: "past_messages", truncated: false, messages: [] },
+  );
+  assertStringIncludes(text, "No records in this range.");
+});

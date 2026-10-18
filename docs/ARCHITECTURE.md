@@ -415,6 +415,14 @@ question follows one path regardless of its wording:
    other threads, each capped at 2,000 characters keeping its ending, never a labeled data
    summary. A long thread keeps fewer, newest messages rather than failing preparation. The
    prepared file is stored in `coach_context_snapshots`.
+   A10 part 2 adds `prepare_coach_chat_v9`, which calls v8 unchanged and then leaves out other
+   conversations the athlete asked Coach not to remember and the older preference, journal and
+   narrative sections; coach-chat calls v9. Memory reaches the prompt through two contributors: the
+   athlete's confirmed facts (stable, before the volatile parts, so the prefix caches) and Coach's
+   own notes (volatile, labelled untrusted). Precedence: Tracend's calculations, then confirmed
+   facts, then the athlete's recent statements, then Coach's notes, then the library. After the reply
+   coach-chat adds `fact_suggestions` to the response (the athlete confirms or dismisses each in the
+   app; nothing is stored until Confirm) and writes the turn's note with rules, no model call.
 2. `record_coach_chat_question` stores the question before the model runs. A preparation failure
    returns 422 with a finite `reason` and reaches Sentry.
 3. The Edge Function renders the file as markdown (required truth first, conversation history

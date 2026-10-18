@@ -10,6 +10,8 @@ import {
 import { createGoalPhaseContributor } from "../../_shared/coach_context/contributors/goal_phase.ts";
 import { createNutritionStateContributor } from "../../_shared/coach_context/contributors/nutrition_state.ts";
 import { createScreeningContributor } from "../../_shared/coach_context/contributors/screening.ts";
+import { createConfirmedFactsContributor } from "../../_shared/coach_context/contributors/confirmed_facts.ts";
+import { createCoachNotesContributor } from "../../_shared/coach_context/contributors/coach_notes.ts";
 import { coachingPrinciplesContributor } from "../../_shared/library/principles.ts";
 import { chunkSource } from "../../_shared/library/chunk.ts";
 import { createLibraryContributor, type LibraryRow } from "../../_shared/library/retrieval.ts";
@@ -60,6 +62,16 @@ function contributorsOf(bank: BankCase): CoachContextContributor[] {
         )
     ),
   );
+  if (contributors.memory) {
+    // The real contributors over the memory the case gives the athlete.
+    const read = () =>
+      Promise.resolve({
+        localDate: "",
+        facts: contributors.memory?.facts ?? [],
+        notes: contributors.memory?.notes ?? [],
+      });
+    list.push(createConfirmedFactsContributor(read), createCoachNotesContributor(read));
+  }
   if (contributors.nutritionState) {
     list.push(createNutritionStateContributor(() => Promise.resolve(contributors.nutritionState)));
   }
@@ -148,6 +160,7 @@ export async function answer(p: PreparedRun, generate: Generate): Promise<Reply>
       contextKind: classifyQuestion(p.question),
       contributions: p.firstRound,
       lookups: bankLookupRunner(p.bank.athlete().contributors.lookupRows ?? {}, requested),
+      factSuggestions: p.bank.athlete().contributors.memory?.remember !== false,
     });
     return replyFrom(generation, requested, generation.estimatedCostUsd, started);
   } catch (error) {

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory.dart';
+import 'package:tracend/features/coach/memory/fact_suggestion.dart';
 
 Map<String, dynamic> _fixture(String name) => Map<String, dynamic>.from(
   json.decode(File('test/contract/fixtures/$name').readAsStringSync()) as Map,
@@ -81,7 +82,7 @@ void main() {
         'supabase/migrations/20261018150020_coach_memory.sql',
       ).readAsStringSync();
       final kinds = RegExp(
-        r"kind in \(\s*([^)]*)\)",
+        r'kind in \(\s*([^)]*)\)',
       ).firstMatch(sql)!.group(1)!;
       expect(
         RegExp(
@@ -90,7 +91,7 @@ void main() {
         CoachFactKind.values.map((kind) => kind.wire).toList(),
       );
       final sources = RegExp(
-        r"source in \(([^)]*)\)",
+        r'source in \(([^)]*)\)',
       ).firstMatch(sql)!.group(1)!;
       expect(
         RegExp(
@@ -121,6 +122,29 @@ void main() {
         'schema_version',
       ]);
     });
+
+    test(
+      'the coach-chat response carries fact_suggestions with exactly their keys',
+      () {
+        final body = _fixture('coach_fact_suggestions_v1_0.json');
+        for (final suggestion in body['fact_suggestions'] as List) {
+          expect(_keys(suggestion), [
+            'action',
+            'fact_id',
+            'kind',
+            'origin',
+            'previous',
+            'reason',
+            'statement',
+            'subject',
+          ]);
+        }
+        final read = CoachFactSuggestion.listFromResponse(body);
+        expect(read.single.action, CoachFactSuggestionAction.update);
+        expect(read.single.kind, CoachFactKind.foodLike);
+        expect(read.single.factId, '7b2a4d63-8e1f-4c9b-8d32-6f5e4c3b2a11');
+      },
+    );
 
     test('the thread list says which conversations are not remembered', () {
       final threads = (_fixture('coach_threads_v1_0.json')['threads'] as List)

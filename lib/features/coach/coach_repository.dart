@@ -284,6 +284,12 @@ abstract interface class CoachChatRepository {
   Future<void> deleteThread(String threadId);
 }
 
+/// A repository that keeps the last coach-chat response body, for the fields
+/// beside the message (the fact suggestions).
+abstract interface class CoachRawResponses {
+  Future<Map<String, dynamic>?> loadLastRawResponse();
+}
+
 abstract interface class CoachRepository {
   Future<CoachDecision?> loadLatest();
   Future<CoachDecision> generate();
@@ -291,7 +297,11 @@ abstract interface class CoachRepository {
 }
 
 class SupabaseCoachRepository
-    implements CoachRepository, CoachChatRepository, CoachContextRepository {
+    implements
+        CoachRepository,
+        CoachChatRepository,
+        CoachContextRepository,
+        CoachRawResponses {
   SupabaseCoachRepository(this._client, {DateTime Function()? now})
     : _now = now ?? DateTime.now;
 
@@ -435,24 +445,7 @@ class SupabaseCoachRepository
     }
   }
 
-  Future<void> confirmPreference({
-    required String category,
-    required String key,
-    required String value,
-    required String provenance,
-  }) async {
-    await _client.rpc(
-      'persist_coach_preference',
-      params: {
-        'target_user_id': _client.auth.currentUser?.id,
-        'category': category,
-        'pref_key': key,
-        'pref_value': value,
-        'provenance': provenance,
-      },
-    );
-  }
-
+  @override
   Future<Map<String, dynamic>?> loadLastRawResponse() async => _lastResponse;
 
   CoachMessage _messageFromJson(Map<String, dynamic> row) =>

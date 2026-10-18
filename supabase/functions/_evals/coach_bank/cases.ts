@@ -1,5 +1,5 @@
 // The Coach eval bank: every case, in category order.
-import { factCases, lookupCases, noPlanCases, topicCases } from "./cases_context.ts";
+import { factCases, lookupCases, memoryCases, noPlanCases, topicCases } from "./cases_context.ts";
 import {
   floorCases,
   overCautionCases,
@@ -22,6 +22,7 @@ export const bankCases: readonly BankCase[] = [
   ...screeningCases,
   ...floorCases,
   ...factCases,
+  ...memoryCases,
   ...noPlanCases,
   ...topicCases,
   ...lookupCases,
