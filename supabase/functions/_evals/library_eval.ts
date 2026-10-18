@@ -34,6 +34,7 @@ import { libraryRetrievalQuery } from "../_shared/library/query.ts";
 import { libraryRelevanceFloor } from "../_shared/library/retrieval.ts";
 import questionFile from "./library_questions.json" with { type: "json" };
 import {
+  floorGrid,
   keysPassing,
   type LibraryQuestion,
   percentile,
@@ -148,7 +149,11 @@ for (const [index, question] of questions.entries()) {
   }
 }
 
-const unfloored = { maxVectorDistance: Number.POSITIVE_INFINITY, strongTextRank: 0 };
+const unfloored = {
+  maxTopDistance: Number.POSITIVE_INFINITY,
+  maxVectorDistance: Number.POSITIVE_INFINITY,
+  strongTextRank: 0,
+};
 const scored = (rows: readonly ScoredHit[][], floor = unfloored): QuestionScore[] =>
   questions.map((question, index) => scoreQuestion(question, keysPassing(rows[index], floor)));
 const modes = {
@@ -159,8 +164,9 @@ const modes = {
   vector_only: scored(hits.vector),
 };
 
+const floor = libraryRelevanceFloor;
 console.log(
-  `\nRelevance floor: cosine distance at most ${libraryRelevanceFloor.maxVectorDistance}, or a text rank of at least ${libraryRelevanceFloor.strongTextRank}. "hybrid" and "text_only" are unfiltered (what search_library_v2 showed); "hybrid_floor" is what Coach chat shows; "text_floor" is the word-search fallback when the embedding fails.`,
+  `\nRelevance floor: excerpts only when the nearest chunk is within cosine distance ${floor.maxTopDistance}; then chunks within ${floor.maxVectorDistance}, and full-text hits ranked at least ${floor.strongTextRank}. "hybrid" and "text_only" are unfiltered (what search_library_v2 showed); "hybrid_floor" is what Coach chat shows; "text_floor" is the word-search fallback when the embedding fails.`,
 );
 console.log(`\n${renderTable(modes)}`);
 console.log("\nHybrid misses with the floor:");
@@ -202,24 +208,63 @@ for (const [index, question] of questions.entries()) {
   );
 }
 
-const distanceSteps = Array.from({ length: 21 }, (_, step) => 0.1 + step * 0.01);
+const strongestExpected = questions.flatMap((question, index) =>
+  questionKind(question) === "no_answer"
+    ? []
+    : [strongest(hits.text[index].filter((hit) => question.expected.includes(hit.sourceKey)))]
+);
+const strongestOutside = questions.flatMap((question, index) =>
+  questionKind(question) === "no_answer" ? [strongest(hits.text[index])] : []
+);
 console.log(
-  "\nFloor sweep, hybrid search (strong text rank 'none' keeps a row on its distance alone):",
+  "\nStrongest text rank of an expected source's chunk (answerable questions, word search):",
+);
+console.log(`  ${strongestExpected.length} questions: ${describe(strongestExpected)}`);
+console.log("Strongest text rank of any chunk (no-answer questions, word search):");
+console.log(`  ${strongestOutside.length} questions: ${describe(strongestOutside)}`);
+
+const steps = (from: number, to: number, by: number) =>
+  Array.from({ length: Math.round((to - from) / by) + 1 }, (_, step) => from + step * by);
+const none = Number.POSITIVE_INFINITY;
+console.log(
+  "\nFloor sweep, hybrid search: nearest-chunk limit by row limit ('none': no text rule):",
 );
 console.log(
   renderSweep(
-    sweepFloors(questions, hits.hybrid, distanceSteps, [
-      Number.POSITIVE_INFINITY,
-      0.05,
-      0.1,
-      0.15,
-      0.2,
-    ]),
+    sweepFloors(
+      questions,
+      hits.hybrid,
+      floorGrid(steps(0.13, 0.18, 0.005), steps(0.15, 0.21, 0.01), [none]),
+    ),
+  ),
+);
+console.log("\nFloor sweep, hybrid search: the strong text rank at the chosen distances:");
+console.log(
+  renderSweep(
+    sweepFloors(
+      questions,
+      hits.hybrid,
+      floorGrid([floor.maxTopDistance], [floor.maxVectorDistance], [
+        none,
+        0.004,
+        0.006,
+        0.008,
+        0.01,
+        0.015,
+        0.02,
+      ]),
+    ),
   ),
 );
 console.log("\nFloor sweep, word search alone (the fallback), by strong text rank:");
 console.log(
-  renderSweep(sweepFloors(questions, hits.text, [0], [0.01, 0.02, 0.05, 0.1, 0.15, 0.2])),
+  renderSweep(
+    sweepFloors(
+      questions,
+      hits.text,
+      floorGrid([0], [0], [0.002, 0.004, 0.006, 0.008, 0.01, 0.015]),
+    ),
+  ),
 );
 
 const floored = modes.hybrid_floor;

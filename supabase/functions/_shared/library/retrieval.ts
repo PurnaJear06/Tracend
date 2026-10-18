@@ -28,16 +28,31 @@ export const libraryBudgetChars = 9_000;
 export const libraryEmbedDeadlineMs = 1_500;
 
 /**
- * When a chunk is close enough to the question to show (calibrated with the real gte-small model
- * on the retrieval questions, docs/handoff/research-library.md "Relevance floor"). A chunk is shown
- * when its cosine distance to the question is at most `maxVectorDistance`, or when it is a strong
- * full-text hit (`ts_rank` of at least `strongTextRank`) whatever its distance. Without an
- * embedding (the word-search fallback) only strong full-text hits are shown.
+ * When the library has something for the question, and which chunks to show (calibrated with the
+ * real gte-small model on the retrieval questions; docs/handoff/research-library.md, "Relevance
+ * floor"). Two limits on the cosine distance to the question, because the right chunks of a
+ * question the library covers sit close to it, while every chunk of a question it does not cover
+ * sits farther away, and the second or third source of a multi-topic question sits farther than
+ * the first:
+ *
+ * - `maxTopDistance`: the turn shows excerpts only when its nearest chunk is at most this far
+ *   (or a strong full-text hit is among the rows). Past it the library has nothing for the
+ *   question, and Coach is told so.
+ * - `maxVectorDistance`: then every chunk at most this far is shown, with every strong full-text
+ *   hit (`ts_rank` of at least `strongTextRank`) whatever its distance.
+ *
+ * Without an embedding (the word-search fallback) there is no distance, so only strong full-text
+ * hits are shown.
  */
-export type RelevanceFloor = Readonly<{ maxVectorDistance: number; strongTextRank: number }>;
+export type RelevanceFloor = Readonly<{
+  maxTopDistance: number;
+  maxVectorDistance: number;
+  strongTextRank: number;
+}>;
 export const libraryRelevanceFloor: RelevanceFloor = Object.freeze({
-  maxVectorDistance: 0.2,
-  strongTextRank: 0.1,
+  maxTopDistance: 0.16,
+  maxVectorDistance: 0.19,
+  strongTextRank: 0.01,
 });
 
 /** One chunk the search returned. */
@@ -77,14 +92,25 @@ export type LibrarySearchRequest = Readonly<{
 /** Runs the search for one athlete (search_library_v3 with the athlete's region). */
 export type LibrarySearch = (request: LibrarySearchRequest) => Promise<readonly LibraryRow[]>;
 
-/** Whether a row is relevant enough to show (see `libraryRelevanceFloor`). */
-export function passesRelevanceFloor(
-  row: Pick<LibraryRow, "vectorDistance" | "textRank">,
+type Scored = Pick<LibraryRow, "vectorDistance" | "textRank">;
+
+/**
+ * The rows relevant enough to show, best first (see `RelevanceFloor`). Rows that no query scored
+ * (fixed rows in the answer bank carry neither score) are shown as given.
+ */
+export function relevantRows<Row extends Scored>(
+  rows: readonly Row[],
   floor: RelevanceFloor = libraryRelevanceFloor,
-): boolean {
-  if (row.vectorDistance === undefined && row.textRank === undefined) return true;
-  if (typeof row.textRank === "number" && row.textRank >= floor.strongTextRank) return true;
-  return typeof row.vectorDistance === "number" && row.vectorDistance <= floor.maxVectorDistance;
+): Row[] {
+  if (rows.every((row) => row.vectorDistance === undefined && row.textRank === undefined)) {
+    return [...rows];
+  }
+  const strong = (row: Scored) =>
+    typeof row.textRank === "number" && row.textRank >= floor.strongTextRank;
+  const within = (row: Scored, limit: number) =>
+    typeof row.vectorDistance === "number" && row.vectorDistance <= limit;
+  if (!rows.some((row) => strong(row) || within(row, floor.maxTopDistance))) return [];
+  return rows.filter((row) => strong(row) || within(row, floor.maxVectorDistance));
 }
 
 const sourceIdPattern = /^[a-z0-9][a-z0-9_.-]{0,119}$/;
@@ -133,13 +159,22 @@ export const libraryNoMatchText =
   "No research library excerpt matched this question closely enough to show. Cite no library source this turn. If the answer rests on research evidence, say that Tracend's library does not cover it rather than answering from memory.";
 
 /**
+ * The block when the search ran on the words alone (the embedding failed) and found no strong
+ * match: the library may still cover the question, so Coach must not say it does not.
+ */
+export const libraryWordsOnlyText =
+  "The research library could only be searched by keyword this turn and no excerpt matched closely. Cite no library source this turn, do not say the library lacks the topic, and make no research claims from memory.";
+
+/**
  * The block: the introduction, then as many chunks as fit the budget, best first, with the sources
  * they came from. Whole chunks only, so the host never has to cut one. With nothing to show it is
- * the explicit no-match line, so Coach knows the library was searched and found nothing.
+ * an explicit line saying so, so Coach knows the library was searched and found nothing:
+ * `wordsOnly` when the search had no embedding.
  */
 export function renderLibraryChunks(
   rows: readonly LibraryRow[],
   budgetChars: number = libraryBudgetChars,
+  wordsOnly = false,
 ): RenderedBlock {
   const blocks: string[] = [];
   const shown: Record<string, ShownSource> = {};
@@ -159,9 +194,8 @@ export function renderLibraryChunks(
       text: earlier ? `${earlier.text}\n${block}` : block,
     };
   }
-  return blocks.length === 0
-    ? { text: libraryNoMatchText, shown }
-    : { text: `${intro}\n\n${blocks.join("\n\n")}`, shown };
+  if (blocks.length > 0) return { text: `${intro}\n\n${blocks.join("\n\n")}`, shown };
+  return { text: wordsOnly ? libraryWordsOnlyText : libraryNoMatchText, shown };
 }
 
 /** "Title (year)", cut to the evidence label limit. */
@@ -225,7 +259,7 @@ export function createLibraryContributor(deps: LibraryContributorDeps): CoachCon
         embedding,
         matchCount: libraryMatchCount,
       });
-      const block = renderLibraryChunks(rows.filter((row) => passesRelevanceFloor(row)));
+      const block = renderLibraryChunks(relevantRows(rows), libraryBudgetChars, embedding === null);
       const distances = rows.flatMap((row) =>
         typeof row.vectorDistance === "number" ? [row.vectorDistance] : []
       );

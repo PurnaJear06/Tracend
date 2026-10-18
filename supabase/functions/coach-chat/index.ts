@@ -40,6 +40,8 @@ import {
   trainingQuestion,
 } from "../_shared/coach_safety/red_flags.ts";
 import { previousQuestionsOf } from "../_shared/library/query.ts";
+import { prefetchLibraryEmbedding } from "../_shared/library/live.ts";
+import { libraryContributorId } from "../_shared/library/retrieval.ts";
 import { loadMemoryContext, recordMemoryAfterTurn } from "../_shared/coach_memory/store.ts";
 import {
   noSuggestions,
@@ -538,6 +540,10 @@ export async function handleCoachChat(
     }
     return reply(refusal.status, versionedResponse({ error: refusal.error }));
   }
+  // The library (gateway route only) embeds the question now, while the replay check, the budget
+  // and the context preparation run; the contributor waits for it within its own deadline. A
+  // follow-up is embedded later, with the earlier question the prepared context supplies.
+  const libraryEmbedding = coachRoute && !redFlag ? prefetchLibraryEmbedding(input.question) : null;
   const budget = new CoachChatBudgetLedger(
     (fn, args) => auth.serviceClient.rpc(fn, args),
     auth.userId,
@@ -736,11 +742,15 @@ export async function handleCoachChat(
           question: input.question,
           localDate: coachingDate,
           previousQuestions: previousQuestionsOf(context, input.question),
+          ...(libraryEmbedding ? { queryEmbedding: libraryEmbedding } : {}),
         },
       );
     if (contributions.outcomes.length) {
       log.info("coach_context_contributors", { contributors: contributions.outcomes });
     }
+    // Source ids, counts, timings and the nearest distance: never the question or a chunk.
+    const libraryTrace = contributions.traces?.[libraryContributorId];
+    if (libraryTrace) log.info("library_retrieval", { ...libraryTrace });
     const generation = redFlag
       ? deterministicSafetyGeneration(redFlag)
       : coachRoute
@@ -870,6 +880,9 @@ export async function handleCoachChat(
       {
         guardFaults: guardFaultsOf(generation.attempts),
         lookups: lookupTrace(generation.lookups),
+        libraryVersion: typeof libraryTrace?.library_version === "string"
+          ? libraryTrace.library_version
+          : null,
       },
     );
     if (!traced) log.warn("coach_chat_trace_not_stored");

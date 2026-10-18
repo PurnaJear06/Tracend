@@ -2,7 +2,9 @@
 // the turn fell back to the data summary, and which lookups ran. Names and counts only, never
 // message content, a figure or a lookup's rows. They are stored on the assistant message
 // (coach_messages.guard_faults and .lookups, migration 20261018100020), so "why did that turn
-// fall back?" is a query on one row.
+// fall back?" is a query on one row. The library version the turn searched (E3,
+// coach_messages.library_version, migration 20261018170044) says which library content the answer
+// was shown.
 import type { CoachChatAttemptTelemetry } from "../_shared/providers/coach_chat_provider.ts";
 import type { LookupCount } from "../_shared/coach_lookups/runner.ts";
 
@@ -48,7 +50,7 @@ export function lookupTrace(counts: readonly LookupCount[] | undefined): string[
 /** The service-role update the trace is written with, typed structurally. */
 export type TraceClient = Readonly<{
   from(table: "coach_messages"): {
-    update(values: { guard_faults?: string[]; lookups?: string[] }): {
+    update(values: { guard_faults?: string[]; lookups?: string[]; library_version?: string }): {
       eq(column: "id", value: string): {
         eq(column: "user_id", value: string): PromiseLike<{ error: unknown }>;
       };
@@ -56,21 +58,36 @@ export type TraceClient = Readonly<{
   };
 }>;
 
+/** The library version, when the turn searched the library and it reported one. */
+const libraryVersionPattern = /^[0-9a-f]{16}$/;
+
 /**
- * Writes the trace on the assistant message. A clean turn writes nothing. A failure never fails
- * the turn: it is reported to the caller as false.
+ * Writes the trace on the assistant message. A clean turn that did not search the library writes
+ * nothing. A failure never fails the turn: it is reported to the caller as false.
  */
 export async function recordTurnTrace(
   client: TraceClient,
   userId: string,
   messageId: string | undefined,
-  trace: Readonly<{ guardFaults: readonly string[]; lookups: readonly string[] }>,
+  trace: Readonly<{
+    guardFaults: readonly string[];
+    lookups: readonly string[];
+    libraryVersion?: string | null;
+  }>,
 ): Promise<boolean> {
-  if (!messageId || (trace.guardFaults.length === 0 && trace.lookups.length === 0)) return true;
+  const libraryVersion = typeof trace.libraryVersion === "string" &&
+      libraryVersionPattern.test(trace.libraryVersion)
+    ? trace.libraryVersion
+    : null;
+  if (
+    !messageId ||
+    (trace.guardFaults.length === 0 && trace.lookups.length === 0 && libraryVersion === null)
+  ) return true;
   try {
     const { error } = await client.from("coach_messages").update({
       ...(trace.guardFaults.length ? { guard_faults: [...trace.guardFaults] } : {}),
       ...(trace.lookups.length ? { lookups: [...trace.lookups] } : {}),
+      ...(libraryVersion ? { library_version: libraryVersion } : {}),
     }).eq("id", messageId).eq("user_id", userId);
     return !error;
   } catch {

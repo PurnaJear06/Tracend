@@ -2,7 +2,7 @@
 // answer needs among the sources shown, the mean reciprocal rank of the first one, how often a
 // question outside the library is shown nothing (no-answer precision), and the sweep that
 // calibrates the relevance floor.
-import { passesRelevanceFloor, type RelevanceFloor } from "../_shared/library/retrieval.ts";
+import { type RelevanceFloor, relevantRows } from "../_shared/library/retrieval.ts";
 
 /**
  * single: one topic's sources. multi_source: sources from two or three topics, so a good answer
@@ -174,7 +174,7 @@ export type ScoredHit = Readonly<{
 
 /** The source keys of the hits a floor lets through, best first. */
 export function keysPassing(hits: readonly ScoredHit[], floor: RelevanceFloor): string[] {
-  return hits.filter((hit) => passesRelevanceFloor(hit, floor)).map((hit) => hit.sourceKey);
+  return relevantRows(hits, floor).map((hit) => hit.sourceKey);
 }
 
 export type FloorPoint = Readonly<{
@@ -186,49 +186,58 @@ export type FloorPoint = Readonly<{
   emptyAnswerable: number;
 }>;
 
-/**
- * The results each candidate floor would give: every combination of a distance limit and a
- * full-text rank, over the same hits (`hits[i]` are question i's rows, unfiltered).
- */
+/** The results each candidate floor would give, over the same hits (`hits[i]` are question i's). */
 export function sweepFloors(
   questions: readonly LibraryQuestion[],
   hits: readonly (readonly ScoredHit[])[],
-  distances: readonly number[],
-  textRanks: readonly number[],
+  floors: readonly RelevanceFloor[],
 ): FloorPoint[] {
-  const points: FloorPoint[] = [];
-  for (const strongTextRank of textRanks) {
-    for (const maxVectorDistance of distances) {
-      const floor = { maxVectorDistance, strongTextRank };
-      const scores = questions.map((question, index) =>
-        scoreQuestion(question, keysPassing(hits[index], floor))
-      );
-      const summary = summarise(scores);
-      points.push({
-        floor,
-        meanRecall: summary.meanRecall,
-        mrr: summary.mrr,
-        noAnswerPrecision: summariseNoAnswer(scores).precision,
-        emptyAnswerable: scores.filter((score) =>
-          score.kind !== "no_answer" && score.retrieved.length === 0
-        ).length,
-      });
-    }
-  }
-  return points;
+  return floors.map((floor) => {
+    const scores = questions.map((question, index) =>
+      scoreQuestion(question, keysPassing(hits[index], floor))
+    );
+    const summary = summarise(scores);
+    return {
+      floor,
+      meanRecall: summary.meanRecall,
+      mrr: summary.mrr,
+      noAnswerPrecision: summariseNoAnswer(scores).precision,
+      emptyAnswerable: scores.filter((score) =>
+        score.kind !== "no_answer" && score.retrieved.length === 0
+      ).length,
+    };
+  });
 }
+
+/** Every floor of the grid: each top distance with each row distance at least as far, and each rank. */
+export function floorGrid(
+  topDistances: readonly number[],
+  rowDistances: readonly number[],
+  textRanks: readonly number[],
+): RelevanceFloor[] {
+  return textRanks.flatMap((strongTextRank) =>
+    topDistances.flatMap((maxTopDistance) =>
+      rowDistances.filter((distance) => distance >= maxTopDistance).map((maxVectorDistance) => ({
+        maxTopDistance,
+        maxVectorDistance,
+        strongTextRank,
+      }))
+    )
+  );
+}
+
+const rankText = (rank: number) => Number.isFinite(rank) ? rank.toFixed(4) : "none";
 
 export function renderSweep(points: readonly FloorPoint[]): string {
   const lines = [
-    "max distance  strong text rank  recall@8    MRR  no-answer shown nothing  answerable shown nothing",
-    "------------  ----------------  --------  -----  -----------------------  ------------------------",
+    "top distance  row distance  strong text rank  recall@8    MRR  no-answer shown nothing  answerable shown nothing",
+    "------------  ------------  ----------------  --------  -----  -----------------------  ------------------------",
   ];
   for (const point of points) {
-    const rank = Number.isFinite(point.floor.strongTextRank)
-      ? point.floor.strongTextRank.toFixed(2)
-      : "none";
     lines.push(
-      `${point.floor.maxVectorDistance.toFixed(3).padStart(12)}  ${rank.padStart(16)}  ${
+      `${point.floor.maxTopDistance.toFixed(3).padStart(12)}  ${
+        point.floor.maxVectorDistance.toFixed(3).padStart(12)
+      }  ${rankText(point.floor.strongTextRank).padStart(16)}  ${
         point.meanRecall.toFixed(3).padStart(8)
       }  ${point.mrr.toFixed(3)}  ${percent(point.noAnswerPrecision).padStart(23)}  ${
         String(point.emptyAnswerable).padStart(24)
