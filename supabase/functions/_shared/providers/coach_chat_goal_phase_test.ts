@@ -71,6 +71,8 @@ Deno.test("today's path carries contributor blocks between the athlete file and 
     stable: "",
     volatile: '<reference_data source="goal_phase">\nX\n</reference_data>',
     outcomes: [],
+    texts: {},
+    shown: {},
   });
   assert(message.indexOf("</coaching_context>") < message.indexOf("goal_phase"));
   assert(message.indexOf("goal_phase") < message.indexOf("User's message:"));
@@ -88,6 +90,8 @@ const goalPhaseBlock = {
   stable: "",
   volatile: '<reference_data source="goal_phase">\nGOAL-PHASE-MARKER\n</reference_data>',
   outcomes: [],
+  texts: { goal_phase: "GOAL-PHASE-MARKER" },
+  shown: {},
 };
 
 const okBody = (shape: "groq" | "gemini") => {

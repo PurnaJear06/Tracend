@@ -236,11 +236,15 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   missing native calls are swallowed. `test/live_activity/rest_timer_live_activity_test.dart`
   covers start, adjust, skip, end, leaving the workout, and a rest that ended while the app was
   closed. The Lock Screen and Dynamic Island are checked on the owner's iPhone.
-- **Research library (E1):** `research_library_test.sql` (66 assertions) covers pgvector, forced
-  RLS with no API access, the indexes, `search_library_v1` grants, hybrid ranking by reciprocal
-  rank fusion (k = 60), filters, `match_count` limits, the exact contract keys, and a rule that no
-  `public` or `private` function takes an argument whose type lives in a schema `supabase db dump`
-  excludes.
+- **Research library (E1, E3):** `research_library_test.sql` covers pgvector, forced RLS with no
+  API access, the indexes, `search_library_v2` grants, hybrid ranking by reciprocal rank fusion
+  (k = 50), the ORed full-text terms, filters, the athlete's regions (`IN` sources reach only Indian
+  accounts), the three-per-source cap, `match_count` limits, the exact contract keys, and a rule
+  that no `public` or `private` function takes an argument whose type lives in a schema
+  `supabase db dump` excludes. In Deno: `query_test.ts` (follow-up rewrite), `retrieval_test.ts`
+  (the contributor, the shown ids, timeouts), the gateway, contract and reply-guard tests for
+  library citations, and the retrieval gate `library_eval.ts` (recall in the top 8 of at least 0.8,
+  regional isolation) in `coach-eval.yml`, which needs the database and the embedding model.
 
 ### Supabase boundaries
 

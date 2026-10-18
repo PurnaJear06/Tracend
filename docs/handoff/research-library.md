@@ -14,7 +14,7 @@ A hybrid (full-text plus gte-small vector) research library behind Coach answers
 
 E1 (Phase 1); E2, E3 (Phase 3); E4, E5 (Phase 4)
 
-E2 (Phase 3, round 2) merged (#135); E2.1, its follow-up with 14 more sources, is in review. See the sections below.
+E2 (Phase 3, round 2) merged (#135); E2.1, its follow-up with 14 more sources, is merged. E3 (the library in every Coach reply) is in review. See the sections below.
 
 ## State
 
@@ -221,8 +221,8 @@ communicates (individualise, honest about missing data and evidence strength, ne
 supplements pushed). `_shared/library/principles.ts` exports `coachingPrinciples` (`version`, `text`),
 `citedSourceKeys(text)` and `coachingPrinciplesContributor`, a Contract 7 contributor with
 `id: "coaching_principles"`, `slot: "stable"`, `budgetChars: 7200`, whose `render` returns the same
-text for every question. It is **not registered**: E3 or the lead adds it to
-`coach_context/registry.ts`. Any edit to the text changes the cached prefix, so bump
+text for every question. A9 registered it first in `coach_context/registry.ts` (it was not
+registered when E2 shipped). Any edit to the text changes the cached prefix, so bump
 `coachingPrinciplesVersion`. Tests (`principles_test.ts`): every cited id exists in the source list;
 the digest stays between 4,800 and 7,200 characters (1,200 to 1,800 tokens at four characters a
 token; real tokenisation of the bracketed ids runs higher, so E3 should count tokens with the
@@ -393,8 +393,178 @@ stack); CI runs it.
   found none in trained adults but less hunger. Both are summarised, and the digest calls a break a
   choice, not a promise.
 
+## E3: the library shapes every Coach reply (in review)
+
+Branch `claude/e3-library-in-coach`, migration `20261018140043_library_search_v2.sql` (code 43).
+
+### What shipped
+
+- **`search_library_v2`** (Contract 6 v2; `search_library_v1` is dropped, nothing deployed called it).
+  Full-text search ORs the terms of the question (v1's `websearch_to_tsquery` ANDed them: the
+  "Finding for E3" above), reciprocal rank fusion with k = 50, rows carry `source_key` (the manifest
+  key Coach cites) and `schema_version` 2, at most three rows per source, `match_count` up to 10.
+  `target_user_id` limits the sources to the athlete's regions: `global` plus the country in the
+  account locale and `IN` for an Indian time zone, because the app stores no country yet
+  (`private.library_regions_for_account`; change that one function when a country is stored). An
+  `IN` source reaches only Indian athletes. Field list and rules: DATA_MODEL.md section 12.
+- **The `library` contributor** (`_shared/library/retrieval.ts`, `live.ts`, `query.ts`), registered
+  last, volatile, gateway route only. Query: the question, plus the topic of the athlete's last real
+  question when it is a follow-up (`isFollowUp`: no topic word, or a few and a lead or demonstrative
+  such as "And ...", "What about ...", "that"; a bare "it" counts only in a question of two topic
+  words or fewer). Deterministic, no model call. The query is embedded with `gte-small` by
+  `library-embed` (its new `{"query": ...}` mode, called over HTTP by `query_embedder.ts`; no new
+  provider), then the
+  search runs for the athlete. Up to 8 chunks, whole chunks within 9,000 characters (the eight
+  longest chunks are 7,200), each `[source: <id>] <header>` and the body. A failed embedding falls
+  back to words alone (logged `library_retrieval_degraded`); a failed or slow search (the host's
+  4 seconds) leaves the library out and Coach answers without it. A red-flag turn retrieves nothing
+  (`coach-chat/index.ts` skips every contributor, and now also a turn `screenTurn` would refer).
+- **Citations.** Evidence items gain the source `library`: `code` is the source id, `label` a short
+  citation. `parseCoachChatAnswer` refuses a library citation whose id was not shown this turn (new
+  rule `citation_not_retrieved`; `shownLibraryKeysIn` reads the ids back from the rendered block),
+  and the reply guard refuses an id printed in the text that was not shown. One repair, then the
+  labelled data summary, like every other rule. The output schema takes a library item with any
+  code (an `anyOf` branch) because the ids change every turn and a schema change would break the
+  prompt cache; data evidence still uses the day's enum. The app shows library evidence in the
+  existing evidence disclosure as "Research library" (`coach_labels.dart`).
+- **Rules in the prompt.** "Using the research library" (system prompt, gateway only): precedence
+  (Tracend's calculations, confirmed facts, the athlete's words, then the library), cite by id, never
+  print ids, never fill a gap from memory, a figure is that source's guidance, never the athlete's
+  target. The retrieved block is a contributor block, so its figures are grounded for the numbers
+  check; a figure nothing holds is still refused.
+- **Heart-rate profile registered** (C3's `heart_rate_profile`, 900 characters, volatile). It reads
+  `get_heart_rate_inputs_v1` with the service role.
+- **Contract 7 v1.1:** the contributor input gains the optional `previousQuestions` (the athlete's
+  earlier questions, newest first). Listed for the lead's approval in the program doc.
+- **Removed:** `search_library_v1` (migration), its pgTAP assertions (rewritten for v2), the
+  `library_eval.ts` url-to-key lookup, and the unregistered state of the digest and heart-rate
+  contributors. The `coachChatEvidenceSources` list gained `library`; the legacy provider schema uses
+  the new `coachChatDataEvidenceSources` (the old three).
+
+### Review fixes (Opus review of #150, no P1s)
+
+- **Embedding deadline (P2) and the model out of coach-chat (blocking change).** The question's
+  embedding races a 1.5-second deadline (`libraryEmbedDeadlineMs`); on a timeout or a failure the
+  search runs with `embedding: null` (words alone) instead of the host's 4-second limit dropping
+  the whole block. The model itself no longer loads in coach-chat: a first load (16.3 s locally in the
+  E1 spike, about 70 ms after) and the CPU kills the E2 note records (about 1.1 s soft, 2.1 s hard
+  locally) would have taken the whole Coach turn down. `library-embed` gained a `{"query": "..."}`
+  mode (one text of 1 to 1,000 characters in, `{schema_version, embedding}` out; the `texts` batch
+  mode and the cron worker run are unchanged) behind the same worker-secret check. Coach chat reads
+  the secret once through the service-role function `library_worker_secret_v1()` (added to this PR's
+  migration; it returns the Vault secret the cron job already uses; no new secret, no new public
+  surface) and calls `${SUPABASE_URL}/functions/v1/library-embed` with it; the body is the question,
+  which neither side logs. The embedder constants and type moved to `embedding.ts` so coach-chat's
+  import graph holds no model code: `deno info --json supabase/functions/coach-chat/index.ts` lists
+  101 modules and not `embedder.ts`, and `Supabase.ai` appears nowhere under coach-chat or the
+  shared modules it imports. A first query after library-embed's isolate starts still waits for the
+  model there, so that turn gets word search; the load continues for the next.
+  **Deploy order:** `library-embed` and coach-chat deploy in the same run, one after the other. Until
+  the new `library-embed` is live, coach-chat's query call gets a non-200 and uses word search: safe.
+  The migration runs before both. Not measured: library-embed's memory and CPU with query traffic;
+  after the deploy, check its logs for resource-limit errors and coach-chat's for
+  `library_retrieval_degraded`.
+- **Library figures (P2).** The library is no longer in the main numbers ground. A figure only the library
+  holds is accepted when the reply cites the source whose shown chunks contain it, and in a sentence that
+  states the athlete's own target or prescription the numbers must come from the athlete's data and
+  calculations alone, never the library or the principles digest (AI_SAFETY_SPEC §11.2). The
+  contributor host now returns each contributor's text (`texts`) and the shown sources (`shown`:
+  id, label, chunk text) beside the blocks; `CoachChatAnswerCheck` takes the cited ids.
+- **Labels (P3).** The server overwrites a `library` citation's label with the retrieved source's title
+  and year (`parseCoachChatAnswer`).
+- **Red-flag follow-ups (P3).** An earlier question `screenMessage` flags is skipped when a follow-up
+  picks its topic.
+- **"Why" and "how come" (P3)** are no longer follow-up leads ("Why?" alone still has no topic of its own).
+- **Shown ids (P3).** They come from the contributor's rows (`RenderedBlock.shown`), not from parsing the
+  prompt text; `shownLibraryKeys` and `shownLibraryKeysIn` are removed.
+
+### The gate (measured in CI, not locally)
+
+Colima is off limits for builders, so the recall gate runs in `coach-eval.yml`'s
+`library-retrieval` job (local stack, real `gte-small`, real `search_library_v2`). Run it alone
+without spend: Actions, Coach Eval, Run workflow, `retrieval_only`. Measured 2026-10-18 on the
+branch (run 39080097067), 49 sources, 169 chunks, all embedded, 82 scored questions (61 single-topic,
+15 multi-source, 6 follow-up; 10 no-answer are listed, not scored):
+
+| Search | Mean recall in top 8 | All found | At least one | MRR |
+|---|---|---|---|---|
+| Hybrid (`search_library_v2`) | **0.917** | 84% | 98% | 0.878 |
+| Vector only | 0.884 | 79% | 96% | 0.869 |
+| Full-text only (terms ORed) | 0.860 | 74% | 96% | 0.773 |
+
+By kind (hybrid): single 0.934, multi-source 0.811, follow-up 1.000. Regional sources shown to
+athletes outside their region: 0 of 92 searches. The gate (mean recall at least 0.8, multi-source
+at least 0.7, MRR at least 0.5, no regional leak) passes. For comparison, E2 measured the v1 hybrid at
+0.929 on its 42 questions, where the fusion added nothing over the vectors (0.940 vector-only); the
+question set has since grown with harder ones, and now the fusion is the best of the three. 13
+questions still miss at least one expected source (listed in the job's output).
+
+"Every citation points at a retrieved chunk" holds by construction: a reply that cites anything else
+is refused and repaired, then replaced by the data summary (gateway, contract and reply-guard tests
+in the Deno job). How often a model needs that repair is measured by the answer bank's `library`
+category (6 cases on fixed chunks: guideline figure quoted as guidance, shrinking returns, a
+consensus figure, two sources that differ, retrieval that found nothing, a follow-up), which needs a
+gateway route and so runs locally with the `AI_COACH_CHAT_*` settings and an Anthropic key, not in
+CI (no Anthropic key is stored there). Unsupported claims are the numbers check's job (a figure that
+no excerpt, record or message holds is refused) and the bank's graders.
+
+### Head-to-head: retrieval against the whole library in the cached prefix
+
+The whole library (`_evals/library_full.ts`) is 85,246 characters: about 21,300 tokens at four
+characters a token, 24,400 at 3.5. That is under the 60,000-token line, so the option was built, as
+an evaluation arm only (Coach chat ships one path). Prices are the gateway's (`ai/models.ts`), the
+extra input a turn adds beyond today's prompt:
+
+| | Retrieval | Whole library in the prefix |
+|---|---|---|
+| Tokens a turn adds | about 1,300 to 1,500 (eight chunks, 616 characters each on average, plus the introduction), never cached | 21,300 to 24,400, cached |
+| Haiku 5.5, cache hit | USD 0.00013 to 0.00015 | USD 0.00021 to 0.00024 |
+| Haiku 5.5, cache miss | the same | USD 0.0027 to 0.0030 (cache write) |
+| Sonnet 5.5, cache hit | USD 0.0026 to 0.0030 | USD 0.0021 to 0.0024 |
+| Sonnet 5.5, cache miss | the same | USD 0.053 to 0.061 (cache write) |
+| Sonnet 5.5, half the turns miss | USD 0.0026 to 0.0030 | USD 0.028 to 0.032 |
+
+The cache lives five minutes, and a chat with a coach is a question now and another tomorrow, so most
+turns that follow a pause are misses; with retrieval the library costs the same either way. Latency:
+retrieval adds one embedding (about 70 ms once the model is loaded, from the E1 spike) and one
+database call before the model is called, a few hundred milliseconds inside the 4-second limit; the
+whole library adds 21,000 to 24,000 tokens to every uncached prefill (the athlete file changes
+daily, so the prefix changes with it unless the library is placed before it). Quality: the script
+`library_head_to_head.ts` answers the same questions end to end through the gateway in both arms and
+reports citations of the expected sources, citation precision, repairs, cost, latency and cache
+tokens (`library_head_to_head_metrics.ts` is tested). It needs a gateway route and an Anthropic key
+and the retrieval database, so **it has not been run**: no quality numbers exist yet. Other
+differences that do not depend on it: the whole library cannot honour the athlete's region (an `IN`
+source would reach everyone unless there is one prefix per region), its prompt grows with every
+source added (the design revisits at about 100,000 tokens), and with retrieval the citation guard
+works from a short list of ids.
+
+**Recommendation: keep retrieval.** The cost is about twenty times lower on a miss and about equal on a hit,
+the region filter works, the guard's list of ids is short and it scales; the whole library has no
+measured quality advantage to pay for. Re-run the script when the library nears 60,000 tokens or the
+model changes.
+
+### Owner and lead notes
+
+- **Contract requests (lead):** Contract 6 v2 and Contract 7 v1.1 (above and in the program doc);
+  `coach-eval.yml` gained the `retrieval_only` input and its description (builder-owned in the brief).
+- **No topic filter.** The brief called for filtering by topic and population. Population is the
+  region filter. A topic filter is supported by the function but Coach does not use it: the tags are
+  free text and a hard filter drops the second source of a question that spans topics (15 of the 82
+  questions need two or three). Recall is measured without it. Revisit with real traffic.
+- **No country in the app yet.** Region comes from the account locale (`en-IN`) and time zone
+  (`Asia/Kolkata`). An Indian athlete with a US locale and a US time zone is treated as outside India.
+  A country on the profile is the real fix (E4).
+- **Today's DeepSeek path does not retrieve** (it has no field to cite in); production uses the Claude
+  route.
+- **The first deploy needs no extra step:** the migration creates the function, the existing
+  `library-embed` embeds new chunks, and coach-chat embeds each question itself. After the deploy,
+  `select * from public.search_library_v2('protein per day', null, 3, null)` as `service_role` shows
+  rows, and `coach_context_contributors` in the function log shows `library` rendered.
+
 ## Next agent starts here
 
-E3 (library inside Coach chat) once E2 merges and its contract requests are in: see "Finding for
-E3" above (full-text search with whole questions) and the coaching-principles contributor, which is
-built but not registered. E4 adds regional sources the same way as E2 (files plus a migration).
+E4 (regional modules) adds sources the same way as E2 (files plus a migration) and should store a
+country on the profile so `private.library_regions_for_account` stops guessing from the locale and
+time zone. E5 (plan explanations citing sources) can reuse `libraryRetrievalQuery`, the contributor
+and the `library` evidence source. Run `retrieval_only` after any library or search change.

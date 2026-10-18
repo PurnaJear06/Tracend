@@ -23,13 +23,13 @@ const request = {
   localDate: "2026-10-17",
 };
 
-Deno.test("the contributor is valid and is not registered yet", () => {
+Deno.test("the contributor is valid and registered", () => {
   const contributor = createHeartRateContributor(() => Promise.resolve(null));
   validateCoachContextContributors([contributor]);
   assertEquals(contributor.id, heartRateContributorId);
   assertEquals(contributor.slot, "volatile");
   assertEquals(contributor.budgetChars, heartRateBudgetChars);
-  assertEquals(coachContextContributors.map((c) => c.id).includes(heartRateContributorId), false);
+  assertEquals(coachContextContributors.map((c) => c.id).includes(heartRateContributorId), true);
 });
 
 Deno.test("the text states resting, an age-formula maximum, zones and the missing trend", () => {

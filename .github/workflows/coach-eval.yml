@@ -13,9 +13,11 @@ name: Coach Eval
 #     dead ends, latency, spend and the prompt cache. Each run makes 17 calls unless `max_calls`
 #     or the `EVAL_MAX_CALLS` variable says otherwise: one prompt from each category, rotating
 #     prompts and athletes; "all" runs every prompt for every athlete.
-#   - Library retrieval (library_eval.ts): the 86 questions through the real hybrid search on a
-#     local Supabase stack with the real gte-small embeddings, scored as recall@8 and MRR. It
-#     needs the database and the embedding model, so it cannot run in the Deno job.
+#   - Library retrieval (library_eval.ts, E3's gate): the 92 questions (follow-ups included) through
+#     the real hybrid search, search_library_v2, on a local Supabase stack with the real gte-small
+#     embeddings, scored as recall@8 and MRR; the run fails when mean recall in the top 8 is under
+#     0.8 or a regional source reaches an athlete outside its region. It needs the database and the
+#     embedding model, so it cannot run in the Deno job. Run it alone with `retrieval_only`.
 #
 # The model is called as before: by default DeepSeek (`DEEPSEEK_API_KEY` secret). Set the
 # repository variable `EVAL_BASE_URL` (for example https://router.bynara.id/v1) and the
@@ -43,6 +45,11 @@ on:
         description: Comma-separated parts of case ids to run (empty runs the whole bank)
         required: false
         default: ""
+      retrieval_only:
+        description: Run only the library retrieval evaluation (no model, no spend)
+        type: boolean
+        required: false
+        default: false
   pull_request:
     types: [labeled]
 
@@ -56,7 +63,7 @@ concurrency:
 jobs:
   coach-eval:
     name: Coach chat live evaluation
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'coach-eval'
+    if: (github.event_name == 'workflow_dispatch' && !inputs.retrieval_only) || github.event.label.name == 'coach-eval'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

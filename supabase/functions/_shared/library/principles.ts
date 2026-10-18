@@ -31,8 +31,10 @@ export function citedSourceKeys(text: string): string[] {
   return [...keys];
 }
 
+export const coachingPrinciplesContributorId = "coaching_principles";
+
 export const coachingPrinciplesContributor: CoachContextContributor = Object.freeze({
-  id: "coaching_principles",
+  id: coachingPrinciplesContributorId,
   slot: "stable",
   budgetChars: coachingPrinciplesMaxChars,
   render: () => Promise.resolve(coachingPrinciples.text),

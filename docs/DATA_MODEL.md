@@ -1237,18 +1237,23 @@ loader, the worker secret and the kick are not executable by any API role; `libr
 is executable by `service_role` only (and needs a direct SQL connection, because `private` is not
 exposed to the Data API).
 
-#### `public.search_library_v1(query_text, query_embedding, match_count, filters)`
+#### `public.search_library_v2(query_text, query_embedding, match_count, filters, target_user_id)`
 
-Contract 6 v1.1. Security definer, empty `search_path`, executable by `service_role` only. Takes
-the 30 best full-text matches (`websearch_to_tsquery('english', …)`, ranked by `ts_rank_cd`) and
-the 30 nearest embeddings (cosine distance) and merges them by reciprocal rank fusion:
-`score = Σ 1 / (60 + rank)` over the lists a chunk appears in. Returns up to `match_count` rows
-(clamped to 1–8, null = 8), best first, each
-`{schema_version: 1, chunk_id, source_id, title, year, url, section, body, header, score}`.
+Contract 6 v2 (E3, migration `20261018140043_library_search_v2`; it replaces and drops
+`search_library_v1`, which nothing deployed called). Security definer, empty `search_path`,
+executable by `service_role` only. Takes the 30 best full-text matches and the 30 nearest
+embeddings (cosine distance) and merges them by reciprocal rank fusion:
+`score = Σ 1 / (50 + rank)` over the lists a chunk appears in. Full-text search ORs the terms of the
+question: lower-cased words of letters and digits, stemmed by the English configuration with its
+stop words dropped, ranked by `ts_rank` (length-normalised). v1's `websearch_to_tsquery` ANDed every
+word, so a whole question matched almost nothing. Returns up to `match_count` rows (clamped to
+1–10, null = 8), best first, at most three per source, each
+`{schema_version: 2, chunk_id, source_id, source_key, title, year, url, section, body, header, score}`.
+`source_key` is the stable manifest key Coach cites; `source_id` differs in every database.
 
 - Only the first 1000 characters of `query_text` are used. A null or blank `query_text`, or one
-  of stop words or negations (`-creatine`) only, skips full-text search; a null
-  `query_embedding` skips vector search; both skipped returns no rows.
+  of stop words only, skips full-text search; a null `query_embedding` skips vector search; both
+  skipped returns no rows.
 - `query_embedding` is declared as `public.library_embedding`, a domain over
   `extensions.vector(384)`; callers pass the same JSON number array. Another size raises `22000`
   ("expected 384 dimensions").
@@ -1259,6 +1264,19 @@ the 30 nearest embeddings (cosine distance) and merges them by reciprocal rank f
   when its array overlaps the filter; an absent, null or empty array does not filter. Any other key
   or a non-text-array value raises `22023`. Sources that apply everywhere carry `global` in
   `region`, so a regional caller passes for example `["global", "IN"]`.
+- `target_user_id` (optional): when set and `filters` has no `region`, the search is limited to the
+  athlete's regions from `private.library_regions_for_account(uuid)` (not executable by any API
+  role): always `global`, plus the country in `user_accounts.locale` (`en-IN`, `en_US`) and `IN` for
+  the `Asia/Kolkata` and `Asia/Calcutta` time zones, because the app stores no country yet. An
+  unknown account gets `global` only. A source tagged `IN` therefore reaches only athletes in
+  India. When the app stores a country, change that one function.
+- `public.library_worker_secret_v1()` (same migration): returns the Vault worker secret
+  (`private.library_worker_secret()`), executable by `service_role` only. Coach chat uses it as the
+  bearer when it calls `library-embed` to embed the question, so gte-small never loads inside
+  coach-chat.
+- Coach does not filter by topic: the tags are free text, and a hard topic filter would drop the
+  second source of a question that spans topics. The `topics` filter stays for callers that know
+  what they want.
 
 #### Dump-safe function signatures (all schemas we own)
 
