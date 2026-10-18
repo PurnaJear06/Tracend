@@ -14,7 +14,7 @@ A hybrid (full-text plus gte-small vector) research library behind Coach answers
 
 E1 (Phase 1); E2, E3 (Phase 3); E4, E5 (Phase 4)
 
-E2 (Phase 3, round 2) merged (#135); E2.1, its follow-up with 14 more sources, is merged. E2.2 (57 more sources and machine-readable licences, 106 in all) is in review. E3 (the library in every Coach reply) is in review. See the sections below.
+E2 (Phase 3, round 2) merged (#135); E2.1, its follow-up with 14 more sources, is merged; E2.2 (57 more sources and machine-readable licences, 106 in all) is merged (#152). E3 (the library in every Coach reply) is merged (#150). E3.1, the engine's production pass (relevance floor, latency, telemetry, versioning), is in review. See the sections below.
 
 ## State
 
@@ -802,14 +802,174 @@ model changes.
   `select * from public.search_library_v2('protein per day', null, 3, null)` as `service_role` shows
   rows, and `coach_context_contributors` in the function log shows `library` rendered.
 
+## E3.1: the engine's production pass (in review)
+
+Branch `claude/rag-engine`, migration `20261018170044_library_search_v3.sql` (code 44, additive).
+The engine fixes from the 2026-10-18 RAG audit (P1-2, P2-1, P2-2, P2-3, P2-5, P2-6 and the P3 items).
+New sources, the licence field, new questions and the claim-support judge are other branches.
+
+### What shipped
+
+- **`search_library_v3`** (Contract 6 v3) beside v2, which stays for the Coach chat build deployed
+  now (drop it in a cleanup migration once this is live). Rows add `vector_distance` (cosine distance
+  to the question), `text_rank` (`ts_rank`, 0 when no term matched), `evidence_level`, `kind` and
+  `library_version`, with `schema_version` 3. Vector search compares only chunks whose
+  `embedding_model` equals the new `query_embedding_model` argument (required with an embedding).
+  Every TypeScript caller (`live.ts`, `library_eval.ts`, `library_head_to_head.ts`) uses v3 and
+  parses rows with one function, `libraryRowsOf`.
+- **Relevance floor** (`relevantRows` in `_shared/library/retrieval.ts`, calibrated below). Two
+  limits on the cosine distance: the turn shows excerpts only when its nearest chunk is within 0.16
+  (or a strong full-text hit, `ts_rank` at least 0.006, is among the rows); then every chunk within
+  0.19 and every strong full-text hit is shown. One per-row limit could not separate the two sets:
+  the second or third source of a multi-topic question sits farther from it than the first, so a
+  row limit tight enough to drop the no-answer questions' chunks cost multi-source recall (0.852 at
+  0.16), while the gate on the nearest chunk costs almost nothing. Without an embedding (the
+  word-search fallback) there is no distance, so only strong full-text hits are shown.
+- **Nothing passes: an explicit line.** The block then says no excerpt matched, that Coach must cite
+  no library source and should say the evidence is not in Tracend's library rather than answering
+  from memory (`libraryNoMatchText`). When the search ran on words alone it says the library could
+  only be searched by keyword, and Coach must not claim the library lacks the topic
+  (`libraryWordsOnlyText`). The answer bank's `library-found-nothing` case now gets the same block
+  production gives.
+- **Marker line** (P2-2, P2-3): `[source: <id>] <Kind>, <year>. Evidence: <evidence level>.` before
+  the header. A "Practical reading" section is marked "Tracend's reading of this source (our
+  interpretation and its limits), not a finding the source reports."; a chunk elsewhere that points
+  to another entry ("see the ... entry", "in this library") is marked as holding Tracend's remark. 49
+  of the 169 chunks are Practical reading sections and 1 more carries a cross-reference. Done in
+  rendering, so nothing is re-embedded. The system prompt tells Coach to present a marked excerpt as
+  our reading.
+- **Latency** (P2-1). Coach chat starts the question's embedding right after the consent check
+  (`prefetchLibraryEmbedding` in `live.ts`), so it runs while the replay check, the budget and
+  `prepare_coach_chat_v9` run; the contributor reuses it when its query is that text (every
+  question that is not a follow-up; a follow-up's query needs the prepared context, so it is
+  embedded then). The 1.5-second deadline counts from the start of the embedding, and the word
+  search fallback is unchanged (Contract 7 v1.2: `queryEmbedding` on the contributor input).
+  `library-embed` keeps its service client for the isolate and remembers the last accepted worker
+  secret by its SHA-256 for 5 minutes (`embed_service.ts`); a refused bearer always goes to the
+  database and never evicts the accepted one. Safe because the secret changes only when Vault loses
+  it (a restore), and the worst case is that a replaced secret works for 5 more minutes in a warm
+  isolate.
+- **Telemetry** (P2-1). One `library_retrieval` log line per turn, with the request's correlation
+  id: `embed_ms`, `degraded` (`none`, `embedding_unavailable`, `embedding_timeout`), `prefetched`,
+  `follow_up`, `candidates`, `shown` (source keys), `top_distance` and `library_version`. No question
+  text, chunk text or health value. It replaces `library_retrieval_degraded` (Contract 7 v1.2: a
+  contributor may return `trace`, which the host passes on as `traces[id]`).
+- **Versioning** (P2-5). `private.library_sources.content_sha256`, kept current by triggers on both
+  library tables (whatever writes the rows: the loader, a retire, the SQL editor) and back-filled by
+  the migration; `private.library_version()` digests every source's key and digest into 16 hex
+  characters; coach-chat stores it on the answer as `coach_messages.library_version` with the turn
+  trace (`recordTurnTrace`). The version does not count embedding state, so it is the same before
+  and after the worker embeds a chunk.
+- **Retiring a source** (P2-5). Deploys load content only through migrations (`supabase db push`
+  runs the generated `library_replace_source` blocks; no deploy step calls it), so retiring follows
+  the same path: `build_migration.ts --retire <key>` prints a block that calls
+  `private.library_retire_source(key)` (deletes the source and its chunks; false when no source has
+  the key). `library_content_test.ts` fails while a migration still loads a source that `index.ts`
+  no longer lists and no later retire block removes it, and when a retire follows a source's newest
+  load.
+- **P3 fixes.** A question with no ASCII word (Hindi in Devanagari, emoji) is never a follow-up, so
+  it is not searched with an earlier question's words. On a 401 from `library-embed`, the query
+  embedder reads the worker secret again and retries once. The search filters by `embedding_model`.
+  `library-embed`'s catch-all logs every failure (`library_embed_failed` with its code) and sends at
+  most one Sentry event per 30 minutes per isolate. The digest is shown to Coach without its source
+  ids (`withoutSourceIds`; the authored file keeps them, and the test still checks every id exists):
+  only retrieved excerpts are citable, so an id copied from the digest was a refused citation. That
+  was simpler than making the digest's 46 ids citable, which would have meant shown text and labels
+  for sources that were not retrieved. Digest version 3, 5,661 characters as shown.
+- **Deploy check** (P3). `deploy.yml` gains a read-only **Library Check** job after the functions
+  deploy (tag-release waits for it): through `supabase db query --linked` with the existing
+  `SUPABASE_ACCESS_TOKEN`, it waits up to 20 minutes for `library_status_v1()` to reach
+  embedded = chunks, then checks that a sample word search (`search_library_v3('protein per day',
+  null, null, 3, null)`) returns rows.
+- **The retrieval gate runs on library pull requests** (P2-6). `coach-eval.yml`'s
+  `library-retrieval` job also runs on a pull request (opened, pushed, reopened) that changes
+  `supabase/library/**`, `supabase/functions/_shared/library/**` or a migration that mentions the
+  library (a small `library-changes` job decides). It is not a required check. The model jobs keep
+  the label and manual runs; their concurrency group moved to the job.
+
+### Relevance floor: calibration
+
+Measured with the real `gte-small` model in CI (Coach Eval, `retrieval_only`, runs 39099613784 and
+39100025122, 2026-10-18), 49 sources, 169 chunks, all embedded, the 92 existing questions (61
+single, 15 multi-source, 6 follow-up, 10 no-answer). `library_eval.ts` prints the distances, the
+sweep and the before and after tables; "before" is the unfiltered v3 hybrid, which ranks exactly as
+v2 did.
+
+| | recall@8 | MRR | no-answer questions shown nothing |
+|---|---|---|---|
+| Hybrid, no floor (v2 behaviour) | 0.917 | 0.880 | 0 of 10 (0%) |
+| Hybrid with the floor (what Coach chat shows) | **0.911** | **0.868** | **8 of 10 (80%)** |
+| Word search alone, no floor (old fallback) | 0.860 | 0.773 | 0 of 10 |
+| Word search alone with the floor (new fallback) | 0.614 | 0.605 | 8 of 10 |
+
+By kind with the floor: single 0.926, multi-source 0.811 (unchanged), follow-up 1.000. One
+answerable question is shown nothing (its nearest chunk is past 0.16). The two no-answer questions
+still shown excerpts are metformin (nearest 0.143) and ACL rehabilitation (0.147): both sit as close
+to training and recovery chunks as covered questions do, so no distance separates them; the prompt's
+precedence and medical-boundary rules still apply to them.
+
+Distances: the nearest chunk of an expected source is at 0.077 to 0.181 (p50 0.108, p90 0.139); the
+nearest chunk of a no-answer question at 0.143 to 0.199 (p50 0.175). Full-text ranks are small
+(normalisation 1, ORed terms): the strongest expected-source chunk per question has p50 0.0073 and
+at most 0.0131; no-answer questions reach at most 0.0073.
+
+Sweep (nearest-chunk limit / row limit, recall, MRR, no-answer shown nothing, answerable shown
+nothing): 0.14 / 0.19: 0.856, 0.827, 100%, 7; 0.15 / 0.19: 0.898, 0.855, 80%, 2; **0.16 / 0.19:
+0.911, 0.868, 80%, 1**; 0.17 / 0.19: 0.911, 0.868, 60%, 1; 0.18 / 0.19: 0.911, 0.868, 40%, 1. A
+single per-row limit: 0.15: 0.813 and 80%; 0.16: 0.852 and 80%; 0.19: 0.917 and 20%. 0.16 sits
+between the last answerable question it keeps (above 0.155) and the nearest excluded no-answer
+question (0.167). Row limits 0.18 to 0.21 give the same recall; 0.19 keeps a margin for the second
+source of multi-topic questions. Text rank: at 0.004 the hybrid's no-answer share falls to 30%; from
+0.006 up it changes nothing in the hybrid; for the fallback, 0.004 gives recall 0.785 and 40%, 0.006
+gives 0.614 and 80%, 0.008 gives 0.280 and 100%, so 0.006 keeps the fallback at the main path's
+no-answer precision.
+
+`library_eval.ts` now scores no-answer precision and gates on it (`EVAL_MIN_NO_ANSWER_PRECISION`,
+default 0.7), with recall 0.8, multi-source recall 0.7 and MRR 0.5 as before, all measured with the
+floor. Ten no-answer questions are few: re-run the sweep when the question set grows (another
+branch is adding questions) and move the limits only on that evidence.
+
+### Not done, and why
+
+- **Follow-ups anchored on the Coach's previous reply** (P3, "if cheap and measurable"). Not
+  measurable here: no retrieval question carries a previous Coach reply, and the question file
+  belongs to another branch. A reply is model text that often spans several topics, so adding it to
+  the query could pull the search off the athlete's question; measure it with follow-up questions
+  that carry a reply before building it.
+- **The answer bank's fixed rows carry no scores, kind or evidence level**
+  (`_evals/coach_bank/harness.ts`, another branch's file). They are shown as given (unscored rows
+  pass the floor) and their marker line shows only the year; the bank's chunks therefore do not get
+  the Tracend's-reading mark from the section. `LibraryRow` takes `section`, `kind` and
+  `evidenceLevel` when the harness passes them.
+- **The digest's sources stay uncitable** rather than made citable (above).
+
+### Gates
+
+`./scripts/deno.sh fmt --check supabase/functions`, `lint` and `test --allow-env --allow-net
+--allow-read=supabase/migrations,site/src/config.ts supabase/functions` pass. pgTAP
+`library_search_v3_test.sql` (38 assertions: grants, the v3 keys and schema version, cosine
+distances, the model filter, text ranks, the embedding-model requirement, evidence level and kind,
+regions, the content digest and when it changes, the version, loading and retiring, and the
+library version on a Coach answer) runs in CI. The legacy DeepSeek request digests
+(`coach_chat_parity_test.ts`) were recorded again because the digest's persona line changed.
+
+### After the deploy
+
+- Run Coach Eval with `retrieval_only` on `main`.
+- In the function logs, `library_retrieval` lines should show `prefetched: true` on most turns and a
+  low `embed_ms`; `degraded` other than `none` points at `library-embed` (cold load or errors).
+- `select library_version, count(*) from public.coach_messages where library_version is not null
+  group by 1;` in the SQL editor shows which library content answers were given from.
+- Once no deployed code calls `search_library_v2`, drop it in a cleanup migration.
+
 ## Next agent starts here
 
 E4 (regional modules) adds sources the same way as E2 (files plus a migration) and should store a
 country on the profile so `private.library_regions_for_account` stops guessing from the locale and
-time zone. E5 (plan explanations citing sources) can reuse `libraryRetrievalQuery`, the contributor
-and the `library` evidence source. Run `retrieval_only` after any library or search change.
-
-After E2.2: add retrieval questions for the 57 new sources and measure recall once production has
-embedded them; decide whether retrieval should skip or down-rank `supersededBy` sources (the field
-lives in the content files only); the full-library render is near the 60,000-token line, so the
-next expansion needs a size decision first.
+time zone. A source removed from `index.ts` needs a retire block in the same migration
+(`build_migration.ts --retire`). E5 (plan explanations citing sources) can reuse
+`libraryRetrievalQuery`, the contributor, `relevantRows` and the `library` evidence source. The
+retrieval gate now runs by itself on library pull requests; re-run the floor sweep in its output
+when the question set or the library grows. Decide whether retrieval should skip or down-rank
+`supersededBy` sources (the field lives in the content files only); the full-library render is near
+the 60,000-token line, so the next expansion needs a size decision first.

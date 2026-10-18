@@ -1065,14 +1065,22 @@ rules are AI_SAFETY_SPEC §11.2; the prompt budget is CONTEXT_BUDGET.md.
   refer. The legacy (DeepSeek) route filters the library out like the data index
   (`coachContextContributorsFor`).
 - **The model stays out of coach-chat.** The question is embedded by `library-embed` (a `{"query"}`
-  mode, worker-secret bearer read once via `library_worker_secret_v1`, 1.5-second deadline); on a
-  timeout, an error or a non-200 the search uses the words alone. coach-chat's import graph holds no
+  mode, worker-secret bearer read via `library_worker_secret_v1` and read again once on a 401,
+  1.5-second deadline counted from the start of the embedding, which coach-chat starts right after
+  the consent check); on a timeout, an error or a non-200 the search uses the words alone. coach-chat's import graph holds no
   `Supabase.ai` code. `library-embed` and coach-chat deploy in the same run: until the new
   `library-embed` is live the query call gets a non-200 and falls back, which is safe.
 - **Reservation.** The contributors' worst case grows by 9,900 characters (36,274 in all), so a Sonnet
   5.5 reservation is about USD 0.34 (0.32 before); Opus 5.5 was already over the cap.
-- **Eval.** `library_eval.ts` runs the real `search_library_v2` with the query Coach builds, follow-ups
-  and regional isolation. The bank has a `library` category (6 cases, fixed chunks, graders
+- **Relevance floor (E3.1).** `search_library_v3` returns each row's cosine distance and text rank;
+  the contributor shows excerpts only when the nearest chunk is within 0.16, then chunks within 0.19
+  and strong full-text hits (`relevantRows`). With nothing left it renders an explicit no-match line
+  (cite nothing, say the library does not cover it), or a keyword-only line when the embedding
+  failed. Marker lines carry kind, year and evidence level, and mark Tracend's own reading of a
+  source. One `library_retrieval` log line per turn; the library version is stored on the answer
+  (`coach_messages.library_version`). Details and calibration: `research-library.md`, E3.1.
+- **Eval.** `library_eval.ts` runs the real `search_library_v3` with the query Coach builds, follow-ups
+  and regional isolation, before and after the floor, with no-answer precision. The bank has a `library` category (6 cases, fixed chunks, graders
   `citations_shown` and `cites_sources`, gateway route only: `run.ts` skips them on the DeepSeek or
   router route). `library_head_to_head.ts` compares retrieval with the whole library in the prefix
   (not run: it needs an Anthropic key and the database).

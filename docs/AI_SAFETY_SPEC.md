@@ -1123,18 +1123,35 @@ and shows Coach the chunks it found. The library never decides a number; it grou
   the model never loads inside coach-chat and a load that runs into the Edge CPU limit cannot kill
   a Coach turn. The call is gated like the cron job's, with the library worker secret, which the
   database keeps in Vault and hands only to the service role (`library_worker_secret_v1`); the body
-  is the question and nothing else, and neither function logs it. It then calls
-  `search_library_v2` with the athlete's id, so the search is limited to global sources and the
-  sources for the athlete's country (an `IN` source reaches only athletes in India; DATA_MODEL.md
-  section 12). The block holds up to 8 chunks, whole chunks only, within 9,000 characters, each
-  starting `[source: <id>]` with the stable manifest key.
+  is the question and nothing else, and neither function logs it. Coach chat starts the embedding
+  right after the consent check, so it runs alongside the context preparation (a follow-up, whose
+  query needs the prepared context, is embedded then). It then calls `search_library_v3` with the
+  athlete's id, so the search is limited to global sources and the sources for the athlete's country
+  (an `IN` source reaches only athletes in India; DATA_MODEL.md section 12), and compares only chunks
+  embedded with the question's model. The block holds up to 8 chunks, whole chunks only, within
+  9,000 characters, each starting `[source: <id>]` with the stable manifest key, then the kind of
+  source, its year and its evidence level.
+- **Relevance floor.** Excerpts are shown only when the nearest chunk is within cosine distance 0.16
+  of the question (or a strong full-text hit is among the rows); then every chunk within 0.19 and
+  every strong full-text hit is shown (`relevantRows`, calibrated on the retrieval questions with the
+  real model: 8 of 10 questions outside the library are now shown nothing, recall 0.911 against
+  0.917 without a floor; `docs/handoff/research-library.md`). When nothing passes, the block says
+  that no library excerpt matched, that Coach must cite no library source and should say the evidence
+  is not in Tracend's library rather than answer from memory; when the search ran on words alone it
+  says Coach must not claim the library lacks the topic.
+- **Tracend's reading is not the source's finding.** Chunks from a "Practical reading" section are
+  Tracend's interpretation of a source and its limits, and a remark pointing to another library entry
+  is Tracend's too. The marker line says so, and the rules tell Coach to present such an excerpt as
+  our reading, never as what the study found.
 - **When retrieval does not happen or fails.** A red-flag turn (a symptom, or a training question
   on a pain day) is answered by the fixed referral and retrieves nothing. The contributor runs
   inside the host's 4-second limit; a search that fails or is slow leaves the library out and Coach
   answers without it. The call to `library-embed` has its own deadline of 1.5 seconds: on a timeout, an
   error or any status but 200 (a cold model load there, a secret mismatch, a deploy still in
-  progress) the search runs on the question's words alone (logged `library_retrieval_degraded`)
-  instead of the whole block being dropped at the host's limit. `library-embed` and coach-chat deploy
+  progress) the search runs on the question's words alone instead of the whole block being dropped
+  at the host's limit; a 401 first re-reads the worker secret and retries once. Each turn logs one
+  `library_retrieval` line (embedding time, degraded reason, shown source ids, nearest distance,
+  library version; no question or chunk text). `library-embed` and coach-chat deploy
   in the same workflow run, one after the other: until the new `library-embed` is live, coach-chat's
   query call gets a non-200 and answers from word search, which is safe. Today's
   DeepSeek path has neither the evidence field nor the block, so it does not retrieve.
@@ -1148,7 +1165,9 @@ and shows Coach the chunks it found. The library never decides a number; it grou
   rule `citation_not_retrieved` (the retrieved ids are not in the output schema because they change
   every turn and the schema is part of the prompt cache key), and the reply guard refuses a source
   id printed in the text that was not shown (Coach is told not to print ids). A turn with no
-  retrieved chunk accepts no library citation at all. The refusal is repaired once with the rule
+  retrieved chunk accepts no library citation at all. The coaching principles digest is shown
+  without its source ids, so it offers nothing to cite: only excerpts retrieved this turn are
+  citable. The refusal is repaired once with the rule
   named; a second failure ends in the labelled data summary, like every other rule.
 - **Numbers.** The library is kept out of the main numbers ground. A figure that only the library
   holds is accepted only when the reply cites, in `evidence`, the source whose shown chunks contain
@@ -1164,10 +1183,14 @@ and shows Coach the chunks it found. The library never decides a number; it grou
 - **No memory from the model.** The rules tell Coach not to write that research shows something no
   excerpt supports and not to fill a gap from memory: it says what the library does not cover.
 - **Observability.** The contributor's outcome (rendered, empty, failed, timeout) is logged with
-  the other contributors (`coach_context_contributors`); a search that ran without its embedding
-  logs `library_retrieval_degraded`. Neither carries the question or any chunk.
-- **Evaluation.** `_evals/library_eval.ts` (recall of the expected sources in the top 8, MRR, follow-ups,
-  and regional isolation) runs the real search on every labelled run of `coach-eval.yml`; the answer
+  the other contributors (`coach_context_contributors`), and its trace as `library_retrieval`
+  (embedding time, degraded reason, prefetched, follow-up, candidates, shown source ids, nearest
+  distance, library version). Neither carries the question or any chunk. The library version is
+  stored on the answer (`coach_messages.library_version`).
+- **Evaluation.** `_evals/library_eval.ts` (recall of the expected sources in the top 8, MRR,
+  no-answer precision, follow-ups and regional isolation, after the relevance floor) runs the real
+  search on every labelled run of `coach-eval.yml` and on every pull request that changes the
+  library; the answer
   bank's `library` category (Claude gateway route only) grades citations and honesty on fixed chunks;
   `library_head_to_head.ts` compares retrieval with the whole library in the prefix.
 

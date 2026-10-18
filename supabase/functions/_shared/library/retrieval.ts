@@ -49,10 +49,16 @@ export type RelevanceFloor = Readonly<{
   maxVectorDistance: number;
   strongTextRank: number;
 }>;
+// Measured 2026-10-18 (82 answerable and 10 no-answer questions, 169 chunks): the nearest chunk of an
+// expected source sits at 0.077 to 0.181 (median 0.108); the nearest chunk of a no-answer question
+// at 0.143 to 0.199 (median 0.175). With these limits recall@8 is 0.911 (0.917 without a floor), MRR
+// 0.868 (0.880) and 8 of the 10 no-answer questions are shown nothing (none without a floor). The
+// text rank adds nothing to the hybrid at 0.006 and keeps the word-search fallback at recall 0.614
+// with the same 8 of 10.
 export const libraryRelevanceFloor: RelevanceFloor = Object.freeze({
   maxTopDistance: 0.16,
   maxVectorDistance: 0.19,
-  strongTextRank: 0.01,
+  strongTextRank: 0.006,
 });
 
 /** One chunk the search returned. */

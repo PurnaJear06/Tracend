@@ -52,7 +52,10 @@ purpose limitation, retention control, and audit coverage.
   stands and in-house summaries in our own words, with their embeddings. Paid course material is
   never stored. The library holds no user data, so it is outside export and account deletion. It
   still sits in the `private` schema with forced RLS and no API grants, and only the service-role
-  `search_library_v2` reads it.
+  search functions (`search_library_v3`, and `search_library_v2` until the deployed build moves to
+  v3) read it. A Coach answer records only the library version it was shown
+  (`coach_messages.library_version`, 16 hex characters, no content). library-embed remembers the last
+  accepted worker secret by its SHA-256 for 5 minutes per isolate, never a refused one.
 
 Classification is inherited by derived data. A summary of health data remains restricted. A Coach
 question used as a library search query (or its `gte-small` embedding, computed by the

@@ -1,6 +1,7 @@
 name: Coach Eval
 
-# The live Coach evaluations. On demand only and not a required check. Before merging a Coach
+# The live Coach evaluations. Not a required check. The model evaluations run on demand only, and
+# the library retrieval evaluation also runs on library pull requests (below). Before merging a Coach
 # change, add the `coach-eval` label to the pull request (runs that PR's code) or use Run
 # workflow on main. Every Coach pull request must pass the answer bank (docs/TESTING_STRATEGY.md).
 #
@@ -13,11 +14,15 @@ name: Coach Eval
 #     dead ends, latency, spend and the prompt cache. Each run makes 17 calls unless `max_calls`
 #     or the `EVAL_MAX_CALLS` variable says otherwise: one prompt from each category, rotating
 #     prompts and athletes; "all" runs every prompt for every athlete.
-#   - Library retrieval (library_eval.ts, E3's gate): the 92 questions (follow-ups included) through
-#     the real hybrid search, search_library_v2, on a local Supabase stack with the real gte-small
-#     embeddings, scored as recall@8 and MRR; the run fails when mean recall in the top 8 is under
-#     0.8 or a regional source reaches an athlete outside its region. It needs the database and the
-#     embedding model, so it cannot run in the Deno job. Run it alone with `retrieval_only`.
+#   - Library retrieval (library_eval.ts, E3's gate): the retrieval questions (follow-ups and
+#     no-answer questions included) through the real hybrid search, search_library_v3, on a local
+#     Supabase stack with the real gte-small embeddings, before and after the relevance floor,
+#     scored as recall@8, MRR and no-answer precision, with the sweep that calibrates the floor;
+#     the run fails under the thresholds in library_eval.ts or when a regional source reaches an
+#     athlete outside its region. It needs the database and the embedding model, so it cannot run
+#     in the Deno job. It also runs by itself on every pull request that changes the library
+#     content, the shared library code or a library migration (not a required check). Run it
+#     alone with `retrieval_only`.
 #
 # The model is called as before: by default DeepSeek (`DEEPSEEK_API_KEY` secret). Set the
 # repository variable `EVAL_BASE_URL` (for example https://router.bynara.id/v1) and the
@@ -51,14 +56,10 @@ on:
         required: false
         default: false
   pull_request:
-    types: [labeled]
+    types: [labeled, opened, synchronize, reopened]
 
 permissions:
   contents: read
-
-concurrency:
-  group: coach-eval
-  cancel-in-progress: false
 
 jobs:
   coach-eval:
@@ -66,6 +67,9 @@ jobs:
     if: (github.event_name == 'workflow_dispatch' && !inputs.retrieval_only) || github.event.label.name == 'coach-eval'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    concurrency:
+      group: coach-eval
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -118,11 +122,49 @@ jobs:
           path: eval-report
           retention-days: 30
 
+  # Whether a pull request (opened or pushed to) changes the library, so its retrieval runs.
+  library-changes:
+    name: Library changes
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      library: ${{ steps.diff.outputs.library }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Look for library changes
+        id: diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
+          library=false
+          if printf '%s\n' "$changed" | grep -Eq '^supabase/(library|functions/_shared/library)/'; then
+            library=true
+          fi
+          # A migration is a library migration when it touches the library's tables or functions.
+          for file in $(printf '%s\n' "$changed" | grep -E '^supabase/migrations/[^/]+\.sql$' || true); do
+            if [ -f "$file" ] && grep -Eq 'library_|search_library' "$file"; then library=true; fi
+          done
+          echo "library=$library" >> "$GITHUB_OUTPUT"
+          echo "Library changed: $library"
+
   library-retrieval:
     name: Library retrieval evaluation
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'coach-eval'
+    needs: library-changes
+    if: >-
+      !cancelled() && (github.event_name == 'workflow_dispatch' ||
+      github.event.label.name == 'coach-eval' || needs.library-changes.outputs.library == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    concurrency:
+      group: library-retrieval-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:

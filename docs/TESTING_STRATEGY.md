@@ -253,14 +253,21 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   as stale, schema refusal, links). The
   Xcode tests are not run in CI; the widgets themselves are checked on the owner's iPhone.
 - **Research library (E1, E3):** `research_library_test.sql` covers pgvector, forced RLS with no
-  API access, the indexes, `search_library_v2` grants, hybrid ranking by reciprocal rank fusion
+  API access, the indexes, `search_library_v2` grants (v2 stays for the deployed build), hybrid ranking by reciprocal rank fusion
   (k = 50), the ORed full-text terms, filters, the athlete's regions (`IN` sources reach only Indian
   accounts), the three-per-source cap, `match_count` limits, the exact contract keys, and a rule
   that no `public` or `private` function takes an argument whose type lives in a schema
   `supabase db dump` excludes. In Deno: `query_test.ts` (follow-up rewrite), `retrieval_test.ts`
   (the contributor, the shown ids, timeouts), the gateway, contract and reply-guard tests for
   library citations, and the retrieval gate `library_eval.ts` (recall in the top 8 of at least 0.8,
-  regional isolation) in `coach-eval.yml`, which needs the database and the embedding model.
+  multi-source recall 0.7, MRR 0.5 and no-answer precision 0.7, all after the relevance floor, plus
+  regional isolation and the floor's calibration sweep) in `coach-eval.yml`, which needs the
+  database and the embedding model and runs by itself on every pull request that changes the
+  library (not a required check). `library_search_v3_test.sql` (E3.1) covers v3's grants and keys,
+  cosine distances, the embedding-model filter, text ranks, the content digest and its triggers, the
+  library version, retiring a source and `coach_messages.library_version`;
+  `library_content_test.ts` checks that a source removed from `index.ts` is retired by a migration;
+  `embed_service_test.ts` covers the worker-secret cache and the Sentry gate.
 
 ### Supabase boundaries
 
