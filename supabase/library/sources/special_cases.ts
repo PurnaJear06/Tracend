@@ -12,13 +12,15 @@ export const specialCaseSources: readonly LibrarySource[] = [
     year: 2001,
     doi: "10.1097/00005768-200108000-00009",
     url: "https://doi.org/10.1097/00005768-200108000-00009",
-    licence: "Publisher copyright (no open licence found); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-18",
     region: ["global"],
     topics: ["detraining", "training", "strength", "recovery", "time-off"],
     evidenceLevel: "narrative review",
     kind: "paper",
     chosenBecause:
-      "Directly answers 'will I lose my gains if I cannot train for a couple of weeks?' for trained people.",
+      "Directly answers 'will I lose my gains if I cannot train for a couple of weeks?' for trained people. Summarised from the abstract only.",
     sections: [
       {
         title: "What detraining is",
@@ -46,13 +48,15 @@ export const specialCaseSources: readonly LibrarySource[] = [
     year: 2013,
     doi: "10.1111/sms.12047",
     url: "https://doi.org/10.1111/sms.12047",
-    licence: "Publisher copyright (no open licence found); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-18",
     region: ["global"],
     topics: ["detraining", "training", "strength", "time-off", "older-adults"],
     evidenceLevel: "meta-analysis (103 studies)",
     kind: "paper",
     chosenBecause:
-      "The broadest pooled analysis of how much strength is lost when resistance training stops and who loses it fastest.",
+      "The broadest pooled analysis of how much strength is lost when resistance training stops and who loses it fastest. Summarised from the abstract only.",
     sections: [
       {
         title: "What the analysis did",
@@ -77,13 +81,15 @@ export const specialCaseSources: readonly LibrarySource[] = [
     year: 2019,
     doi: "10.1177/2050312119831116",
     url: "https://doi.org/10.1177/2050312119831116",
-    licence: "CC BY-NC (open access); own-words summary, no text copied",
+    licence: "CC-BY-NC-4.0",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-18",
     region: ["global"],
     topics: ["home-training", "equipment", "strength", "training", "minimal-equipment"],
     evidenceLevel: "systematic review and meta-analysis (8 studies)",
     kind: "paper",
     chosenBecause:
-      "Shows that resistance bands, which fit in a bag, build strength about as well as weights, which is the main question when a person must train away from a gym.",
+      "Shows that resistance bands, which fit in a bag, build strength about as well as weights, which is the main question when a person must train away from a gym. Summarised from the abstract only.",
     sections: [
       {
         title: "What the review did",
@@ -107,13 +113,15 @@ export const specialCaseSources: readonly LibrarySource[] = [
     year: 2019,
     doi: "10.1519/jsc.0000000000003230",
     url: "https://doi.org/10.1519/jsc.0000000000003230",
-    licence: "Publisher copyright (no open licence found); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-18",
     region: ["global"],
     topics: ["older-adults", "strength", "training", "safety", "guidelines"],
     evidenceLevel: "position statement",
     kind: "position_stand",
     chosenBecause:
-      "The most thorough professional position on resistance training for older adults, so Coach can explain why lifting matters with age.",
+      "The most thorough professional position on resistance training for older adults, so Coach can explain why lifting matters with age. Summarised from the abstract only.",
     sections: [
       {
         title: "Why it matters",
@@ -138,13 +146,15 @@ export const specialCaseSources: readonly LibrarySource[] = [
     year: 2020,
     doi: "10.1007/s40279-020-01319-3",
     url: "https://doi.org/10.1007/s40279-020-01319-3",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-4.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-18",
     region: ["global"],
     topics: ["women", "menstrual-cycle", "performance", "training", "individualisation"],
     evidenceLevel: "systematic review and network meta-analysis (78 studies)",
     kind: "paper",
     chosenBecause:
-      "The best pooled answer to whether training should change across the menstrual cycle, which Coach is often asked.",
+      "The best pooled answer to whether training should change across the menstrual cycle, which Coach is often asked. Summarised from the abstract only.",
     sections: [
       {
         title: "What the review did",

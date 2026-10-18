@@ -1,5 +1,5 @@
 begin;
-select plan(97);
+select plan(98);
 
 -- Start from a library with no embeddings, as production does right after the migration.
 update private.library_chunks set embedding = null, embedding_model = null;
@@ -27,10 +27,14 @@ select is((select count(*) from private.library_chunks where token_count > 512),
 select is((select count(*) from private.library_chunks where embedding is not null), 0::bigint,
   'chunks load without embeddings');
 select is((select count(*) from (select distinct unnest(region) r from private.library_sources) x
-  where r not in ('global', 'US', 'IN')), 0::bigint,
-  'regions are global or the one US or Indian guideline');
+  where r not in ('global', 'US', 'GB', 'IN')), 0::bigint,
+  'regions are global or the US, UK and Indian guidelines');
 select ok(exists (select 1 from private.library_sources where doi = '10.1186/s12970-017-0177-8'
-  and licence like 'CC BY%'), 'a known source loaded with its DOI and licence');
+  and licence = 'CC-BY-4.0'), 'a known source loaded with its DOI and licence');
+select is((select count(*) from private.library_sources where licence not in (
+  'CC-BY-2.0', 'CC-BY-3.0', 'CC-BY-4.0', 'CC-BY-NC-4.0', 'CC-BY-NC-ND-4.0', 'CC-BY-NC-SA-3.0-IGO',
+  'OGL-UK-3.0', 'public-domain-us-gov', 'proprietary')), 0::bigint,
+  'every licence is a machine-readable identifier');
 select ok((select bool_and(topics <> '{}') from private.library_sources), 'every source has topics');
 
 -- Grants --------------------------------------------------------------------------------------

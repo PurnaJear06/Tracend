@@ -12,13 +12,15 @@ export const activitySources: readonly LibrarySource[] = [
     year: 2011,
     doi: "10.1249/MSS.0b013e318213fefb",
     url: "https://doi.org/10.1249/MSS.0b013e318213fefb",
-    licence: "Publisher copyright (no open licence); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["cardio", "activity", "strength", "flexibility", "training", "guidelines"],
     evidenceLevel: "position stand",
     kind: "position_stand",
     chosenBecause:
-      "A complete weekly template covering cardio, strength, balance and flexibility, plus the point that something is better than nothing; Tracend's standard cites it.",
+      "A complete weekly template covering cardio, strength, balance and flexibility, plus the point that something is better than nothing; Tracend's standard cites it. Summarised from the abstract only.",
     sections: [
       {
         title: "Weekly amounts",
@@ -44,13 +46,15 @@ Resistance exercise for each major muscle group is recommended on 2 to 3 days a 
     year: 2020,
     doi: "10.1136/bjsports-2020-102955",
     url: "https://doi.org/10.1136/bjsports-2020-102955",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-4.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["cardio", "activity", "strength", "sedentary", "guidelines"],
     evidenceLevel: "public health guideline",
     kind: "guideline",
     chosenBecause:
-      "The international reference on how much activity adults need, and the safest public baseline for any country; free to read.",
+      "The international reference on how much activity adults need, and the safest public baseline for any country; free to read. Summarised from the abstract only.",
     sections: [
       {
         title: "What adults should do",
@@ -78,14 +82,15 @@ Resistance exercise for each major muscle group is recommended on 2 to 3 days a 
     year: 2018,
     doi: "10.1001/jama.2018.14854",
     url: "https://doi.org/10.1001/jama.2018.14854",
-    licence:
-      "Publisher copyright (JAMA summary of a US government publication); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["US"],
     topics: ["cardio", "activity", "strength", "guidelines"],
     evidenceLevel: "public health guideline",
     kind: "guideline",
     chosenBecause:
-      "The national guideline Americans meet in practice; useful for US users and for the point that the least active people gain the most from small increases.",
+      "The national guideline Americans meet in practice; useful for US users and for the point that the least active people gain the most from small increases. Summarised from the abstract only.",
     sections: [
       {
         title: "What the guidelines say for adults",
@@ -113,13 +118,15 @@ Resistance exercise for each major muscle group is recommended on 2 to 3 days a 
     year: 2022,
     doi: "10.1016/S2468-2667(21)00302-9",
     url: "https://doi.org/10.1016/S2468-2667(21)00302-9",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-NC-ND-4.0",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["activity", "steps", "cardio", "health"],
     evidenceLevel: "meta-analysis of 15 cohorts (47,471 adults)",
     kind: "paper",
     chosenBecause:
-      "Gives an evidence-based answer to 'do I really need 10,000 steps?', a question the app's step data raises daily.",
+      "Gives an evidence-based answer to 'do I really need 10,000 steps?', a question the app's step data raises daily. Summarised from the abstract only.",
     sections: [
       {
         title: "What the study did",
