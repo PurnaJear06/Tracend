@@ -19,6 +19,11 @@
 --      random source_id differs in every database.
 --   6. match_count is clamped to 1..10 (v1: 1..8); null still means 8.
 --
+--   7. Coach chat embeds the question by calling library-embed, which is the only place gte-small
+--      loads. The call is gated like the cron job's, with the library worker secret, so the service
+--      role may read that one secret (library_worker_secret_v1). The service role can already read
+--      every row and call every function; the secret opens nothing but the embedding function.
+--
 -- Nothing else in the repository calls search_library_v1 (the retrieval evaluation moves to v2
 -- with this change, and the deployed Edge Functions never called it), so it is dropped here.
 -- Additive for every caller that exists.
@@ -258,3 +263,16 @@ grant execute on function public.search_library_v2(text, public.library_embeddin
   to service_role;
 
 drop function public.search_library_v1(text, public.library_embedding, integer, jsonb);
+
+-- The library worker secret, for the Edge Functions that call library-embed (Coach chat). It is
+-- created in Vault on first use, as for the cron job, and never leaves the service role.
+create function public.library_worker_secret_v1()
+returns text
+language sql
+security definer
+set search_path = ''
+as $$
+  select private.library_worker_secret()
+$$;
+revoke all on function public.library_worker_secret_v1() from public, anon, authenticated;
+grant execute on function public.library_worker_secret_v1() to service_role;

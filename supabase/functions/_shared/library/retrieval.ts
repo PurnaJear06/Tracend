@@ -1,5 +1,5 @@
 import type { CoachContextContributor, RenderedBlock, ShownSource } from "../coach_context/host.ts";
-import { type Embedder } from "./embedder.ts";
+import type { Embedder } from "./embedding.ts";
 import { libraryRetrievalQuery } from "./query.ts";
 
 // Library retrieval as a Contract 7 contributor (chunk E3): every Coach chat turn searches the
@@ -15,8 +15,9 @@ export const libraryMatchCount = 8;
 /** About 2,300 tokens. The average chunk is 600 characters, so eight rarely come near it. */
 export const libraryBudgetChars = 9_000;
 /**
- * The most the question's embedding may take. A cold gte-small load can run far past it, and the
- * host drops the whole block at 4 seconds; past this the search runs on the words alone.
+ * The most the question's embedding may take. A cold gte-small load inside library-embed can run
+ * far past it, and the host drops the whole block at 4 seconds; past this the search runs on the
+ * words alone.
  */
 export const libraryEmbedDeadlineMs = 1_500;
 

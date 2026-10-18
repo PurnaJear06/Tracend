@@ -639,7 +639,7 @@ coaching-principles digest of the sources sits in the Coach's stable prompt pref
 
 The library shapes every Coach reply on the gateway route (E3): the `library` contributor builds the
 query from the question (a follow-up borrows the topic of the last real question, deterministically),
-embeds it with `gte-small` in the Edge runtime, searches for the athlete's region and renders up to
+embeds it with `gte-small` by calling the `library-embed` function (the only place the model loads), searches for the athlete's region and renders up to
 8 chunks, each tagged with its stable source id, as a volatile block after the athlete data. Coach
 cites the sources it uses as `library` evidence, and a citation of an id that was not shown is a
 reply-guard failure (AI_SAFETY_SPEC §11.2). If retrieval is slow or fails, Coach answers without it

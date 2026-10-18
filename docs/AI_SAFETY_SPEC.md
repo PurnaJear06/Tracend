@@ -1071,7 +1071,12 @@ and shows Coach the chunks it found. The library never decides a number; it grou
   (`_shared/library/query.ts`, deterministic, no model call; an earlier question that reported a
   symptom, and "Why?" or "How come ..." with a topic of its own, do not count as a follow-up topic). It
   embeds the query with `gte-small`
-  (the same model that embedded the chunks; the Edge runtime provides it) and calls
+  (the same model that embedded the chunks) by calling the `library-embed` Edge Function
+  (`_shared/library/query_embedder.ts`; its `{"query": ...}` mode returns the 384-number vector), so
+  the model never loads inside coach-chat and a load that runs into the Edge CPU limit cannot kill
+  a Coach turn. The call is gated like the cron job's, with the library worker secret, which the
+  database keeps in Vault and hands only to the service role (`library_worker_secret_v1`); the body
+  is the question and nothing else, and neither function logs it. It then calls
   `search_library_v2` with the athlete's id, so the search is limited to global sources and the
   sources for the athlete's country (an `IN` source reaches only athletes in India; DATA_MODEL.md
   section 12). The block holds up to 8 chunks, whole chunks only, within 9,000 characters, each
@@ -1079,9 +1084,12 @@ and shows Coach the chunks it found. The library never decides a number; it grou
 - **When retrieval does not happen or fails.** A red-flag turn (a symptom, or a training question
   on a pain day) is answered by the fixed referral and retrieves nothing. The contributor runs
   inside the host's 4-second limit; a search that fails or is slow leaves the library out and Coach
-  answers without it. The embedding has its own deadline of 1.5 seconds: if it takes longer (a cold
-  model load) or fails, the search runs on the question's words alone (logged
-  `library_retrieval_degraded`) instead of the whole block being dropped at the host's limit. Today's
+  answers without it. The call to `library-embed` has its own deadline of 1.5 seconds: on a timeout, an
+  error or any status but 200 (a cold model load there, a secret mismatch, a deploy still in
+  progress) the search runs on the question's words alone (logged `library_retrieval_degraded`)
+  instead of the whole block being dropped at the host's limit. `library-embed` and coach-chat deploy
+  in the same workflow run, one after the other: until the new `library-embed` is live, coach-chat's
+  query call gets a non-200 and answers from word search, which is safe. Today's
   DeepSeek path has neither the evidence field nor the block, so it does not retrieve.
 - **Precedence.** Tracend's calculations, then the athlete's confirmed facts, then what the athlete
   said, then the library. The rules tell Coach that where an excerpt disagrees with the plan, the

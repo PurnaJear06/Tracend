@@ -1,12 +1,17 @@
 import { coachServiceRpc, type ServiceRpc } from "../coach_context/service_source.ts";
 import { createLogger } from "../logger.ts";
-import { createGteSmallEmbedder, type Embedder } from "./embedder.ts";
-import { createLibraryContributor, type LibraryRow, type LibrarySearch } from "./retrieval.ts";
+import { createQueryEmbedder } from "./query_embedder.ts";
+import {
+  createLibraryContributor,
+  libraryEmbedDeadlineMs,
+  type LibraryRow,
+  type LibrarySearch,
+} from "./retrieval.ts";
 
 // The library contributor Coach chat registers: the question is embedded with the same gte-small
-// model that embedded the chunks (the Supabase Edge runtime provides it), then
-// search_library_v2 runs for this athlete, so the athlete's region decides which regional sources
-// can appear. No new provider and no network call beyond the database.
+// model that embedded the chunks, but by library-embed (query_embedder.ts), never inside
+// coach-chat; then search_library_v2 runs for this athlete, so the athlete's region decides which
+// regional sources can appear. No new provider.
 
 const asRows = (data: unknown): LibraryRow[] =>
   (Array.isArray(data) ? data : []).flatMap((item) => {
@@ -38,11 +43,22 @@ export function librarySearchViaRpc(rpc: ServiceRpc): LibrarySearch {
   };
 }
 
-// Loaded on first use and kept for the life of the Edge isolate: the model loads once.
-let embedder: Embedder | undefined;
+// The question is embedded by library-embed, over HTTP, with the same deadline the contributor
+// enforces; the worker secret comes from the database once and is kept.
+const embed = createQueryEmbedder({
+  baseUrl: () => Deno.env.get("SUPABASE_URL") ?? "",
+  secret: async () => {
+    const { data, error } = await coachServiceRpc("library_worker_secret_v1", {});
+    if (error || typeof data !== "string" || data === "") {
+      throw new Error("library_worker_secret_unavailable");
+    }
+    return data;
+  },
+  timeoutMs: libraryEmbedDeadlineMs,
+});
 
 export const libraryContributor = createLibraryContributor({
-  embed: () => (embedder ??= createGteSmallEmbedder()),
+  embed: () => embed,
   search: librarySearchViaRpc(coachServiceRpc),
   degraded: (code) => createLogger().warn("library_retrieval_degraded", { reason: code }),
 });

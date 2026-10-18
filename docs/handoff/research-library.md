@@ -411,8 +411,9 @@ Branch `claude/e3-library-in-coach`, migration `20261018140043_library_search_v2
   last, volatile, gateway route only. Query: the question, plus the topic of the athlete's last real
   question when it is a follow-up (`isFollowUp`: no topic word, or a few and a lead or demonstrative
   such as "And ...", "What about ...", "that"; a bare "it" counts only in a question of two topic
-  words or fewer). Deterministic, no model call. The query is embedded with `gte-small` through the
-  Edge runtime (`createGteSmallEmbedder`, the model `library-embed` used; no new provider), then the
+  words or fewer). Deterministic, no model call. The query is embedded with `gte-small` by
+  `library-embed` (its new `{"query": ...}` mode, called over HTTP by `query_embedder.ts`; no new
+  provider), then the
   search runs for the athlete. Up to 8 chunks, whole chunks within 9,000 characters (the eight
   longest chunks are 7,200), each `[source: <id>] <header>` and the body. A failed embedding falls
   back to words alone (logged `library_retrieval_degraded`); a failed or slow search (the host's
@@ -442,17 +443,27 @@ Branch `claude/e3-library-in-coach`, migration `20261018140043_library_search_v2
 
 ### Review fixes (Opus review of #150, no P1s)
 
-- **Embedding deadline (P2).** The question's embedding races a 1.5-second deadline
-  (`libraryEmbedDeadlineMs`); on a timeout or a failure the search runs with `embedding: null`
-  (words alone) instead of the host's 4-second limit dropping the whole block. A cold gte-small load
-  (16.3 s locally in the E1 spike, about 70 ms after) therefore costs one turn its vector half, and the
-  load goes on in the background for the next. Not done: warming the session when the module loads,
-  because it would charge every coach-chat cold start (red-flag and non-retrieval turns too) with an
-  unmeasured model load. **Cold start and memory are not measured**: no test or document records
-  coach-chat's memory with gte-small loaded, and the E2 note that the local runtime cut library-embed
-  at about 1.1 s of CPU shows a first load could meet the CPU limit. After the deploy, check coach-chat's
-  logs for `library_retrieval_degraded` and for resource-limit errors, and roll back with
-  `./scripts/rollback-function.sh coach-chat` if the limit is hit.
+- **Embedding deadline (P2) and the model out of coach-chat (blocking change).** The question's
+  embedding races a 1.5-second deadline (`libraryEmbedDeadlineMs`); on a timeout or a failure the
+  search runs with `embedding: null` (words alone) instead of the host's 4-second limit dropping
+  the whole block. The model itself no longer loads in coach-chat: a first load (16.3 s locally in the
+  E1 spike, about 70 ms after) and the CPU kills the E2 note records (about 1.1 s soft, 2.1 s hard
+  locally) would have taken the whole Coach turn down. `library-embed` gained a `{"query": "..."}`
+  mode (one text of 1 to 1,000 characters in, `{schema_version, embedding}` out; the `texts` batch
+  mode and the cron worker run are unchanged) behind the same worker-secret check. Coach chat reads
+  the secret once through the service-role function `library_worker_secret_v1()` (added to this PR's
+  migration; it returns the Vault secret the cron job already uses; no new secret, no new public
+  surface) and calls `${SUPABASE_URL}/functions/v1/library-embed` with it; the body is the question,
+  which neither side logs. The embedder constants and type moved to `embedding.ts` so coach-chat's
+  import graph holds no model code: `deno info --json supabase/functions/coach-chat/index.ts` lists
+  101 modules and not `embedder.ts`, and `Supabase.ai` appears nowhere under coach-chat or the
+  shared modules it imports. A first query after library-embed's isolate starts still waits for the
+  model there, so that turn gets word search; the load continues for the next.
+  **Deploy order:** `library-embed` and coach-chat deploy in the same run, one after the other. Until
+  the new `library-embed` is live, coach-chat's query call gets a non-200 and uses word search: safe.
+  The migration runs before both. Not measured: library-embed's memory and CPU with query traffic;
+  after the deploy, check its logs for resource-limit errors and coach-chat's for
+  `library_retrieval_degraded`.
 - **Library figures (P2).** The library is no longer in the main numbers ground. A figure only the library
   holds is accepted when the reply cites the source whose shown chunks contain it, and in a sentence that
   states the athlete's own target or prescription the numbers must come from the athlete's data and

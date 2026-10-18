@@ -1,5 +1,5 @@
 begin;
-select plan(96);
+select plan(97);
 
 -- Start from a library with no embeddings, as production does right after the migration.
 update private.library_chunks set embedding = null, embedding_model = null;
@@ -37,6 +37,7 @@ select ok((select bool_and(topics <> '{}') from private.library_sources), 'every
 select ok((select bool_and(has_function_privilege('service_role', f, 'execute'))
   from unnest(array[
     'public.library_worker_authorized_v1(text)',
+    'public.library_worker_secret_v1()',
     'public.library_pending_chunks_v1(integer, uuid[])',
     'public.library_record_embed_failures_v1(uuid[])',
     'public.library_store_embeddings_v1(text, jsonb)',
@@ -47,6 +48,7 @@ select ok((select bool_and(not has_function_privilege('anon', f, 'execute')
     and not has_function_privilege('authenticated', f, 'execute'))
   from unnest(array[
     'public.library_worker_authorized_v1(text)',
+    'public.library_worker_secret_v1()',
     'public.library_pending_chunks_v1(integer, uuid[])',
     'public.library_record_embed_failures_v1(uuid[])',
     'public.library_store_embeddings_v1(text, jsonb)',
@@ -86,6 +88,8 @@ select is((select count(*) from vault.secrets where name = 'library_worker_secre
 select ok(public.library_worker_authorized_v1(private.library_worker_secret()),
   'the secret authorises the worker');
 select ok(not public.library_worker_authorized_v1('wrong'), 'a wrong secret does not');
+select is(public.library_worker_secret_v1(), private.library_worker_secret(),
+  'the service role function returns the same secret, for Coach chat to call library-embed');
 select ok(not public.library_worker_authorized_v1(''), 'an empty secret does not');
 select ok(not public.library_worker_authorized_v1(null), 'a missing secret does not');
 

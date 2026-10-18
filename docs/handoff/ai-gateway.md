@@ -1006,6 +1006,11 @@ rules are AI_SAFETY_SPEC §11.2; the prompt budget is CONTEXT_BUDGET.md.
   to `renderCoachContext` and skips every contributor for a red-flag turn or a turn `screenTurn` would
   refer. The legacy (DeepSeek) route filters the library out like the data index
   (`coachContextContributorsFor`).
+- **The model stays out of coach-chat.** The question is embedded by `library-embed` (a `{"query"}`
+  mode, worker-secret bearer read once via `library_worker_secret_v1`, 1.5-second deadline); on a
+  timeout, an error or a non-200 the search uses the words alone. coach-chat's import graph holds no
+  `Supabase.ai` code. `library-embed` and coach-chat deploy in the same run: until the new
+  `library-embed` is live the query call gets a non-200 and falls back, which is safe.
 - **Reservation.** The contributors' worst case grows by 9,900 characters (36,274 in all), so a Sonnet
   5.5 reservation is about USD 0.34 (0.32 before); Opus 5.5 was already over the cap.
 - **Eval.** `library_eval.ts` runs the real `search_library_v2` with the query Coach builds, follow-ups

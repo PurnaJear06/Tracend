@@ -1270,6 +1270,10 @@ word, so a whole question matched almost nothing. Returns up to `match_count` ro
   the `Asia/Kolkata` and `Asia/Calcutta` time zones, because the app stores no country yet. An
   unknown account gets `global` only. A source tagged `IN` therefore reaches only athletes in
   India. When the app stores a country, change that one function.
+- `public.library_worker_secret_v1()` (same migration): returns the Vault worker secret
+  (`private.library_worker_secret()`), executable by `service_role` only. Coach chat uses it as the
+  bearer when it calls `library-embed` to embed the question, so gte-small never loads inside
+  coach-chat.
 - Coach does not filter by topic: the tags are free text, and a hard topic filter would drop the
   second source of a question that spans topics. The `topics` filter stays for callers that know
   what they want.

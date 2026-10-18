@@ -55,8 +55,8 @@ purpose limitation, retention control, and audit coverage.
   `search_library_v2` reads it.
 
 Classification is inherited by derived data. A summary of health data remains restricted. A Coach
-question used as a library search query (or its `gte-small` embedding, computed inside the Edge
-Function) keeps the question's classification: it is used for that request only and is never
+question used as a library search query (or its `gte-small` embedding, computed by the
+`library-embed` Edge Function, which Coach chat calls with the worker secret and the question only) keeps the question's classification: it is used for that request only and is never
 written to the library or logged. Coach chat searches with it on every turn (E3); the query may
 carry the athlete's previous question's topic, built in the function and not stored. The search
 reads the athlete's account locale and time zone to pick regional sources (inside the security
