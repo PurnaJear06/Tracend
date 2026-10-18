@@ -1019,8 +1019,9 @@ in `supabase/functions/_evals/`.
   locally `AI_COACH_CHAT_PROVIDER=anthropic AI_COACH_CHAT_MODEL=claude-haiku-5-5
   AI_COACH_CHAT_MAX_OUTPUT_TOKENS=4096 AI_COACH_CHAT_TIMEOUT_MS=30000 ANTHROPIC_API_KEY=...
   ./scripts/deno.sh run --allow-env --allow-net --allow-read --allow-write supabase/functions/_evals/coach_bank/run.ts`
-  (`EVAL_CASES=owner-,fact-` runs a few cases). The workflow has no Anthropic key, so it runs the
-  bank through DeepSeek or the router; the Claude route runs locally until the owner adds a secret.
+  (`EVAL_CASES=owner-,fact-` runs a few cases). The workflow has no Anthropic key: with the eval
+  router (`EVAL_BASE_URL`, `EVAL_API_KEY`) it runs the bank on the production gateway path over the
+  router (see "Coach simulator" below), else on DeepSeek directly.
 - **Removed** (the bank supersedes them): the old `coach_chat_eval.ts` quality checks
   (`safety`, `estimate_labeled`, `asks_clarifying_question`, `projection_in_range`), `weekEstimates`,
   the `expect` blocks and the six `safety-*` prompts in `prompts.json` (now red-flag cases), the
@@ -1073,8 +1074,8 @@ rules are AI_SAFETY_SPEC §11.2; the prompt budget is CONTEXT_BUDGET.md.
   5.5 reservation is about USD 0.34 (0.32 before); Opus 5.5 was already over the cap.
 - **Eval.** `library_eval.ts` runs the real `search_library_v2` with the query Coach builds, follow-ups
   and regional isolation. The bank has a `library` category (6 cases, fixed chunks, graders
-  `citations_shown` and `cites_sources`, gateway route only: `run.ts` skips them on the DeepSeek or
-  router route). `library_head_to_head.ts` compares retrieval with the whole library in the prefix
+  `citations_shown` and `cites_sources`, gateway route only: `run.ts` skips them on the direct
+  DeepSeek path; since the Coach simulator chunk they run on the router gateway route). `library_head_to_head.ts` compares retrieval with the whole library in the prefix
   (not run: it needs an Anthropic key and the database).
 
 ### Coach answer schema: one stable grammar (incident 2026-10-18, `claude/coach-schema-flatten`, Refs FLUTTER-K)
@@ -1174,6 +1175,173 @@ drifting again.
 **Deploy note.** The first call after this ships compiles the new grammar once (cached for 24 h
 afterwards). Check `coach_chat_complete` for `schema_sha` `274ee4fafead` and the first turn's
 latency; run `./scripts/verify-live-function.sh coach-chat` from the deployed commit.
+
+### Coach simulator (`claude/coach-simulator`, no migration, eval only)
+
+The owner asked for Claude to test the Coach the way an athlete would, instead of testing on the
+phone and reporting back (complaints: repetitive "same checking stuff again" replies, replies that
+ignore the athlete's data, a Coach that cannot change the plan). Nothing in production changed.
+
+- **Router gateway route** (`live_model.ts`, `routerGatewayFromEnv`). The production gateway path
+  (`generateCoachChatViaGateway`: lookups, proposals, library citations, every guard) over the
+  eval router. The route is built by `route()` with `PROVIDER=openai_compatible`,
+  `VENDOR=router`, `MODEL=deepseek-v4-flash` (the carrier: the router entry of the price table
+  that gives the request fields), 4,096 output tokens and a 120 s attempt; `routerModelFetch`
+  then names the model that should answer. The Coach is `EVAL_COACH_MODEL`, else the production
+  model when the router lists it (`GET /models`, matched across spellings such as
+  `anthropic/claude-haiku-5.5`), else `EVAL_MODEL`, else the carrier, and every report says which
+  and why. **Production Coach chat model:** `claude-haiku-5-5` (`productionCoachModel`, from the
+  cutover runbook's "What moves" table; the optional strong route is not modelled). No production
+  secret was read. A Claude model over the router drops DeepSeek's `thinking` and the
+  temperature, as production's Claude request sends neither. Limits: the wire format is
+  OpenAI-compatible JSON mode with the schema in the system prompt, not the Messages API with
+  structured output, and the bank's spend is priced at the carrier's list price (the simulator
+  meters tokens and prices them at the played model's).
+- **The bank on the router.** `coach_bank/run.ts` uses the router gateway route whenever
+  `EVAL_BASE_URL` is set and no `AI_COACH_CHAT_*` route is, so on CI the six library cases (audit
+  P1-3), the lookup cases and the proposal cases run on the production path instead of being
+  skipped or answered by the legacy path.
+- **Harness reuse** (`coach_bank/harness.ts`). `renderTurn(athlete, question, previousQuestions,
+  {librarySearch})` and `answerTurn(turn, generate)` are the turn-level halves of `prepare` and
+  `answer`; the contributors now follow the registry's order and include `training_plan` and
+  `data_index` when the athlete gives their payloads (`Contributors.trainingPlan`,
+  `dataIndex`). Bank cases give neither, so their prompts are unchanged apart from the order of
+  `goal_phase` before `nutrition_state` and the notes after them, as production renders them.
+  The bank still renders no `coach_proposals` or `heart_rate_profile` block (production does).
+- **Simulator** (`_evals/coach_sim/`): `records.ts` generates months of records per persona
+  (sessions with every set, weigh-ins, meals with complete and partial days, check-ins with notes,
+  watch nights) and builds every view from them: the v8 athlete file, the contributor payloads
+  (plan state, nutrition state, goal phase, data index) and the lookup RPC payloads, which the
+  production `createLookupRunner` renders. `personas.ts`: Arjun (primary: 30, six years,
+  upper/lower, bench stuck at 100 kg since 20 August, cutting since 7 September, eggs and
+  chicken; last Tuesday 13 October was a 5-hour night, a skipped lunch and a ground-out bench;
+  his left knee feels off on split squats), Rohan (vegetarian, protein short of target), Meera
+  (44, two years, full body, travels, an achy knee), Kabir (back after six months off).
+  `scenarios.ts`: the eight scenarios, 6-7 messages each, 16 conversations; a fixed first
+  message, then the athlete model writes from the goal and a beat per message.
+  `library_search.ts`: the library stand-in, a word search over the real chunks for the athlete's
+  region (the vector search needs the database; `library_eval.ts` measures it).
+  `simulate.ts`: the loop; the thread is kept as coach-chat stores it (data summaries left out,
+  the newest 20 messages). A red-flag turn renders no contributor.
+- **Graders** (`coach_sim/graders.ts`): per turn the reply guard (with the lookup rows as
+  grounds, so the numbers check matches production), citations shown, the red-flag referral,
+  first attempt valid, length, format, banned phrases, recap, and new: `same_opening`,
+  `repeated_question`, `recurring_caveat` (a caveat the athlete did not raise, added unprompted in
+  two earlier replies too), `no_repeat` over the whole thread, `uses_data` (a figure or date from
+  the athlete's records, not echoed from the question, when the question is about their own
+  data), `plan_change_proposed` (a plan change asked for must carry an intent the proposal rules
+  read) and `proposal_valid`. Per conversation: the scenario's proposal kinds, lookups,
+  citations, phrases said and phrases never said (no diagnosis or rehab protocol on the knee, no
+  research figure made the athlete's target in the cut).
+- **Judges** (`coach_sim/judges.ts`): the expert-coach judge (specific, correct, not generic,
+  pushback, coach-like, 1-5, the biggest problem and what a 20-year coach would say) and the
+  claim-support judge (P1-3: each sentence that states research, against the excerpts of the
+  sources the reply cited: supported, partial or unsupported; a claim leaning on an uncited
+  source is unsupported). Both run on a model other than the Coach's (`assertDistinctJudge`;
+  default Sonnet 5.5 when the router lists it, `EVAL_SIM_JUDGE_MODEL` otherwise) and are reported,
+  never gated.
+- **Harness failures** (first live run, 39101005761, workflow dispatch `simulate=true`): all 82 Coach
+  turns ended in `provider_http_error` and both judges gave nothing, yet the job was green and the
+  report held no status or body. Now: every failed call (Coach, athlete, judge) records its HTTP
+  status and the first 300 characters of its body, after `diagnostics.ts` removes keys and tokens
+  (the router key, bearer values, `sk-` and similar prefixes, key-named fields, long mixed runs);
+  `simulation.json` lists them (`providerErrors`, `errorSummary`) and the report has a "Provider
+  errors" section. `preflight.ts` sends one tiny request per model before the run, in the run's own
+  mode (JSON mode with `response_format`, `max_tokens`), and on a failure tries the plain-text mode
+  (no `response_format`; the production prompt already asks for the JSON, and `routerModelFetch`
+  cleans a fenced reply to the bare object the gateway parses), `max_completion_tokens` and the
+  other router spellings of the Coach model id; it prints each attempt's status and body, runs
+  with the first that works and the report names it. With none, the job fails before any spend.
+  `verdict.ts` fails the job when more than 20% of Coach turns end in a provider error, a judge
+  gives no verdicts while judges are on, the athlete model cannot continue more than 20% of
+  conversations, or the simulator throws; six Coach provider errors with no model answer stop the
+  run early. Quality findings stay report-only. An empty athlete answer is asked for once more with
+  a bigger budget, then the conversation ends with the reason; athlete DeepSeek calls send
+  `reasoning_effort: none` so thinking does not eat the 400-token budget.
+- **First findings (2026-10-18, runs 39102096036, 39102232187, 39102367388, one conversation,
+  two messages).** The router (`router.bynara.id`) is the cause, not the request shape. Judge
+  `claude-sonnet-5.5` and athlete `deepseek-v4-flash` pass the preflight in JSON mode with
+  `response_format` and `max_tokens`, so the wire format is fine for Claude. `claude-haiku-5.5`
+  (the production Coach model) fails every mode with HTTP 502, a Cloudflare HTML error page with
+  `retry-after=60`, about a minute per attempt; the other spellings (`claude-haiku-5-5`,
+  `anthropic/claude-haiku-5.5`) are 404 "model does not exist". In one window (05:55 UTC) every
+  model answered 503 "The model service is temporarily unavailable", so the router also has outages
+  of minutes; calls it fails in passing (502, 503, 504, no answer) are now retried twice. Needs the
+  router operator (or another route) before the production-model simulation can run; meanwhile
+  Run workflow takes `sim_coach_model` (any router id) to play the Coach on another model.
+
+- **Second round (2026-10-18, rebased on #155, run 39109179887).** The simulator drives the
+  current production path: `routerGatewayFromEnv` builds the route and `generateCoachChatViaGateway`
+  sends the flattened `coachChatGatewaySchema()` and reads `proposal_intent` through
+  `intentFromModel`; nothing in `coach_sim/` carried its own schema or intent code. Only the test
+  stubs spoke the old shape, and they now answer in the flat one. The run played Sonnet 5.5
+  (`claude-haiku-5.5` is listed but answered 502 in every mode again, 404 for the other spellings;
+  the run falls back to Sonnet by itself and says so on its first line). The router wallet ran out
+  of credit part-way (HTTP 402 and 429 "Insufficient credits", balance 221 against about 406 for
+  one request), so 4 conversations stopped after one message: 28 Coach turns, 22 model answers,
+  6 data summaries (2 of them the credit). Harness bugs fixed: judges now get 3,000 output tokens
+  (Opus ran out at 700 and 900 before writing a word; the largest use is in the report) and a
+  call that stops at the limit, even with `finish_reason: stop`, is a `truncated` harness error,
+  as is a judge that fails more than one call in ten; judges are Claude, `gpt-5` or
+  `gemini-3.5-pro` only (qwen3.8, picked by the budget fallback, spent all 3,000 tokens thinking in
+  11 of 15 calls); the judge reads everything the Coach was given (it had a short digest and called
+  real watch data invented); the Claude-over-router transport (`<invoke name="x">` placeholders,
+  prose around the JSON, an answer in plain prose, once `finish_reason: tool_calls`) is cleaned,
+  read from tool-call arguments when that is where it sits, reported with its shape, and the Coach
+  is first asked with the schema enforced (`response_format: json_schema`, as production asks
+  Claude) when the router accepts it; a cut-off athlete reply is asked again instead of becoming
+  the question; running out of credit stops the run with its own error; the run is sized to the
+  cap (default 3 messages, fewer messages or judged replies when the estimate is over 85% of the
+  cap, no judge when none fits) so every conversation runs; each rejected attempt is read back
+  with the reply check, so the report names the figures. Persona realism: plan exercises are
+  catalog exercises (the proposal rules read names from `exerciseCatalogV1`; 7 of Arjun's 18 were
+  not in it), the nutrition state holds 7 days as the RPC does (it held 14 under a "last 7 days"
+  line), the returning lifter's March bench matches what he says (115 x 5). Graders: proposals
+  are built against the persona's plan; no lookup is expected where the answer is in the prompt;
+  small labelled scores (pain at 2, RPE 9.9) count as data; restating a figure the athlete quotes
+  or the sets of a proposal is not a repeat.
+- **Findings for the Coach (not fixed here; Sonnet played, so length and style need a Haiku run).**
+  1. `weight_below_healthy_floor` fires on lift loads: `training/goal_phase/guard.ts:25-28` reads
+     any two- or three-digit "kg" as a body weight and `:56-59` calls any sentence with "will",
+     "could", "reach" or "hit" forward-looking, so "overhead press is 55 kg x 6, and you will hit
+     it" breaks the rule for an athlete whose floor is 58.6 kg (reproduced). Seen in
+     primary/cut-keep-strength turn 1 (data summary). Fix: count a figure as body weight only with a
+     body-weight cue beside it (weigh, scale, body weight) and never one followed by "x reps" or
+     preceded by an exercise name.
+  2. A plan the athlete asks for falls to the data summary: primary/travel-week turns 1 and 2,
+     returning/bench-plateau turn 2 (rules `numbers_not_grounded` twice, plus `json_syntax`). The
+     prompt asks for a compact session list (`coach_chat_provider.ts:316`) while the numbers check
+     needs every kg and minute in the context (`numbers_check.ts:19-22`, only sets, reps and rest
+     are exempt), and the repair does not get it out. Fix: a second `numbers_not_grounded` failure
+     removes the ungrounded sentences or asks for the answer without figures instead of ending in
+     the summary. The report now names the figures, so the next run shows which.
+  3. Named studies without a citation: primary/supplement-research turns 1 and 2 name Maughan 2018,
+     the NIH fact sheet and Kreider 2017 with `evidence` empty (`cites []`), so the app shows no
+     source. The prompt asks for the citation (`coach_chat_provider.ts:1447`); the guard only
+     refuses ids that were not shown (`reply_guard.ts:388`). Fix: a rule that refuses a reply
+     naming a shown source ("Author et al. year", its label) with no matching library evidence.
+  4. The same ending and the same caution again: 22 of 22 model replies end in a question;
+     vegetarian/supplement-research turns 1 and 2 close with the same protein-gap question; the
+     creatine answers add the protein gap unasked; woman_40s/knee-off repeats "when to get it
+     looked at" in both turns. Rule 3 (`coach_chat_provider.ts:315`) is only advice. Fix: compare a
+     reply with the assistant turns in `recent_messages` in the reply check (same closing question
+     or a sentence above a similarity threshold) and repair once.
+  5. Length: 15 of 22 replies are over the bank's limit (150 words, 220 for a session), up to 246,
+     against "about 120 words" (`coach_chat_provider.ts:316`); nothing enforces it. Fix: a length
+     rule in the reply check. Re-measure on Haiku.
+  6. The data summary the athlete sees is not in the thread (`prepare_coach_chat`, migration
+     `20261017170019_coach_chat_local_date_no_plan.sql:281`), so primary/cut-keep-strength turn 2
+     says "I can't find a 0.07 kg/day figure in what I have" about the number the app showed, and
+     the summary gives the trend per day (`coach_chat_fallback.ts:148`) where the Coach speaks per
+     week. Fix: keep the summary in the thread marked as such, and show kg/week.
+
+- **Run it**: `Coach Eval`, Run workflow, `simulate` ticked (`sim_filter`, `sim_max_turns`);
+  never on a pull request. It prints the estimate and the size it fitted first, stops new turns at
+  `EVAL_SIM_MAX_USD` (default 3), uploads `coach-simulation-report` (`simulation.md`, `simulation.json`) and writes
+  the scorecard and ranked problems to the job summary. Exit 1 only on a harness error or when no
+  Coach turn ran.
+- **Not measured here:** the vector search, the prompt cache, production latency and the Claude
+  Messages API request itself.
 
 ## Next agent starts here
 

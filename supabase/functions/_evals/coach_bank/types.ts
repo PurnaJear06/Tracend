@@ -52,6 +52,10 @@ export type Contributors = Readonly<{
   goalPhase?: unknown | null;
   /** A get_coach_nutrition_state_v1 payload for the nutrition_state contributor, or none. */
   nutritionState?: unknown;
+  /** A get_coach_plan_state_v1 payload for the training_plan contributor, or none. */
+  trainingPlan?: unknown;
+  /** A get_coach_data_index_v1 payload for the data_index contributor, or none. */
+  dataIndex?: unknown;
   /** Rows a data lookup returns, by lookup name (see lookups.ts); empty without lookups. */
   lookupRows?: Readonly<Record<string, readonly LookupRow[]>>;
   /**
