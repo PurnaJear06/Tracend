@@ -166,7 +166,9 @@ Deno.test("the Coach is asked with the answer schema first and keeps it when the
   assertEquals(result.working?.mode, structuredMode);
   assertEquals(sent.length, 1);
   assertEquals((sent[0].response_format as { type: string }).type, "json_schema");
-  assertStringIncludes(renderPreflight([result]).join("\n"), "structured output");
+  const lines = renderPreflight([result]).join("\n");
+  assertStringIncludes(lines, "structured output");
+  assert(!lines.includes("first mode tried failed"), lines);
 });
 
 Deno.test("a router that rejects json_schema falls back to the JSON object mode", async () => {
@@ -184,4 +186,5 @@ Deno.test("a router that rejects json_schema falls back to the JSON object mode"
   });
   assertEquals(result.working?.mode, chatModes[0]);
   assertEquals(result.attempts.map((a) => [a.ok, a.status]), [[false, 400], [true, 200]]);
+  assertStringIncludes(renderPreflight([result]).join("\n"), "first mode tried failed");
 });

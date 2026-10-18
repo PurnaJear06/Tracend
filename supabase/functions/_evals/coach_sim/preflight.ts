@@ -8,7 +8,7 @@ import { type RouterFetchOptions, routerModelFetch } from "../live_model.ts";
 import { excerpt, type WireError } from "./diagnostics.ts";
 import { normalizedModelId } from "../live_model.ts";
 import { routerChat } from "./router_client.ts";
-import { type ChatMode, chatModes, defaultChatMode, describeMode, jsonObjectIn } from "./wire.ts";
+import { type ChatMode, chatModes, describeMode, jsonObjectIn } from "./wire.ts";
 
 export type PreflightRole = "coach" | "athlete" | "judge";
 
@@ -223,7 +223,7 @@ export function renderPreflight(results: readonly PreflightResult[]): string[] {
     `${result.role} \`${result.wanted}\`: ${
       result.working
         ? `works as \`${result.working.model}\` in ${describeMode(result.working.mode)}${
-          result.working.mode === defaultChatMode ? "" : " (the default mode failed)"
+          result.attempts[0]?.mode === result.working.mode ? "" : " (the first mode tried failed)"
         }`
         : "NO WORKING REQUEST"
     }`,
