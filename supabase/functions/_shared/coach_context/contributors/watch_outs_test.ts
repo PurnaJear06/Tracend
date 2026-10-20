@@ -345,7 +345,7 @@ Deno.test("a weigh-in older than 14 days and an Apple Health sync older than 2 d
   assertEquals(
     stale({ health_sync: { at: "2026-10-11T08:00:00Z", local_date: "2026-10-11" } }),
     [
-      "- Apple Health last synced on 2026-10-11, 3 days ago (the app calls more than 2 days stale), so recent sleep and recovery rows may be missing.",
+      "- Apple Health last synced on 2026-10-11, more than 73 hours ago (the app calls more than 48 hours stale), so recent sleep and recovery rows may be missing.",
     ],
   );
   // Exactly two days of elapsed time is not stale; a second more is.
@@ -353,9 +353,12 @@ Deno.test("a weigh-in older than 14 days and an Apple Health sync older than 2 d
     stale({ health_sync: { at: "2026-10-12T09:00:00Z", local_date: "2026-10-12" } }),
     [],
   );
+  // Just over two days reads as over 48 hours, never as "2 days ago ... more than 2 days stale".
   assertEquals(
-    stale({ health_sync: { at: "2026-10-12T08:59:59Z", local_date: "2026-10-12" } }).length,
-    1,
+    stale({ health_sync: { at: "2026-10-12T08:59:59Z", local_date: "2026-10-12" } }),
+    [
+      "- Apple Health last synced on 2026-10-12, more than 48 hours ago (the app calls more than 48 hours stale), so recent sleep and recovery rows may be missing.",
+    ],
   );
   // Without the database's now there is no elapsed time to judge.
   assertEquals(

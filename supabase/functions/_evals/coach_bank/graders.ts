@@ -34,6 +34,8 @@ export type Prepared = Readonly<{
   bank: BankCase;
   context: Record<string, unknown>;
   contributions: CoachContributions;
+  /** The rows the case's lookups return, as the production loop hands them to the numbers check. */
+  lookedUp: readonly string[];
   question: string;
   history: readonly Turn[];
 }>;
@@ -527,7 +529,11 @@ export function gradeModelReply(p: Prepared, reply: Reply): GraderResult[] {
       ...namedShownSources(text, p.contributions.shown),
     ]),
   ];
-  const broken = coachReplyCheckFor(p.context, p.question, p.contributions)(text, cited, text);
+  const broken = coachReplyCheckFor(p.context, p.question, p.contributions, p.lookedUp)(
+    text,
+    cited,
+    text,
+  );
   const rules = broken === null
     ? []
     : typeof broken === "string"

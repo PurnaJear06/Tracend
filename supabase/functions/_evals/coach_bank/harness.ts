@@ -162,7 +162,6 @@ function contributorsOf(bank: BankCase): CoachContextContributor[] {
 const withVolatile = (base: CoachContributions, block: string): CoachContributions => ({
   ...base,
   volatile: [base.volatile, block].filter(Boolean).join("\n\n"),
-  texts: { ...base.texts, data_lookup: block },
 });
 
 const lookupBlock = (text: string) =>
@@ -188,6 +187,7 @@ export async function prepare(bank: BankCase): Promise<PreparedRun> {
     history,
     firstRound,
     contributions: rows ? withVolatile(firstRound, lookupBlock(allLookupRows(rows))) : firstRound,
+    lookedUp: rows ? [allLookupRows(rows)] : [],
   };
 }
 

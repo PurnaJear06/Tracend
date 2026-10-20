@@ -1150,10 +1150,16 @@ adapter still sends no tools.
   call or lookup. Every guard (safe ranges, screening cap, claimed actions, the numbers check, the
   goal-phase rules) runs on the final answer. The rows a lookup returned count as grounded for the
   numbers check, because they are the athlete's own records and Tracend's calculations, field by
-  field (`lookupGrounding`, tested): text a model wrote (a daily decision's words, the reason on a plan,
-  a target or a proposal, Coach's earlier replies) is shown and grounds nothing, and neither does the
-  athlete file's latest daily decision; a contributor declares what it grounds in
-  `coach_context/grounding.ts`; the model's own request text (its
+  field (`lookupGrounding`, tested): text a model wrote (a daily decision's words, the reason on a
+  plan, a target or a proposal, Coach's earlier replies) is shown and grounds nothing. A proposal's
+  figures (its gain, cost and reason, Tracend-built or not) ground a figure, but never a sentence
+  that states the athlete's own target: a proposal is not a target. The athlete file is declared the
+  same way, key by key and field by field (`providers/context_grounding.ts`, tested with a marker in
+  every field the renderer shows): its latest daily decision, its plan proposals and the active
+  plan's title and reason (written with the onboarding model) are shown and ground nothing; the
+  plan's version and sessions per week, the targets and the records do. A contributor declares what
+  it grounds in `coach_context/grounding.ts`, and one that is not declared grounds nothing; the
+  model's own request text (its
   filter) never does. The interim sentence is checked only against what the model had seen when it
   wrote it. A lookup call that fails, or a round that cannot start in the time left, also ends in
   the interim sentence, with a note of what was not checked.

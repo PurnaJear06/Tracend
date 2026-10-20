@@ -1570,6 +1570,27 @@ no time; plan age is in whole weeks by date (no product rule measures it).
 each schedule day carries the id and whether it was logged); the name is only what the line says.
 Two workouts with one name have two streaks; a workout made up on another day answers its own.
 
+**Review round 3 (PR #159, same branch).**
+1) *The athlete file grounds field by field.* `providers/context_grounding.ts` declares every key
+`renderCoachContextParts` reads (`records`, `modelText`, `conversation`, or a record/modelText field
+list for `active_plan`); `contextForGrounds` is the file as it grounds, and `replyCheckInputsFor`
+renders that. Model text, shown and never evidence: the latest daily decision, the active plan's
+title and reason (the onboarding model's), and the whole Plan Proposals section (a proposal is never
+the athlete's target; legacy rows were a model's). The one-off `latest_decision: null` is gone.
+`context_grounding_test.ts` puts a marker in every leaf of a full context, requires each shown leaf
+to be declared and to ground as declared, and reads the keys the renderer touches through a Proxy, so
+a new section or field fails until its author declares it. Probe regressions: figures only in a
+rationale or a declined legacy proposal reach neither `ground` nor `athleteGround`.
+2) *Proposal lookups.* `plan_history/proposals` splits `lookupGrounding` into `grounds` (date, kind,
+title, status, confidence) and `figures` (reason, gain, cost): the figures ground `ground` (via
+`proposalGrounds`, collected by the gateway) but never `athleteGround`; schema 3.0 rows no longer lose them.
+3) *Exhaustive lookup test.* `render_grounding_test.ts` walks every leaf of each fixture and fails a
+shown leaf that is in no list.
+4) *Fail closed.* `groundingOf` of an id nobody declared is `excluded`; the bank harness passes the
+case's lookup rows the way the production loop does (`lookedUp`) instead of a made-up contributor id.
+5) *Stale-sync wording.* The line states hours ("more than 73 hours ago (the app calls more than 48
+hours stale)"), so a sync just over 48 hours old cannot read "2 days ago ... more than 2 days stale".
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in

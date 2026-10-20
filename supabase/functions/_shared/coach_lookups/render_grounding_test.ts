@@ -44,6 +44,27 @@ const fixtures: Readonly<Record<string, unknown>> = {
   "past_messages/default": pastMessagesCoachPayload,
 };
 
+/** Every leaf of a payload, as a path: `a[].b` for the field `b` of each element of `a`. */
+function leaves(node: unknown, path = "", out = new Set<string>()): Set<string> {
+  if (Array.isArray(node)) {
+    if (node.length > 0 && node.every((item) => item === null || typeof item !== "object")) {
+      out.add(`${path}[]`);
+    }
+    for (const item of node) {
+      if (item !== null && typeof item === "object") leaves(item, `${path}[]`, out);
+    }
+    return out;
+  }
+  if (node !== null && typeof node === "object") {
+    for (const [key, value] of Object.entries(node)) {
+      leaves(value, path ? `${path}.${key}` : key, out);
+    }
+    return out;
+  }
+  out.add(path);
+  return out;
+}
+
 /** A copy of the payload with `marker` in the field at `path` of every element on the way. */
 function mark(payload: unknown, path: string, marker: string): unknown {
   const copy = structuredClone(payload) as Record<string, unknown>;
@@ -57,12 +78,8 @@ function mark(payload: unknown, path: string, marker: string): unknown {
     const object = node as Record<string, unknown>;
     const list = step.endsWith("[]");
     const key = list ? step.slice(0, -2) : step;
-    if (rest.length === 0) {
-      if (list) return;
-      object[key] = marker;
-    } else {
-      put(object[key], rest);
-    }
+    if (rest.length === 0) object[key] = list ? [marker] : marker;
+    else put(object[key], rest);
   };
   put(copy, path.split("."));
   return copy;
@@ -82,7 +99,7 @@ Deno.test("every lookup and every mode declares what grounds, and has a fixture"
   assertEquals(Object.keys(fixtures).length, 15);
 });
 
-Deno.test("each declared field grounds a figure or does not, exactly as declared", () => {
+Deno.test("every field a lookup shows is declared, and each grounds a figure, grounds a proposal's figure, or does not, exactly as declared", () => {
   let checked = 0;
   for (const [lookup, modes] of Object.entries(lookupGrounding)) {
     for (const [mode, fields] of Object.entries(modes)) {
@@ -93,24 +110,43 @@ Deno.test("each declared field grounds a figure or does not, exactly as declared
         "2026-10-17",
         mode === "default" ? null : mode,
       );
-      const all = [
-        ...fields.grounds.map((path) => ({ path, grounds: true })),
-        ...fields.modelText.map((path) => ({ path, grounds: false })),
-      ];
-      assert(all.length > 0, `${lookup}/${mode} declares nothing`);
-      for (const { path, grounds } of all) {
+      const declared = new Map<string, "grounds" | "figures" | "modelText">([
+        ...fields.grounds.map((path) => [path, "grounds"] as const),
+        ...fields.figures.map((path) => [path, "figures"] as const),
+        ...fields.modelText.map((path) => [path, "modelText"] as const),
+      ]);
+      assertEquals(
+        declared.size,
+        fields.grounds.length + fields.figures.length + fields.modelText.length,
+      );
+      assert(declared.size > 0, `${lookup}/${mode} declares nothing`);
+      // Every leaf of the fixture: a marker in it either shows (then it is declared) or does not.
+      for (const path of leaves(fixture)) {
         const marker = `MK${100000 + checked}Z`;
         checked += 1;
         const rendered = renderLookup(asked, mark(fixture, path, marker), 20_000, everyScope);
         const where = `${lookup}/${mode} ${path}`;
-        // Coach reads it either way...
-        assert(rendered.text.includes(marker), `${where} is not shown`);
-        // ...and it is evidence only when the field is a record.
-        assertEquals(rendered.grounds.join("\n").includes(marker), grounds, where);
+        const shown = rendered.text.includes(marker);
+        const kind = declared.get(path);
+        if (kind === undefined) {
+          assert(!shown, `${where} is shown to Coach but not declared in lookupGrounding`);
+          continue;
+        }
+        // Coach reads it, and it is evidence only as declared.
+        assert(shown, `${where} is declared but not shown`);
+        assertEquals(rendered.grounds.join("\n").includes(marker), kind === "grounds", where);
+        assertEquals(
+          rendered.proposalGrounds.join("\n").includes(marker),
+          kind === "figures",
+          where,
+        );
+      }
+      for (const path of declared.keys()) {
+        assert(leaves(fixture).has(path), `${lookup}/${mode} ${path} is not in the fixture`);
       }
     }
   }
-  assert(checked >= 50, `${checked} fields checked`);
+  assert(checked >= 250, `${checked} fields checked`);
 });
 
 Deno.test("a figure written by a model in a lookup row is not a ground, and the record around it is", () => {

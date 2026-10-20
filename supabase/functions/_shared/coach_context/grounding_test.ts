@@ -12,8 +12,8 @@ Deno.test("every registered contributor declares what it may ground, and nothing
   );
   assertEquals(groundingOf("library"), "excluded");
   assertEquals(groundingOf("coaching_principles"), "guidance");
-  // An id nobody declared is a record: the table above is what keeps it from happening.
-  assertEquals(groundingOf("some_new_block"), "records");
+  // An id nobody declared grounds nothing.
+  assertEquals(groundingOf("some_new_block"), "excluded");
 });
 
 const contributions = (texts: Record<string, string>) => ({ ...noCoachContributions, texts });

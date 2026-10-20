@@ -17,6 +17,7 @@ import { calculateCoachNumbers, formatCoachCalculations } from "../coach_calcula
 import type { AiVendor } from "../ai/types.ts";
 import type { CoachContributions } from "../coach_context/host.ts";
 import { groundingOf } from "../coach_context/grounding.ts";
+import { contextForGrounds } from "./context_grounding.ts";
 import { targetFromDetails, weightClaimCheckFor } from "../training/goal_phase/guard.ts";
 import { describeGoalTarget } from "../training/goal_phase/render.ts";
 import { type RedFlagHit, screenTurn } from "../coach_safety/red_flags.ts";
@@ -1337,17 +1338,17 @@ export function replyCheckInputsFor(
   question: string,
   contributions: CoachContributions | null,
   lookedUp: readonly string[] = [],
+  proposed: readonly string[] = [],
 ): ReplyCheckInputs {
-  // The latest daily decision is a model's words about an earlier day: its figures were true then,
-  // and a decision never grounds today's claim (as a data summary of another day does not).
-  const { file } = renderCoachContextParts(
-    { ...context, latest_decision: null },
-    coachChatMaxContextBudget,
-  );
+  // The athlete file as it grounds: without the fields a model wrote (a plan's rationale, the
+  // latest daily decision, the last proposals), which are shown but are not evidence
+  // (`context_grounding.ts` declares them, field by field).
+  const { file } = renderCoachContextParts(contextForGrounds(context), coachChatMaxContextBudget);
   // The text of every contributor that declares itself a record or guidance (`grounding.ts`). The
   // library is left out: a figure may use it only when the reply cites the source (shown). The
   // principles digest grounds general guidance but never a sentence that states the athlete's own
-  // target.
+  // target. Figures Tracend proposed (the proposals a lookup returned) are given in the same way:
+  // a proposal is not the athlete's target, whoever built it.
   const texts = Object.entries(contributions?.texts ?? {}).filter(([id]) =>
     groundingOf(id) !== "excluded"
   );
@@ -1368,7 +1369,7 @@ export function replyCheckInputsFor(
   return {
     ranges,
     screening,
-    ground: numberGroundOf([...athleteGiven, ...texts.map(([, text]) => text)]),
+    ground: numberGroundOf([...athleteGiven, ...proposed, ...texts.map(([, text]) => text)]),
     athleteGround: numberGroundOf(athleteGiven),
     librarySources: Object.fromEntries(
       Object.entries(contributions?.shown ?? {}).map(([id, source]) => [id, source.text]),
@@ -1401,8 +1402,9 @@ export function coachReplyCheckFor(
   question: string,
   contributions: CoachContributions | null,
   lookedUp: readonly string[] = [],
+  proposed: readonly string[] = [],
 ): CoachChatAnswerCheck {
-  return coachReplyCheck(replyCheckInputsFor(context, question, contributions, lookedUp));
+  return coachReplyCheck(replyCheckInputsFor(context, question, contributions, lookedUp, proposed));
 }
 
 /**
@@ -1414,11 +1416,12 @@ export function coachReplyCutFor(
   question: string,
   contributions: CoachContributions | null,
   lookedUp: readonly string[] = [],
+  proposed: readonly string[] = [],
 ): (
   candidate: Record<string, unknown>,
   rules: readonly CoachChatValidationRule[],
 ) => CutReply | null {
-  const inputs = replyCheckInputsFor(context, question, contributions, lookedUp);
+  const inputs = replyCheckInputsFor(context, question, contributions, lookedUp, proposed);
   return (candidate, rules) => cutReply(inputs, candidate, rules);
 }
 

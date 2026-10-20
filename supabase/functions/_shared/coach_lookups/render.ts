@@ -30,6 +30,12 @@ export type RenderedLookup = Readonly<{
    * counts and the period. Never the model's own filter text.
    */
   grounds: readonly string[];
+  /**
+   * Lines that give a figure Tracend proposed, which ground a figure in a reply but never one that
+   * states the athlete's own target (a pending, declined or applied proposal is not the athlete's
+   * target; the plan and the targets are).
+   */
+  proposalGrounds: readonly string[];
 }>;
 
 /** A lookup's rows as units (a row with its detail lines), ahead of fitting them to the budget. */
@@ -42,13 +48,15 @@ type Parts = Readonly<{
   /** Units run in date order and the earliest are the ones to keep (a schedule from today). */
   keepFirst?: boolean;
   /**
-   * Lines that carry text a model wrote (a decision's summary, the reason given for a plan or a
-   * proposal, Coach's own earlier reply), by the line as shown, with the part of it that is still a
-   * record (its date, its codes, its counts), which is all that may ground a figure in a reply. A
-   * model's words are not evidence that a figure is true, and a decision or reason written on an
-   * earlier day states figures that were true on that day. An empty string grounds nothing.
+   * Lines that carry text that is not a record, by the line as shown, with what of it still
+   * grounds. `records` is the part that is a record (its date, codes and counts) and grounds any
+   * figure. `figures`, when present, is text Tracend built for a proposal: it grounds a figure but
+   * not the athlete's own target. What is in neither is a model's words (a decision's summary, the
+   * reason given for a plan, Coach's own earlier reply): shown, never evidence, because a model's
+   * words do not show a figure is true and a decision or reason written on an earlier day states
+   * figures that were true on that day.
    */
-  ungrounded?: ReadonlyMap<string, string>;
+  ungrounded?: ReadonlyMap<string, Readonly<{ records: string; figures?: string }>>;
 }>;
 
 type Json = Record<string, unknown>;
@@ -323,8 +331,10 @@ function planSchedule(body: Json): Parts {
 }
 
 function proposalsHistory(body: Json): Parts {
-  // The reason, the gain and the cost are text built around a model's reason and note: shown, not evidence.
-  const ungrounded = new Map<string, string>();
+  // The reason, the gain and the cost of a proposal are built by Tracend's rules (the figures are
+  // its own; a note with a digit is dropped), so they ground a figure, but a proposal is not the
+  // athlete's target: they never ground a sentence that states one.
+  const ungrounded = new Map<string, { records: string; figures?: string }>();
   const lines = list(body.proposals).map((proposal) => {
     const head = `- ${val(proposal.created_on)} ${val(proposal.kind).replaceAll("_", " ")}: ${
       val(proposal.title)
@@ -332,10 +342,11 @@ function proposalsHistory(body: Json): Parts {
     const tail = `${has(proposal.ends_on) ? ` Ends ${proposal.ends_on}.` : ""}${
       has(proposal.applied_on) ? ` Applied ${proposal.applied_on}.` : ""
     }`;
-    const line = `${head} Why: ${val(proposal.rationale)} Gain: ${val(proposal.benefit)} Cost: ${
+    const figures = `Why: ${val(proposal.rationale)} Gain: ${val(proposal.benefit)} Cost: ${
       val(proposal.downside)
-    }${tail}`;
-    ungrounded.set(line, `${head}${tail}`);
+    }`;
+    const line = `${head} ${figures}${tail}`;
+    ungrounded.set(line, { records: `${head}${tail}`, figures });
     return line;
   });
   return { ...singles(lines), ungrounded };
@@ -349,10 +360,10 @@ function planHistory(body: Json): Parts {
   // A version's reason and a target's reason were written with a model's help (the plan or the
   // proposal that made them): shown, not evidence. The plan's own sessions, sets and targets are
   // what the athlete approved, and ground.
-  const ungrounded = new Map<string, string>();
+  const ungrounded = new Map<string, { records: string; figures?: string }>();
   const reasoned = (head: string, why: unknown) => {
     const line = `${head}. Why: ${val(why)}`;
-    ungrounded.set(line, `${head}.`);
+    ungrounded.set(line, { records: `${head}.` });
     return line;
   };
   const units = [
@@ -416,7 +427,7 @@ function goals(body: Json): Parts {
 function dailyDecisions(body: Json): Parts {
   // The summary and the decision are a model's words about that day: shown, not evidence. The
   // action codes, the confidence, the flags and the date are Tracend's record of it.
-  const ungrounded = new Map<string, string>();
+  const ungrounded = new Map<string, { records: string; figures?: string }>();
   const lines = list(body.decisions).map((decision) => {
     const tail = ` Confidence ${val(decision.confidence)}${
       Array.isArray(decision.risk_flags) && decision.risk_flags.length
@@ -428,10 +439,9 @@ function dailyDecisions(body: Json): Parts {
     const line = `- ${val(decision.local_date)}: ${training}${
       has(decision.training_summary) ? ` (${decision.training_summary})` : ""
     }; nutrition ${nutrition}; decision: ${val(decision.decision)}${tail}`;
-    ungrounded.set(
-      line,
-      `- ${val(decision.local_date)}: ${training}; nutrition ${nutrition};${tail}`,
-    );
+    ungrounded.set(line, {
+      records: `- ${val(decision.local_date)}: ${training}; nutrition ${nutrition};${tail}`,
+    });
     return line;
   });
   return { ...singles(lines), ungrounded };
@@ -511,7 +521,7 @@ function pastMessages(body: Json): Parts {
   return {
     ...singles(lines),
     ungrounded: new Map(
-      replies.map((line) => [line, line.slice(0, line.indexOf(" (an earlier reply"))]),
+      replies.map((line) => [line, { records: line.slice(0, line.indexOf(" (an earlier reply")) }]),
     ),
   };
 }
@@ -543,18 +553,26 @@ const renderers: Readonly<
 export const lookupRendererNames: readonly string[] = Object.keys(renderers);
 
 /**
- * Which fields of each lookup's payload ground a figure in a reply (`grounds`) and which are text a
- * model wrote (`modelText`): shown to Coach, never evidence. Only values that are deterministic
- * (Tracend calculated them) or recorded by the athlete may ground; a decision's summary, the reason
- * on a plan version, a nutrition target or a proposal, and Coach's own earlier reply may not. Keyed
- * by lookup, then by mode (the filter that selects different records, or "default"). Every
- * renderer and every mode must be declared here, with a fixture, or render_grounding_test.ts
- * fails: a new renderer states what it grounds before it can ship. Paths are in the lookup's
- * payload (`a[].b` is the field `b` of each element of the list `a`); the test puts a marker in
- * each and reads it back from `text` and `grounds`.
+ * Which fields of each lookup's payload ground a figure in a reply (`grounds`: records), which
+ * ground only a figure that is not the athlete's own target (`figures`: what Tracend built for a
+ * proposal), and which are text a model wrote (`modelText`): shown to Coach, never evidence. Only
+ * values that are deterministic (Tracend calculated them) or recorded by the athlete may ground
+ * the athlete's targets; a decision's summary, the reason on a plan version or a nutrition target,
+ * and Coach's own earlier reply may not ground anything. Keyed by lookup, then by mode (the filter
+ * that selects different records, or "default"). Every renderer, every mode and every field the
+ * renderer shows must be declared here, with a fixture, or render_grounding_test.ts fails: a new
+ * renderer, or a new field, states what it grounds before it can ship. Paths are in the lookup's
+ * payload (`a[].b` is the field `b` of each element of the list `a`).
  */
 export type FieldGrounding = Readonly<{
+  /** Records: the athlete's, Apple Health's, Tracend's calculations. They ground any figure. */
   grounds: readonly string[];
+  /**
+   * Figures Tracend built for a proposal: they ground a figure, but not one that states the
+   * athlete's own target (a proposal is not a target).
+   */
+  figures: readonly string[];
+  /** Text a model wrote: shown, never evidence. */
   modelText: readonly string[];
 }>;
 
@@ -564,54 +582,158 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, Fi
       grounds: [
         "sessions[].local_date",
         "sessions[].workout",
+        "sessions[].minutes",
+        "sessions[].effort",
         "sessions[].note",
         "sessions[].exercises[].name",
-        "sessions[].exercises[].note",
         "sessions[].exercises[].planned_name",
         "sessions[].exercises[].substitution_reason",
+        "sessions[].exercises[].note",
+        "sessions[].exercises[].planned.sets",
+        "sessions[].exercises[].planned.rep_min",
+        "sessions[].exercises[].planned.rep_max",
+        "sessions[].exercises[].sets[].reps",
+        "sessions[].exercises[].sets[].load_kg",
+        "sessions[].exercises[].sets[].rir",
+        "sessions[].exercises[].sets[].peak_bpm",
       ],
+      figures: [],
       modelText: [],
     },
   },
   exercise_history: {
     default: {
-      grounds: ["sessions[].local_date", "sessions[].name", "planned[].name"],
+      grounds: [
+        "sessions[].local_date",
+        "sessions[].name",
+        "sessions[].top_load_kg",
+        "sessions[].top_reps",
+        "sessions[].sets",
+        "sessions[].e1rm_kg",
+        "sessions[].min_rir",
+        "planned[].name",
+        "planned[].sets",
+        "planned[].rep_min",
+        "planned[].rep_max",
+        "planned[].rest_seconds",
+        "next_targets[].name",
+        "next_targets[].basis.recent[].local_date",
+      ],
+      figures: [],
       modelText: [],
     },
   },
   meals: {
     default: {
       grounds: [
+        "target_kcal",
+        "rules.min_meals",
         "days[].local_date",
+        "days[].meals",
+        "days[].calories",
+        "days[].protein_g",
+        "days[].carbohydrate_g",
+        "days[].fat_g",
         "meals[].local_date",
         "meals[].meal_type",
         "meals[].foods[].name",
+        "meals[].foods[].calories",
       ],
+      figures: [],
       modelText: [],
     },
   },
   body: {
     default: {
-      grounds: ["weights[].date", "weights[].source", "measurements[].date"],
+      grounds: [
+        "weights[].date",
+        "weights[].kg",
+        "weights[].source",
+        "measurements[].date",
+        "measurements[].waist_cm",
+        "measurements[].chest_cm",
+        "measurements[].hip_cm",
+        "measurements[].arm_cm",
+        "measurements[].thigh_cm",
+      ],
+      figures: [],
       modelText: [],
     },
   },
   check_ins: {
-    default: { grounds: ["check_ins[].local_date", "check_ins[].note"], modelText: [] },
+    default: {
+      grounds: [
+        "check_ins[].local_date",
+        "check_ins[].sleep_quality",
+        "check_ins[].energy",
+        "check_ins[].soreness",
+        "check_ins[].hunger",
+        "check_ins[].mood",
+        "check_ins[].pain_severity",
+        "check_ins[].note",
+      ],
+      figures: [],
+      modelText: [],
+    },
   },
-  recovery: { default: { grounds: ["days[].local_date"], modelText: [] } },
+  recovery: {
+    default: {
+      grounds: [
+        "days[].local_date",
+        "days[].sleep_minutes",
+        "days[].resting_heart_rate_bpm",
+        "days[].hrv_ms",
+        "days[].steps",
+        "days[].recovery_score",
+        "days[].sleep_quality",
+        "days[].acwr",
+        "days[].respiratory_rate_bpm",
+        "days[].sleep_awake_minutes",
+        "days[].sleep_light_minutes",
+        "days[].sleep_deep_minutes",
+        "days[].sleep_rem_minutes",
+        "days[].hrv_sleep_ms",
+        "days[].hrv_morning_ms",
+        "days[].active_energy_kcal",
+        "days[].workout_minutes",
+      ],
+      figures: [],
+      modelText: [],
+    },
+  },
   plan_history: {
     default: {
       grounds: [
+        "training[].version",
         "training[].status",
         "training[].title",
+        "training[].sessions_per_week",
+        "training[].block_weeks",
+        "training[].effective_date",
+        "training[].created_on",
         "training[].sessions[].name",
+        "training[].sessions[].weekday",
         "training[].sessions[].exercises[].name",
+        "training[].sessions[].exercises[].sets",
+        "training[].sessions[].exercises[].rep_min",
+        "training[].sessions[].exercises[].rep_max",
+        "nutrition[].version",
         "nutrition[].status",
+        "nutrition[].calories",
+        "nutrition[].protein_g",
+        "nutrition[].carbohydrate_g",
+        "nutrition[].fat_g",
+        "nutrition[].effective_date",
+        "nutrition[].created_on",
       ],
+      figures: [],
       modelText: ["training[].rationale", "nutrition[].rationale"],
     },
-    schedule: { grounds: ["days[].planned[].name", "days[].done[].name"], modelText: [] },
+    schedule: {
+      grounds: ["plan.version", "days[].date", "days[].planned[].name", "days[].done[].name"],
+      figures: [],
+      modelText: [],
+    },
     proposals: {
       grounds: [
         "proposals[].created_on",
@@ -619,19 +741,41 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, Fi
         "proposals[].title",
         "proposals[].status",
         "proposals[].confidence",
+        "proposals[].ends_on",
+        "proposals[].applied_on",
       ],
-      modelText: ["proposals[].rationale", "proposals[].benefit", "proposals[].downside"],
+      figures: ["proposals[].rationale", "proposals[].benefit", "proposals[].downside"],
+      modelText: [],
     },
   },
   goals: {
     default: {
-      grounds: ["goals[].goal_type", "goals[].status", "screenings[].outcome"],
+      grounds: [
+        "goals[].goal_type",
+        "goals[].status",
+        "goals[].created_on",
+        "goals[].target.weight_kg",
+        "screenings[].outcome",
+        "screenings[].screened_on",
+      ],
+      figures: [],
       modelText: [],
     },
   },
   weekly_reviews: {
     default: {
-      grounds: ["reviews[].review_week", "reviews[].outcome_code", "reviews[].next_focus_code"],
+      grounds: [
+        "reviews[].review_week",
+        "reviews[].outcome_code",
+        "reviews[].next_focus_code",
+        "reviews[].training.planned_sessions",
+        "reviews[].training.completed_workouts",
+        "reviews[].training.completed_sets",
+        "reviews[].training.adherence_percent",
+        "reviews[].recovery.check_in_days",
+        "reviews[].nutrition.confirmed_days",
+      ],
+      figures: [],
       modelText: [],
     },
     decisions: {
@@ -640,17 +784,41 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, Fi
         "decisions[].training_action",
         "decisions[].nutrition_action",
         "decisions[].confidence",
+        "decisions[].risk_flags[]",
       ],
+      figures: [],
       modelText: ["decisions[].training_summary", "decisions[].decision"],
     },
   },
   health_history: {
-    default: { grounds: ["months[].workouts"], modelText: [] },
-    workouts: { grounds: ["workouts[].local_date", "workouts[].activity_type"], modelText: [] },
+    default: {
+      grounds: [
+        "months[].workouts",
+        "months[].strength_workouts",
+        "months[].workout_minutes",
+        "months[].sleep_nights",
+        "months[].sleep_minutes_avg",
+        "months[].weight_days",
+        "months[].weight_kg_avg",
+      ],
+      figures: [],
+      modelText: [],
+    },
+    workouts: {
+      grounds: [
+        "workouts[].local_date",
+        "workouts[].activity_type",
+        "workouts[].minutes",
+        "workouts[].energy_kcal",
+      ],
+      figures: [],
+      modelText: [],
+    },
   },
   past_messages: {
     default: {
       grounds: ["messages[].local_date", "messages[].content", "coach_replies[].local_date"],
+      figures: [],
       modelText: ["coach_replies[].content"],
     },
   },
@@ -720,8 +888,11 @@ export function renderLookup(
     rows: shown.length,
     grounds: [
       `Period looked at: ${request.from} to ${request.to}. Rows shown: ${shown.length} of ${total}.`,
-      ...lines.map((line) => parts.ungrounded?.get(line) ?? line).filter((line) => line !== ""),
+      ...lines.map((line) => parts.ungrounded?.get(line)?.records ?? line).filter((line) =>
+        line !== ""
+      ),
     ],
+    proposalGrounds: lines.flatMap((line) => parts.ungrounded?.get(line)?.figures ?? []),
   };
 }
 
@@ -732,5 +903,6 @@ export function unreadable(request: DataRequest): RenderedLookup {
       "Say you could not check it; do not guess.",
     rows: 0,
     grounds: [],
+    proposalGrounds: [],
   };
 }

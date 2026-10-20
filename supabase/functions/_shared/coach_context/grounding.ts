@@ -1,7 +1,7 @@
 // What each Coach context contributor may ground in a reply's numbers check. Only values that are
 // deterministic (Tracend calculated them) or recorded by the athlete may ground a figure; a model's
 // words, an earlier reply of Coach's and library text may not stand in for a record. A new
-// contributor has to be declared here (registry_test.ts fails otherwise), so its author decides.
+// contributor has to be declared here (grounding_test.ts fails otherwise), so its author decides.
 //
 //   records   the block holds Tracend's calculations, the athlete's records and what the athlete
 //             approved or wrote; its figures count as given
@@ -27,6 +27,6 @@ export const contributorGrounding: Readonly<Record<string, ContributorGrounding>
   library: "excluded",
 });
 
-/** An id nobody declared grounds as records; the registry test keeps the table complete. */
+/** An id nobody declared grounds nothing: a contributor is evidence only once it says so. */
 export const groundingOf = (id: string): ContributorGrounding =>
-  contributorGrounding[id] ?? "records";
+  contributorGrounding[id] ?? "excluded";

@@ -492,8 +492,10 @@ export async function generateCoachChatViaGateway(
   // Only lines the server produced from the records count, never the model's own request text.
   const sections: string[] = [];
   const grounds: string[] = [];
+  // Figures Tracend proposed (rows of the proposals lookup): given, but not the athlete's targets.
+  const proposed: string[] = [];
   const lookupsRun: LookupCount[] = [];
-  let answerCheck = coachReplyCheckFor(context, question, contributions, grounds);
+  let answerCheck = coachReplyCheckFor(context, question, contributions, grounds, proposed);
   // One call of a lookup round gets half an initial attempt, and a round starts only when that
   // much of the turn's deadline is left, so sequential calls cannot run past it.
   const lookupCallMs = Math.round(timing.initialAttemptMs / 2);
@@ -857,7 +859,7 @@ export async function generateCoachChatViaGateway(
         return null;
       }
       const rules = repair.issue.rules ?? [repair.issue.rule];
-      const cut = coachReplyCutFor(context, question, contributions, grounds)(
+      const cut = coachReplyCutFor(context, question, contributions, grounds, proposed)(
         parts.answer as Record<string, unknown>,
         rules,
       );
@@ -935,8 +937,9 @@ export async function generateCoachChatViaGateway(
     const round = await input.lookups(current.lookup.requests);
     sections.push(round.text);
     grounds.push(...round.grounds);
+    proposed.push(...(round.proposalGrounds ?? []));
     lookupsRun.push(...round.counts.map((count) => ({ ...count, round: rounds })));
-    answerCheck = coachReplyCheckFor(context, question, contributions, grounds);
+    answerCheck = coachReplyCheckFor(context, question, contributions, grounds, proposed);
     const closed = rounds >= maxLookupRounds;
     const next = await attempt("lookup", promptFor(undefined, closed), !closed);
     if (!next) {

@@ -363,8 +363,11 @@ function staleSync(facts: WatchFacts): string | null {
   // the end of that day.
   const elapsed = facts.asOf - facts.healthSync.at;
   if (elapsed <= watchOutThresholds.healthSyncStaleMs) return null;
-  const days = Math.floor(elapsed / 86_400_000);
-  return `Apple Health last synced on ${facts.healthSync.localDate}, ${days} days ago (the app calls more than ${watchOutThresholds.healthSyncStaleDays} days stale), so recent sleep and recovery rows may be missing.`;
+  // In hours, and "more than" the whole hours: whole days would read "2 days ago" against "more
+  // than 2 days stale" for a sync just over 48 hours old.
+  const hours = Math.floor(elapsed / 3_600_000);
+  const limit = watchOutThresholds.healthSyncStaleDays * 24;
+  return `Apple Health last synced on ${facts.healthSync.localDate}, more than ${hours} hours ago (the app calls more than ${limit} hours stale), so recent sleep and recovery rows may be missing.`;
 }
 
 function planAge(facts: WatchFacts): string | null {

@@ -30,6 +30,11 @@ export type LookupRound = Readonly<{
   text: string;
   /** The lines the numbers check may ground a reply on: the rows, never the model's request. */
   grounds: readonly string[];
+  /**
+   * Lines that give a figure Tracend proposed (a proposal's reason, gain and cost): a figure in a
+   * reply may rest on them, but never one that states the athlete's own target.
+   */
+  proposalGrounds?: readonly string[];
   counts: readonly LookupCount[];
 }>;
 
@@ -94,6 +99,7 @@ export function createLookupRunner(
     return {
       text: `${sectionHead}${body}\n</looked_up_data>`,
       grounds: results.flatMap((result) => result.grounds),
+      proposalGrounds: results.flatMap((result) => result.proposalGrounds),
       counts: requests.map((request, index) => ({
         lookup: request.lookup,
         rows: results[index].rows,
