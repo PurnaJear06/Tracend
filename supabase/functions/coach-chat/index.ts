@@ -85,7 +85,7 @@ import { coachServiceRpc } from "../_shared/coach_context/service_source.ts";
 import { noticeScopes } from "../_shared/ai_notice_coverage.ts";
 import { createLookupRunner } from "../_shared/coach_lookups/runner.ts";
 import { proposeFromChat } from "../_shared/coach_proposals/chat.ts";
-import { guardFaultsOf, lookupTrace, recordTurnTrace } from "./turn_trace.ts";
+import { guardFaultsOf, lookupRoundsTrace, lookupTrace, recordTurnTrace } from "./turn_trace.ts";
 
 export const coachChatResponseSchemaVersion = "1.1";
 // Request 1.1 (current app) gets response 1.2: answer_source on every message
@@ -900,6 +900,7 @@ export async function handleCoachChat(
       {
         guardFaults: guardFaultsOf(generation.attempts, undefined, generation.cuts),
         lookups: lookupTrace(generation.lookups),
+        lookupRounds: lookupRoundsTrace(generation.lookups, generation.attempts),
         libraryVersion: typeof libraryTrace?.library_version === "string"
           ? libraryTrace.library_version
           : null,
@@ -1102,6 +1103,10 @@ export async function handleCoachChat(
       {
         guardFaults: guardFaultsOf(unavailable.metadata.attempts ?? [], unavailable.failureReason),
         lookups: lookupTrace(unavailable.metadata.lookups),
+        lookupRounds: lookupRoundsTrace(
+          unavailable.metadata.lookups,
+          unavailable.metadata.attempts ?? [],
+        ),
       },
     );
     log.info("coach_chat_data_summary_served", {

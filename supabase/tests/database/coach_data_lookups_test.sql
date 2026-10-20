@@ -762,11 +762,15 @@ select lives_ok($$update public.coach_messages set guard_faults = array['rule:nu
 select throws_ok($$update public.coach_messages set guard_faults = array['Not a rule name!']
     where id = 'a1b00000-0000-4000-8000-000000000001'$$, '23514', null,
   'content-like text cannot be stored in the trace');
-select lives_ok($$update public.coach_messages set lookups = array(select 'r1_x' || n || ':3' from generate_series(1, 16) n)
-    where id = 'a1b00000-0000-4000-8000-000000000001'$$, 'two rounds of eight lookups fit the trace');
-select throws_ok($$update public.coach_messages set lookups = array(select 'x' || n from generate_series(1, 17) n)
+select throws_ok($$update public.coach_messages set lookups = array(select 'x' || n from generate_series(1, 13) n)
     where id = 'a1b00000-0000-4000-8000-000000000001'$$, '23514', null, 'the trace is bounded');
-select throws_ok($$update public.coach_messages set lookups = array['r1_plan_history.proposals:3']
+-- Per round and per mode (migration 20261020100017): its own column, the old one unchanged.
+select lives_ok($$update public.coach_messages set lookup_rounds = array(select 'r1_x' || n || ':3' from generate_series(1, 16) n)
+    || array['correction:1']
+    where id = 'a1b00000-0000-4000-8000-000000000001'$$, 'two rounds of eight lookups and a correction fit the round trace');
+select throws_ok($$update public.coach_messages set lookup_rounds = array(select 'x' || n from generate_series(1, 18) n)
+    where id = 'a1b00000-0000-4000-8000-000000000001'$$, '23514', null, 'the round trace is bounded');
+select throws_ok($$update public.coach_messages set lookup_rounds = array['r1_plan_history.proposals:3']
     where id = 'a1b00000-0000-4000-8000-000000000001'$$, '23514', null, 'and keeps its format');
 set local role authenticated;
 set local "request.jwt.claim.sub" = 'a1000000-0000-4000-8000-000000000002';

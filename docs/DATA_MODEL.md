@@ -751,9 +751,12 @@ A10 adds two nullable columns on an assistant message, written by the Edge Funct
 role and never by the app (the app has select only): `guard_faults text[]` (rule names with counts,
 for example `rule:numbers_not_grounded:2`, `outcome:repair_timeout`, and
 `fallback:provider_response_invalid` when the turn ended in the data summary) and `lookups text[]`
-(the lookups a turn ran with their row counts per round, for example `r1_workouts:4` and
-`r2_recovery:28`; before 2026-10-20 the entries had no round prefix and summed rounds). Names and counts
-only, never message content; a check limits `guard_faults` to 12 entries and `lookups` to 16 entries (two rounds of eight; migration `20261020100017`) of `[a-z0-9_:]`. Row-level security
+(the lookups a turn ran with their row counts summed over rounds, for example `exercise_history:14`).
+Migration `20261020100017` adds a third, `lookup_rounds text[]`: the same per round and per mode of a lookup, for
+example `r1_workouts:4`, `r2_recovery:28`, `r1_plan_history_proposals:3`, and `correction:1` when a refused
+request was corrected. Names and counts
+only, never message content; a check limits `guard_faults` and `lookups` to 12 entries of `[a-z0-9_:]` (unchanged) and
+`lookup_rounds` to 17 entries (two rounds of eight and the correction marker) and 800 characters. Row-level security
 limits both to the message's owner.
 
 E3's production pass (migration `20261018200044_library_search_v3`) adds `library_version text`

@@ -1149,7 +1149,11 @@ adapter still sends no tools.
 - **Order of guards.** The deterministic red-flag screen runs first and answers before any model
   call or lookup. Every guard (safe ranges, screening cap, claimed actions, the numbers check, the
   goal-phase rules) runs on the final answer. The rows a lookup returned count as grounded for the
-  numbers check, because they are the athlete's own records; the model's own request text (its
+  numbers check, because they are the athlete's own records and Tracend's calculations, field by
+  field (`lookupGrounding`, tested): text a model wrote (a daily decision's words, the reason on a plan,
+  a target or a proposal, Coach's earlier replies) is shown and grounds nothing, and neither does the
+  athlete file's latest daily decision; a contributor declares what it grounds in
+  `coach_context/grounding.ts`; the model's own request text (its
   filter) never does. The interim sentence is checked only against what the model had seen when it
   wrote it. A lookup call that fails, or a round that cannot start in the time left, also ends in
   the interim sentence, with a note of what was not checked.
@@ -1159,8 +1163,10 @@ adapter still sends no tools.
 - **Nothing is written, nothing runs in the background, no loop is open-ended.** Lookups exist
   only on the gateway route; today's DeepSeek path has none.
 - **Observability**: the lookup names and row counts, never the rows, are stored on the assistant
-  message (`coach_messages.lookups`) per round (`r1_workouts:4`, `r2_recovery:28`, with the mode of a lookup that has modes, `r1_plan_history_proposals:3`; the column holds 16 entries, two rounds of eight, so the width of
-  the first round and the follow-up of the second can be measured), with the guard rules each attempt broke and any fallback code
+  message (`coach_messages.lookups`, names and totals) and per round (`coach_messages.lookup_rounds`:
+  `r1_workouts:4`, `r2_recovery:28`, with the mode of a lookup that has modes,
+  `r1_plan_history_proposals:3`, and `correction:1` when a refused request was corrected; 17 entries,
+  so the width of the first round and the follow-up of the second can be measured), with the guard rules each attempt broke and any fallback code
   (`coach_messages.guard_faults`), so the lead can query what Coach looked at and why a turn fell
   back.
 

@@ -16,8 +16,7 @@ import { deepseekFlashPeakPricePerMillionUsd, isApprovedDeepseekModel } from "./
 import { calculateCoachNumbers, formatCoachCalculations } from "../coach_calculations.ts";
 import type { AiVendor } from "../ai/types.ts";
 import type { CoachContributions } from "../coach_context/host.ts";
-import { libraryContributorId as libraryId } from "../library/retrieval.ts";
-import { coachingPrinciplesContributorId as principlesId } from "../library/principles.ts";
+import { groundingOf } from "../coach_context/grounding.ts";
 import { targetFromDetails, weightClaimCheckFor } from "../training/goal_phase/guard.ts";
 import { describeGoalTarget } from "../training/goal_phase/render.ts";
 import { type RedFlagHit, screenTurn } from "../coach_safety/red_flags.ts";
@@ -1339,12 +1338,22 @@ export function replyCheckInputsFor(
   contributions: CoachContributions | null,
   lookedUp: readonly string[] = [],
 ): ReplyCheckInputs {
-  const { file } = renderCoachContextParts(context, coachChatMaxContextBudget);
-  // The text of every contributor except the library, which a figure may use only when the reply
-  // cites the source (shown). The principles digest grounds general guidance but never a sentence
-  // that states the athlete's own target.
-  const texts = Object.entries(contributions?.texts ?? {}).filter(([id]) => id !== libraryId);
-  const athleteTexts = texts.filter(([id]) => id !== principlesId).map(([, text]) => text);
+  // The latest daily decision is a model's words about an earlier day: its figures were true then,
+  // and a decision never grounds today's claim (as a data summary of another day does not).
+  const { file } = renderCoachContextParts(
+    { ...context, latest_decision: null },
+    coachChatMaxContextBudget,
+  );
+  // The text of every contributor that declares itself a record or guidance (`grounding.ts`). The
+  // library is left out: a figure may use it only when the reply cites the source (shown). The
+  // principles digest grounds general guidance but never a sentence that states the athlete's own
+  // target.
+  const texts = Object.entries(contributions?.texts ?? {}).filter(([id]) =>
+    groundingOf(id) !== "excluded"
+  );
+  const athleteTexts = texts.filter(([id]) => groundingOf(id) === "records").map(([, text]) =>
+    text
+  );
   const athleteGiven = [
     file,
     ...athleteTexts,

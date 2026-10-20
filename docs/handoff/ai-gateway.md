@@ -1449,9 +1449,10 @@ to look up what the context "already holds", and a refused request ended the inv
    proposal waiting, two or more training-decision watch-outs. A follow-up turn is not a signal
    (not a harder question). The route is chosen after the contributors render; the first budget
    place covers the dearer route. `coach_chat_route` is logged with the reasons.
-6. **Telemetry**: `coach_messages.lookups` entries are per round, `r1_workouts:4`, `r2_recovery:28`
-   (same column, same 12-entry limit; an older row has no prefix). A corrected round shows as an
-   attempt `invalid` with `rule:lookup_request_invalid` followed by a `lookup` attempt.
+6. **Telemetry**: `coach_messages.lookup_rounds` (a new column; `lookups` keeps its names and totals)
+   holds entries per round, `r1_workouts:4`, `r2_recovery:28`, and `correction:1` when a refused
+   request was corrected (also visible as an attempt `invalid` with
+   `rule:lookup_request_invalid` followed by a `lookup` attempt).
 7. **Eval bank**: 37 `inv-` cases (category `investigation`) with `checks.domains` and
    `checks.maxRequests`, graders `domain_coverage` and `over_fetch`, and the gate "90% of runs with a
    domain check cover every kind they need" (`bankGates.domainCoverageRate`). Controls: greeting,
@@ -1503,9 +1504,9 @@ rollback (the runbook keeps it for two weeks after cutover), so it is reachable;
 now render there too (they need neither lookups nor library), and their facts and schedule reads
 have their own 2.5 s limit so a slow read leaves the plan-only lines (the overlap fact) intact.
 7) The watch-outs budget is 1,200: lines are packed into what the introduction leaves (at most
-900), so the host never cuts a line, and the trace counts only the lines shown. 8) The lookups
-trace carries the mode (`r1_plan_history_proposals:3`) and the column holds 16 entries (migration
-section 9; the only reader of the names is `memory.ts`, which uses the plain lookup name). 9) A lookup
+900), so the host never cuts a line, and the trace counts only the lines shown. 8) The per-round
+trace carries the mode (`r1_plan_history_proposals:3`); round 2 of the review moved it to its own
+column (see below), so the deployed `lookups` column and its check are untouched. 9) A lookup
 with modes (`filterModes` in the catalogue) accepts an empty filter or one of its modes in any case;
 a near miss is refused and goes to the corrected round. 10) The dead `strongSkipped` branch is
 deleted; `selectCoachChatRoute` takes the stronger route only when coach-chat has already filtered it
@@ -1536,6 +1537,38 @@ a notice (v7) whose Coach-chat list adds, for example: "breathing rate" to the A
 energy" (already sent) to the Apple Health summaries; then set `firstNoticeNaming` to 7 for
 `breathing_rate` and `workout_notes`. Until then Coach does not see them. The wording is the owner's;
 none is published here.
+
+**Review round 2 (PR #159, same branch).**
+1) *Model-written text never grounds a number, systemically.* `Parts.ungrounded` is now a map from
+the line shown to the part of it that is still a record (its date, codes and counts). Declared in
+`lookupGrounding` (render.ts), field by field, for every lookup and mode, and checked by
+`render_grounding_test.ts`, which puts a marker in each declared field and reads it back from the
+rows Coach sees and from the rows that ground; a lookup, mode or field without a declaration, or a
+renderer without a fixture, fails the test. Model text: the daily decision's summary and decision,
+the reason on a plan version, on a nutrition target and on a proposal (and its gain and cost), and
+Coach's earlier replies. Records: everything else (the athlete's rows and notes, Apple Health, the
+computed scores, the weekly review's codes and counts, the plan's sessions and sets that the
+athlete approved). Contributors are declared the same way in `coach_context/grounding.ts`
+(`records`, `guidance`, `excluded`; `grounding_test.ts` checks the table against the registry), and
+`replyCheckInputsFor` reads it. One more path found by the audit and closed: the athlete file's
+"Latest Decision" (a model's words about an earlier day) no longer grounds. `coach-decide` does
+check a decision's own figures (`groundingFault`), but they were true on that day.
+2) *Additive migration.* Nothing in the migration drops or replaces anything. `coach_messages.lookups`
+is back to plain names and totals, at most 12, as main writes it (`memory.ts` unchanged); the
+per-round trace has its own new column `lookup_rounds` and check (17 entries, 800 characters, the
+same format), including `correction:1`.
+3) *Elapsed time.* The sync fact is a moment (`health_sync.at`, the last completed or partial
+`health_sync_runs` row, else the newest summary write) next to the database's `as_of`, and the line
+fires when `as_of - at` is more than 2 days, exactly the app's rule
+(`deriveHealthConnectionState`: `now.difference(last) > Duration(days: 2)`). The cases are shared:
+`stale_sync_cases.json` is read by the Deno watch-outs test and by `test/health_stale_sync_cases_test.dart`
+against the app's function, so the two cannot drift. A sync at 00:01 is stale at 00:02 two days
+later, not at the end of that day. The weigh-in rule is the goal phase's own (days between the
+reading's date and today, `goalPhaseThresholds.staleReadingDays`, read from it), and a weigh-in has
+no time; plan age is in whole weeks by date (no product rule measures it).
+4) *Identity, not name.* The repeated-miss streak keys on the planned workout's id (`planned` on
+each schedule day carries the id and whether it was logged); the name is only what the line says.
+Two workouts with one name have two streaks; a workout made up on another day answers its own.
 
 ## Next agent starts here
 

@@ -63,3 +63,29 @@ Deno.test("a missing or foreign payload reads as an empty schedule, and today fa
   assertEquals(readScheduleBody({ to: "2026-10-13", days: [] }).today, "2026-10-13");
   assert(readScheduleBody({ today: "2026-10-18", to: "2026-10-13" }).today === "2026-10-18");
 });
+
+Deno.test("each planned session carries its id and whether it was logged; two workouts with one name stay two", () => {
+  const body = readScheduleBody({
+    to: "2026-10-13",
+    plan: { id: "v-3", version: 3 },
+    sessions: [
+      { id: "w-a", version_id: "v-3", name: "Pull day", exercises: [] },
+      { id: "w-b", version_id: "v-3", name: "Pull day", exercises: [] },
+    ],
+    days: [{
+      date: "2026-10-07",
+      weekday: 3,
+      version_id: "v-3",
+      version: 3,
+      block: false,
+      planned: [{ id: "w-a", name: "Pull day" }, { id: "w-b", name: "Pull day" }],
+      done: [{ planned_workout_id: "w-a", name: "Pull day", exercises: [] }],
+    }],
+  });
+  assertEquals(body.days[0].planned, [
+    { id: "w-a", name: "Pull day", logged: true },
+    { id: "w-b", name: "Pull day", logged: false },
+  ]);
+  assertEquals(body.days[0].unlogged, [{ id: "w-b", name: "Pull day" }]);
+  assertEquals([...body.currentWorkoutIds].sort(), ["w-a", "w-b"]);
+});

@@ -39,6 +39,8 @@ export type ScheduleBodyDay = Readonly<{
   done: readonly DoneSession[];
   /** The day's planned sessions that no finished session answers. */
   unlogged: readonly PlannedSession[];
+  /** Every planned session of the day, by the planned workout's id, with whether it was logged. */
+  planned: readonly (PlannedSession & Readonly<{ logged: boolean }>)[];
 }>;
 
 export type ScheduleBody = Readonly<{
@@ -49,6 +51,8 @@ export type ScheduleBody = Readonly<{
   planId: string | null;
   planVersion: unknown;
   days: readonly ScheduleBodyDay[];
+  /** The ids of the planned workouts of the plan version in force now. */
+  currentWorkoutIds: ReadonlySet<string>;
   /** The exercises (slug and planned sets) of each planned workout, by the workout's id. */
   exercisesByWorkout: ReadonlyMap<string, readonly DayExercise[]>;
 }>;
@@ -82,6 +86,11 @@ export function readScheduleBody(body: unknown): ScheduleBody {
     const dayWorkouts = idsByVersion.get(String(row.version_id)) ?? new Set<string>();
     const isDone = (id: string, name: string) =>
       done.some((item) => item.id === id || (!dayWorkouts.has(item.id) && item.name === name));
+    const planned = list(row.planned).map((item) => {
+      const id = String(item.id);
+      const name = String(item.name);
+      return { id, name, logged: isDone(id, name) };
+    });
     return {
       date: String(row.date),
       weekday: Number(row.weekday),
@@ -89,10 +98,8 @@ export function readScheduleBody(body: unknown): ScheduleBody {
       version: row.version,
       block: row.block === true,
       done,
-      unlogged: list(row.planned).map((item): PlannedSession => ({
-        id: String(item.id),
-        name: String(item.name),
-      })).filter((item) => !isDone(item.id, item.name)),
+      unlogged: planned.filter((item) => !item.logged).map(({ id, name }) => ({ id, name })),
+      planned,
     };
   });
   return {
@@ -100,6 +107,7 @@ export function readScheduleBody(body: unknown): ScheduleBody {
     to,
     planId: plan.id === undefined || plan.id === null ? null : String(plan.id),
     planVersion: plan.version,
+    currentWorkoutIds: idsByVersion.get(String(plan.id)) ?? new Set<string>(),
     days,
     exercisesByWorkout,
   };

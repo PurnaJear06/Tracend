@@ -14,6 +14,7 @@
 // Inputs: the plan state (get_coach_plan_state_v1, shared with the training plan block), the facts
 // of get_coach_watch_outs_v1 and the plan laid over the last four weeks (plan_history, filter
 // schedule). Any one of them may fail; the lines that need it are then left out.
+import { goalPhaseThresholds } from "../../training/goal_phase/thresholds.ts";
 import { addDays, dayOf, overlapFactLine, stamp } from "../../training/schedule/week_ahead.ts";
 import { readScheduleBody, type ScheduleBody } from "../../training/schedule/lookup_body.ts";
 import { type CoachContextContributor, sharedRead } from "../host.ts";
@@ -55,10 +56,16 @@ export const watchOutThresholds = Object.freeze({
    * one spread is "normal for you", two or more is "much"). The z-scores are the recovery engine's own.
    */
   driftSpreads: 1,
-  /** A weigh-in older than 14 days is stale: the goal phase gives no rate then (ALGORITHMS.md, B7). */
-  weighInStaleDays: 14,
+  /**
+   * A weigh-in older than 14 days is stale: the goal phase gives no rate then (ALGORITHMS.md, B7).
+   * The goal phase counts days between the reading's date and today, and so does this: a weigh-in
+   * has a date and no time. (The plan's age is also in whole days: no product rule measures it.)
+   */
+  weighInStaleDays: goalPhaseThresholds.staleReadingDays.value,
   /** Apple Health is stale after more than 2 days (deriveHealthConnectionState in health_models.dart). */
   healthSyncStaleDays: 2,
+  /** The app's rule in milliseconds: elapsed time since the last successful sync is more than this (strictly), as `now.difference(last) > Duration(days: 2)`. */
+  healthSyncStaleMs: 2 * 86_400_000,
   /** "Repeated" is twice running: the same exercise skipped in each of its last two sessions, the same session missed on its last two planned days. */
   repeatedTimes: 2,
 });
@@ -80,6 +87,16 @@ const day = (value: unknown): string | null => {
   return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
 };
 
+const instant = (value: unknown): number | null => {
+  const time = typeof value === "string" ? Date.parse(value) : NaN;
+  return Number.isFinite(time) ? time : null;
+};
+const syncOf = (row: Json): WatchFacts["healthSync"] => {
+  const at = instant(row.at);
+  const localDate = day(row.local_date);
+  return at === null || localDate === null ? null : { at, localDate };
+};
+
 /** The facts of one get_coach_watch_outs_v1 payload. */
 export type WatchFacts = Readonly<{
   localDate: string;
@@ -98,7 +115,10 @@ export type WatchFacts = Readonly<{
   painFlags: readonly Readonly<{ date: string; name: string; slug: string | null }>[];
   skipped: readonly Readonly<{ name: string; sessions: number; lastDate: string }>[];
   weighIn: string | null;
-  healthSync: string | null;
+  /** The last successful sync: its moment (milliseconds) and the athlete's local day. */
+  healthSync: Readonly<{ at: number; localDate: string }> | null;
+  /** The database's now when the facts were read, for elapsed-time rules. */
+  asOf: number | null;
   plan:
     | Readonly<{
       version: number | null;
@@ -153,7 +173,8 @@ export function parseWatchFacts(payload: unknown): WatchFacts | null {
         : [{ name: str(row.name), sessions, lastDate }];
     }),
     weighIn: day(rec(body.weigh_in).local_date),
-    healthSync: day(rec(body.health_sync).local_date),
+    healthSync: syncOf(rec(body.health_sync)),
+    asOf: instant(body.as_of),
     plan: startsOn === null ? null : {
       version: num(plan.version),
       startsOn,
@@ -263,23 +284,33 @@ function behindPlan(plan: PlanState): string | null {
   }.`;
 }
 
-/** The same session missed on each of its last planned days. */
+/**
+ * The same session missed on each of its last planned days. A session is the planned workout (its
+ * id), not its name: two workouts can share a name (the plan supports it), and each has its own
+ * streak. The name is only what the line says.
+ */
 function missedSessions(schedule: ScheduleBody): string | null {
-  const byName = new Map<string, { date: string; missed: boolean }[]>();
+  const byWorkout = new Map<string, { name: string; rows: { date: string; missed: boolean }[] }>();
   // Only days planned under the plan in force now: a session of an older plan is not one the
   // athlete is skipping today. Without a plan in force nothing is claimed.
   if (schedule.planId === null) return null;
+  const note = (id: string, name: string, date: string, missed: boolean) => {
+    const entry = byWorkout.get(id) ?? { name, rows: [] };
+    entry.rows.push({ date, missed });
+    byWorkout.set(id, entry);
+  };
   for (const row of schedule.days) {
     if (row.versionId !== schedule.planId) continue;
     if (dayOf(row.date) >= dayOf(schedule.today)) continue;
-    for (const item of row.unlogged) {
-      byName.set(item.name, [...(byName.get(item.name) ?? []), { date: row.date, missed: true }]);
-    }
+    for (const item of row.planned) note(item.id, item.name, row.date, !item.logged);
+    // A workout done on a day it was not planned for answers its own streak (it was made up).
     for (const item of row.done) {
-      byName.set(item.name, [...(byName.get(item.name) ?? []), { date: row.date, missed: false }]);
+      if (schedule.currentWorkoutIds.has(item.id) && !row.planned.some((p) => p.id === item.id)) {
+        note(item.id, item.name, row.date, false);
+      }
     }
   }
-  const streaks = [...byName].flatMap(([name, rows]) => {
+  const streaks = [...byWorkout.values()].flatMap(({ name, rows }) => {
     const newestFirst = [...rows].sort((a, b) => b.date.localeCompare(a.date));
     const lead = newestFirst.findIndex((row) => !row.missed);
     const missed = (lead === -1 ? newestFirst : newestFirst.slice(0, lead)).map((row) => row.date);
@@ -327,10 +358,13 @@ function staleWeighIn(facts: WatchFacts): string | null {
 }
 
 function staleSync(facts: WatchFacts): string | null {
-  if (facts.healthSync === null) return null;
-  const days = dayOf(facts.localDate) - dayOf(facts.healthSync);
-  if (days <= watchOutThresholds.healthSyncStaleDays) return null;
-  return `Apple Health last synced on ${facts.healthSync}, ${days} days ago (the app calls more than ${watchOutThresholds.healthSyncStaleDays} days stale), so recent sleep and recovery rows may be missing.`;
+  if (facts.healthSync === null || facts.asOf === null) return null;
+  // Elapsed time, as the app measures it: a sync at 00:01 is stale at 00:02 two days later, not at
+  // the end of that day.
+  const elapsed = facts.asOf - facts.healthSync.at;
+  if (elapsed <= watchOutThresholds.healthSyncStaleMs) return null;
+  const days = Math.floor(elapsed / 86_400_000);
+  return `Apple Health last synced on ${facts.healthSync.localDate}, ${days} days ago (the app calls more than ${watchOutThresholds.healthSyncStaleDays} days stale), so recent sleep and recovery rows may be missing.`;
 }
 
 function planAge(facts: WatchFacts): string | null {

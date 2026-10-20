@@ -15,8 +15,8 @@
 -- 7. coach_lookup_past_messages_v1 1.0 -> 1.1  + coach_replies: Coach's own earlier replies that
 --                                              match the words, labelled in the renderer as unverified
 -- 8. get_coach_watch_outs_v1       new         the facts the watch-outs are computed from
--- 9. coach_messages.lookups        check 12 -> 16 entries: the trace is per round and per mode
---    (r1_plan_history_proposals:3), so two rounds of eight lookups fit
+-- 9. coach_messages.lookup_rounds  new column: the lookups per round and per mode
+--                                              (r1_plan_history_proposals:3); `lookups` is unchanged
 --
 -- Every public function is SECURITY DEFINER, read-only and granted to service_role only. The
 -- private helper is not SECURITY DEFINER (like the other private helpers) and is revoked from
@@ -500,7 +500,8 @@ end $$;
 --   pain_flags   exercises the athlete flagged for pain in the last 14 days (newest 6)
 --   skipped      exercises skipped in each of their last 2 or more sessions (56 days; newest 4)
 --   weigh_in     the newest weight reading's date (manual or watch)
---   health_sync  the newest Apple Health sync time, as the athlete's local date
+--   health_sync  the newest successful Apple Health sync: its moment and the athlete's local date
+--   as_of        the database's now, for elapsed-time rules (a sync is stale after more than 2 days)
 --   plan         the active plan: its version number, the day the plan began (its first version,
 --                so a version bump does not reset it) and its block weeks
 create function public.get_coach_watch_outs_v1(p_user_id uuid, p_local_date date)
@@ -583,9 +584,19 @@ returns jsonb language sql stable security definer set search_path = '' as $$
         select h.local_date from public.daily_health_summaries h
         where h.user_id = p_user_id and h.weight_kg is not null and h.local_date <= p_local_date
       ) r having max(r.d) is not null),
-    'health_sync', (select jsonb_build_object(
-        'local_date', private.local_day(p_user_id, max(h.last_synced_at)))
-      from public.daily_health_summaries h where h.user_id = p_user_id having count(*) > 0),
+    -- The moment of the last successful sync (a completed or partial run; else the newest summary
+    -- write), not only its day: the app calls Apple Health stale after more than 2 days of elapsed
+    -- time since that moment (deriveHealthConnectionState), and `as_of` is the database's own now so
+    -- the comparison does not depend on a second clock.
+    'health_sync', (select jsonb_build_object('at', t.at,
+        'local_date', private.local_day(p_user_id, t.at))
+      from (select coalesce(
+          (select max(r.completed_at) from public.health_sync_runs r
+            where r.user_id = p_user_id and r.status in ('completed', 'partial')),
+          (select max(h.last_synced_at) from public.daily_health_summaries h
+            where h.user_id = p_user_id)) as at) t
+      where t.at is not null),
+    'as_of', now(),
     -- starts_on is when the plan began, not when its current version did: the first version of the
     -- same plan (a plan edit is a new version of one plan; a new plan or a temporary block starts a
     -- new chain), so a version bump does not make a plan young again.
@@ -601,16 +612,19 @@ $$;
 
 -- 9 ----------------------------------------------------------------------------------------------
 
--- The lookups a turn ran are stored per round (r1_workouts:4, r2_recovery:28) and per mode of a
--- lookup (r1_plan_history_proposals:3). Two rounds of eight distinct lookups are sixteen entries;
--- the old check allowed twelve. Only the bounds are relaxed: the format and the 800 characters
--- (sixteen entries of at most about 35) still keep content out of the column.
-alter table public.coach_messages drop constraint coach_messages_lookups_check;
-alter table public.coach_messages add constraint coach_messages_lookups_check check (
-  lookups is null or (
-    cardinality(lookups) <= 16
-    and char_length(array_to_string(lookups, ' ')) <= 800
-    and array_to_string(lookups, ' ') ~ '^[a-z0-9_: ]*$'));
+-- The lookups a turn ran, per round and per mode of a lookup: r1_workouts:4, r2_recovery:28,
+-- r1_plan_history_proposals:3, and correction:1 when a refused request was corrected. Two rounds of
+-- eight distinct lookups are sixteen entries, and the correction marker one more. The older
+-- `lookups` column is left exactly as it was (names and row totals, at most twelve) because the
+-- deployed Edge Function writes it that way and reads nothing else; this is a new column with its
+-- own bounds, written by the new Edge Function. Like the other trace columns it holds names and
+-- counts only, and the app has select only.
+alter table public.coach_messages
+  add column lookup_rounds text[],
+  add constraint coach_messages_lookup_rounds_check check (lookup_rounds is null or (
+    cardinality(lookup_rounds) <= 17
+    and char_length(array_to_string(lookup_rounds, ' ')) <= 800
+    and array_to_string(lookup_rounds, ' ') ~ '^[a-z0-9_: ]*$'));
 
 -- Access -----------------------------------------------------------------------------------------
 

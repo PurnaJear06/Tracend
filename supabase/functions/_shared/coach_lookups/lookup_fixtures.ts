@@ -452,3 +452,96 @@ export const pastMessagesCoachPayload = {
     content: "Keep the load light and check the grip",
   }],
 };
+
+/** plan_history 1.2 without a filter: plan versions and nutrition targets, each with its reason. */
+export const planVersionsPayload = {
+  schema_version: "1.2",
+  lookup: "plan_history",
+  from: "2026-08-01",
+  to: "2026-10-17",
+  truncated: false,
+  training: [{
+    version: 3,
+    status: "active",
+    title: "Push pull",
+    sessions_per_week: 4,
+    block_weeks: 6,
+    effective_date: "2026-09-01",
+    created_on: "2026-08-30",
+    rationale: "A split that fits four days",
+    sessions: [{
+      name: "Push day",
+      weekday: 1,
+      exercises: [{ name: "Barbell bench press", sets: 3, rep_min: 6, rep_max: 8 }],
+    }],
+  }],
+  nutrition: [{
+    version: 2,
+    status: "active",
+    calories: 2300,
+    protein_g: 160,
+    carbohydrate_g: 250,
+    fat_g: 70,
+    effective_date: "2026-09-01",
+    created_on: "2026-08-30",
+    rationale: "A small deficit",
+  }],
+};
+
+export const goalsPayload = {
+  schema_version: "1.0",
+  lookup: "goals",
+  from: "2026-07-01",
+  to: "2026-10-17",
+  truncated: false,
+  goals: [{
+    goal_type: "fat_loss",
+    status: "active",
+    priority: 1,
+    created_on: "2026-07-03",
+    activated_on: "2026-07-03",
+    target: { weight_kg: 76 },
+  }],
+  screenings: [{ outcome: "cleared", screened_on: "2026-07-01" }],
+};
+
+export const weeklyReviewsPayload = {
+  schema_version: "1.1",
+  lookup: "weekly_reviews",
+  from: "2026-09-01",
+  to: "2026-10-17",
+  truncated: false,
+  reviews: [{
+    review_week: "2026-10-05",
+    outcome_code: "week_observed",
+    next_focus_code: "continue_approved_plan",
+    training: {
+      planned_sessions: 4,
+      completed_workouts: 3,
+      completed_sets: 40,
+      adherence_percent: 75,
+    },
+    recovery: { check_in_days: 5 },
+    nutrition: { confirmed_days: 6 },
+    progress: null,
+    missing_data: [],
+  }],
+};
+
+export const healthMonthsPayload = {
+  schema_version: "1.1",
+  lookup: "health_history",
+  from: "2025-10-01",
+  to: "2026-10-17",
+  truncated: false,
+  months: [{
+    month: "2026-08-01",
+    workouts: 12,
+    strength_workouts: 8,
+    workout_minutes: 700,
+    sleep_nights: 20,
+    sleep_minutes_avg: 420,
+    weight_days: 4,
+    weight_kg_avg: 84.2,
+  }],
+};

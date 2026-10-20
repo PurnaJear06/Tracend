@@ -1,0 +1,41 @@
+{
+  "comment": "The Apple Health stale rule shared by the app (deriveHealthConnectionState in lib/features/health/health_models.dart) and the Coach watch-outs (watch_outs.ts): elapsed time since the last successful sync is more than 2 days. Both test suites read these cases.",
+  "cases": [
+    {
+      "name": "exactly two days is not stale",
+      "last_sync": "2026-10-18T09:00:00Z",
+      "now": "2026-10-20T09:00:00Z",
+      "stale": false
+    },
+    {
+      "name": "one second over two days is stale",
+      "last_sync": "2026-10-18T09:00:00Z",
+      "now": "2026-10-20T09:00:01Z",
+      "stale": true
+    },
+    {
+      "name": "a sync just after midnight is stale two days and a minute later, though the dates differ by two",
+      "last_sync": "2026-10-18T00:01:00Z",
+      "now": "2026-10-20T23:59:00Z",
+      "stale": true
+    },
+    {
+      "name": "a sync late in the evening is not stale 47 hours later, though the dates differ by two",
+      "last_sync": "2026-10-17T23:00:00Z",
+      "now": "2026-10-19T22:00:00Z",
+      "stale": false
+    },
+    {
+      "name": "a sync three days ago is stale",
+      "last_sync": "2026-10-17T12:00:00Z",
+      "now": "2026-10-20T12:00:00Z",
+      "stale": true
+    },
+    {
+      "name": "a sync this morning is not stale",
+      "last_sync": "2026-10-20T06:00:00Z",
+      "now": "2026-10-20T09:00:00Z",
+      "stale": false
+    }
+  ]
+}

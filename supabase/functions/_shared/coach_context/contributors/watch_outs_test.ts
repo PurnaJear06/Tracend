@@ -1,4 +1,6 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
+import cases from "./stale_sync_cases.json" with { type: "json" };
+import { goalPhaseThresholds } from "../../training/goal_phase/thresholds.ts";
 import { evidenceCodeReference } from "../../providers/daily_decision_provider.ts";
 import { renderCoachContext } from "../host.ts";
 import { readScheduleBody } from "../../training/schedule/lookup_body.ts";
@@ -36,7 +38,8 @@ const factsOf = (patch: Record<string, unknown> = {}) =>
     pain_flags: [],
     skipped: [],
     weigh_in: { local_date: "2026-10-12" },
-    health_sync: { local_date: "2026-10-14" },
+    health_sync: { at: "2026-10-14T06:00:00Z", local_date: "2026-10-14" },
+    as_of: "2026-10-14T09:00:00Z",
     plan: { version: 3, starts_on: "2026-09-16", block_weeks: 6, ends_on: null },
     ...patch,
   })!;
@@ -338,10 +341,30 @@ Deno.test("a weigh-in older than 14 days and an Apple Health sync older than 2 d
   ]);
   assertEquals(stale({ weigh_in: { local_date: "2026-09-30" } }), []);
   assertEquals(stale({ weigh_in: null }), []);
-  assertEquals(stale({ health_sync: { local_date: "2026-10-11" } }), [
-    "- Apple Health last synced on 2026-10-11, 3 days ago (the app calls more than 2 days stale), so recent sleep and recovery rows may be missing.",
-  ]);
-  assertEquals(stale({ health_sync: { local_date: "2026-10-12" } }), []);
+  // 2026-10-14 09:00 now: a sync at 2026-10-11 08:00 is 3 days and 1 hour ago.
+  assertEquals(
+    stale({ health_sync: { at: "2026-10-11T08:00:00Z", local_date: "2026-10-11" } }),
+    [
+      "- Apple Health last synced on 2026-10-11, 3 days ago (the app calls more than 2 days stale), so recent sleep and recovery rows may be missing.",
+    ],
+  );
+  // Exactly two days of elapsed time is not stale; a second more is.
+  assertEquals(
+    stale({ health_sync: { at: "2026-10-12T09:00:00Z", local_date: "2026-10-12" } }),
+    [],
+  );
+  assertEquals(
+    stale({ health_sync: { at: "2026-10-12T08:59:59Z", local_date: "2026-10-12" } }).length,
+    1,
+  );
+  // Without the database's now there is no elapsed time to judge.
+  assertEquals(
+    stale({
+      as_of: null,
+      health_sync: { at: "2026-10-01T08:00:00Z", local_date: "2026-10-01" },
+    }),
+    [],
+  );
   assertEquals(stale({ health_sync: null }), []);
 });
 
@@ -404,7 +427,8 @@ function everything(): WatchOutInputs {
       pain_flags: [{ local_date: "2026-10-10", name: "Barbell row", slug: "barbell-row" }],
       skipped: [{ name: "Cable chest fly", slug: null, sessions: 3, last_date: "2026-10-12" }],
       weigh_in: { local_date: "2026-09-01" },
-      health_sync: { local_date: "2026-10-01" },
+      health_sync: { at: "2026-10-01T08:00:00Z", local_date: "2026-10-01" },
+      as_of: "2026-10-14T09:00:00Z",
       plan: { version: 3, starts_on: "2026-04-01", block_weeks: 6, ends_on: null },
     }),
     schedule: readScheduleBody(scheduleBody([planned("2026-09-30"), planned("2026-10-07")])),
@@ -472,7 +496,8 @@ const factsSource = () =>
     pain_flags: [{ local_date: "2026-10-10", name: "Barbell row", slug: "barbell-row" }],
     check_in: { local_date: wednesday, pain_severity: 0 },
     weigh_in: { local_date: "2026-10-12" },
-    health_sync: { local_date: "2026-10-14" },
+    health_sync: { at: "2026-10-14T06:00:00Z", local_date: "2026-10-14" },
+    as_of: "2026-10-14T09:00:00Z",
   });
 const scheduleSource = () =>
   Promise.resolve(scheduleBody([planned("2026-09-30"), planned("2026-10-07")]));
@@ -628,7 +653,8 @@ Deno.test("the trace counts the lines kept, not the lines found", async () => {
         pain_flags: [{ local_date: "2026-10-10", name: "Barbell row", slug: "barbell-row" }],
         skipped: [{ name: "Cable chest fly", slug: null, sessions: 3, last_date: "2026-10-12" }],
         weigh_in: { local_date: "2026-09-01" },
-        health_sync: { local_date: "2026-10-01" },
+        health_sync: { at: "2026-10-01T08:00:00Z", local_date: "2026-10-01" },
+        as_of: "2026-10-14T09:00:00Z",
         plan: { version: 3, starts_on: "2026-04-01", block_weeks: 6, ends_on: null },
       }),
     schedule: () => Promise.resolve(scheduleBody([planned("2026-09-30"), planned("2026-10-07")])),
@@ -686,4 +712,93 @@ Deno.test("a session missed under an older version of the plan is not raised: on
     linesOf({ schedule: readScheduleBody({ ...scheduleBody([planned("2026-10-07")]), plan: {} }) }),
     [],
   );
+});
+
+Deno.test("the stale-sync rule is the app's: elapsed time since the last successful sync, pinned by the cases the app tests read", () => {
+  assertEquals(cases.cases.length >= 6, true);
+  for (const item of cases.cases) {
+    const lines = linesOf({
+      facts: factsOf({
+        health_sync: {
+          at: item.last_sync,
+          local_date: item.last_sync.slice(0, 10),
+        },
+        as_of: item.now,
+      }),
+    }).filter((line) => line.startsWith("- Apple Health last synced"));
+    assertEquals(lines.length, item.stale ? 1 : 0, item.name);
+  }
+  assertEquals(watchOutThresholds.healthSyncStaleMs, 2 * 86_400_000);
+  // The weigh-in rule is the goal phase's own, read from it, and counts days between dates.
+  assertEquals(watchOutThresholds.weighInStaleDays, goalPhaseThresholds.staleReadingDays.value);
+});
+
+Deno.test("two workouts that share a name are two sessions: a streak belongs to one planned workout, not to the name", () => {
+  const day = (
+    date: string,
+    planned: { id: string; logged: boolean }[],
+  ) => ({
+    date,
+    weekday: 3,
+    version_id: "v3",
+    version: 3,
+    block: false,
+    planned: planned.map(({ id }) => ({ id, name: "Pull day" })),
+    done: planned.filter((item) => item.logged).map(({ id }) => ({
+      planned_workout_id: id,
+      name: "Pull day",
+      exercises: [],
+    })),
+  });
+  const body = (days: unknown[]) => ({
+    ...scheduleBody([]),
+    sessions: [
+      { id: "w-pull-a", version_id: "v3", name: "Pull day", weekday: 3, exercises: [] },
+      { id: "w-pull-b", version_id: "v3", name: "Pull day", weekday: 5, exercises: [] },
+    ],
+    days,
+  });
+  // B is missed on both of its days while A is done: B's streak, said under the shared name.
+  const bMissed = body([
+    day("2026-09-30", [{ id: "w-pull-a", logged: true }, { id: "w-pull-b", logged: false }]),
+    day("2026-10-07", [{ id: "w-pull-a", logged: true }, { id: "w-pull-b", logged: false }]),
+  ]);
+  assertEquals(linesOf({ schedule: readScheduleBody(bMissed) }), [
+    "- Planned but not logged on each of its last days: Pull day (2026-09-30 and 2026-10-07).",
+  ]);
+  // A and B each miss once, on different days: no workout has two misses in a row. A name-keyed
+  // count would call it two.
+  const oneEach = body([
+    day("2026-09-30", [{ id: "w-pull-a", logged: false }, { id: "w-pull-b", logged: true }]),
+    day("2026-10-07", [{ id: "w-pull-a", logged: true }, { id: "w-pull-b", logged: false }]),
+  ]);
+  assertEquals(linesOf({ schedule: readScheduleBody(oneEach) }), []);
+  // B done after two misses ends B's streak even though A is missed again.
+  const recovered = body([
+    day("2026-09-23", [{ id: "w-pull-b", logged: false }]),
+    day("2026-09-30", [{ id: "w-pull-b", logged: false }]),
+    day("2026-10-07", [{ id: "w-pull-a", logged: false }, { id: "w-pull-b", logged: true }]),
+  ]);
+  assertEquals(linesOf({ schedule: readScheduleBody(recovered) }), []);
+  // Two workouts, each missed twice, are two entries under the one name.
+  const both = body([
+    day("2026-09-30", [{ id: "w-pull-a", logged: false }, { id: "w-pull-b", logged: false }]),
+    day("2026-10-07", [{ id: "w-pull-a", logged: false }, { id: "w-pull-b", logged: false }]),
+  ]);
+  const line = linesOf({ schedule: readScheduleBody(both) })[0];
+  assertEquals(line.split("Pull day").length - 1, 2);
+});
+
+Deno.test("a workout made up on another day answers its own streak", () => {
+  const body = scheduleBody([
+    planned("2026-09-23"),
+    planned("2026-09-30"),
+    {
+      ...planned("2026-10-02"),
+      planned: [],
+      done: [{ planned_workout_id: "w-pull", name: "Pull day", exercises: [] }],
+    },
+  ]);
+  // Missed on the 23rd and 30th, then done on the 2nd (a make-up): the newest is a success.
+  assertEquals(linesOf({ schedule: readScheduleBody(body) }), []);
 });

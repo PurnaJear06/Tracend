@@ -111,6 +111,14 @@ select pg_temp.perf('a1530000-0000-4000-8000-000000000011', '000000000010', 1, '
 select pg_temp.perf('a1530000-0000-4000-8000-000000000012', '000000000010', 1, 'skipped', 'prescribed',
   false, '', null, null, 'cable-curl');
 
+-- Two sync runs: a completed one three days ago, and a failed one an hour ago that is not a sync.
+insert into public.health_sync_runs(user_id, idempotency_key, requested_start, requested_end,
+  requested_types, returned_types, accepted_count, rejected_count, status, completed_at) values
+  ('a1030000-0000-4000-8000-000000000001', 'a1730000-0000-4000-8000-000000000001', current_date - 7,
+   current_date, array['steps'], array['steps'], 8, 0, 'completed', now() - interval '3 days'),
+  ('a1030000-0000-4000-8000-000000000001', 'a1730000-0000-4000-8000-000000000002', current_date - 7,
+   current_date, array['steps'], array[]::text[], 0, 8, 'failed', now() - interval '1 hour');
+
 -- Recovery, a check-in, a weigh-in and the sync ----------------------------------------------------
 
 insert into public.daily_health_summaries(user_id, local_date, timezone, present_types, source_refs,
@@ -381,8 +389,15 @@ select is(public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001',
     ->'skipped'->0->>'last_date', (current_date - 2)::text, 'last on this date');
 select is(public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001', current_date)
     ->'weigh_in'->>'local_date', (current_date - 20)::text, 'the newest weigh-in');
+select is((public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001', current_date)
+    ->'health_sync'->>'at')::timestamptz,
+  (select completed_at from public.health_sync_runs
+    where idempotency_key = 'a1730000-0000-4000-8000-000000000001'),
+  'the newest successful Apple Health sync, as a moment: a completed run, not a later failed one and not a summary written earlier');
 select is(public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001', current_date)
-    ->'health_sync'->>'local_date', (current_date - 3)::text, 'the newest Apple Health sync, as a local date');
+    ->'health_sync'->>'local_date', (current_date - 3)::text, 'and its local day');
+select is((public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001', current_date)
+    ->>'as_of')::timestamptz, now(), 'with the database''s own now, for elapsed-time rules');
 select is(public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001', current_date)
     ->'plan', jsonb_build_object('version', 3, 'starts_on', current_date - 120, 'block_weeks', 6,
     'ends_on', null), 'the plan''s number, when it began (its first version, not this one) and block length');
