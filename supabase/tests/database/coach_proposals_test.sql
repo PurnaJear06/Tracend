@@ -559,6 +559,9 @@ insert into p select 'strict', pg_temp.store('a8000000-0000-4000-8000-0000000000
   '{"nutrition":{"calories":2000,"protein_g":140,"carbohydrate_g":215,"fat_g":65,"rationale":"Four."}}',
   pg_temp.basis('a8000000-0000-4000-8000-000000000001', false, true, false));
 -- What a pending proposal would set, for Coach's context (the proposal's, not the athlete's target).
+-- Every row in this transaction has the same created_at; make this one clearly newest, so it is among the eight Coach is told about.
+update public.change_proposals set created_at = now() + interval '2 hours'
+where id = (select id from p where name = 'strict');
 select ok(exists (select 1 from jsonb_array_elements(
     public.get_coach_proposals_context_v1('a8000000-0000-4000-8000-000000000001',
       private.local_date_for('a8000000-0000-4000-8000-000000000001')) -> 'proposals') x
