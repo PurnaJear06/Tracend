@@ -359,7 +359,7 @@ select is(public.coach_lookup_past_messages_v1('a1030000-0000-4000-8000-00000000
 
 select is((select array_agg(k order by k) from jsonb_object_keys(public.get_coach_watch_outs_v1(
     'a1030000-0000-4000-8000-000000000001', current_date)) k),
-  array['check_in', 'health_sync', 'local_date', 'metrics', 'pain_flags', 'plan', 'schema_version',
+  array['as_of', 'check_in', 'health_sync', 'local_date', 'metrics', 'pain_flags', 'plan', 'schema_version',
     'skipped', 'sleep', 'weigh_in'], 'the watch-out facts have exactly these keys');
 select is(public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001', current_date)
     ->'sleep', jsonb_build_object('local_date', current_date, 'minutes', 355), 'the newest night');
