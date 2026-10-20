@@ -331,7 +331,7 @@ begin
               where x.health_workout_reference_id = r.id and x.user_id = p_user_id
               order by x.confidence desc limit 1))
             order by r.started_at desc)
-          from (select * from rows_all order by started_at desc limit 40) r), '[]'::jsonb));
+          from (select * from rows_all order by started_at desc limit 40) r), '[]'::jsonb)));
   end if;
   return (
     with rows_all as (
@@ -380,7 +380,7 @@ begin
             'confidence', r.confidence, 'risk_flags', to_jsonb(r.risk_flags))
             order by r.local_date desc, r.created_at desc)
           from (select * from rows_all order by local_date desc, created_at desc limit 30) r),
-          '[]'::jsonb));
+          '[]'::jsonb)));
   end if;
   return (
     with rows_all as (
