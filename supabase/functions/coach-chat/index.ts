@@ -82,6 +82,7 @@ import {
   coachContextContributorsFor,
 } from "../_shared/coach_context/registry.ts";
 import { coachServiceRpc } from "../_shared/coach_context/service_source.ts";
+import { noticeScopes } from "../_shared/ai_notice_coverage.ts";
 import { createLookupRunner } from "../_shared/coach_lookups/runner.ts";
 import { proposeFromChat } from "../_shared/coach_proposals/chat.ts";
 import { guardFaultsOf, lookupTrace, recordTurnTrace } from "./turn_trace.ts";
@@ -510,10 +511,12 @@ export async function handleCoachChat(
   let consent: "granted" | "not_granted" | "unavailable" = "granted";
   let refusal: { status: 403 | 503; error: string } | null = null;
   let consentVendor: AiConsentWithProvider["provider"] = null;
+  let noticeVersion: string | null = null;
   if (defaultRoute) {
     const withProvider = await aiConsentWithProvider(rpc, auth.userId, "coach_chat");
     consent = withProvider.consent;
     consentVendor = withProvider.provider;
+    noticeVersion = withProvider.noticeVersion;
     // The stronger route is used only for the vendor the notice names (the choice is made below).
     const strong = usableCoachRoute(log, "coach_chat_strong");
     strongRoute = strong !== null && strong.vendor === withProvider.provider ? strong : null;
@@ -756,7 +759,6 @@ export async function handleCoachChat(
         routeSignalsOf(contributions),
         defaultRoute,
         strongRoute,
-        consentVendor,
       );
       coachRoute = selection.route;
       log.info("coach_chat_route", { tier: selection.tier, reasons: [...selection.reasons] });
@@ -775,7 +777,12 @@ export async function handleCoachChat(
         consentVendor,
         contributions,
         budget: budget.attemptBudget,
-        lookups: createLookupRunner((name, params) => coachServiceRpc(name, params), auth.userId),
+        // Data the accepted notice does not name (`ai_notice_coverage.ts`) stays out of the rows.
+        lookups: createLookupRunner(
+          (name, params) => coachServiceRpc(name, params),
+          auth.userId,
+          noticeScopes(noticeVersion),
+        ),
         proposals: true,
         factSuggestions: remembered,
         requestStartedAt: startedAtMs,

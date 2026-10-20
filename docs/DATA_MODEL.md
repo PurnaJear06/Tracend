@@ -753,7 +753,7 @@ for example `rule:numbers_not_grounded:2`, `outcome:repair_timeout`, and
 `fallback:provider_response_invalid` when the turn ended in the data summary) and `lookups text[]`
 (the lookups a turn ran with their row counts per round, for example `r1_workouts:4` and
 `r2_recovery:28`; before 2026-10-20 the entries had no round prefix and summed rounds). Names and counts
-only, never message content; a check limits each to 12 entries of `[a-z0-9_:]`. Row-level security
+only, never message content; a check limits `guard_faults` to 12 entries and `lookups` to 16 entries (two rounds of eight; migration `20261020100017`) of `[a-z0-9_:]`. Row-level security
 limits both to the message's owner.
 
 E3's production pass (migration `20261018200044_library_search_v3`) adds `library_version text`
@@ -792,7 +792,8 @@ records such as plan versions and goals are the athlete's local days, `private.l
   reached: `_plan_history_v1` with `proposals` (1.2; the Coach proposals in the range, newest 12,
   with kind, title, status, why, gain, cost and dates; `private.coach_lookup_proposals`),
   `_health_history_v1` with `workouts` (1.1; the individual watch workouts of any age, newest 40,
-  with whether a logged session matches), `_weekly_reviews_v1` with `decisions` (1.1; the daily
+  with how each stands against the logged sessions: the strongest standing among confirmed,
+  suggested and conflict, and rejected only when nothing else was proposed), `_weekly_reviews_v1` with `decisions` (1.1; the daily
   `coach_decisions`, newest 30). `_workouts_v1` (1.1) adds the session note (cut to 300),
   each exercise's note (cut to 200), the kind of performance and the reason for a substitution;
   `_recovery_v1` (1.1) adds breathing rate, the four sleep stages, night and morning HRV, active
@@ -805,7 +806,7 @@ records such as plan versions and goals are the athlete's local days, `private.l
   sleep quality score, the engine's z-scores for resting heart rate and HRV and the components it
   could not use), the newest check-in of today or yesterday, exercises flagged for pain in the last
   14 days, exercises skipped in each of their last two or more sessions (56 days), the newest weigh-in
-  and Apple Health sync dates, and the active plan's number, start and block length.
+  and Apple Health sync dates, and the active plan's number, when the plan began (its first version: a version bump does not reset it), and block length. Skipped exercises count only those the active plan still holds.
 - `private.nutrition_day_totals` and `private.nutrition_complete_day_rules` define a complete
   logging day (ALGORITHMS.md section 6); `evaluate_change_eligibility` averages complete days only.
 

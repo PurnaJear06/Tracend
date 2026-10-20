@@ -14,6 +14,7 @@ import {
   stamp,
   unknownNote,
 } from "../training/schedule/week_ahead.ts";
+import type { NoticeScope } from "../ai_notice_coverage.ts";
 import { type DataRequest, lookupSpec } from "./catalogue.ts";
 
 /** Most characters of one lookup's text. */
@@ -40,6 +41,11 @@ type Parts = Readonly<{
   newestLast?: boolean;
   /** Units run in date order and the earliest are the ones to keep (a schedule from today). */
   keepFirst?: boolean;
+  /**
+   * Lines shown to the model that are not records and so never ground a figure in a reply (Coach's
+   * own earlier words: a number it said once is not evidence that it is true).
+   */
+  ungrounded?: ReadonlySet<string>;
 }>;
 
 type Json = Record<string, unknown>;
@@ -71,10 +77,13 @@ function setText(set: Json): string {
   return text;
 }
 
-function workouts(body: Json): Parts {
+function workouts(body: Json, allowed: ReadonlySet<NoticeScope>): Parts {
   const sessions = list(body.sessions);
+  const notes = allowed.has("workout_notes");
+  let withheld = false;
   const units = sessions.map((session) => {
-    const note = has(session.note)
+    withheld ||= !notes && has(session.note);
+    const note = notes && has(session.note)
       ? `; session note (the athlete's words): ${quoted(session.note)}`
       : "";
     const head = `- ${val(session.local_date)} ${val(session.workout)}, ${
@@ -88,14 +97,15 @@ function workouts(body: Json): Parts {
       const sets = list(exercise.sets).map(setText).join("; ");
       const status = exercise.status === "skipped" ? " skipped" : "";
       const pain = exercise.pain ? " pain flagged;" : "";
+      withheld ||= !notes && (has(exercise.note) || has(exercise.substitution_reason));
       const swap = exercise.kind === "substituted"
         ? ` [substitute for ${val(exercise.planned_name)}${
-          has(exercise.substitution_reason)
+          notes && has(exercise.substitution_reason)
             ? `, reason (the athlete's words): ${quoted(exercise.substitution_reason)}`
             : ""
         }]`
         : "";
-      const note = has(exercise.note)
+      const note = notes && has(exercise.note)
         ? ` note (the athlete's words): ${quoted(exercise.note)};`
         : "";
       return `    ${val(exercise.name)}${plan}${swap}${status}:${pain}${note} ${
@@ -104,8 +114,16 @@ function workouts(body: Json): Parts {
     });
     return [head, ...exercises];
   });
-  return { preface: [], units, trailer: [] };
+  return {
+    preface: withheld ? [withheldNote("the athlete's free-text notes and swap reasons")] : [],
+    units,
+    trailer: [],
+  };
 }
+
+/** Said when a field exists but the accepted AI notice does not name it, so Coach never reads "none". */
+const withheldNote = (what: string) =>
+  `Withheld: ${what} exist but are not shown, because the athlete's accepted AI notice does not name them. Do not say there are none.`;
 
 function exerciseHistory(body: Json): Parts {
   const sessions = list(body.sessions);
@@ -205,8 +223,10 @@ function checkIns(body: Json): Parts {
   return singles(lines);
 }
 
-function recovery(body: Json): Parts {
+function recovery(body: Json, allowed: ReadonlySet<NoticeScope>): Parts {
   const days = list(body.days);
+  const breathing = allowed.has("breathing_rate");
+  const withheld = !breathing && days.some((day) => has(day.respiratory_rate_bpm));
   const lines = days.map((day) => {
     const stages = [
       has(day.sleep_deep_minutes) ? `deep ${day.sleep_deep_minutes}` : null,
@@ -222,15 +242,15 @@ function recovery(body: Json): Parts {
       stages.length ? ` (${stages.join(", ")} min)` : ""
     }, resting heart rate ${withUnit(day.resting_heart_rate_bpm, "bpm")}, HRV ${
       withUnit(day.hrv_ms, "ms")
-    }${hrvParts.length ? ` (${hrvParts.join(", ")} ms)` : ""}, breathing rate ${
-      withUnit(day.respiratory_rate_bpm, "breaths/min")
-    }, steps ${val(day.steps)}, active energy ${withUnit(day.active_energy_kcal, "kcal")}, ${
+    }${hrvParts.length ? ` (${hrvParts.join(", ")} ms)` : ""}, ${
+      breathing ? `breathing rate ${withUnit(day.respiratory_rate_bpm, "breaths/min")}, ` : ""
+    }steps ${val(day.steps)}, active energy ${withUnit(day.active_energy_kcal, "kcal")}, ${
       withUnit(day.workout_minutes, "min")
     } of workouts, recovery score ${val(day.recovery_score)}, sleep quality ${
       val(day.sleep_quality)
     }, load ratio ${val(day.acwr)}`;
   });
-  return singles(lines);
+  return { ...singles(lines), preface: withheld ? [withheldNote("breathing rates")] : [] };
 }
 
 /** Most overlaps one schedule result lists; the rest are counted, never dropped silently. */
@@ -405,14 +425,22 @@ function weeklyReviews(body: Json): Parts {
   return singles(lines);
 }
 
+/** How a watch workout stands against the sessions the athlete logged. */
+const reconciliationText: Readonly<Record<string, string>> = {
+  confirmed: "matched to a logged session (confirmed)",
+  suggested: "possibly the same as a logged session (suggested, not confirmed)",
+  conflict: "overlaps a logged session but conflicts with it",
+  rejected: "the athlete rejected a match with a logged session",
+};
+
 function watchWorkouts(body: Json): Parts {
   const lines = list(body.workouts).map((workout) =>
     `- ${val(workout.local_date)} ${val(workout.activity_type)} recorded by the watch, ${
       withUnit(workout.minutes, "min")
-    }, ${withUnit(workout.energy_kcal, "kcal")}${
+    }, ${withUnit(workout.energy_kcal, "kcal")}; ${
       has(workout.reconciliation)
-        ? `; matched to a logged session (${workout.reconciliation})`
-        : "; not matched to a logged session"
+        ? reconciliationText[String(workout.reconciliation)] ?? "not matched to a logged session"
+        : "no logged session was matched to it"
     }`
   );
   return singles(lines);
@@ -434,20 +462,22 @@ function healthHistory(body: Json): Parts {
 }
 
 function pastMessages(body: Json): Parts {
+  // Coach's own words are not records: labelled so a claim in one is checked, never repeated as
+  // fact, and kept out of the lines that ground the numbers check.
+  const replies = list(body.coach_replies).map((message) =>
+    `- ${
+      val(message.local_date)
+    }, Coach replied (an earlier reply, not a record; it may have been wrong, so check any claim in it against the records): ${
+      quoted(message.content)
+    }`
+  );
   const lines = [
     ...list(body.messages).map((message) =>
       `- ${val(message.local_date)}, the athlete wrote: ${quoted(message.content)}`
     ),
-    // Coach's own words are not records: labelled so a claim in one is checked, never repeated as fact.
-    ...list(body.coach_replies).map((message) =>
-      `- ${
-        val(message.local_date)
-      }, Coach replied (an earlier reply, not a record; it may have been wrong, so check any claim in it against the records): ${
-        quoted(message.content)
-      }`
-    ),
+    ...replies,
   ];
-  return singles(lines);
+  return { ...singles(lines), ungrounded: new Set(replies) };
 }
 
 /** One line per row. */
@@ -457,7 +487,9 @@ const singles = (lines: string[]): Parts => ({
   trailer: [],
 });
 
-const renderers: Readonly<Record<string, (body: Json) => Parts>> = {
+const renderers: Readonly<
+  Record<string, (body: Json, allowed: ReadonlySet<NoticeScope>) => Parts>
+> = {
   workouts,
   exercise_history: exerciseHistory,
   meals,
@@ -501,6 +533,7 @@ export function renderLookup(
   request: DataRequest,
   payload: unknown,
   maxChars: number = lookupResultMaxChars,
+  allowed: ReadonlySet<NoticeScope> = new Set(),
 ): RenderedLookup {
   const body = rec(payload);
   const render = renderers[request.lookup];
@@ -510,7 +543,7 @@ export function renderLookup(
   ) {
     return unreadable(request);
   }
-  const parts = render(body);
+  const parts = render(body, allowed);
   const total = parts.units.length;
   const sqlCut = body.truncated === true;
   const fixed = [...parts.preface, ...parts.trailer].join("\n").length;
@@ -534,7 +567,7 @@ export function renderLookup(
     rows: shown.length,
     grounds: [
       `Period looked at: ${request.from} to ${request.to}. Rows shown: ${shown.length} of ${total}.`,
-      ...lines,
+      ...lines.filter((line) => !parts.ungrounded?.has(line)),
     ],
   };
 }

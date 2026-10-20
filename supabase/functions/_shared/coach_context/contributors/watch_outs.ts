@@ -33,8 +33,8 @@ import {
 } from "./training_plan.ts";
 
 export const watchOutsContributorId = "watch_outs";
-export const watchOutsBudgetChars = 1_100;
-/** At most this many lines, and at most this many characters of lines (the introduction is extra). */
+export const watchOutsBudgetChars = 1_200;
+/** At most this many lines, and at most this many characters of lines (`watchOutsLinesRoom` is what the introduction leaves of the budget). */
 export const watchOutsMaxLines = 8;
 export const watchOutsLinesMaxChars = 900;
 /** How many days back the planned sessions are checked for repeated misses. */
@@ -266,7 +266,11 @@ function behindPlan(plan: PlanState): string | null {
 /** The same session missed on each of its last planned days. */
 function missedSessions(schedule: ScheduleBody): string | null {
   const byName = new Map<string, { date: string; missed: boolean }[]>();
+  // Only days planned under the plan in force now: a session of an older plan is not one the
+  // athlete is skipping today. Without a plan in force nothing is claimed.
+  if (schedule.planId === null) return null;
   for (const row of schedule.days) {
+    if (row.versionId !== schedule.planId) continue;
     if (dayOf(row.date) >= dayOf(schedule.today)) continue;
     for (const item of row.unlogged) {
       byName.set(item.name, [...(byName.get(item.name) ?? []), { date: row.date, missed: true }]);
@@ -334,10 +338,22 @@ function planAge(facts: WatchFacts): string | null {
   if (plan === null || plan.temporary || plan.blockWeeks === null) return null;
   const weeks = Math.floor((dayOf(facts.localDate) - dayOf(plan.startsOn)) / 7);
   if (weeks < plan.blockWeeks) return null;
-  return `The active plan${
+  return `The current plan${
     plan.version === null ? "" : ` (v${plan.version})`
-  } took effect on ${plan.startsOn}, ${weeks} weeks ago; its block is ${plan.blockWeeks} weeks.`;
+  } has run since ${plan.startsOn}, ${weeks} weeks; its block is ${plan.blockWeeks} weeks.`;
 }
+
+const introduction =
+  "Watch-outs: facts Tracend calculated across the athlete's records. Each is verified from the dates and figures it states. Address each that bears on the question, or say why it does not matter. A change to the plan is a proposal the athlete approves.";
+
+/**
+ * Characters the lines may take: at most `watchOutsLinesMaxChars`, and what the contributor's
+ * budget leaves after the introduction, so the host never has to cut a line.
+ */
+export const watchOutsLinesRoom = Math.min(
+  watchOutsLinesMaxChars,
+  watchOutsBudgetChars - introduction.length,
+);
 
 /** One watch-out: its line, and whether it bears on a training decision or only on the data. */
 export type WatchOut = Readonly<{ line: string; kind: "decision" | "data" }>;
@@ -368,15 +384,12 @@ export function computeWatchOuts(inputs: WatchOutInputs): WatchOut[] {
     if (text === null) continue;
     const line = `- ${text}`;
     // Strict priority: when a line does not fit, nothing less important takes its place.
-    if (found.length >= watchOutsMaxLines || used + line.length + 1 > watchOutsLinesMaxChars) break;
+    if (found.length >= watchOutsMaxLines || used + line.length + 1 > watchOutsLinesRoom) break;
     found.push({ line, kind });
     used += line.length + 1;
   }
   return found;
 }
-
-const introduction =
-  "Watch-outs: facts Tracend calculated across the athlete's records. Each is verified from the dates and figures it states. Address each that bears on the question, or say why it does not matter. A change to the plan is a proposal the athlete approves.";
 
 /** The block's text, or null when there is nothing to watch. Exposed for tests. */
 export function renderWatchOuts(inputs: WatchOutInputs): string | null {
@@ -384,9 +397,12 @@ export function renderWatchOuts(inputs: WatchOutInputs): string | null {
   return found.length === 0 ? null : [introduction, ...found.map((item) => item.line)].join("\n");
 }
 
-/** Whether pain is on record: today's or yesterday's check-in, or an exercise flagged in 14 days. */
-export function painOnRecord(facts: WatchFacts | null): boolean {
-  return facts !== null && ((facts.checkIn?.pain ?? 0) > 0 || facts.painFlags.length > 0);
+/**
+ * Whether pain is on record (today's or yesterday's check-in, or an exercise flagged in 14 days),
+ * or null when the facts could not be read: the route treats an unknown as pain.
+ */
+export function painOnRecord(facts: WatchFacts | null): boolean | null {
+  return facts === null ? null : (facts.checkIn?.pain ?? 0) > 0 || facts.painFlags.length > 0;
 }
 
 /** Where the contributor reads from; each is a service-role read. */
@@ -396,7 +412,26 @@ export type WatchOutSources = Readonly<{
   schedule: StateSource;
 }>;
 
-export function createWatchOutsContributor(sources: WatchOutSources): CoachContextContributor {
+/**
+ * How long the facts and the schedule may take: inside the host's limit, so the lines that need
+ * only the plan (the back-to-back muscles) survive a slow second read.
+ */
+export const watchOutsSecondaryTimeoutMs = 2_500;
+
+function within<T>(read: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    read,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("watch-outs read timed out")), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+export function createWatchOutsContributor(
+  sources: WatchOutSources,
+  secondaryTimeoutMs: number = watchOutsSecondaryTimeoutMs,
+): CoachContextContributor {
   return {
     id: watchOutsContributorId,
     slot: "volatile",
@@ -404,8 +439,8 @@ export function createWatchOutsContributor(sources: WatchOutSources): CoachConte
     async render(input) {
       const [plan, facts, schedule] = await Promise.allSettled([
         sharedRead(input, planStateReadKey, () => sources.planState(input.userId, input.localDate)),
-        sources.facts(input.userId, input.localDate),
-        sources.schedule(input.userId, input.localDate),
+        within(sources.facts(input.userId, input.localDate), secondaryTimeoutMs),
+        within(sources.schedule(input.userId, input.localDate), secondaryTimeoutMs),
       ]);
       const ok = <T>(result: PromiseSettledResult<unknown>, parse: (value: unknown) => T | null) =>
         result.status === "fulfilled" ? parse(result.value) : null;
@@ -418,11 +453,13 @@ export function createWatchOutsContributor(sources: WatchOutSources): CoachConte
         ),
       };
       const found = computeWatchOuts(inputs);
-      if (found.length === 0) return null;
+      // The counts go to the route (coach_chat_provider_route.ts) whether or not there is text to
+      // show: a turn with nothing to watch still says whether pain is on record. No text, no figure.
       return {
-        text: [introduction, ...found.map((item) => item.line)].join("\n"),
+        text: found.length === 0
+          ? ""
+          : [introduction, ...found.map((item) => item.line)].join("\n"),
         shown: {},
-        // Counts the turn's route reads (coach_chat_provider_route.ts); no text, no figure.
         trace: {
           lines: found.length,
           decisions: found.filter((item) => item.kind === "decision").length,

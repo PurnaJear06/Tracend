@@ -230,7 +230,14 @@ async function renderOne(
     if (rendered === "timeout") return { outcome: { ...base, outcome: "timeout" }, block: null };
     const text = typeof rendered === "object" && rendered !== null ? rendered.text : rendered;
     if (typeof text !== "string" || text.trim() === "") {
-      return { outcome: { ...base, outcome: "empty" }, block: null };
+      // An empty block can still report counts: the route reads them whether or not text rendered.
+      return {
+        outcome: { ...base, outcome: "empty" },
+        block: null,
+        ...(typeof rendered === "object" && rendered !== null && rendered.trace
+          ? { trace: rendered.trace }
+          : {}),
+      };
     }
     // A contributor's text cannot close its own label and pose as instructions after it.
     const safe = text.trim().replace(closingTag, "<\\/reference_data");

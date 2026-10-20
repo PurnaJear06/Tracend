@@ -44,7 +44,7 @@ export const coverageDomains: readonly BriefDomain[] = Object.freeze([
   {
     id: "training",
     shown: "28 d session totals (no sets, loads, notes)",
-    adds: "workouts (every set with load, reps, notes, swaps), exercise_history (one lift)",
+    adds: "workouts (every set with load, reps, swaps), exercise_history (one lift)",
     lookups: [{ lookup: "workouts" }, { lookup: "exercise_history" }],
     index: ["workouts"],
     unit: "sessions",
@@ -71,7 +71,7 @@ export const coverageDomains: readonly BriefDomain[] = Object.freeze([
   {
     id: "recovery",
     shown: "28 d sleep, resting HR, HRV, steps",
-    adds: "recovery (60 d; sleep stages, night/morning HRV, breathing, score)",
+    adds: "recovery (60 d; sleep stages, night/morning HRV, score)",
     lookups: [{ lookup: "recovery" }],
     index: ["recovery"],
     unit: "days",
@@ -251,17 +251,34 @@ export function renderCoverageBrief(payload: unknown, localDate: string): string
   ].join("\n");
 }
 
-export function createCoverageBriefContributor(source: StateSource): CoachContextContributor {
+/**
+ * How long the index may take before the brief goes ahead without the counts: inside the host's
+ * limit for a contributor, so a slow database leaves the static map and not nothing.
+ */
+export const coverageBriefReadTimeoutMs = 3_000;
+
+export function createCoverageBriefContributor(
+  source: StateSource,
+  readTimeoutMs: number = coverageBriefReadTimeoutMs,
+): CoachContextContributor {
   return {
     id: coverageBriefContributorId,
     slot: "volatile",
     budgetChars: coverageBriefBudgetChars,
     async render(input) {
       let payload: unknown = null;
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        payload = await source(input.userId, input.localDate);
+        payload = await Promise.race([
+          source(input.userId, input.localDate),
+          new Promise<null>((resolve) => {
+            timer = setTimeout(() => resolve(null), readTimeoutMs);
+          }),
+        ]);
       } catch {
         // The static map is still worth showing without the counts.
+      } finally {
+        clearTimeout(timer);
       }
       return renderCoverageBrief(payload, input.localDate);
     },

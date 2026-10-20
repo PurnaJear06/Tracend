@@ -641,6 +641,25 @@ the server enforces the same rule for every caller. `coach-chat` answers 403
 `coach-decide` then uses the deterministic provider and `onboarding-plan` the rules plan, so no
 data reaches the AI provider.
 
+**New data and the accepted notice (2026-10-20).** Data reaches the AI only under an accepted notice
+that names it. The Coach notice (v5 and v6 list the same data) names: training plan and workout
+logs, check-ins, Apple Health summaries (sleep, heart rate, HRV, steps and workouts), meals and
+nutrition targets, body measurements, goals, focus muscles and preferences, and the messages the
+athlete sends the Coach. `_shared/ai_notice_coverage.ts` holds the verdict for the fields the
+lookups grew, and `coach-chat` passes the athlete's accepted notice version to the lookup runner:
+- **Not named, held back until a notice names them:** Apple Health breathing rate (`breathing_rate`)
+  and the athlete's free text in a workout: the session note, an exercise's note and the reason for
+  a swap (`workout_notes`). The rows leave them out and say they exist ("Withheld: ... Do not say
+  there are none"). To open one, the owner publishes a notice that names it, then sets the first
+  version number that does in `firstNoticeNaming` in the same change.
+- **Covered, not gated:** sleep stages (they are the Apple Health sleep summary), night and morning
+  HRV (HRV), workout minutes and the watch's workouts (workouts), proposals and daily decisions
+  (Tracend's own text about the plan, targets and goals the notice names), and Coach's own earlier
+  replies (the conversation memory has always sent them; they carry no new data).
+- **Already sent before this change, not named:** active energy (`health_daily_28d` in the athlete
+  file since v8; the Coach list does not name it, the onboarding sentence does). Not gated here
+  because it is not new; the next notice should name it.
+
 **Notices name a vendor.** All three tables have a `provider` column. The meal photo table always
 required one; the other two gained a nullable one in migration A1, and migration code 17 filled
 it for every earlier notice from its label and model (DeepSeek, Groq), so no notice has a null
@@ -1054,7 +1073,7 @@ routes stay available by settings alone for two weeks after the cutover.
 - **Second Coach route.** The route is chosen from the state of the athlete's records, never the
   words of the question (`coach_chat_provider_route.ts`, deterministic): a health check that is not
   cleared (or could not be read), pain on record (today's or yesterday's check-in, or an exercise
-  flagged for pain in the last 14 days), a Coach proposal waiting for the athlete's answer, or two
+  flagged for pain in the last 14 days; a pain signal that could not be read counts as pain, as an unreadable health check does), a Coach proposal waiting for the athlete's answer, or two
   or more watch-outs about training decisions. A turn with any of them uses the route configured
   as `AI_COACH_CHAT_STRONG_*` when it is set, evaluated and its vendor is the one the athlete's
   accepted notice names; every other turn, and every turn when it is unset, uses the `coach_chat`
@@ -1084,20 +1103,20 @@ adapter still sends no tools.
   **Coverage Brief** (`coverage_brief` contributor, gateway route only) says, for each kind of
   record, what that summary shows, what a lookup adds, how much exists and how fresh it is, and the
   neighbouring kinds to check with it. The neighbour table is static: the same for every athlete
-  and every question. The instructions tell Coach to answer a question about the athlete only after
+  and every question. The brief is shown even when the index read is slow or fails (the counts read "unavailable"). The instructions tell Coach to answer a question about the athlete only after
   it has requested, in its first round, every lookup that could change the answer (the brief's
   neighbours of the topic, the detail behind a summary, the days ahead for a question about today
   or the week), and to skip lookups only for a greeting, thanks, general knowledge, a question about
   the app and a follow-up the rows already in the conversation answer. The old rules "work only from
   the prepared context", "do not look up what the context already holds" and "ask for the narrowest
-  range" are gone. The **watch-outs** (`watch_outs` contributor, gateway route only) are facts
-  computed by code across kinds of record, at most 8 lines and about 900 characters, shown when
-  there are any: muscles shared on consecutive days, a session due today or tomorrow on a day with
+  range" are gone. The **watch-outs** (`watch_outs` contributor; it stays on the rollback route too) are facts
+  computed by code across kinds of record, at most 8 lines packed into what the contributor's
+  1,200-character budget leaves after its introduction (900 at most), shown when there are any: muscles shared on consecutive days, a session due today or tomorrow on a day with
   a recovery score below 40, a sleep quality score below 50 or pain on the check-in, a pain flag on
   an exercise that is planned again, sessions behind the plan this week, a session or exercise
-  skipped on each of its last two chances, resting heart rate or HRV a spread or more from the
+  skipped on each of its last two chances (only exercises and sessions of the plan in force), resting heart rate or HRV a spread or more from the
   athlete's own usual (the recovery score's own z-scores), a weigh-in older than 14 days, an Apple
-  Health sync older than 2 days and a plan older than its block. Every threshold is one the product
+  Health sync older than 2 days and a plan older than its block (measured from the plan's first version: a version bump does not reset it; a new plan or a temporary block starts a new count). Every threshold is one the product
   already uses (the evidence-code table, the app's "than usual", the goal phase's stale reading, the
   app's stale sync) and none is new; each line states its dates and figures, so the numbers check
   grounds a reply on them. A watch-out is a verified fact, not an instruction: Coach addresses it or
@@ -1110,7 +1129,10 @@ adapter still sends no tools.
   400 days, a range not wholly in the future (an end after the coaching date is cut to it; the one
   exception is `plan_history` with the filter `schedule`, which reads the plan and may end up to 90
   days after it), at most
-  8 requests a round, a required filter for `exercise_history`, filters of plain words only. A
+  8 requests a round, a required filter for `exercise_history`, filters of plain words only, and for
+  a lookup with modes (`plan_history`: `schedule`, `proposals`; `health_history`: `workouts`;
+  `weekly_reviews`: `decisions`) a filter that is empty or one of its modes: a near miss such as
+  `proposal` is refused and goes to the corrected round. A
   request the catalogue refuses (`lookup_request_invalid`: a bad date, a missing filter, too many
   requests) gets **one corrected round** per turn, if the time and a budget place allow: the model
   is called again, told why, and may send a corrected list or answer. A second refusal, a request
@@ -1137,7 +1159,7 @@ adapter still sends no tools.
 - **Nothing is written, nothing runs in the background, no loop is open-ended.** Lookups exist
   only on the gateway route; today's DeepSeek path has none.
 - **Observability**: the lookup names and row counts, never the rows, are stored on the assistant
-  message (`coach_messages.lookups`) per round (`r1_workouts:4`, `r2_recovery:28`, so the width of
+  message (`coach_messages.lookups`) per round (`r1_workouts:4`, `r2_recovery:28`, with the mode of a lookup that has modes, `r1_plan_history_proposals:3`; the column holds 16 entries, two rounds of eight, so the width of
   the first round and the follow-up of the second can be measured), with the guard rules each attempt broke and any fallback code
   (`coach_messages.guard_faults`), so the lead can query what Coach looked at and why a turn fell
   back.
@@ -1183,7 +1205,7 @@ adapter still sends no tools.
   have been wrong, so check any claim in it against the records)", at most 4 of Coach's own earlier
   replies in the same remembered chats that match the same words (300 characters each; never a
   data summary or a reply that failed), so Coach can re-read what it advised. The instructions say
-  such a line is not a record and a claim in it is checked against the records first. This replaces
+  such a line is not a record and a claim in it is checked against the records first. A figure in one never grounds the numbers check (the renderer leaves those lines out of the rows that count as given, so the same figure stated afresh is refused unless a record holds it). This replaces
   the rule that Coach's replies are never searched; it is the owner's to confirm.
 - **Evaluation.** Bank cases cover a contradicted fact (knee, schedule, diet), a respected dislike, a
   confirmed limit in a leg session, a follow-through check against Coach's own note and a chat that

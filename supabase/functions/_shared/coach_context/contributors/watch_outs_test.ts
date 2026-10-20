@@ -15,12 +15,14 @@ import {
   type WatchOutInputs,
   watchOutsBudgetChars,
   watchOutsLinesMaxChars,
+  watchOutsLinesRoom,
   watchOutsMaxLines,
   watchOutThresholds,
 } from "./watch_outs.ts";
 
 // Wednesday 2026-10-14 in the six-day split: Monday and Tuesday done, Pull and rear delts today,
 // Chest volume and delts tomorrow.
+const introductionLength = () => renderWatchOuts(everything())!.split("\n")[0].length;
 const wednesday = "2026-10-14";
 const midweek = () => parsePlanState(splitPlanPayload(3, ["w-chest-a", "w-legs-a"]))!;
 
@@ -346,7 +348,7 @@ Deno.test("a weigh-in older than 14 days and an Apple Health sync older than 2 d
 Deno.test("a plan older than its own block is flagged; a younger one, a temporary block and an unknown block are not", () => {
   const age = (plan: Record<string, unknown> | null) => linesOf({ facts: factsOf({ plan }) });
   assertEquals(age({ version: 3, starts_on: "2026-07-01", block_weeks: 6, ends_on: null }), [
-    "- The active plan (v3) took effect on 2026-07-01, 15 weeks ago; its block is 6 weeks.",
+    "- The current plan (v3) has run since 2026-07-01, 15 weeks; its block is 6 weeks.",
   ]);
   // Exactly the block length: the block is complete.
   assertEquals(
@@ -496,7 +498,7 @@ Deno.test("the contributor reports counts for the route and renders text with it
   assertEquals(contributor.slot, "volatile");
 });
 
-Deno.test("a source that fails or times out drops only its lines; with all failing the block is absent", async () => {
+Deno.test("a source that fails or times out drops only its lines; with all failing there is no text and pain is unknown", async () => {
   const failing = () => Promise.reject(new Error("down"));
   const noPlan = createWatchOutsContributor({
     planState: failing,
@@ -511,7 +513,13 @@ Deno.test("a source that fails or times out drops only its lines; with all faili
     facts: failing,
     schedule: failing,
   });
-  assertEquals(await none.render(input), null);
+  // Nothing to show, and nothing known: no text, and pain is unknown (the route fails toward the
+  // stronger model).
+  assertEquals(await none.render(input), {
+    text: "",
+    shown: {},
+    trace: { lines: 0, decisions: 0, pain: null },
+  });
   // An empty schedule payload (an athlete without a plan) reads as no schedule.
   const empty = createWatchOutsContributor({
     planState: planSource,
@@ -563,4 +571,119 @@ Deno.test("the schedule is read for the four weeks before the coaching date, end
     failed = true;
   }
   assert(failed);
+});
+
+Deno.test("nothing to watch still reports the counts: no text, pain known and absent", async () => {
+  const quiet = createWatchOutsContributor({
+    planState: () => Promise.resolve(splitPlanPayload(3, ["w-chest-a", "w-legs-a"])),
+    facts: () => Promise.resolve({ schema_version: "1.0", local_date: wednesday }),
+    schedule: () => Promise.resolve(null),
+  });
+  assertEquals(await quiet.render(input), {
+    text: "",
+    shown: {},
+    trace: { lines: 0, decisions: 0, pain: false },
+  });
+  const result = await renderCoachContext([quiet], input);
+  assertEquals(result.outcomes[0].outcome, "empty");
+  assertEquals(result.volatile, "");
+  // The host keeps the counts of an empty block for the route.
+  assertEquals(result.traces?.watch_outs, { lines: 0, decisions: 0, pain: false });
+});
+
+Deno.test("pain on record is reported whether or not any line renders", async () => {
+  const painOnly = createWatchOutsContributor({
+    planState: () => Promise.resolve(null),
+    facts: () =>
+      Promise.resolve({
+        schema_version: "1.0",
+        local_date: wednesday,
+        check_in: { local_date: wednesday, pain_severity: 2 },
+      }),
+    schedule: () => Promise.resolve(null),
+  });
+  const result = await renderCoachContext([painOnly], input);
+  assertEquals(result.outcomes[0].outcome, "empty");
+  assertEquals(result.traces?.watch_outs?.pain, true);
+});
+
+Deno.test("the lines are packed against the budget the introduction leaves, so the host never cuts a block", () => {
+  assertEquals(watchOutsBudgetChars, 1_200);
+  assert(watchOutsLinesRoom <= watchOutsLinesMaxChars);
+  assert(introductionLength() + watchOutsLinesRoom <= watchOutsBudgetChars);
+  const text = renderWatchOuts(everything())!;
+  assert(text.length <= watchOutsBudgetChars, `${text.length} characters`);
+});
+
+Deno.test("the trace counts the lines kept, not the lines found", async () => {
+  const contributor = createWatchOutsContributor({
+    planState: () =>
+      Promise.resolve(everything().plan === null ? null : splitPlanPayload(3, ["w-chest-a"])),
+    facts: () =>
+      Promise.resolve({
+        schema_version: "1.0",
+        local_date: wednesday,
+        metrics: metrics({ recovery_score: 20, sleep_quality_score: 30, hrv_z: -2, rhr_z: -2 }),
+        check_in: { local_date: wednesday, pain_severity: 4 },
+        pain_flags: [{ local_date: "2026-10-10", name: "Barbell row", slug: "barbell-row" }],
+        skipped: [{ name: "Cable chest fly", slug: null, sessions: 3, last_date: "2026-10-12" }],
+        weigh_in: { local_date: "2026-09-01" },
+        health_sync: { local_date: "2026-10-01" },
+        plan: { version: 3, starts_on: "2026-04-01", block_weeks: 6, ends_on: null },
+      }),
+    schedule: () => Promise.resolve(scheduleBody([planned("2026-09-30"), planned("2026-10-07")])),
+  });
+  const block = (await contributor.render(input)) as unknown as {
+    text: string;
+    trace: { lines: number; decisions: number };
+  };
+  const lines = block.text.split("\n").filter((line) => line.startsWith("- "));
+  assertEquals(block.trace.lines, lines.length);
+  assert(lines.length < 10);
+  const result = await renderCoachContext([contributor], input);
+  assertEquals(result.outcomes[0].clipped, false);
+});
+
+Deno.test("a watch-outs read that times out leaves the host with a timeout outcome and no trace", async () => {
+  const hanging = createWatchOutsContributor({
+    planState: () => new Promise(() => {}),
+    facts: () => new Promise(() => {}),
+    schedule: () => new Promise(() => {}),
+  });
+  const result = await renderCoachContext([hanging], input, 20);
+  assertEquals(result.outcomes[0].outcome, "timeout");
+  assertEquals(result.traces?.watch_outs, undefined);
+});
+
+Deno.test("a slow facts or schedule read does not cost the back-to-back muscles: the plan's line survives", async () => {
+  const payload = splitPlanPayload(3, ["w-chest-a", "w-legs-a"]);
+  const sessions = payload.sessions as Record<string, unknown>[];
+  sessions[4].weekday = 5;
+  sessions[4].exercises = sessions[3].exercises;
+  const slow = createWatchOutsContributor({
+    planState: () => Promise.resolve(payload),
+    facts: () => new Promise(() => {}),
+    schedule: () => new Promise(() => {}),
+  }, 20);
+  const result = await renderCoachContext([slow], input, 500);
+  assertEquals(result.outcomes[0].outcome, "rendered");
+  assertStringIncludes(result.volatile, "Same muscles on consecutive days");
+  // Pain is unknown (the facts never came), so the route fails toward the stronger model.
+  assertEquals(result.traces?.watch_outs?.pain, null);
+});
+
+Deno.test("a session missed under an older version of the plan is not raised: only days planned by the plan in force count", () => {
+  const older = (date: string) => ({ ...planned(date), version_id: "v2", version: 2 });
+  const body = scheduleBody([older("2026-09-23"), older("2026-09-30"), planned("2026-10-07")]);
+  assertEquals(linesOf({ schedule: readScheduleBody(body) }), []);
+  // Two misses under the current version still count.
+  const current = scheduleBody([older("2026-09-23"), planned("2026-09-30"), planned("2026-10-07")]);
+  assertEquals(linesOf({ schedule: readScheduleBody(current) }), [
+    "- Planned but not logged on each of its last days: Pull day (2026-09-30 and 2026-10-07).",
+  ]);
+  // Without a plan in force nothing is claimed.
+  assertEquals(
+    linesOf({ schedule: readScheduleBody({ ...scheduleBody([planned("2026-10-07")]), plan: {} }) }),
+    [],
+  );
 });

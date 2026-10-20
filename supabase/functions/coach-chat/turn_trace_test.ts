@@ -3,6 +3,7 @@ import type { CoachChatAttemptTelemetry } from "../_shared/providers/coach_chat_
 import {
   guardFaultsOf,
   lookupTrace,
+  mostLookupEntries,
   mostTraceEntries,
   recordTurnTrace,
   type TraceClient,
@@ -84,7 +85,25 @@ Deno.test("lookups are logged per round: r1_workouts:4, r2_recovery:28, summed w
   assertEquals(lookupTrace([]), []);
 });
 
-Deno.test("a trace entry is names and counts in the column's format, and the column's limits hold", () => {
+Deno.test("a mode of a lookup is part of the entry: plan_history reads three different sets of records", () => {
+  assertEquals(
+    lookupTrace([
+      { lookup: "plan_history", rows: 3, round: 1 },
+      { lookup: "plan_history", rows: 7, round: 1, mode: "schedule" },
+      { lookup: "plan_history", rows: 2, round: 1, mode: "proposals" },
+      { lookup: "plan_history", rows: 4, round: 1, mode: "proposals" },
+      { lookup: "health_history", rows: 5, round: 2, mode: "workouts" },
+    ]),
+    [
+      "r1_plan_history:3",
+      "r1_plan_history_schedule:7",
+      "r1_plan_history_proposals:6",
+      "r2_health_history_workouts:5",
+    ],
+  );
+});
+
+Deno.test("a trace entry is names and counts in the column's format, and two rounds of eight fit its limits", () => {
   const all = [
     "workouts",
     "exercise_history",
@@ -94,24 +113,28 @@ Deno.test("a trace entry is names and counts in the column's format, and the col
     "recovery",
     "plan_history",
     "goals",
-    "weekly_reviews",
-    "health_history",
-    "past_messages",
   ];
-  // Eight lookups in round one and eight in round two: the column keeps its 12 entries.
-  const entries = lookupTrace(
-    [
-      ...all.slice(0, 8).map((lookup) => ({ lookup, rows: 60, round: 1 })),
-      ...all.slice(0, 8).map((
-        lookup,
-      ) => ({ lookup, rows: 60, round: 2 })),
-    ],
-  );
-  assertEquals(entries.length, mostTraceEntries);
+  const round = (n: number) => all.map((lookup) => ({ lookup, rows: 60, round: n }));
+  const entries = lookupTrace([...round(1), ...round(2)]);
+  // Sixteen entries, none cut: the second round is kept in full.
+  assertEquals(entries.length, 16);
+  assertEquals(mostLookupEntries, 16);
   assertEquals(entries[0], "r1_workouts:60");
+  assertEquals(entries[15], "r2_goals:60");
   const column = entries.join(" ");
   assertEquals(/^[a-z0-9_: ]*$/.test(column), true);
-  assertEquals(column.length <= 600, true);
+  assertEquals(column.length <= 800, true);
+  // The longest entries still fit: modes of the longest names, two rounds.
+  const longest = lookupTrace(
+    [
+      ...["health_history", "weekly_reviews", "plan_history", "exercise_history"].flatMap((
+        lookup,
+      ) => [1, 2].map((r) => ({ lookup, rows: 999, round: r, mode: "proposals" }))),
+    ],
+  );
+  assertEquals(longest.join(" ").length <= 800, true);
+  // The guard faults keep their own limit.
+  assertEquals(mostTraceEntries, 12);
 });
 
 function client(result: { error: unknown } | "throw") {

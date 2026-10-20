@@ -15,15 +15,34 @@
 -- 7. coach_lookup_past_messages_v1 1.0 -> 1.1  + coach_replies: Coach's own earlier replies that
 --                                              match the words, labelled in the renderer as unverified
 -- 8. get_coach_watch_outs_v1       new         the facts the watch-outs are computed from
+-- 9. coach_messages.lookups        check 12 -> 16 entries: the trace is per round and per mode
+--    (r1_plan_history_proposals:3), so two rounds of eight lookups fit
 --
 -- Every public function is SECURITY DEFINER, read-only and granted to service_role only. The
 -- private helper is not SECURITY DEFINER (like the other private helpers) and is revoked from
 -- anon and authenticated.
 
+-- 0 ----------------------------------------------------------------------------------------------
+
+-- The athlete's time zone name as private.local_day resolves it (UTC when unset or unknown), so a
+-- function that compares many timestamps with local days resolves it once and compares timestamps,
+-- instead of calling local_day (which cannot be inlined and reads pg_timezone_names) per row.
+create function private.user_timezone(p_user uuid)
+returns text language sql stable set search_path = '' as $$
+  select coalesce((
+    select a.timezone from public.user_accounts a
+    join pg_catalog.pg_timezone_names z on z.name = a.timezone
+    where a.id = p_user), 'UTC');
+$$;
+revoke all on function private.user_timezone(uuid) from public, anon, authenticated;
+
 -- 1 ----------------------------------------------------------------------------------------------
 
 create or replace function public.get_coach_data_index_v1(p_user_id uuid, p_local_date date)
 returns jsonb language sql stable security definer set search_path = '' as $$
+  -- The time zone is resolved once; each kind that dates its records by creation time converts the
+  -- aggregated first and last timestamp, not every row.
+  with tz as (select private.user_timezone(p_user_id) as name)
   select jsonb_build_object(
     'schema_version', '1.2',
     'local_date', p_local_date,
@@ -56,11 +75,11 @@ returns jsonb language sql stable security definer set search_path = '' as $$
         where c.user_id = p_user_id and c.superseded_at is null),
       'recovery', (select jsonb_build_object('first', min(h.local_date), 'last', max(h.local_date),
           'count', count(*)) from public.daily_health_summaries h where h.user_id = p_user_id),
-      'plan_history', (select jsonb_build_object('first', min(private.local_day(p_user_id, v.created_at)),
-          'last', max(private.local_day(p_user_id, v.created_at)), 'count', count(*))
+      'plan_history', (select jsonb_build_object('first', (min(v.created_at) at time zone (select name from tz))::date,
+          'last', (max(v.created_at) at time zone (select name from tz))::date, 'count', count(*))
         from public.training_plan_versions v where v.user_id = p_user_id),
-      'goals', (select jsonb_build_object('first', min(private.local_day(p_user_id, g.created_at)),
-          'last', max(private.local_day(p_user_id, g.created_at)), 'count', count(*))
+      'goals', (select jsonb_build_object('first', (min(g.created_at) at time zone (select name from tz))::date,
+          'last', (max(g.created_at) at time zone (select name from tz))::date, 'count', count(*))
         from public.user_goals g where g.user_id = p_user_id),
       'weekly_reviews', (select jsonb_build_object('first', min(r.review_week),
           'last', max(r.review_week), 'count', count(*))
@@ -71,15 +90,15 @@ returns jsonb language sql stable security definer set search_path = '' as $$
       'watch_workouts', (select jsonb_build_object('first', min(h.local_date), 'last', max(h.local_date),
           'count', count(*)) from public.health_workout_references h where h.user_id = p_user_id),
       -- Coach proposals (plan_history with the filter "proposals").
-      'proposals', (select jsonb_build_object('first', min(private.local_day(p_user_id, c.created_at)),
-          'last', max(private.local_day(p_user_id, c.created_at)), 'count', count(*))
+      'proposals', (select jsonb_build_object('first', (min(c.created_at) at time zone (select name from tz))::date,
+          'last', (max(c.created_at) at time zone (select name from tz))::date, 'count', count(*))
         from public.change_proposals c where c.user_id = p_user_id and c.schema_version = '3.0'),
       -- The daily coaching decisions (weekly_reviews with the filter "decisions").
       'daily_decisions', (select jsonb_build_object('first', min(d.local_date), 'last', max(d.local_date),
           'count', count(*)) from public.coach_decisions d where d.user_id = p_user_id),
       -- The athlete's own questions in conversations Coach may remember (past_messages).
-      'past_messages', (select jsonb_build_object('first', min(private.local_day(p_user_id, m.created_at)),
-          'last', max(private.local_day(p_user_id, m.created_at)), 'count', count(*))
+      'past_messages', (select jsonb_build_object('first', (min(m.created_at) at time zone (select name from tz))::date,
+          'last', (max(m.created_at) at time zone (select name from tz))::date, 'count', count(*))
         from public.coach_messages m
         join public.coach_threads t on t.id = m.thread_id and t.user_id = m.user_id
         where m.user_id = p_user_id and m.role = 'user' and t.remember
@@ -88,7 +107,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
     -- knows the schedule covers any date from then on, past or ahead (plan_history lookup with the
     -- filter "schedule").
     'schedule', (select jsonb_build_object('version', v.version_number,
-        'starts_on', (select min(coalesce(x.effective_date, private.local_day(p_user_id, x.created_at)))
+        'starts_on', (select min(coalesce(x.effective_date, (x.created_at at time zone (select name from tz))::date))
           from public.training_plan_versions x
           where x.user_id = p_user_id and x.status in ('active', 'superseded')),
         'weekdays', (select coalesce(jsonb_agg(distinct w.preferred_weekday
@@ -212,13 +231,15 @@ $$;
 -- up. The athlete's answers are the status; a proposal's text is Tracend's own, not the athlete's.
 create function private.coach_lookup_proposals(p_user_id uuid, p_from date, p_to date)
 returns jsonb language sql stable set search_path = '' as $$
-  with rows_all as (
+  with tz as (select private.user_timezone(p_user_id) as name), rows_all as (
     select c.created_at, c.proposal_kind, c.proposed_training, c.confidence, c.rationale,
       c.expected_benefit, c.downside, c.ends_on, c.applied_at,
       private.coach_proposal_json(c) ->> 'status' as state
     from public.change_proposals c
+    -- The range as timestamps in the athlete's time zone: the same days private.local_day gives.
     where c.user_id = p_user_id and c.schema_version = '3.0'
-      and private.local_day(p_user_id, c.created_at) between greatest(p_from, p_to - 399) and p_to
+      and c.created_at >= (greatest(p_from, p_to - 399)::timestamp at time zone (select name from tz))
+      and c.created_at < ((p_to + 1)::timestamp at time zone (select name from tz))
     order by c.created_at desc limit 13
   )
   select jsonb_build_object(
@@ -226,7 +247,7 @@ returns jsonb language sql stable set search_path = '' as $$
     'from', greatest(p_from, p_to - 399), 'to', p_to,
     'truncated', (select count(*) > 12 from rows_all),
     'proposals', coalesce((select jsonb_agg(jsonb_build_object(
-        'created_on', private.local_day(p_user_id, r.created_at),
+        'created_on', (r.created_at at time zone (select name from tz))::date,
         'kind', r.proposal_kind,
         'title', r.proposed_training ->> 'title',
         'status', r.state,
@@ -235,8 +256,7 @@ returns jsonb language sql stable set search_path = '' as $$
         'benefit', left(r.expected_benefit, 200),
         'downside', left(r.downside, 200),
         'ends_on', r.ends_on,
-        'applied_on', case when r.applied_at is null then null
-          else private.local_day(p_user_id, r.applied_at) end)
+        'applied_on', (r.applied_at at time zone (select name from tz))::date)
         order by r.created_at desc)
       from (select * from rows_all order by created_at desc limit 12) r), '[]'::jsonb));
 $$;
@@ -327,9 +347,13 @@ begin
         'workouts', coalesce((select jsonb_agg(jsonb_build_object('local_date', r.local_date,
             'activity_type', r.activity_type, 'minutes', round(r.duration_seconds / 60.0),
             'energy_kcal', round(r.energy_kcal),
+            -- How the watch workout stands against the logged sessions: the strongest standing
+            -- first (confirmed, then suggested, then in conflict), so a candidate the athlete
+            -- rejected is the answer only when nothing else was ever proposed.
             'reconciliation', (select x.status from public.workout_reconciliations x
               where x.health_workout_reference_id = r.id and x.user_id = p_user_id
-              order by x.confidence desc limit 1))
+              order by case x.status when 'confirmed' then 0 when 'suggested' then 1
+                when 'conflict' then 2 else 3 end, x.confidence desc limit 1))
             order by r.started_at desc)
           from (select * from rows_all order by started_at desc limit 40) r), '[]'::jsonb)));
   end if;
@@ -414,6 +438,11 @@ create or replace function public.coach_lookup_past_messages_v1(
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
   lo date := greatest(p_from, p_to - 399);
+  tz text := private.user_timezone(p_user_id);
+  -- The range as timestamps in the athlete's time zone (the same days private.local_day gives),
+  -- so the filter compares timestamps instead of calling local_day for every message.
+  lo_at timestamptz := lo::timestamp at time zone tz;
+  hi_at timestamptz := (p_to + 1)::timestamp at time zone tz;
   search_query tsquery;
 begin
   if p_filter is null or btrim(p_filter) = '' then
@@ -422,25 +451,25 @@ begin
   search_query := replace(plainto_tsquery('english', p_filter)::text, ' & ', ' | ')::tsquery;
   return (
     with rows_all as (
-      select m.id, private.local_day(p_user_id, m.created_at) as local_date, m.content,
+      select m.id, (m.created_at at time zone tz)::date as local_date, m.content,
         ts_rank(m.search_vector, search_query) as rank
       from public.coach_messages m
       join public.coach_threads t on t.id = m.thread_id and t.user_id = m.user_id
       where m.user_id = p_user_id and m.role = 'user' and t.remember
         and m.safety_state <> 'unavailable'
-        and private.local_day(p_user_id, m.created_at) between lo and p_to
+        and m.created_at >= lo_at and m.created_at < hi_at
         and m.search_vector @@ search_query
       order by rank desc, m.created_at desc
       limit 13
     ), replies as (
-      select m.id, private.local_day(p_user_id, m.created_at) as local_date, m.content,
+      select m.id, (m.created_at at time zone tz)::date as local_date, m.content,
         ts_rank(m.search_vector, search_query) as rank
       from public.coach_messages m
       join public.coach_threads t on t.id = m.thread_id and t.user_id = m.user_id
       where m.user_id = p_user_id and m.role = 'assistant' and t.remember
         and m.safety_state in ('allowed', 'limited')
         and m.answer_source is distinct from 'data_summary'
-        and private.local_day(p_user_id, m.created_at) between lo and p_to
+        and m.created_at >= lo_at and m.created_at < hi_at
         and m.search_vector @@ search_query
       order by rank desc, m.created_at desc
       limit 4
@@ -472,7 +501,8 @@ end $$;
 --   skipped      exercises skipped in each of their last 2 or more sessions (56 days; newest 4)
 --   weigh_in     the newest weight reading's date (manual or watch)
 --   health_sync  the newest Apple Health sync time, as the athlete's local date
---   plan         the active plan version: its number, the day it took effect and its block weeks
+--   plan         the active plan: its version number, the day the plan began (its first version,
+--                so a version bump does not reset it) and its block weeks
 create function public.get_coach_watch_outs_v1(p_user_id uuid, p_local_date date)
 returns jsonb language sql stable security definer set search_path = '' as $$
   select jsonb_build_object(
@@ -531,6 +561,15 @@ returns jsonb language sql stable security definer set search_path = '' as $$
           left join public.planned_exercises pe on pe.id = p.planned_exercise_id and pe.user_id = p.user_id
           where s.user_id = p_user_id and s.state = 'completed'
             and s.local_date between p_local_date - 55 and p_local_date
+            -- Only an exercise the active plan still holds: one the athlete's plan dropped is not
+            -- a skip to raise.
+            and coalesce(p.exercise_slug,
+                private.exercise_name_key(coalesce(p.performed_name, pe.display_name_snapshot)))
+              in (select coalesce(ae.exercise_slug, private.exercise_name_key(ae.display_name_snapshot))
+                from public.training_plan_versions av
+                join public.planned_workouts aw on aw.plan_version_id = av.id and aw.user_id = av.user_id
+                join public.planned_exercises ae on ae.planned_workout_id = aw.id and ae.user_id = aw.user_id
+                where av.user_id = p_user_id and av.status = 'active')
         ) e
         group by e.key
         having coalesce(min(e.rn) filter (where e.status <> 'skipped') - 1, count(*)) >= 2
@@ -547,12 +586,31 @@ returns jsonb language sql stable security definer set search_path = '' as $$
     'health_sync', (select jsonb_build_object(
         'local_date', private.local_day(p_user_id, max(h.last_synced_at)))
       from public.daily_health_summaries h where h.user_id = p_user_id having count(*) > 0),
+    -- starts_on is when the plan began, not when its current version did: the first version of the
+    -- same plan (a plan edit is a new version of one plan; a new plan or a temporary block starts a
+    -- new chain), so a version bump does not make a plan young again.
     'plan', (select jsonb_build_object('version', v.version_number,
-        'starts_on', coalesce(v.effective_date, private.local_day(p_user_id, v.created_at)),
+        'starts_on', (select min(coalesce(x.effective_date, private.local_day(p_user_id, x.created_at)))
+          from public.training_plan_versions x
+          where x.user_id = p_user_id and x.plan_id = v.plan_id
+            and x.status in ('active', 'superseded')),
         'block_weeks', v.block_weeks, 'ends_on', v.ends_on)
       from public.training_plan_versions v
       where v.user_id = p_user_id and v.status = 'active' limit 1));
 $$;
+
+-- 9 ----------------------------------------------------------------------------------------------
+
+-- The lookups a turn ran are stored per round (r1_workouts:4, r2_recovery:28) and per mode of a
+-- lookup (r1_plan_history_proposals:3). Two rounds of eight distinct lookups are sixteen entries;
+-- the old check allowed twelve. Only the bounds are relaxed: the format and the 800 characters
+-- (sixteen entries of at most about 35) still keep content out of the column.
+alter table public.coach_messages drop constraint coach_messages_lookups_check;
+alter table public.coach_messages add constraint coach_messages_lookups_check check (
+  lookups is null or (
+    cardinality(lookups) <= 16
+    and char_length(array_to_string(lookups, ' ')) <= 800
+    and array_to_string(lookups, ' ') ~ '^[a-z0-9_: ]*$'));
 
 -- Access -----------------------------------------------------------------------------------------
 

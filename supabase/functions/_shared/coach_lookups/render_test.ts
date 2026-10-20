@@ -16,6 +16,7 @@ import {
   workoutsPayload,
 } from "./lookup_fixtures.ts";
 import { maxRoundResultChars } from "./catalogue.ts";
+import { coachReplyCheckFor, replyCheckInputsFor } from "../providers/coach_chat_provider.ts";
 import { lookupResultMaxChars, renderLookup, unreadable } from "./render.ts";
 import { createLookupRunner, lookupBudgetFor, type LookupRpc } from "./runner.ts";
 
@@ -694,6 +695,8 @@ Deno.test("workouts: the athlete's session and exercise notes, pain flags, skips
   const { text } = renderLookup(
     request("workouts", "2026-10-01", "2026-10-17"),
     workoutsNotesPayload,
+    undefined,
+    new Set(["workout_notes"]),
   );
   assertStringIncludes(
     text,
@@ -717,7 +720,12 @@ Deno.test("workouts: the athlete's session and exercise notes, pain flags, skips
 });
 
 Deno.test("recovery: sleep stages, night and morning HRV, breathing rate, active energy; what was not measured stays a dash", () => {
-  const { text } = renderLookup(request("recovery", "2026-10-10", "2026-10-17"), recoveryPayload);
+  const { text } = renderLookup(
+    request("recovery", "2026-10-10", "2026-10-17"),
+    recoveryPayload,
+    undefined,
+    new Set(["breathing_rate"]),
+  );
   assertStringIncludes(
     text,
     "- 2026-10-17: sleep 355 min (deep 50, REM 80, light 205, awake 20 min), resting heart rate 63 bpm, HRV 41 ms (night 44 ms), breathing rate 15.4 breaths/min, steps 8200, active energy 520 kcal, 62 min of workouts, recovery score 31, sleep quality 44, load ratio 1.1",
@@ -756,7 +764,7 @@ Deno.test("watch workouts of any age: date, activity, length and whether a logge
   assertEquals(rows, 2);
   assertStringIncludes(
     text,
-    "- 2026-10-15 Cycling recorded by the watch, 60 min, 500 kcal; not matched to a logged session",
+    "- 2026-10-15 Cycling recorded by the watch, 60 min, 500 kcal; no logged session was matched to it",
   );
   assertStringIncludes(
     text,
@@ -846,4 +854,130 @@ Deno.test("eight lookups in a round stay within the round's characters; every ro
   // Four lookups get more each than eight do.
   const four = await createLookupRunner(rpc, "user-1")(requests.slice(0, 4));
   assert(four.counts[0].rows >= round.counts[0].rows);
+});
+
+Deno.test("Coach's own earlier reply is shown but never grounds a figure; the athlete's own words still do", () => {
+  const payload = {
+    ...pastMessagesCoachPayload,
+    messages: [{ message_id: "m1", local_date: "2026-10-02", content: "I eat about 2900 kcal" }],
+    coach_replies: [{
+      message_id: "m2",
+      local_date: "2026-10-02",
+      content: "Your protein target is 2.7 g per kg, so aim for 3150 kcal a day.",
+    }],
+  };
+  const rendered = renderLookup(
+    request("past_messages", "2026-09-01", "2026-10-17", "protein"),
+    payload,
+  );
+  // The model reads both...
+  assertStringIncludes(rendered.text, "2.7 g per kg");
+  assertStringIncludes(rendered.text, "I eat about 2900 kcal");
+  // ...but only the athlete's words and the server's own lines are grounds.
+  const grounds = rendered.grounds.join("\n");
+  assert(grounds.includes("2900 kcal"));
+  assert(!grounds.includes("2.7 g per kg"));
+  assert(!grounds.includes("3150"));
+  // The numbers check: the figures of an old reply do not make the same figures pass today.
+  const context = { coaching_date: "2026-10-17", permitted_evidence: [] };
+  const check = coachReplyCheckFor(context, "What should I eat?", null, rendered.grounds);
+  const reply = "Your protein target is 2.7 g per kg, so aim for 3150 kcal a day.";
+  const broken = check(reply, [], reply);
+  assert(broken !== null, "figures that only an earlier reply of Coach holds must not pass");
+  assertEquals(
+    check("You told me about 2900 kcal a day.", [], "You told me about 2900 kcal a day."),
+    null,
+  );
+  // Not even as a figure the athlete is said to have given.
+  const { ground, athleteGround } = replyCheckInputsFor(
+    context,
+    "What should I eat?",
+    null,
+    rendered.grounds,
+  );
+  for (const given of [ground, athleteGround!]) {
+    assert(!given.values.some((figure) => figure.value === 3150));
+    assert(!given.values.some((figure) => figure.value === 2.7));
+    assert(given.values.some((figure) => figure.value === 2900));
+  }
+});
+
+Deno.test("data the accepted notice does not name stays out of the rows, and Coach is told it exists", () => {
+  // Today's notices name neither: the athlete's free text in a workout and breathing rate.
+  const workouts = renderLookup(
+    request("workouts", "2026-10-01", "2026-10-17"),
+    workoutsNotesPayload,
+  );
+  for (const hidden of ["Felt flat", "pinched", "Cable station was taken", "the athlete's words"]) {
+    assert(!workouts.text.includes(hidden), hidden);
+    assert(!workouts.grounds.join("\n").includes(hidden), hidden);
+  }
+  // The swap itself, and what the athlete did, are still shown.
+  assertStringIncludes(
+    workouts.text,
+    "Pec deck (planned 2 x 10-12) [substitute for Cable chest fly]",
+  );
+  assertStringIncludes(workouts.text, "pain flagged");
+  assertStringIncludes(
+    workouts.text,
+    "Withheld: the athlete's free-text notes and swap reasons exist",
+  );
+  assertStringIncludes(workouts.text, "Do not say there are none.");
+  const recovery = renderLookup(request("recovery", "2026-10-10", "2026-10-17"), recoveryPayload);
+  assert(!recovery.text.includes("15.4"));
+  assert(!recovery.text.includes("breaths/min"));
+  assertStringIncludes(recovery.text, "Withheld: breathing rates exist");
+  // Sleep stages and night HRV are Apple Health sleep and HRV, which the notice names.
+  assertStringIncludes(recovery.text, "(deep 50, REM 80, light 205, awake 20 min)");
+  assertStringIncludes(recovery.text, "(night 44 ms)");
+  // Nothing is said about data that is not there.
+  const quiet = renderLookup(request("workouts", "2026-10-01", "2026-10-17"), workoutsPayload);
+  assert(!quiet.text.includes("Withheld"));
+  // The notice's own scope opens it.
+  const opened = renderLookup(
+    request("workouts", "2026-10-01", "2026-10-17"),
+    workoutsNotesPayload,
+    undefined,
+    new Set(["workout_notes"]),
+  );
+  assert(!opened.text.includes("Withheld"));
+});
+
+Deno.test("the runner passes the notice's scopes on: a swap reason is read only when the notice names it", async () => {
+  const rpc: LookupRpc = () => Promise.resolve({ data: workoutsNotesPayload, error: null });
+  const closed = await createLookupRunner(rpc, "user-1")([
+    request("workouts", "2026-10-01", "2026-10-17"),
+  ]);
+  assert(!closed.text.includes("Cable station was taken"));
+  const open = await createLookupRunner(rpc, "user-1", new Set(["workout_notes"]))([
+    request("workouts", "2026-10-01", "2026-10-17"),
+  ]);
+  assertStringIncludes(open.text, "Cable station was taken");
+});
+
+Deno.test("a watch workout's standing is told as it is: confirmed, suggested, in conflict, rejected, or never matched", () => {
+  const row = (reconciliation: string | null) => ({
+    local_date: "2026-10-15",
+    activity_type: "Running",
+    minutes: 40,
+    energy_kcal: 350,
+    reconciliation,
+  });
+  const text = (status: string | null) =>
+    renderLookup(request("health_history", "2026-10-01", "2026-10-17", "workouts"), {
+      ...watchWorkoutsPayload,
+      workouts: [row(status)],
+    }).text;
+  assertStringIncludes(text("confirmed"), "matched to a logged session (confirmed)");
+  assertStringIncludes(
+    text("suggested"),
+    "possibly the same as a logged session (suggested, not confirmed)",
+  );
+  assertStringIncludes(text("conflict"), "overlaps a logged session but conflicts with it");
+  assertStringIncludes(text("rejected"), "the athlete rejected a match with a logged session");
+  assertStringIncludes(text(null), "no logged session was matched to it");
+  // Only a confirmed match says "matched".
+  for (const status of ["suggested", "conflict", "rejected", null]) {
+    assert(!text(status).includes("matched to a logged session"), String(status));
+  }
 });

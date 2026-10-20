@@ -247,3 +247,48 @@ Deno.test("the catalogue tells the model the schedule filter and the horizon", (
   assertStringIncludes(text, "with the filter schedule");
   assertStringIncludes(text, "up to 90 days ahead");
 });
+
+Deno.test("a lookup with modes accepts its modes in any case and refuses a near miss, so the correction round fixes it", () => {
+  const asked = (lookup: string, filter: string) =>
+    validateDataRequests([{ lookup, from: "2026-08-01", to: today, filter }], today);
+  for (
+    const [lookup, mode] of [
+      ["plan_history", "schedule"],
+      ["plan_history", "proposals"],
+      ["health_history", "workouts"],
+      ["weekly_reviews", "decisions"],
+    ]
+  ) {
+    for (const filter of [mode, mode.toUpperCase(), ` ${mode} `]) {
+      const checked = asked(lookup, filter);
+      assertEquals(checked.ok && checked.requests[0].filter, mode, `${lookup} ${filter}`);
+    }
+    // Empty is the default records.
+    assertEquals(asked(lookup, "").ok, true);
+  }
+  for (
+    const [lookup, near] of [
+      ["plan_history", "proposal"],
+      ["plan_history", "schedules"],
+      ["plan_history", "upcoming sessions"],
+      ["health_history", "workout"],
+      ["weekly_reviews", "decision"],
+      ["weekly_reviews", "daily"],
+    ]
+  ) {
+    const checked = asked(lookup, near);
+    assertEquals(checked.ok, false, `${lookup} ${near}`);
+    if (!checked.ok) {
+      assertStringIncludes(checked.reason, `${lookup}: the filter must be `);
+      assertStringIncludes(checked.reason, "or empty");
+    }
+  }
+  // Lookups without modes keep their free filters.
+  assertEquals(asked("meals", "lunch").ok, true);
+  // Every mode the catalogue names is explained in the filter's meaning, and every lookup that has
+  // a mode names them all.
+  for (const spec of coachLookupCatalogue) {
+    if (!("filterModes" in spec)) continue;
+    for (const mode of spec.filterModes) assertStringIncludes(spec.filterMeaning, mode);
+  }
+});

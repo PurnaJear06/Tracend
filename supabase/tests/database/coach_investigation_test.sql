@@ -80,6 +80,37 @@ select pg_temp.perf('a1530000-0000-4000-8000-000000000003', '000000000002', 2, '
 select pg_temp.set_of(pg_temp.perf('a1530000-0000-4000-8000-000000000003', '000000000002', 3, 'performed',
   'substituted', false, '', 'Pec deck', 'Cable station was taken', null), 1, 12, 40);
 
+-- An earlier version of the same plan, two months before, with an exercise the active plan dropped.
+-- Its skipped curls are not a skip to raise, and the plan began when this version did.
+insert into public.training_plan_versions(id, user_id, plan_id, version_number, status, block_weeks,
+  sessions_per_week, prescription, rationale, approved_at, effective_date) values
+  ('a1230000-0000-4000-8000-000000000002', 'a1030000-0000-4000-8000-000000000001',
+   'a1130000-0000-4000-8000-000000000001', 2, 'superseded', 6, 1, '{}', 'The first version', now(),
+   current_date - 120);
+insert into public.planned_workouts(id, user_id, plan_version_id, workout_order, name, objective,
+  preferred_weekday, estimated_minutes, warm_up_guidance, cool_down_guidance) values
+  ('a1330000-0000-4000-8000-000000000002', 'a1030000-0000-4000-8000-000000000001',
+   'a1230000-0000-4000-8000-000000000002', 1, 'Old arms', 'Curl', 2, 40, 'Warm up', 'Cool down');
+insert into public.planned_exercises(id, user_id, planned_workout_id, exercise_order,
+  display_name_snapshot, set_count, rep_min, rep_max, rest_seconds, exercise_slug) values
+  ('a1430000-0000-4000-8000-000000000010', 'a1030000-0000-4000-8000-000000000001',
+   'a1330000-0000-4000-8000-000000000002', 1, 'Cable curl', 3, 8, 12, 60, 'cable-curl');
+insert into public.workout_sessions(id, user_id, plan_version_id, planned_workout_id, local_date,
+  timezone, state, idempotency_key, completed_at, duration_seconds, session_effort,
+  session_effort_source, completion_source, notes) values
+  ('a1530000-0000-4000-8000-000000000011', 'a1030000-0000-4000-8000-000000000001',
+   'a1230000-0000-4000-8000-000000000002', 'a1330000-0000-4000-8000-000000000002',
+   current_date - 12, 'UTC', 'completed', gen_random_uuid(), now() - interval '12 days', 2400, 6,
+   'athlete', 'manual', ''),
+  ('a1530000-0000-4000-8000-000000000012', 'a1030000-0000-4000-8000-000000000001',
+   'a1230000-0000-4000-8000-000000000002', 'a1330000-0000-4000-8000-000000000002',
+   current_date - 11, 'UTC', 'completed', gen_random_uuid(), now() - interval '11 days', 2400, 6,
+   'athlete', 'manual', '');
+select pg_temp.perf('a1530000-0000-4000-8000-000000000011', '000000000010', 1, 'skipped', 'prescribed',
+  false, '', null, null, 'cable-curl');
+select pg_temp.perf('a1530000-0000-4000-8000-000000000012', '000000000010', 1, 'skipped', 'prescribed',
+  false, '', null, null, 'cable-curl');
+
 -- Recovery, a check-in, a weigh-in and the sync ----------------------------------------------------
 
 insert into public.daily_health_summaries(user_id, local_date, timezone, present_types, source_refs,
@@ -142,6 +173,28 @@ insert into public.coach_messages(user_id, thread_id, role, content, answer_sour
    'Data summary mentioning shoulder', 'data_summary'),
   ('a1030000-0000-4000-8000-000000000001', 'a1630000-0000-4000-8000-000000000002', 'assistant',
    'Private shoulder reply', 'model');
+
+-- The watch's Running workout was proposed to two sessions: the athlete rejected the closer match
+-- and a weaker one is still suggested. The Cycling workout matches nothing.
+insert into public.workout_reconciliations(user_id, workout_session_id, health_workout_reference_id,
+  status, confidence, overlap_seconds, duration_difference_seconds) values
+  ('a1030000-0000-4000-8000-000000000001', 'a1530000-0000-4000-8000-000000000001',
+   (select id from public.health_workout_references where sample_id_hash = repeat('1', 64)),
+   'rejected', 0.9, 2000, 100),
+  ('a1030000-0000-4000-8000-000000000001', 'a1530000-0000-4000-8000-000000000002',
+   (select id from public.health_workout_references where sample_id_hash = repeat('1', 64)),
+   'suggested', 0.5, 1000, 600);
+
+-- Another athlete, 14 hours ahead of UTC: 20:00 UTC on 1 October is already 2 October for them.
+update public.user_accounts set timezone = 'Pacific/Kiritimati'
+where id = 'a1030000-0000-4000-8000-000000000002';
+insert into public.coach_threads(id, user_id, title, remember) values
+  ('a1630000-0000-4000-8000-000000000003', 'a1030000-0000-4000-8000-000000000002', 'Chat', true);
+insert into public.coach_messages(user_id, thread_id, role, content, created_at) values
+  ('a1030000-0000-4000-8000-000000000002', 'a1630000-0000-4000-8000-000000000003', 'user',
+   'Kayak trip next week', timestamptz '2026-10-01 20:00:00+00'),
+  ('a1030000-0000-4000-8000-000000000002', 'a1630000-0000-4000-8000-000000000003', 'assistant',
+   'Kayak trips are fine', timestamptz '2026-10-01 20:05:00+00');
 
 set local role service_role;
 
@@ -239,6 +292,12 @@ select is(jsonb_array_length(public.coach_lookup_health_history_v1('a1030000-000
     current_date - 60, current_date - 10, 'workouts')->'workouts'), 1, 'the range limits them');
 select is(public.coach_lookup_health_history_v1('a1030000-0000-4000-8000-000000000001', current_date - 400,
     current_date, null)->>'schema_version', '1.1', 'without the filter it is the monthly summary');
+select is(public.coach_lookup_health_history_v1('a1030000-0000-4000-8000-000000000001', current_date - 60,
+    current_date, 'workouts')->'workouts'->1->>'reconciliation', 'suggested',
+  'a candidate the athlete rejected is not the match while a suggestion stands');
+select is(public.coach_lookup_health_history_v1('a1030000-0000-4000-8000-000000000001', current_date - 60,
+    current_date, 'workouts')->'workouts'->0->'reconciliation', 'null'::jsonb,
+  'and a workout nothing was proposed for matches nothing');
 
 -- Weekly reviews: the daily decisions ---------------------------------------------------------
 
@@ -272,6 +331,22 @@ select is((select array_agg(m ->> 'content') from jsonb_array_elements(public.co
 select is(jsonb_array_length(public.coach_lookup_past_messages_v1('a1030000-0000-4000-8000-000000000002',
     current_date - 30, current_date, 'shoulder')->'coach_replies'), 0, 'another athlete''s are not read');
 
+-- Days are the athlete's local days: the index, the lookup range and the dates all agree.
+select is(public.get_coach_data_index_v1('a1030000-0000-4000-8000-000000000002', current_date)
+    ->'domains'->'past_messages', '{"first":"2026-10-02","last":"2026-10-02","count":1}'::jsonb,
+  'the index dates a message by the athlete''s own day');
+select is(jsonb_array_length(public.coach_lookup_past_messages_v1('a1030000-0000-4000-8000-000000000002',
+    date '2026-10-02', date '2026-10-02', 'kayak')->'messages'), 1,
+  'a range of just that local day finds it');
+select is(jsonb_array_length(public.coach_lookup_past_messages_v1('a1030000-0000-4000-8000-000000000002',
+    date '2026-10-01', date '2026-10-01', 'kayak')->'messages'), 0, 'and the UTC day does not');
+select is(public.coach_lookup_past_messages_v1('a1030000-0000-4000-8000-000000000002',
+    date '2026-10-02', date '2026-10-02', 'kayak')->'coach_replies'->0->>'local_date', '2026-10-02',
+  'Coach''s reply is dated the same way');
+select is(public.coach_lookup_past_messages_v1('a1030000-0000-4000-8000-000000000001',
+    current_date - 30, current_date, 'shoulder')->'messages'->0->>'local_date', current_date::text,
+  'an athlete on UTC keeps the UTC day');
+
 -- The watch-out facts -------------------------------------------------------------------------
 
 select is((select array_agg(k order by k) from jsonb_object_keys(public.get_coach_watch_outs_v1(
@@ -297,7 +372,7 @@ select is(public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001',
 select is(public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001', current_date)
     ->'pain_flags'->0->>'local_date', (current_date - 2)::text, 'and when');
 select is(jsonb_array_length(public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001',
-    current_date)->'skipped'), 1, 'one exercise skipped in a row');
+    current_date)->'skipped'), 1, 'one exercise skipped in a row: the dropped exercise''s skips are not raised');
 select is(public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001', current_date)
     ->'skipped'->0->>'name', 'Cable chest fly', 'the fly');
 select is(public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001', current_date)
@@ -309,8 +384,8 @@ select is(public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001',
 select is(public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001', current_date)
     ->'health_sync'->>'local_date', (current_date - 3)::text, 'the newest Apple Health sync, as a local date');
 select is(public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001', current_date)
-    ->'plan', jsonb_build_object('version', 3, 'starts_on', current_date - 70, 'block_weeks', 6,
-    'ends_on', null), 'the plan''s number, start and block length');
+    ->'plan', jsonb_build_object('version', 3, 'starts_on', current_date - 120, 'block_weeks', 6,
+    'ends_on', null), 'the plan''s number, when it began (its first version, not this one) and block length');
 select is(public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000001', current_date - 3)
     ->'pain_flags', '[]'::jsonb, 'a date before the flag has none');
 select is(public.get_coach_watch_outs_v1('a1030000-0000-4000-8000-000000000002', current_date)

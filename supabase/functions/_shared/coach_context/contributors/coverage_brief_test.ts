@@ -4,10 +4,11 @@ import {
   coachLookupNames,
   lookupSpec,
 } from "../../coach_lookups/catalogue.ts";
-import { renderCoachContext } from "../host.ts";
+import { coachContextContributorTimeoutMs, renderCoachContext } from "../host.ts";
 import {
   ageText,
   coverageBriefBudgetChars,
+  coverageBriefReadTimeoutMs,
   coverageDomains,
   createCoverageBriefContributor,
   renderCoverageBrief,
@@ -69,7 +70,7 @@ Deno.test("the brief has one line per kind of record, in a fixed shape, and cove
     assert(ids.includes(id), id);
   }
   assertStringIncludes(text, "- training | 28 d session totals (no sets, loads, notes)");
-  assertStringIncludes(text, "(every set with load, reps, notes, swaps)");
+  assertStringIncludes(text, "(every set with load, reps, swaps)");
 });
 
 Deno.test("each line says what exists and how fresh it is", () => {
@@ -178,4 +179,16 @@ Deno.test("the index keys the brief counts all exist in the index the database r
   // Every key the index reports is counted by some kind, so a new record kind is not silently dropped.
   const counted = new Set(coverageDomains.flatMap((item) => item.index));
   for (const key of indexKeys) assert(counted.has(key), key);
+});
+
+Deno.test("a slow index read leaves the static brief inside the host's limit, not nothing", async () => {
+  const hanging = createCoverageBriefContributor(() => new Promise(() => {}), 20);
+  const context = await renderCoachContext([hanging], {
+    userId: "u",
+    question: "q",
+    localDate: today,
+  }, 500);
+  assertEquals(context.outcomes[0].outcome, "rendered");
+  assertStringIncludes(context.volatile, "counts unavailable");
+  assert(coverageBriefReadTimeoutMs < coachContextContributorTimeoutMs);
 });

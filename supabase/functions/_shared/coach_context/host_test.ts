@@ -165,14 +165,16 @@ Deno.test("the most a registry can add covers every label", async () => {
   assert(result.stable.length + result.volatile.length <= coachContextMaxChars(list));
 });
 
-Deno.test("the coverage brief, the watch-outs and the library, which need the gateway's answer fields, render only on that route", () => {
+Deno.test("the coverage brief and the library, which need the gateway's answer fields, render only on that route", () => {
   assertEquals(
     coachContextContributorsFor(true).map((item) => item.id),
     coachContextContributors.map((item) => item.id),
   );
   const legacy = coachContextContributorsFor(false).map((item) => item.id);
   assertEquals(legacy.includes("coverage_brief"), false);
-  assertEquals(legacy.includes("watch_outs"), false);
+  // The watch-outs state facts and need neither lookups nor library evidence: the rollback path
+  // keeps them (it would otherwise lose the back-to-back muscles fact).
+  assertEquals(legacy.includes("watch_outs"), true);
   assertEquals(legacy.includes("library"), false);
   assertEquals(legacy.includes("training_plan"), true);
   assertEquals(legacy.includes("heart_rate_profile"), true);

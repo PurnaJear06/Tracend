@@ -8,7 +8,7 @@ import {
   coverageBriefContributor,
   coverageBriefContributorId,
 } from "./contributors/coverage_brief.ts";
-import { watchOutsContributor, watchOutsContributorId } from "./contributors/watch_outs.ts";
+import { watchOutsContributor } from "./contributors/watch_outs.ts";
 import { heartRateContributor } from "./contributors/heart_rate.ts";
 import { confirmedFactsContributor } from "./contributors/confirmed_facts.ts";
 import { coachNotesContributor } from "./contributors/coach_notes.ts";
@@ -44,15 +44,12 @@ export const coachContextContributors: readonly CoachContextContributor[] = Obje
   libraryContributor,
 ]);
 
-// Contributors that exist only on the gateway route. The Coverage Brief invites the model to ask for
-// lookups, the watch-outs name the lookup that checks each fact, and the library asks it to cite
-// sources; today's DeepSeek path has no `data_requests` and no library evidence, so it renders
-// without them.
-const gatewayOnly: readonly string[] = [
-  coverageBriefContributorId,
-  watchOutsContributorId,
-  libraryContributorId,
-];
+// Contributors that exist only on the gateway route. The Coverage Brief invites the model to ask
+// for lookups and the library asks it to cite sources; today's DeepSeek path (the rollback route,
+// still reachable while its settings are kept) has no `data_requests` and no library evidence, so it
+// renders without them. The watch-outs state facts and need neither, so the rollback path keeps
+// them: it is where the back-to-back muscles fact would otherwise be lost.
+const gatewayOnly: readonly string[] = [coverageBriefContributorId, libraryContributorId];
 
 /** The contributors for a turn: all of them on the gateway route, the rest on the legacy path. */
 export function coachContextContributorsFor(

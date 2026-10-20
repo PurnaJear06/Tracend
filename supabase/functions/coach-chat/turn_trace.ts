@@ -8,8 +8,13 @@
 import type { CoachChatAttemptTelemetry } from "../_shared/providers/coach_chat_provider.ts";
 import type { LookupCount } from "../_shared/coach_lookups/runner.ts";
 
-/** The most entries a column holds (the migration's check). */
+/** The most entries the guard_faults column holds (the migration's check). */
 export const mostTraceEntries = 12;
+/**
+ * The most entries the lookups column holds: two rounds of eight distinct lookups (migration
+ * 20261020100017 raised it from 12; a correction round runs no lookups, so it adds none).
+ */
+export const mostLookupEntries = 16;
 
 const quietOutcomes = new Set(["valid", "invalid", "lookup", "truncated"]);
 
@@ -43,18 +48,19 @@ export function guardFaultsOf(
 }
 
 /**
- * Entries like `r1_workouts:4` and `r2_recovery:28`: the round a lookup ran in (`r1` is the first),
- * its name and the rows it returned, summed within the round. They show how wide the first round
- * was and what the second one followed up, so the lead can measure how Coach investigates. A
- * column holds 12 entries; a count with no round is read as round 1.
+ * Entries like `r1_workouts:4`, `r1_plan_history_proposals:3` and `r2_recovery:28`: the round a
+ * lookup ran in (`r1` is the first), its name, its mode when the filter selects different records
+ * (`plan_history` reads plan versions, the schedule or proposals), and the rows it returned, summed
+ * within the round. They show how wide the first round was and what the second one followed up, so
+ * the lead can measure how Coach investigates. A count with no round is read as round 1.
  */
 export function lookupTrace(counts: readonly LookupCount[] | undefined): string[] {
   const rows = new Map<string, number>();
   for (const count of counts ?? []) {
-    const key = `r${count.round ?? 1}_${count.lookup}`;
+    const key = `r${count.round ?? 1}_${count.lookup}${count.mode ? `_${count.mode}` : ""}`;
     rows.set(key, (rows.get(key) ?? 0) + count.rows);
   }
-  return [...rows].map(([entry, total]) => `${entry}:${total}`).slice(0, mostTraceEntries);
+  return [...rows].map(([entry, total]) => `${entry}:${total}`).slice(0, mostLookupEntries);
 }
 
 /** The service-role update the trace is written with, typed structurally. */

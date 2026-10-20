@@ -34,6 +34,12 @@ export type CoachLookupSpec = Readonly<{
   /** What the filter means, for the model. Empty when the lookup takes none. */
   filterMeaning: string;
   /**
+   * The filters that select a different set of records (a mode) and nothing else: the filter of a
+   * lookup that has modes is empty or one of these, and a near miss ("proposal") is refused so the
+   * model corrects it instead of silently getting the default records.
+   */
+  filterModes?: readonly string[];
+  /**
    * Set on the one lookup that can see forward: with this filter the range may end up to
    * `maxScheduleAheadDays` after the coaching date. Every other request is cut at the coaching date.
    */
@@ -45,7 +51,7 @@ export const coachLookupCatalogue = [
     name: "workouts",
     rpc: "coach_lookup_workouts_v1",
     summary:
-      "completed sessions in the range (newest 15) with every exercise: planned sets and reps against the sets logged (reps, load, reps in reserve, effort, watch heart rate), the athlete's own session and exercise notes, pain flags, skipped exercises, and substitutions with their reason",
+      "completed sessions in the range (newest 15) with every exercise: planned sets and reps against the sets logged (reps, load, reps in reserve, effort, watch heart rate), pain flags, skipped exercises, substitutions, and the athlete's own session and exercise notes and swap reasons (the notes only where the athlete's accepted AI notice names them)",
     filter: "optional",
     filterMeaning: "an exercise name: only sessions and exercises that match",
   },
@@ -84,7 +90,7 @@ export const coachLookupCatalogue = [
     name: "recovery",
     rpc: "coach_lookup_recovery_v1",
     summary:
-      "watch and recovery data by day (newest 60): sleep and its stages, resting heart rate, HRV (all day, night, morning), breathing rate, steps, active energy, workout minutes, recovery score",
+      "watch and recovery data by day (newest 60): sleep and its stages, resting heart rate, HRV (all day, night, morning), breathing rate (only where the athlete's accepted AI notice names it), steps, active energy, workout minutes, recovery score",
     filter: "none",
     filterMeaning: "",
   },
@@ -98,6 +104,7 @@ export const coachLookupCatalogue = [
     filter: "optional",
     filterMeaning:
       "schedule for the day-by-day schedule of the dates (use it for what is coming up, next week or any past week); proposals for the Coach proposals and the athlete's answers; empty for the plan versions and nutrition targets",
+    filterModes: ["schedule", "proposals"],
     reachesAheadWith: "schedule",
   },
   {
@@ -114,6 +121,7 @@ export const coachLookupCatalogue = [
       "weekly reviews for weeks starting in the range (newest 12); with the filter decisions, instead, the daily coaching decisions of the days in the range (newest 30): the training action, the decision and its flags",
     filter: "optional",
     filterMeaning: "decisions for the past daily decisions; empty for the weekly reviews",
+    filterModes: ["decisions"],
   },
   {
     name: "health_history",
@@ -122,6 +130,7 @@ export const coachLookupCatalogue = [
       "the monthly Apple Health summary imported at onboarding: workouts, sleep, weight (newest 12 months); with the filter workouts, instead, the individual workouts the watch recorded in the range (newest 40, any age) with their length and whether a logged session matches them",
     filter: "optional",
     filterMeaning: "workouts for the watch workouts; empty for the monthly summary",
+    filterModes: ["workouts"],
   },
   {
     name: "past_messages",
@@ -235,6 +244,18 @@ export function validateDataRequests(raw: unknown, localDate: string): DataReque
         return { ok: false, reason: `${spec.name}: the filter must be plain words` };
       }
       filter = text;
+    }
+    if (filter !== null && spec.filterModes) {
+      const mode = filter.toLowerCase();
+      if (!spec.filterModes.includes(mode)) {
+        return {
+          ok: false,
+          reason: `${spec.name}: the filter must be ${
+            spec.filterModes.join(" or ")
+          }, or empty (${spec.filterMeaning})`,
+        };
+      }
+      filter = mode;
     }
     if (spec.filter === "required" && filter === null) {
       return { ok: false, reason: `${spec.name}: a filter is required (${spec.filterMeaning})` };

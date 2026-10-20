@@ -1421,7 +1421,7 @@ to look up what the context "already holds", and a refused request ended the inv
    state (shared with the plan block through `sharedRead`, so it is fetched once), the new
    `get_coach_watch_outs_v1` facts and the plan laid over the last 28 days
    (`readScheduleBody`, shared with the lookup renderer, so "planned but not logged" is one rule).
-   Thresholds, all existing: recovery score < 40 and sleep quality score < 50 (the evidence-code
+   (The line budget is 1,200 characters with the introduction; the rollback path renders the watch-outs too.) Thresholds, all existing: recovery score < 40 and sleep quality score < 50 (the evidence-code
    table), one spread from the baseline (the app's "than usual"; the recovery score's own z-scores),
    weigh-in older than 14 days (goal phase), sync older than 2 days (the app's stale state), plan
    older than its own `block_weeks`, "repeated" is twice running. `watchOutThresholds` documents each
@@ -1483,6 +1483,59 @@ no extra call.
 
 **Open.** pgTAP was not run locally (no database here); CI runs it. After deploy: ask Coach a
 cross-domain question and read `coach_messages.lookups` (`r1_` entries should show 3 to 6 kinds).
+
+**Review round 1 (PR #159, same branch).** 1) Coach's earlier replies never ground a figure: the
+renderer marks them display-only (`Parts.ungrounded`) and `renderLookup` leaves them out of
+`grounds`; the probe "2.7 g per kg ... 3150 kcal" is refused while the same figures from the athlete's
+own words or a record still pass (tested for `ground` and `athleteGround`). 2) The index no longer
+calls `private.local_day` per row: it resolves the time zone once (`private.user_timezone`) and
+converts the aggregated first and last timestamp; `past_messages` and the proposals lookup compare
+timestamps against the range converted once. The brief races its index read against 3 s, so a slow
+database leaves the static map ("counts unavailable"). 3) The route no longer depends on what
+rendered: the host keeps the counts of an empty block, the watch-outs always report `pain`
+(`true`, `false`, or `null` when the facts could not be read), and a failed or timed-out watch-outs
+contributor or an unreadable pain signal counts as pain (`pain_unknown`), like an unreadable health
+check. A proposals contributor that fails reports no waiting proposal (not asked for). 4) Notice
+coverage, per field, below. 5) A watch workout is "matched" only when confirmed; suggested, in
+conflict and rejected read as such, and SQL picks confirmed, then suggested, then conflict, and a
+rejected candidate only when nothing else was ever proposed. 6) The DeepSeek path is a configured
+rollback (the runbook keeps it for two weeks after cutover), so it is reachable; the watch-outs
+now render there too (they need neither lookups nor library), and their facts and schedule reads
+have their own 2.5 s limit so a slow read leaves the plan-only lines (the overlap fact) intact.
+7) The watch-outs budget is 1,200: lines are packed into what the introduction leaves (at most
+900), so the host never cuts a line, and the trace counts only the lines shown. 8) The lookups
+trace carries the mode (`r1_plan_history_proposals:3`) and the column holds 16 entries (migration
+section 9; the only reader of the names is `memory.ts`, which uses the plain lookup name). 9) A lookup
+with modes (`filterModes` in the catalogue) accepts an empty filter or one of its modes in any case;
+a near miss is refused and goes to the corrected round. 10) The dead `strongSkipped` branch is
+deleted; `selectCoachChatRoute` takes the stronger route only when coach-chat has already filtered it
+by the notice's vendor. 11) The skipped-twice and repeated-miss watch-outs count only the active
+plan's exercises and the days planned under the version in force; plan age is measured from the
+plan's first version.
+
+*Block start rule used.* No field names a block start. A plan edit is a new version of the same
+`training_plans` row, and a new plan or a temporary block is a new row, so the plan's age counts from
+the earliest `active` or `superseded` version of the active version's plan (`effective_date`, else its
+creation day). The comparison is against that version's `block_weeks`. A new plan resets it, which
+is when a new block starts.
+
+*Notice coverage, per new field* (the Coach notice, ai-coaching-v5 and v6, lists: training plan and
+workout logs, check-ins, Apple Health summaries (sleep, heart rate, HRV, steps and workouts), meals
+and nutrition targets, body measurements, goals, focus muscles and preferences, and the messages the
+athlete sends the Coach): breathing rate, **not named, held back**; the athlete's free text in a
+workout (session note, exercise note, swap reason), **not named, held back**; sleep stages, covered
+by "sleep"; night and morning HRV, covered by "HRV"; Coach's earlier replies, covered (the
+conversation memory already sends them). Active energy is sent today in the athlete file and is not
+named; not new, so not gated. Gating: `_shared/ai_notice_coverage.ts` (`firstNoticeNaming`), fed by
+the notice version that `coach-chat` reads from `get_ai_consent_v2`; the rows leave the fields out and
+tell Coach they were withheld.
+
+**Owner decisions, with the wording needed.** To send breathing rate and workout free text, publish
+a notice (v7) whose Coach-chat list adds, for example: "breathing rate" to the Apple Health summaries,
+"and the notes you write in a workout or when you swap an exercise" to the workout logs, and "active
+energy" (already sent) to the Apple Health summaries; then set `firstNoticeNaming` to 7 for
+`breathing_rate` and `workout_notes`. Until then Coach does not see them. The wording is the owner's;
+none is published here.
 
 ## Next agent starts here
 

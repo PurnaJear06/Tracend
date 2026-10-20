@@ -11,7 +11,8 @@
 // are deterministic, cost nothing and are the same for the same records:
 //   - the health check is not cleared (or could not be read): effort is capped and referral wording
 //     applies, which is the part of a reply most worth getting right;
-//   - pain is on record (today's check-in, or an exercise flagged for pain in the last 14 days);
+//   - pain is on record (today's check-in, or an exercise flagged for pain in the last 14 days), or
+//     could not be read (an unknown is treated as pain, as an unreadable health check is);
 //   - a Coach proposal is waiting for the athlete's answer: what Coach says now bears on it;
 //   - two or more watch-outs about training decisions at once (back-to-back muscles, a session due
 //     on a bad recovery day, a pain flag planned again, behind plan, repeated skips, recovery
@@ -22,7 +23,7 @@ import { screeningStateOf } from "../coach_context/contributors/screening.ts";
 import { proposalsContributorId } from "../coach_context/contributors/proposals.ts";
 import { watchOutsContributorId } from "../coach_context/contributors/watch_outs.ts";
 import type { CoachContributions } from "../coach_context/host.ts";
-import type { AiRoute, AiVendor } from "../ai/types.ts";
+import type { AiRoute } from "../ai/types.ts";
 
 /** Two watch-outs about training decisions are "several": one alone is a note, two are a judgement. */
 export const strongWatchOutDecisions = 2;
@@ -30,8 +31,12 @@ export const strongWatchOutDecisions = 2;
 export type RouteSignals = Readonly<{
   /** The health check outcome; anything but "cleared" counts. */
   screening: "cleared" | "moderate_until_cleared" | "see_professional" | "unknown";
-  /** Pain is on record (today's check-in or a pain-flagged exercise in the last 14 days). */
-  pain: boolean;
+  /**
+   * Pain on record (today's or yesterday's check-in, or a pain-flagged exercise in the last 14
+   * days). "unknown" when the contributor that reads it failed or timed out or could not read its
+   * facts: an unknown is treated as pain, as an unreadable health check is.
+   */
+  pain: "none" | "on_record" | "unknown";
   /** Coach proposals waiting for the athlete's answer. */
   proposalsWaiting: number;
   /** Watch-outs about training decisions this turn (not stale inputs or plan age). */
@@ -46,9 +51,21 @@ export function routeSignalsOf(contributions: CoachContributions | null): RouteS
   const traces = contributions?.traces ?? {};
   const watch = traces[watchOutsContributorId];
   const proposals = traces[proposalsContributorId];
+  const watchOutcome = contributions?.outcomes.find((entry) => entry.id === watchOutsContributorId);
+  // The watch-outs report on pain whether or not they rendered text. A contributor that failed or
+  // timed out, or whose facts could not be read (pain: null), leaves it unknown; no contributor at
+  // all (a rollback path, a test) leaves nothing to know.
+  const pain = !watchOutcome
+    ? "none"
+    : watchOutcome.outcome === "failed" || watchOutcome.outcome === "timeout" ||
+        (watch ?? {}).pain === undefined || (watch ?? {}).pain === null
+    ? "unknown"
+    : watch?.pain === true
+    ? "on_record"
+    : "none";
   return {
     screening: screeningStateOf(contributions),
-    pain: watch?.pain === true,
+    pain,
     proposalsWaiting: count(proposals?.waiting),
     watchOutDecisions: count(watch?.decisions),
   };
@@ -58,7 +75,8 @@ export function routeSignalsOf(contributions: CoachContributions | null): RouteS
 export function strongRouteReasons(signals: RouteSignals): string[] {
   return [
     ...(signals.screening !== "cleared" ? ["screening_not_cleared"] : []),
-    ...(signals.pain ? ["pain_on_record"] : []),
+    ...(signals.pain === "on_record" ? ["pain_on_record"] : []),
+    ...(signals.pain === "unknown" ? ["pain_unknown"] : []),
     ...(signals.proposalsWaiting > 0 ? ["proposal_waiting"] : []),
     ...(signals.watchOutDecisions >= strongWatchOutDecisions ? ["several_watch_outs"] : []),
   ];
@@ -66,34 +84,21 @@ export function strongRouteReasons(signals: RouteSignals): string[] {
 
 export type CoachRouteSelection =
   | Readonly<{ route: AiRoute; tier: "default"; reasons: readonly string[] }>
-  | Readonly<{ route: AiRoute; tier: "strong"; reasons: readonly string[] }>
-  | Readonly<{
-    route: AiRoute;
-    tier: "default";
-    reasons: readonly string[];
-    strongSkipped: "consent_vendor_differs";
-  }>;
+  | Readonly<{ route: AiRoute; tier: "strong"; reasons: readonly string[] }>;
 
 /**
- * The route for a turn. The stronger route answers a turn with a signal when it is set and its
- * vendor is the one the athlete's accepted notice names: a notice names one vendor, so a stronger
- * route at another company would be refused for consent, and the default route answers instead.
+ * The route for a turn: the stronger route when a signal asks for it and it is set. The caller
+ * passes it only when its vendor is the one the athlete's accepted notice names (a notice names
+ * one vendor, so a stronger route at another company would be refused for consent); coach-chat
+ * filters by vendor before it reserves the budget.
  */
 export function selectCoachChatRoute(
   signals: RouteSignals,
   defaultRoute: AiRoute,
   strong: AiRoute | null,
-  consentVendor: AiVendor | null,
 ): CoachRouteSelection {
   const reasons = strongRouteReasons(signals);
-  if (reasons.length === 0 || !strong) return { route: defaultRoute, tier: "default", reasons };
-  if (strong.vendor !== consentVendor) {
-    return {
-      route: defaultRoute,
-      tier: "default",
-      reasons,
-      strongSkipped: "consent_vendor_differs",
-    };
-  }
-  return { route: strong, tier: "strong", reasons };
+  return reasons.length === 0 || !strong
+    ? { route: defaultRoute, tier: "default", reasons }
+    : { route: strong, tier: "strong", reasons };
 }

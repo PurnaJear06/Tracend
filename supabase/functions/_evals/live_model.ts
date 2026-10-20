@@ -100,8 +100,8 @@ export function gatewayGenerate(
       route: selectCoachChatRoute(
         routeSignalsOf(contributions ?? null),
         coachRoute,
-        strong(),
-        coachRoute.vendor,
+        // The eval's stand-in for the athlete's notice is the default route's vendor.
+        strong()?.vendor === coachRoute.vendor ? strong() : null,
       ).route,
       consentVendor: coachRoute.vendor,
       ...(contributions ? { contributions } : {}),

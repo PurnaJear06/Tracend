@@ -86,8 +86,9 @@ lookups), a refused request gets one corrected round, the model tier follows the
 records, and `coach_messages.lookups` records lookups per round. Migration
 `20261020100017_coach_investigation.sql` (additive; new kinds are filters on existing lookups, so the
 answer schema is unchanged at 2,818 bytes). 37 `inv-` eval cases and a 90% domain-coverage gate; the
-live measurement is still to run. Owner decision: `past_messages` now returns Coach's own earlier
-replies, labelled (AI_SAFETY_SPEC §11.1a). Details: "Coach investigates first" in
+live measurement is still to run. Owner decisions: `past_messages` now returns Coach's own earlier
+replies, labelled and never grounding a figure (AI_SAFETY_SPEC §11.1a); breathing rate and the athlete's
+free text in a workout are held back until a notice names them (§10.3, wording in `ai-gateway.md`). Details: "Coach investigates first" in
 [`ai-gateway.md`](./handoff/ai-gateway.md).
 
 **Coach week-ahead fix (2026-10-18, merged as #156).** On a Sunday Coach

@@ -41,6 +41,13 @@ const answerJson = JSON.stringify({
 /** A turn whose contributors reported pain on record, which asks for the stronger route. */
 const withPain: CoachContributions = {
   ...noCoachContributions,
+  outcomes: [{
+    id: "watch_outs",
+    slot: "volatile",
+    outcome: "rendered",
+    chars: 400,
+    clipped: false,
+  }],
   traces: { watch_outs: { lines: 1, decisions: 1, pain: true } },
 };
 

@@ -35,7 +35,7 @@ const sonnet = () =>
 
 const calm: RouteSignals = {
   screening: "cleared",
-  pain: false,
+  pain: "none",
   proposalsWaiting: 0,
   watchOutDecisions: 0,
 };
@@ -49,14 +49,15 @@ Deno.test("each structural signal asks for the stronger route, and nothing else 
     "screening_not_cleared",
   ]);
   assertEquals(strongRouteReasons({ ...calm, screening: "unknown" }), ["screening_not_cleared"]);
-  assertEquals(strongRouteReasons({ ...calm, pain: true }), ["pain_on_record"]);
+  assertEquals(strongRouteReasons({ ...calm, pain: "on_record" }), ["pain_on_record"]);
+  assertEquals(strongRouteReasons({ ...calm, pain: "unknown" }), ["pain_unknown"]);
   assertEquals(strongRouteReasons({ ...calm, proposalsWaiting: 1 }), ["proposal_waiting"]);
   assertEquals(strongRouteReasons({ ...calm, watchOutDecisions: 1 }), []);
   assertEquals(strongRouteReasons({ ...calm, watchOutDecisions: 2 }), ["several_watch_outs"]);
   assertEquals(
     strongRouteReasons({
       screening: "unknown",
-      pain: true,
+      pain: "on_record",
       proposalsWaiting: 2,
       watchOutDecisions: 3,
     }),
@@ -64,15 +65,19 @@ Deno.test("each structural signal asks for the stronger route, and nothing else 
   );
 });
 
+const outcome = (id: string, state: "rendered" | "empty" | "failed" | "timeout") => ({
+  id,
+  slot: "volatile" as const,
+  outcome: state,
+  chars: 0,
+  clipped: false,
+});
+
 Deno.test("the signals come from what the contributors reported, never from the question", () => {
   const contributions = (
-    traces: Record<string, Record<string, number | boolean>>,
-    stable = "",
-  ): CoachContributions => ({
-    ...noCoachContributions,
-    stable,
-    traces,
-  });
+    traces: Record<string, Record<string, number | boolean | null>>,
+    outcomes = Object.keys(traces).map((id) => outcome(id, "rendered")),
+  ): CoachContributions => ({ ...noCoachContributions, outcomes, traces });
   assertEquals(routeSignalsOf(null), calm);
   assertEquals(routeSignalsOf(contributions({})), calm);
   assertEquals(
@@ -80,12 +85,48 @@ Deno.test("the signals come from what the contributors reported, never from the 
       watch_outs: { lines: 4, decisions: 3, pain: true },
       coach_proposals: { waiting: 1 },
     })),
-    { screening: "cleared", pain: true, proposalsWaiting: 1, watchOutDecisions: 3 },
+    { screening: "cleared", pain: "on_record", proposalsWaiting: 1, watchOutDecisions: 3 },
   );
   assertEquals(
     routeSignalsOf(contributions({ watch_outs: { lines: 1, decisions: 0, pain: false } })),
     calm,
   );
+});
+
+Deno.test("the signals do not depend on what rendered: pain on record counts when there is nothing to show", () => {
+  const empty: CoachContributions = {
+    ...noCoachContributions,
+    outcomes: [outcome("watch_outs", "empty")],
+    traces: { watch_outs: { lines: 0, decisions: 0, pain: true } },
+  };
+  assertEquals(routeSignalsOf(empty).pain, "on_record");
+  assertEquals(strongRouteReasons(routeSignalsOf(empty)), ["pain_on_record"]);
+  // Nothing found and no pain: the default route.
+  const quiet: CoachContributions = {
+    ...empty,
+    traces: { watch_outs: { lines: 0, decisions: 0, pain: false } },
+  };
+  assertEquals(routeSignalsOf(quiet).pain, "none");
+});
+
+Deno.test("a pain signal that is unknown fails toward the stronger route: a timeout, a failure, unreadable facts", () => {
+  for (const state of ["timeout", "failed"] as const) {
+    const lost: CoachContributions = {
+      ...noCoachContributions,
+      outcomes: [outcome("watch_outs", state)],
+    };
+    assertEquals(routeSignalsOf(lost).pain, "unknown", state);
+    assertEquals(strongRouteReasons(routeSignalsOf(lost)), ["pain_unknown"], state);
+  }
+  // The block rendered or was empty but its facts could not be read: pain null.
+  const unreadable: CoachContributions = {
+    ...noCoachContributions,
+    outcomes: [outcome("watch_outs", "empty")],
+    traces: { watch_outs: { lines: 0, decisions: 0, pain: null } },
+  };
+  assertEquals(routeSignalsOf(unreadable).pain, "unknown");
+  // A route without the contributor (the legacy path, a test) has nothing to know.
+  assertEquals(routeSignalsOf({ ...noCoachContributions, outcomes: [] }).pain, "none");
 });
 
 Deno.test("a screening that is not cleared, or could not be read, is read from the real screening block", async () => {
@@ -121,35 +162,29 @@ Deno.test("the same words choose the same route for the same records: the questi
   const defaultRoute = haiku();
   const questions = ["How is my progress this month?", "hi", "check my training"];
   for (const _question of questions) {
-    assertEquals(selectCoachChatRoute(calm, defaultRoute, strong, "anthropic").tier, "default");
+    assertEquals(selectCoachChatRoute(calm, defaultRoute, strong).tier, "default");
     assertEquals(
-      selectCoachChatRoute({ ...calm, pain: true }, defaultRoute, strong, "anthropic").tier,
+      selectCoachChatRoute({ ...calm, pain: "on_record" }, defaultRoute, strong).tier,
       "strong",
     );
   }
 });
 
-Deno.test("the stronger route answers when it is set and its vendor holds the athlete's consent", () => {
+Deno.test("the stronger route answers when a signal asks for it and it is set", () => {
   const strong = sonnet();
-  const picked = selectCoachChatRoute({ ...calm, pain: true }, haiku(), strong, "anthropic");
+  const picked = selectCoachChatRoute({ ...calm, pain: "on_record" }, haiku(), strong);
   assertEquals(picked.tier, "strong");
   assertEquals(picked.route, strong);
   assertEquals(picked.reasons, ["pain_on_record"]);
 });
 
-Deno.test("the default route answers without a stronger route, without a signal, or on another vendor's notice", () => {
+Deno.test("the default route answers without a stronger route or without a signal", () => {
   const defaultRoute = haiku();
-  const calmTurn = selectCoachChatRoute(calm, defaultRoute, sonnet(), "anthropic");
+  const calmTurn = selectCoachChatRoute(calm, defaultRoute, sonnet());
   assertEquals([calmTurn.tier, calmTurn.route], ["default", defaultRoute]);
-
-  const unset = selectCoachChatRoute({ ...calm, pain: true }, defaultRoute, null, "anthropic");
+  const unset = selectCoachChatRoute({ ...calm, pain: "on_record" }, defaultRoute, null);
   assertEquals([unset.tier, unset.route], ["default", defaultRoute]);
-
-  const other = selectCoachChatRoute({ ...calm, pain: true }, defaultRoute, sonnet(), "deepseek");
-  assertEquals(other.tier, "default");
-  assertEquals("strongSkipped" in other && other.strongSkipped, "consent_vendor_differs");
-  const noNotice = selectCoachChatRoute({ ...calm, pain: true }, defaultRoute, sonnet(), null);
-  assertEquals(noNotice.tier, "default");
+  assertEquals(unset.reasons, ["pain_on_record"]);
 });
 
 Deno.test("the second route is a gateway feature with its own settings and is not set by default", () => {
