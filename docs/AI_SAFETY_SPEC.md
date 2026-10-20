@@ -1180,7 +1180,9 @@ adapter still sends no tools.
   in the brief or "(below 40)" in a watch-out cannot make a made-up "3 kg" or "40 ms" pass, and a
   contributor that marks nothing grounds nothing. The principles digest is the exception by
   design (`guidance`: its whole text is general guidance, never the athlete's target), and Coach's
-  notes ground only their dates. A lookup that shows a value declares it (`lookupGrounding`);
+  notes ground only their dates. A lookup that shows a value declares it (`lookupGrounding`; a
+  rule Tracend applies, such as how many meals make a day complete, is a `thresholds` field: shown,
+  never a ground);
   the rule that every field a renderer reads is declared is checked by reading the renderer's own
   field reads, not by what a fixture happened to show. Each records contributor has a probe
   (`contributor_grounding_test.ts`) that lists every number in its rendered text that is not a

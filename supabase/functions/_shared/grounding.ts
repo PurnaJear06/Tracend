@@ -57,25 +57,34 @@ export type Declaration = Readonly<{
    * by themselves.
    */
   controls?: readonly string[];
+  /**
+   * Fields that state a rule Tracend applies (how many meals make a day complete, a window, a
+   * limit): shown to Coach, never evidence about the athlete. They are cut from the rows that
+   * ground, so "3 meals" in a rule line cannot make "you ate 3 meals" pass.
+   */
+  thresholds?: readonly string[];
 }>;
 
-export type Resolved = Readonly<Record<Grounding | "controls", ReadonlySet<string>>>;
+export type Resolved = Readonly<
+  Record<Grounding | "controls" | "thresholds", ReadonlySet<string>>
+>;
 
 /** The declaration as three sets of paths. A path declared twice, or two ways, is a mistake. */
 export function resolve(declaration: Declaration): Resolved {
-  const sets: Record<Grounding | "controls", Set<string>> = {
+  const sets: Record<Grounding | "controls" | "thresholds", Set<string>> = {
     records: new Set(),
     figures: new Set(),
     modelText: new Set(),
     controls: new Set(),
+    thresholds: new Set(),
   };
   const seen = new Set<string>();
-  const put = (path: string, kind: Grounding | "controls") => {
+  const put = (path: string, kind: Grounding | "controls" | "thresholds") => {
     if (seen.has(path)) throw new Error(`${path} is declared twice`);
     seen.add(path);
     sets[kind].add(path);
   };
-  for (const kind of ["records", "figures", "modelText", "controls"] as const) {
+  for (const kind of ["records", "figures", "modelText", "controls", "thresholds"] as const) {
     for (const path of declaration[kind] ?? []) put(path, kind);
   }
   for (const [path, column] of Object.entries(declaration.columns ?? {})) {

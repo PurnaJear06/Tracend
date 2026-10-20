@@ -1665,10 +1665,12 @@ Fixtures now fill every field in some row (a second set with `rir` null and `rpe
 body-fat range, physique and dates, a schedule day under an earlier version, a month-label shift in
 `variantsOf`), and a test fails a fixture field that is null in every row.
 
-*Leftover.* The `meals` lookup declares `rules.min_meals` and `rules.min_target_share` (the rule that
-makes a day complete) as records, so "3 meals" or "70%" in the rule line still grounds on that
-path; a threshold has no kind of its own in `lookupGrounding` yet.
-
+5) *Thresholds in lookups.* `lookupGrounding` has a `thresholds` kind (fields that state a rule
+Tracend applies: shown, cut from the rows that ground, never evidence). `meals` declares
+`rules.min_meals` and `rules.min_target_share` there, so "3 meals" or "70%" from the complete-day
+rule line grounds nothing while the day rows still do (`render_grounding_test.ts`). `controls` was
+not used: those fields are kept when the rows are read again, which would put the rule back into
+the grounds. Every other lookup declaration was audited; none holds another rule, threshold or window.
 
 ## Next agent starts here
 

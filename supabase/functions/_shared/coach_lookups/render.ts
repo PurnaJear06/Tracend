@@ -167,7 +167,7 @@ function meals(body: Json): Parts {
     `Target ${withUnit(body.target_kcal, "kcal")} a day. A day is complete with ${
       val(rules.min_meals)
     } or more meals or ${
-      Math.round(Number(rules.min_target_share) * 100)
+      has(rules.min_target_share) ? Math.round(Number(rules.min_target_share) * 100) : "—"
     }% of the target; otherwise ` +
     "it is partial and says nothing about the day's intake.";
   const dayLines = days.map((day) =>
@@ -596,7 +596,6 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, De
     default: {
       records: [
         "target_kcal",
-        "rules.min_meals",
         "days[].local_date",
         "days[].meals",
         "days[].calories",
@@ -607,12 +606,16 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, De
         "meals[].meal_type",
         "meals[].foods[].name",
         "meals[].foods[].calories",
-        "rules.min_target_share",
         "days[].complete",
         "meals[].source",
       ],
       controls: [
         "truncated",
+      ],
+      // The rule that makes a day complete is Tracend's, not the athlete's data.
+      thresholds: [
+        "rules.min_meals",
+        "rules.min_target_share",
       ],
     },
   },

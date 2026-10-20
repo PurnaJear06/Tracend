@@ -73,7 +73,7 @@ Deno.test("every field a renderer reads is declared, whether or not the fixture'
     for (const [mode, declaration] of Object.entries(modes)) {
       const resolved = resolve(declaration);
       const declared = new Set(
-        (["records", "figures", "modelText", "controls"] as const).flatMap((kind) => [
+        (["records", "figures", "modelText", "controls", "thresholds"] as const).flatMap((kind) => [
           ...resolved[kind],
         ]),
       );
@@ -143,8 +143,13 @@ Deno.test("every field a lookup shows is declared, and each grounds a figure, gr
     for (const [mode, declaration] of Object.entries(modes)) {
       const fixture = fixtures[`${lookup}/${mode}`];
       const resolved = resolve(declaration);
-      const kinds = new Map<string, "records" | "figures" | "modelText" | "controls">();
-      for (const kind of ["records", "figures", "modelText", "controls"] as const) {
+      const kinds = new Map<
+        string,
+        "records" | "figures" | "modelText" | "controls" | "thresholds"
+      >();
+      for (
+        const kind of ["records", "figures", "modelText", "controls", "thresholds"] as const
+      ) {
         for (const path of resolved[kind]) kinds.set(path, kind);
       }
       assert(kinds.size > 0, `${lookup}/${mode} declares nothing`);
@@ -223,4 +228,39 @@ Deno.test("what a row shows about a set's heart rate and a goal's non-weight tar
     [],
   );
   assertEquals(ungroundedNumbers("Your goal asks for 18% body fat.", goalGround), ["18"]);
+});
+
+Deno.test("the rule that makes a day complete is shown but grounds nothing; a real meal count still does", () => {
+  const rendered = renderLookup(request("meals", "2026-10-01", "2026-10-17"), mealsPayload);
+  // The rule line is shown to Coach: 3 meals or 70% of the target.
+  assert(rendered.text.includes("A day is complete with 3 or more meals or 70% of the target"));
+  const ground = numberGroundOf(rendered.grounds);
+  // "70%" is in the rule line and in no row. (The 3 of "Rows shown: 3 of 3" is a count of rows.)
+  assert(!ground.values.some((given) => given.value === 70));
+  // A rule of 6 meals or 55% shows in the text and is not a ground.
+  const stricter = renderLookup(request("meals", "2026-10-01", "2026-10-17"), {
+    ...mealsPayload,
+    rules: { min_meals: 6, min_target_share: 0.55 },
+  });
+  assert(stricter.text.includes("complete with 6 or more meals or 55% of the target"));
+  assert(
+    !numberGroundOf(stricter.grounds).values.some((given) =>
+      given.value === 6 || given.value === 55
+    ),
+  );
+  // "70%" is a rule; the fixture's target and days hold no 70.
+  assertEquals(ungroundedNumbers("You need 70% of your target to log a day.", ground), ["70"]);
+  assertEquals(ungroundedNumbers("A day counts after 20 meals.", ground), ["20"]);
+  // The athlete's own counts from the rows ground.
+  const days = (mealsPayload as { days: { local_date: string; meals: number; calories: number }[] })
+    .days;
+  const day = days.find((item) => item.meals > 3)!;
+  assertEquals(
+    ungroundedNumbers(
+      `On ${day.local_date} you logged ${day.meals} meals, ${day.calories} kcal.`,
+      ground,
+    ),
+    [],
+  );
+  assertEquals(ungroundedNumbers("Your target is 2000 kcal.", ground), []);
 });
