@@ -15,7 +15,10 @@ import { evalProfiles } from "../../_evals/fixtures.ts";
 import { renderCoachContext } from "../coach_context/host.ts";
 import { createTrainingPlanContributor } from "../coach_context/contributors/training_plan.ts";
 import { ownersCaseDate, ownersPlanPayload } from "../coach_context/contributors/plan_fixtures.ts";
-import { exerciseHistoryPayload } from "../coach_lookups/lookup_fixtures.ts";
+import {
+  exerciseHistoryPayload,
+  proposalsLookupPayload,
+} from "../coach_lookups/lookup_fixtures.ts";
 import { createLookupRunner, type LookupRpc } from "../coach_lookups/runner.ts";
 import {
   coachChatGatewaySchema,
@@ -528,6 +531,35 @@ Deno.test("the model's own filter text grounds nothing: a figure it put in the f
     ["lookup", "invalid", "numbers_not_grounded"],
     ["repair", "valid", undefined],
   ]);
+});
+
+Deno.test("a figure in a proposal the lookup returned grounds a figure about the proposal, never one about the athlete's own target", async () => {
+  const payload = {
+    ...proposalsLookupPayload,
+    proposals: [{
+      ...proposalsLookupPayload.proposals[0],
+      rationale: "Raise intake to 2350 kcal",
+    }],
+  };
+  const asked = {
+    lookup: "plan_history",
+    from: "2026-09-01",
+    to: "2026-10-17",
+    filter: "proposals",
+  };
+  const outcomes = async (...answers: string[]) => {
+    const { result } = await run([asking([asked]), ...answers.map((answer) => final(answer))], {
+      runner: lookupRig(payload).runner,
+    });
+    return generation(result).attempts.map((attempt) => attempt.rule ?? attempt.outcome);
+  };
+  assertEquals((await outcomes("The proposal raises intake to 2,350 kcal.")).at(-1), "valid");
+  // Stated as the athlete's own target it is refused once, and the repair stands.
+  const refused = await outcomes(
+    "If you approve it, your daily target becomes 2,350 kcal.",
+    "The proposal raises intake to 2,350 kcal.",
+  );
+  assert(refused.includes("numbers_not_grounded"), refused.join(","));
 });
 
 Deno.test("the period looked at is grounded, so the answer can name it", async () => {

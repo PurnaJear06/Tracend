@@ -939,7 +939,7 @@ Deno.test("v8: each watch average names the days its metric was measured", () =>
   for (
     const fact of [
       "last 7 days averages (7 days synced)",
-      "sleep 395 min over 1 day measured",
+      "sleep 395 min (6 h 35 min; 6.6 h) over 1 day measured",
       "RHR 57.9 bpm over 7 days measured",
     ]
   ) {

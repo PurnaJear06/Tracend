@@ -1148,21 +1148,35 @@ adapter still sends no tools.
   ends in the labelled data summary.
 - **Order of guards.** The deterministic red-flag screen runs first and answers before any model
   call or lookup. Every guard (safe ranges, screening cap, claimed actions, the numbers check, the
-  goal-phase rules) runs on the final answer. The rows a lookup returned count as grounded for the
-  numbers check, because they are the athlete's own records and Tracend's calculations, field by
-  field (`lookupGrounding`, tested): text a model wrote (a daily decision's words, the reason on a
-  plan, a target or a proposal, Coach's earlier replies) is shown and grounds nothing. A proposal's
-  figures (its gain, cost and reason, Tracend-built or not) ground a figure, but never a sentence
-  that states the athlete's own target: a proposal is not a target. The athlete file is declared the
-  same way, key by key and field by field (`providers/context_grounding.ts`, tested with a marker in
-  every field the renderer shows): its latest daily decision, its plan proposals and the active
-  plan's title and reason (written with the onboarding model) are shown and ground nothing; the
-  plan's version and sessions per week, the targets and the records do. A contributor declares what
-  it grounds in `coach_context/grounding.ts`, and one that is not declared grounds nothing; the
-  model's own request text (its
-  filter) never does. The interim sentence is checked only against what the model had seen when it
+  goal-phase rules) runs on the final answer. What the numbers check is given is set by the next
+  item, and the model's own request text (its filter) never counts. The interim sentence is checked only against what the model had seen when it
   wrote it. A lookup call that fails, or a round that cannot start in the time left, also ends in
   the interim sentence, with a note of what was not checked.
+- **What grounds a figure (one rule, every path).** Every stored value Coach is shown is declared as
+  one of three kinds (`_shared/grounding.ts`), and a value that is not declared grounds nothing.
+  *Records* (the athlete's records, Apple Health, Tracend's calculations, what the athlete approved
+  or wrote) ground any figure, including one that states the athlete's own target ("your target is
+  ..."). *Proposal figures* (what Tracend built for a proposal: its title, reason, gain and cost, and
+  the targets a pending proposal would set) ground a figure but never one that states the athlete's
+  own target, because a proposal is not a target until the athlete approves it; Coach is told to
+  write them as the proposal's ("the proposal sets 2,350 kcal"). *Model text* (the reason on a plan
+  or a nutrition target, a daily decision's words, Coach's own earlier replies) is shown and grounds
+  nothing: a model's words do not show a figure is true, and a reason or decision written on an
+  earlier day states figures that were true that day. The plan's title and the names of its
+  workouts and exercises are records on every path, because the athlete approved the plan and the
+  app shows them; its rationale is model text on every path (`columnGrounding` declares each
+  stored column once, and the athlete file, the lookups and the contributors all read it). The
+  three places that show stored values declare their fields in the same way: the lookups field by
+  field (`lookupGrounding`; the rows that ground are rendered again from the payload cut down to
+  the declared fields, so an undeclared field cannot reach them), the athlete file key by key and,
+  for a key that mixes kinds, field by field (`providers/context_grounding.ts`), and the
+  contributors one by one (`coach_context/grounding.ts`; a contributor may mark lines of its text
+  as proposal figures, as the proposals block does for a pending proposal Tracend built). Tests put
+  a change in every field each renderer shows, keeping its type, and fail a shown field that is
+  undeclared or that grounds differently from its declaration; they count the fields verified, not
+  walked, and read the keys the renderer touches. Durations stored in minutes are shown with the
+  hours and minutes the app shows and the hours to one decimal next to them (`341 min (5 h 41 min;
+  5.7 h)`), so "you slept 5.7 h" rests on a record: the numbers check never converts units.
 - **Rows are reference data**, dated and labelled; athlete-written text in them (check-in notes) is
   untrusted data. A lookup that fails is reported to the model as unreadable and it must say it
   could not check.

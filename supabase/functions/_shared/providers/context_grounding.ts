@@ -1,28 +1,31 @@
-// What in the athlete file may ground a figure in a reply's numbers check, key by key. The file
-// holds the athlete's records and Tracend's calculations, and a few fields a model wrote: the
-// reason on the active plan (the onboarding plan's), the latest daily decision, and the last
-// proposals the athlete was shown (legacy ones were a model's, and none of them is a target while
-// it is pending or declined). Those are shown to Coach and ground nothing, so that a figure that
-// only they hold must come from a record. `contextForGrounds` is the file as it grounds; the file
+// What in the athlete file may ground a figure in a reply's numbers check, key by key, in the
+// three words of `../grounding.ts`. The file holds the athlete's records and Tracend's calculations,
+// and a few fields a model wrote: the reason on the active plan (the onboarding model's), the latest
+// daily decision, and the last proposals the athlete was shown (a pending or declined one is not a
+// target, and a legacy one was a model's). Those are shown to Coach and ground nothing, so a figure
+// that only they hold must come from a record. A pending proposal Tracend built grounds a figure
+// through the `coach_proposals` contributor (`coach_context/contributors/proposals.ts`), which
+// states its figures as proposal figures. `contextForGrounds` is the file as it grounds; the file
 // itself (`renderCoachContextParts`) is unchanged.
 //
-// Every key the file reads is declared here. `context_grounding_test.ts` records the keys the
-// renderer reads, puts a marker in every field of a full context and checks that each field that
-// is shown is declared and grounds exactly as declared; a new section or a new field fails it
-// until its author states what it is.
+// A key that is not declared grounds nothing, and so does a field of a mixed key that is not
+// declared. `context_grounding_test.ts` records the keys and fields the renderer reads, changes
+// every field of a full context and checks that each one that is shown is declared and grounds
+// exactly as declared; a new section or a new field fails it until its author states what it is.
 //
 //   records       the athlete's records, Tracend's calculations, what the athlete wrote or approved
 //   modelText     a model wrote it (or it is a proposal, not a target): shown, grounds nothing
-//   conversation  the conversation memory: it is not in the file and has its own rules
-//                 (the athlete's words ground, Coach's never do, a data summary only on its day)
-//   fields        the key mixes both: the fields listed in `records` ground, those in `modelText` do not
-export type ContextKeyGrounding =
-  | "records"
-  | "modelText"
-  | "conversation"
-  | Readonly<{ records: readonly string[]; modelText: readonly string[] }>;
+//   notInFile     read into the part of the context that is not the file: the conversation memory,
+//                 which has its own rules (the athlete's words ground, Coach's never do, a data
+//                 summary only on its day), and the notice of what was left out for size
+//   a declaration the key mixes kinds: the paths listed ground as declared, the rest nothing
+import { type Declaration, pruneTo, resolve } from "../grounding.ts";
 
-export const contextGrounding: Readonly<Record<string, ContextKeyGrounding>> = Object.freeze({
+export type ContextKeyGrounding = "records" | "modelText" | "notInFile" | Declaration;
+
+export const contextGrounding: Readonly<Record<string, ContextKeyGrounding>> = Object.freeze<
+  Record<string, ContextKeyGrounding>
+>({
   coaching_date: "records",
   training_week_structure: "records",
   latest_check_in: "records",
@@ -55,52 +58,41 @@ export const contextGrounding: Readonly<Record<string, ContextKeyGrounding>> = O
   nutrition_targets: "records",
   data_quality: "records",
   context_coverage: "records",
-  omitted_sections: "records",
-  // The plan's sessions per week and version are the approved plan; its title and the reason for
-  // it were written with the onboarding model.
+  // The plan's version and sessions per week are the approved plan, and so is its title (the app
+  // shows it); the reason for it was written with the onboarding model.
   active_plan: {
-    records: ["version_number", "sessions_per_week"],
-    modelText: ["title", "rationale"],
+    records: ["active_plan.version_number", "active_plan.sessions_per_week"],
+    columns: {
+      "active_plan.title": "training_plans.title",
+      "active_plan.rationale": "training_plan_versions.rationale",
+    },
   },
   // A model's words about an earlier day: their figures were true then.
   latest_decision: "modelText",
   // The last three proposals, any status and any schema: a pending or declined one is not a target,
   // and a legacy one is a model's. An applied one is in the plan and the targets above.
   plan_proposals: "modelText",
-  recent_messages: "conversation",
-  recent_other_conversations: "conversation",
+  omitted_sections: "notInFile",
+  recent_messages: "notInFile",
+  recent_other_conversations: "notInFile",
 });
 
-/** The paths of a mixed key that a model wrote, or the whole key when it is all model text. */
-const removed = (key: string, rule: ContextKeyGrounding): readonly string[] =>
-  rule === "modelText"
-    ? [key]
-    : typeof rule === "object"
-    ? rule.modelText.map((p) => `${key}.${p}`)
-    : [];
-
-function without(node: unknown, steps: string[]): unknown {
-  if (steps.length === 0) return undefined;
-  if (Array.isArray(node)) return node.map((item) => without(item, steps));
-  if (node === null || typeof node !== "object") return node;
-  const [step, ...rest] = steps;
-  const copy = { ...(node as Record<string, unknown>) };
-  if (rest.length === 0) delete copy[step];
-  else if (step in copy) copy[step] = without(copy[step], rest);
-  return copy;
-}
-
-/** The context with the fields a model wrote left out: what the numbers check may ground on. */
+/**
+ * The context as it grounds: whole for a key of records, cut down to the declared fields for a
+ * mixed key, and without the key for model text, the conversation and any key not declared.
+ */
 export function contextForGrounds(
   context: Record<string, unknown>,
   rules: Readonly<Record<string, ContextKeyGrounding>> = contextGrounding,
 ): Record<string, unknown> {
-  let result: Record<string, unknown> = context;
-  for (const [key, rule] of Object.entries(rules)) {
-    if (!(key in context)) continue;
-    for (const path of removed(key, rule)) {
-      result = without(result, path.split(".")) as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(context)) {
+    const rule = rules[key];
+    if (rule === "records") out[key] = value;
+    else if (typeof rule === "object") {
+      const kept = resolve(rule);
+      out[key] = pruneTo(value, new Set([...kept.records, ...kept.controls]), key);
     }
   }
-  return result;
+  return out;
 }

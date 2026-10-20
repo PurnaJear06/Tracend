@@ -1,3 +1,4 @@
+import { minutesCell, minutesText } from "../duration_text.ts";
 import { factSuggestionContract } from "../coach_memory/model_contract.ts";
 import { type AvoidablePattern, avoidablePatternLabels } from "../onboarding/catalog.ts";
 import {
@@ -1037,8 +1038,8 @@ export function renderCoachContextParts(
       const a = obj(averages[label]);
       if (!Object.keys(a).length) continue;
       s += `- ${label.replace(/_/g, " ")} averages (${str(a.days_synced)} days synced): sleep ${
-        str(a.avg_sleep_minutes)
-      } min${over(a.days_with_sleep)}, RHR ${str(a.avg_resting_heart_rate_bpm)} bpm${
+        minutesText(a.avg_sleep_minutes, str(a.avg_sleep_minutes))
+      }${over(a.days_with_sleep)}, RHR ${str(a.avg_resting_heart_rate_bpm)} bpm${
         over(a.days_with_resting_heart_rate)
       }, HRV ${str(a.avg_hrv_ms)} ms${over(a.days_with_hrv)}, steps ${str(a.avg_steps)}${
         over(a.days_with_steps)
@@ -1049,7 +1050,7 @@ export function renderCoachContextParts(
       s += "|------|-----------|-----|--------|-------|-------------|-------------|-----------|\n";
       for (const day of healthDays) {
         const d = obj(day);
-        s += `| ${str(d.local_date)} | ${str(d.sleep_minutes)} | ${
+        s += `| ${str(d.local_date)} | ${minutesCell(d.sleep_minutes, str(d.sleep_minutes))} | ${
           str(d.resting_heart_rate_bpm)
         } | ${str(d.hrv_ms)} | ${str(d.steps)} | ${str(d.active_energy_kcal)} | ${
           str(d.workout_minutes)
@@ -1101,7 +1102,9 @@ export function renderCoachContextParts(
       let anyField = false;
       for (const f of hkFields) {
         if (f in health) {
-          s += `- ${f.replace(/_/g, " ")}: ${str(health[f])}\n`;
+          s += `- ${f.replace(/_/g, " ")}: ${
+            f === "sleep_minutes" ? minutesCell(health[f], str(health[f])) : str(health[f])
+          }\n`;
           anyField = true;
         }
       }
@@ -1119,7 +1122,9 @@ export function renderCoachContextParts(
     if (trend.avg_resting_hr != null) s += `- avg RHR (7d): ${str(trend.avg_resting_hr)}\n`;
     if (trend.avg_hrv_sdnn != null) s += `- avg HRV (7d): ${str(trend.avg_hrv_sdnn)}\n`;
     if (trend.avg_sleep_minutes != null) {
-      s += `- avg sleep (7d): ${str(trend.avg_sleep_minutes)} min\n`;
+      s += `- avg sleep (7d): ${
+        minutesText(trend.avg_sleep_minutes, str(trend.avg_sleep_minutes))
+      }\n`;
     }
     push(s);
   }
@@ -1132,7 +1137,9 @@ export function renderCoachContextParts(
     const latest = obj(briefHealth[0]);
     let s = "## Health\n";
     if (latest.local_date != null) s += `*date: ${str(latest.local_date)}*\n`;
-    if ("sleep_minutes" in latest) s += `- sleep: ${str(latest.sleep_minutes)} min\n`;
+    if ("sleep_minutes" in latest) {
+      s += `- sleep: ${minutesText(latest.sleep_minutes, str(latest.sleep_minutes))}\n`;
+    }
     if ("resting_heart_rate_bpm" in latest) {
       s += `- RHR: ${str(latest.resting_heart_rate_bpm)}\n`;
     }
@@ -1347,13 +1354,15 @@ export function replyCheckInputsFor(
   // The text of every contributor that declares itself a record or guidance (`grounding.ts`). The
   // library is left out: a figure may use it only when the reply cites the source (shown). The
   // principles digest grounds general guidance but never a sentence that states the athlete's own
-  // target. Figures Tracend proposed (the proposals a lookup returned) are given in the same way:
-  // a proposal is not the athlete's target, whoever built it.
+  // target. Figures Tracend proposed (the proposals a lookup returned, the lines a contributor
+  // states as a pending proposal's) are given in the same way: a proposal is not the athlete's
+  // target, whoever built it.
   const texts = Object.entries(contributions?.texts ?? {}).filter(([id]) =>
     groundingOf(id) !== "excluded"
   );
-  const athleteTexts = texts.filter(([id]) => groundingOf(id) === "records").map(([, text]) =>
-    text
+  const figureLines = contributions?.figures ?? {};
+  const athleteTexts = texts.filter(([id]) => groundingOf(id) === "records").map(([id, text]) =>
+    withoutLines(text, figureLines[id] ?? [])
   );
   const athleteGiven = [
     file,
@@ -1395,6 +1404,9 @@ export function replyCheckInputsFor(
     weightClaim: weightClaimCheckFor(context, question),
   };
 }
+
+const withoutLines = (text: string, lines: readonly string[]): string =>
+  lines.length === 0 ? text : text.split("\n").filter((line) => !lines.includes(line)).join("\n");
 
 /** The check every answer for this turn must pass; see `replyCheckInputsFor` for its inputs. */
 export function coachReplyCheckFor(
@@ -1567,7 +1579,8 @@ const proposalContract = "\n# Proposing a change\n" +
   "- Never propose in a turn where the athlete reports pain, a symptom or a safety concern.\n" +
   "- Copy a figure into the intent only if the athlete wrote it in their message. Never choose a calorie, weight, load or set count yourself: Tracend does.\n" +
   "- Ask for one change at a time. Return proposal_intent as [] when no change is being asked for.\n" +
-  "- The proposals section of the context says what is waiting for an answer, what was answered and what has ended. Never propose again what is waiting. After a diet break or a block has ended, suggest the next step.\n";
+  "- The proposals section of the context says what is waiting for an answer, what was answered and what has ended. Never propose again what is waiting. After a diet break or a block has ended, suggest the next step.\n" +
+  '- The figures of a proposal that is waiting belong to the proposal, not to the athlete\'s targets, which stay as they are until the athlete approves it. Write "the proposal sets 2,350 kcal", never "your target is 2,350 kcal".\n';
 
 // The library rules the gateway path adds (E3). Retrieval puts excerpts in the volatile part of the
 // prompt; Coach cites them in evidence with the source id, and the reply guard refuses a citation of

@@ -180,6 +180,28 @@ Deno.test("the graders accept every hand-written good reply", () => {
   assert(checked >= 60, `${checked} good replies`);
 });
 
+Deno.test("only the rows the model asked for, within the dates it asked for, ground a figure", () => {
+  const bench = prepared.get("lookup-bench-since-august")!;
+  const [asked] = bench.bank.goodRequests!;
+  const reply = (requests: Reply["dataRequests"]): Reply => ({
+    outcome: "model",
+    answer: bench.bank.good![0],
+    safetyState: "allowed",
+    dataRequests: requests,
+    citations: [],
+    costUsd: 0,
+    latencyMs: 0,
+  });
+  const guard = (requests: Reply["dataRequests"]) =>
+    gradeReply(bench, reply(requests)).find((r) => r.grader === "reply_guard")!;
+  assert(guard([asked]).pass);
+  // The same figures from a request that stops before August's rows, or that asks for another
+  // lookup, are not given to the numbers check.
+  assert(!guard([{ ...asked, from: "2026-09-20" }]).pass);
+  assert(!guard([{ ...asked, lookup: "meals" }]).pass);
+  assert(!guard([]).pass);
+});
+
 Deno.test("the graders catch every hand-written bad reply with the named grader", () => {
   const caught = new Set<string>();
   for (const p of prepared.values()) {

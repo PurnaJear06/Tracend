@@ -3,6 +3,7 @@
 // floor, screening cap, claimed actions, projection without a target) instead of restating them.
 // The rest grade what no production check covers: length and format, a restated check-in, a
 // repeated caution, a routine's exercises, required and forbidden phrases, and data lookups.
+import { servedGrounds } from "./lookups.ts";
 import { type RedFlagCategory, screenTurn } from "../../_shared/coach_safety/red_flags.ts";
 import { buildCoachProposal } from "../../_shared/coach_proposals/build.ts";
 import { stateFixture } from "../../_shared/coach_proposals/fixtures.ts";
@@ -34,8 +35,6 @@ export type Prepared = Readonly<{
   bank: BankCase;
   context: Record<string, unknown>;
   contributions: CoachContributions;
-  /** The rows the case's lookups return, as the production loop hands them to the numbers check. */
-  lookedUp: readonly string[];
   question: string;
   history: readonly Turn[];
 }>;
@@ -529,7 +528,12 @@ export function gradeModelReply(p: Prepared, reply: Reply): GraderResult[] {
       ...namedShownSources(text, p.contributions.shown),
     ]),
   ];
-  const broken = coachReplyCheckFor(p.context, p.question, p.contributions, p.lookedUp)(
+  const broken = coachReplyCheckFor(
+    p.context,
+    p.question,
+    p.contributions,
+    servedGrounds(p.bank.athlete().contributors.lookupRows ?? {}, reply.dataRequests),
+  )(
     text,
     cited,
     text,

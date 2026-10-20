@@ -626,6 +626,48 @@ alter table public.coach_messages
     and char_length(array_to_string(lookup_rounds, ' ')) <= 800
     and array_to_string(lookup_rounds, ' ') ~ '^[a-z0-9_: ]*$'));
 
+-- 10 ---------------------------------------------------------------------------------------------
+
+-- What a pending proposal would set, for Coach's context: the targets and the shape of the plan in
+-- the proposal's payload, which Tracend's rules built. They ground a figure in a reply as the
+-- proposal's, never as the athlete's target. Only fields are added to each proposal (`figures`, null
+-- unless the proposal is pending), and the version moves to 1.1; the reader accepts any 1.x.
+create or replace function public.get_coach_proposals_context_v1(p_user_id uuid, p_local_date date)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object(
+    'schema_version', '1.1',
+    'local_date', p_local_date,
+    'block', (select jsonb_build_object('title', tp.title, 'kind', v.block_kind,
+        'started_on', v.effective_date, 'ends_on', v.ends_on)
+      from public.training_plan_versions v
+      join public.training_plans tp on tp.id = v.plan_id and tp.user_id = v.user_id
+      where v.user_id = p_user_id and v.status = 'active' and v.ends_on is not null
+        and v.ends_on >= p_local_date),
+    'phase', (select jsonb_build_object('phase', g.details ->> 'phase',
+        'started_on', g.details ->> 'phase_started_on', 'ends_on', g.details ->> 'phase_ends_on')
+      from public.user_goals g where g.id = private.active_goal_id(p_user_id)
+        and g.details ? 'phase'),
+    'proposals', coalesce((select jsonb_agg(x.item order by x.created_at desc) from (
+        select c.created_at, jsonb_build_object(
+          'kind', c.proposal_kind, 'title', c.proposed_training ->> 'title',
+          'status', private.coach_proposal_json(c) ->> 'status',
+          'created_on', c.created_at::date, 'expires_at', c.expires_at, 'ends_on', c.ends_on,
+          'figures', case when private.coach_proposal_json(c) ->> 'status' = 'pending'
+            then jsonb_strip_nulls(jsonb_build_object(
+              'calories', c.proposal_payload #> '{nutrition,calories}',
+              'protein_g', c.proposal_payload #> '{nutrition,protein_g}',
+              'carbohydrate_g', c.proposal_payload #> '{nutrition,carbohydrate_g}',
+              'fat_g', c.proposal_payload #> '{nutrition,fat_g}',
+              'sessions_per_week',
+                jsonb_array_length(c.proposal_payload #> '{training,weekly_structure}'),
+              'block_weeks', c.proposal_payload #> '{training,block_weeks}'))
+            end) item
+        from public.change_proposals c
+        where c.user_id = p_user_id and c.schema_version = '3.0'
+          and c.created_at > statement_timestamp() - interval '60 days'
+        order by c.created_at desc limit 8) x), '[]'::jsonb));
+$$;
+
 -- Access -----------------------------------------------------------------------------------------
 
 do $$

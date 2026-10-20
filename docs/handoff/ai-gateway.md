@@ -1538,7 +1538,7 @@ energy" (already sent) to the Apple Health summaries; then set `firstNoticeNamin
 `breathing_rate` and `workout_notes`. Until then Coach does not see them. The wording is the owner's;
 none is published here.
 
-**Review round 2 (PR #159, same branch).**
+**Review round 2 (PR #159, same branch).** (Item 1 below was consolidated in round 4: `Parts.ungrounded` is gone.)
 1) *Model-written text never grounds a number, systemically.* `Parts.ungrounded` is now a map from
 the line shown to the part of it that is still a record (its date, codes and counts). Declared in
 `lookupGrounding` (render.ts), field by field, for every lookup and mode, and checked by
@@ -1570,7 +1570,7 @@ no time; plan age is in whole weeks by date (no product rule measures it).
 each schedule day carries the id and whether it was logged); the name is only what the line says.
 Two workouts with one name have two streaks; a workout made up on another day answers its own.
 
-**Review round 3 (PR #159, same branch).**
+**Review round 3 (PR #159, same branch).** (Consolidated in round 4; the file's declaration is now in the shared form.)
 1) *The athlete file grounds field by field.* `providers/context_grounding.ts` declares every key
 `renderCoachContextParts` reads (`records`, `modelText`, `conversation`, or a record/modelText field
 list for `active_plan`); `contextForGrounds` is the file as it grounds, and `replyCheckInputsFor`
@@ -1590,6 +1590,44 @@ shown leaf that is in no list.
 case's lookup rows the way the production loop does (`lookedUp`) instead of a made-up contributor id.
 5) *Stale-sync wording.* The line states hours ("more than 73 hours ago (the app calls more than 48
 hours stale)"), so a sync just over 48 hours old cannot read "2 days ago ... more than 2 days stale".
+**Review round 4 (PR #159, same branch): one grounding model.**
+1) *Three kinds, one vocabulary, every path* (`_shared/grounding.ts`): `records` ground both
+`ground` and `athleteGround`; `figures` (proposal figures) ground `ground` only; `modelText` grounds
+nothing; undeclared grounds nothing (fail closed). The rule is in AI_SAFETY_SPEC §11.1 "What
+grounds a figure". `columnGrounding` declares each stored column once (plan title, workout and
+exercise names: records; plan and nutrition rationale, daily decision text, Coach's earlier reply:
+model text; a proposal's title, reason, gain, cost: figures); the athlete file, the lookups and the
+contributors all import it. The three surfaces are checked against each other in
+`providers/context_grounding_test.ts` (a title and a workout name ground on the file, the lookup and
+the contributor; a rationale on none).
+2) *Pending proposals Tracend built.* The file's `plan_proposals` stays model text as a whole
+(a legacy row was a model's, and the context cannot tell the two apart). The `coach_proposals`
+contributor states a pending proposal's figures on their own line and hands the host that line
+(`RenderedBlock.figures`, `CoachContributions.figures`); `replyCheckInputsFor` puts it in `ground`
+and takes it out of `athleteGround`. The figures come from `get_coach_proposals_context_v1` 1.1
+(additive `figures` on each proposal, null once answered; migration `20261020100017`, pgTAP in
+`coach_proposals_test.sql`). The instructions gained one line: a waiting proposal's figures are the
+proposal's, not the athlete's target (`instructionsMaxChars` 25,500 and the Haiku/Sonnet reservation
+values re-pinned; DeepSeek parity hashes regenerated because the file text changed).
+3) *Grounds are rendered from the declaration.* For lookups the rows that ground are the renderer's
+output on the payload cut down to the declared fields (`pruneTo`), selected by the same row indexes
+as the text, so an undeclared or model-text field cannot appear in them; `Parts.ungrounded` was
+deleted. For a mixed key of the file (`active_plan`) `contextForGrounds` keeps only the declared
+records; a key that is not declared is dropped. `controls` are fields that only select or position
+records (a mode, a key, a cut, the fields the progression parser needs).
+4) *Tests that cannot pass vacuously.* `grounding_probe.ts` changes a field keeping its type (number,
+date, flag, word); a field is shown when the text changes. The lookup test verified 173 fields; the
+file test runs over every eval athlete, an older pre-v8 context and the shapes behind each alias key,
+requires each key to have a verified field, and a recursive Proxy lists every path the renderer
+reads, which must be declared.
+5) *Eval faithfulness.* The bank grades a reply with the rows its accepted requests return
+(`servedGrounds`: only the lookups asked for, within the dates asked for), not every row of the
+case; a case whose good reply cites rows now lists the request that fetches them.
+6) *Durations.* `duration_text.ts`: a duration in minutes is shown as `341 min (5 h 41 min; 5.7 h)`
+(the app's split, recovery_readout_card.dart `_formatMinutes`, and hours to one decimal) for sleep in
+the file, the recovery lookup, the monthly health history (sleep average, workout minutes) and the
+sleep watch-out; nothing is added under an hour. The numbers check still never converts units.
+
 
 ## Next agent starts here
 

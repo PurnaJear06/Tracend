@@ -819,7 +819,11 @@ stored and sets `change_proposals.source_message_id` the other way; the thread l
 the card shows live and on reload. `get_coach_proposals_context_v1(user, local_date)` (service role)
 feeds the Coach context: the running block and its last day, the goal phase and its end date (a
 phase or block that has ended is reported as ended), proposals waiting and how recent ones were
-answered.
+answered. From `schema_version` 1.1 (migration `20261020100017`, additive: only a field was added to
+each proposal) a pending proposal also carries `figures`, what its payload would set (`calories`,
+`protein_g`, `carbohydrate_g`, `fat_g`, `sessions_per_week`, `block_weeks`; a field is absent when the
+proposal does not change it, and `figures` is null once the proposal is answered). They are shown to
+Coach as the proposal's figures, never as the athlete's target.
 
 
 ### `coach_context_snapshots`

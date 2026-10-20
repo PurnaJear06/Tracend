@@ -154,8 +154,9 @@ Deno.test("a lookup answered without asking fails the data_requests grader", asy
     repeats: 1,
     generate: () => Promise.resolve(generation(bench.good![0])),
   });
+  // It cites rows it never fetched: the loop did not ask for them, so they ground nothing either.
   const failed = result.runs[0].results.filter((r) => !r.pass).map((r) => r.grader);
-  assertEquals(failed, ["data_requests"]);
+  assertEquals(failed, ["reply_guard", "data_requests"]);
 });
 
 // ---- the gate -----------------------------------------------------------------------------

@@ -82,6 +82,12 @@ export type RenderedBlock = Readonly<{
   shown: Readonly<Record<string, ShownSource>>;
   /** What the contributor reports about this turn for the log. */
   trace?: ContributorTrace;
+  /**
+   * Lines of `text` (exactly as written) that state the figures of a proposal Tracend built: they
+   * ground a figure in a reply but never one that states the athlete's own target
+   * (`../grounding.ts`).
+   */
+  figures?: readonly string[];
 }>;
 
 export type CoachContextContributor = Readonly<{
@@ -114,6 +120,8 @@ export type CoachContributions = Readonly<{
   texts: Readonly<Record<string, string>>;
   /** The library sources shown this turn, by source id; none when no contributor showed any. */
   shown: Readonly<Record<string, ShownSource>>;
+  /** The proposal-figure lines of each contributor's text, by contributor id (see `RenderedBlock`). */
+  figures?: Readonly<Record<string, readonly string[]>>;
   /** The traces contributors reported, by contributor id; absent in hand-built contributions. */
   traces?: Readonly<Record<string, ContributorTrace>>;
 }>;
@@ -213,6 +221,7 @@ type Rendered = Readonly<{
   text?: string;
   shown?: RenderedBlock["shown"];
   trace?: ContributorTrace;
+  figures?: readonly string[];
 }>;
 
 async function renderOne(
@@ -258,6 +267,10 @@ async function renderOne(
       ...(typeof rendered === "object" && rendered !== null && rendered.trace
         ? { trace: rendered.trace }
         : {}),
+      // Only the lines that survived the clip are still in the text.
+      ...(typeof rendered === "object" && rendered !== null && rendered.figures
+        ? { figures: rendered.figures.filter((line) => clipped.includes(line)) }
+        : {}),
     };
   } catch {
     return { outcome: { ...base, outcome: "failed" }, block: null };
@@ -294,6 +307,13 @@ export async function renderCoachContext(
     shown: Object.assign({}, ...rendered.map((item) => item.shown ?? {})),
     traces: Object.fromEntries(
       rendered.flatMap((item) => item.trace === undefined ? [] : [[item.outcome.id, item.trace]]),
+    ),
+    figures: Object.fromEntries(
+      rendered.flatMap((item) =>
+        item.figures === undefined || item.figures.length === 0
+          ? []
+          : [[item.outcome.id, item.figures]]
+      ),
     ),
   };
 }

@@ -260,3 +260,30 @@ Deno.test("a read that fails fails for every contributor that asked, and the tur
   ], input);
   assertEquals(result.outcomes.map((item) => item.outcome), ["failed", "failed", "rendered"]);
 });
+
+Deno.test("the proposal-figure lines a contributor reports are kept only while they are in the clipped text", async () => {
+  const lines = [
+    "Header line",
+    "Figure line A",
+    "Figure line B that is long enough to be clipped away",
+  ];
+  const rendered = await renderCoachContext(
+    [
+      contributor("coach_proposals", "volatile", () =>
+        Promise.resolve({
+          text: lines.join("\n"),
+          shown: {},
+          figures: [lines[1], lines[2]],
+        }), 30),
+    ],
+    input,
+  );
+  assertStringIncludes(rendered.texts.coach_proposals, "Header line\nFigure line A");
+  assert(!rendered.texts.coach_proposals.includes("Figure line B"));
+  assertEquals(rendered.figures, { coach_proposals: ["Figure line A"] });
+  const none = await renderCoachContext(
+    [contributor("coach_proposals", "volatile", () => Promise.resolve("Only text"))],
+    input,
+  );
+  assertEquals(none.figures, {});
+});

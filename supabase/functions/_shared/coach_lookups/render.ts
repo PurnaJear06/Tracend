@@ -14,7 +14,9 @@ import {
   stamp,
   unknownNote,
 } from "../training/schedule/week_ahead.ts";
+import { minutesText } from "../duration_text.ts";
 import type { NoticeScope } from "../ai_notice_coverage.ts";
+import { type Declaration, pruneTo, resolve } from "../grounding.ts";
 import { type DataRequest, lookupSpec } from "./catalogue.ts";
 
 /** Most characters of one lookup's text. */
@@ -47,16 +49,6 @@ type Parts = Readonly<{
   newestLast?: boolean;
   /** Units run in date order and the earliest are the ones to keep (a schedule from today). */
   keepFirst?: boolean;
-  /**
-   * Lines that carry text that is not a record, by the line as shown, with what of it still
-   * grounds. `records` is the part that is a record (its date, codes and counts) and grounds any
-   * figure. `figures`, when present, is text Tracend built for a proposal: it grounds a figure but
-   * not the athlete's own target. What is in neither is a model's words (a decision's summary, the
-   * reason given for a plan, Coach's own earlier reply): shown, never evidence, because a model's
-   * words do not show a figure is true and a decision or reason written on an earlier day states
-   * figures that were true on that day.
-   */
-  ungrounded?: ReadonlyMap<string, Readonly<{ records: string; figures?: string }>>;
 }>;
 
 type Json = Record<string, unknown>;
@@ -249,11 +241,11 @@ function recovery(body: Json, allowed: ReadonlySet<NoticeScope>): Parts {
       has(day.hrv_sleep_ms) ? `night ${day.hrv_sleep_ms}` : null,
       has(day.hrv_morning_ms) ? `morning ${day.hrv_morning_ms}` : null,
     ].filter(Boolean);
-    return `- ${val(day.local_date)}: sleep ${withUnit(day.sleep_minutes, "min")}${
-      stages.length ? ` (${stages.join(", ")} min)` : ""
-    }, resting heart rate ${withUnit(day.resting_heart_rate_bpm, "bpm")}, HRV ${
-      withUnit(day.hrv_ms, "ms")
-    }${hrvParts.length ? ` (${hrvParts.join(", ")} ms)` : ""}, ${
+    return `- ${val(day.local_date)}: sleep ${
+      has(day.sleep_minutes) ? minutesText(day.sleep_minutes) : "—"
+    }${stages.length ? ` (${stages.join(", ")} min)` : ""}, resting heart rate ${
+      withUnit(day.resting_heart_rate_bpm, "bpm")
+    }, HRV ${withUnit(day.hrv_ms, "ms")}${hrvParts.length ? ` (${hrvParts.join(", ")} ms)` : ""}, ${
       breathing ? `breathing rate ${withUnit(day.respiratory_rate_bpm, "breaths/min")}, ` : ""
     }steps ${val(day.steps)}, active energy ${withUnit(day.active_energy_kcal, "kcal")}, ${
       withUnit(day.workout_minutes, "min")
@@ -331,25 +323,16 @@ function planSchedule(body: Json): Parts {
 }
 
 function proposalsHistory(body: Json): Parts {
-  // The reason, the gain and the cost of a proposal are built by Tracend's rules (the figures are
-  // its own; a note with a digit is dropped), so they ground a figure, but a proposal is not the
-  // athlete's target: they never ground a sentence that states one.
-  const ungrounded = new Map<string, { records: string; figures?: string }>();
-  const lines = list(body.proposals).map((proposal) => {
-    const head = `- ${val(proposal.created_on)} ${val(proposal.kind).replaceAll("_", " ")}: ${
+  const lines = list(body.proposals).map((proposal) =>
+    `- ${val(proposal.created_on)} ${val(proposal.kind).replaceAll("_", " ")}: ${
       val(proposal.title)
-    } (${val(proposal.status)}, confidence ${val(proposal.confidence)}).`;
-    const tail = `${has(proposal.ends_on) ? ` Ends ${proposal.ends_on}.` : ""}${
-      has(proposal.applied_on) ? ` Applied ${proposal.applied_on}.` : ""
-    }`;
-    const figures = `Why: ${val(proposal.rationale)} Gain: ${val(proposal.benefit)} Cost: ${
-      val(proposal.downside)
-    }`;
-    const line = `${head} ${figures}${tail}`;
-    ungrounded.set(line, { records: `${head}${tail}`, figures });
-    return line;
-  });
-  return { ...singles(lines), ungrounded };
+    } (${val(proposal.status)}, confidence ${val(proposal.confidence)}). Why: ${
+      val(proposal.rationale)
+    } Gain: ${val(proposal.benefit)} Cost: ${val(proposal.downside)}${
+      has(proposal.ends_on) ? ` Ends ${proposal.ends_on}.` : ""
+    }${has(proposal.applied_on) ? ` Applied ${proposal.applied_on}.` : ""}`
+  );
+  return singles(lines);
 }
 
 function planHistory(body: Json): Parts {
@@ -357,25 +340,13 @@ function planHistory(body: Json): Parts {
   if (body.filter === "proposals") return proposalsHistory(body);
   const training = list(body.training);
   const nutrition = list(body.nutrition);
-  // A version's reason and a target's reason were written with a model's help (the plan or the
-  // proposal that made them): shown, not evidence. The plan's own sessions, sets and targets are
-  // what the athlete approved, and ground.
-  const ungrounded = new Map<string, { records: string; figures?: string }>();
-  const reasoned = (head: string, why: unknown) => {
-    const line = `${head}. Why: ${val(why)}`;
-    ungrounded.set(line, { records: `${head}.` });
-    return line;
-  };
   const units = [
     ...training.map((version) => [
-      reasoned(
-        `- Plan v${val(version.version)} (${val(version.status)}), created ${
-          val(version.created_on)
-        }, effective ${val(version.effective_date)}: ${val(version.title)}, ${
-          val(version.sessions_per_week)
-        } sessions a week, ${val(version.block_weeks)}-week block`,
-        version.rationale,
-      ),
+      `- Plan v${val(version.version)} (${val(version.status)}), created ${
+        val(version.created_on)
+      }, effective ${val(version.effective_date)}: ${val(version.title)}, ${
+        val(version.sessions_per_week)
+      } sessions a week, ${val(version.block_weeks)}-week block. Why: ${val(version.rationale)}`,
       ...list(version.sessions).map((session) =>
         `    day ${val(session.weekday)} ${val(session.name)}: ${
           list(session.exercises).map((exercise) =>
@@ -385,17 +356,16 @@ function planHistory(body: Json): Parts {
       ),
     ]),
     ...nutrition.map((target) => [
-      reasoned(
-        `- Nutrition target v${val(target.version)} (${val(target.status)}), created ${
-          val(target.created_on)
-        }, effective ${val(target.effective_date)}: ${val(target.calories)} kcal, protein ${
-          val(target.protein_g)
-        } g, carbs ${val(target.carbohydrate_g)} g, fat ${val(target.fat_g)} g`,
-        target.rationale,
-      ),
+      `- Nutrition target v${val(target.version)} (${val(target.status)}), created ${
+        val(target.created_on)
+      }, effective ${val(target.effective_date)}: ${val(target.calories)} kcal, protein ${
+        val(target.protein_g)
+      } g, carbs ${val(target.carbohydrate_g)} g, fat ${val(target.fat_g)} g. Why: ${
+        val(target.rationale)
+      }`,
     ]),
   ];
-  return { preface: [], units, trailer: [], ungrounded };
+  return { preface: [], units, trailer: [] };
 }
 
 function goals(body: Json): Parts {
@@ -425,26 +395,18 @@ function goals(body: Json): Parts {
 }
 
 function dailyDecisions(body: Json): Parts {
-  // The summary and the decision are a model's words about that day: shown, not evidence. The
-  // action codes, the confidence, the flags and the date are Tracend's record of it.
-  const ungrounded = new Map<string, { records: string; figures?: string }>();
-  const lines = list(body.decisions).map((decision) => {
-    const tail = ` Confidence ${val(decision.confidence)}${
+  const lines = list(body.decisions).map((decision) =>
+    `- ${val(decision.local_date)}: ${val(decision.training_action).replaceAll("_", " ")}${
+      has(decision.training_summary) ? ` (${decision.training_summary})` : ""
+    }; nutrition ${val(decision.nutrition_action).replaceAll("_", " ")}; decision: ${
+      val(decision.decision)
+    } Confidence ${val(decision.confidence)}${
       Array.isArray(decision.risk_flags) && decision.risk_flags.length
         ? `; flags ${decision.risk_flags.join(", ")}`
         : ""
-    }`;
-    const training = val(decision.training_action).replaceAll("_", " ");
-    const nutrition = val(decision.nutrition_action).replaceAll("_", " ");
-    const line = `- ${val(decision.local_date)}: ${training}${
-      has(decision.training_summary) ? ` (${decision.training_summary})` : ""
-    }; nutrition ${nutrition}; decision: ${val(decision.decision)}${tail}`;
-    ungrounded.set(line, {
-      records: `- ${val(decision.local_date)}: ${training}; nutrition ${nutrition};${tail}`,
-    });
-    return line;
-  });
-  return { ...singles(lines), ungrounded };
+    }`
+  );
+  return singles(lines);
 }
 
 function weeklyReviews(body: Json): Parts {
@@ -494,8 +456,8 @@ function healthHistory(body: Json): Parts {
     `- ${String(month.month ?? "").slice(0, 7)} (imported from Apple Health): ${
       val(month.workouts)
     } workouts (${val(month.strength_workouts)} strength, ${
-      val(month.workout_minutes)
-    } min), sleep ${withUnit(month.sleep_minutes_avg, "min")} over ${
+      has(month.workout_minutes) ? minutesText(month.workout_minutes) : "—"
+    }), sleep ${has(month.sleep_minutes_avg) ? minutesText(month.sleep_minutes_avg) : "—"} over ${
       val(month.sleep_nights)
     } nights, weight ${withUnit(month.weight_kg_avg, "kg")} over ${val(month.weight_days)} days`
   );
@@ -503,27 +465,20 @@ function healthHistory(body: Json): Parts {
 }
 
 function pastMessages(body: Json): Parts {
-  // Coach's own words are not records: labelled so a claim in one is checked, never repeated as
-  // fact, and kept out of the lines that ground the numbers check.
-  const replies = list(body.coach_replies).map((message) =>
-    `- ${
-      val(message.local_date)
-    }, Coach replied (an earlier reply, not a record; it may have been wrong, so check any claim in it against the records): ${
-      quoted(message.content)
-    }`
-  );
+  // Coach's own words are not records: labelled so a claim in one is checked, never repeated as fact.
   const lines = [
     ...list(body.messages).map((message) =>
       `- ${val(message.local_date)}, the athlete wrote: ${quoted(message.content)}`
     ),
-    ...replies,
-  ];
-  return {
-    ...singles(lines),
-    ungrounded: new Map(
-      replies.map((line) => [line, { records: line.slice(0, line.indexOf(" (an earlier reply")) }]),
+    ...list(body.coach_replies).map((message) =>
+      `- ${
+        val(message.local_date)
+      }, Coach replied (an earlier reply, not a record; it may have been wrong, so check any claim in it against the records): ${
+        quoted(message.content)
+      }`
     ),
-  };
+  ];
+  return singles(lines);
 }
 
 /** One line per row. */
@@ -553,40 +508,22 @@ const renderers: Readonly<
 export const lookupRendererNames: readonly string[] = Object.keys(renderers);
 
 /**
- * Which fields of each lookup's payload ground a figure in a reply (`grounds`: records), which
- * ground only a figure that is not the athlete's own target (`figures`: what Tracend built for a
- * proposal), and which are text a model wrote (`modelText`): shown to Coach, never evidence. Only
- * values that are deterministic (Tracend calculated them) or recorded by the athlete may ground
- * the athlete's targets; a decision's summary, the reason on a plan version or a nutrition target,
- * and Coach's own earlier reply may not ground anything. Keyed by lookup, then by mode (the filter
- * that selects different records, or "default"). Every renderer, every mode and every field the
- * renderer shows must be declared here, with a fixture, or render_grounding_test.ts fails: a new
- * renderer, or a new field, states what it grounds before it can ship. Paths are in the lookup's
- * payload (`a[].b` is the field `b` of each element of the list `a`).
+ * What each field of each lookup's payload grounds in a reply (`../grounding.ts` says what the
+ * three kinds are). Keyed by lookup, then by mode (the filter that selects different records, or
+ * "default"); paths are in the payload (`a[].b` is the field `b` of each element of the list `a`).
+ * The grounds of a result are the rows rendered again from the payload cut down to the declared
+ * fields, so a field that is not declared, or is model text, cannot appear in them, whatever the
+ * renderer does with it. Every renderer, mode and shown field must be declared, with a fixture, or
+ * render_grounding_test.ts fails: a new field states what it grounds before it can ship.
  */
-export type FieldGrounding = Readonly<{
-  /** Records: the athlete's, Apple Health's, Tracend's calculations. They ground any figure. */
-  grounds: readonly string[];
-  /**
-   * Figures Tracend built for a proposal: they ground a figure, but not one that states the
-   * athlete's own target (a proposal is not a target).
-   */
-  figures: readonly string[];
-  /** Text a model wrote: shown, never evidence. */
-  modelText: readonly string[];
-}>;
-
-export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, FieldGrounding>>>> = {
+export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, Declaration>>>> = {
   workouts: {
     default: {
-      grounds: [
+      records: [
         "sessions[].local_date",
-        "sessions[].workout",
         "sessions[].minutes",
         "sessions[].effort",
         "sessions[].note",
-        "sessions[].exercises[].name",
-        "sessions[].exercises[].planned_name",
         "sessions[].exercises[].substitution_reason",
         "sessions[].exercises[].note",
         "sessions[].exercises[].planned.sets",
@@ -596,36 +533,62 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, Fi
         "sessions[].exercises[].sets[].load_kg",
         "sessions[].exercises[].sets[].rir",
         "sessions[].exercises[].sets[].peak_bpm",
+        "sessions[].exercises[].status",
+        "sessions[].exercises[].pain",
+        "sessions[].exercises[].kind",
+        "sessions[].exercises[].sets[].done",
       ],
-      figures: [],
-      modelText: [],
+      controls: [
+        "truncated",
+      ],
+      columns: {
+        "sessions[].workout": "planned_workouts.name",
+        "sessions[].exercises[].name": "planned_exercises.name",
+        "sessions[].exercises[].planned_name": "planned_exercises.name",
+      },
     },
   },
   exercise_history: {
     default: {
-      grounds: [
+      records: [
         "sessions[].local_date",
-        "sessions[].name",
         "sessions[].top_load_kg",
         "sessions[].top_reps",
         "sessions[].sets",
         "sessions[].e1rm_kg",
         "sessions[].min_rir",
-        "planned[].name",
         "planned[].sets",
         "planned[].rep_min",
         "planned[].rep_max",
         "planned[].rest_seconds",
-        "next_targets[].name",
         "next_targets[].basis.recent[].local_date",
+        "next_targets[].action",
+        "next_targets[].reason",
+        "next_targets[].load_kg",
+        "next_targets[].reps",
+        "next_targets[].sets",
+        "next_targets[].confidence",
+        "next_targets[].basis.recent[].load_kg",
+        "next_targets[].basis.recent[].sets",
+        "next_targets[].basis.recent[].min_reps",
       ],
-      figures: [],
-      modelText: [],
+      controls: [
+        "truncated",
+        "next_targets[].planned_exercise_id",
+        "next_targets[].exercise_key",
+        "next_targets[].basis.last_date",
+        "next_targets[].basis.recent[].min_rir",
+      ],
+      columns: {
+        "sessions[].name": "planned_exercises.name",
+        "planned[].name": "planned_exercises.name",
+        "next_targets[].name": "planned_exercises.name",
+      },
     },
   },
   meals: {
     default: {
-      grounds: [
+      records: [
         "target_kcal",
         "rules.min_meals",
         "days[].local_date",
@@ -638,14 +601,18 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, Fi
         "meals[].meal_type",
         "meals[].foods[].name",
         "meals[].foods[].calories",
+        "rules.min_target_share",
+        "days[].complete",
+        "meals[].source",
       ],
-      figures: [],
-      modelText: [],
+      controls: [
+        "truncated",
+      ],
     },
   },
   body: {
     default: {
-      grounds: [
+      records: [
         "weights[].date",
         "weights[].kg",
         "weights[].source",
@@ -656,13 +623,14 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, Fi
         "measurements[].arm_cm",
         "measurements[].thigh_cm",
       ],
-      figures: [],
-      modelText: [],
+      controls: [
+        "truncated",
+      ],
     },
   },
   check_ins: {
     default: {
-      grounds: [
+      records: [
         "check_ins[].local_date",
         "check_ins[].sleep_quality",
         "check_ins[].energy",
@@ -671,14 +639,16 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, Fi
         "check_ins[].mood",
         "check_ins[].pain_severity",
         "check_ins[].note",
+        "check_ins[].available_to_train",
       ],
-      figures: [],
-      modelText: [],
+      controls: [
+        "truncated",
+      ],
     },
   },
   recovery: {
     default: {
-      grounds: [
+      records: [
         "days[].local_date",
         "days[].sleep_minutes",
         "days[].resting_heart_rate_bpm",
@@ -697,23 +667,21 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, Fi
         "days[].active_energy_kcal",
         "days[].workout_minutes",
       ],
-      figures: [],
-      modelText: [],
+      controls: [
+        "truncated",
+      ],
     },
   },
   plan_history: {
     default: {
-      grounds: [
+      records: [
         "training[].version",
         "training[].status",
-        "training[].title",
         "training[].sessions_per_week",
         "training[].block_weeks",
         "training[].effective_date",
         "training[].created_on",
-        "training[].sessions[].name",
         "training[].sessions[].weekday",
-        "training[].sessions[].exercises[].name",
         "training[].sessions[].exercises[].sets",
         "training[].sessions[].exercises[].rep_min",
         "training[].sessions[].exercises[].rep_max",
@@ -726,31 +694,66 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, Fi
         "nutrition[].effective_date",
         "nutrition[].created_on",
       ],
-      figures: [],
-      modelText: ["training[].rationale", "nutrition[].rationale"],
+      controls: [
+        "truncated",
+      ],
+      columns: {
+        "training[].title": "training_plans.title",
+        "training[].sessions[].name": "planned_workouts.name",
+        "training[].sessions[].exercises[].name": "planned_exercises.name",
+        "training[].rationale": "training_plan_versions.rationale",
+        "nutrition[].rationale": "nutrition_target_sets.rationale",
+      },
     },
     schedule: {
-      grounds: ["plan.version", "days[].date", "days[].planned[].name", "days[].done[].name"],
-      figures: [],
-      modelText: [],
+      records: [
+        "plan.version",
+        "days[].date",
+        "days[].weekday",
+        "sessions[].exercises[].slug",
+        "sessions[].exercises[].sets",
+        "days[].done[].exercises[].slug",
+        "days[].done[].exercises[].sets",
+      ],
+      controls: [
+        "filter",
+        "today",
+        "truncated",
+        "plan.id",
+        "sessions[].id",
+        "days[].version_id",
+        "days[].block",
+        "days[].planned[].id",
+      ],
+      columns: {
+        "days[].planned[].name": "planned_workouts.name",
+        "days[].done[].name": "planned_workouts.name",
+      },
     },
     proposals: {
-      grounds: [
+      records: [
         "proposals[].created_on",
         "proposals[].kind",
-        "proposals[].title",
         "proposals[].status",
         "proposals[].confidence",
         "proposals[].ends_on",
         "proposals[].applied_on",
       ],
-      figures: ["proposals[].rationale", "proposals[].benefit", "proposals[].downside"],
-      modelText: [],
+      controls: [
+        "filter",
+        "truncated",
+      ],
+      columns: {
+        "proposals[].title": "change_proposals.title",
+        "proposals[].rationale": "change_proposals.rationale",
+        "proposals[].benefit": "change_proposals.expected_benefit",
+        "proposals[].downside": "change_proposals.downside",
+      },
     },
   },
   goals: {
     default: {
-      grounds: [
+      records: [
         "goals[].goal_type",
         "goals[].status",
         "goals[].created_on",
@@ -758,13 +761,14 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, Fi
         "screenings[].outcome",
         "screenings[].screened_on",
       ],
-      figures: [],
-      modelText: [],
+      controls: [
+        "truncated",
+      ],
     },
   },
   weekly_reviews: {
     default: {
-      grounds: [
+      records: [
         "reviews[].review_week",
         "reviews[].outcome_code",
         "reviews[].next_focus_code",
@@ -775,24 +779,31 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, Fi
         "reviews[].recovery.check_in_days",
         "reviews[].nutrition.confirmed_days",
       ],
-      figures: [],
-      modelText: [],
+      controls: [
+        "truncated",
+      ],
     },
     decisions: {
-      grounds: [
+      records: [
         "decisions[].local_date",
         "decisions[].training_action",
         "decisions[].nutrition_action",
         "decisions[].confidence",
         "decisions[].risk_flags[]",
       ],
-      figures: [],
-      modelText: ["decisions[].training_summary", "decisions[].decision"],
+      controls: [
+        "filter",
+        "truncated",
+      ],
+      columns: {
+        "decisions[].training_summary": "coach_decisions.training_summary",
+        "decisions[].decision": "coach_decisions.decision",
+      },
     },
   },
   health_history: {
     default: {
-      grounds: [
+      records: [
         "months[].workouts",
         "months[].strength_workouts",
         "months[].workout_minutes",
@@ -801,25 +812,37 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, Fi
         "months[].weight_days",
         "months[].weight_kg_avg",
       ],
-      figures: [],
-      modelText: [],
+      controls: [
+        "truncated",
+      ],
     },
     workouts: {
-      grounds: [
+      records: [
         "workouts[].local_date",
         "workouts[].activity_type",
         "workouts[].minutes",
         "workouts[].energy_kcal",
+        "workouts[].reconciliation",
       ],
-      figures: [],
-      modelText: [],
+      controls: [
+        "filter",
+        "truncated",
+      ],
     },
   },
   past_messages: {
     default: {
-      grounds: ["messages[].local_date", "messages[].content", "coach_replies[].local_date"],
-      figures: [],
-      modelText: ["coach_replies[].content"],
+      records: [
+        "messages[].local_date",
+        "messages[].content",
+        "coach_replies[].local_date",
+      ],
+      controls: [
+        "truncated",
+      ],
+      columns: {
+        "coach_replies[].content": "coach_messages.coach_content",
+      },
     },
   },
 };
@@ -871,30 +894,54 @@ export function renderLookup(
   // Room for the widest heading, then rows: newest first (the last ones when the rows run
   // oldest to newest).
   let used = fixed + heading(request, total, total + 1, sqlCut, parts.keepFirst).length + 40;
-  const kept: string[][] = [];
-  const order = parts.newestLast ? [...parts.units].reverse() : parts.units;
-  for (const unit of order) {
-    const size = unit.join("\n").length + 1;
+  const kept: number[] = [];
+  const order = parts.units.map((_, index) => index);
+  if (parts.newestLast) order.reverse();
+  for (const index of order) {
+    const size = parts.units[index].join("\n").length + 1;
     if (used + size > maxChars) break;
-    kept.push(unit);
+    kept.push(index);
     used += size;
   }
-  const shown = parts.newestLast ? kept.reverse() : kept;
+  const shownIndexes = parts.newestLast ? kept.reverse() : kept;
+  const shown = shownIndexes.map((index) => parts.units[index]);
   const headed = heading(request, shown.length, total, sqlCut, parts.keepFirst);
   const lines = [...parts.preface, ...shown.flat(), ...parts.trailer];
   const empty = total === 0 ? ["No records in this range."] : [];
+  const period =
+    `Period looked at: ${request.from} to ${request.to}. Rows shown: ${shown.length} of ${total}.`;
+  // The rows again, from the fields that ground (the same rows, in the same order).
+  const groundedBy = (kinds: readonly ("records" | "figures")[]): string[] => {
+    const declaration = lookupGrounding[request.lookup]?.[modeOf(request)];
+    if (!declaration) return [];
+    const resolved = resolve(declaration);
+    const keep = new Set([...kinds.flatMap((kind) => [...resolved[kind]])]);
+    if (keep.size === 0) return [];
+    for (const path of resolved.controls) keep.add(path);
+    const again = render(pruneTo(body, keep) as Json, allowed);
+    if (again.units.length !== total) return [...again.preface, ...again.trailer];
+    return [
+      ...again.preface,
+      ...shownIndexes.flatMap((index) => again.units[index]),
+      ...again.trailer,
+    ]
+      .filter((line) => line !== "");
+  };
   return {
     text: [headed, ...empty, ...lines].join("\n"),
     rows: shown.length,
-    grounds: [
-      `Period looked at: ${request.from} to ${request.to}. Rows shown: ${shown.length} of ${total}.`,
-      ...lines.map((line) => parts.ungrounded?.get(line)?.records ?? line).filter((line) =>
-        line !== ""
-      ),
-    ],
-    proposalGrounds: lines.flatMap((line) => parts.ungrounded?.get(line)?.figures ?? []),
+    grounds: [period, ...groundedBy(["records"])],
+    proposalGrounds: groundedBy(["figures"]),
   };
 }
+
+/** The mode of a request: its filter when the lookup has one by that name, else "default". */
+const modeOf = (request: DataRequest): string => {
+  const spec = lookupSpec(request.lookup);
+  return request.filter !== null && spec?.filterModes?.includes(request.filter)
+    ? request.filter
+    : "default";
+};
 
 /** Shown in place of a result the server could not read: Coach must say it could not check. */
 export function unreadable(request: DataRequest): RenderedLookup {

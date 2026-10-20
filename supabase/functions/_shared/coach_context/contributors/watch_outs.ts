@@ -14,6 +14,7 @@
 // Inputs: the plan state (get_coach_plan_state_v1, shared with the training plan block), the facts
 // of get_coach_watch_outs_v1 and the plan laid over the last four weeks (plan_history, filter
 // schedule). Any one of them may fail; the lines that need it are then left out.
+import { minutesText } from "../../duration_text.ts";
 import { goalPhaseThresholds } from "../../training/goal_phase/thresholds.ts";
 import { addDays, dayOf, overlapFactLine, stamp } from "../../training/schedule/week_ahead.ts";
 import { readScheduleBody, type ScheduleBody } from "../../training/schedule/lookup_body.ts";
@@ -222,7 +223,7 @@ function loadCheck(plan: PlanState, facts: WatchFacts): string | null {
   }
   if (m?.sleepQuality != null && m.sleepQuality < watchOutThresholds.sleepQualityBelow) {
     const slept = facts.sleep !== null && Math.abs(dayOf(facts.sleep.date) - dayOf(m.date)) <= 1
-      ? `, ${facts.sleep.minutes} min asleep on ${facts.sleep.date}`
+      ? `, ${minutesText(facts.sleep.minutes)} asleep on ${facts.sleep.date}`
       : "";
     reasons.push(
       `sleep quality score ${m.sleepQuality} on ${m.date} (below ${watchOutThresholds.sleepQualityBelow}${slept})`,

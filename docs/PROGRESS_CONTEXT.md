@@ -88,7 +88,7 @@ records, and `coach_messages.lookups` records lookups per round. Migration
 answer schema is unchanged at 2,818 bytes). 37 `inv-` eval cases and a 90% domain-coverage gate; the
 live measurement is still to run. Owner decisions: `past_messages` now returns Coach's own earlier
 replies, labelled and never grounding a figure (AI_SAFETY_SPEC §11.1a); breathing rate and the athlete's
-free text in a workout are held back until a notice names them (§10.3, wording in `ai-gateway.md`). Details: "Coach investigates first" in
+free text in a workout are held back until a notice names them (§10.3, wording in `ai-gateway.md`). One grounding rule covers every path (records ground both, a pending proposal's figures ground only a figure about the proposal, a model's words and anything undeclared ground nothing: §11.1 "What grounds a figure"), and sleep durations carry their hours so "5.7 h" rests on a "341 min" row. Details: "Coach investigates first" in
 [`ai-gateway.md`](./handoff/ai-gateway.md).
 
 **Coach week-ahead fix (2026-10-18, merged as #156).** On a Sunday Coach

@@ -728,7 +728,7 @@ Deno.test("recovery: sleep stages, night and morning HRV, breathing rate, active
   );
   assertStringIncludes(
     text,
-    "- 2026-10-17: sleep 355 min (deep 50, REM 80, light 205, awake 20 min), resting heart rate 63 bpm, HRV 41 ms (night 44 ms), breathing rate 15.4 breaths/min, steps 8200, active energy 520 kcal, 62 min of workouts, recovery score 31, sleep quality 44, load ratio 1.1",
+    "- 2026-10-17: sleep 355 min (5 h 55 min; 5.9 h) (deep 50, REM 80, light 205, awake 20 min), resting heart rate 63 bpm, HRV 41 ms (night 44 ms), breathing rate 15.4 breaths/min, steps 8200, active energy 520 kcal, 62 min of workouts, recovery score 31, sleep quality 44, load ratio 1.1",
   );
   assertStringIncludes(
     text,

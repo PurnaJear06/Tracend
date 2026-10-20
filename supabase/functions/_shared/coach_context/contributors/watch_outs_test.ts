@@ -97,7 +97,7 @@ Deno.test("a session due today or tomorrow on a poor recovery day names the sess
   assertEquals(lines.length, 1);
   assertEquals(
     lines[0],
-    "- Due Pull and rear delts today (Wed 2026-10-14) and Chest volume and delts tomorrow (Thu 2026-10-15), with recovery score 31 on 2026-10-14 (below 40); sleep quality score 44 on 2026-10-14 (below 50, 355 min asleep on 2026-10-14); check-in pain 3/10 on 2026-10-14.",
+    "- Due Pull and rear delts today (Wed 2026-10-14) and Chest volume and delts tomorrow (Thu 2026-10-15), with recovery score 31 on 2026-10-14 (below 40); sleep quality score 44 on 2026-10-14 (below 50, 355 min (5 h 55 min; 5.9 h) asleep on 2026-10-14); check-in pain 3/10 on 2026-10-14.",
   );
 });
 

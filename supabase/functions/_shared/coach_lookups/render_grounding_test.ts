@@ -24,6 +24,8 @@ import {
   weeklyReviewsPayload,
   workoutsNotesPayload,
 } from "./lookup_fixtures.ts";
+import { leafPaths, resolve } from "../grounding.ts";
+import { changeAt, variantsOf } from "../grounding_probe.ts";
 import { lookupGrounding, lookupRendererNames, renderLookup } from "./render.ts";
 
 const fixtures: Readonly<Record<string, unknown>> = {
@@ -44,47 +46,6 @@ const fixtures: Readonly<Record<string, unknown>> = {
   "past_messages/default": pastMessagesCoachPayload,
 };
 
-/** Every leaf of a payload, as a path: `a[].b` for the field `b` of each element of `a`. */
-function leaves(node: unknown, path = "", out = new Set<string>()): Set<string> {
-  if (Array.isArray(node)) {
-    if (node.length > 0 && node.every((item) => item === null || typeof item !== "object")) {
-      out.add(`${path}[]`);
-    }
-    for (const item of node) {
-      if (item !== null && typeof item === "object") leaves(item, `${path}[]`, out);
-    }
-    return out;
-  }
-  if (node !== null && typeof node === "object") {
-    for (const [key, value] of Object.entries(node)) {
-      leaves(value, path ? `${path}.${key}` : key, out);
-    }
-    return out;
-  }
-  out.add(path);
-  return out;
-}
-
-/** A copy of the payload with `marker` in the field at `path` of every element on the way. */
-function mark(payload: unknown, path: string, marker: string): unknown {
-  const copy = structuredClone(payload) as Record<string, unknown>;
-  const put = (node: unknown, steps: string[]): void => {
-    const [step, ...rest] = steps;
-    if (Array.isArray(node)) {
-      for (const item of node) put(item, steps);
-      return;
-    }
-    if (node === null || typeof node !== "object") return;
-    const object = node as Record<string, unknown>;
-    const list = step.endsWith("[]");
-    const key = list ? step.slice(0, -2) : step;
-    if (rest.length === 0) object[key] = list ? [marker] : marker;
-    else put(object[key], rest);
-  };
-  put(copy, path.split("."));
-  return copy;
-}
-
 const everyScope = new Set(["breathing_rate", "workout_notes"] as const);
 
 Deno.test("every lookup and every mode declares what grounds, and has a fixture", () => {
@@ -99,54 +60,85 @@ Deno.test("every lookup and every mode declares what grounds, and has a fixture"
   assertEquals(Object.keys(fixtures).length, 15);
 });
 
+/**
+ * What a change to the field at `path` does to a result: whether the text Coach reads changes (the
+ * field is shown), whether the rows that ground change, and whether the proposal figures change.
+ * The change keeps the field's type; the first one that changes the text is used.
+ */
+function effectOf(lookup: string, mode: string, fixture: unknown, path: string, seed: number) {
+  const asked = request(
+    lookup as never,
+    "2026-08-01",
+    "2026-10-17",
+    mode === "default" ? null : mode,
+  );
+  const read = (payload: unknown) => {
+    const rendered = renderLookup(asked, payload, 20_000, everyScope);
+    return {
+      text: rendered.text,
+      grounds: rendered.grounds.join("\n"),
+      figures: rendered.proposalGrounds.join("\n"),
+    };
+  };
+  const base = read(fixture);
+  for (let variant = 0; variant < 3; variant++) {
+    const changed = read(
+      changeAt(fixture, path, (value) => {
+        const options = variantsOf(value, seed);
+        return options[Math.min(variant, options.length - 1)];
+      }),
+    );
+    if (changed.text === base.text) continue;
+    return {
+      shown: true,
+      grounds: changed.grounds !== base.grounds,
+      figures: changed.figures !== base.figures,
+    };
+  }
+  return { shown: false, grounds: false, figures: false };
+}
+
 Deno.test("every field a lookup shows is declared, and each grounds a figure, grounds a proposal's figure, or does not, exactly as declared", () => {
-  let checked = 0;
+  const problems: string[] = [];
+  let verified = 0;
+  let seed = 0;
   for (const [lookup, modes] of Object.entries(lookupGrounding)) {
-    for (const [mode, fields] of Object.entries(modes)) {
+    for (const [mode, declaration] of Object.entries(modes)) {
       const fixture = fixtures[`${lookup}/${mode}`];
-      const asked = request(
-        lookup as never,
-        "2026-08-01",
-        "2026-10-17",
-        mode === "default" ? null : mode,
-      );
-      const declared = new Map<string, "grounds" | "figures" | "modelText">([
-        ...fields.grounds.map((path) => [path, "grounds"] as const),
-        ...fields.figures.map((path) => [path, "figures"] as const),
-        ...fields.modelText.map((path) => [path, "modelText"] as const),
-      ]);
-      assertEquals(
-        declared.size,
-        fields.grounds.length + fields.figures.length + fields.modelText.length,
-      );
-      assert(declared.size > 0, `${lookup}/${mode} declares nothing`);
-      // Every leaf of the fixture: a marker in it either shows (then it is declared) or does not.
-      for (const path of leaves(fixture)) {
-        const marker = `MK${100000 + checked}Z`;
-        checked += 1;
-        const rendered = renderLookup(asked, mark(fixture, path, marker), 20_000, everyScope);
+      const resolved = resolve(declaration);
+      const kinds = new Map<string, "records" | "figures" | "modelText" | "controls">();
+      for (const kind of ["records", "figures", "modelText", "controls"] as const) {
+        for (const path of resolved[kind]) kinds.set(path, kind);
+      }
+      assert(kinds.size > 0, `${lookup}/${mode} declares nothing`);
+      const paths = leafPaths(fixture);
+      for (const path of paths) {
+        // The version of the payload decides whether it is read at all, not what it shows.
+        if (path === "schema_version") continue;
         const where = `${lookup}/${mode} ${path}`;
-        const shown = rendered.text.includes(marker);
-        const kind = declared.get(path);
+        const effect = effectOf(lookup, mode, fixture, path, seed++);
+        const kind = kinds.get(path);
+        if (kind === "controls") continue;
         if (kind === undefined) {
-          assert(!shown, `${where} is shown to Coach but not declared in lookupGrounding`);
+          if (effect.shown) problems.push(`${where} is shown but not declared`);
           continue;
         }
-        // Coach reads it, and it is evidence only as declared.
-        assert(shown, `${where} is declared but not shown`);
-        assertEquals(rendered.grounds.join("\n").includes(marker), kind === "grounds", where);
-        assertEquals(
-          rendered.proposalGrounds.join("\n").includes(marker),
-          kind === "figures",
-          where,
-        );
+        if (!effect.shown) {
+          problems.push(`${where} is declared but changing it does not change what Coach reads`);
+        } else if (effect.grounds !== (kind === "records")) {
+          problems.push(`${where} (${kind}) grounds=${effect.grounds}`);
+        } else if (effect.figures !== (kind === "figures")) {
+          problems.push(`${where} (${kind}) grounds a proposal's figure=${effect.figures}`);
+        } else verified += 1;
       }
-      for (const path of declared.keys()) {
-        assert(leaves(fixture).has(path), `${lookup}/${mode} ${path} is not in the fixture`);
+      for (const path of kinds.keys()) {
+        if (!paths.has(path)) problems.push(`${lookup}/${mode} ${path} is not in the fixture`);
       }
     }
   }
-  assert(checked >= 250, `${checked} fields checked`);
+  assertEquals(problems, []);
+  // The count of fields checked end to end (shown, then grounding as declared), not of fields walked.
+  assert(verified >= 170, `${verified} fields verified`);
 });
 
 Deno.test("a figure written by a model in a lookup row is not a ground, and the record around it is", () => {
