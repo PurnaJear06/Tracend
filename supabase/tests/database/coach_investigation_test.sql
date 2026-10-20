@@ -124,11 +124,11 @@ values ('a1030000-0000-4000-8000-0000000000c1', 'a1030000-0000-4000-8000-0000000
 set local session_replication_role = replica;
 insert into public.coach_decisions(user_id, feature_snapshot_id, policy_evaluation_id, model_run_id,
   decision_kind, local_date, schema_version, training, nutrition, head_coach, evidence, confidence,
-  risk_flags) values
+  risk_flags, valid_until) values
   ('a1030000-0000-4000-8000-000000000001', gen_random_uuid(), gen_random_uuid(), gen_random_uuid(),
    'daily', current_date - 1, '1.0', '{"action":"ADJUST_TODAY","summary":"Reduce intensity"}',
    '{"action":"MAINTAIN_TARGETS"}', '{"final_decision":"Reduce training intensity today."}', '[]', 'high',
-   array['elevated_load']);
+   array['elevated_load'], now() + interval '24 hours');
 set local session_replication_role = origin;
 insert into public.coach_threads(id, user_id, title, remember) values
   ('a1630000-0000-4000-8000-000000000001', 'a1030000-0000-4000-8000-000000000001', 'Open chat', true),
