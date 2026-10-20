@@ -318,3 +318,90 @@ Deno.test("a judged run reports the tone rate without gating on it", async () =>
   assertStringIncludes(result.text, "Tone judge (reported, not gated): 50%");
   assert(result.summary.costUsd >= 0.004);
 });
+
+// ---- the domain-coverage gate ----------------------------------------------------------------
+
+const investigationCases = bankCases.filter((bank) => bank.category === "investigation");
+
+/** A model that investigates as the case's good requests say, or skips them when told to. */
+const scripted = (skip: (id: string) => boolean): Generate => async ({ question, lookups }) => {
+  const bank = investigationCases.find((c) => c.question === question)!;
+  const requests = skip(bank.id) ? [] : bank.goodRequests ?? [];
+  if (requests.length > 0) {
+    await lookups!(requests.map((request) => ({
+      lookup: request.lookup as never,
+      from: request.from,
+      to: request.to,
+      filter: typeof request.filter === "string" ? request.filter : null,
+    })));
+  }
+  return generation(bank.good![0]);
+};
+
+Deno.test("a model that investigates every case covers the kinds it needs: the gate passes at 100%", async () => {
+  const result = await runBank({
+    cases: investigationCases,
+    repeats: 1,
+    generate: scripted(() => false),
+  });
+  assertEquals(result.summary.domainCoverage.checked, investigationCases.length);
+  assertEquals(result.summary.domainCoverage.rate, 1);
+  assertEquals(result.summary.gates.domains, true);
+  assert(result.passed, result.text);
+  assertStringIncludes(result.text, "| Domain coverage ≥ 90% | pass | 100%");
+});
+
+Deno.test("a model that skips the lookups on a fifth of the cases that need them fails the domain gate", async () => {
+  const needing = investigationCases.filter((bank) => (bank.goodRequests ?? []).length > 0);
+  const skipped = new Set(
+    needing.slice(0, Math.ceil(needing.length * 0.35)).map((bank) => bank.id),
+  );
+  const result = await runBank({
+    cases: investigationCases,
+    repeats: 1,
+    generate: scripted((id) => skipped.has(id)),
+  });
+  const rate = result.summary.domainCoverage.rate!;
+  assert(rate < bankGates.domainCoverageRate, `${rate}`);
+  assertEquals(result.summary.gates.domains, false);
+  assert(!result.passed);
+  assertStringIncludes(result.text, "| Domain coverage ≥ 90% | FAIL |");
+  assertStringIncludes(result.text, "domain_coverage");
+});
+
+Deno.test("the gate is a share of runs: nine of ten pass it, eight of ten do not, and none checked is no gate", () => {
+  const run = (index: number, covered: boolean): CaseRun => ({
+    id: `case-${index}`,
+    category: "investigation",
+    repeat: 1,
+    reply: {
+      outcome: "model",
+      answer: "ok",
+      safetyState: "allowed",
+      dataRequests: [],
+      costUsd: 0.001,
+      latencyMs: 1000,
+    },
+    results: [
+      { grader: "answered", severity: "quality", pass: true },
+      {
+        grader: "domain_coverage",
+        severity: "quality",
+        pass: covered,
+        ...(covered ? {} : { detail: "not covered: recovery" }),
+      },
+    ],
+  });
+  const ten = (covered: number) =>
+    Array.from({ length: 10 }, (_, index) => run(index, index < covered));
+  const nine = summarise(ten(9));
+  assertEquals(nine.domainCoverage, { checked: 10, covered: 9, rate: 0.9 });
+  assertEquals(nine.gates.domains, true);
+  const eight = summarise(ten(8));
+  assertEquals(eight.gates.domains, false);
+  assertEquals(eight.passed, false);
+  const none = summarise([]);
+  assertEquals(none.domainCoverage, { checked: 0, covered: 0, rate: null });
+  assertEquals(none.gates.domains, true);
+  assertEquals(bankGates.domainCoverageRate, 0.9);
+});

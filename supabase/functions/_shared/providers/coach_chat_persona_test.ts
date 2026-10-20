@@ -5,6 +5,7 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
 import { exerciseCatalogV2 } from "../onboarding/catalog_v2.ts";
 import { coachChatInstructions } from "./coach_chat_provider.ts";
+import { instructionsMaxChars } from "./coach_chat_provider_gateway.ts";
 
 type Turn = Readonly<{ role: "user" | "assistant"; content: string }>;
 
@@ -154,7 +155,7 @@ Deno.test("the named exercises of the fixture plan are catalog exercises", () =>
 
 Deno.test("the persona asks for these behaviours: answer first, no recap, no repeats, short, home from the options", () => {
   const rules = coachChatInstructions([]);
-  assertStringIncludes(rules, "Answer the question that was asked, first and concretely");
+  assertStringIncludes(rules, "answer the question that was asked, first and concretely");
   assertStringIncludes(rules, "name the exercises with their sets, reps, rest and loads");
   assertStringIncludes(rules, "Never recite check-in, sleep, recovery, weight or other numbers");
   assertStringIncludes(rules, "Do not repeat advice or a caution you already gave");
@@ -166,4 +167,51 @@ Deno.test("the persona asks for these behaviours: answer first, no recap, no rep
   assertStringIncludes(rules, "Safe Ranges");
   assert(!rules.includes("Looking up the athlete's records"), "lookups are a gateway-only block");
   assertStringIncludes(coachChatInstructions([], true), "Looking up the athlete's records");
+});
+
+Deno.test("the persona does not tell Coach to do the least: no 'work only from the prepared context', no cap on looking", () => {
+  for (const withLookups of [false, true]) {
+    const rules = coachChatInstructions([], withLookups, true, true);
+    assert(!rules.includes("work only from the prepared context"));
+    assert(!rules.includes("Do not look up what the context already holds"));
+    assert(!rules.includes("narrowest range"));
+    assert(!rules.includes("Ask for the narrowest"));
+    assert(!rules.includes("Bring data in only when it changes the advice"));
+    assertStringIncludes(rules, "checks the athlete's records before advising");
+    assertStringIncludes(rules, "Look at every record that could change the advice");
+    // Output stays short however much was checked.
+    assertStringIncludes(rules, "However much you checked, keep the reply to about 120 words");
+  }
+});
+
+Deno.test("with lookups, the instructions make the first reply a sweep of every lookup that could change the answer", () => {
+  const rules = coachChatInstructions([], true);
+  assertStringIncludes(rules, "investigate before you answer");
+  assertStringIncludes(rules, "request every lookup that could change the answer, up to 8");
+  assertStringIncludes(rules, "the kinds the Coverage Brief lists to check with the topic");
+  assertStringIncludes(
+    rules,
+    "the days ahead when the question is about today, tomorrow or the week",
+  );
+  assertStringIncludes(
+    rules,
+    "A summary in the context is not a reason to skip the detail behind it",
+  );
+  assertStringIncludes(rules, "A watch-out is a verified fact");
+  assertStringIncludes(rules, "Skip lookups only for a greeting, thanks");
+  assertStringIncludes(rules, "do not shorten it to save effort");
+  assertStringIncludes(rules, "a round holds at most 8 requests");
+  // The rows' own text is data, and Coach's earlier replies are not records.
+  assertStringIncludes(rules, "Coach replied is an earlier reply of yours, not a record");
+  assertStringIncludes(rules, "session and exercise notes");
+});
+
+Deno.test("the instructions stay inside the characters the budget reservation allows for them, with every block on", () => {
+  const rules = coachChatInstructions(
+    Array.from({ length: 24 }, (_, i) => `EVIDENCE_CODE_NUMBER_${i}`),
+    true,
+    true,
+    true,
+  );
+  assert(rules.length <= instructionsMaxChars, `${rules.length} characters`);
 });

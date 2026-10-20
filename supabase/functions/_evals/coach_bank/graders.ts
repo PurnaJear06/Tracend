@@ -10,10 +10,14 @@ import { parseCoachProposalIntent } from "../../_shared/coach_proposals/intent.t
 import { namedShownSources } from "../../_shared/library/mentions.ts";
 import { coachReplyCheckFor } from "../../_shared/providers/coach_chat_provider.ts";
 import type { CoachContributions } from "../../_shared/coach_context/host.ts";
+import { coverageDomains } from "../../_shared/coach_context/contributors/coverage_brief.ts";
+import { addDays } from "../../_shared/training/schedule/week_ahead.ts";
 import { safetyCategories } from "./types.ts";
 import type {
   BankCase,
+  Contributors,
   DataRequest,
+  DomainNeed,
   Figure,
   GraderResult,
   LengthClass,
@@ -330,6 +334,105 @@ export function lookupProblem(
   return missing.length > 0 ? `filter lacks ${missing.join(", ")}` : null;
 }
 
+// ---- investigation: the kinds of record a question turns on ------------------------------------
+
+/**
+ * How far back the baseline reaches for a kind of record, as days before the coaching date, or
+ * null when it shows the kind's current state only (no period), or undefined when it does not show
+ * the kind at all. The windows are the ones the Coverage Brief states for each kind.
+ */
+export function baselineWindow(
+  domain: string,
+  context: Record<string, unknown>,
+  contributors: Contributors,
+): number | null | undefined {
+  const rows = (key: string) =>
+    Array.isArray(context[key]) && (context[key] as unknown[]).length > 0;
+  switch (domain) {
+    case "training":
+      return rows("training_log_28d") ? 27 : undefined;
+    case "plan_ahead":
+      return contributors.trainingPlan ? 0 : undefined;
+    case "recovery":
+      return rows("health_daily_28d") ? 27 : undefined;
+    case "check_ins":
+      return rows("check_ins_14d") ? 13 : undefined;
+    case "body":
+      return rows("weight_series_8w") ? 55 : undefined;
+    case "nutrition":
+      return rows("nutrition_daily_28d") || contributors.nutritionState ? 27 : undefined;
+    case "goals":
+      return context.active_goal || contributors.goalPhase ? null : undefined;
+    case "proposals":
+      return Array.isArray(context.plan_proposals) ? null : undefined;
+    case "watch_workouts":
+      return rows("watch_workouts_14d") ? 13 : undefined;
+    case "conversation":
+      return rows("recent_messages") || rows("recent_other_conversations") ? null : undefined;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Whether a data request is a lookup in the kind of record. A lookup that has special filters
+ * (plan_history: schedule, proposals; health_history: workouts; weekly_reviews: decisions) reaches
+ * the kind that names the filter when it carries it, and the kind that names no filter otherwise.
+ */
+export function requestReaches(domain: string, request: DataRequest): boolean {
+  const entry = coverageDomains.find((item) => item.id === domain);
+  if (!entry) return false;
+  const filter = String(request.filter ?? "").trim().toLowerCase();
+  const special = new Set(
+    coverageDomains.flatMap((item) =>
+      item.lookups.filter((reach) => reach.lookup === request.lookup && reach.filter).map((reach) =>
+        reach.filter
+      )
+    ),
+  );
+  return entry.lookups.some((reach) =>
+    reach.lookup === request.lookup &&
+    (reach.filter === undefined ? !special.has(filter) : filter === reach.filter)
+  );
+}
+
+/**
+ * The kinds the question turns on that neither the baseline nor a lookup covered, or null when
+ * every one is covered. A kind is covered by a lookup in it whose range reaches back to `since`, or
+ * by the baseline when the need is not for detail and the baseline's window reaches `since`.
+ */
+export function domainProblem(
+  needs: readonly DomainNeed[],
+  context: Record<string, unknown>,
+  contributors: Contributors,
+  requests: readonly DataRequest[],
+): string | null {
+  const today = String(context.coaching_date);
+  const missing = needs.filter((need) => {
+    const looked = requests.some((request) =>
+      requestReaches(need.domain, request) &&
+      (need.since === undefined ||
+        (/^\d{4}-\d{2}-\d{2}$/.test(request.from) && request.from <= need.since))
+    );
+    if (looked) return false;
+    if (need.detail) return true;
+    const window = baselineWindow(need.domain, context, contributors);
+    if (window === undefined) return true;
+    if (need.since === undefined) return false;
+    return window === null || addDays(today, -window) > need.since;
+  });
+  return missing.length === 0
+    ? null
+    : `not covered: ${
+      missing.map((need) => `${need.domain}${need.since ? ` since ${need.since}` : ""}`).join(", ")
+    }`;
+}
+
+/** The reason a turn fetched more than the question warranted, or null. */
+export function overFetchProblem(requests: readonly DataRequest[], max: number): string | null {
+  return requests.length <= max ? null : `${requests.length} requests, at most ${max}`;
+}
+
 // ---- proposals (A8) -------------------------------------------------------------------------
 
 /**
@@ -498,6 +601,19 @@ export function gradeModelReply(p: Prepared, reply: Reply): GraderResult[] {
   if (expect.lookup) {
     const problem = lookupProblem(expect.lookup, reply.dataRequests);
     out.push(result("data_requests", "quality", problem === null, problem ?? undefined));
+  }
+  if (expect.checks?.domains) {
+    const problem = domainProblem(
+      expect.checks.domains,
+      p.context,
+      p.bank.athlete().contributors,
+      reply.dataRequests,
+    );
+    out.push(result("domain_coverage", "quality", problem === null, problem ?? undefined));
+  }
+  if (expect.checks?.maxRequests !== undefined) {
+    const problem = overFetchProblem(reply.dataRequests, expect.checks.maxRequests);
+    out.push(result("over_fetch", "quality", problem === null, problem ?? undefined));
   }
   // Every citation must point at a chunk the turn showed (the production guard refuses the rest, so
   // a failure here means the guard broke), and a library case must cite what it expects.

@@ -7,9 +7,18 @@
 // This is not an agent. A request is a field of the JSON answer (`data_requests`), the server
 // runs it, and the model is called again with the rows. At most `maxLookupRounds` rounds happen
 // in one turn, at most `maxRequestsPerRound` lookups in a round, and nothing is ever written.
+//
+// The names are the closed enum of the structured-output schema (`dataRequestsJsonSchema`), whose
+// bytes are fixed (coach_chat_schema_test.ts): a new kind of record is reached through a filter on
+// an existing lookup, never a new name, so the schema is the same bytes as before.
 
 export const maxLookupRounds = 2;
-export const maxRequestsPerRound = 4;
+export const maxRequestsPerRound = 8;
+/**
+ * Most characters of rows one round adds to the prompt. A round of up to four lookups gets
+ * `lookupResultMaxChars` each (render.ts); more are scaled down to share this total.
+ */
+export const maxRoundResultChars = 24_000;
 export const maxLookupRangeDays = 400;
 export const maxLookupFilterChars = 60;
 /** How far past the coaching date a lookup that reads the plan's schedule may reach. */
@@ -36,7 +45,7 @@ export const coachLookupCatalogue = [
     name: "workouts",
     rpc: "coach_lookup_workouts_v1",
     summary:
-      "completed sessions in the range (newest 15) with every exercise: planned sets and reps against the sets logged (reps, load, reps in reserve, effort, watch heart rate)",
+      "completed sessions in the range (newest 15) with every exercise: planned sets and reps against the sets logged (reps, load, reps in reserve, effort, watch heart rate), the athlete's own session and exercise notes, pain flags, skipped exercises, and substitutions with their reason",
     filter: "optional",
     filterMeaning: "an exercise name: only sessions and exercises that match",
   },
@@ -75,7 +84,7 @@ export const coachLookupCatalogue = [
     name: "recovery",
     rpc: "coach_lookup_recovery_v1",
     summary:
-      "watch and recovery data by day (newest 60): sleep, resting heart rate, HRV, steps, recovery score",
+      "watch and recovery data by day (newest 60): sleep and its stages, resting heart rate, HRV (all day, night, morning), breathing rate, steps, active energy, workout minutes, recovery score",
     filter: "none",
     filterMeaning: "",
   },
@@ -83,11 +92,12 @@ export const coachLookupCatalogue = [
     name: "plan_history",
     rpc: "coach_lookup_plan_history_v1",
     summary:
-      "training plan versions (what was planned, when and why, newest 6) and nutrition target versions (newest 12); with the filter schedule, instead, the plan laid over the range day by day: the sessions planned for each date with their muscles, what was logged, and any muscle trained on consecutive days. The range may be in the past or up to " +
-      maxScheduleAheadDays + " days ahead",
+      "training plan versions (what was planned, when and why, newest 6) and nutrition target versions (newest 12); with the filter schedule, instead, the plan laid over the range day by day: the sessions planned for each date with their muscles, what was logged, and any muscle trained on consecutive days (the range may be in the past or up to " +
+      maxScheduleAheadDays +
+      " days ahead); with the filter proposals, instead, the changes Coach proposed in the range (newest 12) with why, and how the athlete answered",
     filter: "optional",
     filterMeaning:
-      "schedule for the day-by-day schedule of the dates (use it for what is coming up, next week or any past week); empty for the plan versions and nutrition targets",
+      "schedule for the day-by-day schedule of the dates (use it for what is coming up, next week or any past week); proposals for the Coach proposals and the athlete's answers; empty for the plan versions and nutrition targets",
     reachesAheadWith: "schedule",
   },
   {
@@ -100,23 +110,24 @@ export const coachLookupCatalogue = [
   {
     name: "weekly_reviews",
     rpc: "coach_lookup_weekly_reviews_v1",
-    summary: "weekly reviews for weeks starting in the range (newest 12)",
-    filter: "none",
-    filterMeaning: "",
+    summary:
+      "weekly reviews for weeks starting in the range (newest 12); with the filter decisions, instead, the daily coaching decisions of the days in the range (newest 30): the training action, the decision and its flags",
+    filter: "optional",
+    filterMeaning: "decisions for the past daily decisions; empty for the weekly reviews",
   },
   {
     name: "health_history",
     rpc: "coach_lookup_health_history_v1",
     summary:
-      "the monthly Apple Health summary imported at onboarding: workouts, sleep, weight (newest 12 months)",
-    filter: "none",
-    filterMeaning: "",
+      "the monthly Apple Health summary imported at onboarding: workouts, sleep, weight (newest 12 months); with the filter workouts, instead, the individual workouts the watch recorded in the range (newest 40, any age) with their length and whether a logged session matches them",
+    filter: "optional",
+    filterMeaning: "workouts for the watch workouts; empty for the monthly summary",
   },
   {
     name: "past_messages",
     rpc: "coach_lookup_past_messages_v1",
     summary:
-      "the athlete's own earlier questions in conversations they let Coach remember, found by their words (newest first among equal matches, 12 at most); use it when the notes are not enough to recall what they said",
+      "the athlete's own earlier questions in conversations they let Coach remember, found by their words (12 at most), and Coach's own earlier replies on the same words (4 at most; what Coach said then, not a record, so check a claim in one against the records); use it when the notes are not enough to recall what was said",
     filter: "required",
     filterMeaning: 'the words to find, such as "knee pain"; any of them matches',
   },

@@ -42,13 +42,19 @@ export function guardFaultsOf(
   return entries.slice(0, mostTraceEntries);
 }
 
-/** Entries like `exercise_history:14`: the lookup and the rows it returned, summed over rounds. */
+/**
+ * Entries like `r1_workouts:4` and `r2_recovery:28`: the round a lookup ran in (`r1` is the first),
+ * its name and the rows it returned, summed within the round. They show how wide the first round
+ * was and what the second one followed up, so the lead can measure how Coach investigates. A
+ * column holds 12 entries; a count with no round is read as round 1.
+ */
 export function lookupTrace(counts: readonly LookupCount[] | undefined): string[] {
   const rows = new Map<string, number>();
   for (const count of counts ?? []) {
-    rows.set(count.lookup, (rows.get(count.lookup) ?? 0) + count.rows);
+    const key = `r${count.round ?? 1}_${count.lookup}`;
+    rows.set(key, (rows.get(key) ?? 0) + count.rows);
   }
-  return [...rows].map(([lookup, total]) => `${lookup}:${total}`).slice(0, mostTraceEntries);
+  return [...rows].map(([entry, total]) => `${entry}:${total}`).slice(0, mostTraceEntries);
 }
 
 /** The service-role update the trace is written with, typed structurally. */

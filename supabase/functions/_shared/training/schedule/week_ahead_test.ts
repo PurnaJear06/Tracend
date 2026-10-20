@@ -5,6 +5,7 @@ import {
   buildWeekAhead,
   consecutiveOverlaps,
   overlapAheadDays,
+  overlapFactLine,
   renderOverlapFact,
   renderWeekAhead,
   type SchedulePoint,
@@ -43,7 +44,12 @@ Deno.test("a Sunday with Monday tomorrow: Monday is listed and the shared muscle
   assertEquals(schedule.overlaps[0].muscles, ["chest", "triceps", "front and side delts"]);
   const text = renderWeekAhead(schedule).join("\n");
   assertStringIncludes(text, "- Mon 2026-10-19 (tomorrow): Chest priority");
-  assertStringIncludes(text, "Sun 2026-10-18 then Mon 2026-10-19: ");
+  assertStringIncludes(
+    overlapFactLine(schedule.overlaps)!,
+    "Sun 2026-10-18 then Mon 2026-10-19: ",
+  );
+  // The schedule block does not state the fact: the watch-outs block does.
+  assert(!text.includes("Same muscles on consecutive days"));
   assertStringIncludes(text, "undone earlier this week: Chest volume");
 });
 
@@ -153,6 +159,10 @@ Deno.test("the overlap fact is a structured value with its own one-line renderin
   const line = renderOverlapFact(overlaps)!;
   assert(!line.includes("\n"));
   assertStringIncludes(line, "Same muscles on consecutive days");
+  // The lookup result carries the advice after the fact; the watch-outs block states it once.
+  assertStringIncludes(line, "A change of day or exercise is a proposal the athlete approves.");
+  assert(!overlapFactLine(overlaps)!.includes("proposal"));
+  assertEquals(overlapFactLine([]), null);
 });
 
 Deno.test("face pulls the day before a press day are not a back-to-back shoulder day", () => {
@@ -206,7 +216,8 @@ Deno.test("the overlap line speaks in dates, not hours: no claim finer than a da
     at(sunday, "Chest volume", chest),
     at("2026-10-19", "Chest priority", chest),
   ]);
-  const text = renderWeekAhead(schedule).join("\n");
+  const text = overlapFactLine(schedule.overlaps)!;
   assertStringIncludes(text, "Same muscles on consecutive days, with no rest day between");
   assert(!/hour|under a day|48/i.test(text));
+  assert(!/hour|under a day|48/i.test(renderOverlapFact(schedule.overlaps)!));
 });

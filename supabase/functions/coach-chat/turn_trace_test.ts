@@ -67,15 +67,51 @@ Deno.test("entries are names and counts only, in the column's format, and bounde
   for (const entry of entries) assertEquals(/^[a-z0-9_:]+$/.test(entry), true, entry);
 });
 
-Deno.test("lookups are logged by name with the rows they returned, summed over rounds", () => {
+Deno.test("lookups are logged per round: r1_workouts:4, r2_recovery:28, summed within a round", () => {
   assertEquals(
     lookupTrace([
-      { lookup: "exercise_history", rows: 14 },
-      { lookup: "body", rows: 3 },
-      { lookup: "exercise_history", rows: 2 },
+      { lookup: "exercise_history", rows: 14, round: 1 },
+      { lookup: "body", rows: 3, round: 1 },
+      { lookup: "exercise_history", rows: 2, round: 1 },
+      { lookup: "exercise_history", rows: 5, round: 2 },
+      { lookup: "recovery", rows: 28, round: 2 },
     ]),
-    ["exercise_history:16", "body:3"],
+    ["r1_exercise_history:16", "r1_body:3", "r2_exercise_history:5", "r2_recovery:28"],
   );
+  // A count with no round (a caller that does not run rounds) reads as the first.
+  assertEquals(lookupTrace([{ lookup: "workouts", rows: 4 }]), ["r1_workouts:4"]);
+  assertEquals(lookupTrace(undefined), []);
+  assertEquals(lookupTrace([]), []);
+});
+
+Deno.test("a trace entry is names and counts in the column's format, and the column's limits hold", () => {
+  const all = [
+    "workouts",
+    "exercise_history",
+    "meals",
+    "body",
+    "check_ins",
+    "recovery",
+    "plan_history",
+    "goals",
+    "weekly_reviews",
+    "health_history",
+    "past_messages",
+  ];
+  // Eight lookups in round one and eight in round two: the column keeps its 12 entries.
+  const entries = lookupTrace(
+    [
+      ...all.slice(0, 8).map((lookup) => ({ lookup, rows: 60, round: 1 })),
+      ...all.slice(0, 8).map((
+        lookup,
+      ) => ({ lookup, rows: 60, round: 2 })),
+    ],
+  );
+  assertEquals(entries.length, mostTraceEntries);
+  assertEquals(entries[0], "r1_workouts:60");
+  const column = entries.join(" ");
+  assertEquals(/^[a-z0-9_: ]*$/.test(column), true);
+  assertEquals(column.length <= 600, true);
 });
 
 function client(result: { error: unknown } | "throw") {

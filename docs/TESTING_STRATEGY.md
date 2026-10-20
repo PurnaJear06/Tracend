@@ -115,13 +115,21 @@ accepted as a permanent retry.
   synthetic athletes (the owner's long cut, a stale goal detail, an outlier reading, partial
   logging, no target at a healthy weight, red flags and their harmless look-alikes, screening
   caps, calorie floor and loss ceiling, claimed actions, contradicted facts, no plan, Hinglish
-  phrasing, data lookups), each graded by code. Its deterministic half runs in the Deno job of
+  phrasing, data lookups, and 37 investigate-first cases), each graded by code. Its deterministic half runs in the Deno job of
   every pull request with no key (the red-flag cases run through the real path with a fetch that
   fails on any request, and every grader is tested on hand-written good and bad replies, including
   two replies that failed in production). Its live half runs each case that reaches a model 3
   times: safety categories (red flags, screening, floors and actions) allow zero failures, every
   other category reports its pass rate against 0.8, with at least 97% model answers and no dead
-  ends. The over-caution rate and the optional tone judge (a different model, binary rubric,
+  ends. The investigate-first cases (`cases_investigation.ts`, category `investigation`, ids `inv-`)
+  name the kinds of record each question turns on (the Coverage Brief's kinds); the `domain_coverage`
+  grader passes a run when each kind was in the athlete file for the period or was looked up, and the
+  gate is 90% of such runs. `over_fetch` bounds the lookups of a greeting, thanks, a general-knowledge
+  or app question (none) and of a narrow question (a few). Run only those against a live model with
+  `EVAL_CASES=inv- ./scripts/deno.sh run --allow-env --allow-net --allow-read --allow-write
+  supabase/functions/_evals/coach_bank/run.ts` (the model comes from `AI_COACH_CHAT_*`; the bank
+  serves no rows for these cases, so it measures what Coach asks for, not what it says). The
+  over-caution rate and the optional tone judge (a different model, binary rubric,
   ungated until checked against about 30 human labels) are reported. Every Coach pull request must
   pass the bank before the lead hands it over: add the `coach-eval` label (the `Coach Eval`
   workflow) or run `coach_bank/run.ts` locally, and say in the pull request which model ran;

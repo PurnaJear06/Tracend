@@ -3,7 +3,7 @@
 // Text the athlete wrote (check-in notes) is quoted, flattened to one line and labelled.
 import { describeTarget, parseProgressionSummary } from "../training/progression/targets.ts";
 import { clipToBudget } from "../coach_context/host.ts";
-import type { DayExercise } from "../training/schedule/muscles.ts";
+import { readScheduleBody } from "../training/schedule/lookup_body.ts";
 import {
   consecutiveOverlaps,
   dayOf,
@@ -74,9 +74,12 @@ function setText(set: Json): string {
 function workouts(body: Json): Parts {
   const sessions = list(body.sessions);
   const units = sessions.map((session) => {
+    const note = has(session.note)
+      ? `; session note (the athlete's words): ${quoted(session.note)}`
+      : "";
     const head = `- ${val(session.local_date)} ${val(session.workout)}, ${
       withUnit(session.minutes, "min")
-    }, effort ${val(session.effort)}`;
+    }, effort ${val(session.effort)}${note}`;
     const exercises = list(session.exercises).map((exercise) => {
       const planned = rec(exercise.planned);
       const plan = has(planned.sets)
@@ -85,7 +88,19 @@ function workouts(body: Json): Parts {
       const sets = list(exercise.sets).map(setText).join("; ");
       const status = exercise.status === "skipped" ? " skipped" : "";
       const pain = exercise.pain ? " pain flagged;" : "";
-      return `    ${val(exercise.name)}${plan}${status}:${pain} ${sets || "no sets logged"}`;
+      const swap = exercise.kind === "substituted"
+        ? ` [substitute for ${val(exercise.planned_name)}${
+          has(exercise.substitution_reason)
+            ? `, reason (the athlete's words): ${quoted(exercise.substitution_reason)}`
+            : ""
+        }]`
+        : "";
+      const note = has(exercise.note)
+        ? ` note (the athlete's words): ${quoted(exercise.note)};`
+        : "";
+      return `    ${val(exercise.name)}${plan}${swap}${status}:${pain}${note} ${
+        sets || "no sets logged"
+      }`;
     });
     return [head, ...exercises];
   });
@@ -192,13 +207,29 @@ function checkIns(body: Json): Parts {
 
 function recovery(body: Json): Parts {
   const days = list(body.days);
-  const lines = days.map((day) =>
-    `- ${val(day.local_date)}: sleep ${withUnit(day.sleep_minutes, "min")}, resting heart rate ${
-      withUnit(day.resting_heart_rate_bpm, "bpm")
-    }, HRV ${withUnit(day.hrv_ms, "ms")}, steps ${val(day.steps)}, recovery score ${
-      val(day.recovery_score)
-    }, sleep quality ${val(day.sleep_quality)}, load ratio ${val(day.acwr)}`
-  );
+  const lines = days.map((day) => {
+    const stages = [
+      has(day.sleep_deep_minutes) ? `deep ${day.sleep_deep_minutes}` : null,
+      has(day.sleep_rem_minutes) ? `REM ${day.sleep_rem_minutes}` : null,
+      has(day.sleep_light_minutes) ? `light ${day.sleep_light_minutes}` : null,
+      has(day.sleep_awake_minutes) ? `awake ${day.sleep_awake_minutes}` : null,
+    ].filter(Boolean);
+    const hrvParts = [
+      has(day.hrv_sleep_ms) ? `night ${day.hrv_sleep_ms}` : null,
+      has(day.hrv_morning_ms) ? `morning ${day.hrv_morning_ms}` : null,
+    ].filter(Boolean);
+    return `- ${val(day.local_date)}: sleep ${withUnit(day.sleep_minutes, "min")}${
+      stages.length ? ` (${stages.join(", ")} min)` : ""
+    }, resting heart rate ${withUnit(day.resting_heart_rate_bpm, "bpm")}, HRV ${
+      withUnit(day.hrv_ms, "ms")
+    }${hrvParts.length ? ` (${hrvParts.join(", ")} ms)` : ""}, breathing rate ${
+      withUnit(day.respiratory_rate_bpm, "breaths/min")
+    }, steps ${val(day.steps)}, active energy ${withUnit(day.active_energy_kcal, "kcal")}, ${
+      withUnit(day.workout_minutes, "min")
+    } of workouts, recovery score ${val(day.recovery_score)}, sleep quality ${
+      val(day.sleep_quality)
+    }, load ratio ${val(day.acwr)}`;
+  });
   return singles(lines);
 }
 
@@ -208,73 +239,36 @@ const maxListedOverlaps = 8;
 /** The plan laid over a range of dates: one line per day with a session, and the overlaps. */
 function planSchedule(body: Json): Parts {
   const plan = rec(body.plan);
-  // Planned workouts are keyed by id: names are not unique.
-  const sessions = new Map(
-    list(body.sessions).map((session) => [
-      String(session.id),
-      list(session.exercises).map((exercise): DayExercise => ({
-        slug: typeof exercise.slug === "string" ? exercise.slug : null,
-        sets: Number(exercise.sets) || 0,
-      })),
-    ]),
-  );
-  const idsByVersion = new Map<string, Set<string>>();
-  for (const session of list(body.sessions)) {
-    const version = String(session.version_id);
-    idsByVersion.set(version, (idsByVersion.get(version) ?? new Set()).add(String(session.id)));
-  }
-  const to = String(body.to ?? "");
-  const today = String(has(body.today) ? body.today : to);
+  const schedule = readScheduleBody(body);
   const scheduleDays: ScheduleDay[] = [];
   const lines: string[] = [];
-  for (const row of list(body.days)) {
-    const date = String(row.date);
-    const weekday = Number(row.weekday);
-    const offset = dayOf(date) - dayOf(today);
-    const done = list(row.done).map((item) => ({
-      kind: "done" as SessionKind,
-      id: String(item.planned_workout_id),
-      name: String(item.name),
-      exercises: list(item.exercises).map((exercise): DayExercise => ({
-        slug: typeof exercise.slug === "string" ? exercise.slug : null,
-        sets: Number(exercise.sets) || 0,
-      })),
-    }));
-    const doneNames = done.map((item) => item.name);
-    // A finished session answers the planned one with its id. One whose id is not a workout of
-    // that day's own plan version (it was finished under another version, for instance logged this
-    // morning before a change took effect today) is matched by its name.
-    const dayWorkouts = idsByVersion.get(String(row.version_id)) ?? new Set<string>();
-    const isDone = (id: string, name: string) =>
-      done.some((item) => item.id === id || (!dayWorkouts.has(item.id) && item.name === name));
-    const planned = list(row.planned).map((item) => ({
-      id: String(item.id),
-      name: String(item.name),
-    })).filter((item) => !isDone(item.id, item.name));
+  for (const row of schedule.days) {
+    const offset = dayOf(row.date) - dayOf(schedule.today);
+    const done = row.done.map((item) => ({ kind: "done" as SessionKind, ...item }));
+    const planned = row.unlogged;
     // A planned session that was not logged on a day before today did not happen.
     const upcoming = offset >= 0 ? planned : [];
-    const day = scheduleDay(date, weekday, offset, [
+    const day = scheduleDay(row.date, row.weekday, offset, [
       ...done,
       ...upcoming.map((item) => ({
         kind: "planned" as SessionKind,
         name: item.name,
-        exercises: sessions.get(item.id) ?? [],
+        exercises: schedule.exercisesByWorkout.get(item.id) ?? [],
       })),
     ]);
     scheduleDays.push(day);
     const parts = [
-      done.length ? `done ${doneNames.join(" + ")}` : null,
+      done.length ? `done ${done.map((item) => item.name).join(" + ")}` : null,
       upcoming.length ? `planned ${upcoming.map((item) => item.name).join(" + ")}` : null,
       offset < 0 && planned.length
         ? `planned ${planned.map((item) => item.name).join(" + ")}, not logged`
         : null,
     ].filter(Boolean).join("; ");
     const muscles = day.muscles.length ? ` (${day.muscles.join(", ")})` : "";
-    const block = row.block === true;
     // Version numbers repeat across plans (a block is a new plan at version 1), so versions are
     // compared by id and the number is only shown.
-    const version = has(row.version) && (block || row.version_id !== plan.id)
-      ? ` [version ${row.version}${block ? ", temporary block" : ""}]`
+    const version = has(row.version) && (row.block || row.versionId !== schedule.planId)
+      ? ` [version ${row.version}${row.block ? ", temporary block" : ""}]`
       : "";
     lines.push(
       `- ${stamp(day)}${offset === 0 ? " (today)" : ""}: ${parts}${muscles}${
@@ -305,8 +299,22 @@ function planSchedule(body: Json): Parts {
   };
 }
 
+function proposalsHistory(body: Json): Parts {
+  const lines = list(body.proposals).map((proposal) =>
+    `- ${val(proposal.created_on)} ${val(proposal.kind).replaceAll("_", " ")}: ${
+      val(proposal.title)
+    } (${val(proposal.status)}, confidence ${val(proposal.confidence)}). Why: ${
+      val(proposal.rationale)
+    } Gain: ${val(proposal.benefit)} Cost: ${val(proposal.downside)}${
+      has(proposal.ends_on) ? ` Ends ${proposal.ends_on}.` : ""
+    }${has(proposal.applied_on) ? ` Applied ${proposal.applied_on}.` : ""}`
+  );
+  return singles(lines);
+}
+
 function planHistory(body: Json): Parts {
   if (body.filter === "schedule") return planSchedule(body);
+  if (body.filter === "proposals") return proposalsHistory(body);
   const training = list(body.training);
   const nutrition = list(body.nutrition);
   const units = [
@@ -363,7 +371,23 @@ function goals(body: Json): Parts {
   return singles(lines);
 }
 
+function dailyDecisions(body: Json): Parts {
+  const lines = list(body.decisions).map((decision) =>
+    `- ${val(decision.local_date)}: ${val(decision.training_action).replaceAll("_", " ")}${
+      has(decision.training_summary) ? ` (${decision.training_summary})` : ""
+    }; nutrition ${val(decision.nutrition_action).replaceAll("_", " ")}; decision: ${
+      val(decision.decision)
+    } Confidence ${val(decision.confidence)}${
+      Array.isArray(decision.risk_flags) && decision.risk_flags.length
+        ? `; flags ${decision.risk_flags.join(", ")}`
+        : ""
+    }`
+  );
+  return singles(lines);
+}
+
 function weeklyReviews(body: Json): Parts {
+  if (body.filter === "decisions") return dailyDecisions(body);
   const reviews = list(body.reviews);
   const lines = reviews.map((review) => {
     const training = rec(review.training);
@@ -381,7 +405,21 @@ function weeklyReviews(body: Json): Parts {
   return singles(lines);
 }
 
+function watchWorkouts(body: Json): Parts {
+  const lines = list(body.workouts).map((workout) =>
+    `- ${val(workout.local_date)} ${val(workout.activity_type)} recorded by the watch, ${
+      withUnit(workout.minutes, "min")
+    }, ${withUnit(workout.energy_kcal, "kcal")}${
+      has(workout.reconciliation)
+        ? `; matched to a logged session (${workout.reconciliation})`
+        : "; not matched to a logged session"
+    }`
+  );
+  return singles(lines);
+}
+
 function healthHistory(body: Json): Parts {
+  if (body.filter === "workouts") return watchWorkouts(body);
   const months = list(body.months);
   const lines = months.map((month) =>
     `- ${String(month.month ?? "").slice(0, 7)} (imported from Apple Health): ${
@@ -396,9 +434,19 @@ function healthHistory(body: Json): Parts {
 }
 
 function pastMessages(body: Json): Parts {
-  const lines = list(body.messages).map((message) =>
-    `- ${val(message.local_date)}, the athlete wrote: ${quoted(message.content)}`
-  );
+  const lines = [
+    ...list(body.messages).map((message) =>
+      `- ${val(message.local_date)}, the athlete wrote: ${quoted(message.content)}`
+    ),
+    // Coach's own words are not records: labelled so a claim in one is checked, never repeated as fact.
+    ...list(body.coach_replies).map((message) =>
+      `- ${
+        val(message.local_date)
+      }, Coach replied (an earlier reply, not a record; it may have been wrong, so check any claim in it against the records): ${
+        quoted(message.content)
+      }`
+    ),
+  ];
   return singles(lines);
 }
 
@@ -449,7 +497,11 @@ function heading(
  * budget runs out; the heading then says how many of how many, so the model never believes it saw
  * more than it did. An unreadable payload becomes a notice that Coach could not check.
  */
-export function renderLookup(request: DataRequest, payload: unknown): RenderedLookup {
+export function renderLookup(
+  request: DataRequest,
+  payload: unknown,
+  maxChars: number = lookupResultMaxChars,
+): RenderedLookup {
   const body = rec(payload);
   const render = renderers[request.lookup];
   if (
@@ -469,7 +521,7 @@ export function renderLookup(request: DataRequest, payload: unknown): RenderedLo
   const order = parts.newestLast ? [...parts.units].reverse() : parts.units;
   for (const unit of order) {
     const size = unit.join("\n").length + 1;
-    if (used + size > lookupResultMaxChars) break;
+    if (used + size > maxChars) break;
     kept.push(unit);
     used += size;
   }

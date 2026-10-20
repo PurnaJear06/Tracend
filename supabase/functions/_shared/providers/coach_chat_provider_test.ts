@@ -1301,8 +1301,8 @@ Deno.test("DeepSeek system prompt carries the full coach persona before the outp
     const messages = bodies[0].messages as Array<Record<string, unknown>>;
     const system = String(messages[0]?.content ?? "");
     const markers = [
-      "work only from the prepared context",
-      "Answer the question that was asked, first and concretely",
+      "checks the athlete's records before advising",
+      "answer the question that was asked, first and concretely",
       "Do not repeat advice or a caution you already gave",
       "Connect the question to the context",
       "without judgment",

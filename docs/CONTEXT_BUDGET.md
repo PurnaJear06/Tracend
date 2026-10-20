@@ -49,7 +49,7 @@ inside budgets that already exist.
 | Plan Status section | Athlete file, after the Safe Ranges, only when `plan_status` says there is no plan or no nutrition target | 470 (no plan approved) or 627 (`see_professional`) characters | Required section. Stated reason, health-check outcome and date, and "no plan-specific advice". |
 | Coaching principles digest | First stable contributor (cached block, after the athlete file) | 5,661 characters as shown, version 3 (limits 4,800 to 7,200; budget 7,200) | Fixed text, no athlete data (E2), shown without its inline source ids (E3.1: only retrieved excerpts are citable; the authored file keeps them). Its figures ground the numbers check. Counts toward the turn's budget reservation; Sonnet 5.5 still fits one reservation. Changing the text changes the cached prefix: bump its version. |
 | `screening` contributor | Stable contributor block, first in the registry | 249 (cleared), 458 (see_professional), 483 (moderate_until_cleared) or about 800 (unknown, when the lookup failed) characters; budget 900 | Counts toward the turn's budget reservation (`coachContextMaxChars`); nothing renders for an athlete never screened. |
-| Persona and contract lines | System prompt | about +1,650 characters (7,265 before A9) | Inside the 16,000-character instructions reserve. |
+| Persona and contract lines | System prompt | about +1,650 characters (7,265 before A9) | Inside the 25,000-character instructions reserve. |
 
 Sonnet 5.5 as the stronger Coach route still fits one budget reservation (USD 0.50) with these
 blocks; `coach_chat_provider_route_test.ts` fails if a larger block ever pushes it over.
@@ -61,11 +61,12 @@ rest of the athlete's records come from lookups the model asks for (AI_SAFETY_SP
 
 | Piece | Where | Size | Notes |
 | --- | --- | --- | --- |
-| `training_plan` contributor | Volatile contributor, after the goal phase | up to 12,000 characters (budget 12,000, the host's ceiling). About 3,500 for a four-session plan, about 4,000 for six sessions of four exercises, about 9,900 for seven sessions of nine exercises with long names (tested) | Fixed parts first: the rules for naming exercises (home options), the plan's sets a week by muscle, the equipment, and the next 7 days from the athlete's date with each session's muscles (about 1,000 characters; one more line of about 300 only when two sessions share a muscle on consecutive days). Then the lists that grow with the plan: today's or the next session with each exercise's sets, reps, rest, load, next target and last logged set, and the other sessions compactly. The host cuts a block by whole lines from the end and ends it with a note, so a cut can only shorten those lists, never remove a rule or the week. Replaces the unregistered `progression` contributor and the athlete file's "Training Week Structure". |
+| `training_plan` contributor | Volatile contributor, after the goal phase | up to 12,000 characters (budget 12,000, the host's ceiling). About 3,500 for a four-session plan, about 4,000 for six sessions of four exercises, about 9,900 for seven sessions of nine exercises with long names (tested) | Fixed parts first: the rules for naming exercises (home options), the plan's sets a week by muscle, the equipment, and the next 7 days from the athlete's date with each session's muscles (about 1,000 characters; the muscles two sessions share on consecutive days are stated by the watch-outs block, not here). Then the lists that grow with the plan: today's or the next session with each exercise's sets, reps, rest, load, next target and last logged set, and the other sessions compactly. The host cuts a block by whole lines from the end and ends it with a note, so a cut can only shorten those lists, never remove a rule or the week. Replaces the unregistered `progression` contributor and the athlete file's "Training Week Structure". |
 | `nutrition_state` contributor | Volatile | up to 3,200 characters | The week's complete days (k of n), complete-day averages, partial days, today's schedule and meals, meal sources. Replaces the athlete file's per-logged-day nutrition lines, "Logged Nutrition", "7-Day Nutrition Compliance", "Nutrition Adherence", today's meals and the schedule line. |
-| `data_index` contributor | Volatile, gateway route only | up to 1,900 characters (budget 1,900) | First and last date and count per kind of record, and the weekdays and start date of the active plan's schedule with how far ahead it can be asked for. Left out on today's DeepSeek path, which has no lookups. |
-| Looked-up rows | After the question, one labelled block per round | up to 5,000 characters per lookup, 4 lookups a round, 2 rounds (at most 40,000 characters in one turn). Whole rows only, newest first; the heading says "showing the newest N of M rows" when some were cut | Not part of the cached prefix. Each lookup call is a separate model call with its own reservation. |
-| Lookup instructions | System prompt, gateway route only | about 3,200 characters | Inside the 16,000-character instructions reserve. |
+| `watch_outs` contributor | Volatile, gateway route only, before the Coverage Brief | up to 1,100 characters (budget 1,100): an introduction of about 250 characters and at most 8 lines of at most 900 characters in all. Typically 0 to 450 | Facts computed across kinds of record (muscles shared on consecutive days, a session due on a poor-recovery day, a pain flag planned again, behind plan, repeated skips, drift from the athlete's own usual, a stale weigh-in or sync, an old plan). Nothing renders when nothing is found. Replaces the overlap sentence that sat in the training plan block. |
+| `coverage_brief` contributor | Volatile, gateway route only | 2,200 to 2,555 characters (budget 2,800); the largest it can be, with every count at six digits, is tested | Replaces the data index (about 1,100 characters, budget 1,900). One line per kind of record (14): what the context shows, what a lookup adds, how much exists and how fresh, and the kinds to check with it. Static text of about 1,500 characters plus the counts and dates; still shown, marked "counts unavailable", when the index read fails. Left out on today's DeepSeek path, which has no lookups. |
+| Looked-up rows | After the question, one labelled block per round | up to 5,000 characters per lookup for up to 4 lookups a round, then 24,000 characters shared evenly (8 lookups: 3,000 each), 2 rounds (at most 48,000 characters in one turn). Whole rows only, newest first; the heading says "showing the newest N of M rows" when some were cut | Not part of the cached prefix. Each lookup call is a separate model call with its own reservation. The first round is meant to be wide (the sweep-first rule); a turn that needs nothing makes no call. |
+| Lookup instructions | System prompt, gateway route only | about 4,300 characters (the catalogue text grew with the new filters and the sweep-first rules replaced the lines that told Coach to look up less) | The whole instructions measure 24,292 characters with the lookups, proposals and fact suggestions on and a full list of evidence codes (21,839 before); the reservation allows 25,000 (`instructionsMaxChars`, tested), up from 16,000, which had already been passed. |
 
 Removed from the athlete file because a contributor or a lookup replaces them: "Today's Check-In"
 (mislabelled when old; the dated check-in table stays), "Latest Weekly Review" (the SQL value is
@@ -75,7 +76,9 @@ line, "Today's Meals", "Logged Nutrition", "7-Day Nutrition Compliance", "Nutrit
 
 The worst-case reservation counts the contributors' budgets (`coachContextMaxChars`) plus the
 athlete file and the instructions; a lookup round reserves from its actual prompt. Sonnet 5.5 still
-fits one reservation (`coach_chat_provider_route_test.ts`).
+fits one reservation (`coach_chat_provider_route_test.ts`). Since the route is chosen after the
+contributors render (the structural signals come from them), the first attempt's place covers the
+dearer of the two routes.
 
 ## Library Retrieval and the Heart-Rate Profile (E3)
 
@@ -83,16 +86,18 @@ fits one reservation (`coach_chat_provider_route_test.ts`).
 | --- | --- | --- | --- |
 | `heart_rate_profile` contributor | Volatile, after the proposals | up to 900 characters (budget 900) | Resting rate, maximum, zones and recovery after sets, from Apple Watch summaries (C3). Nothing renders without a profile. It was built in C3 and registered here. |
 | `library` contributor | Volatile, gateway route only, last in the registry (just before the question) | up to 9,000 characters (budget 9,000; about 2,300 tokens); eight chunks average about 5,200 characters with the introduction (the eight longest chunks in the library total 7,500) | The chunks `search_library_v3` returned for this question that pass the relevance floor, whole chunks only, each starting `[source: <id>]` and the kind, year and evidence level (about 60 more characters a chunk, about 160 more for a chunk marked as Tracend's reading). With no chunk past the floor, one line of about 250 characters saying none matched. Left out when the search fails or takes over 4 seconds, and on a red-flag turn. Not part of the cached prefix: it changes with every question. |
-| Library rules | System prompt, gateway route only | about 2,000 characters | "Using the research library": precedence, how to cite, no ids in the text, no gap filled from memory. Inside the 16,000-character instructions reserve. |
+| Library rules | System prompt, gateway route only | about 2,000 characters | "Using the research library": precedence, how to cite, no ids in the text, no gap filled from memory. Inside the 25,000-character instructions reserve. |
 | Library evidence in the schema | Output schema | none: evidence is one object (`code` a plain string, `source` one of four) | `source: "library"` with any `code`; the ids shown change every turn, so they are checked after the answer (`citation_not_retrieved`), not listed in the schema. The whole output schema is one fixed 2,818-byte shape with no optional key and no union, so Claude compiles it once and caches it; it no longer lists the day's evidence codes (they are in the prompt). |
-| Empty-value rules | System prompt, gateway route only | about 520 characters | "The shape of your JSON": every key is always present, `[]` and `""` for nothing, no null. Inside the 16,000-character instructions reserve. |
+| Empty-value rules | System prompt, gateway route only | about 520 characters | "The shape of your JSON": every key is always present, `[]` and `""` for nothing, no null. Inside the 25,000-character instructions reserve. |
 
 The two contributors add 9,900 characters to the worst case. Recomputed 2026-10-18 from the registry
 (`coachContextMaxChars`; budgets: principles 7,200, screening 900, confirmed facts 4,200, goal phase
 2,200, training plan 12,000, nutrition 3,200, proposals 1,800, heart rate 900, notes 3,600, data
 index 1,900, library 9,000): the contributors' total is 49,924 characters (44,624 before the
-week-ahead fix raised the training plan from 7,000 and the data index from 1,600), so a Sonnet 5.5
-reservation is about USD 0.36 (0.35 before), still under the USD 0.50 cap (`coach_chat_provider_route_test.ts`). Opus 5.5 was already over the cap and takes
+week-ahead fix raised the training plan from 7,000 and the data index from 1,600). On 2026-10-20
+the data index (1,900) gave way to the watch-outs (1,100) and the Coverage Brief (2,800), and the
+instructions reserve rose from 16,000 to 25,000 characters: the total is 52,000 characters, so a
+Sonnet 5.5 reservation is about USD 0.38 (0.36 before), a Haiku 5.5 one about USD 0.096, still under the USD 0.50 cap (`coach_chat_provider_route_test.ts`). Opus 5.5 was already over the cap and takes
 today's path.
 
 The coaching principles digest (E2) stays in the cached prefix as before. The whole library

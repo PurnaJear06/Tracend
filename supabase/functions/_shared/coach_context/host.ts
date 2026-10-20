@@ -25,7 +25,31 @@ export type CoachContextInput = Readonly<{
    * embeds the query itself otherwise. Optional: other contributors ignore it.
    */
   queryEmbedding?: PrefetchedQueryEmbedding;
+  /**
+   * Reads shared by the contributors of one turn (see `sharedRead`): the host makes the map, so a
+   * read two contributors need, such as the plan state, is made once. Absent in a hand-built
+   * input; `sharedRead` then reads every time.
+   */
+  shared?: Map<string, Promise<unknown>>;
 }>;
+
+/**
+ * One read for the turn: the first contributor to ask under `key` starts it, the others get the
+ * same promise. A key names one source of data, so every contributor using it reads the same thing.
+ */
+export function sharedRead(
+  input: Pick<CoachContextInput, "shared">,
+  key: string,
+  read: () => Promise<unknown>,
+): Promise<unknown> {
+  if (!input.shared) return read();
+  let promise = input.shared.get(key);
+  if (!promise) {
+    promise = read();
+    input.shared.set(key, promise);
+  }
+  return promise;
+}
 
 /** A query embedding already on its way: the text embedded, when it started, and the result. */
 export type PrefetchedQueryEmbedding = Readonly<{
@@ -246,8 +270,9 @@ export async function renderCoachContext(
 ): Promise<CoachContributions> {
   validateCoachContextContributors(contributors);
   if (contributors.length === 0) return noCoachContributions;
+  const turnInput: CoachContextInput = { ...input, shared: input.shared ?? new Map() };
   const rendered = await Promise.all(
-    contributors.map((contributor) => renderOne(contributor, input, timeoutMs)),
+    contributors.map((contributor) => renderOne(contributor, turnInput, timeoutMs)),
   );
   const blocks = (slot: CoachContextSlot) =>
     rendered.filter((item) => item.outcome.slot === slot && item.block !== null)

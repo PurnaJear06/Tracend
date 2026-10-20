@@ -1,6 +1,6 @@
 # AI Gateway Handoff
 
-**As of:** 2026-10-18
+**As of:** 2026-10-20
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -669,8 +669,9 @@ audit (1, 2, 3, 6 deterministic part, 7, 15).
   rule) and a stricter numbers line; the instructions grew from 7,265 to 8,582 characters.
   **The legacy request digests in `coach_chat_parity_test.ts` were recorded again on purpose**
   (persona, answer contract and the Safe Ranges section changed the request).
-- **Second route** (`coach_chat_provider_route.ts`; `coach_chat_strong` added to `aiFeatures`):
-  a rules classifier sends progress, body-weight and goal, nutrition-number and plan questions to
+- **Second route** (`coach_chat_provider_route.ts`; `coach_chat_strong` added to `aiFeatures`;
+  since 2026-10-20 the choice reads the athlete's records, not the question: see "Coach
+  investigates first"): a rules classifier sent progress, body-weight and goal, nutrition-number and plan questions to
   `AI_COACH_CHAT_STRONG_*` when it is set and `EVALUATED=true`, its reservation fits one budget
   place (Sonnet 5.5 at 4,096 output tokens does) and the athlete's accepted notice names its
   vendor; otherwise the default route answers (`coach_chat_strong_route_not_used` is logged for the
@@ -1396,6 +1397,92 @@ Sunday what is coming up and check `model_runs` and the `lookups` column for `pl
 same coaching date; older summaries stay as dated text (pgTAP asserts the date). (2) An athlete-named study
 exempts only the same reference (surname and year, or institution initials and document kind). (3) Evidence
 labels never attach a source. (4) The repeat comparison keeps negation (opposite polarity is never a repeat).
+
+## Coach investigates first (2026-10-20, branch `claude/coach-investigate-first`)
+
+**Trigger.** The owner: "Coach should see everything: once I ask a query, it checks everything and
+answers." A Sunday turn used the plan and the check-in with one lookup (`workouts:4`) and missed
+that Monday trains chest again. The read-only audit (2026-10-18) found Coach was not blind (the
+baseline carries 28 days of training and watch data, 14 of check-ins, the plan week), but nothing
+told it where the holes were, nothing computed facts across kinds of record, the prompt told it not
+to look up what the context "already holds", and a refused request ended the investigation.
+
+**What changed.**
+1. **Coverage Brief** (`coach_context/contributors/coverage_brief.ts`, replaces `data_index.ts`):
+   one line per kind of record (training, plan_ahead, plan_versions, recovery, check_ins, body,
+   nutrition, goals, proposals, decisions, watch_workouts, reviews, apple_health, conversation):
+   what the context shows, what a lookup adds (lookup name and filter), what exists with first and
+   last date and days since the last record, and the kinds to check with it. The neighbour table is
+   static and identical for every question. 2,200 to 2,555 characters (data index: about 1,100);
+   shown without counts when the index read fails.
+2. **Watch-outs** (`watch_outs.ts`): up to 8 lines, 900 characters, strict priority, nothing when
+   nothing is found. The overlap fact of #156 moved here (`overlapFactLine` in `week_ahead.ts`; the
+   plan block no longer carries it; the lookup renderer still does, with its advice). Reads the plan
+   state (shared with the plan block through `sharedRead`, so it is fetched once), the new
+   `get_coach_watch_outs_v1` facts and the plan laid over the last 28 days
+   (`readScheduleBody`, shared with the lookup renderer, so "planned but not logged" is one rule).
+   Thresholds, all existing: recovery score < 40 and sleep quality score < 50 (the evidence-code
+   table), one spread from the baseline (the app's "than usual"; the recovery score's own z-scores),
+   weigh-in older than 14 days (goal phase), sync older than 2 days (the app's stale state), plan
+   older than its own `block_weeks`, "repeated" is twice running. `watchOutThresholds` documents each
+   and a test ties two of them to the source text.
+3. **Catalogue gaps** (migration `20261020100017_coach_investigation.sql`, additive, pgTAP
+   `coach_investigation_test.sql`): `plan_history` filter `proposals`, `health_history` filter
+   `workouts` (watch workouts of any age), `weekly_reviews` filter `decisions`, `workouts` returns
+   session/exercise notes and substitution reasons, `recovery` returns breathing rate, sleep stages,
+   night/morning HRV, active energy, workout minutes, `past_messages` returns Coach's own earlier
+   replies (labelled "an earlier reply, not a record"), the index covers four more kinds. New kinds
+   are **filters, not new lookup names**: the structured-output schema is 2,818 bytes, sha
+   `274ee4fafead`, unchanged (a test pins both). The existing pgTAP files were updated for the new
+   keys and versions.
+4. **Prompt**: "work only from the prepared context", "do not look up what the context already
+   holds", "narrowest range" and the do-the-minimum persona lines are rewritten; the new rule is
+   "investigate before you answer: request every lookup that could change the answer in the first
+   round (up to 8), the brief's neighbours, the detail behind a summary, the days ahead". Reply
+   length rules are unchanged ("however much you checked, about 120 words"). `maxRequestsPerRound`
+   4 to 8; a round's rows are capped at 24,000 characters (`lookupBudgetFor`). A refused or
+   malformed `data_requests` gets one corrected round (`lookupCorrectionText`), inside the time and
+   budget rules; a second refusal, a request after the rounds are used up and a correction that
+   cannot be sent still end in the repair, which must answer.
+5. **Route**: `coach_chat_provider_route.ts` no longer reads the question. Signals reported by the
+   contributors (their numeric traces): screening not cleared or unreadable, pain on record, a
+   proposal waiting, two or more training-decision watch-outs. A follow-up turn is not a signal
+   (not a harder question). The route is chosen after the contributors render; the first budget
+   place covers the dearer route. `coach_chat_route` is logged with the reasons.
+6. **Telemetry**: `coach_messages.lookups` entries are per round, `r1_workouts:4`, `r2_recovery:28`
+   (same column, same 12-entry limit; an older row has no prefix). A corrected round shows as an
+   attempt `invalid` with `rule:lookup_request_invalid` followed by a `lookup` attempt.
+7. **Eval bank**: 37 `inv-` cases (category `investigation`) with `checks.domains` and
+   `checks.maxRequests`, graders `domain_coverage` and `over_fetch`, and the gate "90% of runs with a
+   domain check cover every kind they need" (`bankGates.domainCoverageRate`). Controls: greeting,
+   thanks, general knowledge, an app question (no lookups), narrow questions (at most 2), a
+   baseline-sufficient question (at most 3). The bank now renders the real brief (and the watch-outs
+   when a case gives facts) in every first round. The deterministic half proves the grader, the gate
+   and that the good requests of every case cover it; **the live measurement was not run** (no API
+   key here): `EVAL_CASES=inv- ./scripts/deno.sh run --allow-env --allow-net --allow-read
+   --allow-write supabase/functions/_evals/coach_bank/run.ts`. If the live rate is under 90%, the
+   escalation is the audit's option D: a small planning call before the answer (its own schema,
+   +2 to 3 s a turn); not built.
+
+**Cost and latency (estimates).** Prompt: +about 1,450 characters for the brief, +0 to 450 for the
+watch-outs, +2,450 in the instructions (cached prefix). A turn that investigates makes one more
+model call than before, as before, but now the first round is wide: about 9 to 13 s for a typical
+investigating turn (call 1 of 100 to 250 output tokens, parallel lookups in tens of milliseconds,
+call 2 with 5 to 20k tokens of rows), about 15 to 20 s with a second round, inside the 28 s first
+attempt and the 40 s turn. The new reads add two RPCs to context preparation in parallel (the watch
+facts and the 28-day schedule), inside the contributors' 4 s limit. A turn that needs nothing makes
+no extra call.
+
+**Decisions for the owner.**
+- `past_messages` now returns Coach's own earlier replies (labelled, 4 at most). AI_SAFETY_SPEC
+  §11.1a said Coach's replies were never searched so a wrong claim never returns as memory; it is
+  changed here because the brief asked for it. Veto = delete the `coach_replies` key in the SQL and
+  the renderer, and restore the sentence.
+- The watch-outs' thresholds are the product's existing ones; the list of facts is new and wants the
+  owner's review.
+
+**Open.** pgTAP was not run locally (no database here); CI runs it. After deploy: ask Coach a
+cross-domain question and read `coach_messages.lookups` (`r1_` entries should show 3 to 6 kinds).
 
 ## Next agent starts here
 

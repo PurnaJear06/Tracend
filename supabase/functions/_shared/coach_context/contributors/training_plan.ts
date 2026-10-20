@@ -23,6 +23,7 @@ import {
   renderWeekAhead,
   type ScheduleNote,
   type SchedulePoint,
+  type WeekAhead,
   weekAheadDays,
 } from "../../training/schedule/week_ahead.ts";
 import {
@@ -31,10 +32,12 @@ import {
   parseProgressionSummary,
   type ProgressionTarget,
 } from "../../training/progression/targets.ts";
-import type { CoachContextContributor } from "../host.ts";
+import { type CoachContextContributor, sharedRead } from "../host.ts";
 import { coachServiceRpc, type StateSource, stateSourceFromRpc } from "../service_source.ts";
 
 export const trainingPlanContributorId = "training_plan";
+/** The key under which the turn's plan state is read once for every contributor that needs it. */
+export const planStateReadKey = "plan_state";
 // Sized for the largest plan the app allows: 7 sessions of 9 exercises with long names is about
 // 9,900 characters (training_plan_test.ts), and the host's own ceiling is 12,000.
 export const trainingPlanContributorBudgetChars = 12_000;
@@ -522,6 +525,15 @@ export function resolveSchedule(
   return { points, notes };
 }
 
+/** The next seven days of a plan state, with the muscles shared on consecutive days. */
+export function weekAheadOf(
+  state: PlanState,
+  focus: FocusSession = pickFocusSession(state),
+): WeekAhead {
+  const { points, notes } = resolveSchedule(state, focus);
+  return buildWeekAhead(state.localDate, state.weekday, points, notes);
+}
+
 /** Sets a week of the plan in force today gives each target muscle, from the catalog's first-listed muscle. */
 function weeklySets(state: PlanState): string {
   const totals = new Map<string, number>();
@@ -582,8 +594,7 @@ export function renderTrainingPlan(state: PlanState | null): string | null {
         state.equipment.length ? state.equipment.join(", ").replaceAll("_", " ") : "bodyweight only"
       }.`,
   );
-  const { points, notes } = resolveSchedule(state, focus);
-  lines.push(...renderWeekAhead(buildWeekAhead(state.localDate, state.weekday, points, notes)));
+  lines.push(...renderWeekAhead(weekAheadOf(state, focus)));
   if (focus.session) {
     const label = focus.isToday
       ? "Today's planned session"
@@ -630,7 +641,11 @@ export function createTrainingPlanContributor(source: StateSource): CoachContext
     slot: "volatile",
     budgetChars: trainingPlanContributorBudgetChars,
     async render(input) {
-      return renderTrainingPlan(parsePlanState(await source(input.userId, input.localDate)));
+      return renderTrainingPlan(
+        parsePlanState(
+          await sharedRead(input, planStateReadKey, () => source(input.userId, input.localDate)),
+        ),
+      );
     },
   };
 }

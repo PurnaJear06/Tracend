@@ -136,7 +136,15 @@ export function createProposalsContributor(source: StateSource): CoachContextCon
     slot: "volatile",
     budgetChars: proposalsContributorBudgetChars,
     async render(input) {
-      return renderProposals(parseProposalsState(await source(input.userId, input.localDate)));
+      const state = parseProposalsState(await source(input.userId, input.localDate));
+      const text = renderProposals(state);
+      if (text === null) return null;
+      // How many proposals wait for an answer, for the route (coach_chat_provider_route.ts).
+      return {
+        text,
+        shown: {},
+        trace: { waiting: state!.proposals.filter((item) => item.status === "pending").length },
+      };
     },
   };
 }

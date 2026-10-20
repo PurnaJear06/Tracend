@@ -53,6 +53,9 @@ const asking = (
       : requests,
   });
 
+/** A response for the fake: the provider answers with a server error. */
+const provider500 = "provider-500";
+
 const benchRequest = {
   lookup: "exercise_history",
   from: "2026-08-01",
@@ -96,9 +99,9 @@ async function run(
   let index = 0;
   const fake = fakeFetch(() => {
     const at = index++;
-    return at >= responses.length && options.failAfter
-      ? new Response("down", { status: 500 })
-      : claude(responses[Math.min(at, responses.length - 1)]);
+    if (at >= responses.length && options.failAfter) return new Response("down", { status: 500 });
+    const response = responses[Math.min(at, responses.length - 1)];
+    return response === provider500 ? new Response("down", { status: 500 }) : claude(response);
   });
   const question = options.question ?? "How did my bench go since August?";
   const logged = await captureLogs(async () => {
@@ -148,7 +151,7 @@ Deno.test("owner's case: 'how did my bench go since August?' looks up the exerci
     params: { p_user_id: "user-1", p_from: "2026-08-01", p_to: "2026-09-27", p_filter: "bench" },
   }]);
   assertStringIncludes(done.answer.answer, "2026-09-10");
-  assertEquals(done.lookups, [{ lookup: "exercise_history", rows: 2 }]);
+  assertEquals(done.lookups, [{ lookup: "exercise_history", rows: 2, round: 1 }]);
   // The first call was offered the lookups; the second carries the rows after the question.
   assertStringIncludes(systemOf(sent[0]), "Looking up the athlete's records");
   assert(!promptOf(sent[0]).includes("<looked_up_data>"));
@@ -162,7 +165,7 @@ Deno.test("owner's case: 'how did my bench go since August?' looks up the exerci
   ]);
 });
 
-Deno.test("owner's case: train today, then 10-15 days at home, needs no lookup: the baseline and the home options answer", async () => {
+Deno.test("owner's case: train today, then 10-15 days at home: the baseline and the home options answer, and the model made no lookup", async () => {
   const rig = lookupRig();
   const contributions = await renderCoachContext([
     createTrainingPlanContributor(() => Promise.resolve(ownersPlanPayload())),
@@ -187,7 +190,9 @@ Deno.test("owner's case: train today, then 10-15 days at home, needs no lookup: 
   assertStringIncludes(prompt, '<reference_data source="training_plan">');
   assertStringIncludes(prompt, "Barbell bench press: 3 x 6-8, rest 120 s, RPE 8, plan load 60 kg");
   assertStringIncludes(prompt, "Home: bodyweight");
-  assertStringIncludes(systemOf(sent[0]), "Do not look up what the context already holds");
+  const system = systemOf(sent[0]);
+  assertStringIncludes(system, "investigate before you answer");
+  assert(!system.includes("Do not look up what the context already holds"));
 });
 
 Deno.test("a lookup the catalogue does not know never reaches the server: the output schema refuses it and the repair answers", async () => {
@@ -204,7 +209,7 @@ Deno.test("a lookup the catalogue does not know never reaches the server: the ou
   assertEquals(done.attempts[0].rule, "json_syntax");
 });
 
-Deno.test("an oversized range passes the schema and is refused by the server's check before anything is read", async () => {
+Deno.test("an oversized range passes the schema and is refused by the server's check before anything is read: the model gets one corrected round", async () => {
   const rig = lookupRig();
   const { result, sent } = await run([
     asking([{ ...benchRequest, from: "2025-01-01" }]),
@@ -212,9 +217,149 @@ Deno.test("an oversized range passes the schema and is refused by the server's c
   ], { runner: rig.runner });
   const done = generation(result);
   assertEquals(rig.calls.length, 0);
-  assertEquals(done.attempts[0].rule, "lookup_request_invalid");
-  assertStringIncludes(promptOf(sent[1]), "data_requests you returned were refused");
+  assertEquals(done.attempts.map((attempt) => [attempt.attempt, attempt.outcome, attempt.rule]), [
+    ["initial", "invalid", "lookup_request_invalid"],
+    ["lookup", "valid", undefined],
+  ]);
+  // The second call is told why and may ask again; it is not a repair that must answer.
+  assertStringIncludes(promptOf(sent[1]), "Your data_requests were refused");
   assertStringIncludes(promptOf(sent[1]), "a range is at most 400 days");
+  assert(!promptOf(sent[1]).includes("No more lookups are available"));
+  assert(!promptOf(sent[1]).includes("Repair instruction"));
+});
+
+Deno.test("a corrected list runs as the first round, and the turn answers from its rows", async () => {
+  const rig = lookupRig();
+  const { result, sent } = await run([
+    asking([{ ...benchRequest, from: "2025-01-01" }]),
+    asking([benchRequest]),
+    final("From the rows, your bench went from 80 kg to 85 kg."),
+  ], { runner: rig.runner });
+  const done = generation(result);
+  assertEquals(sent.length, 3);
+  assertEquals(rig.calls.length, 1);
+  assertEquals(done.lookups, [{ lookup: "exercise_history", rows: 2, round: 1 }]);
+  assertEquals(done.attempts.map((attempt) => [attempt.attempt, attempt.outcome]), [
+    ["initial", "invalid"],
+    ["lookup", "lookup"],
+    ["lookup", "valid"],
+  ]);
+  // The correction used no round: both lookup rounds are still available after it.
+  assertStringIncludes(promptOf(sent[2]), "<looked_up_data>");
+  assert(!promptOf(sent[2]).includes("No more lookups are available"));
+});
+
+Deno.test("a malformed request (a date that is not a date, a missing filter) is corrected the same way", async () => {
+  const rig = lookupRig();
+  const { result, sent } = await run([
+    asking([{ ...benchRequest, from: "last August" }]),
+    asking([benchRequest]),
+    final("From the rows, your bench went from 80 kg to 85 kg."),
+  ], { runner: rig.runner });
+  const done = generation(result);
+  assertEquals(rig.calls.length, 1);
+  assertStringIncludes(promptOf(sent[1]), "from and to must be dates as YYYY-MM-DD");
+  assertEquals(done.attempts.map((attempt) => attempt.rule), [
+    "lookup_request_invalid",
+    undefined,
+    undefined,
+  ]);
+  const missing = await run([
+    asking([{ ...benchRequest, filter: "" }]),
+    final("I will answer without it."),
+  ], { runner: rig.runner });
+  assertStringIncludes(promptOf(missing.sent[1]), "a filter is required");
+});
+
+Deno.test("only one correction a turn: a second refusal goes to the repair, which must answer", async () => {
+  const rig = lookupRig();
+  const { result, sent } = await run([
+    asking([{ ...benchRequest, from: "2025-01-01" }]),
+    asking([{ ...benchRequest, from: "2025-01-01" }]),
+    final("I could not check that far back."),
+  ], { runner: rig.runner });
+  const done = generation(result);
+  assertEquals(rig.calls.length, 0);
+  assertEquals(done.attempts.map((attempt) => [attempt.attempt, attempt.outcome, attempt.rule]), [
+    ["initial", "invalid", "lookup_request_invalid"],
+    ["lookup", "invalid", "lookup_request_invalid"],
+    ["repair", "valid", undefined],
+  ]);
+  assertStringIncludes(promptOf(sent[2]), "no more lookups are available this turn");
+  assertStringIncludes(promptOf(sent[2]), "Answer now from what you have");
+});
+
+Deno.test("a refusal in the second round is corrected once, and a refusal after that is not", async () => {
+  const rig = lookupRig();
+  const oversized = asking([{ ...benchRequest, from: "2025-01-01" }]);
+  const { result, sent } = await run([
+    oversized,
+    asking([benchRequest]),
+    oversized,
+    final("From the rows I have, your bench went from 80 kg to 85 kg."),
+  ], { runner: rig.runner });
+  const done = generation(result);
+  assertEquals(sent.length, 4);
+  assertEquals(rig.calls.length, 1);
+  assertEquals(done.attempts.map((attempt) => [attempt.attempt, attempt.outcome]), [
+    ["initial", "invalid"],
+    ["lookup", "lookup"],
+    ["lookup", "invalid"],
+    ["repair", "valid"],
+  ]);
+});
+
+Deno.test("a correction that cannot be sent (no budget place) leaves the refusal to the repair", async () => {
+  const rig = lookupRig();
+  const reserved: string[] = [];
+  const { result, sent } = await run([
+    asking([{ ...benchRequest, from: "2025-01-01" }]),
+    final("I could not check that far back."),
+  ], {
+    runner: rig.runner,
+    budget: {
+      reserveAttempt: (_usd, kind) => {
+        reserved.push(kind);
+        return Promise.resolve(kind === "repair");
+      },
+      inFlight: () => {},
+    },
+  });
+  const done = generation(result);
+  assertEquals(reserved, ["lookup", "repair"]);
+  assertEquals(sent.length, 2);
+  assertStringIncludes(promptOf(sent[1]), "no more lookups are available this turn");
+  assertEquals(done.attempts.map((attempt) => attempt.attempt), ["initial", "repair"]);
+});
+
+Deno.test("a correction call that fails outright leaves the refusal to the repair", async () => {
+  const rig = lookupRig();
+  const { result, sent } = await run([
+    asking([{ ...benchRequest, from: "2025-01-01" }]),
+    provider500,
+    final("I could not check that far back."),
+  ], { runner: rig.runner });
+  const done = generation(result);
+  assertEquals(sent.length, 3);
+  assertEquals(done.attempts.map((attempt) => [attempt.attempt, attempt.outcome]), [
+    ["initial", "invalid"],
+    ["lookup", "http_error"],
+    ["repair", "valid"],
+  ]);
+});
+
+Deno.test("no correction when too little of the turn's deadline is left: the repair path stands", async () => {
+  const rig = lookupRig();
+  const { result, sent } = await run([
+    asking([{ ...benchRequest, from: "2025-01-01" }]),
+    final("I could not check that far back."),
+  ], {
+    runner: rig.runner,
+    timing: { totalDeadlineMs: 12_000, initialAttemptMs: 28_000, repairAttemptMs: 10_000 },
+  });
+  const done = generation(result);
+  assertEquals(sent.length, 2);
+  assertEquals(done.attempts.map((attempt) => attempt.attempt), ["initial", "repair"]);
 });
 
 Deno.test("two lookup rounds are allowed; a third request is refused and the repair must answer", async () => {
@@ -271,7 +416,7 @@ Deno.test("each extra call has its own budget place; with none, the interim sent
   assertEquals(reserved, ["lookup"]);
   assertEquals(sent.length, 1);
   assertEquals(done.answer.answer, "I am checking your records and have not seen them yet.");
-  assertEquals(done.lookups, [{ lookup: "exercise_history", rows: 2 }]);
+  assertEquals(done.lookups, [{ lookup: "exercise_history", rows: 2, round: 1 }]);
 });
 
 Deno.test("budget gone and no usable interim sentence: the turn falls back, as a failed repair does", async () => {
@@ -424,7 +569,7 @@ Deno.test("a lookup call that fails after the rows were fetched ends with the in
   assertEquals(done.answer.missing_data, [
     "Could not check: exercise_history 2026-08-01 to 2026-09-27",
   ]);
-  assertEquals(done.lookups, [{ lookup: "exercise_history", rows: 2 }]);
+  assertEquals(done.lookups, [{ lookup: "exercise_history", rows: 2, round: 1 }]);
 });
 
 Deno.test("a failed lookup call with no usable interim sentence falls back as before", async () => {
@@ -448,4 +593,55 @@ Deno.test("a lookup round does not start when too little of the turn's deadline 
   assertEquals(rig.calls.length, 0);
   assertEquals(done.answer.answer, "I am checking your records and have not seen them yet.");
   assertEquals(done.answer.missing_data.length, 1);
+});
+
+Deno.test("each lookup is counted with the round it ran in, so the trace can show how wide the first round was", async () => {
+  const rig = lookupRig();
+  const { result } = await run([
+    asking([
+      benchRequest,
+      { lookup: "body", from: "2026-08-01", to: "2026-09-27" },
+      { lookup: "recovery", from: "2026-09-01", to: "2026-09-27" },
+    ]),
+    asking([{ lookup: "check_ins", from: "2026-09-01", to: "2026-09-27" }]),
+    final("From the rows I have, your bench went from 80 kg to 85 kg."),
+  ], { runner: rig.runner });
+  const done = generation(result);
+  assertEquals(rig.calls.length, 4);
+  assertEquals(done.lookups?.map((count) => [count.lookup, count.round]), [
+    ["exercise_history", 1],
+    ["body", 1],
+    ["recovery", 1],
+    ["check_ins", 2],
+  ]);
+});
+
+Deno.test("up to eight lookups are accepted in one round", async () => {
+  const rig = lookupRig();
+  const names = [
+    "body",
+    "recovery",
+    "check_ins",
+    "goals",
+    "weekly_reviews",
+    "workouts",
+    "meals",
+    "health_history",
+  ];
+  const { result, sent } = await run([
+    asking(names.map((lookup) => ({ lookup, from: "2026-09-01", to: "2026-09-27" }))),
+    final("From the rows I have, nothing stands out."),
+  ], { runner: rig.runner });
+  const done = generation(result);
+  assertEquals(rig.calls.length, 8);
+  assertEquals(done.lookups?.length, 8);
+  assertStringIncludes(systemOf(sent[0]), "a round holds at most 8 requests");
+  const nine = asking([...names, "past_messages"].map((lookup) => ({
+    lookup,
+    from: "2026-09-01",
+    to: "2026-09-27",
+    filter: lookup === "past_messages" ? "knee" : "",
+  })));
+  const refused = await run([nine, final("I will answer without it.")], { runner: rig.runner });
+  assertStringIncludes(promptOf(refused.sent[1]), "at most 8 requests");
 });

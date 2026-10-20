@@ -197,8 +197,9 @@ select is(public.get_coach_nutrition_state_v1('a1000000-0000-4000-8000-000000000
 select is((select array(select k from jsonb_object_keys(
     public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)->'domains') k
     order by k collate "C")),
-  array['body', 'check_ins', 'goals', 'health_history', 'meals', 'plan_history', 'recovery',
-    'weekly_reviews', 'workouts'], 'the index covers every kind of record');
+  array['body', 'check_ins', 'daily_decisions', 'goals', 'health_history', 'meals', 'past_messages',
+    'plan_history', 'proposals', 'recovery', 'watch_workouts', 'weekly_reviews', 'workouts'],
+  'the index covers every kind of record');
 select is(public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)
     ->'domains'->'workouts', jsonb_build_object('first', current_date - 40, 'last', current_date - 5,
     'count', 2), 'with first and last date and a count');
@@ -238,7 +239,7 @@ select is(pg_temp.keys(public.coach_lookup_workouts_v1('a1000000-0000-4000-8000-
     current_date - 60, current_date, null)),
   array['from', 'lookup', 'schema_version', 'sessions', 'to', 'truncated'], 'workouts: complete key list');
 select is(public.coach_lookup_workouts_v1('a1000000-0000-4000-8000-000000000001', current_date - 60,
-    current_date, null)->>'schema_version', '1.0', 'with a schema version');
+    current_date, null)->>'schema_version', '1.1', 'with a schema version');
 select is((public.coach_lookup_workouts_v1('a1000000-0000-4000-8000-000000000001', current_date - 60,
     current_date, null)->'sessions'->0->>'local_date')::date, current_date - 5, 'newest session first');
 select is(jsonb_array_length(public.coach_lookup_workouts_v1('a1000000-0000-4000-8000-000000000001',
@@ -411,7 +412,7 @@ select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000002',
 
 -- The index says which weekdays the plan covers and from when.
 select is(public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)
-    ->>'schema_version', '1.1', 'the index has a schema version');
+    ->>'schema_version', '1.2', 'the index has a schema version');
 select is(public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)
     ->'schedule'->>'starts_on', (current_date - 60)::text, 'the schedule starts when the plan took effect');
 select is(public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)

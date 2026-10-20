@@ -1051,13 +1051,17 @@ routes stay available by settings alone for two weeks after the cutover.
   `plan_status` and the athlete file states there is no plan, the reason, the health-check outcome
   and date, and that Coach gives no plan-specific advice (sessions, loads, calorie or protein
   targets). General questions and next steps stay allowed.
-- **Second Coach route.** Questions that ask for analysis (progress, a trend or pace, a change to
-  the plan or a target, a nutrition amount; a domain noun alone is not enough) per
-  `coach_chat_provider_route.ts`, a rules classifier, use the route configured
+- **Second Coach route.** The route is chosen from the state of the athlete's records, never the
+  words of the question (`coach_chat_provider_route.ts`, deterministic): a health check that is not
+  cleared (or could not be read), pain on record (today's or yesterday's check-in, or an exercise
+  flagged for pain in the last 14 days), a Coach proposal waiting for the athlete's answer, or two
+  or more watch-outs about training decisions. A turn with any of them uses the route configured
   as `AI_COACH_CHAT_STRONG_*` when it is set, evaluated and its vendor is the one the athlete's
-  accepted notice names; every other question, and every question when it is unset, uses the
-  `coach_chat` route. The budget reservation, the price and the stored provenance follow the route
-  that answers.
+  accepted notice names; every other turn, and every turn when it is unset, uses the `coach_chat`
+  route. The contributors report the counts the choice reads, so it is made after they render; the
+  first budget place covers the dearer of the two routes. The budget, the price and the stored
+  provenance follow the route that answers. (Until 2026-10-20 a keyword list on the question chose
+  the route, so "check my training" stayed on the small model.)
 - Every coach-chat provider uses one shared coach persona (coaching approach, communication style,
   hard boundaries), followed by the null contract and the output accuracy/validation contract so the
   contract's rules take precedence.
@@ -1069,10 +1073,35 @@ records, for any day or period, when the question needs it. This is **not an age
 calling**. The mechanism is part of the JSON answer, so it works with any provider and the Claude
 adapter still sends no tools.
 
-- **A closed catalogue** (`_shared/coach_lookups/catalogue.ts`): ten lookups (`workouts`,
+- **A closed catalogue** (`_shared/coach_lookups/catalogue.ts`): eleven lookups (`workouts`,
   `exercise_history`, `meals`, `body`, `check_ins`, `recovery`, `plan_history`, `goals`,
-  `weekly_reviews`, `health_history`). Each is one `SECURITY DEFINER` RPC granted to
-  `service_role` only, read-only, with a `schema_version`, a row cap and a range clamp.
+  `weekly_reviews`, `health_history`, `past_messages`). Each is one `SECURITY DEFINER` RPC granted to
+  `service_role` only, read-only, with a `schema_version`, a row cap and a range clamp. The names
+  are the closed enum of the answer schema, whose bytes are fixed, so a newer kind of record is
+  reached through a filter on an existing lookup (`plan_history` with `schedule` or `proposals`,
+  `health_history` with `workouts`, `weekly_reviews` with `decisions`), never a new name.
+- **Coach investigates first (2026-10-20).** The always-on context is a summary, and the
+  **Coverage Brief** (`coverage_brief` contributor, gateway route only) says, for each kind of
+  record, what that summary shows, what a lookup adds, how much exists and how fresh it is, and the
+  neighbouring kinds to check with it. The neighbour table is static: the same for every athlete
+  and every question. The instructions tell Coach to answer a question about the athlete only after
+  it has requested, in its first round, every lookup that could change the answer (the brief's
+  neighbours of the topic, the detail behind a summary, the days ahead for a question about today
+  or the week), and to skip lookups only for a greeting, thanks, general knowledge, a question about
+  the app and a follow-up the rows already in the conversation answer. The old rules "work only from
+  the prepared context", "do not look up what the context already holds" and "ask for the narrowest
+  range" are gone. The **watch-outs** (`watch_outs` contributor, gateway route only) are facts
+  computed by code across kinds of record, at most 8 lines and about 900 characters, shown when
+  there are any: muscles shared on consecutive days, a session due today or tomorrow on a day with
+  a recovery score below 40, a sleep quality score below 50 or pain on the check-in, a pain flag on
+  an exercise that is planned again, sessions behind the plan this week, a session or exercise
+  skipped on each of its last two chances, resting heart rate or HRV a spread or more from the
+  athlete's own usual (the recovery score's own z-scores), a weigh-in older than 14 days, an Apple
+  Health sync older than 2 days and a plan older than its block. Every threshold is one the product
+  already uses (the evidence-code table, the app's "than usual", the goal phase's stale reading, the
+  app's stale sync) and none is new; each line states its dates and figures, so the numbers check
+  grounds a reply on them. A watch-out is a verified fact, not an instruction: Coach addresses it or
+  says why it does not matter, and a change stays a proposal the athlete approves.
 - **The model names a lookup, a range and a filter; nothing else.** The answer may carry
   `data_requests: [{lookup, from, to, filter}]` instead of a final answer. The athlete's id is bound
   by the Edge Function from the authenticated request when it builds the runner; it is never part of
@@ -1081,11 +1110,16 @@ adapter still sends no tools.
   400 days, a range not wholly in the future (an end after the coaching date is cut to it; the one
   exception is `plan_history` with the filter `schedule`, which reads the plan and may end up to 90
   days after it), at most
-  4 requests a round, a required filter for `exercise_history`, filters of plain words only. A
-  refused request is an invalid answer (rules `lookup_request_invalid`,
-  `lookup_rounds_exceeded`): the one repair attempt must answer without lookups.
+  8 requests a round, a required filter for `exercise_history`, filters of plain words only. A
+  request the catalogue refuses (`lookup_request_invalid`: a bad date, a missing filter, too many
+  requests) gets **one corrected round** per turn, if the time and a budget place allow: the model
+  is called again, told why, and may send a corrected list or answer. A second refusal, a request
+  after the rounds are used up (`lookup_rounds_exceeded`) and a correction that cannot be sent end
+  in the one repair attempt, which must answer without lookups.
 - **At most 2 lookup rounds.** After the rows return, the model is called again; after the second
-  round it is told no more lookups exist and must answer. A third request is refused.
+  round it is told no more lookups exist and must answer. A third request is refused. A round's
+  rows add at most 24,000 characters to the prompt (5,000 for each of up to four lookups, the total
+  shared out evenly beyond that).
 - **Budget.** Every extra call, lookup round or repair, reserves its own budget place at its own
   worst case before it is sent. When no place is available the model's interim sentence (it says
   what it is checking and has not seen) is the answer if it passes every guard; otherwise the turn
@@ -1103,7 +1137,8 @@ adapter still sends no tools.
 - **Nothing is written, nothing runs in the background, no loop is open-ended.** Lookups exist
   only on the gateway route; today's DeepSeek path has none.
 - **Observability**: the lookup names and row counts, never the rows, are stored on the assistant
-  message (`coach_messages.lookups`), with the guard rules each attempt broke and any fallback code
+  message (`coach_messages.lookups`) per round (`r1_workouts:4`, `r2_recovery:28`, so the width of
+  the first round and the follow-up of the second can be measured), with the guard rules each attempt broke and any fallback code
   (`coach_messages.guard_faults`), so the lead can query what Coach looked at and why a turn fell
   back.
 
@@ -1143,8 +1178,13 @@ adapter still sends no tools.
 - **A chat the athlete asked Coach not to remember** gets no notes, no suggestions (the model is not
   offered the field), no search and no appearance in another chat. A red-flag turn writes nothing.
 - **Raw message search** is the `past_messages` lookup: the athlete's own earlier questions in
-  remembered chats, found by their words, at most 12 rows of 300 characters. Coach's replies are not
-  searched, so a wrong claim of the Coach's never returns as memory.
+  remembered chats, found by their words, at most 12 rows of 300 characters. Since 2026-10-20 it
+  also returns, apart from them and labelled "Coach replied (an earlier reply, not a record; it may
+  have been wrong, so check any claim in it against the records)", at most 4 of Coach's own earlier
+  replies in the same remembered chats that match the same words (300 characters each; never a
+  data summary or a reply that failed), so Coach can re-read what it advised. The instructions say
+  such a line is not a record and a claim in it is checked against the records first. This replaces
+  the rule that Coach's replies are never searched; it is the owner's to confirm.
 - **Evaluation.** Bank cases cover a contradicted fact (knee, schedule, diet), a respected dislike, a
   confirmed limit in a leg session, a follow-through check against Coach's own note and a chat that
   is not remembered.

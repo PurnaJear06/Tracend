@@ -1,5 +1,5 @@
 // The athlete's next seven days as Coach reads them, and the muscles two sessions share on
-// consecutive days. Deterministic arithmetic over the plan and the sessions logged: the model
+// consecutive days (stated in the watch-outs block). Deterministic arithmetic over the plan and the sessions logged: the model
 // explains the result and may offer a change as a proposal the athlete approves; it never works
 // out which days overlap or edits the plan.
 //
@@ -168,31 +168,34 @@ function describeDay(day: ScheduleDay): string {
 }
 
 /**
- * The back-to-back muscle fact as one compact line, or null when there is no overlap. The structured
- * value is `MuscleOverlap[]` (from `consecutiveOverlaps` or `buildWeekAhead`); this line is its
- * rendering, so another block can carry the fact without rebuilding the text.
+ * The back-to-back muscle fact as one compact line, or null when there is no overlap, without the
+ * advice that follows it. The structured value is `MuscleOverlap[]` (from `consecutiveOverlaps` or
+ * `buildWeekAhead`); this line is its rendering, so another block can carry the fact without
+ * rebuilding the text. The watch-outs block carries it with its own instruction.
  */
-export function renderOverlapFact(overlaps: readonly MuscleOverlap[]): string | null {
+export function overlapFactLine(overlaps: readonly MuscleOverlap[]): string | null {
   if (overlaps.length === 0) return null;
   return "Same muscles on consecutive days, with no rest day between (Tracend calculated from the dates): " +
     overlaps.map((overlap) =>
       `${stamp(overlap.from)} then ${stamp(overlap.to)}: ${overlap.muscles.join(", ")}`
-    ).join("; ") +
-    ". Say so when you explain these days. A change of day or exercise is a proposal the " +
-    "athlete approves.";
+    ).join("; ") + ".";
+}
+
+/** The fact with the advice a lookup result carries after it. */
+export function renderOverlapFact(overlaps: readonly MuscleOverlap[]): string | null {
+  const line = overlapFactLine(overlaps);
+  return line === null ? null : `${line} Say so when you explain these days. A change of day or ` +
+    "exercise is a proposal the athlete approves.";
 }
 
 /**
- * The block Coach reads: the days from today with their muscles, then, only when there is one,
- * the muscles shared on consecutive days. Nothing about overlap is said when there is none.
+ * The block Coach reads: the days from today with their muscles. The muscles two sessions share on
+ * consecutive days are not here: the watch-outs block states that fact (`overlapFactLine`).
  */
 export function renderWeekAhead(schedule: WeekAhead): string[] {
-  const lines = [
+  return [
     "Next 7 days from today, by the athlete's own dates (muscles from the sets of each session: " +
     "logged sets for a finished one, planned sets for the rest; Tracend calculated them):",
     ...schedule.days.map(describeDay),
   ];
-  const fact = renderOverlapFact(schedule.overlaps);
-  if (fact !== null) lines.push(fact);
-  return lines;
 }

@@ -19,7 +19,16 @@ import { weightClaimCheckFor } from "../../_shared/training/goal_phase/guard.ts"
 import { bankCases } from "./cases.ts";
 import { repetitiveProductionReply } from "./cases_training.ts";
 import { answer, prepare } from "./harness.ts";
-import { gradeModelReply, gradeReply, gradeScreen } from "./graders.ts";
+import {
+  baselineWindow,
+  domainProblem,
+  gradeModelReply,
+  gradeReply,
+  gradeScreen,
+  overFetchProblem,
+  requestReaches,
+} from "./graders.ts";
+import { coverageDomains } from "../../_shared/coach_context/contributors/coverage_brief.ts";
 import { bankCategories, type BankCategory, type Reply, reportOnlyCategories } from "./types.ts";
 import type { Generate } from "../live_model.ts";
 
@@ -28,7 +37,7 @@ const prepared = new Map(
 );
 
 Deno.test("the bank has 60 or more cases with unique ids across every category", () => {
-  assert(bankCases.length >= 60 && bankCases.length <= 150, `${bankCases.length} cases`);
+  assert(bankCases.length >= 60 && bankCases.length <= 200, `${bankCases.length} cases`);
   assertEquals(new Set(bankCases.map((c) => c.id)).size, bankCases.length);
   for (const category of bankCategories) {
     assert(bankCases.some((c) => c.category === category), `no case in ${category}`);
@@ -51,6 +60,7 @@ Deno.test("the required groups are covered", () => {
   assert(count("lookups") >= 4, "lookups");
   assert(count("proposals") >= 5, "proposals");
   assert(count("library") >= 5, "library");
+  assert(count("investigation") >= 30 && count("investigation") <= 40, "investigation");
   const ids = bankCases.map((c) => c.id);
   for (
     const id of [
@@ -80,6 +90,9 @@ Deno.test("the required groups are covered", () => {
       "topic-protein-how-much",
       "lookup-bench-since-august",
       "lookup-meals-last-tuesday",
+      "inv-train-legs-today",
+      "inv-check-my-training",
+      "inv-greeting",
     ]
   ) assert(ids.includes(id), `missing case ${id}`);
 });
@@ -213,6 +226,8 @@ Deno.test("the graders catch every hand-written bad reply with the named grader"
       "routine_sets_reps",
       "cites_rows",
       "data_requests",
+      "domain_coverage",
+      "over_fetch",
       "proposal_intent",
       "cites_sources",
       "citations_shown",
@@ -376,4 +391,135 @@ Deno.test("the Sunday chest case shows Coach tomorrow's session and why Thursday
     run.firstRound.volatile,
     "Chest volume and delts is not set for today: it would train chest, triceps, front and side delts on consecutive days with tomorrow's session",
   );
+});
+
+// ---- investigate first: the domain-coverage grader and the over-fetch bound ------------------
+
+const investigation = bankCases.filter((c) => c.category === "investigation");
+
+Deno.test("the investigation cases: 30 to 40, each names real kinds of record and good requests that cover them", () => {
+  assert(investigation.length >= 30 && investigation.length <= 40, `${investigation.length}`);
+  const ids = new Set(coverageDomains.map((item) => item.id));
+  for (const bank of investigation) {
+    const { checks } = bank.expect;
+    assert(checks, bank.id);
+    for (const item of checks.domains ?? []) {
+      assert(ids.has(item.domain), `${bank.id}: ${item.domain}`);
+    }
+    const { context, contributors } = bank.athlete();
+    assertEquals(
+      domainProblem(checks.domains ?? [], context, contributors, bank.goodRequests ?? []),
+      null,
+      bank.id,
+    );
+  }
+  // Across the cases, every kind of record is the subject of at least one question.
+  const covered = new Set(
+    investigation.flatMap((c) => (c.expect.checks?.domains ?? []).map((d) => d.domain)),
+  );
+  for (
+    const id of [
+      "training",
+      "plan_ahead",
+      "recovery",
+      "check_ins",
+      "body",
+      "nutrition",
+      "goals",
+      "proposals",
+      "decisions",
+      "watch_workouts",
+      "reviews",
+      "conversation",
+      "plan_versions",
+    ]
+  ) {
+    assert(covered.has(id), `no investigation case turns on ${id}`);
+  }
+});
+
+Deno.test("the investigation cases include controls: a greeting, thanks, general knowledge, the app, and narrow questions", () => {
+  const trivial = investigation.filter((c) => c.expect.lookup?.kind === "none");
+  assert(trivial.length >= 4, `${trivial.length} controls`);
+  for (const bank of trivial) assertEquals(bank.expect.checks?.maxRequests, 0, bank.id);
+  const narrow = investigation.filter((c) =>
+    (c.expect.checks?.maxRequests ?? 99) <= 3 && c.expect.lookup?.kind !== "none"
+  );
+  assert(narrow.length >= 3, `${narrow.length} narrow cases`);
+});
+
+Deno.test("a kind is covered by its lookup, by the baseline for the period, and not by a lookup in a neighbour", () => {
+  const athlete = prepared.get("inv-train-legs-today")!.bank.athlete();
+  const { context, contributors } = athlete;
+  const ask = (lookup: string, from: string, to: string, filter?: string) => ({
+    lookup,
+    from,
+    to,
+    ...(filter ? { filter } : {}),
+  });
+  // The baseline holds 28 days of sessions: a month of totals covers "training" for 28 days...
+  assertEquals(baselineWindow("training", context, contributors), 27);
+  assertEquals(domainProblem([{ domain: "training" }], context, contributors, []), null);
+  // ...but not set-level detail, and not a period before its window.
+  assertEquals(
+    domainProblem([{ domain: "training", detail: true }], context, contributors, []),
+    "not covered: training",
+  );
+  assertEquals(
+    domainProblem([{ domain: "training", since: "2026-08-14" }], context, contributors, []),
+    "not covered: training since 2026-08-14",
+  );
+  // A lookup covers it only when its range reaches back far enough.
+  assertEquals(
+    domainProblem([{ domain: "training", since: "2026-08-14" }], context, contributors, [
+      ask("workouts", "2026-09-14", "2026-10-14"),
+    ]),
+    "not covered: training since 2026-08-14",
+  );
+  assertEquals(
+    domainProblem([{ domain: "training", since: "2026-08-14" }], context, contributors, [
+      ask("exercise_history", "2026-08-01", "2026-10-14", "squat"),
+    ]),
+    null,
+  );
+  // Lookups with filters reach the kind that names the filter, and a lookup with a special filter
+  // does not reach the kind that names none.
+  assert(requestReaches("plan_ahead", ask("plan_history", "2026-10-14", "2026-10-21", "schedule")));
+  assert(
+    !requestReaches("plan_versions", ask("plan_history", "2026-10-14", "2026-10-21", "schedule")),
+  );
+  assert(requestReaches("plan_versions", ask("plan_history", "2026-08-14", "2026-10-14")));
+  assert(!requestReaches("plan_ahead", ask("plan_history", "2026-08-14", "2026-10-14")));
+  assert(requestReaches("proposals", ask("plan_history", "2026-08-14", "2026-10-14", "Proposals")));
+  assert(
+    requestReaches("watch_workouts", ask("health_history", "2026-08-14", "2026-10-14", "workouts")),
+  );
+  assert(requestReaches("apple_health", ask("health_history", "2026-08-14", "2026-10-14")));
+  assert(
+    requestReaches("decisions", ask("weekly_reviews", "2026-08-14", "2026-10-14", "decisions")),
+  );
+  assert(requestReaches("reviews", ask("weekly_reviews", "2026-08-14", "2026-10-14")));
+  assert(!requestReaches("recovery", ask("check_ins", "2026-08-14", "2026-10-14")));
+  // A kind the athlete file does not show at all needs a lookup even without a period.
+  const empty = prepared.get("noplan-train-today")!.bank.athlete();
+  assertEquals(baselineWindow("recovery", empty.context, empty.contributors), undefined);
+});
+
+Deno.test("the over-fetch bound counts every lookup of the turn", () => {
+  const request = { lookup: "body", from: "2026-10-01", to: "2026-10-14" };
+  assertEquals(overFetchProblem([], 0), null);
+  assertEquals(overFetchProblem([request], 0), "1 requests, at most 0");
+  assertEquals(overFetchProblem([request, request, request], 3), null);
+  assertEquals(overFetchProblem([request, request, request, request], 3), "4 requests, at most 3");
+});
+
+Deno.test("the first round the model sees carries the Coverage Brief, and the watch-outs where the facts call for them", () => {
+  const legs = prepared.get("inv-train-legs-today")!.firstRound;
+  assertStringIncludes(legs.volatile, '<reference_data source="coverage_brief">');
+  assertStringIncludes(legs.volatile, "- training | 28 d session totals");
+  assertStringIncludes(legs.volatile, "repeats");
+  // The control cases have the brief too, with no plan to watch.
+  const greeting = prepared.get("inv-greeting")!.firstRound;
+  assertStringIncludes(greeting.volatile, '<reference_data source="coverage_brief">');
+  assertEquals(greeting.volatile.includes('source="watch_outs"'), false);
 });
