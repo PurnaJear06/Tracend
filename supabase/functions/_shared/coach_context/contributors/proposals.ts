@@ -6,8 +6,11 @@
 // A pending proposal's figures (its targets, the sessions a week it would set) are Tracend's own
 // (the proposal rules built them), so they ground a figure in a reply, but as the proposal's:
 // never as the athlete's target, which a proposal is not until it is approved. They are stated on
-// their own line, handed to the host as proposal figures (`RenderedBlock.figures`).
-import type { CoachContextContributor } from "../host.ts";
+// their own line, marked as proposal figures (`figure`, `RenderedBlock.figures`). A proposal's title
+// is Tracend's text for it (`columnGrounding`: change_proposals.title) and counts the same way. The
+// dates and the rest are records; the words around them ground nothing.
+import { figure, record } from "../../recorded_text.ts";
+import { blockOf, type CoachContextContributor, type RenderedBlock } from "../host.ts";
 import { coachServiceRpc, type StateSource, stateSourceFromRpc } from "../service_source.ts";
 
 export const proposalsContributorId = "coach_proposals";
@@ -126,12 +129,12 @@ const statusWords: Readonly<Record<string, string>> = {
   undone: "approved, then undone",
 };
 
-/** The lines of the block that state a pending proposal's figures, as shown. */
+/** The lines of the block that state a pending proposal's figures. */
 function figureLines(state: ProposalsState): string[] {
   return state.proposals.filter((item) => item.status === "pending" && item.figures !== null)
     .slice(0, 3).map((item) =>
-      `The pending proposal "${item.title}" would set ${
-        figuresText(item.figures!)
+      `The pending proposal "${figure(item.title)}" would set ${
+        figure(figuresText(item.figures!))
       } if approved. These are the proposal's figures: the athlete's own targets stay as they are until it is approved.`
     );
 }
@@ -140,16 +143,20 @@ export function renderProposals(state: ProposalsState | null): string | null {
   return renderProposalsBlock(state)?.text ?? null;
 }
 
-/** The block's text, and the lines of it that are a pending proposal's figures. */
-export function renderProposalsBlock(
-  state: ProposalsState | null,
-): Readonly<{ text: string; figures: readonly string[] }> | null {
+/** The block: its text, and the values in it (the dates are records, a proposal's text is figures). */
+export function renderProposalsBlock(state: ProposalsState | null): RenderedBlock | null {
+  const marked = proposalsMarked(state);
+  return marked === null ? null : blockOf(marked);
+}
+
+function proposalsMarked(state: ProposalsState | null): string | null {
   if (!state) return null;
   const lines: string[] = [];
   if (state.block) {
     lines.push(
-      `A temporary change is running: "${state.block.title}" until ${state.block.endsOn}. The ` +
-        "regular plan returns by itself the day after.",
+      `A temporary change is running: "${figure(state.block.title)}" until ${
+        record(state.block.endsOn)
+      }. The regular plan returns by itself the day after.`,
     );
   }
   if (state.phase) {
@@ -157,12 +164,14 @@ export function renderProposalsBlock(
     const ended = state.phase.endsOn !== null && state.phase.endsOn < state.localDate;
     lines.push(
       ended
-        ? `The athlete's ${name} ended on ${state.phase.endsOn}. Nutrition does not change back by ` +
+        ? `The athlete's ${name} ended on ${
+          record(state.phase.endsOn!)
+        }. Nutrition does not change back by ` +
           "itself: suggest the next step (resume the deficit or stay at maintenance) as a " +
           "proposal for the athlete to approve."
         : `The athlete is in ${name}${
-          state.phase.startedOn ? ` since ${state.phase.startedOn}` : ""
-        }${state.phase.endsOn ? `, ending ${state.phase.endsOn}` : ""}.`,
+          state.phase.startedOn ? ` since ${record(state.phase.startedOn)}` : ""
+        }${state.phase.endsOn ? `, ending ${record(state.phase.endsOn)}` : ""}.`,
     );
   }
   const waiting = state.proposals.filter((item) => item.status === "pending");
@@ -170,12 +179,13 @@ export function renderProposalsBlock(
     lines.push(
       "Waiting for the athlete to answer (not applied yet): " +
         waiting.map((item) =>
-          `"${item.title}"${item.expiresOn ? ` (open until ${item.expiresOn})` : ""}`
+          `"${figure(item.title)}"${
+            item.expiresOn ? ` (open until ${record(item.expiresOn)})` : ""
+          }`
         ).join("; ") + ".",
     );
   }
-  const figures = figureLines(state);
-  lines.push(...figures);
+  lines.push(...figureLines(state));
   const answered = state.proposals.filter((item) => item.status !== "pending").slice(0, 5);
   if (answered.length) {
     lines.push(
@@ -183,20 +193,17 @@ export function renderProposalsBlock(
         answered.map((item) => {
           const ended = item.status === "accepted" && item.endsOn !== null &&
             item.endsOn < state.localDate;
-          return `"${item.title}", ${item.createdOn}: ${statusWords[item.status] ?? item.status}${
-            ended ? `, ended ${item.endsOn}` : ""
-          }`;
+          return `"${figure(item.title)}", ${record(item.createdOn)}: ${
+            statusWords[item.status] ?? item.status
+          }${ended ? `, ended ${record(item.endsOn!)}` : ""}`;
         }).join("; ") + ".",
     );
   }
   if (lines.length === 0) return null;
-  return {
-    text: [
-      "Coach proposals (Tracend's record; a change happens only when the athlete approves it):",
-      ...lines,
-    ].join("\n"),
-    figures,
-  };
+  return [
+    "Coach proposals (Tracend's record; a change happens only when the athlete approves it):",
+    ...lines,
+  ].join("\n");
 }
 
 export function createProposalsContributor(source: StateSource): CoachContextContributor {
@@ -210,9 +217,7 @@ export function createProposalsContributor(source: StateSource): CoachContextCon
       if (block === null) return null;
       // How many proposals wait for an answer, for the route (coach_chat_provider_route.ts).
       return {
-        text: block.text,
-        figures: block.figures,
-        shown: {},
+        ...block,
         trace: { waiting: state!.proposals.filter((item) => item.status === "pending").length },
       };
     },

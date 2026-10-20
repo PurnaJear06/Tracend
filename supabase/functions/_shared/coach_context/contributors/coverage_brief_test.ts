@@ -4,7 +4,7 @@ import {
   coachLookupNames,
   lookupSpec,
 } from "../../coach_lookups/catalogue.ts";
-import { coachContextContributorTimeoutMs, renderCoachContext } from "../host.ts";
+import { coachContextContributorTimeoutMs, renderCoachContext, renderedText } from "../host.ts";
 import {
   ageText,
   coverageBriefBudgetChars,
@@ -120,7 +120,7 @@ Deno.test("the neighbour map is a static table: the same text whatever the quest
   });
   const second = await contributor.render({ userId: "u", question: "hi", localDate: today });
   assertEquals(first, second);
-  assertEquals(first, renderCoverageBrief(payload, today));
+  assertEquals(renderedText(first), renderCoverageBrief(payload, today));
 });
 
 Deno.test("a failing index read leaves the static brief, not nothing", async () => {

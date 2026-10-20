@@ -1,6 +1,7 @@
 // Confirmed facts as the Coach contributors see them: parsed from the database's answer, rendered
 // into the stable part of the Coach's file, and checked for facts that are due to be asked about
 // again. The database owns every date; this module only reads them.
+import { plain, record } from "../recorded_text.ts";
 import { dateOf, flatten } from "./text.ts";
 import {
   type FactKind,
@@ -108,20 +109,33 @@ const preface = "The athlete confirmed these facts about themselves; each line s
   'print it. A line marked "re-check" is old: ask about it once, briefly, if it matters to the ' +
   "question.";
 
+// The statement is the athlete's own and its dates are records; the id in brackets and the preface
+// are not (`../recorded_text.ts`).
 function factLine(fact: CoachFact, due: boolean): string {
-  const marker = due ? `; re-check, due since ${fact.reconfirmOn}` : "";
-  return `- [${fact.id}] ${flatten(fact.statement, 200)} (confirmed ${fact.confirmedOn}, ${
-    factSourceLabels[fact.source]
-  }${marker})`;
+  const marker = due ? `; re-check, due since ${record(fact.reconfirmOn ?? "")}` : "";
+  return `- [${fact.id}] ${record(flatten(fact.statement, 200))} (confirmed ${
+    record(fact.confirmedOn)
+  }, ${factSourceLabels[fact.source]}${marker})`;
+}
+
+/** The facts section as the model reads it (`renderConfirmedFactsMarked` without its marks). */
+export function renderConfirmedFacts(
+  facts: readonly CoachFact[],
+  today: string,
+  budgetChars: number,
+): string | null {
+  const marked = renderConfirmedFactsMarked(facts, today, budgetChars);
+  return marked === null ? null : plain(marked);
 }
 
 /**
- * The facts section of the Coach's file, or null when the athlete has confirmed none. Kinds appear
+ * The facts section of the Coach's file, or null when the athlete has confirmed none, with the
+ * values in it marked (`../recorded_text.ts`). Kinds appear
  * in a fixed order and facts within a kind by confirmation date, so the text only changes when a
  * fact does. When it does not fit the budget the last kinds are dropped whole and the count of
  * facts left out is stated.
  */
-export function renderConfirmedFacts(
+export function renderConfirmedFactsMarked(
   facts: readonly CoachFact[],
   today: string,
   budgetChars: number,
@@ -152,7 +166,7 @@ export function renderConfirmedFacts(
   };
   for (let count = entries.length; count > 0; count--) {
     const text = render(count);
-    if (text.length <= budgetChars) return text;
+    if (plain(text).length <= budgetChars) return text;
   }
   return null;
 }

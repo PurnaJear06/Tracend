@@ -1629,6 +1629,47 @@ the file, the recovery lookup, the monthly health history (sleep average, workou
 sleep watch-out; nothing is added under an hour. The numbers check still never converts units.
 
 
+**Review round 5 (PR #159, same branch): contributors ground their values, not their text.**
+1) *P1: constants no longer ground.* A contributor declared `records` used to ground its whole text,
+so "last 3" in the brief let "You lost 3 kg" pass and "(below 40)" in a watch-out let "Your HRV was
+40 ms" pass (and a fact's id in brackets grounded its digits). Now each contributor writes its
+record values through `record` (and a proposal's title and figures through `figure`) while it builds
+its text (`_shared/recorded_text.ts`); the host gets the text without marks plus the marked values as
+structured data (`RenderedBlock.records` / `.figures`, `CoachContributions.records`), each as the
+value with the words that give its unit, cut at the nearest digit and the line (so a unit-aware
+match stays unit-aware). `replyCheckInputsFor` grounds only those values (`guidance` still grounds
+its whole text; a records contributor that marks nothing grounds nothing). The host drops a value
+whose line was cut for size. Audited: screening (the day it was answered), confirmed facts (the
+athlete's statements and dates, not the id), goal phase (readings, rates, target; not the 4-week
+window, the 90-reading cap, source years or the thresholds in a reason), training plan, nutrition
+(not the 7/14-day windows or the complete-day rule), proposals (dates records; titles and figures
+`figure`), heart rate (not the formula, its constants or the 28-day windows), Coach's notes (their
+dates only: a note is untrusted and its figures were not confirmed), watch-outs (not the thresholds,
+the 48-hour limit, the scale of 10), coverage brief (counts, dates, ages; not the windows or sizes).
+`coverage_brief`, `watch_outs` and the others keep their plain `renderX` for tests; the `...Marked`
+forms feed the host. `ReviewReason.marked`, `describeTargetAdviceMarked`, `renderWeekAheadMarked`,
+`stampMarked` and `overlapFactLineMarked` are the marked forms of shared helpers.
+2) *Probes.* `contributor_grounding_test.ts` renders every records contributor on fixture data
+(`contributor_probe.ts`), lists every number in the text that is not a marked value (the fixed
+wording, listed in full in each test so a new constant must be classified), asserts none grounds for
+`ground` or `athleteGround`, that every marked value is a number of the fixture (or one listed as
+calculated from it) and grounds, and that the two named replies are still refused. Mutation check:
+marking a threshold as a record makes the watch-outs probe fail.
+3) *P2: lookups.* `drop_60s_bpm` and `rpe` (sets), a goal's `body_fat_pct_min/max`, `physique`, `date`
+and `set_at`, a schedule day's `version`, and a Health month's `month` are declared as records
+(`sessions[].assisted`, `sessions[].version_id` and `days[].done[].planned_workout_id` are controls).
+4) *Test gap.* `render_grounding_test.ts` reads the renderer's own field reads (`pathsRead`, a
+recursive proxy on the renderer alone, not on `renderLookup`, whose prune step reads every field)
+and fails any field read that is not declared, whether or not the fixture's value made it appear.
+Fixtures now fill every field in some row (a second set with `rir` null and `rpe` set, a goal with a
+body-fat range, physique and dates, a schedule day under an earlier version, a month-label shift in
+`variantsOf`), and a test fails a fixture field that is null in every row.
+
+*Leftover.* The `meals` lookup declares `rules.min_meals` and `rules.min_target_share` (the rule that
+makes a day complete) as records, so "3 meals" or "70%" in the rule line still grounds on that
+path; a threshold has no kind of its own in `lookupGrounding` yet.
+
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in

@@ -2,12 +2,21 @@
 // explains it; it never sets or changes it (Architecture rule 1), and the athlete alone sets a
 // target (rule 2). Safety outcomes come before "ask for a target", so an athlete deep in a long
 // cut is told so even while no target is set; `needsTarget` still says a target is missing.
-import { latestWeightBasis } from "./render.ts";
+import { plain, record } from "../../recorded_text.ts";
+import { latestWeightBasisMarked } from "./render.ts";
 import { goalPhaseThresholds as limits } from "./thresholds.ts";
 import type { ContinuousLoss, GoalPhaseReview, GoalPhaseSummary, ReviewReason } from "./types.ts";
 
 const lossGoalTypes = ["fat_loss"];
 const gainGoalTypes = ["muscle_gain"];
+
+/** A reason from its sentence with the values marked; `detail` is the same sentence without marks. */
+const reason = (code: string, marked: string, sources: readonly string[]): ReviewReason => ({
+  code,
+  detail: plain(marked),
+  marked,
+  sources,
+});
 
 /** The sign of the goal: -1 to lose weight, 1 to gain, 0 when the goal does not say. */
 function goalDirection(summary: GoalPhaseSummary): -1 | 0 | 1 {
@@ -32,13 +41,12 @@ function targetReached(summary: GoalPhaseSummary): ReviewReason | null {
     ? current >= target - slack
     : false;
   return reached
-    ? {
-      code: "target_weight_reached",
-      detail:
-        `the latest weight, ${current} kg (${latestWeightBasis(summary)}), is at the target ` +
-        `of ${target} kg`,
-      sources: [],
-    }
+    ? reason(
+      "target_weight_reached",
+      `the latest weight, ${record(current)} kg (${latestWeightBasisMarked(summary)}), is at the ` +
+        `target of ${record(target)} kg`,
+      [],
+    )
     : null;
 }
 
@@ -73,19 +81,19 @@ function maintenanceReasons(summary: GoalPhaseSummary): ReviewReason[] {
   const stillLosing = pace !== null && pace <= -limits.stillLosingKgPerWeek.value;
   const bmi = summary.bmi;
   if (bmi !== null && bmi < limits.bmiHealthyFloor.value) {
-    reasons.push({
-      code: "bmi_below_healthy_range",
-      detail: `BMI ${bmi} at the latest weight (${latestWeightBasis(summary)}) is below ` +
+    reasons.push(reason(
+      "bmi_below_healthy_range",
+      `BMI ${record(bmi)} at the latest weight (${latestWeightBasisMarked(summary)}) is below ` +
         `${limits.bmiHealthyFloor.value}, the underweight range`,
-      sources: ["who_2004"],
-    });
+      ["who_2004"],
+    ));
   } else if (bmi !== null && bmi < limits.bmiNearFloor.value && stillLosing) {
-    reasons.push({
-      code: "bmi_near_healthy_floor",
-      detail: `BMI ${bmi} at the latest weight (${latestWeightBasis(summary)}) is close to ` +
+    reasons.push(reason(
+      "bmi_near_healthy_floor",
+      `BMI ${record(bmi)} at the latest weight (${latestWeightBasisMarked(summary)}) is close to ` +
         `${limits.bmiHealthyFloor.value} and weight is still falling`,
-      sources: ["who_2004", "tracend_in_house"],
-    });
+      ["who_2004", "tracend_in_house"],
+    ));
   }
   // The loss is judged over the continuous run of falling weight when it differs from the goal
   // phase (it began before the goal, or the weight rose first): the athlete's body does not
@@ -99,22 +107,23 @@ function maintenanceReasons(summary: GoalPhaseSummary): ReviewReason[] {
       weeks >= limits.longDeficitWeeks.value &&
       changePct <= -limits.longDeficitMinimumLossPct.value
     ) {
-      reasons.push({
-        code: "long_continuous_deficit",
-        detail: `${weeks} weeks of falling weight since ${since} (${changePct}% from the start ` +
-          `of the run); a continuous deficit this long is usually broken up`,
-        sources: ["byrne_2018", "trexler_2014", "jensen_2014"],
-      });
+      reasons.push(reason(
+        "long_continuous_deficit",
+        `${record(weeks)} weeks of falling weight since ${record(since ?? "")} (${
+          record(changePct)
+        }% from the start of the run); a continuous deficit this long is usually broken up`,
+        ["byrne_2018", "trexler_2014", "jensen_2014"],
+      ));
     }
     if (
       weeks >= limits.largeLossMinimumWeeks.value &&
       changePct <= -limits.largeLossPct.value
     ) {
-      reasons.push({
-        code: "large_total_loss",
-        detail: `${Math.abs(changePct)}% of body weight lost since ${since}`,
-        sources: ["jensen_2014", "tracend_in_house"],
-      });
+      reasons.push(reason(
+        "large_total_loss",
+        `${record(Math.abs(changePct))}% of body weight lost since ${record(since ?? "")}`,
+        ["jensen_2014", "tracend_in_house"],
+      ));
     }
   }
   return reasons;
@@ -128,12 +137,12 @@ function fastRate(summary: GoalPhaseSummary): ReviewReason | null {
   if (weeks < limits.fastRateMinimumWeeks.value) return null;
   const pct = (Math.abs(pace) / current) * 100;
   if (pace < 0 && pct > limits.fastRatePctPerWeek.value) {
-    return {
-      code: "fast_sustained_loss",
-      detail: `losing ${Math.abs(pace)} kg a week, about ${pct.toFixed(1)}% of body weight, ` +
-        `above ${limits.fastRatePctPerWeek.value}% a week`,
-      sources: ["helms_2014", "garthe_2011"],
-    };
+    return reason(
+      "fast_sustained_loss",
+      `losing ${record(Math.abs(pace))} kg a week, about ${record(pct.toFixed(1))}% of body ` +
+        `weight, above ${limits.fastRatePctPerWeek.value}% a week`,
+      ["helms_2014", "garthe_2011"],
+    );
   }
   return null;
 }
@@ -152,11 +161,11 @@ export function reviewGoalPhase(summary: GoalPhaseSummary): GoalPhaseReview {
   if (needsTarget) {
     return {
       outcome: "ask_target",
-      reasons: [{
-        code: "no_target",
-        detail: "the goal has no target weight, body-fat range or physique goal",
-        sources: [],
-      }],
+      reasons: [reason(
+        "no_target",
+        "the goal has no target weight, body-fat range or physique goal",
+        [],
+      )],
       needsTarget,
     };
   }

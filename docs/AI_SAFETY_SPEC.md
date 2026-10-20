@@ -1170,8 +1170,22 @@ adapter still sends no tools.
   field (`lookupGrounding`; the rows that ground are rendered again from the payload cut down to
   the declared fields, so an undeclared field cannot reach them), the athlete file key by key and,
   for a key that mixes kinds, field by field (`providers/context_grounding.ts`), and the
-  contributors one by one (`coach_context/grounding.ts`; a contributor may mark lines of its text
-  as proposal figures, as the proposals block does for a pending proposal Tracend built). Tests put
+  contributors one by one (`coach_context/grounding.ts`). A contributor mixes fixed wording with
+  values (the windows it looks at, the thresholds it applies, the definition of a baseline, an id)
+  and states which are values: it writes each one through `record` while it builds its text
+  (`_shared/recorded_text.ts`), and hands the host the text without the marks and the marked
+  values as structured data (`RenderedBlock.records`, the way proposal figures were already
+  carried: `figure` marks what a pending proposal Tracend built would set, and a proposal's
+  title). Only those values ground; the fixed wording of a contributor grounds nothing, so "last 3"
+  in the brief or "(below 40)" in a watch-out cannot make a made-up "3 kg" or "40 ms" pass, and a
+  contributor that marks nothing grounds nothing. The principles digest is the exception by
+  design (`guidance`: its whole text is general guidance, never the athlete's target), and Coach's
+  notes ground only their dates. A lookup that shows a value declares it (`lookupGrounding`);
+  the rule that every field a renderer reads is declared is checked by reading the renderer's own
+  field reads, not by what a fixture happened to show. Each records contributor has a probe
+  (`contributor_grounding_test.ts`) that lists every number in its rendered text that is not a
+  record value, asserts none of them grounds a figure or the athlete's own data or target, and
+  asserts every marked value is a value of its fixture. Tests put
   a change in every field each renderer shows, keeping its type, and fail a shown field that is
   undeclared or that grounds differently from its declaration; they count the fields verified, not
   walked, and read the keys the renderer touches. Durations stored in minutes are shown with the

@@ -546,6 +546,8 @@ Deno.test("a source that fails or times out drops only its lines; with all faili
   assertEquals(await none.render(input), {
     text: "",
     shown: {},
+    records: [],
+    figures: [],
     trace: { lines: 0, decisions: 0, pain: null },
   });
   // An empty schedule payload (an athlete without a plan) reads as no schedule.
@@ -610,6 +612,8 @@ Deno.test("nothing to watch still reports the counts: no text, pain known and ab
   assertEquals(await quiet.render(input), {
     text: "",
     shown: {},
+    records: [],
+    figures: [],
     trace: { lines: 0, decisions: 0, pain: false },
   });
   const result = await renderCoachContext([quiet], input);

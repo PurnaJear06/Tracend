@@ -3,6 +3,7 @@
 // the app reads, is a SQL function; this module is the TypeScript side of the same payload: its
 // types, a strict parser for `get_progression_summary_v1`, and the plain words Coach is given.
 // Heart rate is not an input to any target (decision D9).
+import { plain, record as recorded } from "../../recorded_text.ts";
 
 export type ProgressionAction = "add_load" | "add_reps" | "hold" | "lower";
 
@@ -172,7 +173,7 @@ function reasonWords(
 }
 
 function kg(value: number): string {
-  return `${Number.isInteger(value) ? value : Number(value.toFixed(2))} kg`;
+  return `${recorded(Number.isInteger(value) ? value : Number(value.toFixed(2)))} kg`;
 }
 
 /** Machine help is the load of an assisted exercise: a catalog slug `assisted-...` or a name. */
@@ -183,29 +184,47 @@ export function isAssistedTarget(item: Pick<ProgressionTarget, "exerciseKey" | "
 
 /** "62.5 kg x 5 reps, 3 sets", "20 kg help x 8 reps, 3 sets" or "11 reps, 2 sets". */
 export function describeTargetPrescription(item: ProgressionTarget): string {
+  return plain(describeTargetPrescriptionMarked(item));
+}
+
+// The "...Marked" forms mark the loads, reps, sets and dates (`recorded_text.ts`): the words are
+// Tracend's, the figures are its calculation from the sets the athlete logged.
+function describeTargetPrescriptionMarked(item: ProgressionTarget): string {
   const load = item.loadKg === null
     ? ""
     : isAssistedTarget(item)
     ? (item.loadKg === 0 ? "unassisted, " : `${kg(item.loadKg)} help x `)
     : `${kg(item.loadKg)} x `;
-  return `${load}${item.reps} reps, ${item.sets} sets`;
+  return `${load}${recorded(item.reps)} reps, ${recorded(item.sets)} sets`;
 }
 
 /** The last logged session in words: "2026-10-10: 60 kg, 3 sets, fewest reps 8". */
 export function describeLastSession(item: ProgressionTarget): string {
+  return plain(describeLastSessionMarked(item));
+}
+
+/** `describeLastSession` with its values marked. */
+export function describeLastSessionMarked(item: ProgressionTarget): string {
   const last = item.recent[0];
   const load = last.loadKg === null
     ? "no load"
     : isAssistedTarget(item)
     ? (last.loadKg === 0 ? "unassisted" : `${kg(last.loadKg)} help`)
     : kg(last.loadKg);
-  return `${last.localDate}: ${load}, ${last.sets} sets, fewest reps ${last.minReps}`;
+  return `${recorded(last.localDate)}: ${load}, ${recorded(last.sets)} sets, fewest reps ${
+    recorded(last.minReps)
+  }`;
 }
 
 /** The target and why: "62.5 kg x 5 reps, 3 sets; add load, every set reached the top ...". */
 export function describeTargetAdvice(item: ProgressionTarget): string {
+  return plain(describeTargetAdviceMarked(item));
+}
+
+/** `describeTargetAdvice` with its values marked. */
+export function describeTargetAdviceMarked(item: ProgressionTarget): string {
   const caution = item.confidence === "low" ? " (reps in reserve were not logged)" : "";
-  return `${describeTargetPrescription(item)}; ${item.action.replace("_", " ")}, ` +
+  return `${describeTargetPrescriptionMarked(item)}; ${item.action.replace("_", " ")}, ` +
     `${reasonWords(item.reason, item.action, isAssistedTarget(item))}${caution}`;
 }
 

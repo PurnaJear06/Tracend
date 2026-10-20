@@ -16,7 +16,10 @@ Deno.test("every registered contributor declares what it may ground, and nothing
   assertEquals(groundingOf("some_new_block"), "excluded");
 });
 
-const contributions = (texts: Record<string, string>) => ({ ...noCoachContributions, texts });
+const contributions = (
+  texts: Record<string, string>,
+  records: Record<string, readonly string[]> = {},
+) => ({ ...noCoachContributions, texts, records });
 
 Deno.test("library text grounds nothing here, the principles digest only as guidance, other blocks as records", () => {
   const context = { coaching_date: "2026-10-17", permitted_evidence: [] };
@@ -26,8 +29,8 @@ Deno.test("library text grounds nothing here, the principles digest only as guid
     contributions({
       library: "Excerpt: 1.9 g per kg",
       coaching_principles: "Guidance: 1.6 g per kg",
-      watch_outs: "Recovery score 31 on 2026-10-17",
-    }),
+      watch_outs: "Recovery score 31 on 2026-10-17 (below 40)",
+    }, { watch_outs: ["score 31 on 2026-10-17"] }),
   );
   const has = (ground: typeof inputs.ground, value: number) =>
     ground.values.some((figure) => figure.value === value);
@@ -36,6 +39,9 @@ Deno.test("library text grounds nothing here, the principles digest only as guid
   assert(has(inputs.ground, 31));
   assert(!has(inputs.athleteGround!, 1.6));
   assert(has(inputs.athleteGround!, 31));
+  // The threshold in the text is fixed wording: only the value that was marked grounds.
+  assert(!has(inputs.ground, 40));
+  assert(!has(inputs.athleteGround!, 40));
 });
 
 Deno.test("the latest daily decision is a model's words about an earlier day: its figures ground nothing today", () => {

@@ -7,7 +7,10 @@
 // Health sync gone stale, and a plan that has outlived its block.
 //
 // Every line states what was found with its dates and the figures it was computed from, so the
-// numbers check can ground a reply on it; none is a conclusion about what to do. Nothing is shown
+// numbers check can ground a reply on it; none is a conclusion about what to do. The dates, the
+// scores, the counts and the names are marked as records (`../../recorded_text.ts`); the
+// thresholds a line quotes ("below 40", "older than 14 days"), the 48-hour limit and the block
+// length the app uses are fixed wording and ground nothing. Nothing is shown
 // when nothing is found. A threshold is always one Tracend already uses somewhere else, and the
 // table below says where; none is chosen here for this block.
 //
@@ -16,9 +19,15 @@
 // schedule). Any one of them may fail; the lines that need it are then left out.
 import { minutesText } from "../../duration_text.ts";
 import { goalPhaseThresholds } from "../../training/goal_phase/thresholds.ts";
-import { addDays, dayOf, overlapFactLine, stamp } from "../../training/schedule/week_ahead.ts";
+import {
+  addDays,
+  dayOf,
+  overlapFactLineMarked,
+  stampMarked,
+} from "../../training/schedule/week_ahead.ts";
+import { plain, record } from "../../recorded_text.ts";
 import { readScheduleBody, type ScheduleBody } from "../../training/schedule/lookup_body.ts";
-import { type CoachContextContributor, sharedRead } from "../host.ts";
+import { blockOf, type CoachContextContributor, sharedRead } from "../host.ts";
 import {
   coachServiceRpc,
   type ServiceRpc,
@@ -218,24 +227,28 @@ function loadCheck(plan: PlanState, facts: WatchFacts): string | null {
   const m = facts.metrics;
   if (m?.recoveryScore != null && m.recoveryScore < watchOutThresholds.recoveryScoreBelow) {
     reasons.push(
-      `recovery score ${m.recoveryScore} on ${m.date} (below ${watchOutThresholds.recoveryScoreBelow})`,
+      `recovery score ${record(m.recoveryScore)} on ${
+        record(m.date)
+      } (below ${watchOutThresholds.recoveryScoreBelow})`,
     );
   }
   if (m?.sleepQuality != null && m.sleepQuality < watchOutThresholds.sleepQualityBelow) {
     const slept = facts.sleep !== null && Math.abs(dayOf(facts.sleep.date) - dayOf(m.date)) <= 1
-      ? `, ${minutesText(facts.sleep.minutes)} asleep on ${facts.sleep.date}`
+      ? `, ${record(minutesText(facts.sleep.minutes))} asleep on ${record(facts.sleep.date)}`
       : "";
     reasons.push(
-      `sleep quality score ${m.sleepQuality} on ${m.date} (below ${watchOutThresholds.sleepQualityBelow}${slept})`,
+      `sleep quality score ${record(m.sleepQuality)} on ${
+        record(m.date)
+      } (below ${watchOutThresholds.sleepQualityBelow}${slept})`,
     );
   }
   const pain = facts.checkIn;
   if (pain?.pain != null && pain.pain > 0) {
-    reasons.push(`check-in pain ${pain.pain}/10 on ${pain.date}`);
+    reasons.push(`check-in pain ${record(pain.pain)}/10 on ${record(pain.date)}`);
   }
   if (reasons.length === 0) return null;
   const when = due.map((item) =>
-    `${item.name} ${item.offset === 0 ? "today" : "tomorrow"} (${stamp(item)})`
+    `${record(item.name)} ${item.offset === 0 ? "today" : "tomorrow"} (${stampMarked(item)})`
   );
   return `Due ${join(when)}, with ${reasons.join("; ")}.`;
 }
@@ -259,9 +272,9 @@ function painPlannedAgain(plan: PlanState, facts: WatchFacts): string | null {
         if (flag) {
           flagged.delete(exercise.slug!);
           found.push(
-            `${flag.name} (pain flagged on ${flag.date}) is planned again in ${session.name} on ${
-              stamp({ weekday, date })
-            }`,
+            `${record(flag.name)} (pain flagged on ${record(flag.date)}) is planned again in ${
+              record(session.name)
+            } on ${stampMarked({ weekday, date })}`,
           );
         }
       }
@@ -275,12 +288,14 @@ function behindPlan(plan: PlanState): string | null {
   if (undone.length === 0) return null;
   const names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   const missed = undone.map((session) =>
-    `${session.name} (${session.weekday === null ? "no set day" : names[session.weekday - 1]})`
+    `${record(session.name)} (${
+      session.weekday === null ? "no set day" : names[session.weekday - 1]
+    })`
   );
-  const done = plan.completed.map((row) => row.localDate);
+  const done = plan.completed.map((row) => record(row.localDate));
   return `Behind plan this week: ${join(missed)} not done, planned for days already past; ${
     done.length
-      ? `${done.length} finished since Monday (${join(done)})`
+      ? `${record(done.length)} finished since Monday (${join(done)})`
       : "none finished since Monday"
   }.`;
 }
@@ -321,7 +336,8 @@ function missedSessions(schedule: ScheduleBody): string | null {
   }).sort((a, b) => b.last.localeCompare(a.last)).slice(0, 2);
   if (streaks.length === 0) return null;
   return `Planned but not logged on each of its last days: ${
-    streaks.map((item) => `${item.name} (${join(item.dates.toReversed())})`).join("; ")
+    streaks.map((item) => `${record(item.name)} (${join(item.dates.toReversed().map(record))})`)
+      .join("; ")
   }.`;
 }
 
@@ -330,7 +346,9 @@ function skippedExercises(facts: WatchFacts): string | null {
     .slice(0, 3);
   if (rows.length === 0) return null;
   return `Skipped in each of its last sessions: ${
-    rows.map((row) => `${row.name} (${row.sessions} in a row, last ${row.lastDate})`).join("; ")
+    rows.map((row) =>
+      `${record(row.name)} (${record(row.sessions)} in a row, last ${record(row.lastDate)})`
+    ).join("; ")
   }.`;
 }
 
@@ -340,13 +358,13 @@ function drift(facts: WatchFacts): string | null {
   const spreads = watchOutThresholds.driftSpreads;
   const parts: string[] = [];
   if (m.rhrZ !== null && !m.missing.includes("resting_hr") && m.rhrZ <= -spreads) {
-    parts.push(`resting heart rate is ${oneDecimal(-m.rhrZ)} spreads above their usual`);
+    parts.push(`resting heart rate is ${record(oneDecimal(-m.rhrZ))} spreads above their usual`);
   }
   if (m.hrvZ !== null && !m.missing.includes("hrv_sdnn") && m.hrvZ <= -spreads) {
-    parts.push(`HRV is ${oneDecimal(-m.hrvZ)} spreads below their usual`);
+    parts.push(`HRV is ${record(oneDecimal(-m.hrvZ))} spreads below their usual`);
   }
   if (parts.length === 0) return null;
-  return `On ${m.date}, ${
+  return `On ${record(m.date)}, ${
     parts.join(" and ")
   } (the recovery score's z-scores; the app calls one spread "than usual").`;
 }
@@ -355,7 +373,9 @@ function staleWeighIn(facts: WatchFacts): string | null {
   if (facts.weighIn === null) return null;
   const days = dayOf(facts.localDate) - dayOf(facts.weighIn);
   if (days <= watchOutThresholds.weighInStaleDays) return null;
-  return `Last weigh-in was ${facts.weighIn}, ${days} days ago (older than ${watchOutThresholds.weighInStaleDays} days, so no weight trend is current).`;
+  return `Last weigh-in was ${record(facts.weighIn)}, ${
+    record(days)
+  } days ago (older than ${watchOutThresholds.weighInStaleDays} days, so no weight trend is current).`;
 }
 
 function staleSync(facts: WatchFacts): string | null {
@@ -368,7 +388,9 @@ function staleSync(facts: WatchFacts): string | null {
   // than 2 days stale" for a sync just over 48 hours old.
   const hours = Math.floor(elapsed / 3_600_000);
   const limit = watchOutThresholds.healthSyncStaleDays * 24;
-  return `Apple Health last synced on ${facts.healthSync.localDate}, more than ${hours} hours ago (the app calls more than ${limit} hours stale), so recent sleep and recovery rows may be missing.`;
+  return `Apple Health last synced on ${record(facts.healthSync.localDate)}, more than ${
+    record(hours)
+  } hours ago (the app calls more than ${limit} hours stale), so recent sleep and recovery rows may be missing.`;
 }
 
 function planAge(facts: WatchFacts): string | null {
@@ -377,8 +399,10 @@ function planAge(facts: WatchFacts): string | null {
   const weeks = Math.floor((dayOf(facts.localDate) - dayOf(plan.startsOn)) / 7);
   if (weeks < plan.blockWeeks) return null;
   return `The current plan${
-    plan.version === null ? "" : ` (v${plan.version})`
-  } has run since ${plan.startsOn}, ${weeks} weeks; its block is ${plan.blockWeeks} weeks.`;
+    plan.version === null ? "" : ` (v${record(plan.version)})`
+  } has run since ${record(plan.startsOn)}, ${record(weeks)} weeks; its block is ${
+    record(plan.blockWeeks)
+  } weeks.`;
 }
 
 const introduction =
@@ -393,8 +417,11 @@ export const watchOutsLinesRoom = Math.min(
   watchOutsBudgetChars - introduction.length,
 );
 
-/** One watch-out: its line, and whether it bears on a training decision or only on the data. */
-export type WatchOut = Readonly<{ line: string; kind: "decision" | "data" }>;
+/**
+ * One watch-out: its line, the same line with its values marked as records, and whether it bears
+ * on a training decision or only on the data.
+ */
+export type WatchOut = Readonly<{ line: string; marked: string; kind: "decision" | "data" }>;
 
 /**
  * The watch-outs, most important first: back-to-back muscles, a session due on a bad day, a pain
@@ -405,7 +432,7 @@ export type WatchOut = Readonly<{ line: string; kind: "decision" | "data" }>;
 export function computeWatchOuts(inputs: WatchOutInputs): WatchOut[] {
   const { plan, facts, schedule } = inputs;
   const candidates: (readonly [string | null, WatchOut["kind"]])[] = [
-    [plan === null ? null : overlapFactLine(weekAheadOf(plan).overlaps), "decision"],
+    [plan === null ? null : overlapFactLineMarked(weekAheadOf(plan).overlaps), "decision"],
     [plan === null || facts === null ? null : loadCheck(plan, facts), "decision"],
     [plan === null || facts === null ? null : painPlannedAgain(plan, facts), "decision"],
     [plan === null ? null : behindPlan(plan), "decision"],
@@ -420,10 +447,11 @@ export function computeWatchOuts(inputs: WatchOutInputs): WatchOut[] {
   let used = 0;
   for (const [text, kind] of candidates) {
     if (text === null) continue;
-    const line = `- ${text}`;
+    const marked = `- ${text}`;
+    const line = plain(marked);
     // Strict priority: when a line does not fit, nothing less important takes its place.
     if (found.length >= watchOutsMaxLines || used + line.length + 1 > watchOutsLinesRoom) break;
-    found.push({ line, kind });
+    found.push({ line, marked, kind });
     used += line.length + 1;
   }
   return found;
@@ -493,17 +521,16 @@ export function createWatchOutsContributor(
       const found = computeWatchOuts(inputs);
       // The counts go to the route (coach_chat_provider_route.ts) whether or not there is text to
       // show: a turn with nothing to watch still says whether pain is on record. No text, no figure.
-      return {
-        text: found.length === 0
-          ? ""
-          : [introduction, ...found.map((item) => item.line)].join("\n"),
-        shown: {},
-        trace: {
-          lines: found.length,
-          decisions: found.filter((item) => item.kind === "decision").length,
-          pain: painOnRecord(inputs.facts),
+      return blockOf(
+        found.length === 0 ? "" : [introduction, ...found.map((item) => item.marked)].join("\n"),
+        {
+          trace: {
+            lines: found.length,
+            decisions: found.filter((item) => item.kind === "decision").length,
+            pain: painOnRecord(inputs.facts),
+          },
         },
-      };
+      );
     },
   };
 }

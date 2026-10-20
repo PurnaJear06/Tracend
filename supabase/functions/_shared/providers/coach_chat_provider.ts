@@ -1351,22 +1351,24 @@ export function replyCheckInputsFor(
   // latest daily decision, the last proposals), which are shown but are not evidence
   // (`context_grounding.ts` declares them, field by field).
   const { file } = renderCoachContextParts(contextForGrounds(context), coachChatMaxContextBudget);
-  // The text of every contributor that declares itself a record or guidance (`grounding.ts`). The
-  // library is left out: a figure may use it only when the reply cites the source (shown). The
-  // principles digest grounds general guidance but never a sentence that states the athlete's own
-  // target. Figures Tracend proposed (the proposals a lookup returned, the lines a contributor
-  // states as a pending proposal's) are given in the same way: a proposal is not the athlete's
-  // target, whoever built it.
-  const texts = Object.entries(contributions?.texts ?? {}).filter(([id]) =>
-    groundingOf(id) !== "excluded"
-  );
-  const figureLines = contributions?.figures ?? {};
-  const athleteTexts = texts.filter(([id]) => groundingOf(id) === "records").map(([id, text]) =>
-    withoutLines(text, figureLines[id] ?? [])
-  );
+  // What the contributors ground (`grounding.ts` declares each). A contributor that declares itself
+  // `records` grounds only the values it marked (`RenderedBlock.records`): its fixed wording, its
+  // thresholds and the windows it looks at ground nothing. The principles digest (`guidance`)
+  // grounds general guidance but never a sentence that states the athlete's own target, and the
+  // library is left out: a figure may use it only when the reply cites the source (shown).
+  // Figures Tracend proposed (the proposals a lookup returned, the values a contributor states as
+  // a pending proposal's) are given in the same way: a proposal is not the athlete's target,
+  // whoever built it.
+  const declared = (given: Readonly<Record<string, readonly string[]>> | undefined, kind: string) =>
+    Object.entries(given ?? {}).filter(([id]) => groundingOf(id) === kind).flatMap(([, v]) => v);
+  const recordedValues = declared(contributions?.records, "records");
+  const proposalValues = declared(contributions?.figures, "records");
+  const guidance = Object.entries(contributions?.texts ?? {}).filter(([id]) =>
+    groundingOf(id) === "guidance"
+  ).map(([, text]) => text);
   const athleteGiven = [
     file,
-    ...athleteTexts,
+    ...recordedValues,
     ...lookedUp,
     question,
     ...athleteMessages(context),
@@ -1378,7 +1380,7 @@ export function replyCheckInputsFor(
   return {
     ranges,
     screening,
-    ground: numberGroundOf([...athleteGiven, ...proposed, ...texts.map(([, text]) => text)]),
+    ground: numberGroundOf([...athleteGiven, ...proposed, ...proposalValues, ...guidance]),
     athleteGround: numberGroundOf(athleteGiven),
     librarySources: Object.fromEntries(
       Object.entries(contributions?.shown ?? {}).map(([id, source]) => [id, source.text]),
@@ -1404,9 +1406,6 @@ export function replyCheckInputsFor(
     weightClaim: weightClaimCheckFor(context, question),
   };
 }
-
-const withoutLines = (text: string, lines: readonly string[]): string =>
-  lines.length === 0 ? text : text.split("\n").filter((line) => !lines.includes(line)).join("\n");
 
 /** The check every answer for this turn must pass; see `replyCheckInputsFor` for its inputs. */
 export function coachReplyCheckFor(

@@ -9,8 +9,14 @@
 // every question: it is a map of the product's data, not a choice made for the question. The dates
 // and counts come from get_coach_data_index_v1 (service role); when that read fails the brief is
 // still shown without them. The rules for asking (data_requests) are in the Coach instructions.
+//
+// What grounds a figure in a reply: the counts, the dates and the ages the index reports are
+// records, marked as such (`../../recorded_text.ts`). Everything else in the brief is fixed wording
+// and grounds nothing: the windows the context shows ("28 d", "last 3"), the number of days of a
+// summary, the size of a lookup.
 import { dayOf } from "../../training/schedule/week_ahead.ts";
-import type { CoachContextContributor } from "../host.ts";
+import { plain, record } from "../../recorded_text.ts";
+import { blockOf, type CoachContextContributor } from "../host.ts";
 import { coachServiceRpc, type StateSource, stateSourceFromRpc } from "../service_source.ts";
 
 export const coverageBriefContributorId = "coverage_brief";
@@ -180,9 +186,13 @@ const iso = (value: unknown): string | null =>
 
 /** "today", "1 d ago" or "N d ago" for a date against the coaching date. */
 export function ageText(date: string, localDate: string): string {
-  const days = dayOf(localDate) - dayOf(date);
-  return days <= 0 ? "today" : `${days} d ago`;
+  return plain(ageMarked(date, localDate));
 }
+
+const ageMarked = (date: string, localDate: string): string => {
+  const days = dayOf(localDate) - dayOf(date);
+  return days <= 0 ? "today" : `${record(days)} d ago`;
+};
 
 /** The records of a domain from the index: first, last, count; null when it holds none. */
 function recordsOf(
@@ -214,7 +224,7 @@ function scheduleStat(schedule: Json): string | null {
     : [];
   const start = iso(schedule.starts_on);
   if (start === null || days.length === 0) return null;
-  return `repeats ${days.map((day) => weekdayNames[day - 1]).join(" ")} since ${start}`;
+  return `repeats ${days.map((day) => weekdayNames[day - 1]).join(" ")} since ${record(start)}`;
 }
 
 function statOf(
@@ -230,18 +240,24 @@ function statOf(
   if (records === null) return "none yet";
   const span = records.first === records.last ? records.first : `${records.first}..${records.last}`;
   // A month-keyed kind has no day of its own to age.
-  const age = domain.id === "apple_health" ? "" : `, last ${ageText(records.last, localDate)}`;
-  return `${records.count} ${domain.unit} ${span}${age}`;
+  const age = domain.id === "apple_health" ? "" : `, last ${ageMarked(records.last, localDate)}`;
+  return `${record(records.count)} ${domain.unit} ${record(span)}${age}`;
 }
 
 /** The brief for one index payload (null when the index could not be read). Exposed for tests. */
 export function renderCoverageBrief(payload: unknown, localDate: string): string {
+  return plain(coverageBriefMarked(payload, localDate));
+}
+
+function coverageBriefMarked(payload: unknown, localDate: string): string {
   const body = rec(payload);
   const index = typeof body.schema_version === "string" && body.schema_version.startsWith("1.")
     ? body
     : null;
   return [
-    `What the athlete's records hold (today ${localDate}). Each line: kind | what the context above ` +
+    `What the athlete's records hold (today ${
+      record(localDate)
+    }). Each line: kind | what the context above ` +
     "shows | what a lookup adds | what exists | kinds to check with it. A summary is not the detail behind it.",
     ...coverageDomains.map((domain) =>
       `- ${domain.id} | ${domain.shown} | ${domain.adds} | ${statOf(domain, index, localDate)} | ${
@@ -280,7 +296,7 @@ export function createCoverageBriefContributor(
       } finally {
         clearTimeout(timer);
       }
-      return renderCoverageBrief(payload, input.localDate);
+      return blockOf(coverageBriefMarked(payload, input.localDate));
     },
   };
 }

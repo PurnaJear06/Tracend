@@ -4,12 +4,15 @@
 // stand in for a record. A contributor has to be declared here (grounding_test.ts fails otherwise)
 // and one that is not declared grounds nothing, so its author decides.
 //
-//   records   the block holds Tracend's calculations, the athlete's records and what the athlete
-//             approved or wrote; its figures count as given. Lines the contributor hands the host
-//             as proposal figures (`RenderedBlock.figures`) are the exception: they ground a
-//             figure, but never one that states the athlete's own target
-//   guidance  general guidance for healthy adults (the principles digest): its figures ground only
-//             a sentence that is not the athlete's own target
+//   records   the block states Tracend's calculations, the athlete's records and what the athlete
+//             approved or wrote, mixed with fixed wording (windows, thresholds, definitions of a
+//             baseline, ids). Only the values the contributor marked with `record`
+//             (`RenderedBlock.records`, `../recorded_text.ts`) count as given; the rest of its
+//             text grounds nothing, and a records contributor that marks nothing grounds nothing.
+//             Values marked with `figure` (`RenderedBlock.figures`) are the exception: they ground
+//             a figure, but never one that states the athlete's own target
+//   guidance  general guidance for healthy adults (the principles digest): its whole text is the
+//             ground, and its figures ground only a sentence that is not the athlete's own target
 //   excluded  grounds nothing here: the library's excerpts count only when the reply cites the source
 //
 // The athlete's names (the plan's title, its workouts and exercises) are records in every contributor

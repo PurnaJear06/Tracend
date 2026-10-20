@@ -7,13 +7,13 @@ import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 import { evalProfiles } from "../../_evals/fixtures.ts";
 import { columnGrounding, leafPaths, resolve } from "../grounding.ts";
 import { changeAt, variantsOf } from "../grounding_probe.ts";
-import { noCoachContributions, renderCoachContext } from "../coach_context/host.ts";
+import { renderCoachContext } from "../coach_context/host.ts";
 import {
   createProposalsContributor,
   parseProposalsState,
 } from "../coach_context/contributors/proposals.ts";
 import { ownersPlanPayload } from "../coach_context/contributors/plan_fixtures.ts";
-import { parsePlanState, renderTrainingPlan } from "../coach_context/contributors/training_plan.ts";
+import { createTrainingPlanContributor } from "../coach_context/contributors/training_plan.ts";
 import { planVersionsPayload, request } from "../coach_lookups/lookup_fixtures.ts";
 import { renderLookup } from "../coach_lookups/render.ts";
 import {
@@ -265,7 +265,7 @@ Deno.test("only a model's words and a proposal's figures are held back; records 
   assert(has("ground", inputs, 2));
 });
 
-Deno.test("a title and a workout name are records on every path; a rationale is model text on every path", () => {
+Deno.test("a title and a workout name are records on every path; a rationale is model text on every path", async () => {
   const title = 4713;
   const workout = 4715;
   const rationale = 4717;
@@ -297,13 +297,19 @@ Deno.test("a title and a workout name are records on every path; a rationale is 
   );
   const viaLookup = replyCheckInputsFor(contexts()[0], "q", null, lookup.grounds as string[]);
   // The contributor.
-  const text = renderTrainingPlan(parsePlanState(ownersPlanPayload()))!
-    .replace("Upper lower push pull", `Block ${title}`)
-    .replace("Push day", `Push day ${workout}`);
-  const viaContributor = replyCheckInputsFor(contexts()[0], "q", {
-    ...noCoachContributions,
-    texts: { training_plan: text },
-  });
+  const plan = structuredClone(ownersPlanPayload()) as {
+    plan: { title: string };
+    sessions: { name: string }[];
+  };
+  plan.plan.title = `Block ${title}`;
+  for (const session of plan.sessions) {
+    if (session.name === "Push day") session.name = `Push day ${workout}`;
+  }
+  const contributions = await renderCoachContext(
+    [createTrainingPlanContributor(() => Promise.resolve(plan))],
+    { userId: "u", question: "q", localDate: "2026-10-17" },
+  );
+  const viaContributor = replyCheckInputsFor(contexts()[0], "q", contributions);
   assertEquals(columnGrounding["training_plans.title"], "records");
   assertEquals(columnGrounding["planned_workouts.name"], "records");
   assertEquals(columnGrounding["training_plan_versions.rationale"], "modelText");
@@ -354,7 +360,12 @@ Deno.test("a pending proposal Tracend built grounds a figure as the proposal's, 
     calories: 2350,
     proteinG: 165,
   });
-  assertEquals(contributions.figures?.coach_proposals?.length, 1);
+  // The proposal's figures are its figures, not records; the date it is open until is a record.
+  assert(
+    contributions.figures?.coach_proposals?.some((piece) => piece.includes("2350 kcal a day")),
+  );
+  assert(!contributions.records?.coach_proposals?.some((piece) => piece.includes("2350")));
+  assert(contributions.records?.coach_proposals?.some((piece) => piece.includes("2026-10-24")));
   assert(contributions.texts.coach_proposals.includes("2350 kcal a day, 165 g protein"));
   const inputs = replyCheckInputsFor(ctxWith({}), "q", contributions);
   assert(has("ground", inputs, 2350));

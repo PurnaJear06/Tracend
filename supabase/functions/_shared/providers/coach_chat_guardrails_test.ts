@@ -5,7 +5,7 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
 import { captureLogs, claudeMessage, fakeFetch, jsonResponse, routeFor } from "../ai/fakes.ts";
 import { ownerContext, ownerGoalPhasePayload } from "../coach_safety/fixtures.ts";
-import { renderGoalPhasePayload } from "../coach_context/contributors/goal_phase.ts";
+import { renderGoalPhaseBlock } from "../coach_context/contributors/goal_phase.ts";
 import { renderCoachContext } from "../coach_context/host.ts";
 import { coachContextContributors } from "../coach_context/registry.ts";
 import { createScreeningContributor } from "../coach_context/contributors/screening.ts";
@@ -68,7 +68,7 @@ async function run(
         id: "goal_phase",
         slot: "volatile",
         budgetChars: 2_200,
-        render: () => Promise.resolve(renderGoalPhasePayload(ownerGoalPhasePayload, "2026-10-14")),
+        render: () => Promise.resolve(renderGoalPhaseBlock(ownerGoalPhasePayload, "2026-10-14")),
       },
     ], { userId: "u", question, localDate: "2026-10-14" })
     : undefined;
