@@ -25,8 +25,9 @@ import {
   workoutsNotesPayload,
 } from "./lookup_fixtures.ts";
 import { leafPaths, resolve } from "../grounding.ts";
-import { changeAt, variantsOf } from "../grounding_probe.ts";
-import { lookupGrounding, lookupRendererNames, renderLookup } from "./render.ts";
+import { numberGroundOf, ungroundedNumbers } from "../coach_safety/numbers_check.ts";
+import { changeAt, filledPaths, pathsRead, variantsOf } from "../grounding_probe.ts";
+import { lookupGrounding, lookupRendererNames, rendererOf, renderLookup } from "./render.ts";
 
 const fixtures: Readonly<Record<string, unknown>> = {
   "workouts/default": workoutsNotesPayload,
@@ -60,18 +61,54 @@ Deno.test("every lookup and every mode declares what grounds, and has a fixture"
   assertEquals(Object.keys(fixtures).length, 15);
 });
 
+/** Fields that only say which request the payload answers; the heading is made from the request. */
+const requestEcho = new Set(["schema_version", "lookup", "from", "to", "filter"]);
+
+const askedFor = (lookup: string, mode: string) =>
+  request(lookup as never, "2026-08-01", "2026-10-17", mode === "default" ? null : mode);
+
+Deno.test("every field a renderer reads is declared, whether or not the fixture's value made it appear", () => {
+  const problems: string[] = [];
+  for (const [lookup, modes] of Object.entries(lookupGrounding)) {
+    for (const [mode, declaration] of Object.entries(modes)) {
+      const resolved = resolve(declaration);
+      const declared = new Set(
+        (["records", "figures", "modelText", "controls"] as const).flatMap((kind) => [
+          ...resolved[kind],
+        ]),
+      );
+      const read = pathsRead(fixtures[`${lookup}/${mode}`], (spied) => {
+        rendererOf(lookup)(spied as never, everyScope);
+      });
+      assert(read.size > 3, `${lookup}/${mode} reads ${read.size} fields`);
+      for (const path of read) {
+        if (!requestEcho.has(path) && !declared.has(path)) {
+          problems.push(`${lookup}/${mode} reads ${path}, which is not declared`);
+        }
+      }
+    }
+  }
+  assertEquals(problems, []);
+});
+
+Deno.test("a fixture fills every field it has, so a conditional field cannot hide from the checks", () => {
+  const problems: string[] = [];
+  for (const [name, fixture] of Object.entries(fixtures)) {
+    const filled = filledPaths(fixture);
+    for (const path of leafPaths(fixture)) {
+      if (!filled.has(path)) problems.push(`${name} ${path} is null in every row`);
+    }
+  }
+  assertEquals(problems, []);
+});
+
 /**
  * What a change to the field at `path` does to a result: whether the text Coach reads changes (the
  * field is shown), whether the rows that ground change, and whether the proposal figures change.
  * The change keeps the field's type; the first one that changes the text is used.
  */
 function effectOf(lookup: string, mode: string, fixture: unknown, path: string, seed: number) {
-  const asked = request(
-    lookup as never,
-    "2026-08-01",
-    "2026-10-17",
-    mode === "default" ? null : mode,
-  );
+  const asked = askedFor(lookup, mode);
   const read = (payload: unknown) => {
     const rendered = renderLookup(asked, payload, 20_000, everyScope);
     return {
@@ -161,4 +198,29 @@ Deno.test("a figure written by a model in a lookup row is not a ground, and the 
   assert(plan.text.includes("A split that fits four days"));
   assert(!plan.grounds.join("\n").includes("A split that fits four days"));
   assert(plan.grounds.join("\n").includes("2300 kcal, protein 160 g"));
+});
+
+Deno.test("what a row shows about a set's heart rate and a goal's non-weight targets grounds a true reply", () => {
+  const sets = renderLookup(
+    request("workouts", "2026-10-01", "2026-10-17"),
+    workoutsNotesPayload,
+    20_000,
+    everyScope,
+  );
+  const setGround = numberGroundOf(sets.grounds);
+  const heart = ungroundedNumbers(
+    "Your heart rate fell 24 bpm after 60 s, from a 152 bpm peak.",
+    setGround,
+  );
+  assertEquals(heart, []);
+  const goals = renderLookup(request("goals", "2026-07-01", "2026-10-17"), goalsPayload);
+  const goalGround = numberGroundOf(goals.grounds);
+  assertEquals(
+    ungroundedNumbers(
+      "Your recomposition goal asks for 12-15% body fat by 2027-01-31.",
+      goalGround,
+    ),
+    [],
+  );
+  assertEquals(ungroundedNumbers("Your goal asks for 18% body fat.", goalGround), ["18"]);
 });

@@ -728,7 +728,7 @@ Deno.test("recovery: sleep stages, night and morning HRV, breathing rate, active
   );
   assertStringIncludes(
     text,
-    "- 2026-10-17: sleep 355 min (5 h 55 min; 5.9 h) (deep 50, REM 80, light 205, awake 20 min), resting heart rate 63 bpm, HRV 41 ms (night 44 ms), breathing rate 15.4 breaths/min, steps 8200, active energy 520 kcal, 62 min of workouts, recovery score 31, sleep quality 44, load ratio 1.1",
+    "- 2026-10-17: sleep 355 min (5 h 55 min; 5.9 h) (deep 50, REM 80, light 205, awake 20 min), resting heart rate 63 bpm, HRV 41 ms (night 44, morning 47 ms), breathing rate 15.4 breaths/min, steps 8200, active energy 520 kcal, 62 min of workouts, recovery score 31, sleep quality 44, load ratio 1.1",
   );
   assertStringIncludes(
     text,
@@ -929,7 +929,7 @@ Deno.test("data the accepted notice does not name stays out of the rows, and Coa
   assertStringIncludes(recovery.text, "Withheld: breathing rates exist");
   // Sleep stages and night HRV are Apple Health sleep and HRV, which the notice names.
   assertStringIncludes(recovery.text, "(deep 50, REM 80, light 205, awake 20 min)");
-  assertStringIncludes(recovery.text, "(night 44 ms)");
+  assertStringIncludes(recovery.text, "(night 44, morning 47 ms)");
   // Nothing is said about data that is not there.
   const quiet = renderLookup(request("workouts", "2026-10-01", "2026-10-17"), workoutsPayload);
   assert(!quiet.text.includes("Withheld"));

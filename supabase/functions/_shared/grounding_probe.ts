@@ -11,11 +11,12 @@ export function variantsOf(value: unknown, seed: number): unknown[] {
   if (typeof value === "number") return [value + 1, value + 17, 7_770_000 + seed];
   if (typeof value === "boolean") return [!value];
   if (typeof value === "string") {
+    // The last shift is a season: a date shown only as its month changes the text with it.
     if (isoDate.test(value)) {
-      return [3, 11].map((days) => shiftDate(value, days));
+      return [3, 11, 75].map((days) => shiftDate(value, days));
     }
     if (isoMoment.test(value)) {
-      return [3, 11].map((days) => shiftDate(value.slice(0, 10), days) + value.slice(10));
+      return [3, 11, 75].map((days) => shiftDate(value.slice(0, 10), days) + value.slice(10));
     }
     return [`ZQ${seed}X`, `ZQ${seed}Y`];
   }
@@ -50,4 +51,50 @@ export function changeAt<T>(payload: T, path: string, next: (value: unknown) => 
   const copy = structuredClone(payload);
   for (const [holder, key] of slots(copy, path.split("."))) holder[key] = next(holder[key]);
   return copy;
+}
+
+/**
+ * The paths a renderer reads in a payload, as the declarations write them (`a.b` for a field, `a[].b`
+ * inside a list): `run` is given a copy of the payload that records every read of a plain value,
+ * including a read of a field the payload does not have. Containers are not recorded, only the
+ * fields a renderer takes values from, so a field it looks at (to show it, or to decide what to
+ * show) is on the list whether or not the fixture's value made it appear in the text.
+ */
+export function pathsRead(payload: unknown, run: (spied: unknown) => void): Set<string> {
+  const seen = new Set<string>();
+  const wrap = (value: unknown, path: string): unknown => {
+    if (value === null || typeof value !== "object") return value;
+    return new Proxy(value, {
+      get(target, key, receiver) {
+        const read = Reflect.get(target, key, receiver);
+        if (typeof key !== "string" || typeof read === "function") return read;
+        const list = Array.isArray(target);
+        if (list && !/^\d+$/.test(key)) return read;
+        const child = list ? `${path}[]` : path === "" ? key : `${path}.${key}`;
+        if (read === null || typeof read !== "object") seen.add(child);
+        return wrap(read, child);
+      },
+    });
+  };
+  run(wrap(payload, ""));
+  return seen;
+}
+
+/** The leaf paths of a payload that hold a value (not null) in at least one row. */
+export function filledPaths(node: unknown, path = "", out = new Set<string>()): Set<string> {
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      if (item !== null && typeof item === "object") filledPaths(item, `${path}[]`, out);
+      else if (item !== null && item !== undefined) out.add(`${path}[]`);
+    }
+    return out;
+  }
+  if (node !== null && typeof node === "object") {
+    for (const [key, value] of Object.entries(node)) {
+      filledPaths(value, path === "" ? key : `${path}.${key}`, out);
+    }
+    return out;
+  }
+  if (node !== null && node !== undefined) out.add(path);
+  return out;
 }

@@ -507,6 +507,9 @@ const renderers: Readonly<
 /** The lookups that have a renderer, for the grounding table's completeness check. */
 export const lookupRendererNames: readonly string[] = Object.keys(renderers);
 
+/** A lookup's renderer on its own, to see which fields it reads (render_grounding_test.ts). */
+export const rendererOf = (lookup: string) => renderers[lookup];
+
 /**
  * What each field of each lookup's payload grounds in a reply (`../grounding.ts` says what the
  * three kinds are). Keyed by lookup, then by mode (the filter that selects different records, or
@@ -532,7 +535,9 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, De
         "sessions[].exercises[].sets[].reps",
         "sessions[].exercises[].sets[].load_kg",
         "sessions[].exercises[].sets[].rir",
+        "sessions[].exercises[].sets[].rpe",
         "sessions[].exercises[].sets[].peak_bpm",
+        "sessions[].exercises[].sets[].drop_60s_bpm",
         "sessions[].exercises[].status",
         "sessions[].exercises[].pain",
         "sessions[].exercises[].kind",
@@ -574,6 +579,7 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, De
       ],
       controls: [
         "truncated",
+        "sessions[].assisted",
         "next_targets[].planned_exercise_id",
         "next_targets[].exercise_key",
         "next_targets[].basis.last_date",
@@ -710,6 +716,7 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, De
         "plan.version",
         "days[].date",
         "days[].weekday",
+        "days[].version",
         "sessions[].exercises[].slug",
         "sessions[].exercises[].sets",
         "days[].done[].exercises[].slug",
@@ -721,7 +728,9 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, De
         "truncated",
         "plan.id",
         "sessions[].id",
+        "sessions[].version_id",
         "days[].version_id",
+        "days[].done[].planned_workout_id",
         "days[].block",
         "days[].planned[].id",
       ],
@@ -758,6 +767,11 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, De
         "goals[].status",
         "goals[].created_on",
         "goals[].target.weight_kg",
+        "goals[].target.body_fat_pct_min",
+        "goals[].target.body_fat_pct_max",
+        "goals[].target.physique",
+        "goals[].target.date",
+        "goals[].target.set_at",
         "screenings[].outcome",
         "screenings[].screened_on",
       ],
@@ -804,6 +818,7 @@ export const lookupGrounding: Readonly<Record<string, Readonly<Record<string, De
   health_history: {
     default: {
       records: [
+        "months[].month",
         "months[].workouts",
         "months[].strength_workouts",
         "months[].workout_minutes",

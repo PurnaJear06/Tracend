@@ -12,6 +12,7 @@ export const exerciseHistoryPayload = {
     {
       local_date: "2026-08-04",
       name: "Barbell bench press",
+      assisted: false,
       top_load_kg: 80,
       top_reps: 5,
       sets: 3,
@@ -141,10 +142,10 @@ export const bodyPayload = {
   measurements: [{
     date: "2026-10-01",
     waist_cm: 88,
-    chest_cm: null,
-    hip_cm: null,
+    chest_cm: 101,
+    hip_cm: 95,
     arm_cm: 36,
-    thigh_cm: null,
+    thigh_cm: 58,
   }],
 };
 
@@ -193,8 +194,8 @@ export const scheduleLookupPayload = {
     {
       date: "2026-10-15",
       weekday: 4,
-      version_id: "v-3",
-      version: 3,
+      version_id: "v-2",
+      version: 2,
       block: false,
       planned: [{ id: "w-chest-b", name: "Chest volume", minutes: 90 }],
       done: [],
@@ -253,15 +254,26 @@ export const workoutsNotesPayload = {
         substitution_reason: null,
         note: "Right shoulder pinched on the last rep",
         planned: { sets: 3, rep_min: 6, rep_max: 8 },
-        sets: [{
-          reps: 8,
-          load_kg: 75,
-          rir: 2,
-          rpe: null,
-          done: true,
-          peak_bpm: null,
-          drop_60s_bpm: null,
-        }],
+        sets: [
+          {
+            reps: 8,
+            load_kg: 75,
+            rir: 2,
+            rpe: null,
+            done: true,
+            peak_bpm: 152,
+            drop_60s_bpm: 24,
+          },
+          {
+            reps: 6,
+            load_kg: 77.5,
+            rir: null,
+            rpe: 8.5,
+            done: true,
+            peak_bpm: null,
+            drop_60s_bpm: null,
+          },
+        ],
       },
       {
         name: "Cable chest fly",
@@ -320,7 +332,7 @@ export const recoveryPayload = {
       sleep_deep_minutes: 50,
       sleep_rem_minutes: 80,
       hrv_sleep_ms: 44,
-      hrv_morning_ms: null,
+      hrv_morning_ms: 47,
       active_energy_kcal: 520,
       workout_minutes: 62,
     },
@@ -494,14 +506,31 @@ export const goalsPayload = {
   from: "2026-07-01",
   to: "2026-10-17",
   truncated: false,
-  goals: [{
-    goal_type: "fat_loss",
-    status: "active",
-    priority: 1,
-    created_on: "2026-07-03",
-    activated_on: "2026-07-03",
-    target: { weight_kg: 76 },
-  }],
+  goals: [
+    {
+      goal_type: "fat_loss",
+      status: "active",
+      priority: 1,
+      created_on: "2026-07-03",
+      activated_on: "2026-07-03",
+      target: { weight_kg: 76 },
+    },
+    {
+      goal_type: "recomposition",
+      status: "paused",
+      priority: 2,
+      created_on: "2026-03-02",
+      activated_on: "2026-03-02",
+      target: {
+        weight_kg: 79,
+        body_fat_pct_min: 12,
+        body_fat_pct_max: 15,
+        physique: "athletic",
+        date: "2027-01-31",
+        set_at: "2026-03-02T08:15:00Z",
+      },
+    },
+  ],
   screenings: [{ outcome: "cleared", screened_on: "2026-07-01" }],
 };
 
@@ -523,7 +552,6 @@ export const weeklyReviewsPayload = {
     },
     recovery: { check_in_days: 5 },
     nutrition: { confirmed_days: 6 },
-    progress: null,
     missing_data: [],
   }],
 };
