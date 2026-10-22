@@ -4,6 +4,8 @@
 // The rest grade what no production check covers: length and format, a restated check-in, a
 // repeated caution, a routine's exercises, required and forbidden phrases, and data lookups.
 import { servedGrounds } from "./lookups.ts";
+import { shownDays } from "../../_shared/coach_context/contributors/coverage_brief.ts";
+import { weekAheadDays } from "../../_shared/training/schedule/week_ahead.ts";
 import { type RedFlagCategory, screenTurn } from "../../_shared/coach_safety/red_flags.ts";
 import { buildCoachProposal } from "../../_shared/coach_proposals/build.ts";
 import { stateFixture } from "../../_shared/coach_proposals/fixtures.ts";
@@ -340,7 +342,9 @@ export function lookupProblem(
 /**
  * How far back the baseline reaches for a kind of record, as days before the coaching date, or
  * null when it shows the kind's current state only (no period), or undefined when it does not show
- * the kind at all. The windows are the ones the Coverage Brief states for each kind.
+ * the kind at all. The windows are `shownDays`, the ones the Coverage Brief states for each kind
+ * and the contributors render; a kind counts only when what renders it is in the context (the
+ * raw payload of a kind the renderer does not show, such as `nutrition_daily_28d`, does not).
  */
 export function baselineWindow(
   domain: string,
@@ -351,28 +355,37 @@ export function baselineWindow(
     Array.isArray(context[key]) && (context[key] as unknown[]).length > 0;
   switch (domain) {
     case "training":
-      return rows("training_log_28d") ? 27 : undefined;
+      return rows("training_log_28d") ? shownDays.training - 1 : undefined;
     case "plan_ahead":
       return contributors.trainingPlan ? 0 : undefined;
     case "recovery":
-      return rows("health_daily_28d") ? 27 : undefined;
+      return rows("health_daily_28d") ? shownDays.recovery - 1 : undefined;
     case "check_ins":
-      return rows("check_ins_14d") ? 13 : undefined;
+      return rows("check_ins_14d") ? shownDays.check_ins - 1 : undefined;
     case "body":
-      return rows("weight_series_8w") ? 55 : undefined;
+      return rows("weight_series_8w") ? shownDays.body - 1 : undefined;
     case "nutrition":
-      return rows("nutrition_daily_28d") || contributors.nutritionState ? 27 : undefined;
+      // Only the nutrition contributor shows the week; the athlete file no longer lists the days.
+      return contributors.nutritionState ? shownDays.nutrition - 1 : undefined;
     case "goals":
       return context.active_goal || contributors.goalPhase ? null : undefined;
     case "proposals":
       return Array.isArray(context.plan_proposals) ? null : undefined;
     case "watch_workouts":
-      return rows("watch_workouts_14d") ? 13 : undefined;
+      return rows("watch_workouts_14d") ? shownDays.watch_workouts - 1 : undefined;
     case "conversation":
       return rows("recent_messages") || rows("recent_other_conversations") ? null : undefined;
     default:
       return undefined;
   }
+}
+
+/**
+ * How many days after the coaching date the baseline reaches for a kind of record: the plan
+ * contributor shows the next seven days, nothing else looks ahead.
+ */
+export function baselineAhead(domain: string, contributors: Contributors): number {
+  return domain === "plan_ahead" && contributors.trainingPlan ? weekAheadDays - 1 : 0;
 }
 
 /**
@@ -399,8 +412,9 @@ export function requestReaches(domain: string, request: DataRequest): boolean {
 
 /**
  * The kinds the question turns on that neither the baseline nor a lookup covered, or null when
- * every one is covered. A kind is covered by a lookup in it whose range reaches back to `since`, or
- * by the baseline when the need is not for detail and the baseline's window reaches `since`.
+ * every one is covered. A kind is covered by a lookup in it whose range reaches back to `since` and
+ * forward to the end of the need (`until`, else the coaching date), or by the baseline when the
+ * need is not for detail and the baseline's window reaches `since` and the end.
  */
 export function domainProblem(
   needs: readonly DomainNeed[],
@@ -409,23 +423,29 @@ export function domainProblem(
   requests: readonly DataRequest[],
 ): string | null {
   const today = String(context.coaching_date);
+  const isoDay = /^\d{4}-\d{2}-\d{2}$/;
   const missing = needs.filter((need) => {
+    const end = need.until ?? today;
     const looked = requests.some((request) =>
-      requestReaches(need.domain, request) &&
-      (need.since === undefined ||
-        (/^\d{4}-\d{2}-\d{2}$/.test(request.from) && request.from <= need.since))
+      requestReaches(need.domain, request) && isoDay.test(request.to) && request.to >= end &&
+      (need.since === undefined || (isoDay.test(request.from) && request.from <= need.since))
     );
     if (looked) return false;
     if (need.detail) return true;
     const window = baselineWindow(need.domain, context, contributors);
     if (window === undefined) return true;
+    if (addDays(today, baselineAhead(need.domain, contributors)) < end) return true;
     if (need.since === undefined) return false;
     return window === null || addDays(today, -window) > need.since;
   });
   return missing.length === 0
     ? null
     : `not covered: ${
-      missing.map((need) => `${need.domain}${need.since ? ` since ${need.since}` : ""}`).join(", ")
+      missing.map((need) =>
+        `${need.domain}${need.since ? ` since ${need.since}` : ""}${
+          need.until ? ` until ${need.until}` : ""
+        }`
+      ).join(", ")
     }`;
 }
 

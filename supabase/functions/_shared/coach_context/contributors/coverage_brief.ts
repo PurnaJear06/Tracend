@@ -42,6 +42,23 @@ export type BriefDomain = Readonly<{
   also: readonly string[];
 }>;
 
+/**
+ * How many days, counting the coaching date, the context shows of each kind of record: the one
+ * place the windows are written. The brief's lines below state them, the nutrition block uses
+ * its own, and the eval bank's `baselineWindow` reads them, so a window cannot be described one
+ * way and graded another. A kind with no entry shows its current state only, or nothing.
+ */
+export const shownDays = Object.freeze(
+  {
+    training: 28,
+    recovery: 28,
+    check_ins: 14,
+    body: 56,
+    nutrition: 7,
+    watch_workouts: 14,
+  } as const,
+);
+
 // The windows below are the ones the athlete file and the contributors render: 28 days of training
 // log and watch data, 14 days of check-ins, 8 weeks of weights (build_coach_athlete_context, and the
 // training_plan, nutrition_state and proposals contributors). A change there changes a line here;
@@ -49,7 +66,7 @@ export type BriefDomain = Readonly<{
 export const coverageDomains: readonly BriefDomain[] = Object.freeze([
   {
     id: "training",
-    shown: "28 d session totals (no sets, loads, notes)",
+    shown: `${shownDays.training} d session totals (no sets, loads, notes)`,
     adds: "workouts (every set with load, reps, swaps), exercise_history (one lift)",
     lookups: [{ lookup: "workouts" }, { lookup: "exercise_history" }],
     index: ["workouts"],
@@ -76,7 +93,7 @@ export const coverageDomains: readonly BriefDomain[] = Object.freeze([
   },
   {
     id: "recovery",
-    shown: "28 d sleep, resting HR, HRV, steps",
+    shown: `${shownDays.recovery} d sleep, resting HR, HRV, steps`,
     adds: "recovery (60 d; sleep stages, night/morning HRV, score)",
     lookups: [{ lookup: "recovery" }],
     index: ["recovery"],
@@ -85,7 +102,7 @@ export const coverageDomains: readonly BriefDomain[] = Object.freeze([
   },
   {
     id: "check_ins",
-    shown: "14 d scores (sleep, energy, soreness, mood, pain), no notes",
+    shown: `${shownDays.check_ins} d scores (sleep, energy, soreness, mood, pain), no notes`,
     adds: "check_ins (60 d, with notes)",
     lookups: [{ lookup: "check_ins" }],
     index: ["check_ins"],
@@ -94,7 +111,7 @@ export const coverageDomains: readonly BriefDomain[] = Object.freeze([
   },
   {
     id: "body",
-    shown: "8 wk weights, waist, goal trend",
+    shown: `${shownDays.body / 7} wk weights, waist, goal trend`,
     adds: "body (90 weights, tape)",
     lookups: [{ lookup: "body" }],
     index: ["body"],
@@ -139,7 +156,7 @@ export const coverageDomains: readonly BriefDomain[] = Object.freeze([
   },
   {
     id: "watch_workouts",
-    shown: "14 d, type and minutes",
+    shown: `${shownDays.watch_workouts} d, type and minutes`,
     adds: "health_history filter workouts (any age)",
     lookups: [{ lookup: "health_history", filter: "workouts" }],
     index: ["watch_workouts"],

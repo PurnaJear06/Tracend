@@ -139,7 +139,16 @@ export type ProposalExpectation =
  * window may not reach. `detail`: the summary the baseline gives is not enough (sets and loads
  * behind a session total, the plan beyond the next seven days).
  */
-export type DomainNeed = Readonly<{ domain: string; since?: string; detail?: boolean }>;
+export type DomainNeed = Readonly<{
+  domain: string;
+  since?: string;
+  /**
+   * The last date the need reaches; the coaching date when absent. A need for the plan ahead names
+   * the future date it must reach ("next week"), and a lookup covers it only through that date.
+   */
+  until?: string;
+  detail?: boolean;
+}>;
 
 /** What the reply's data requests must show about how the turn investigated. */
 export type InvestigationChecks = Readonly<{

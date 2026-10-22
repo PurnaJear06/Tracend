@@ -1672,6 +1672,16 @@ rule line grounds nothing while the day rows still do (`render_grounding_test.ts
 not used: those fields are kept when the rows are read again, which would put the rule back into
 the grounds. Every other lookup declaration was audited; none holds another rule, threshold or window.
 
+**Review round 6 (PR #159, last round).** 1) A running block's title (`training_plans.title`) is a
+record (`record()`); only a pending proposal's title stays `figure()`. 2) The domain-coverage grader
+requires a lookup's range to reach the end of the need: the coaching date, or `DomainNeed.until` (a
+future date for "next week"; the baseline reaches six days ahead, `baselineAhead`), as well as back
+to `since`. The two single-day cases name their day as `since` and `until`. 3) `baselineWindow` reads
+`shownDays` (`coverage_brief.ts`), the one place the windows are written (the brief's lines and the
+nutrition block use it): the raw `nutrition_daily_28d` rows no longer count, only the nutrition
+block's week does.
+
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in

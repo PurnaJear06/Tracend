@@ -436,7 +436,7 @@ Deno.test("proposals: dates ground as records; a proposal's title and figures gr
   const payload = {
     schema_version: "1.1",
     local_date: "2026-10-17",
-    block: { title: "Deload week", kind: "deload", ends_on: "2026-10-24" },
+    block: { title: "12-week deload", kind: "deload", ends_on: "2026-10-24" },
     phase: { phase: "cut", started_on: "2026-08-04", ends_on: "2026-11-30" },
     proposals: [
       {
@@ -470,6 +470,8 @@ Deno.test("proposals: dates ground as records; a proposal's title and figures gr
     calculated: [],
     fixed: [],
   });
+  // The running block's title is the athlete's approved plan: a record, unlike a pending title.
+  assertEquals(ungroundedNumbers("You are on a 12-week deload.", inputs.athleteGround!), []);
   assertEquals(ungroundedNumbers("The proposal sets 2350 kcal.", inputs.ground), []);
   assertEquals(ungroundedNumbers("Your target is 2350 kcal.", inputs.athleteGround!), ["2350"]);
 });

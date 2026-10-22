@@ -7,8 +7,9 @@
 // (the proposal rules built them), so they ground a figure in a reply, but as the proposal's:
 // never as the athlete's target, which a proposal is not until it is approved. They are stated on
 // their own line, marked as proposal figures (`figure`, `RenderedBlock.figures`). A proposal's title
-// is Tracend's text for it (`columnGrounding`: change_proposals.title) and counts the same way. The
-// dates and the rest are records; the words around them ground nothing.
+// is Tracend's text for it (`columnGrounding`: change_proposals.title) and counts the same way. A
+// running block's title is the title of the training plan the athlete approved
+// (`training_plans.title`: a record), like the dates; the words around them ground nothing.
 import { figure, record } from "../../recorded_text.ts";
 import { blockOf, type CoachContextContributor, type RenderedBlock } from "../host.ts";
 import { coachServiceRpc, type StateSource, stateSourceFromRpc } from "../service_source.ts";
@@ -154,7 +155,7 @@ function proposalsMarked(state: ProposalsState | null): string | null {
   const lines: string[] = [];
   if (state.block) {
     lines.push(
-      `A temporary change is running: "${figure(state.block.title)}" until ${
+      `A temporary change is running: "${record(state.block.title)}" until ${
         record(state.block.endsOn)
       }. The regular plan returns by itself the day after.`,
     );

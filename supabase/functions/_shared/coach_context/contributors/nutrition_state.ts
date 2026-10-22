@@ -11,6 +11,7 @@
 // (`../../recorded_text.ts`). The rule that makes a day complete (its meals and share of the
 // target) and the windows (7 and 14 days) are fixed wording and ground nothing.
 import { plain, record } from "../../recorded_text.ts";
+import { shownDays } from "./coverage_brief.ts";
 import { blockOf, type CoachContextContributor } from "../host.ts";
 import { coachServiceRpc, type StateSource, stateSourceFromRpc } from "../service_source.ts";
 
@@ -122,12 +123,16 @@ function nutritionMarked(state: NutritionState | null): string | null {
   const complete = state.days.filter((day) => day.complete);
   const partial = state.days.filter((day) => !day.complete);
   if (state.days.length === 0) {
-    lines.push("Last 7 days (to " + record(state.localDate) + "): no confirmed meals logged.");
+    lines.push(
+      `Last ${shownDays.nutrition} days (to ${
+        record(state.localDate)
+      }): no confirmed meals logged.`,
+    );
   } else {
     lines.push(
-      `Last 7 days (to ${record(state.localDate)}): ${record(complete.length)} of ${
-        record(state.days.length)
-      } logged ` +
+      `Last ${shownDays.nutrition} days (to ${record(state.localDate)}): ${
+        record(complete.length)
+      } of ${record(state.days.length)} logged ` +
         `days are complete (a complete day has at least ${state.minMeals} confirmed meals or ` +
         `${Math.round(state.minShare * 100)}% of the calorie target). Days with no meals are ` +
         "unknown, not zero.",

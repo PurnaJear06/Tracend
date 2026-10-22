@@ -28,7 +28,10 @@ import {
   overFetchProblem,
   requestReaches,
 } from "./graders.ts";
-import { coverageDomains } from "../../_shared/coach_context/contributors/coverage_brief.ts";
+import {
+  coverageDomains,
+  shownDays,
+} from "../../_shared/coach_context/contributors/coverage_brief.ts";
 import { bankCategories, type BankCategory, type Reply, reportOnlyCategories } from "./types.ts";
 import type { Generate } from "../live_model.ts";
 
@@ -545,3 +548,79 @@ Deno.test("the first round the model sees carries the Coverage Brief, and the wa
   assertStringIncludes(greeting.volatile, '<reference_data source="coverage_brief">');
   assertEquals(greeting.volatile.includes('source="watch_outs"'), false);
 });
+
+Deno.test("a lookup covers a need only through its end: the coaching date, or the future date a plan need names", () => {
+  const { context, contributors } = prepared.get("inv-train-legs-today")!.bank.athlete();
+  const ask = (lookup: string, from: string, to: string, filter?: string) => ({
+    lookup,
+    from,
+    to,
+    ...(filter ? { filter } : {}),
+  });
+  const today = String(context.coaching_date);
+  // A range that starts early enough but ends in August does not cover "since September".
+  const since = { domain: "training", since: "2026-09-01", detail: true };
+  assertEquals(
+    domainProblem([since], context, contributors, [ask("workouts", "2026-08-01", "2026-08-02")]),
+    "not covered: training since 2026-09-01",
+  );
+  assertEquals(
+    domainProblem([since], context, contributors, [ask("workouts", "2026-08-01", today)]),
+    null,
+  );
+  // A need for next week's plan is covered by a schedule range that reaches it, not one that stops today.
+  const ahead = { domain: "plan_ahead", detail: true, until: "2026-10-26" };
+  assertEquals(
+    domainProblem([ahead], context, contributors, [
+      ask("plan_history", "2026-08-14", today, "schedule"),
+    ]),
+    "not covered: plan_ahead until 2026-10-26",
+  );
+  assertEquals(
+    domainProblem([ahead], context, contributors, [
+      ask("plan_history", today, "2026-10-26", "schedule"),
+    ]),
+    null,
+  );
+  // The baseline shows seven days ahead and no more.
+  assertEquals(
+    domainProblem([{ domain: "plan_ahead", until: "2026-10-20" }], context, contributors, []),
+    null,
+  );
+  assertEquals(
+    domainProblem([{ domain: "plan_ahead", until: "2026-10-21" }], context, contributors, []),
+    "not covered: plan_ahead until 2026-10-21",
+  );
+});
+
+Deno.test("every baseline window is the one the context renders, not the length of a raw array", () => {
+  const { context, contributors } = prepared.get("inv-train-legs-today")!.bank.athlete();
+  const today = String(context.coaching_date);
+  // The raw payload carries 28 days of meals that no renderer shows; only the nutrition block's
+  // week reaches Coach.
+  const withRaw = {
+    ...context,
+    nutrition_daily_28d: Array.from({ length: 28 }, (_, i) => ({ i })),
+  };
+  const shows = { ...contributors, nutritionState: {} };
+  assertEquals(baselineWindow("nutrition", withRaw, contributors), undefined);
+  assertEquals(baselineWindow("nutrition", withRaw, shows), shownDays.nutrition - 1);
+  const tenDays = { domain: "nutrition", since: addDaysOf(today, -9) };
+  assertEquals(
+    domainProblem([tenDays], withRaw, shows, []),
+    `not covered: nutrition since ${tenDays.since}`,
+  );
+  assertEquals(
+    domainProblem([{ domain: "nutrition", since: addDaysOf(today, -6) }], withRaw, shows, []),
+    null,
+  );
+  // The windows are the ones the brief states for each kind.
+  for (const [domain, days] of Object.entries(shownDays)) {
+    const line = coverageDomains.find((item) => item.id === domain)!.shown;
+    const stated = domain === "body" ? `${days / 7} wk` : `${days} d`;
+    if (domain !== "nutrition") assertStringIncludes(line, stated);
+  }
+});
+
+const addDaysOf = (date: string, days: number): string =>
+  new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
