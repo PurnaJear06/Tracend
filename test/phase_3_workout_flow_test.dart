@@ -19,6 +19,7 @@ import 'package:tracend/features/train/widgets/rest_timer_view.dart';
 import 'package:tracend/features/train/widgets/set_row.dart';
 import 'package:tracend/features/train/workout_events.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/features/workout_hr/watch_workout_prompt.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
 
@@ -308,6 +309,7 @@ Future<void> _open(
   Size size = const Size(390, 844),
   WorkoutEventHub? events,
   PlannedWorkout workout = _workout,
+  WatchWorkoutPromptSource? watchPrompt,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -332,6 +334,7 @@ Future<void> _open(
                     events: events,
                     activity: h.activity,
                     lockScreenNumbers: () async => h.lockNumbers,
+                    watchPrompt: watchPrompt,
                   ),
                 ),
               );
@@ -384,6 +387,28 @@ final _finishButton = find.widgetWithText(FilledButton, 'Finish workout');
 Future<void> _flushSave(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 300));
   await tester.pumpAndSettle();
+}
+
+/// A Watch-workout suggestion source the test controls.
+class _WatchPrompt implements WatchWorkoutPromptSource {
+  _WatchPrompt({this.suggest = true});
+
+  final bool suggest;
+  int asked = 0;
+  int snoozed = 0;
+  int muted = 0;
+
+  @override
+  Future<bool> shouldSuggest() async {
+    asked++;
+    return suggest;
+  }
+
+  @override
+  Future<void> snooze() async => snoozed++;
+
+  @override
+  Future<void> mute() async => muted++;
 }
 
 void main() {
@@ -2563,5 +2588,118 @@ void main() {
     expect(find.text('Available to train today'), findsOneWidget);
     // Pinned below the questions, so it is on screen without scrolling.
     expect(find.text('Save check-in').hitTestable(), findsOneWidget);
+  });
+
+  group('Watch workout suggestion', () {
+    final card = find.text('Track your heart rate');
+
+    testWidgets('shows before the first set and Not now snoozes it', (
+      tester,
+    ) async {
+      final source = _WatchPrompt();
+      await _open(tester, _Harness(), watchPrompt: source);
+
+      expect(card, findsOneWidget);
+      expect(source.asked, 1);
+      expect(find.textContaining('Start a Strength workout'), findsOneWidget);
+      expect(find.textContaining('informs rest and recovery'), findsOneWidget);
+      expect(find.textContaining('informs rest only'), findsNothing);
+
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+
+      expect(card, findsNothing);
+      expect((source.snoozed, source.muted), (1, 0));
+    });
+
+    testWidgets('"I don\'t use a Watch" mutes it', (tester) async {
+      final source = _WatchPrompt();
+      await _open(tester, _Harness(), watchPrompt: source);
+
+      await tester.tap(find.text("I don't use a Watch"));
+      await tester.pumpAndSettle();
+
+      expect(card, findsNothing);
+      expect((source.snoozed, source.muted), (0, 1));
+    });
+
+    testWidgets('does not show when the source says no', (tester) async {
+      final source = _WatchPrompt(suggest: false);
+      await _open(tester, _Harness(), watchPrompt: source);
+
+      expect(source.asked, 1);
+      expect(card, findsNothing);
+    });
+
+    testWidgets('goes away when the first set is done, without an answer', (
+      tester,
+    ) async {
+      final source = _WatchPrompt();
+      await _open(tester, _Harness(), watchPrompt: source);
+      expect(card, findsOneWidget);
+
+      await _tapText(tester, 'Done set 1');
+
+      expect(card, findsNothing);
+      expect((source.snoozed, source.muted), (0, 0));
+    });
+
+    testWidgets('undoing the first set does not bring the card back', (
+      tester,
+    ) async {
+      final source = _WatchPrompt();
+      await _open(tester, _Harness(), watchPrompt: source);
+      expect(card, findsOneWidget);
+
+      await _tapText(tester, 'Done set 1');
+      expect(card, findsNothing);
+      await _tapLabel(tester, 'Skip rest');
+      await _tapLabel(tester, 'Undo set 1');
+
+      expect(find.text('Done set 1'), findsWidgets);
+      expect(card, findsNothing);
+    });
+
+    testWidgets('is not asked for a workout already under way', (tester) async {
+      final h = _Harness();
+      h.repository.saved = jsonEncode({
+        'workout_id': 'upper-a',
+        'session_id': 'server-session',
+        'idempotency_key': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        'revision': 1,
+        'actual_started_at': h.clock.now
+            .subtract(const Duration(minutes: 10))
+            .toUtc()
+            .toIso8601String(),
+        'exercises': [
+          {
+            'order': 1,
+            'status': 'unknown',
+            'pain_flag': false,
+            'sets': [
+              {
+                'number': 1,
+                'load_kg': '60',
+                'repetitions': '8',
+                'rpe': '',
+                'completed': true,
+              },
+              {'number': 2, 'completed': false},
+            ],
+          },
+        ],
+      });
+      final source = _WatchPrompt();
+      await _open(tester, h, watchPrompt: source);
+
+      expect(source.asked, 0);
+      expect(card, findsNothing);
+    });
+
+    testWidgets('a workout with no source suggests nothing', (tester) async {
+      await _open(tester, _Harness());
+
+      expect(card, findsNothing);
+    });
   });
 }
