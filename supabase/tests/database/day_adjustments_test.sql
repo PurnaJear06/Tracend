@@ -804,14 +804,20 @@ select ok((select day_adjustment_id is not null from public.workout_sessions
 select pg_temp.as_user('b4000000-0000-4000-8000-000000000012');
 select pg_temp.check_in('b4000000-0000-4000-8000-000000000012', 2, 3, 4, 3, 0);
 select public.respond_to_day_adjustment_v1((select today from t), true);
+-- An accepted answer left on the same weekday a week ago, as a stale row would be.
+insert into public.day_adjustments(user_id, local_date, planned_workout_id, plan_version_id,
+  rules_version, band, kind, origin, rules_kind, triggers, changes, cardio, inputs, inputs_hash, status)
+select user_id, local_date - 7, planned_workout_id, plan_version_id, rules_version, band, kind, origin,
+  rules_kind, triggers, changes, cardio, inputs, inputs_hash, status from public.day_adjustments
+where user_id = 'b4000000-0000-4000-8000-000000000012' and superseded_at is null;
 select public.start_workout((select workout_id from wk where uid = 'b4000000-0000-4000-8000-000000000012'),
-  (select today - 1 from t), 'UTC', 'b4100000-0000-4000-8000-000000000012');
+  (select today - 7 from t), 'UTC', 'b4100000-0000-4000-8000-000000000012');
 select is((select array_agg(c order by o) from (
     select p.exercise_order o, count(s.id) c from public.exercise_performances p
     join public.workout_sessions w on w.id = p.workout_session_id
     left join public.exercise_sets s on s.exercise_performance_id = p.id
     where w.idempotency_key = 'b4100000-0000-4000-8000-000000000012' group by p.exercise_order) x),
-  array[4::bigint, 3, 2], 'a start backdated to yesterday gets the plan as written');
+  array[4::bigint, 3, 2], 'a start backdated to a day that has an accepted answer gets the plan as written');
 select ok((select day_adjustment_id is null from public.workout_sessions
     where idempotency_key = 'b4100000-0000-4000-8000-000000000012'), 'and is not linked to today''s answer');
 
