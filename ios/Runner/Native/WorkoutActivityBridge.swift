@@ -219,7 +219,11 @@ enum WorkoutActivityBridge {
     var target = ""
     var canLog = true
 
+    /// The call says the card carries no set any more (`clear_next`).
+    var clears = false
+
     init(_ arguments: [String: Any]) {
+      clears = arguments["clear_next"] as? Bool == true
       let order = (arguments["next_exercise_order"] as? NSNumber)?.intValue
       let number = (arguments["next_set_number"] as? NSNumber)?.intValue
       guard order != nil || number != nil else { return }
@@ -315,7 +319,7 @@ enum WorkoutActivityBridge {
     if let nextLabel {
       state.nextLabel = nextLabel
     }
-    state = next.applied(to: state, clearing: false)
+    state = next.applied(to: state, clearing: next.clears)
     await activity.update(ActivityContent(state: state, staleDate: staleDate(state)))
     return true
   }

@@ -180,6 +180,22 @@ void main() {
     expect(breadcrumbs.last.data, {'showing': true});
   });
 
+  test('updateRest says the card carries no set only when asked', () async {
+    await bridge.updateRest(endsAt: endsAt, clearNext: true);
+    await bridge.updateRest(endsAt: endsAt, next: benchSet, clearNext: true);
+    await bridge.updateRest(endsAt: endsAt);
+
+    expect(native.calls[0].arguments, {
+      'ends_at_millis': endsAt.millisecondsSinceEpoch,
+      'clear_next': true,
+    });
+    // A named set wins; the plain call leaves the set alone.
+    expect((native.calls[1].arguments as Map)['clear_next'], isNull);
+    expect(native.calls[2].arguments, {
+      'ends_at_millis': endsAt.millisecondsSinceEpoch,
+    });
+  });
+
   test('hideNumbers sends no arguments', () async {
     await bridge.hideNumbers();
 
@@ -301,7 +317,7 @@ void main() {
       controller.present(null);
       await controller.stop();
       await pumpEventQueue();
-      expect(native.methods, ['showSet', 'startRest', 'end']);
+      expect(native.methods, ['showSet', 'startRest', 'updateRest', 'end']);
       expect(native.showingUntilMillis, isNull);
     });
 

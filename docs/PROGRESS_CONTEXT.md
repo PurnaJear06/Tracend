@@ -33,7 +33,7 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping
   heart rate in shadow. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
 - ios-widgets: D0 live (#112). D1 merged (#121: Done, Skip and +30s on the Lock Screen and in the
-  Dynamic Island); the owner's device check is pending. D2 in review (#149): Today widgets on the Home Screen and the
+  Dynamic Island); the owner's device check is pending. D2 merged (#149): Today widgets on the Home Screen and the
   Lock Screen, Lock Screen numbers an off-by-default per-athlete choice, 12-hour expiry, snapshot
   excluded from backups and emptied on every sign-out. Live Activity set logging in review (branch
   `claude/live-activity-set-logging`): the card shows the set in progress with **Log set** and **Open**

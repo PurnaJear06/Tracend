@@ -1596,6 +1596,212 @@ void main() {
     });
   });
 
+  group('the work left changes during a rest', () {
+    /// Bench press is logged (both sets) and Push-up set 1 too, from the
+    /// Lock Screen; Push-up set 2 is the only set left and its rest runs.
+    Future<_Harness> oneSetLeft(WidgetTester tester) async {
+      final h = _Harness()..lockNumbers = true;
+      await _open(tester, h);
+      for (var set = 0; set < 2; set++) {
+        expect(await h.activity.pressDone(), isTrue);
+        expect(await h.activity.pressSkip(), isTrue);
+      }
+      expect(await h.activity.pressDone(), isTrue);
+      expect(h.activity.phase, 'rest');
+      expect(h.activity.card, (exerciseOrder: 2, setNumber: 2));
+      return h;
+    }
+
+    testWidgets('logging the last set in the app leaves the rest with no set '
+        'to log', (tester) async {
+      final h = await oneSetLeft(tester);
+      await _tapLabel(tester, 'Hide rest timer');
+      await tester.drag(find.byType(PageView), const Offset(-500, 0));
+      await tester.pumpAndSettle();
+
+      await _tapText(tester, 'Done set 2');
+      await _flushSave(tester);
+
+      // The rest still runs, but the card no longer carries a set.
+      expect(h.activity.phase, 'rest');
+      expect(h.activity.card, isNull);
+      expect(h.activity.label, '');
+
+      // When it ends the card says every set is logged, and a late Log set
+      // for the set that is already logged changes nothing.
+      h.clock.advance(const Duration(minutes: 5));
+      expect(h.activity.phase, 'finished');
+      expect(
+        await h.activity.pressDone(exerciseOrder: 2, setNumber: 2),
+        isTrue,
+      );
+      expect(h.activity.phase, 'finished');
+      expect(h.activity.card, isNull);
+      await _flushSave(tester);
+    });
+
+    testWidgets('that card goes two minutes after the rest ends', (
+      tester,
+    ) async {
+      final h = await oneSetLeft(tester);
+      await _tapLabel(tester, 'Hide rest timer');
+      await tester.drag(find.byType(PageView), const Offset(-500, 0));
+      await tester.pumpAndSettle();
+      await _tapText(tester, 'Done set 2');
+      await _flushSave(tester);
+
+      h.clock.advance(const Duration(seconds: 60));
+      await tester.pump(const Duration(seconds: 1));
+      expect(h.activity.phase, 'finished');
+      h.clock.advance(const Duration(seconds: 119));
+      await tester.pump(const Duration(seconds: 1));
+      expect(h.activity.showing, isTrue);
+
+      h.clock.advance(const Duration(seconds: 2));
+      await tester.pump(const Duration(seconds: 1));
+      expect(h.activity.showing, isFalse);
+    });
+
+    testWidgets('skipping the last exercise during a rest does the same', (
+      tester,
+    ) async {
+      final h = await oneSetLeft(tester);
+      await _tapLabel(tester, 'Hide rest timer');
+      await tester.drag(find.byType(PageView), const Offset(-500, 0));
+      await tester.pumpAndSettle();
+
+      await _tapLabel(tester, 'More for Push-up');
+      await tester.tap(find.text('Mark as skipped'));
+      await tester.pumpAndSettle();
+
+      expect(h.activity.card, isNull);
+      h.clock.advance(const Duration(minutes: 5));
+      expect(h.activity.phase, 'finished');
+      expect(
+        await h.activity.pressDone(exerciseOrder: 2, setNumber: 2),
+        isTrue,
+      );
+      expect(h.repository.savedSet(1, 1)['completed'], isFalse);
+      await _flushSave(tester);
+    });
+
+    testWidgets('a press during that rest redraws it with no set', (
+      tester,
+    ) async {
+      final h = await oneSetLeft(tester);
+      await _tapLabel(tester, 'Hide rest timer');
+      await tester.drag(find.byType(PageView), const Offset(-500, 0));
+      await tester.pumpAndSettle();
+      await _tapText(tester, 'Done set 2');
+      await _flushSave(tester);
+
+      // A Log set still on the card of the rest is stale: it redraws the
+      // rest as it is and does not bring the set back.
+      expect(
+        await h.activity.pressDone(exerciseOrder: 2, setNumber: 2),
+        isTrue,
+      );
+
+      expect(h.activity.card, isNull);
+      expect(h.activity.phase, 'rest');
+      await _flushSave(tester);
+    });
+
+    testWidgets('undoing the set before the rest names it again', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      expect(await h.activity.pressDone(), isTrue);
+      expect(h.activity.card, (exerciseOrder: 1, setNumber: 2));
+
+      await _tapLabel(tester, 'Hide rest timer');
+      await _tapLabel(tester, 'Undo set 1');
+      await _flushSave(tester);
+
+      expect(h.activity.card, (exerciseOrder: 1, setNumber: 1));
+      expect(h.activity.label, 'Set 1 of Bench press');
+      h.clock.advance(const Duration(minutes: 5));
+      expect(h.activity.phase, 'set');
+      expect(await h.activity.pressDone(), isTrue);
+      expect(h.repository.savedSet(0, 0)['completed'], isTrue);
+      await _flushSave(tester);
+    });
+
+    testWidgets('editing the next set during a rest moves the card', (
+      tester,
+    ) async {
+      final h = _Harness()..lockNumbers = true;
+      await _open(tester, h);
+      expect(await h.activity.pressDone(), isTrue);
+      expect(h.activity.set!.target, '60 kg × 8');
+
+      await _tapLabel(tester, 'Hide rest timer');
+      await _tapLabel(tester, 'More weight');
+      await _flushSave(tester);
+
+      expect(h.activity.phase, 'rest');
+      expect(h.activity.set!.target, '62.5 kg × 8');
+      h.clock.advance(const Duration(minutes: 5));
+      expect(await h.activity.pressDone(), isTrue);
+      expect(h.repository.savedSet(0, 1)['load_kg'], '62.5');
+      await _flushSave(tester);
+    });
+
+    testWidgets('swiping during a rest points the card, and its label, at '
+        'the exercise on screen', (tester) async {
+      final h = _Harness();
+      await _open(tester, h);
+      expect(await h.activity.pressDone(), isTrue);
+      await _tapLabel(tester, 'Hide rest timer');
+
+      await tester.drag(find.byType(PageView), const Offset(-500, 0));
+      await tester.pumpAndSettle();
+
+      expect(h.activity.card, (exerciseOrder: 2, setNumber: 1));
+      expect(h.activity.label, 'Set 1 of Push-up');
+      h.clock.advance(const Duration(minutes: 5));
+      expect(await h.activity.pressDone(), isTrue);
+      expect(h.repository.savedSet(1, 0)['completed'], isTrue);
+      await _flushSave(tester);
+    });
+
+    testWidgets('finishing during a rest removes the card', (tester) async {
+      final h = _Harness();
+      await _open(tester, h);
+      expect(await h.activity.pressDone(), isTrue);
+      expect(h.activity.phase, 'rest');
+
+      await _tapLabel(tester, 'Finish workout');
+      await _tapLabel(tester, '8, Hard');
+      await _tap(tester, _finishButton);
+
+      expect(h.activity.showing, isFalse);
+      expect(
+        await h.activity.pressDone(exerciseOrder: 1, setNumber: 2),
+        isFalse,
+      );
+    });
+
+    testWidgets('discarding during a rest removes the card', (tester) async {
+      final h = _Harness();
+      await _open(tester, h);
+      expect(await h.activity.pressDone(), isTrue);
+
+      await _tapLabel(tester, 'Leave workout');
+      await tester.tap(find.text('Discard workout'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Discard workout').last);
+      await tester.pumpAndSettle();
+
+      expect(h.activity.showing, isFalse);
+      expect(
+        await h.activity.pressDone(exerciseOrder: 1, setNumber: 2),
+        isFalse,
+      );
+    });
+  });
+
   testWidgets('the screen torn down mid-rest ends only the Live Activity', (
     tester,
   ) async {

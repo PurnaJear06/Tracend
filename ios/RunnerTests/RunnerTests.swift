@@ -403,6 +403,22 @@ final class WorkoutActivityStateTests: XCTestCase {
     XCTAssertEqual(kept.nextTarget, "82.5 kg × 8")
   }
 
+  func testAnUpdateThatClearsTheSetLeavesARestThatEndsAsEverySetLogged() {
+    let clear = WorkoutActivityBridge.NextSet(["clear_next": true])
+    XCTAssertFalse(clear.present)
+    XCTAssertTrue(clear.clears)
+    let rest = set(endsAt: now.addingTimeInterval(60))
+    let cleared = clear.applied(to: rest, clearing: clear.clears)
+    XCTAssertNil(cleared.nextSet)
+    XCTAssertEqual(cleared.nextTarget, "")
+    XCTAssertEqual(cleared.phase(at: now), .resting)
+    XCTAssertEqual(cleared.phase(at: now.addingTimeInterval(60)), .finished)
+    // A plain update leaves the set alone.
+    let plain = WorkoutActivityBridge.NextSet([:])
+    XCTAssertFalse(plain.clears)
+    XCTAssertEqual(plain.applied(to: rest, clearing: plain.clears).nextSet?.setNumber, 2)
+  }
+
   func testTheCardThatSaysEverySetIsLoggedGoesAfterTwoMinutes() {
     var done = set(endsAt: now)
     done.nextExerciseOrder = nil

@@ -163,15 +163,26 @@ class RestTimerController {
   /// card turns into it when the rest ends). With [begin] a card is requested
   /// when none shows (the workout opened, a set was logged); without it
   /// nothing appears, so a card the athlete dismissed stays gone. The same
-  /// set again sends nothing, unless [begin].
-  void present(ActivitySet? set, {bool begin = false}) {
+  /// set again sends nothing, unless [begin]. [nextLabel] is the "Next: …"
+  /// line of a running rest for [set].
+  ///
+  /// With a rest running and no set left, the rest goes on but the card
+  /// carries no set, so it says every set is logged when the rest ends, and
+  /// goes [doneLinger] later.
+  void present(ActivitySet? set, {bool begin = false, String nextLabel = ''}) {
     final drawn = _drawn;
     if (!begin && drawn != null && drawn.set == set) return;
     final timer = _timer;
     if (timer != null) {
-      if (set == null) return;
       _drawn = (set: set);
-      _send(_activity.updateRest(endsAt: timer.endsAt, next: set));
+      _send(
+        _activity.updateRest(
+          endsAt: timer.endsAt,
+          nextLabel: nextLabel,
+          next: set,
+          clearNext: set == null,
+        ),
+      );
       return;
     }
     _drawn = (set: set);
@@ -227,7 +238,13 @@ class RestTimerController {
     final timer = _timer;
     final drawn = _drawn;
     if (timer != null) {
-      _send(_activity.updateRest(endsAt: timer.endsAt, next: drawn?.set));
+      _send(
+        _activity.updateRest(
+          endsAt: timer.endsAt,
+          next: drawn?.set,
+          clearNext: drawn != null && drawn.set == null,
+        ),
+      );
     } else if (drawn != null) {
       _send(_activity.showSet(drawn.set, begin: false));
     }
@@ -240,9 +257,18 @@ class RestTimerController {
   /// app was away). The activity already turned into the set that follows
   /// from its end time, so nothing is sent to it.
   Future<void> ranOut() async {
-    if (_timer == null) return;
+    final timer = _timer;
+    if (timer == null) return;
     _timer = null;
+    _lingerIfFinished(timer.endsAt);
     await _alerts.cancelRestAlert();
+  }
+
+  /// A rest that ends with no set to turn into leaves the card that says
+  /// every set is logged: it goes [doneLinger] after [from].
+  void _lingerIfFinished(DateTime from) {
+    final drawn = _drawn;
+    if (drawn != null && drawn.set == null) _doneUntil = from.add(doneLinger);
   }
 
   /// Ends the card that says every set is logged once [doneLinger] has
@@ -296,6 +322,7 @@ class RestTimerController {
   Future<void> _over(DateTime now) async {
     if (_timer == null) return;
     _timer = null;
+    _lingerIfFinished(now);
     _send(_activity.updateRest(endsAt: now));
     await _alerts.cancelRestAlert();
   }

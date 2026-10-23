@@ -46,6 +46,12 @@ logged from the Lock Screen and the Dynamic Island.
   history loads. Removed with this change: the "Rest done" linger and the two-minute end after a rest,
   the stop of the activity after a set with no rest, and `restore` ending an expired rest's card
   (the old `nextExerciseOrder`/`nextSetNumber` start parameters became `next:`).
+- **Work that changes during a rest.** The card carries the set it turns into, so every change to the
+  remaining work reaches it while the rest runs: `RestTimerController.present` sends `updateRest` with
+  the new set and its "Next: …" label (edit, swipe, undo, skip toggle); when no set is left (the last
+  set logged in the app, or the last exercise skipped) it sends `clear_next`, so the card keeps
+  counting down and then reads "All sets logged", which the app removes two minutes after the rest's
+  end (skip included). Finish, discard and Save and leave end the card.
 - **Write path (unchanged, one only).** Log set → `CompleteSetIntent` (`RestActivityIntents.swift`)
   → `WorkoutActivityBridge.press` → Dart `press` → `ActiveWorkoutScreen._onButton` →
   `WorkoutEventHub.send(CompleteCurrentSet)` → `_onCommand`/`_handleCommand` → `_completeSet` →
@@ -164,7 +170,7 @@ Island check passed on 2026-10-15. What exists:
   activity), `test/account_session_test.dart` (a refused session ends it). The fake is
   `test/live_activity/fake_workout_activity_bridge.dart`.
 
-**D1 in review** (branch `claude/d1-live-activity-buttons`): Done, Skip and +30s.
+**D1 merged** (#121; branch `claude/d1-live-activity-buttons`): Done, Skip and +30s.
 
 - **Intents** `ios/Shared/RestActivityIntents.swift` (both targets): `CompleteSetIntent`,
   `SkipRestIntent`, `AddRestIntent`, all `LiveActivityIntent` and hidden from Shortcuts
@@ -195,7 +201,7 @@ Island check passed on 2026-10-15. What exists:
     sends `next_exercise_order` and `next_set_number` (optional, additive), the activity keeps them
     in its content state (`nextExerciseOrder`, `nextSetNumber`), and the Done button builds
     `CompleteSetIntent(exerciseOrder:setNumber:)` with them. The plan README's Contract 3 block
-    still shows the old empty class; update it when D1 merges. Without a set in the state the card
+    shows the v1.1 class. Without a set in the state the card
     shows "Open Tracend to continue" instead of Done. Dart refuses a `press` for Done without both
     numbers (`invalid_arguments`, so the card asks to open the app) and never ticks "whatever is
     current".
@@ -233,13 +239,7 @@ Island check passed on 2026-10-15. What exists:
   done" two minutes after the rest's end and the screen calls it only while the app is resumed; a
   set with no rest after it ends the activity; `detach` also ends "Rest done". SECURITY_PRIVACY §10
   is updated to match (owner to confirm).
-- **Facts for the other authority docs** (kept out of this PR; fold in when D1 merges):
-  ARCHITECTURE §3.1 should say the buttons are iOS 17 `LiveActivityIntent`s in
-  `ios/Shared/RestActivityIntents.swift` (both targets), run in the app's process, that the bridge
-  forwards `press` to the attached workout screen as a Contract 3 command and waits for its answer
-  (8 s at most) and for its queued activity calls, with no App Group. PRD §4 should replace
-  "Planned (Phase 2, D1)" with: Done, Skip and +30s on the Live Activity; Done logs the suggested
-  kg and reps. TESTING_STRATEGY should list the D1 tests below.
+- **Facts for the other authority docs** are folded in (ARCHITECTURE, PRD and TESTING_STRATEGY describe the buttons).
 - **Tests:** contract test (press with set identity and press time, attach/detach, refused
   arguments including an old Done without a set, the answer waiting, a late press dropped),
   `test/live_activity/live_activity_commands_test.dart` (button mapping, the command sink's answers,
@@ -268,7 +268,7 @@ Island check passed on 2026-10-15. What exists:
 11. Let a rest end, leave the phone for five minutes with the app in the background: "Rest done"
     may still show (nothing can dismiss it); tap Done set: the card goes and no set is ticked.
 
-**D2 in review** (branch `claude/d2-widgets`): Today and Lock Screen widgets.
+**D2 merged** (#149; branch `claude/d2-widgets`): Today and Lock Screen widgets.
 
 - **New: the App Group `group.com.tracend.app`**, in `Runner.entitlements` and the new
   `TracendWidgets/TracendWidgets.entitlements`. It exists only so the widget process can read the
@@ -417,7 +417,7 @@ days like the app's.
 ## Next agent starts here
 
 Set logging from the Live Activity is in review (above); its device check is the second list in State.
-D2 (Today and Lock Screen widgets) is in review; the owner's device check is the list above. After
+D2 (Today and Lock Screen widgets) is merged (#149); the owner's device check is the list above. After
 it passes, the widgets chunk is done. Follow-ups worth a chunk if the owner wants them: use the
 training hub's progression `next_targets` for the medium widget's exercise lines, and a small
 interactive widget (iOS 17 buttons) for the check-in.

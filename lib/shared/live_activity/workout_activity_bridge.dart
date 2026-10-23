@@ -157,12 +157,15 @@ abstract interface class WorkoutActivityBridge {
   });
 
   /// Moves the end of the rest that is showing, its next label when given,
-  /// and the set that follows it when given. Shows nothing when no activity
-  /// is running.
+  /// and the set that follows it when given. With [clearNext] the card
+  /// carries no set any more (every set was logged or skipped meanwhile), so
+  /// when the rest ends it says every set is logged. Shows nothing when no
+  /// activity is running.
   Future<void> updateRest({
     required DateTime endsAt,
     String? nextLabel,
     ActivitySet? next,
+    bool clearNext = false,
   });
 
   /// Shows the set in progress ([set]), or that every set is logged when
@@ -210,10 +213,12 @@ class MethodChannelWorkoutActivityBridge implements WorkoutActivityBridge {
     required DateTime endsAt,
     String? nextLabel,
     ActivitySet? next,
+    bool clearNext = false,
   }) => _invoke('updateRest', {
     'ends_at_millis': endsAt.millisecondsSinceEpoch,
     'next_label': ?nextLabel,
     if (next != null) ...activitySetArguments(next),
+    if (clearNext && next == null) 'clear_next': true,
   });
 
   @override

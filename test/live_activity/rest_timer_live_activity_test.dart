@@ -240,8 +240,78 @@ void main() {
       expect(activity.calls.last.endsAt, controller.timer!.endsAt);
       expect(activity.calls.last.next!.exerciseOrder, 2);
       expect(activity.phase, 'rest');
+    });
+
+    test('with no set left a rest goes on, carries no set, and ends as '
+        '"all sets logged"', () async {
+      await controller.start(90, nextLabel: 'Set 2', next: _set());
+
+      controller.present(null);
+      expect(activity.calls.last.method, 'updateRest');
+      expect(activity.calls.last.clearNext, isTrue);
+      expect(activity.calls.last.nextLabel, '');
+      expect(activity.card, isNull);
+      expect(activity.phase, 'rest');
+      expect(controller.timer, isNotNull);
+
+      // The same again sends nothing.
       controller.present(null);
       expect(activity.calls, hasLength(2));
+
+      now = now.add(const Duration(seconds: 90));
+      await controller.ranOut();
+      expect(activity.phase, 'finished');
+      now = now.add(RestTimerController.doneLinger);
+      controller.tick();
+      expect(activity.showing, isFalse);
+    });
+
+    test('a skip with no set left goes two minutes after the skip', () async {
+      await controller.start(90, next: _set());
+      controller.present(null);
+      now = now.add(const Duration(seconds: 10));
+      await controller.skip();
+      expect(activity.phase, 'finished');
+
+      now = now.add(const Duration(seconds: 119));
+      controller.tick();
+      expect(activity.showing, isTrue);
+      now = now.add(const Duration(seconds: 1));
+      controller.tick();
+      expect(activity.showing, isFalse);
+    });
+
+    test('a rest with a set is not ended by the clock', () async {
+      await controller.start(90, next: _set());
+      controller.present(_set(setNumber: 3));
+      now = now.add(const Duration(seconds: 90));
+      await controller.ranOut();
+      now = now.add(const Duration(hours: 1));
+      controller.tick();
+
+      expect(activity.phase, 'set');
+      expect(activity.card, (exerciseOrder: 1, setNumber: 3));
+    });
+
+    test('refresh of a rest with no set keeps it without one', () async {
+      await controller.start(90, next: _set());
+      controller.present(null);
+      controller.refresh();
+
+      expect(activity.calls.last.clearNext, isTrue);
+      expect(activity.card, isNull);
+    });
+
+    test('a restored rest with no set left carries none', () async {
+      await controller.start(90, next: _set());
+      final stored = controller.toDraft();
+      final resumed = newController();
+      await resumed.restore(stored);
+
+      resumed.present(null, begin: true);
+
+      expect(activity.calls.last.clearNext, isTrue);
+      expect(activity.card, isNull);
     });
 
     test('a set the app cannot log shows the card without a button', () {

@@ -8,6 +8,7 @@ typedef ActivityCall = ({
   String? exerciseName,
   ActivitySet? next,
   bool? begin,
+  bool? clearNext,
 });
 
 /// Records every call instead of showing a Live Activity, tracks the one
@@ -31,6 +32,9 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
 
   /// The set the card names, with its target as the card would show it.
   ActivitySet? set;
+
+  /// The "Next: …" line of the rest, as last sent.
+  String label = '';
 
   /// The end time of the rest the activity would show, the moment the set in
   /// progress began once no rest runs, or null when nothing shows.
@@ -106,10 +110,12 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
       exerciseName: exerciseName,
       next: next,
       begin: null,
+      clearNext: null,
     ));
     await _finish(() {
       showingUntil = endsAt;
       set = next;
+      label = nextLabel;
     });
   }
 
@@ -118,6 +124,7 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
     required DateTime endsAt,
     String? nextLabel,
     ActivitySet? next,
+    bool clearNext = false,
   }) async {
     calls.add((
       method: 'updateRest',
@@ -126,11 +133,14 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
       exerciseName: null,
       next: next,
       begin: null,
+      clearNext: clearNext,
     ));
     await _finish(() {
       if (showingUntil == null) return;
       showingUntil = endsAt;
       if (next != null) set = next;
+      if (clearNext) set = null;
+      if (nextLabel != null) label = nextLabel;
     });
   }
 
@@ -143,6 +153,7 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
       exerciseName: null,
       next: set,
       begin: begin,
+      clearNext: null,
     ));
     await _finish(() {
       if (showingUntil == null && !begin) return;
@@ -160,6 +171,7 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
       exerciseName: null,
       next: null,
       begin: null,
+      clearNext: null,
     ));
     await _finish(() {
       final shown = set;
@@ -184,6 +196,7 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
       exerciseName: null,
       next: null,
       begin: null,
+      clearNext: null,
     ));
     await _finish(() {
       showingUntil = null;

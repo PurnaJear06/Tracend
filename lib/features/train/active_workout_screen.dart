@@ -737,7 +737,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     } else {
       // No rest follows: the activity names the next set, or says every set
       // is logged.
-      _rest.present(next == null ? null : _activitySet(next), begin: true);
+      _rest.present(
+        next == null ? null : _activitySet(next),
+        begin: true,
+        nextLabel: next?.full ?? '',
+      );
     }
     _changed();
   }
@@ -1018,7 +1022,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       return;
     }
     final next = _setInProgress();
-    _rest.present(next == null ? null : _activitySet(next), begin: begin);
+    _rest.present(
+      next == null ? null : _activitySet(next),
+      begin: begin,
+      nextLabel: next?.full ?? '',
+    );
   }
 
   /// The next set to do in the workout, for a rest restored after a
