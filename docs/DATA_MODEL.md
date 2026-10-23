@@ -367,7 +367,7 @@ compound flag, `status` (`active` or `retired`) with
 are retired, never deleted; generation uses only active ones. Catalog changes do not rewrite
 historical snapshots.
 
-**Advanced level (migration `20261023100050_advanced_level_catalog.sql`).** The `level` check
+**Advanced level (migration `20261023100050_advanced_level_catalog.sql`).** `added_load` (boolean, default false) marks an exercise whose logged load is weight added to the body (`weighted-pull-up`): progression reads no load and 0 as none added. The four new rows carry `catalog_version` `catalog-v2` (the TypeScript `catalogVersion` is v2 too: it keys the onboarding snapshot hash and a plan's evidence). `get_coach_plan_state_v1` is 1.2 and adds `experience`. The `level` check
 accepts `advanced` (`experience_level` on `user_profiles` already did). Four rows are added, all
 level `advanced` and role `variation`, load step 2.5 kg: `weighted-pull-up` (vertical pull; bar and
 dumbbells), `close-grip-bench-press` and `incline-barbell-bench-press` (horizontal push; barbell and

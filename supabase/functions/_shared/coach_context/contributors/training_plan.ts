@@ -8,7 +8,11 @@
 // minimal home kit. Coach explains and chooses among these; it never changes the plan or a
 // target. Replaces the progression contributor (B3), which only listed the targets.
 import type { AvoidablePattern } from "../../onboarding/catalog.ts";
-import { avoidablePatterns } from "../../onboarding/catalog.ts";
+import {
+  avoidablePatterns,
+  type ExperienceLevel,
+  experienceLevels,
+} from "../../onboarding/catalog.ts";
 import { catalogV2BySlug } from "../../onboarding/catalog_v2.ts";
 import { homeAlternativesFor, minimalHomeKit } from "../../training/home_alternatives.ts";
 import {
@@ -78,6 +82,8 @@ export type PlanState = Readonly<{
   /** The equipment named at onboarding; null when the athlete never answered. */
   equipment: readonly string[] | null;
   avoid: readonly AvoidablePattern[];
+  /** The athlete's level (get_coach_plan_state_v1 1.2); intermediate from an older payload. */
+  experience: ExperienceLevel;
   title: string;
   version: number | null;
   sessionsPerWeek: number | null;
@@ -153,6 +159,7 @@ export function parsePlanState(payload: unknown): PlanState | null {
       ? body.equipment.filter((item): item is string => typeof item === "string")
       : null,
     avoid,
+    experience: experienceLevels.find((level) => level === body.experience) ?? "intermediate",
     title: str(plan.title),
     version: num(plan.version_number),
     sessionsPerWeek: num(plan.sessions_per_week),
@@ -441,7 +448,7 @@ function exerciseLine(
 }
 
 function homeText(exercise: PlanExercise, state: PlanState): string {
-  const home = homeAlternativesFor(exercise.slug, state.avoid);
+  const home = homeAlternativesFor(exercise.slug, state.experience, state.avoid);
   if (home.already === "bodyweight") return "Home: needs no equipment.";
   const bits = [
     home.already === "minimal" ? "needs only home-size kit" : null,
@@ -453,7 +460,7 @@ function homeText(exercise: PlanExercise, state: PlanState): string {
 
 function compactSession(session: PlanSession, state: PlanState, doneOn: string | null): string {
   const exercises = session.exercises.map((exercise) => {
-    const home = homeAlternativesFor(exercise.slug, state.avoid);
+    const home = homeAlternativesFor(exercise.slug, state.experience, state.avoid);
     const options = [...home.bodyweight.slice(0, 1), ...home.minimal.slice(0, 1)];
     return `${record(exercise.name)} ${prescription(exercise)}${
       home.already ? " (home-ready)" : options.length ? ` (home: ${options.join(" / ")})` : ""

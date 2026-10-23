@@ -133,6 +133,10 @@ Deno.test("golden: the advanced week's heavy and light days, preferences and add
     "Full body B:light",
     "Full body C:-",
   ]);
+  // One session a week meets each muscle once: nothing to alternate.
+  assertEquals(loads("muscle_gain", 1), ["Full body A:-"]);
+  assertEquals(loads("strength", 1), ["Full body A:-"]);
+  assertEquals(loads("muscle_gain", 2), ["Full body A:heavy", "Full body B:light"]);
   assertEquals(loads("muscle_gain", 4), [
     "Upper A:heavy",
     "Lower A:heavy",

@@ -900,6 +900,9 @@ Deno.test("an advanced draft builds a plan with the advanced staples and its own
   const { response } = await run(advanced.fake);
   assertEquals(response.status, 202);
   assertEquals(experienceOf(advanced.calls.persisted[0].snapshot), "advanced");
+  // The snapshot (and so its hash) names the catalog that knows the advanced level: a plan built
+  // before it, by a function that did not, is never reused for the same answers.
+  assertEquals(advanced.calls.persisted[0].snapshot.catalog_version, "catalog-v2");
   const slugs = (advanced.calls.persisted[0].proposal.training.weekly_structure as {
     exercises: { slug: string }[];
   }[]).flatMap((workout) => workout.exercises.map((exercise) => exercise.slug));

@@ -330,6 +330,7 @@ function spreadSets(
   tiers: ReadonlyMap<string, SlotTier>,
   policies: PlanPolicies,
   limit: number,
+  level: Experience,
 ): PlanWorkout[] {
   const { answers, training, catalog } = policies;
   const bySlug = new Map(catalog.map((exercise) => [exercise.slug, exercise]));
@@ -337,8 +338,8 @@ function spreadSets(
     goalEmphasis.value[answers.goal] === "strength";
   const trained = [...new Set(catalog.flatMap((exercise) => exercise.muscles))];
   const emphasis = strength ? "strength" : "hypertrophy";
-  let targets = weeklyTargets(emphasis, answers.experience, trained);
-  const ceiling = weeklySetsPerMuscle.maximum[answers.experience].value;
+  let targets = weeklyTargets(emphasis, level, trained);
+  const ceiling = weeklySetsPerMuscle.maximum[level].value;
   const days = workouts.map((workout) => ({ ...workout, exercises: [...workout.exercises] }));
   const fits = (exercises: PlanExercise[]) =>
     exercises.reduce((total, exercise) => total + exercise.sets, 0) <=
@@ -408,7 +409,7 @@ function spreadSets(
       // Every target is met or out of reach: spare room goes toward the stretch target.
       if (strength || stretched) return days;
       stretched = true;
-      targets = weeklyTargets(emphasis, answers.experience, trained, true);
+      targets = weeklyTargets(emphasis, level, trained, true);
       continue;
     }
     const { day, index } = best as { day: number; index: number; score: number };
@@ -436,6 +437,81 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
   if (screeningBlocksPlan(policies.screening)) {
     throw new PlanBlockedByScreeningError("see_professional");
   }
+  return policies.answers.experience === "advanced"
+    ? buildAdvancedPlan(policies)
+    : buildPlan(policies, noExclusions, false);
+}
+
+const noExclusions: ReadonlySet<string> = new Set();
+
+/** True when a weekly count is short of what the same athlete's intermediate plan would reach. */
+function fallsShort(
+  weekly: ReadonlyMap<string, number>,
+  twin: ReadonlyMap<string, number>,
+): boolean {
+  const growth = weeklySetsPerMuscle.growth.value;
+  return [...twin].some(([muscle, sets]) => (weekly.get(muscle) ?? 0) < Math.min(sets, growth));
+}
+
+/** Every way to leave out `size` of the items, in order. */
+function* combinations<T>(items: readonly T[], size: number, from = 0): Generator<T[]> {
+  if (size === 0) {
+    yield [];
+    return;
+  }
+  for (let index = from; index <= items.length - size; index++) {
+    for (const rest of combinations(items, size - 1, index + 1)) yield [items[index], ...rest];
+  }
+}
+
+/**
+ * An advanced plan prefers the advanced staples (a weighted pull-up instead of a lat pulldown),
+ * but never at the cost of a muscle: no muscle may end below the weekly sets of the same
+ * athlete's intermediate plan, capped at the growth level. When a staple pushes a muscle under
+ * that line, the fewest staples that restore it are left out; if no smaller set does, none is
+ * used; and if the higher advanced set targets alone still push a muscle under it, the plan
+ * keeps the intermediate week's exercises and set targets (`conservative`) with the advanced
+ * prescription. The weekly sets are counted as everywhere else (indirect sets at half).
+ */
+function buildAdvancedPlan(policies: PlanPolicies): OnboardingPlan {
+  const full = buildPlan(policies, noExclusions, false);
+  const twin = fractionalWeeklySets(
+    buildPlan(
+      { ...policies, answers: { ...policies.answers, experience: "intermediate" } },
+      noExclusions,
+      false,
+    )
+      .workouts,
+    policies.catalog,
+  );
+  const short = (plan: OnboardingPlan) =>
+    fallsShort(fractionalWeeklySets(plan.workouts, policies.catalog), twin);
+  if (!short(full)) return full;
+  const staples = policies.catalog.filter((exercise) => exercise.level === "advanced")
+    .map((exercise) => exercise.slug);
+  const used = staples.filter((slug) =>
+    full.workouts.some((workout) => workout.exercises.some((exercise) => exercise.slug === slug))
+  );
+  for (let size = 1; size < used.length; size++) {
+    for (const left of combinations(used, size)) {
+      const plan = buildPlan(policies, new Set(left), false);
+      if (!short(plan)) return plan;
+    }
+  }
+  const without = buildPlan(policies, new Set(staples), false);
+  return short(without) ? buildPlan(policies, new Set(staples), true) : without;
+}
+
+/**
+ * `conservative` builds the athlete's intermediate week (its exercises, slots and weekly set
+ * targets) with the advanced prescription, heavy and light days and text, so no muscle can end
+ * below the intermediate plan's: the last resort of `buildAdvancedPlan`.
+ */
+function buildPlan(
+  policies: PlanPolicies,
+  excluded: ReadonlySet<string>,
+  conservative: boolean,
+): OnboardingPlan {
   const { answers, training, nutrition } = policies;
   const allowed = rankExercises(
     allowedExercises(
@@ -443,16 +519,29 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
       answers.equipment,
       answers.experience,
       answers.avoidPatterns,
-    ),
+    ).filter((exercise) => !excluded.has(exercise.slug)),
     answers.experience,
   );
-  const template = weekTemplate({
-    split: training.split,
-    goal: answers.goal,
-    experience: answers.experience,
-    sessionMinutes: answers.sessionMinutes,
-    moderate: policies.screening === "moderate_until_cleared",
-  }, answers.trainingWeekdays.length);
+  const weekFor = (experience: Experience) =>
+    weekTemplate({
+      split: training.split,
+      goal: answers.goal,
+      experience,
+      sessionMinutes: answers.sessionMinutes,
+      moderate: policies.screening === "moderate_until_cleared",
+    }, answers.trainingWeekdays.length);
+  const own = weekFor(answers.experience);
+  const level: Experience = conservative ? "intermediate" : answers.experience;
+  const template = conservative
+    ? {
+      ...own,
+      days: weekFor(level).days.map((day, index) => ({
+        ...day,
+        objective: own.days[index].objective,
+        load: own.days[index].load,
+      })),
+    }
+    : own;
   const usedThisWeek = new Set<string>();
   const weeklySets = new Map<string, number>();
   const tiers = new Map<string, SlotTier>();
@@ -556,6 +645,7 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
     tiers,
     policies,
     limit,
+    level,
   );
 
   const [low, high] = nutrition.calories;

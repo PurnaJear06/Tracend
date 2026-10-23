@@ -1089,6 +1089,28 @@ shoulder `high` (a narrower grip moves work to elbows and wrists, which are not 
 is claimed), the Bulgarian split squat is knee `high`. A swap into a harsher exercise is never
 offered; a swap away is.
 
+**No muscle loses to a staple.** Preferring a staple can displace a lift that trained a muscle
+(the weighted pull-up wins the vertical pull from the lat pulldown), and the higher advanced targets
+move sets between exercises. After building, `buildAdvancedPlan` compares the plan with the same
+athlete's intermediate plan: no muscle may end below the intermediate plan's weekly sets, capped at
+the growth level (10). If one would, the fewest staples that restore it are left out; if none does,
+all are left out; if the advanced targets alone still leave a muscle short, the plan keeps the
+intermediate week's exercises and set targets with the advanced prescription and heavy/light
+days. A sweep of 4,320 cases (5 goals x 6 day counts x 6 lengths x 4 equipment sets x 2 screening
+outcomes x 3 focus sets) is a permanent test: before the rule 206 plans had a muscle short (132 of
+them below the 10-set growth level where the intermediate twin met it), after it none do and 1,769
+of the 1,800 plans with the equipment keep a staple.
+
+**Progression with heavy and light days.** A lift planned more than once with different rep ranges
+(an advanced plan's bench on a heavy and on a light day) keeps one history per range in
+`private.next_session_targets`: only performances logged against a planned exercise with that range
+count, so a heavy 100 kg x 9 is never read as a light day's 100 kg x 10. A lift repeated with the
+same range, or planned once, keeps one shared history as before; a Deno test pins the redefinition
+as B3's function plus exactly the changed hunks. The weighted pull-up is flagged `added_load` in the
+catalog: its logged load is the weight added to the body, and no load and 0 both read as none added,
+so a set of bodyweight reps at the top of the range earns the first 2.5 kg step. Other exercises
+still read an empty or zero load as no load (a pull-up holds at the top of its range).
+
 **Screening and safety.** Nothing about the screening gate changes: `moderate_until_cleared` caps
 effort at RPE 7, drops strength emphasis and uses hypertrophy reps (split into heavy and light days
 all the same); `see_professional` builds no plan; the avoided patterns, the joint-stress swaps and

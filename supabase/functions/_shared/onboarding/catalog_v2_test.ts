@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
-import { exerciseCatalogV1, muscles } from "./catalog.ts";
+import { exerciseCatalogV1, experienceLevels, muscles } from "./catalog.ts";
 import {
   type CatalogExerciseV2,
   catalogV2BySlug,
@@ -60,7 +60,7 @@ Deno.test("regressions and progressions mirror each other and stay in the patter
       );
       assertEquals(harder.pattern, exercise.pattern, `${exercise.slug} -> ${slug} changes pattern`);
       assert(
-        !(exercise.level === "intermediate" && harder.level === "beginner"),
+        experienceLevels.indexOf(harder.level) >= experienceLevels.indexOf(exercise.level),
         `${slug} is a progression of ${exercise.slug} but a lower level`,
       );
     }
@@ -189,4 +189,15 @@ Deno.test("the advanced staples are rated, linked and loaded like the exercises 
   for (const slug of ["weighted-pull-up", "close-grip-bench-press", "bulgarian-split-squat"]) {
     assertEquals(staple(slug).loadStepKg, 2.5, slug);
   }
+});
+
+Deno.test("added load (weight added to the body) is set on the weighted pull-up only", async () => {
+  const sql = await Deno.readTextFile(migrations[1]);
+  assert(/add column added_load boolean not null default false/.test(sql));
+  assertEquals(
+    [...sql.matchAll(/set added_load = true where slug = '([a-z-]+)'/g)].map((match) => match[1]),
+    ["weighted-pull-up"],
+  );
+  // Its load is a dumbbell hung between the feet, so it steps like a dumbbell.
+  assertEquals(catalogV2BySlug.get("weighted-pull-up")!.equipment, ["pull_up_bar", "dumbbells"]);
 });

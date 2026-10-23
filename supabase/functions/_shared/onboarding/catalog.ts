@@ -99,7 +99,13 @@ const x = (
   ...(role ? { role } : {}),
 });
 
-export const catalogVersion = "catalog-v1";
+/**
+ * Names the exercise list in a plan's evidence and in the onboarding snapshot (and so its hash).
+ * v2 added the advanced level and four staples (20261023100050_advanced_level_catalog.sql). The
+ * bump only makes the generation reuse key different: a plan built by a function that did not yet
+ * know the advanced level is never reused for the same answers.
+ */
+export const catalogVersion = "catalog-v2";
 
 export const exerciseCatalogV1: readonly CatalogExercise[] = Object.freeze([
   // Bodyweight

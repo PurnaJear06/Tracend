@@ -405,3 +405,50 @@ Deno.test("golden: a four-day size plan for an advanced lifter in a full gym", (
     ],
   );
 });
+
+Deno.test("an advanced plan never leaves a muscle under what its intermediate twin reaches, capped at the growth level", () => {
+  const growth = weeklySetsPerMuscle.growth.value;
+  let compared = 0;
+  let withStaples = 0;
+  for (const goal of goals) {
+    for (const days of [1, 2, 3, 4, 5, 6]) {
+      for (const sessionMinutes of [30, 45, 60, 75, 90, 120]) {
+        for (const equipment of Object.values(equipmentSets)) {
+          for (const screening of ["cleared", "moderate_until_cleared"] as const) {
+            for (const priorityMuscles of [[], ["shoulders"], ["chest", "biceps"]] as const) {
+              const overrides = {
+                goal,
+                trainingWeekdays: weekdaysFor[days],
+                sessionMinutes,
+                equipment,
+                priorityMuscles: [...priorityMuscles],
+              };
+              const advanced = advancedPlan(overrides, screening);
+              const twin = advancedPlan({ ...overrides, experience: "intermediate" }, screening);
+              const reached = fractionalWeeklySets(advanced.plan.workouts, exerciseCatalogV1);
+              for (
+                const [muscle, sets] of fractionalWeeklySets(twin.plan.workouts, exerciseCatalogV1)
+              ) {
+                assert(
+                  (reached.get(muscle) ?? 0) >= Math.min(sets, growth),
+                  `${goal} ${days}d ${sessionMinutes}m ${equipment} ${screening} ${priorityMuscles}: ${muscle} ${sets} -> ${
+                    reached.get(muscle) ?? 0
+                  }`,
+                );
+              }
+              validateOnboardingPlan(advanced.plan, advanced.policies);
+              compared++;
+              if (slugsOf(advanced.plan).some((slug) => staples.includes(slug as never))) {
+                withStaples++;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  assertEquals(compared, 5 * 6 * 6 * 4 * 2 * 3);
+  // 1,800 of the 4,320 cases have the equipment for a staple; the rule leaves staples in 1,769 of
+  // them and takes them out only where a muscle would drop.
+  assertEquals(withStaples, 1769);
+});

@@ -18,9 +18,9 @@ import type { Slot, TailProfile, TemplateDay } from "./types.ts";
 const mostSlots = 8;
 
 /**
- * Heavy and light sessions by split, in session order. Every muscle meets a heavy and a light day
- * in the week: full body alternates (the third session keeps the whole range), upper/lower and
- * push/pull/legs run the heavy sessions first.
+ * Heavy and light sessions by split, in session order (none for a one-session week). Every muscle
+ * meets a heavy and a light day in the week: full body alternates (the third session keeps the
+ * whole range), the others run the heavy sessions first.
  */
 const loadsBySplit: Readonly<Record<Split, readonly (SessionLoad | undefined)[]>> = {
   full_body: ["heavy", "light", undefined],
@@ -100,7 +100,8 @@ export function advancedDays(
   split: Split,
   profile: TailProfile,
 ): TemplateDay[] {
-  const loads = loadsBySplit[split];
+  // One session a week meets each muscle once: heavy and light need at least two.
+  const loads = days.length < 2 ? [] : loadsBySplit[split];
   return days.map((day, index) => {
     const load = loads[index];
     const roomy = profile === "strength" ? day.slots : withExtra(day);

@@ -496,9 +496,25 @@ Migration `20261023100050_advanced_level_catalog.sql` (additive); no hub or RPC 
   (`onboarding_plan_v2_test.sql` 76 rows; `exercise_muscle_references_test.sql` allows a reviewed name
   that is also a catalog name only with the same muscles). Flutter: `phase_2_flow_test.dart` (picker,
   guard, review), `profile_goals_test.dart`.
-- **Deploy order.** The migration runs before the functions deploy. For that moment the old function
-  offers the four advanced rows to intermediates (it treated every non-beginner as intermediate);
-  they are valid catalog exercises, so nothing breaks. A Flutter build is only needed for the picker.
+- **Deploy order and the short window.** The migration runs before the functions deploy. For that
+  window the old `onboarding-plan` treats every non-beginner as intermediate and offers the four
+  advanced rows to intermediates; they are valid catalog exercises, so nothing breaks. A plan built
+  in the window is stored under the old snapshot hash (`catalog_version` `catalog-v1` is part of
+  it); the new function uses `catalog-v2`, so it never reuses that plan for the same answers and
+  builds a fresh one (the version keys only the generation reuse and the proposal's evidence; no SQL
+  reads it). Rollback risk: rolling the function back to before this PR leaves the four advanced
+  rows in the catalog, the old function offers them to intermediates again, and plans built under
+  v2 are not reused by v1 either; neither can be un-offered without a migration. A Flutter build is
+  only needed for the picker; the older picker never sends `advanced`.
+- **Review round (Opus, #162).** Heavy and light days of one lift now keep separate progression
+  histories (`next_session_targets` redefined in the same migration); the weighted pull-up is
+  flagged `added_load` and starts from bodyweight (the first 2.5 kg); `buildAdvancedPlan` never lets
+  a staple or the higher advanced targets leave a muscle under the intermediate twin's weekly sets
+  (capped at the growth level); `get_coach_plan_state_v1` 1.2 carries `experience`, so home
+  alternatives use the athlete's level; a one-session week has no heavy/light day; the catalog
+  version moved to v2; two tests that could not fail now can. Left over: the twin comparison
+  costs two to several builds per advanced plan (a few ms); the plan state's `experience` is the
+  profile's stored level, which is null for an athlete who never recorded it (read as intermediate).
 - **Candidates not added** (for the owner): weighted dip and dip station (no dip equipment in the
   picker), trap-bar deadlift (no trap bar), hack squat and pendulum squat, seated leg curl, hammer
   curl and EZ-bar curl, skull crusher, Pendlay and T-bar rows, pause bench (a technique of the bench
