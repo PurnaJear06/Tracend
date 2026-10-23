@@ -752,6 +752,17 @@ kept; toast "Workout paused"), **Discard workout** (destructive, then a confirm 
 workout?" naming that the logged sets are deleted; calls `abandon_workout`, toast "Workout
 discarded") and **Keep logging**.
 
+**An unfinished workout from an earlier day** is not resumed as today's. Opening a workout closes
+every session of the athlete's that began on an earlier local day more than 3 hours ago as
+discarded (their sets stay in the record, uncounted in history), and a draft of one on the phone
+is dropped, so today's workout starts at 0:00 on today's date. A workout begun late the night
+before and still inside 3 hours resumes with its own time. A finish that was saved on the phone but
+never sent, for a workout already more than 3 hours into an earlier day, is sent first when the
+workout is next opened: the draft's sets, then the finish, so the workout completes on its own date
+(the server still accepts them after it closed the session). The phone drops that draft only once
+everything in it has reached the server, or when it holds no done set and no finish; offline, or
+when it cannot be sent, the draft stays and opens as it was saved.
+
 **Finish.** With no set done, Finish plays the warning haptic and the toast "Tick at least one set
 first." Otherwise a sheet asks "How hard was this workout overall?" on a required 1–10 scale with
 nothing preselected (1–2 very easy, 3–4 easy, 5–6 moderate, 7–8 hard, 9 very hard, 10 max).

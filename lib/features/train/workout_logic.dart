@@ -37,6 +37,29 @@ class LoggedExercise {
   final bool assisted;
 }
 
+/// Whether a workout that began at [startedAt] was left open from a day
+/// before [sessionDate]: it began on an earlier calendar day and more than
+/// [maxSeconds] ago. The server closes such a session as discarded
+/// (`private.abandon_stale_workouts`), so a draft of it on this phone must
+/// not open or start the workout for [sessionDate]. A workout that crossed
+/// midnight and is still inside [maxSeconds] is not left over.
+bool workoutLeftOnEarlierDay({
+  required DateTime startedAt,
+  required DateTime now,
+  required DateTime sessionDate,
+  required int maxSeconds,
+}) {
+  final started = startedAt.toLocal();
+  final startDay = DateTime(started.year, started.month, started.day);
+  final sessionDay = DateTime(
+    sessionDate.year,
+    sessionDate.month,
+    sessionDate.day,
+  );
+  return startDay.isBefore(sessionDay) &&
+      now.difference(startedAt).inSeconds > maxSeconds;
+}
+
 /// The server's rule for an assisted exercise: a catalog slug starting
 /// `assisted-`, or, without a slug, a name starting with the word "assisted".
 bool isAssistedExercise({String? slug, required String name}) {

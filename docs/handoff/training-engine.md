@@ -541,6 +541,59 @@ Migration `20261023100050_advanced_level_catalog.sql` (additive); no hub or RPC 
   both levels. (d) Changing level later has no screen of its own: the athlete repeats the Training
   step in a plan rebuild.
 
+### Stale workouts (2026-10-23, `claude/stale-workout-resume`, migration `20261023150021`)
+
+**Bug.** The owner opened today's Legs B and the app resumed a session left `in_progress` since
+2026-07-17: the header timer read 2348 hours, today's sets were saved into the July session
+(`local_date` 2026-07-17, so history, progression targets and day adjustments keyed by local date
+went wrong), and Finish would have saved it as 3 hours (`complete_workout_v2` caps at 10800 s).
+Production held four such sessions (2026-07-01, 2026-07-17, 2026-07-23, 2026-10-20).
+
+**Cause.** `get_my_workout_session` (latest definition `20261015140031_set_timing.sql`) and
+`start_workout` (`20260711190000_workout_truth_repair.sql`, the `state='in_progress'` lookup) find an
+open session by planned workout alone, and a plan repeats weekly, so any session ever left open is
+found again by the same workout months later. The only abandonment was the athlete's own
+`abandon_workout` (and the repair flow's blank duplicate); no rule or job closed forgotten sessions.
+The app then rebuilt the screen from the server row (start time in July). A local draft of the old
+session did the same when the server returned nothing.
+
+**Fix (additive migration).**
+
+- `private.abandon_stale_workouts(p_user default null)`: an `in_progress` session whose `local_date`
+  is before `private.local_date_for(user)` and that started more than 10800 s ago becomes
+  `abandoned` (state and `updated_at` only), audited `workout.abandoned` with `reason: stale`, the
+  completed-set count and the `local_date`. Sets, dates and start stay as they were;
+  `actual_ended_at` stays empty.
+- `get_my_workout_session` (1.1, same shape) is redefined `security definer`, not `stable`, and
+  closes the caller's stale sessions before it looks. The app calls it before every open, so a stale
+  session is closed before `start_workout` can find it. An hourly job (`tracend-abandon-stale-workouts`,
+  minute 17) closes everyone's.
+- App: a saved draft whose workout began on an earlier day than the session date and more than 3
+  hours ago is dropped (`workoutLeftOnEarlierDay`), so it cannot open or seed today's workout.
+- Choice for a stale session that has logged sets: **abandon, never offer to finish it for that
+  day.** Finishing would write a completed workout the athlete did not confirm; moving the sets
+  would change their date. The rows stay and the audit event records how many sets they held.
+- A workout finished offline is never lost to the close. Server: `sync_workout_draft` and
+  `private.complete_workout_session` accept a session whose audit event says `reason: stale`
+  (`private.workout_closed_as_stale`), completing it on its own `local_date` with its end at its start
+  plus the athlete's duration; a session the athlete discarded herself still answers 55000. App:
+  `_restore` sends an earlier day's draft first (sets, then a saved finish; a session never created
+  is created only when a finish waits) and drops it only once that succeeded or it held no done set
+  and no finish; offline it stays and opens as saved. Set heart-rate summaries
+  (`persist_set_heart_rate_v1`) still refuse any abandoned session. A leftover for a workout of
+  another weekday is sent when that workout is next opened; the server keeps its session
+  completable until then.
+- `start_workout` is #165's definition (`20261023140024`, advisory lock first) plus
+  `perform private.abandon_stale_workouts(auth.uid())` right before its open-session lookup, so a
+  start can never find a stale session even when the read before it failed. A unit test pins the
+  redefinition to #165's text plus exactly that line.
+- Existing production rows are not touched by the migration; the hourly job closes the four on its
+  first run after the deploy (the app does it sooner when the owner opens any workout).
+
+Tests: `supabase/tests/database/stale_workout_close_test.sql` (see the file),
+`_shared/training/stale_workouts_test.ts` (hunk pin and rule shape), and in Flutter
+`test/phase_3_workout_flow_test.dart` and `test/workout_logic_test.dart`.
+
 **B4-1 (review, #165; same-day readiness adjustment, server side; migration `20261023140024`, code 24).**
 Based on the owner-approved B4/B5 design (2026-10-23; O2 to O13 as recommended, O1 amended). ALGORITHMS
 section 4 has the rules; AI_SAFETY_SPEC section 6 the safety text; DATA_MODEL `day_adjustments` the

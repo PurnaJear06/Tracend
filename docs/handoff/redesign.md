@@ -175,7 +175,8 @@ Migration `20261003100000_train_redesign_data.sql` (additive):
 - `abandon_workout(p_session_id)`: open → `abandoned` with a `workout.abandoned` audit event; a
   repeat returns `replayed: true`; a completed session is refused (22023); another athlete's is
   not found (P0002). Rows stay; every read counts completed sessions only, and
-  `get_my_workout_session` no longer returns a discarded session.
+  `get_my_workout_session` no longer returns a discarded session. Stale open sessions are closed by
+  the same state (see "Stale workouts" in `training-engine.md`).
 - `exercise_performances.exercise_slug`, kept by a trigger: the planned exercise's slug for a
   prescribed performance, none for substitutions and extras.
 - `get_my_exercise_history(p_keys, p_sessions default 8)` 1.0: 1–20 keys of 1–120 characters

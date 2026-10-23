@@ -195,4 +195,50 @@ void main() {
     expect(isAssistedExercise(name: '  Assisted   dip'), isTrue);
     expect(isAssistedExercise(name: 'Assistedish row'), isFalse);
   });
+
+  group('a workout left on an earlier day', () {
+    bool left(DateTime started, DateTime now, {DateTime? day}) =>
+        workoutLeftOnEarlierDay(
+          startedAt: started,
+          now: now,
+          sessionDate: day ?? now,
+          maxSeconds: 10800,
+        );
+
+    test('months old is left over', () {
+      expect(
+        left(DateTime(2026, 7, 17, 9, 41), DateTime(2026, 10, 23, 8)),
+        isTrue,
+      );
+    });
+
+    test('started earlier today is not, however long ago', () {
+      expect(
+        left(DateTime(2026, 10, 23, 1), DateTime(2026, 10, 23, 22)),
+        isFalse,
+      );
+    });
+
+    test('crossing midnight is not while inside the three hour cap', () {
+      expect(
+        left(DateTime(2026, 10, 22, 23, 45), DateTime(2026, 10, 23, 0, 30)),
+        isFalse,
+      );
+      expect(
+        left(DateTime(2026, 10, 22, 23, 45), DateTime(2026, 10, 23, 2, 46)),
+        isTrue,
+      );
+    });
+
+    test('a workout started now for an earlier day (logged late) is not', () {
+      expect(
+        left(
+          DateTime(2026, 10, 23, 8),
+          DateTime(2026, 10, 23, 8, 5),
+          day: DateTime(2026, 10, 22),
+        ),
+        isFalse,
+      );
+    });
+  });
 }

@@ -121,6 +121,10 @@ class _Repository implements WorkoutRepository {
   Map<String, dynamic>? serverSession;
   PendingWorkoutFinish? pending;
   final abandoned = <String>[];
+
+  /// The sessions sets were synced to and finishes were sent to, in order.
+  final syncedTo = <String>[];
+  final completedIds = <String>[];
   ExerciseHistoryResult history = _history();
 
   Map<String, dynamic> get savedDraft =>
@@ -179,6 +183,7 @@ class _Repository implements WorkoutRepository {
     Map<String, dynamic> draft,
   ) async {
     if (failSync) throw Exception('offline');
+    syncedTo.add(sessionId);
     final code = refuseCode;
     if (code != null) {
       refusals++;
@@ -209,6 +214,7 @@ class _Repository implements WorkoutRepository {
   }) async {
     completeCalls++;
     if (failComplete) throw Exception('offline');
+    completedIds.add(sessionId);
     efforts.add(sessionEffort);
     lastDuration = durationSeconds;
     saved = null;
@@ -2060,6 +2066,164 @@ void main() {
     await _tap(tester, _finishButton);
     expect(h.repository.lastDuration, ActiveWorkoutScreen.maxSessionSeconds);
   });
+
+  Map<String, dynamic> draftStartedAt(DateTime started) => {
+    'workout_id': 'upper-a',
+    'session_id': 'old-session',
+    'idempotency_key': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'revision': 4,
+    'actual_started_at': started.toUtc().toIso8601String(),
+    'exercises': [
+      {
+        'order': 1,
+        'status': 'unknown',
+        'pain_flag': false,
+        'sets': [
+          {
+            'number': 1,
+            'load_kg': '60',
+            'repetitions': '8',
+            'rpe': '',
+            'completed': true,
+          },
+          {
+            'number': 2,
+            'load_kg': '',
+            'repetitions': '',
+            'rpe': '',
+            'completed': false,
+          },
+        ],
+      },
+    ],
+  };
+
+  testWidgets(
+    'a draft left from an earlier day never opens today: new session, timer from zero',
+    (tester) async {
+      final h = _Harness();
+      var starts = 0;
+      h.repository.onStart = () => starts++;
+      h.repository.saved = jsonEncode(draftStartedAt(DateTime(2026, 7, 17, 9)));
+      await _open(tester, h, size: const Size(390, 1400));
+      await _flushSave(tester);
+      expect(find.text('Over 3 hours'), findsNothing);
+      expect(find.text('0:00'), findsOneWidget);
+      expect(starts, 1);
+      expect(h.repository.syncedTo.first, 'old-session');
+      expect(h.repository.completedIds, isEmpty);
+      expect(h.repository.syncedSet(0, 0)['completed'], isFalse);
+      expect(h.repository.savedDraft['session_id'], 'server-session');
+      expect(
+        DateTime.parse(h.repository.savedDraft['actual_started_at'] as String),
+        h.clock.now.toUtc(),
+      );
+    },
+  );
+
+  testWidgets(
+    'a finish saved offline is sent first when the phone is back a day later',
+    (tester) async {
+      final h = _Harness();
+      var starts = 0;
+      h.repository.onStart = () => starts++;
+      h.repository.saved = jsonEncode(
+        draftStartedAt(DateTime(2026, 10, 2, 23)),
+      );
+      h.repository.pending = PendingWorkoutFinish(
+        sessionEffort: 7,
+        durationSeconds: 2400,
+      );
+      await _open(tester, h, size: const Size(390, 1400));
+      await _flushSave(tester);
+      expect(h.repository.syncedTo.first, 'old-session');
+      expect(h.repository.completedIds, ['old-session']);
+      expect(h.repository.efforts, [7]);
+      expect(h.repository.lastDuration, 2400);
+      expect(starts, 1);
+      expect(find.text('0:00'), findsOneWidget);
+      expect(h.repository.syncedSet(0, 0)['completed'], isFalse);
+    },
+  );
+
+  testWidgets(
+    'a finish saved offline for a session never created is created, then sent',
+    (tester) async {
+      final h = _Harness();
+      var starts = 0;
+      h.repository.onStart = () => starts++;
+      h.repository.saved = jsonEncode({
+        ...draftStartedAt(DateTime(2026, 10, 2, 23)),
+        'session_id': 'pending-aaaa',
+      });
+      h.repository.pending = PendingWorkoutFinish(
+        sessionEffort: 6,
+        durationSeconds: 1800,
+      );
+      await _open(tester, h, size: const Size(390, 1400));
+      expect(starts, 2);
+      expect(h.repository.completedIds, ['server-session']);
+      expect(h.repository.efforts, [6]);
+    },
+  );
+
+  testWidgets(
+    'an earlier day that cannot be sent stays on the phone, unchanged',
+    (tester) async {
+      final h = _Harness();
+      var starts = 0;
+      h.repository.onStart = () => starts++;
+      h.repository.failSync = true;
+      h.repository.saved = jsonEncode(
+        draftStartedAt(DateTime(2026, 10, 2, 23)),
+      );
+      h.repository.pending = PendingWorkoutFinish(
+        sessionEffort: 7,
+        durationSeconds: 2400,
+      );
+      await _open(tester, h, size: const Size(390, 1400));
+      expect(find.text('Finish not sent yet'), findsOneWidget);
+      expect(h.repository.completedIds, isEmpty);
+      expect(starts, 0);
+      expect(h.repository.saved, isNotNull);
+      expect(h.repository.savedDraft['session_id'], 'old-session');
+    },
+  );
+
+  testWidgets('a workout that crossed midnight is resumed with its own time', (
+    tester,
+  ) async {
+    final h = _Harness(clock: _Clock()..now = DateTime(2026, 10, 4, 0, 30));
+    var starts = 0;
+    h.repository.onStart = () => starts++;
+    h.repository.saved = jsonEncode(
+      draftStartedAt(DateTime(2026, 10, 3, 23, 45)),
+    );
+    await _open(tester, h, size: const Size(390, 1400));
+    await _flushSave(tester);
+    expect(find.text('45:00'), findsOneWidget);
+    expect(find.text('Over 3 hours'), findsNothing);
+    expect(starts, 0);
+    expect(h.repository.savedDraft['session_id'], 'old-session');
+    expect(h.repository.syncedSet(0, 0)['completed'], isTrue);
+  });
+
+  testWidgets(
+    'a draft from earlier today is resumed after the app was killed',
+    (tester) async {
+      final h = _Harness();
+      var starts = 0;
+      h.repository.onStart = () => starts++;
+      h.repository.saved = jsonEncode(
+        draftStartedAt(h.clock.now.subtract(const Duration(hours: 2))),
+      );
+      await _open(tester, h, size: const Size(390, 1400));
+      await _flushSave(tester);
+      expect(find.text('2:00:00'), findsOneWidget);
+      expect(starts, 0);
+      expect(h.repository.syncedSet(0, 0)['completed'], isTrue);
+    },
+  );
 
   testWidgets('skipped lives in the more menu; pain stays visible', (
     tester,
