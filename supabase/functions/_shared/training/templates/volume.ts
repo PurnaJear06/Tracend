@@ -68,8 +68,9 @@ export const stretchTarget = sourced(
   ["acsm_2026", "schoenfeld_2017", "baz_valle_2022", "tracend_in_house"],
   "Schoenfeld 2017 finds a graded dose-response (more weekly sets, more growth) and Baz-Valle " +
     "2022 sets 12-20 sets as the standard for trained lifters, so once every muscle has the " +
-    "10-set growth level, spare session room goes toward the maximum: halfway between the two " +
-    "(11 sets for a beginner, 15 for an intermediate). The halfway point is Tracend's choice.",
+    "10-set growth level (12 for an advanced lifter, the bottom of Baz-Valle's range), spare " +
+    "session room goes toward the maximum: halfway between the two (11 sets for a beginner, " +
+    "15 for an intermediate, 16 for an advanced lifter). The halfway point is Tracend's choice.",
 );
 
 /**
@@ -86,7 +87,9 @@ export function weeklyTargets(
   stretch = false,
 ): Readonly<Record<string, number>> {
   const ceiling = weeklySetsPerMuscle.maximum[experience].value;
-  const growth = weeklySetsPerMuscle.growth.value;
+  const growth = experience === "advanced"
+    ? weeklySetsPerMuscle.advancedGrowth.value
+    : weeklySetsPerMuscle.growth.value;
   const level = emphasis === "strength"
     ? strengthWeeklyTarget.value
     : stretch

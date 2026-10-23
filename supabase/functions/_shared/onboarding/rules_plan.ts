@@ -23,9 +23,11 @@ import {
   goalEmphasis,
   repRanges,
   restSeconds,
+  type SessionLoad,
   targetRepsInReserve,
+  undulatedRepRange,
 } from "../training/standard/prescription.ts";
-import { weeklySetsPerMuscle } from "../training/standard/volume.ts";
+import { trainingDaysPerWeek, weeklySetsPerMuscle } from "../training/standard/volume.ts";
 import { weekTemplate } from "../training/templates/select.ts";
 import type { SlotTier } from "../training/templates/types.ts";
 import {
@@ -50,16 +52,18 @@ type Experience = PlanPolicies["answers"]["experience"];
 // Equipment for a movement, most preferred first. An experienced lifter starts
 // from the barbell; a beginner from dumbbells and machines, which take less
 // skill to load safely, then the barbell.
+const experiencedEquipment: readonly EquipmentItem[] = [
+  "barbell",
+  "dumbbells",
+  "pull_up_bar",
+  "machines",
+  "cables",
+  "kettlebells",
+  "bands",
+];
 const equipmentPreference: Readonly<Record<Experience, readonly EquipmentItem[]>> = {
-  intermediate: [
-    "barbell",
-    "dumbbells",
-    "pull_up_bar",
-    "machines",
-    "cables",
-    "kettlebells",
-    "bands",
-  ],
+  intermediate: experiencedEquipment,
+  advanced: experiencedEquipment,
   beginner: ["dumbbells", "machines", "barbell", "cables", "kettlebells", "bands", "pull_up_bar"],
 };
 
@@ -139,16 +143,20 @@ const clamp = (value: number, [low, high]: readonly [number, number]) =>
  *   minutes or more, and 120 s in sessions of 45 minutes or less, which cannot hold more;
  * - hypertrophy compound rest is the standard's 90 s in sessions of 45 minutes or less, else 120 s.
  * Under `moderate_until_cleared` the emphasis is never strength and effort stays at RPE 7.
+ * An advanced template marks its sessions heavy or light: a compound lift then takes the lower or
+ * upper part of its range (`undulatedRepRange`); isolation work keeps the whole range.
  */
 function prescription(
   exercise: CatalogExercise,
   policies: PlanPolicies,
+  load?: SessionLoad,
 ): Omit<PlanExercise, "slug" | "sets" | "notes"> {
   const { answers, training } = policies;
   const moderate = policies.screening === "moderate_until_cleared";
   const emphasis = moderate ? "hypertrophy" : goalEmphasis.value[answers.goal];
   const kind = exercise.compound ? "compound" : "isolation";
-  const [repMin, repMax] = repRanges[emphasis][answers.experience][kind].value;
+  const range = repRanges[emphasis][answers.experience][kind].value;
+  const [repMin, repMax] = load && exercise.compound ? undulatedRepRange(range, load) : range;
   // Short sleep starts the block half a point easier (trainingPolicy).
   const lighter = training.startLighter ? 0.5 : 0;
   const [repsLeftLow, repsLeftHigh] = targetRepsInReserve[answers.experience].value;
@@ -204,12 +212,14 @@ function topUpPriorities(
   policies: PlanPolicies,
   allowed: readonly CatalogExercise[],
   limit: number,
+  loads: readonly (SessionLoad | undefined)[],
 ): PlanWorkout[] {
   const { training, catalog } = policies;
   const bySlug = new Map(catalog.map((exercise) => [exercise.slug, exercise]));
   const days: (Omit<PlanWorkout, "exercises"> & { exercises: PlanExercise[] })[] = workouts.map((
     workout,
   ) => ({ ...workout, exercises: [...workout.exercises] }));
+  const loadOf = new Map(days.map((day, index) => [day, loads[index]]));
   const sessionSets = (day: Readonly<{ exercises: readonly PlanExercise[] }>) =>
     day.exercises.reduce((total, exercise) => total + exercise.sets, 0);
   const fits = (exercises: PlanExercise[]) =>
@@ -250,7 +260,7 @@ function topUpPriorities(
           const next = [...day.exercises, {
             slug: choice.slug,
             sets,
-            ...prescription(choice, policies),
+            ...prescription(choice, policies, loadOf.get(day)),
             notes: "",
           }];
           if (fits(next)) {
@@ -279,7 +289,7 @@ function topUpPriorities(
           next[index] = {
             slug: choice.slug,
             sets: day.exercises[index].sets,
-            ...prescription(choice, policies),
+            ...prescription(choice, policies, loadOf.get(day)),
             notes: "",
           };
           if (fits(next)) {
@@ -320,6 +330,7 @@ function spreadSets(
   tiers: ReadonlyMap<string, SlotTier>,
   policies: PlanPolicies,
   limit: number,
+  level: Experience,
 ): PlanWorkout[] {
   const { answers, training, catalog } = policies;
   const bySlug = new Map(catalog.map((exercise) => [exercise.slug, exercise]));
@@ -327,8 +338,8 @@ function spreadSets(
     goalEmphasis.value[answers.goal] === "strength";
   const trained = [...new Set(catalog.flatMap((exercise) => exercise.muscles))];
   const emphasis = strength ? "strength" : "hypertrophy";
-  let targets = weeklyTargets(emphasis, answers.experience, trained);
-  const ceiling = weeklySetsPerMuscle.maximum[answers.experience].value;
+  let targets = weeklyTargets(emphasis, level, trained);
+  const ceiling = weeklySetsPerMuscle.maximum[level].value;
   const days = workouts.map((workout) => ({ ...workout, exercises: [...workout.exercises] }));
   const fits = (exercises: PlanExercise[]) =>
     exercises.reduce((total, exercise) => total + exercise.sets, 0) <=
@@ -398,7 +409,7 @@ function spreadSets(
       // Every target is met or out of reach: spare room goes toward the stretch target.
       if (strength || stretched) return days;
       stretched = true;
-      targets = weeklyTargets(emphasis, answers.experience, trained, true);
+      targets = weeklyTargets(emphasis, level, trained, true);
       continue;
     }
     const { day, index } = best as { day: number; index: number; score: number };
@@ -426,6 +437,81 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
   if (screeningBlocksPlan(policies.screening)) {
     throw new PlanBlockedByScreeningError("see_professional");
   }
+  return policies.answers.experience === "advanced"
+    ? buildAdvancedPlan(policies)
+    : buildPlan(policies, noExclusions, false);
+}
+
+const noExclusions: ReadonlySet<string> = new Set();
+
+/** True when a weekly count is short of what the same athlete's intermediate plan would reach. */
+function fallsShort(
+  weekly: ReadonlyMap<string, number>,
+  twin: ReadonlyMap<string, number>,
+): boolean {
+  const growth = weeklySetsPerMuscle.growth.value;
+  return [...twin].some(([muscle, sets]) => (weekly.get(muscle) ?? 0) < Math.min(sets, growth));
+}
+
+/** Every way to leave out `size` of the items, in order. */
+function* combinations<T>(items: readonly T[], size: number, from = 0): Generator<T[]> {
+  if (size === 0) {
+    yield [];
+    return;
+  }
+  for (let index = from; index <= items.length - size; index++) {
+    for (const rest of combinations(items, size - 1, index + 1)) yield [items[index], ...rest];
+  }
+}
+
+/**
+ * An advanced plan prefers the advanced staples (a weighted pull-up instead of a lat pulldown),
+ * but never at the cost of a muscle: no muscle may end below the weekly sets of the same
+ * athlete's intermediate plan, capped at the growth level. When a staple pushes a muscle under
+ * that line, the fewest staples that restore it are left out; if no smaller set does, none is
+ * used; and if the higher advanced set targets alone still push a muscle under it, the plan
+ * keeps the intermediate week's exercises and set targets (`conservative`) with the advanced
+ * prescription. The weekly sets are counted as everywhere else (indirect sets at half).
+ */
+function buildAdvancedPlan(policies: PlanPolicies): OnboardingPlan {
+  const full = buildPlan(policies, noExclusions, false);
+  const twin = fractionalWeeklySets(
+    buildPlan(
+      { ...policies, answers: { ...policies.answers, experience: "intermediate" } },
+      noExclusions,
+      false,
+    )
+      .workouts,
+    policies.catalog,
+  );
+  const short = (plan: OnboardingPlan) =>
+    fallsShort(fractionalWeeklySets(plan.workouts, policies.catalog), twin);
+  if (!short(full)) return full;
+  const staples = policies.catalog.filter((exercise) => exercise.level === "advanced")
+    .map((exercise) => exercise.slug);
+  const used = staples.filter((slug) =>
+    full.workouts.some((workout) => workout.exercises.some((exercise) => exercise.slug === slug))
+  );
+  for (let size = 1; size < used.length; size++) {
+    for (const left of combinations(used, size)) {
+      const plan = buildPlan(policies, new Set(left), false);
+      if (!short(plan)) return plan;
+    }
+  }
+  const without = buildPlan(policies, new Set(staples), false);
+  return short(without) ? buildPlan(policies, new Set(staples), true) : without;
+}
+
+/**
+ * `conservative` builds the athlete's intermediate week (its exercises, slots and weekly set
+ * targets) with the advanced prescription, heavy and light days and text, so no muscle can end
+ * below the intermediate plan's: the last resort of `buildAdvancedPlan`.
+ */
+function buildPlan(
+  policies: PlanPolicies,
+  excluded: ReadonlySet<string>,
+  conservative: boolean,
+): OnboardingPlan {
   const { answers, training, nutrition } = policies;
   const allowed = rankExercises(
     allowedExercises(
@@ -433,16 +519,29 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
       answers.equipment,
       answers.experience,
       answers.avoidPatterns,
-    ),
+    ).filter((exercise) => !excluded.has(exercise.slug)),
     answers.experience,
   );
-  const template = weekTemplate({
-    split: training.split,
-    goal: answers.goal,
-    experience: answers.experience,
-    sessionMinutes: answers.sessionMinutes,
-    moderate: policies.screening === "moderate_until_cleared",
-  }, answers.trainingWeekdays.length);
+  const weekFor = (experience: Experience) =>
+    weekTemplate({
+      split: training.split,
+      goal: answers.goal,
+      experience,
+      sessionMinutes: answers.sessionMinutes,
+      moderate: policies.screening === "moderate_until_cleared",
+    }, answers.trainingWeekdays.length);
+  const own = weekFor(answers.experience);
+  const level: Experience = conservative ? "intermediate" : answers.experience;
+  const template = conservative
+    ? {
+      ...own,
+      days: weekFor(level).days.map((day, index) => ({
+        ...day,
+        objective: own.days[index].objective,
+        load: own.days[index].load,
+      })),
+    }
+    : own;
   const usedThisWeek = new Set<string>();
   const weeklySets = new Map<string, number>();
   const tiers = new Map<string, SlotTier>();
@@ -484,7 +583,13 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
         const form = slot.rotate
           ? [exercise.compound ? 0 : 1, isFloorBodyweight(exercise) ? 1 : 0]
           : [isBodyweight(exercise) ? 1 : 0];
-        return [served, index >= 0 ? index : focus.length, ...form];
+        // An advanced template's preferred exercise comes before the other forms (never before a
+        // focus muscle that still needs sets) until the week has used it; slots without a
+        // preference rank all alike.
+        const preferred = slot.prefers?.includes(exercise.slug) && !usedThisWeek.has(exercise.slug)
+          ? 0
+          : 1;
+        return [served, index >= 0 ? index : focus.length, preferred, ...form];
       };
       const candidates = pool.sort((a, b) => compareKeys(grade(a), grade(b)));
       const top = candidates[0];
@@ -502,7 +607,7 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
         training.setBudgetPerSession - sessionSets,
         training.maxWeeklySetsPerMuscle - (weeklySets.get(target) ?? 0),
       );
-      const base = prescription(choice, policies);
+      const base = prescription(choice, policies, day.load);
       // Two sets first (spreadSets adds more); in a short session, a shorter
       // rest, so the session still covers its movement patterns.
       const variants: PlanExercise[] = [
@@ -536,10 +641,11 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
     };
   });
   const workouts = spreadSets(
-    topUpPriorities(built, policies, allowed, limit),
+    topUpPriorities(built, policies, allowed, limit, template.days.map((day) => day.load)),
     tiers,
     policies,
     limit,
+    level,
   );
 
   const [low, high] = nutrition.calories;
@@ -562,6 +668,9 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
   );
   const carbohydrate = Math.max(20, Math.round((calories - 4 * protein - 9 * fat) / 4));
   const experienced = answers.path === "experienced";
+  const advanced = answers.experience === "advanced";
+  const [fewestDays, mostDays] = trainingDaysPerWeek.advanced.value;
+  const days = answers.trainingWeekdays.length;
 
   return {
     title: experienced ? "Structured continuation block" : "Foundation block",
@@ -578,14 +687,20 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
           "Tracend's rules use the movements you chose to avoid but cannot read your note; tell the Coach anything it did not cover.",
         ]
         : []),
+      ...(advanced && days < fewestDays
+        ? [
+          `Advanced lifters often train ${fewestDays}-${mostDays} days a week (ACSM 2009); on ${days}, each session carries more of the weekly volume.`,
+        ]
+        : []),
     ],
     missing_information: answers.sex === "unspecified"
       ? ["Sex was not given, so the calorie range covers both estimates."]
       : [],
     kept_from_current_plan: [],
     changed_from_current_plan: [],
-    progression:
-      "When every set reaches the top of its rep range at the target effort, add a small amount of load next session.",
+    progression: advanced
+      ? "When every set reaches the top of its rep range at the target effort, add a small amount of load next session. Heavy and light days each progress inside their own range."
+      : "When every set reaches the top of its rep range at the target effort, add a small amount of load next session.",
     rationale: `${splitText[template.split]} for ${
       profileText[template.profile]
     }, using only exercises your equipment allows, within Tracend's volume and effort limits.`,

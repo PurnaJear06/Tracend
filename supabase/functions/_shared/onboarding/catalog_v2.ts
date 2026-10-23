@@ -101,11 +101,11 @@ const details: Readonly<Record<string, Entry>> = {
   }),
   "dumbbell-reverse-lunge": d(["hamstrings"], [moderate, low, low], {
     regressions: ["reverse-lunge"],
-    progressions: ["barbell-reverse-lunge"],
+    progressions: ["barbell-reverse-lunge", "bulgarian-split-squat"],
     substitutes: ["dumbbell-step-up"],
   }),
   "dumbbell-step-up": d(["hamstrings"], [moderate, low, low], {
-    substitutes: ["dumbbell-reverse-lunge"],
+    substitutes: ["dumbbell-reverse-lunge", "bulgarian-split-squat"],
   }),
   "barbell-reverse-lunge": d(["hamstrings"], [moderate, moderate, moderate], {
     regressions: ["dumbbell-reverse-lunge"],
@@ -168,10 +168,15 @@ const details: Readonly<Record<string, Entry>> = {
     substitutes: ["barbell-bench-press", "machine-chest-press", "incline-dumbbell-press"],
   }),
   "incline-dumbbell-press": d(["triceps"], [low, low, moderate], {
-    substitutes: ["dumbbell-bench-press"],
+    substitutes: ["dumbbell-bench-press", "incline-barbell-bench-press"],
   }),
   "barbell-bench-press": d(["shoulders"], [low, low, high], {
-    substitutes: ["dumbbell-bench-press", "machine-chest-press"],
+    substitutes: [
+      "dumbbell-bench-press",
+      "machine-chest-press",
+      "close-grip-bench-press",
+      "incline-barbell-bench-press",
+    ],
   }),
   "machine-chest-press": d(["shoulders"], [low, low, low], {
     substitutes: ["push-up", "dumbbell-bench-press", "barbell-bench-press"],
@@ -229,14 +234,22 @@ const details: Readonly<Record<string, Entry>> = {
   }),
   "pull-up": d([], [low, low, moderate], {
     regressions: ["assisted-pull-up"],
+    progressions: ["weighted-pull-up"],
     substitutes: ["chin-up", "lat-pulldown"],
   }),
   "chin-up": d([], [low, low, moderate], {
     regressions: ["assisted-pull-up"],
+    progressions: ["weighted-pull-up"],
     substitutes: ["pull-up", "lat-pulldown"],
   }),
   "lat-pulldown": d([], [low, low, moderate], {
-    substitutes: ["pull-up", "chin-up", "assisted-pull-up", "band-lat-pulldown"],
+    substitutes: [
+      "pull-up",
+      "chin-up",
+      "assisted-pull-up",
+      "band-lat-pulldown",
+      "weighted-pull-up",
+    ],
   }),
   "band-lat-pulldown": d([], [low, low, low], {
     substitutes: ["lat-pulldown"],
@@ -326,6 +339,25 @@ const details: Readonly<Record<string, Entry>> = {
   // Leg isolation
   "leg-extension": d([], [moderate, low, low]),
   "lying-leg-curl": d(["calves"], [low, low, low]),
+  // Advanced staples. Ratings are in-house (joint_stress.ts): the weighted pull-up adds load to
+  // the pull-up's hang, so it is rated one step harsher on the shoulder; the close-grip bench
+  // press keeps the bench press's shoulder rating (a narrower grip moves work to the elbows and
+  // wrists, which are not rated, so no relief is claimed); the Bulgarian split squat takes the
+  // front knee through a deep single-leg bend under load.
+  "weighted-pull-up": d([], [low, low, high], {
+    regressions: ["pull-up", "chin-up"],
+    substitutes: ["lat-pulldown"],
+  }),
+  "close-grip-bench-press": d(["shoulders"], [low, low, high], {
+    substitutes: ["barbell-bench-press", "incline-barbell-bench-press"],
+  }),
+  "incline-barbell-bench-press": d(["triceps"], [low, low, high], {
+    substitutes: ["barbell-bench-press", "close-grip-bench-press", "incline-dumbbell-press"],
+  }),
+  "bulgarian-split-squat": d(["hamstrings"], [high, low, low], {
+    regressions: ["dumbbell-reverse-lunge"],
+    substitutes: ["dumbbell-step-up"],
+  }),
 };
 
 /** The load step of an exercise's loading implement, or null. */

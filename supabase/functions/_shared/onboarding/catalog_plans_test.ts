@@ -1,6 +1,11 @@
 import { assertEquals } from "jsr:@std/assert@1.0.14";
 import { goals } from "./answers.ts";
-import { type CatalogExercise, type EquipmentItem, exerciseCatalogV1 } from "./catalog.ts";
+import {
+  type CatalogExercise,
+  catalogVersion,
+  type EquipmentItem,
+  exerciseCatalogV1,
+} from "./catalog.ts";
 import { exerciseCatalogV2 } from "./catalog_v2.ts";
 import { onboardingSystemPrompt, policiesFor, validRulesPlan } from "./generate.ts";
 import { buildOnboardingProposal } from "./plan_contract.ts";
@@ -50,12 +55,14 @@ async function digest(catalog: readonly CatalogExercise[]) {
                 let outcome: string;
                 try {
                   const plan = validRulesPlan(policies);
+                  // The proposal names the catalog version, which moved to v2 with the advanced
+                  // level; the digest still stands for the plan, so the label is read as v1.
                   outcome = JSON.stringify(buildOnboardingProposal(plan, policies, {
                     origin: "rules",
                     provider: null,
                     model: null,
                     fallbackReason: null,
-                  }));
+                  })).replaceAll(`"${catalogVersion}"`, '"catalog-v1"');
                 } catch (error) {
                   outcome = `refused:${(error as Error).name}:${(error as Error).message}`;
                 }

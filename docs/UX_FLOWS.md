@@ -226,7 +226,7 @@ Eligibility → AI coaching → Path → Goal
   → Schedule (weekday chips, up to six; session length)
   → Equipment (chips; none = bodyweight)
   → Food & limits (diet; movements to avoid as chips; other limitations)
-  → Your training (Preserve what works: years trained, current plan, what has worked and stalled)
+  → Your training (Preserve what works: years trained, level, current plan, what has worked and stalled)
   → Current lifts (Preserve what works, optional: barbell top sets — weight, reps, reps left)
   → Focus (optional: up to two muscles to bring up, up to three already strong)
   → Review → Continue to your coach
@@ -234,6 +234,13 @@ Eligibility → AI coaching → Path → Goal
   → Plan (approve, request changes, or reject)
 ```
 
+- **Level (Your training).** With 3–5 years or over 5 years chosen, a second question asks which
+  fits better: **Intermediate** (you follow a plan and still add weight or reps most weeks) or
+  **Advanced** (years of structured training, slow progress, heavy and lighter days). Intermediate
+  is preselected, so nothing changes for anyone who does not look. Under 3 years the question does
+  not appear, and the app sends intermediate whatever an old draft said; the server applies the
+  same rule. The choice is the athlete's: the review shows "Over 5 years · Advanced", and changing
+  it goes through the normal edit and rebuild path (a new plan version the athlete approves).
 - **Progress:** the header reads **Step N of M · ‹section›**: 15 steps for Preserve what works,
   13 for Guide me, which skips Your training and Current lifts. Under it a thin segmented line has
   one segment per step: done steps solid, the current step lime. The step text is what VoiceOver

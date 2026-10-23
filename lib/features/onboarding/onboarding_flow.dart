@@ -196,6 +196,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     'over_5': 'Over 5 years',
   };
 
+  /// The training years from which the advanced level can be chosen; the
+  /// server enforces the same rule and reads anything else as intermediate.
+  static const _advancedYears = {'3_5', 'over_5'};
+
   /// The barbell lifts a top set can be reported for; the load is the whole
   /// bar, so the server can estimate a one-rep max and starting loads.
   static const _lifts = <String, String>{
@@ -422,11 +426,17 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     );
   }
 
+  /// Advanced is the athlete's own choice and only stands with years behind it.
+  String get _experienceAnswer =>
+      _experience == 'advanced' && !_advancedYears.contains(_years)
+      ? 'intermediate'
+      : _experience;
+
   Map<String, dynamic> get _payload {
     final weekdays = _weekdays.toList()..sort();
     return {
       'goal': _goal,
-      'experience': _experience,
+      'experience': _experienceAnswer,
       'sex': _sex,
       'birth_year': _birthYearValue,
       'height_cm': _heightCm.round(),
@@ -2225,6 +2235,23 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ),
+      if (_advancedYears.contains(_years)) ...[
+        _label('Which fits you better?'),
+        _ChoiceCard(
+          selected: _experienceAnswer != 'advanced',
+          title: 'Intermediate',
+          body: 'You follow a plan and still add weight or reps most weeks.',
+          onTap: () => setState(() => _experience = 'intermediate'),
+        ),
+        const SizedBox(height: TracendSpacing.xs),
+        _ChoiceCard(
+          selected: _experienceAnswer == 'advanced',
+          title: 'Advanced',
+          body:
+              'Years of structured training. Progress is slow, and you vary heavy and lighter days.',
+          onTap: () => setState(() => _experience = 'advanced'),
+        ),
+      ],
       const SizedBox(height: TracendSpacing.md),
       _field(
         _currentPlan,
@@ -2502,6 +2529,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           'Training',
           [
             _trainingYears[_years] ?? 'Years not chosen',
+            if (_experienceAnswer == 'advanced') 'Advanced',
             orNone(_currentPlan.text),
             if (_trainingHistory.text.trim().isNotEmpty)
               _trainingHistory.text.trim(),

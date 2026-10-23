@@ -3,6 +3,7 @@ import {
   avoidablePatterns,
   type EquipmentItem,
   equipmentItems,
+  type ExperienceLevel,
   type Muscle,
   muscles,
 } from "./catalog.ts";
@@ -32,6 +33,14 @@ export type DailyActivity = typeof dailyActivities[number];
 
 export const trainingYears = ["under_1", "1_2", "3_5", "over_5"] as const;
 export type TrainingYears = typeof trainingYears[number];
+
+/**
+ * The training years from which an athlete may choose the advanced level. ACSM 2009 describes an
+ * advanced lifter as one with years of experience; the app's answer bands put "years" at three or
+ * more (3-5 years, over 5 years). An in-house cut: with fewer years the choice reads as
+ * intermediate, the more cautious level, whatever the app sent.
+ */
+export const advancedTrainingYears: readonly TrainingYears[] = ["3_5", "over_5"];
 
 /**
  * The lifts an athlete can report a recent top set for. Barbell only: the load
@@ -92,7 +101,7 @@ export const answerLimits = Object.freeze({
 
 export type OnboardingAnswers = Readonly<{
   path: "beginner" | "experienced";
-  experience: "beginner" | "intermediate";
+  experience: ExperienceLevel;
   goal: Goal;
   sex: Sex;
   birthYear: number;
@@ -188,6 +197,23 @@ function followUpList(value: unknown): FollowUp[] {
   }).slice(0, answerLimits.maxFollowUps);
 }
 
+/**
+ * Under a year of training keeps the beginner limits. Older experienced drafts without the answer
+ * stay intermediate, as they were built. Advanced is the athlete's own choice (`experience` in the
+ * draft, which older app builds only ever filled with "intermediate"), allowed from three years of
+ * training; anything else reads as intermediate.
+ */
+function experienceFor(
+  experienced: boolean,
+  years: TrainingYears | null,
+  chosen: unknown,
+): ExperienceLevel {
+  if (!experienced || years === "under_1") return "beginner";
+  return chosen === "advanced" && years !== null && advancedTrainingYears.includes(years)
+    ? "advanced"
+    : "intermediate";
+}
+
 export function parseOnboardingAnswers(
   path: unknown,
   payload: Record<string, unknown>,
@@ -262,9 +288,7 @@ export function parseOnboardingAnswers(
     ok: true,
     answers: {
       path: path as "beginner" | "experienced",
-      // Under a year of training keeps the beginner limits; older experienced
-      // drafts without the answer stay intermediate, as they were built.
-      experience: experienced && years !== "under_1" ? "intermediate" : "beginner",
+      experience: experienceFor(experienced, years, payload.experience),
       goal: goal!,
       sex: sex!,
       birthYear: birthYear!,

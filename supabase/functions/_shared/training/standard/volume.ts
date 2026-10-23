@@ -16,6 +16,20 @@ export const weeklySetsPerMuscle = Object.freeze({
     "ACSM 2026 finds hypertrophy enhanced at 10 or more sets per muscle group a week, and " +
       "Schoenfeld 2017 finds a graded dose-response with more weekly sets.",
   ),
+  /**
+   * The weekly sets an advanced lifter's plan builds toward before it stretches: the bottom of
+   * the range Baz-Valle 2022 gives trained lifters, where the intermediate level aims at the
+   * growth level above.
+   */
+  advancedGrowth: sourced(
+    12,
+    ["baz_valle_2022"],
+    "Baz-Valle 2022 studied lifters with at least a year of training and called fewer than 12 " +
+      "weekly sets per muscle its low-volume group, suggesting 12-20 sets as the standard for " +
+      "trained lifters. Advanced lifters start the climb at the bottom of that range. No " +
+      "source separates advanced from other trained lifters, so this is the most defensible " +
+      "cited value.",
+  ),
   maximum: Object.freeze({
     beginner: sourced(
       12,
@@ -30,7 +44,36 @@ export const weeklySetsPerMuscle = Object.freeze({
       "Baz-Valle 2022 suggests 12-20 weekly sets per muscle as the standard for trained " +
         "lifters, finding no difference above 20 for the quadriceps or biceps.",
     ),
+    advanced: sourced(
+      20,
+      ["baz_valle_2022", "pelland_2026"],
+      "The same 20 as for intermediates: Baz-Valle 2022 found no difference between 12-20 and " +
+        "more than 20 sets for the quadriceps or biceps (more helped only the triceps), and " +
+        "Pelland 2026 finds returns diminish with each added set. No source puts advanced " +
+        "lifters above 20.",
+    ),
   }),
+});
+
+/** Training days a week by experience: the frequency ACSM 2009 recommends for each level. */
+export const trainingDaysPerWeek = Object.freeze({
+  beginner: sourced(
+    [2, 3] as const,
+    ["acsm_2009"],
+    "ACSM 2009 recommends 2-3 days a week for novices.",
+  ),
+  intermediate: sourced(
+    [3, 4] as const,
+    ["acsm_2009"],
+    "ACSM 2009 recommends 3-4 days a week for intermediate lifters.",
+  ),
+  advanced: sourced(
+    [4, 5] as const,
+    ["acsm_2009", "pelland_2026"],
+    "ACSM 2009 recommends 4-5 days a week for advanced lifters, years into training. Pelland " +
+      "2026 finds frequency matters little for muscle size once weekly volume is counted, so " +
+      "fewer days still work: each session simply carries more.",
+  ),
 });
 
 /**

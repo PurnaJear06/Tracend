@@ -282,7 +282,8 @@ settings are in §10.4.
   - **Training:**
     - one workout on each chosen weekday, at most six;
     - a set and exercise budget per session length, and the session must fit its minutes;
-    - weekly sets per target muscle at most 12 for beginners and 20 for intermediates;
+    - weekly sets per target muscle at most 12 for beginners and 20 for intermediate and advanced
+      lifters;
     - each week includes a squat or lunge, a hinge, a push and a pull, except a group the
       athlete avoids entirely or cannot do with their equipment;
     - reps 6–20 (3–20 for strength), RPE 7–8.5 (beginners) or 7–9, rest 60–180 s (240 s for

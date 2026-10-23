@@ -17,6 +17,7 @@ import type {
   CoachProposal,
   CoachProposalIntent,
   NutritionChange,
+  StatePlanExercise,
   TrainingChange,
 } from "./types.ts";
 
@@ -69,14 +70,14 @@ function stateWithReadings(readings: ReturnType<typeof weightReadings>, activate
 }
 
 const progression = (
-  slug: string,
+  exercise: StatePlanExercise,
   loadKg: number,
   action: ProgressionTarget["action"] = "add_load",
   confidence: ProgressionTarget["confidence"] = "high",
 ): ProgressionTarget => ({
-  plannedExerciseId: "x",
-  exerciseKey: slug,
-  name: slug,
+  plannedExerciseId: exercise.plannedExerciseId!,
+  exerciseKey: exercise.slug!,
+  name: exercise.name,
   action,
   reason: "top_of_range",
   loadKg,
@@ -729,7 +730,7 @@ Deno.test("tomorrow I'm tired becomes a lighter next session within one load ste
   )!;
   const step = loadStepKgFor(catalogBySlug.get(squat.slug!)!)!;
   const state = withMessage("Tomorrow I'm tired, go lighter", {
-    progression: [progression(squat.slug!, 60, "hold")],
+    progression: [progression(squat, 60, "hold")],
     todayWorkoutDone: false,
   });
   const proposal = proposalOf(buildFromRawIntent({
@@ -773,7 +774,7 @@ Deno.test("heavier moves at most one step above the logged target and only where
     direction: "heavier",
     session: "next",
   };
-  const earned = stateFixture({ progression: [progression(squat.slug!, 80, "add_load")] });
+  const earned = stateFixture({ progression: [progression(squat, 80, "add_load")] });
   const change = trainingOf(proposalOf(buildCoachProposal(intent, earned))) as Extract<
     TrainingChange,
     { mode: "block" }
@@ -784,15 +785,15 @@ Deno.test("heavier moves at most one step above the logged target and only where
 
   for (
     const held of [
-      stateFixture({ progression: [progression(squat.slug!, 80, "hold")] }),
-      stateFixture({ progression: [progression(squat.slug!, 80, "add_load", "low")] }),
+      stateFixture({ progression: [progression(squat, 80, "hold")] }),
+      stateFixture({ progression: [progression(squat, 80, "add_load", "low")] }),
       stateFixture({ progression: [] }),
     ]
   ) {
     assertEquals(refusalOf(buildCoachProposal(intent, held)).code, "heavier_not_supported");
   }
   const unproven = stateFixture({
-    progression: [progression(squat.slug!, 80, "add_load")],
+    progression: [progression(squat, 80, "add_load")],
     eligibility: {
       ...earned.eligibility,
       trainingEligible: false,
@@ -1112,7 +1113,7 @@ Deno.test("every proposal fits the shape the database stores", () => {
     plan: planFor([1, 3, 5], { blockEndsOn: "2026-10-22", blockKind: "focus" }),
   });
   const state = withMessage("lower to 2100 kcal and 74 kg", {
-    progression: [progression(plan.workouts[0].exercises[0].slug!, 60, "add_load")],
+    progression: [progression(plan.workouts[0].exercises[0], 60, "add_load")],
   });
   const intents: CoachProposalIntent[] = [
     {
@@ -1177,10 +1178,12 @@ Deno.test("a light athlete's floor is the sex minimum", () => {
 
 Deno.test("a move that pushes harder carries the eligibility gate approval will run again", () => {
   const plan = stateFixture().plan!;
-  const slug = plan.workouts[0].exercises.find((exercise) =>
+  const stepped = plan.workouts[0].exercises.find((exercise) =>
     loadStepKgFor(catalogBySlug.get(exercise.slug!)!) !== null
-  )!.slug!;
-  const state = withMessage("lower to 2100", { progression: [progression(slug, 80, "add_load")] });
+  )!;
+  const state = withMessage("lower to 2100", {
+    progression: [progression(stepped, 80, "add_load")],
+  });
   const gates = (intent: CoachProposalIntent) =>
     proposalOf(buildCoachProposal(intent, state)).basis.gates;
   assertEquals(gates({ kind: "nutrition_targets", reason: "plateau", direction: "lower" }), [

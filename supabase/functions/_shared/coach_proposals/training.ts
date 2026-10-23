@@ -594,7 +594,11 @@ export function buildNextSessionAdjustment(
       const entry = target.exercises[order];
       const catalog = entry.slug ? catalogBySlug.get(entry.slug) : undefined;
       const step = catalog ? loadStepKgFor(catalog) : null;
-      const progression = state.progression.find((item) => item.exerciseKey === entry.slug);
+      // The target belongs to the planned exercise: a lift on a heavy and a light day has one
+      // for each, and a day without one never borrows the other's.
+      const progression = entry.plannedExerciseId === null
+        ? undefined
+        : state.progression.find((item) => item.plannedExerciseId === entry.plannedExerciseId);
       const baseLoad = progression?.loadKg ?? entry.targetLoadKg;
       if (intent.direction === "lighter") {
         const sets = exercise.sets >= 3 ? exercise.sets - 1 : exercise.sets;
