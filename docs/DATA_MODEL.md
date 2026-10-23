@@ -482,7 +482,11 @@ hourly job (`tracend-abandon-stale-workouts`) closes everyone's. The close touch
 end was recorded), and the audit event `workout.abandoned` carries `reason: stale`, the number of
 completed sets and the session's `local_date`. A session with logged sets is closed the same way:
 nothing is deleted, moved to another date or completed on the athlete's behalf, and a workout that
-crossed midnight stays open for its three hours. A planned workout repeats every week, so the open
+crossed midnight stays open for its three hours. A session the rule closed (its audit event has
+`reason: stale`) still takes the athlete's own late send: `sync_workout_draft` saves unsent sets
+into it, and `complete_workout_v2` completes it on its own `local_date`, with its end set to its
+start plus the athlete's own duration. A session the athlete discarded herself has no such reason
+and stays final (55000). A planned workout repeats every week, so the open
 session is only ever found for its own day. `completion_source` (`manual`, `healthkit`, or null when no audit evidence
 exists) and `session_effort_source` (`athlete`, `legacy_default`, `healthkit_default`) record
 provenance; see ALGORITHMS §4 "Effort Provenance". `complete_workout_v2` is the only writer of

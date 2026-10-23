@@ -281,10 +281,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     var local = saved == null ? null : _decode(saved);
     if (local != null &&
         _leftOnEarlierDay(local) &&
-        local['session_id'] != server?['session_id']) {
+        local['session_id'] != server?['session_id'] &&
+        await _sendLeftOver(local)) {
       // An unfinished workout from an earlier day stays on its own day (the
-      // server closes it as discarded), so this phone's copy never opens
-      // today's workout or carries its sets and start time into it.
+      // server closes it as discarded and still takes what was left unsent),
+      // so this phone's copy never opens today's workout or carries its sets
+      // and start time into it. It is dropped only once everything in it has
+      // reached the server; otherwise it stays and opens as it was saved.
       await widget.repository.clearDraft(widget.workout.id);
       local = null;
     }
@@ -365,6 +368,112 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     await _save();
   }
+
+  /// The keys of a saved draft that the server reads; the rest only this
+  /// phone needs.
+  static const _serverDraftKeys = [
+    'workout_id',
+    'session_id',
+    'idempotency_key',
+    'revision',
+    'exercises',
+    'notes',
+  ];
+
+  /// The five set keys the server may refuse when this phone's times are off.
+  static const _timingKeys = [
+    'started_at',
+    'completed_at',
+    'rest_before_seconds',
+    'rir',
+    'timing_source',
+  ];
+
+  /// Sends what an earlier day's draft holds that the server may not have:
+  /// its sets, and its finish when one was saved. True when nothing is left
+  /// on this phone that the server lacks, so the draft may go: no set was
+  /// done and no finish waits, or everything reached the server. False
+  /// keeps the draft (offline, or a draft whose session was never created
+  /// and has no finish to send).
+  Future<bool> _sendLeftOver(Map<String, dynamic> draft) async {
+    final repository = widget.repository;
+    try {
+      final finish = await repository.loadPendingFinish(widget.workout.id);
+      if (finish == null && !_hasDoneSet(draft)) return true;
+      var id = draft['session_id'] as String?;
+      if (id == null || id.startsWith('pending-')) {
+        final key = draft['idempotency_key'] as String?;
+        final started = DateTime.tryParse(
+          '${draft['actual_started_at'] ?? ''}',
+        );
+        if (finish == null || key == null || started == null) return false;
+        id = await repository.start(
+          widget.workout,
+          key,
+          localDate: started.toLocal(),
+        );
+      }
+      final revision = (draft['revision'] as num?)?.toInt() ?? 0;
+      final payload = {
+        for (final key in _serverDraftKeys)
+          if (draft.containsKey(key)) key: draft[key],
+        'session_id': id,
+      };
+      try {
+        await repository.sync(id, revision, payload);
+      } on PostgrestException catch (e) {
+        if (e.code != '22023') rethrow;
+        await repository.sync(id, revision, _withoutTiming(payload));
+      }
+      if (finish != null) {
+        await repository.completeWithEffort(
+          id,
+          revision,
+          finish.durationSeconds,
+          payload,
+          sessionEffort: finish.sessionEffort,
+        );
+      }
+      AppBreadcrumbs.workout(
+        'Earlier workout sent',
+        data: {'finished': finish != null},
+      );
+      return true;
+    } catch (e) {
+      debugPrint('Non-critical error: earlier workout kept on the phone: $e');
+      return false;
+    }
+  }
+
+  static bool _hasDoneSet(Map<String, dynamic> draft) {
+    final exercises = draft['exercises'];
+    if (exercises is! List) return false;
+    return exercises.any(
+      (exercise) =>
+          exercise is Map &&
+          exercise['sets'] is List &&
+          (exercise['sets'] as List).any(
+            (set) => set is Map && set['completed'] == true,
+          ),
+    );
+  }
+
+  static Map<String, dynamic> _withoutTiming(Map<String, dynamic> payload) => {
+    ...payload,
+    'exercises': [
+      for (final exercise in payload['exercises'] as List)
+        {
+          ...(exercise as Map<String, dynamic>),
+          'sets': [
+            for (final set in exercise['sets'] as List)
+              {
+                for (final entry in (set as Map<String, dynamic>).entries)
+                  if (!_timingKeys.contains(entry.key)) entry.key: entry.value,
+              },
+          ],
+        },
+    ],
+  };
 
   bool _leftOnEarlierDay(Map<String, dynamic> draft) {
     final started = DateTime.tryParse('${draft['actual_started_at'] ?? ''}');

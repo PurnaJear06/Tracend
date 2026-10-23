@@ -1,5 +1,5 @@
 begin;
-select plan(33);
+select plan(46);
 
 -- A trains; B is another athlete. Sessions are inserted the way the app left them months ago.
 insert into auth.users(id, role) values
@@ -121,8 +121,6 @@ insert into h select 'pull', public.get_my_workout_session('d1330000-0000-4000-8
   (select today from t));
 insert into h select 'upper', public.get_my_workout_session('d1330000-0000-4000-8000-000000000002',
   (select today from t));
-select throws_ok($$select public.complete_workout_v2('d1350000-0000-4000-8000-000000000001', 1, 600, 5, '')$$,
-  '55000', null, 'the closed session cannot be finished with today''s sets');
 
 reset role;
 
@@ -202,6 +200,84 @@ select is((select state::text from public.workout_sessions
 select is(private.abandon_stale_workouts(), 0, 'and a second run closes nothing');
 select is(private.abandon_stale_workouts('d1300000-0000-4000-8000-000000000001'), 0,
   'nor does a run for one athlete');
+
+-- A workout finished offline -------------------------------------------------------------------
+
+-- Offline: logged at 23:30 yesterday, still unsent when the hourly job runs.
+insert into public.planned_workouts(id, user_id, plan_version_id, workout_order, name, objective,
+  preferred_weekday, estimated_minutes, warm_up_guidance, cool_down_guidance) values
+  ('d1330000-0000-4000-8000-000000000005', 'd1300000-0000-4000-8000-000000000001',
+   'd1320000-0000-4000-8000-000000000001', 5, 'Offline', 'Row', 5, 50, 'Warm up', 'Cool down'),
+  ('d1330000-0000-4000-8000-000000000006', 'd1300000-0000-4000-8000-000000000001',
+   'd1320000-0000-4000-8000-000000000001', 6, 'Discarded', 'Row', 6, 50, 'Warm up', 'Cool down');
+insert into public.planned_exercises(id, user_id, planned_workout_id, exercise_order,
+  display_name_snapshot, set_count, rep_min, rep_max, rest_seconds) values
+  ('d1340000-0000-4000-8000-000000000005', 'd1300000-0000-4000-8000-000000000001',
+   'd1330000-0000-4000-8000-000000000005', 1, 'Row', 2, 8, 10, 90);
+insert into public.workout_sessions(id, user_id, plan_version_id, planned_workout_id, local_date,
+  timezone, state, idempotency_key, started_at, actual_started_at)
+select 'd1350000-0000-4000-8000-000000000007', 'd1300000-0000-4000-8000-000000000001',
+  'd1320000-0000-4000-8000-000000000001', 'd1330000-0000-4000-8000-000000000005',
+  today - 1, 'UTC', 'in_progress', 'd1360000-0000-4000-8000-000000000007',
+  now() - interval '26 hours', now() - interval '26 hours' from t;
+insert into public.exercise_performances(id, user_id, workout_session_id, planned_exercise_id,
+  exercise_order, status, performance_kind, performed_name) values
+  ('d1370000-0000-4000-8000-000000000007', 'd1300000-0000-4000-8000-000000000001',
+   'd1350000-0000-4000-8000-000000000007', 'd1340000-0000-4000-8000-000000000005', 1, 'unknown',
+   'prescribed', 'Row');
+insert into public.exercise_sets(user_id, exercise_performance_id, set_number) values
+  ('d1300000-0000-4000-8000-000000000001', 'd1370000-0000-4000-8000-000000000007', 1),
+  ('d1300000-0000-4000-8000-000000000001', 'd1370000-0000-4000-8000-000000000007', 2);
+-- A workout the athlete discarded herself.
+insert into public.workout_sessions(id, user_id, plan_version_id, planned_workout_id, local_date,
+  timezone, state, idempotency_key)
+select 'd1350000-0000-4000-8000-000000000008', 'd1300000-0000-4000-8000-000000000001',
+  'd1320000-0000-4000-8000-000000000001', 'd1330000-0000-4000-8000-000000000006',
+  today, 'UTC', 'in_progress', 'd1360000-0000-4000-8000-000000000008' from t;
+
+select is(private.abandon_stale_workouts('d1300000-0000-4000-8000-000000000001'), 1,
+  'the job closes an offline workout before its finish arrives');
+select is((select state::text from public.workout_sessions
+    where id = 'd1350000-0000-4000-8000-000000000007'), 'abandoned', 'as abandoned');
+
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'd1300000-0000-4000-8000-000000000001';
+
+select is(public.sync_workout_draft('d1350000-0000-4000-8000-000000000007', 1,
+    jsonb_build_object('exercises', jsonb_build_array(jsonb_build_object('order', 1,
+      'status', 'unknown', 'sets', jsonb_build_array(jsonb_build_object('number', 1,
+        'repetitions', '8', 'load_kg', '60', 'rpe', '8', 'completed', true))))))->>'replayed',
+  'false', 'the athlete''s unsent sets are accepted into it');
+select is(public.complete_workout_v2('d1350000-0000-4000-8000-000000000007', 1, 2400, 7,
+    'sent a day late')->>'replayed', 'false', 'and so is her finish');
+
+select is(public.abandon_workout('d1350000-0000-4000-8000-000000000008')->>'replayed', 'false',
+  'a workout she discards herself is discarded');
+select throws_ok($$select public.sync_workout_draft('d1350000-0000-4000-8000-000000000008', 1,
+    '{"exercises":[]}'::jsonb)$$, '55000', null, 'and takes no more sets');
+select throws_ok($$select public.complete_workout_v2('d1350000-0000-4000-8000-000000000008', 1, 600, 5,
+    '')$$, '55000', null, 'and is not finished');
+
+reset role;
+
+select is((select state::text from public.workout_sessions
+    where id = 'd1350000-0000-4000-8000-000000000007'), 'completed', 'the late finish completes it');
+select is((select local_date from public.workout_sessions
+    where id = 'd1350000-0000-4000-8000-000000000007'), (select today - 1 from t),
+  'on its own date');
+select is((select actual_ended_at - actual_started_at from public.workout_sessions
+    where id = 'd1350000-0000-4000-8000-000000000007'), interval '2400 seconds',
+  'its end is its own start plus its own duration, not the day it was sent');
+select is((select duration_seconds from public.workout_sessions
+    where id = 'd1350000-0000-4000-8000-000000000007'), 2400, 'with that duration');
+select is((select load_kg from public.exercise_sets
+    where exercise_performance_id = 'd1370000-0000-4000-8000-000000000007' and set_number = 1 and completed),
+  60::numeric, 'and its set');
+select is((select count(*) from public.audit_events
+    where target_id = 'd1350000-0000-4000-8000-000000000007' and action_code = 'workout.completed'),
+  1::bigint, 'the completion is audited');
+select is((select state::text from public.workout_sessions
+    where id = 'd1350000-0000-4000-8000-000000000008'), 'abandoned', 'the self-discarded one stays discarded');
 
 select * from finish();
 rollback;

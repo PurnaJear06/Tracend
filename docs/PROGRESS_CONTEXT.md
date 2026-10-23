@@ -69,7 +69,8 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
 **Stale open workouts (2026-10-23, branch `claude/stale-workout-resume`, PR open):** the owner's Legs B resumed a
 session left open since 2026-07-17 (timer 2348 h, today's sets saved on a July date). An open session from an earlier
 local day more than 3 hours old is now closed as `abandoned` (rows and sets kept) when any workout is opened and by an
-hourly job, and the phone drops a draft of one. Migration `20261023150021`; `start_workout` untouched. Details:
+hourly job, and the phone sends an earlier day's unsent sets and finish first, then drops its draft; a session the
+rule closed still takes that late send on its own date. Migration `20261023150021`; `start_workout` untouched. Details:
 "Stale workouts" in [`training-engine.md`](./handoff/training-engine.md).
 
 **Incident 2026-10-18: every Coach chat turn timed out (Refs FLUTTER-K). Fixed by #155 (deploy pending verification: confirm `schema_sha` `274ee4fafead` and a first successful turn in production).** The gateway's answer

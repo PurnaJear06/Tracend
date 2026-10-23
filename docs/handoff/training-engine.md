@@ -573,8 +573,16 @@ session did the same when the server returned nothing.
 - Choice for a stale session that has logged sets: **abandon, never offer to finish it for that
   day.** Finishing would write a completed workout the athlete did not confirm; moving the sets
   would change their date. The rows stay and the audit event records how many sets they held.
-- Not covered: a finish saved on the phone but never sent, for a workout more than 3 hours into an
-  earlier day, is dropped with its draft; its server session is closed as discarded.
+- A workout finished offline is never lost to the close. Server: `sync_workout_draft` and
+  `private.complete_workout_session` accept a session whose audit event says `reason: stale`
+  (`private.workout_closed_as_stale`), completing it on its own `local_date` with its end at its start
+  plus the athlete's duration; a session the athlete discarded herself still answers 55000. App:
+  `_restore` sends an earlier day's draft first (sets, then a saved finish; a session never created
+  is created only when a finish waits) and drops it only once that succeeded or it held no done set
+  and no finish; offline it stays and opens as saved. Set heart-rate summaries
+  (`persist_set_heart_rate_v1`) still refuse any abandoned session. A leftover for a workout of
+  another weekday is sent when that workout is next opened; the server keeps its session
+  completable until then.
 - Follow-up after #165 merges: `start_workout` itself could call
   `private.abandon_stale_workouts(auth.uid())` before its open-session lookup, which would close the
   window between a failed read and a start.

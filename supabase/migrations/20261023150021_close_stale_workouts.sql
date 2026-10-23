@@ -18,6 +18,8 @@
 --   1. private.abandon_stale_workouts   the rule, for one athlete or for everyone
 --   2. get_my_workout_session           closes the caller's stale sessions before it looks
 --   3. an hourly job                    closes them for everyone, opened or not
+--   4. the athlete's own late send      a session the rule closed still takes its unsent sets and
+--                                       its finish, on its own date
 --
 -- start_workout is not changed here: the app always reads the session first, and the hourly job
 -- covers the rest.
@@ -113,3 +115,165 @@ grant execute on function public.get_my_workout_session(uuid, date) to authentic
 
 select cron.schedule('tracend-abandon-stale-workouts', '17 * * * *',
   'select private.abandon_stale_workouts()');
+
+-- 4. The athlete's own late send ----------------------------------------------------------------
+
+-- A workout finished offline can reach the server after the rule closed it. Only the rule's own
+-- close counts (its audit event carries reason 'stale'); an athlete's discard has no reason and
+-- stays final.
+create function private.workout_closed_as_stale(p_session_id uuid)
+returns boolean language sql stable set search_path = '' as $$
+  select exists (
+    select 1 from public.audit_events e
+    where e.target_type = 'workout_session' and e.target_id = p_session_id
+      and e.action_code = 'workout.abandoned' and e.metadata->>'reason' = 'stale');
+$$;
+revoke all on function private.workout_closed_as_stale(uuid) from public, anon, authenticated;
+
+-- Unsent sets are saved into a session the rule closed; it stays abandoned until it is finished.
+create or replace function public.sync_workout_draft(session_id uuid, client_revision integer, draft jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare session public.workout_sessions%rowtype; exercise jsonb; set_row jsonb; performance_id uuid;
+  requested_status text; stored public.exercise_sets%rowtype; session_start timestamptz;
+  next_started timestamptz; next_completed timestamptz; next_rest integer; next_rir integer;
+  next_source text;
+begin
+  if auth.uid() is null then raise exception 'authentication required' using errcode='42501'; end if;
+  select * into session from public.workout_sessions where id=session_id and user_id=auth.uid() for update;
+  if not found then raise exception 'session not found' using errcode='P0002'; end if;
+  if session.state <> 'in_progress'
+    and not (session.state = 'abandoned' and private.workout_closed_as_stale(session.id)) then
+    raise exception 'session is immutable' using errcode='55000';
+  end if;
+  if client_revision <= session.client_revision then
+    return jsonb_build_object('session_id',session.id,'client_revision',session.client_revision,'replayed',true);
+  end if;
+  if jsonb_typeof(draft->'exercises') <> 'array' then raise exception 'invalid workout draft' using errcode='22023'; end if;
+  session_start := coalesce(session.actual_started_at, session.started_at);
+  for exercise in select value from jsonb_array_elements(draft->'exercises') loop
+    select id into performance_id from public.exercise_performances
+    where workout_session_id=session.id and exercise_order=(exercise->>'order')::smallint;
+    if performance_id is null then raise exception 'unknown exercise order' using errcode='22023'; end if;
+    requested_status := coalesce(exercise->>'status','unknown');
+    if requested_status not in ('unknown','performed','skipped') then raise exception 'invalid exercise status' using errcode='22023'; end if;
+    update public.exercise_performances set
+      status=requested_status,
+      pain_flag=coalesce((exercise->>'pain_flag')::boolean,pain_flag),
+      note=coalesce(exercise->>'note',note),
+      rest_seconds=coalesce(nullif(exercise->>'rest_seconds','')::smallint,rest_seconds),
+      performance_kind=coalesce(exercise->>'performance_kind',performance_kind),
+      performed_name=coalesce(nullif(exercise->>'performed_name',''),performed_name),
+      substitution_reason=coalesce(nullif(exercise->>'substitution_reason',''),substitution_reason)
+    where id=performance_id;
+    for set_row in select value from jsonb_array_elements(coalesce(exercise->'sets','[]'::jsonb)) loop
+      select * into stored from public.exercise_sets
+      where exercise_performance_id=performance_id and set_number=(set_row->>'number')::smallint
+      for update;
+      if not found then raise exception 'unknown set number' using errcode='22023'; end if;
+      next_started := case when set_row ? 'started_at'
+        then private.workout_set_time(set_row->'started_at', session_start) else stored.started_at end;
+      next_completed := case when set_row ? 'completed_at'
+        then private.workout_set_time(set_row->'completed_at', session_start) else stored.completed_at end;
+      next_rest := case when set_row ? 'rest_before_seconds'
+        then private.workout_set_whole_number(set_row->'rest_before_seconds', 0, 3600, 'rest_before_seconds')
+        else stored.rest_before_seconds end;
+      next_rir := case when set_row ? 'rir'
+        then private.workout_set_whole_number(set_row->'rir', 0, 5, 'rir') else stored.rir end;
+      next_source := stored.timing_source;
+      if set_row ? 'timing_source' then
+        if jsonb_typeof(set_row->'timing_source') = 'null' then
+          next_source := null;
+        elsif set_row->'timing_source' in ('"app"'::jsonb, '"watch"'::jsonb) then
+          next_source := set_row->>'timing_source';
+        else
+          raise exception 'timing_source must be app or watch' using errcode='22023';
+        end if;
+      end if;
+      if next_completed < next_started then
+        raise exception 'a set cannot end before it starts' using errcode='22023';
+      end if;
+      update public.exercise_sets set
+        repetitions=nullif(set_row->>'repetitions','')::smallint,
+        load_kg=nullif(set_row->>'load_kg','')::numeric,
+        rpe=nullif(set_row->>'rpe','')::numeric,
+        completed=coalesce((set_row->>'completed')::boolean,false),
+        started_at=next_started,
+        completed_at=next_completed,
+        rest_before_seconds=next_rest,
+        rir=next_rir,
+        timing_source=next_source
+      where id=stored.id;
+    end loop;
+  end loop;
+  update public.workout_sessions set
+    client_revision=sync_workout_draft.client_revision,
+    notes=coalesce(draft->>'notes',notes),updated_at=now()
+  where id=session.id;
+  return jsonb_build_object('session_id',session.id,'client_revision',client_revision,'replayed',false);
+end $$;
+revoke all on function public.sync_workout_draft(uuid, integer, jsonb) from public, anon, authenticated;
+grant execute on function public.sync_workout_draft(uuid, integer, jsonb) to authenticated;
+
+-- Finishing a session the rule closed completes it on its own local_date; its end is its start plus
+-- the athlete's own duration, never the time of the late send.
+create or replace function private.complete_workout_session(
+  p_session_id uuid,
+  p_client_revision integer,
+  p_duration_seconds integer,
+  p_session_energy smallint,
+  p_session_effort numeric,
+  p_notes text,
+  p_effort_source text
+)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare session public.workout_sessions%rowtype; completed_sets integer; total_sets integer;
+  coverage numeric; capped_duration integer; closed_as_stale boolean;
+begin
+  if auth.uid() is null then raise exception 'authentication required' using errcode = '42501'; end if;
+  select * into session from public.workout_sessions
+    where id = p_session_id and user_id = auth.uid() for update;
+  if not found then raise exception 'session not found' using errcode = 'P0002'; end if;
+  if session.state = 'completed' then
+    return jsonb_build_object('session_id', session.id, 'replayed', true);
+  end if;
+  closed_as_stale := session.state = 'abandoned' and private.workout_closed_as_stale(session.id);
+  if session.state = 'abandoned' and not closed_as_stale then
+    raise exception 'session was discarded' using errcode = '55000';
+  end if;
+  if p_client_revision < session.client_revision then
+    raise exception 'stale client revision' using errcode = '40001';
+  end if;
+  select count(*) filter (where s.completed), count(*) into completed_sets, total_sets
+  from public.exercise_sets s
+  join public.exercise_performances p on p.id = s.exercise_performance_id
+  where p.workout_session_id = session.id;
+  if completed_sets = 0 then raise exception 'complete at least one set' using errcode = '22023'; end if;
+  coverage := completed_sets::numeric / greatest(total_sets, 1);
+  capped_duration := least(p_duration_seconds, 10800);
+  update public.exercise_performances p set status = case
+    when p.status = 'skipped' then 'skipped'
+    when exists (select 1 from public.exercise_sets s
+                 where s.exercise_performance_id = p.id and s.completed) then 'performed'
+    else 'unknown' end
+  where p.workout_session_id = session.id;
+  update public.workout_sessions set
+    state = 'completed', completed_at = now(),
+    actual_ended_at = coalesce(actual_ended_at, case when closed_as_stale
+      then least(now(), coalesce(actual_started_at, started_at) + capped_duration * interval '1 second')
+      else now() end),
+    duration_seconds = capped_duration, session_energy = p_session_energy,
+    session_effort = p_session_effort, notes = p_notes,
+    completion_source = 'manual', session_effort_source = p_effort_source,
+    logging_completeness = coverage,
+    client_revision = greatest(workout_sessions.client_revision, p_client_revision),
+    updated_at = now()
+  where id = session.id;
+  insert into public.audit_events(user_id, action_code, target_type, target_id, outcome, metadata)
+  values (auth.uid(), 'workout.completed', 'workout_session', session.id, 'succeeded',
+    jsonb_build_object('completed_sets', completed_sets, 'total_sets', total_sets,
+      'logging_completeness', coverage, 'effort_source', p_effort_source));
+  return jsonb_build_object('session_id', session.id, 'completed_sets', completed_sets,
+    'total_sets', total_sets, 'logging_completeness', coverage, 'replayed', false);
+end $$;
+revoke all on function private.complete_workout_session(uuid, integer, integer, smallint, numeric, text, text)
+  from public, anon, authenticated;

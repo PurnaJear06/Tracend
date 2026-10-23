@@ -4,6 +4,10 @@ const migration = new URL(
   "../../../migrations/20261023150021_close_stale_workouts.sql",
   import.meta.url,
 );
+const trainRedesign = new URL(
+  "../../../migrations/20261003100000_train_redesign_data.sql",
+  import.meta.url,
+);
 const previous = new URL(
   "../../../migrations/20261015140031_set_timing.sql",
   import.meta.url,
@@ -48,9 +52,13 @@ Deno.test("the stale rule closes only an earlier local day past the three hour c
   assertStringIncludes(code, "statement_timestamp() - interval '10800 seconds'");
   assertStringIncludes(code, "set state = 'abandoned', updated_at = now()");
   assert(!/\bdelete\b/i.test(code), "no delete");
+  const rule = code.slice(
+    code.indexOf("create function private.abandon_stale_workouts"),
+    code.indexOf("revoke all on function private.abandon_stale_workouts"),
+  );
   assert(
-    !/set[^;]*\b(local_date|actual_ended_at)\s*=/i.test(code),
-    "no date or end time is rewritten",
+    !/set[^;]*\b(local_date|actual_ended_at)\s*=/i.test(rule),
+    "the close rewrites no date or end time",
   );
 });
 
@@ -65,4 +73,71 @@ Deno.test("the migration keeps the grants and the hourly job", async () => {
     "grant execute on function public.get_my_workout_session(uuid, date) to authenticated;",
   );
   assertStringIncludes(sql, "select cron.schedule('tracend-abandon-stale-workouts'");
+});
+
+const between = (sql: string, start: string, end: string) => {
+  const from = sql.indexOf(start);
+  return sql.slice(from, sql.indexOf(end, from) + end.length);
+};
+
+// A workout finished offline can reach the server after the rule closed it. The two writers it
+// needs are the earlier functions plus exactly these hunks: the discard check lets through a
+// session closed by the rule (never one the athlete discarded), and its end is its own start plus
+// its own duration.
+Deno.test("sync_workout_draft accepts a session the rule closed and nothing else new", async () => {
+  const start = "create or replace function public.sync_workout_draft";
+  const original = between(await Deno.readTextFile(previous), start, "end $$;");
+  const redefined = between(await Deno.readTextFile(migration), start, "end $$;");
+  const added = `  if session.state <> 'in_progress'
+    and not (session.state = 'abandoned' and private.workout_closed_as_stale(session.id)) then
+    raise exception 'session is immutable' using errcode='55000';
+  end if;`;
+  const was =
+    "  if session.state <> 'in_progress' then raise exception 'session is immutable' using errcode='55000'; end if;";
+  assert(redefined.includes(added), "missing hunk");
+  assertEquals(redefined.replace(added, () => was).trim(), original.trim());
+});
+
+Deno.test("complete_workout_session finishes a rule-closed session on its own date and nothing else new", async () => {
+  const original = between(
+    await Deno.readTextFile(trainRedesign),
+    "create function private.complete_workout_session",
+    "end $$;",
+  );
+  const redefined = between(
+    await Deno.readTextFile(migration),
+    "create or replace function private.complete_workout_session",
+    "end $$;",
+  );
+  const hunks: readonly (readonly [string, string])[] = [
+    ["create or replace function", "create function"],
+    ["capped_duration integer; closed_as_stale boolean;", "capped_duration integer;"],
+    [
+      `  closed_as_stale := session.state = 'abandoned' and private.workout_closed_as_stale(session.id);
+  if session.state = 'abandoned' and not closed_as_stale then`,
+      "  if session.state = 'abandoned' then",
+    ],
+    [
+      `completed_at = now(),
+    actual_ended_at = coalesce(actual_ended_at, case when closed_as_stale
+      then least(now(), coalesce(actual_started_at, started_at) + capped_duration * interval '1 second')
+      else now() end),`,
+      "completed_at = now(), actual_ended_at = coalesce(actual_ended_at, now()),",
+    ],
+  ];
+  let undone = redefined;
+  for (const [added, was] of hunks) {
+    assert(undone.includes(added), `missing hunk: ${added.slice(0, 60)}`);
+    undone = undone.replace(added, () => was);
+  }
+  assertEquals(undone.trim(), original.trim());
+});
+
+Deno.test("only the rule's own close can be finished late", async () => {
+  const sql = await Deno.readTextFile(migration);
+  assertStringIncludes(sql, "e.metadata->>'reason' = 'stale'");
+  assertStringIncludes(
+    sql,
+    "revoke all on function private.workout_closed_as_stale(uuid) from public, anon, authenticated;",
+  );
 });
