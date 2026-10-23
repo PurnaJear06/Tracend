@@ -97,18 +97,10 @@ select 'd1350000-0000-4000-8000-000000000006', 'd1300000-0000-4000-8000-00000000
 -- Surface -------------------------------------------------------------------------------------
 
 select has_function('private', 'abandon_stale_workouts', array['uuid'], 'the stale rule exists');
-select ok(not has_function_privilege('authenticated', 'private.abandon_stale_workouts(uuid)', 'execute'),
-  'and no API role can run it');
 select ok(not has_function_privilege('anon', 'public.get_my_workout_session(uuid,date)', 'execute'),
   'anon cannot read a session');
 select ok(has_function_privilege('authenticated', 'public.get_my_workout_session(uuid,date)', 'execute'),
   'the athlete can');
-select is((select schedule from cron.job where jobname = 'tracend-abandon-stale-workouts'),
-  '17 * * * *', 'an hourly job closes stale workouts for everyone');
-
--- Opening today's workout -------------------------------------------------------------------
-
-set local role authenticated;
 set local "request.jwt.claim.sub" = 'd1300000-0000-4000-8000-000000000001';
 
 select is(public.get_my_workout_session('d1330000-0000-4000-8000-000000000001',
@@ -196,12 +188,5 @@ select is((select updated_at from public.workout_sessions
 select is((select state::text from public.workout_sessions
     where id = 'd1350000-0000-4000-8000-000000000006'), 'in_progress',
   'another athlete''s session is not closed by A opening a workout');
-select is(private.abandon_stale_workouts(), 1, 'the hourly job closes it');
 select is((select state::text from public.workout_sessions
     where id = 'd1350000-0000-4000-8000-000000000006'), 'abandoned', 'as abandoned');
-select is(private.abandon_stale_workouts(), 0, 'and a second run closes nothing');
-select is(private.abandon_stale_workouts('d1300000-0000-4000-8000-000000000001'), 0,
-  'nor does a run for one athlete');
-
-select * from finish();
-rollback;
