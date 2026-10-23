@@ -37,7 +37,17 @@ import {
   type ProgressionTarget,
 } from "../../training/progression/targets.ts";
 import { plain, record } from "../../recorded_text.ts";
-import { blockOf, type CoachContextContributor, sharedRead } from "../host.ts";
+import { heartRateInputsReadKey } from "../../training/heart_rate/inputs.ts";
+import type { HeartRateInputs } from "../../training/heart_rate/profile.ts";
+import { loadWorkoutLoadSignals } from "../../training/heart_rate/load_signals_inputs.ts";
+import type { LoadSignals } from "../../training/heart_rate/load_signals.ts";
+import { heartRateInputsFromService } from "./heart_rate.ts";
+import {
+  blockOf,
+  type CoachContextContributor,
+  type CoachContextInput,
+  sharedRead,
+} from "../host.ts";
 import { coachServiceRpc, type StateSource, stateSourceFromRpc } from "../service_source.ts";
 
 export const trainingPlanContributorId = "training_plan";
@@ -427,11 +437,42 @@ export function pickFocusSession(state: PlanState): FocusSession {
   return { ...base, session: nextFirst, isToday: false, missed: false, nextWeek: true };
 }
 
+// Heart-rate load signals (C4) add fixed sentences and nothing else: they never change a target or
+// a prescription (D9). They carry no figure, are not marked with `record`, and so ground nothing a
+// reply could quote. "Than usual" is a comparison with the athlete's earlier weeks and only the
+// recovery trend makes one; the other rule is a fixed line and gets neutral wording.
+export const slowerRecoverySentence =
+  "Heart rate shows slower recovery than usual: treat this step as less certain (the target is unchanged).";
+export const incompleteRecoverySentence =
+  "Heart rate between sets suggests incomplete recovery: treat this step as less certain (the target is unchanged).";
+export const longerRestSentence =
+  "Heart rate suggests resting a little longer between sets (the plan's rest times are unchanged).";
+
+/**
+ * The sentence for a step up when the signals lower confidence: only a step up (`add_load` or
+ * `add_reps`), never a hold or a cut, and the wording follows the rule that fired.
+ */
+function lessCertainSentence(
+  target: ProgressionTarget | undefined,
+  signals: LoadSignals | null,
+): string | null {
+  if (
+    signals === null || signals.engine.confidence !== "lower" || target === undefined ||
+    (target.action !== "add_load" && target.action !== "add_reps")
+  ) return null;
+  return signals.engine.reasons.includes("recovery_slower")
+    ? slowerRecoverySentence
+    : signals.engine.reasons.includes("slow_settling")
+    ? incompleteRecoverySentence
+    : null;
+}
+
 function exerciseLine(
   exercise: PlanExercise,
   index: number,
   state: PlanState,
   target: ProgressionTarget | undefined,
+  signals: LoadSignals | null,
 ): string {
   const parts = [`${prescription(exercise)}`];
   if (exercise.restSeconds !== null) parts.push(`rest ${record(exercise.restSeconds)} s`);
@@ -443,6 +484,8 @@ function exerciseLine(
       describeTargetAdviceMarked(target)
     }. Last logged ${describeLastSessionMarked(target)}.`
     : " No sets logged for it yet; the plan's prescription stands.";
+  const caution = lessCertainSentence(target, signals);
+  if (caution !== null) line += ` ${caution}`;
   line += ` ${homeText(exercise, state)}`;
   return line;
 }
@@ -575,12 +618,18 @@ function weeklySets(state: PlanState): string {
  * schedule); the lists whose length follows the plan come last, so a cut for size (the host drops
  * whole trailing lines) can only shorten the lists, never remove a rule.
  */
-export function renderTrainingPlan(state: PlanState | null): string | null {
-  const marked = trainingPlanMarked(state);
+export function renderTrainingPlan(
+  state: PlanState | null,
+  signals: LoadSignals | null = null,
+): string | null {
+  const marked = trainingPlanMarked(state, signals);
   return marked === null ? null : plain(marked);
 }
 
-function trainingPlanMarked(state: PlanState | null): string | null {
+function trainingPlanMarked(
+  state: PlanState | null,
+  signals: LoadSignals | null = null,
+): string | null {
   if (state === null || state.sessions.length === 0) return null;
   const focus = pickFocusSession(state);
   const targetById = new Map(state.targets.map((target) => [target.plannedExerciseId, target]));
@@ -637,9 +686,12 @@ function trainingPlanMarked(state: PlanState | null): string | null {
         focus.session.minutes === null ? "" : `, about ${record(focus.session.minutes)} min`
       }).`,
     );
+    if (signals !== null && signals.engine.rest === "allow_longer") {
+      lines.push(longerRestSentence);
+    }
     lines.push(
       ...focus.session.exercises.map((exercise, index) =>
-        "  " + exerciseLine(exercise, index, state, targetById.get(exercise.id))
+        "  " + exerciseLine(exercise, index, state, targetById.get(exercise.id), signals)
       ),
     );
   }
@@ -666,22 +718,110 @@ function trainingPlanMarked(state: PlanState | null): string | null {
   return lines.join("\n");
 }
 
-export function createTrainingPlanContributor(source: StateSource): CoachContextContributor {
+/** Who answered a turn's load-signals read: the trace reports it, never a value. */
+export type LoadSignalsStatus = "off" | "ok" | "unavailable" | "failed" | "timeout";
+
+/** How long the plan waits for the signals before it renders without them. */
+export const loadSignalsDeadlineMs = 1_000;
+
+/**
+ * The athlete's heart-rate load signals for a coaching date; null when there are none. The third
+ * argument is the turn's shared read of the heart-rate profile's inputs.
+ */
+export type LoadSignalsSource = (
+  userId: string,
+  localDate: string,
+  heartRateInputs: () => Promise<HeartRateInputs | null>,
+) => Promise<LoadSignals | null>;
+
+/** Reads the signals over the service-role caller; null when the reads fail. */
+export const loadSignalsFromService: LoadSignalsSource = (
+  userId,
+  localDate,
+  heartRateInputs,
+) =>
+  loadWorkoutLoadSignals(
+    {
+      rpc: async (name, args) => {
+        const { data, error } = await coachServiceRpc(name, args);
+        return { data, error: error ? { message: "load_signals_unavailable" } : null };
+      },
+    },
+    userId,
+    localDate,
+    heartRateInputs,
+  );
+
+type SignalsRead = Readonly<{
+  /** Settles within the deadline and never rejects. */
+  result: Promise<{ signals: LoadSignals | null; status: LoadSignalsStatus }>;
+  /** Drops the deadline timer when the result is not wanted. */
+  stop(): void;
+}>;
+
+/** Starts the signals read now. */
+function readSignals(
+  signals: LoadSignalsSource,
+  input: CoachContextInput,
+  deadlineMs: number,
+): SignalsRead {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), deadlineMs);
+  });
+  const read = Promise.resolve().then(() =>
+    signals(
+      input.userId,
+      input.localDate,
+      () =>
+        sharedRead(
+          input,
+          heartRateInputsReadKey,
+          () => heartRateInputsFromService(input.userId, input.localDate),
+        ) as Promise<HeartRateInputs | null>,
+    )
+  );
+  const result = Promise.race([read, late]).then(
+    (value): { signals: LoadSignals | null; status: LoadSignalsStatus } =>
+      value === "timeout"
+        ? { signals: null, status: "timeout" }
+        : { signals: value, status: value === null ? "unavailable" : "ok" },
+    () => ({ signals: null, status: "failed" as const }),
+  ).finally(() => clearTimeout(timer));
+  return { result, stop: () => clearTimeout(timer) };
+}
+
+export function createTrainingPlanContributor(
+  source: StateSource,
+  signals?: LoadSignalsSource,
+  signalsDeadlineMs: number = loadSignalsDeadlineMs,
+): CoachContextContributor {
   return {
     id: trainingPlanContributorId,
     slot: "volatile",
     budgetChars: trainingPlanContributorBudgetChars,
     async render(input) {
-      const marked = trainingPlanMarked(
-        parsePlanState(
+      // The signals read starts with the plan read, so the plan waits for the slower of the two,
+      // never for both, and for the signals no longer than their own deadline.
+      const reading = signals === undefined ? null : readSignals(signals, input, signalsDeadlineMs);
+      try {
+        const state = parsePlanState(
           await sharedRead(input, planStateReadKey, () => source(input.userId, input.localDate)),
-        ),
-      );
-      return marked === null ? null : blockOf(marked);
+        );
+        if (state === null) return null;
+        const read = reading === null ? null : await reading.result;
+        const marked = trainingPlanMarked(state, read?.signals ?? null);
+        return marked === null
+          ? null
+          : blockOf(marked, read === null ? {} : { trace: { load_signals: read.status } });
+      } finally {
+        reading?.stop();
+      }
     },
   };
 }
 
 export const trainingPlanContributor: CoachContextContributor = createTrainingPlanContributor(
   stateSourceFromRpc(coachServiceRpc, "get_coach_plan_state_v1"),
+  loadSignalsFromService,
 );

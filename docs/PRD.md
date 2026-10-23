@@ -303,7 +303,9 @@ must not prevent manual use.
 
 **Planned (Phases 2–4, C2–C4):** per-set workout heart rate (summaries only; raw samples never
 leave the phone), a heart-rate profile, and sleeping heart rate in shadow mode (D10). Heart rate
-never sets the load (D9).
+never sets the load (D9). C4 adds a dismissible suggestion on the workout screen to start a Watch
+workout when none of the last three workouts had Watch heart rate, and load signals for the training
+engine (confidence and rest), which Coach shows as fixed sentences in the plan context.
 
 ### 5.3 Plans and progression
 

@@ -1122,6 +1122,14 @@ adapter still sends no tools.
   app's stale sync) and none is new; each line states its dates and figures, so the numbers check
   grounds a reply on them. A watch-out is a verified fact, not an instruction: Coach addresses it or
   says why it does not matter, and a change stays a proposal the athlete approves.
+- **Heart-rate caution in the plan block (C4, D9).** The `training_plan` contributor adds fixed
+  sentences, never a figure and never a changed target: on a step up (`add_load` or `add_reps`) "treat
+  this step as less certain", worded "slower recovery than usual" only when the recovery trend (the
+  athlete's last 28 days against the 28 before) says so, and "heart rate between sets suggests incomplete
+  recovery" when the start-of-set rule fired; once per session "resting a little longer between sets". The sentences are
+  not marked as records, so they ground nothing a reply could quote. Heart rate never sets a load or a
+  prescription, and the signals are read with a 1-second deadline of their own: a slow or failed read
+  leaves the plan block as it was and is logged as `load_signals` (ok, unavailable, failed, timeout).
 - **The model names a lookup, a range and a filter; nothing else.** The answer may carry
   `data_requests: [{lookup, from, to, filter}]` instead of a final answer. The athlete's id is bound
   by the Edge Function from the authenticated request when it builds the runner; it is never part of

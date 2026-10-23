@@ -22,6 +22,7 @@ import 'package:tracend/features/train/workout_events.dart';
 import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/features/workout_hr/set_heart_rate_recorder.dart';
+import 'package:tracend/features/workout_hr/watch_workout_prompt.dart';
 import 'package:tracend/shared/home_widgets/lock_screen_numbers.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
@@ -49,6 +50,7 @@ class ActiveWorkoutScreen extends StatefulWidget {
     this.events,
     this.activity = const MethodChannelWorkoutActivityBridge(),
     this.lockScreenNumbers = readLockScreenNumbers,
+    this.watchPrompt,
     super.key,
   });
 
@@ -77,6 +79,11 @@ class ActiveWorkoutScreen extends StatefulWidget {
   /// Whether the athlete allows numbers on the Lock Screen. Read once when the
   /// workout opens; the card shows the set's kg and reps only when true.
   final Future<bool> Function() lockScreenNumbers;
+
+  /// Decides whether to suggest a Watch workout before the first set. The
+  /// screen makes the server-backed one for the Supabase repository and
+  /// suggests nothing otherwise.
+  final WatchWorkoutPromptSource? watchPrompt;
 
   static int _open = 0;
 
@@ -138,6 +145,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   late final WorkoutEventHub _events = widget.events ?? WorkoutEventHub();
   StreamSubscription<void>? _commands;
   StreamSubscription<void>? _heartRate;
+  WatchWorkoutPromptSource? _watchPrompt;
+
+  /// The Watch-workout suggestion shows above the first set only.
+  bool _suggestWatch = false;
+
+  /// A set was done or the suggestion was answered: it is not shown again.
+  bool _watchSuggestionOver = false;
   final SetTimingRecorder _timing = SetTimingRecorder();
 
   String? _sessionId;
@@ -213,6 +227,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         ),
       );
     }
+    _watchPrompt =
+        widget.watchPrompt ??
+        (repository is SupabaseWorkoutRepository
+            ? SupabaseWatchWorkoutPromptSource(Supabase.instance.client)
+            : null);
     _restore();
   }
 
@@ -318,6 +337,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       });
     }
     unawaited(_loadHistory());
+    unawaited(_loadWatchSuggestion());
     try {
       if (_sessionId == null) {
         final id = await widget.repository.start(
@@ -566,6 +586,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   };
 
   void _changed() {
+    // A first set ends the suggestion for this workout for good: undoing the
+    // set does not bring the card back.
+    if (_anySetDone) {
+      _watchSuggestionOver = true;
+      _suggestWatch = false;
+    }
     _revision++;
     _saveTimer?.cancel();
     _saveTimer = Timer(const Duration(milliseconds: 250), _save);
@@ -1768,6 +1794,33 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
   }
 
+  bool get _anySetDone =>
+      _exercises.any((exercise) => exercise.completedCount > 0);
+
+  /// Asks whether to suggest a Watch workout, only for a workout with no set
+  /// done yet (a draft restored mid-workout is past the point of starting one).
+  Future<void> _loadWatchSuggestion() async {
+    final source = _watchPrompt;
+    if (source == null || _viewingCompleted || _anySetDone) return;
+    final suggest = await source.shouldSuggest();
+    if (!suggest ||
+        !mounted ||
+        _closed ||
+        _watchSuggestionOver ||
+        _anySetDone) {
+      return;
+    }
+    setState(() => _suggestWatch = true);
+  }
+
+  void _answerWatchSuggestion({required bool noWatch}) {
+    final source = _watchPrompt;
+    _watchSuggestionOver = true;
+    setState(() => _suggestWatch = false);
+    if (source == null) return;
+    unawaited(noWatch ? source.mute() : source.snooze());
+  }
+
   List<Widget> _banners(BuildContext context) {
     final colors = context.tracendColors;
     final text = Theme.of(context).textTheme;
@@ -1788,6 +1841,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
     final pending = _pendingFinish;
     return [
+      if (_suggestWatch && !_viewingCompleted && !_closed)
+        WatchWorkoutPromptCard(
+          onNotNow: () => _answerWatchSuggestion(noWatch: false),
+          onNoWatch: () => _answerWatchSuggestion(noWatch: true),
+        ),
       if (_viewingCompleted && _completedFromHealth)
         banner([
           const StatusChip(
