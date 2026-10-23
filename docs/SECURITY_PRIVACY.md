@@ -185,6 +185,19 @@ AI consent is enforced on the server, per purpose:
   score is a later reviewed change that must update this section. The heart-rate profile informs
   rest, cardio and recovery talk; it never sets a load or a prescription (D9).
 
+- **Watch-workout suggestion and load signals (C4, D9).** No new metric is collected and no table is
+  added. `get_my_watch_workout_status_v1` (own data) returns, for the last three finished workouts,
+  how many sets were finished and how many had Watch heart rate; the app uses it to decide whether to
+  suggest starting a Watch workout, and keeps the athlete's answer ("Not now", "I don't use a Watch") in
+  the phone's preferences only. `get_workout_load_inputs_v1` (service role only; revoked from `anon`
+  and `authenticated`, pgTAP-checked) gives the training engine the finished workouts of the last 28
+  days with the rest and the per-set heart-rate summary of each tracked set: no load, repetitions,
+  reps in reserve, effort, notes or raw samples. The load signals worked out from it are not stored
+  and, until a hook is added, read by nothing. Sending them to the AI provider (the Coach hook) is a
+  change that must first check the consent notice against the rule in AI_SAFETY_SPEC (a new notice
+  when new data goes to the provider). They lower confidence, suggest a longer rest and prompt a
+  question; they never set a load or a prescription (D9).
+
 ## 5. Photos and Media
 
 ### Storage

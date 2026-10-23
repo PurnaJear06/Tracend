@@ -567,6 +567,30 @@ sets a load or a prescription (D9). Sleeping heart rate is **not** an input (D10
   readings asleep, the lowest mean of any 10-minute slot holding at least 2 readings (a night with none has no row), readings, minutes asleep and coverage of
   10-minute slots. A night is stored only with at least 20 readings and 50% coverage. No score uses it.
 
+### Heart-Rate Load Signals (C4, 2026-10)
+
+`supabase/functions/_shared/training/heart_rate/load_signals.ts`: arithmetic over the last 28 days of
+finished workouts (`get_workout_load_inputs_v1`, no load, repetitions or reps in reserve) and the
+heart-rate profile above. Heart rate informs rest, recovery and confidence; it never sets a load, a
+repetition target or a set count (D9), and no signal raises confidence. Sleeping heart rate is not an
+input (D10). The thresholds are Tracend's own choices, not research values, and wait for a coach's
+review. Nothing consumes the signals yet (workout-hr handoff, "Follow-up after #162").
+
+- **Tracked set:** a `watch_workout` summary with coverage of at least 60%.
+- **Start of set:** for tracked sets with a start heart rate and a rest of at least 30 seconds before
+  them (a shorter one is a set ticked during its own rest), the share of heart-rate reserve at the
+  moment the set began: `(start - resting) / (maximum - resting)`. Needs a resting heart rate and a
+  maximum with a reserve of at least 20 bpm (the profile's zones), at least 12 such sets in at least 2
+  workouts; otherwise `not_enough_data` and nothing changes. The middle (median) share at or above 50%
+  of reserve (where the Easy zone begins) is `elevated`. Elevated with a middle rest under 120 seconds is
+  `rest_short` (rest `allow_longer`; confidence unchanged, since a longer rest is the cure); elevated
+  with a middle rest of 120 seconds or more is `slow_settling` (confidence `lower`, question
+  `recovery_check`: sleep, stress, illness).
+- **Recovery:** the profile's recovery state `slower` (a 60-second drop at least 3 bpm below the 28 days
+  before) gives confidence `lower` and the same question.
+- **Output:** `engine` = `{confidence: none | lower, rest: none | allow_longer, question: recovery_check |
+  null, reasons}`. A heart rate a medicine blunts (beta-blocker) reads low, which only removes a caution.
+
 ### Literature
 
 - Tanaka, H., Monahan, K.D., Seals, D.R. (2001). Age-predicted maximal heart rate revisited. *J Am

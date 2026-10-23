@@ -1,6 +1,6 @@
 # Session Timing and Heart Rate Handoff
 
-**As of:** 2026-10-17
+**As of:** 2026-10-23
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -198,10 +198,86 @@ age" (it needs a birth year in the profile). After a few tracked workouts a reco
 next morning, ask for the `sleeping_heart_rate_nights` rows (SQL editor) to see last night; no score
 changes. A night with the Watch off has no row.
 
+**C4 (Watch-workout suggestion, load signals for the engine): in review** (branch
+`claude/watch-workout-prompt`). Heart rate informs; it never sets a load (D9).
+
+- Migration `20261023120034_watch_workout_load_signals.sql` (code 34, re-stamp before handoff; adds
+  no table, so nothing to export or delete): `get_my_watch_workout_status_v1(local_date)`
+  (authenticated, own data, date within 2 days of today, `schema_version` 1.0) returns the last three
+  finished workouts of the last 28 days that finished at least one set, each with `local_date`,
+  `completed_sets` and `watch_sets` (finished sets with `watch_workout` heart rate and at least 50%
+  coverage). `get_workout_load_inputs_v1(target_user, local_date)` (service role only, 1.0) returns the
+  newest 12 finished workouts of the last 28 days with `completed_sets` and, for each finished set that
+  has a heart-rate summary (120 per workout at most), `exercise_order`, `set_number`,
+  `rest_before_seconds` and the Contract 4 values. It returns no load, repetitions, reps in reserve or
+  effort, so a signal built on it cannot depend on them. Discarded, open and Apple Health completed
+  (no set) workouts are left out; a set finished and later undone is left out even though its
+  readings stay stored. pgTAP `watch_workout_load_signals_test.sql` (53 assertions).
+- Suggestion (app, `lib/features/workout_hr/watch_workout_prompt.dart`): a card above the first
+  exercise of a workout with no set done yet: "Track your heart rate. Start a Strength workout on your
+  Apple Watch, then log your sets here..." with **Not now** and **I don't use a Watch**. It shows when
+  none of the last three finished workouts had Watch heart rate (or there is no finished workout yet),
+  and goes away by itself when the first set is ticked. Not now stays quiet for 7 days; the other button
+  for good. Both answers live in `SharedPreferencesAsync` on the phone (`tracend.watch_prompt.muted`,
+  `tracend.watch_prompt.snoozed_until`), are not tied to the account, and are checked before the server
+  is asked. A server that cannot be read suggests nothing. A workout restored with a set done, or a
+  finished one, is never asked. The one touchpoint in `ActiveWorkoutScreen` is the optional
+  `watchPrompt` source, the banner and two small methods (D1 reviews).
+- Load signals (engine, `supabase/functions/_shared/training/heart_rate/load_signals.ts`, loader in
+  `load_signals_inputs.ts`): pure maths over the inputs above and the C3 profile, rules and thresholds
+  in ALGORITHMS.md "Heart-Rate Load Signals". Output `engine`: `confidence` (`none` or `lower`, never
+  higher), `rest` (`none` or `allow_longer`), `question` (`recovery_check` or null) and the `reasons`.
+  `loadWorkoutLoadSignals(client, userId, localDate)` reads both service-role functions and returns null
+  when either read fails, so the plan and its progression stand exactly as without heart rate.
+- **Nothing reads the signals yet.** They are not in the Coach context (the registered
+  `heart_rate_profile` contributor is unchanged) and no target changes, because PR #162
+  (`claude/advanced-level-catalog`) owns those files. The hooks are in "Follow-up after #162" below.
+- Tests: `load_signals_test.ts` (20 tests: each rule with its edge, the D9 output check, parse and
+  loader), `test/workout_hr/watch_workout_prompt_test.dart`, six widget tests in
+  `test/phase_3_workout_flow_test.dart`, fixture `watch_workout_status_v1_0.json`.
+
+Owner device check (iPhone + Apple Watch, a build from `main` once the migration is deployed): (1)
+open a workout with no Watch workout in your last three sessions: the "Track your heart rate" card shows
+above the first exercise; tick a set and it disappears. (2) Reopen the next workout: Not now keeps it
+away for a week; I don't use a Watch removes it for good (reinstalling the app brings it back). (3) Start
+a Strength workout on the Watch, log three sets, finish both and wait for the summary's heart-rate line;
+open the next workout: the card no longer shows. (4) With the Watch off for three workouts the card
+shows again.
+
+**Follow-up after #162.** #162 (`claude/advanced-level-catalog`) changes `training_plan.ts`,
+`targets_test.ts` and redefines `private.next_session_targets`, so the hooks wait for it. None of them
+may change a target's action, load, reps or sets.
+
+1. Coach text (TypeScript, small): in `contributors/training_plan.ts` `exerciseLine`, after the
+   "Next target" sentence, when `engine.confidence` is `lower` and the target's action is `add_load` or
+   `add_reps`, append one fixed sentence saying the step is less certain because heart rate shows
+   slower recovery. The contributor loads the signals with `loadWorkoutLoadSignals` over
+   `coachServiceRpc` (as `heart_rate.ts` does), marks its numbers with `record()` and renders nothing
+   when the load returns null. When `engine.rest` is `allow_longer` the same place may add "rest
+   a little longer between sets". `engine.question` is the wording seed for B4's recovery question. It
+   changes the Coach prompt, so it needs the A11 bank and the owner's wording (decision below).
+2. Train card (Flutter): the training hub is SQL called straight from the app, so TypeScript signals do
+   not reach it. A card line needs a Dart twin `load_signals.dart` with shared cases (the C3 pattern:
+   `profile_cases.json` read by both) and a `get_my_workout_load_inputs_v1` for the signed-in athlete.
+   Not built: it is a second copy of the rules and the owner has not asked for the line.
+3. B4 (same-day readiness) reads `engine.confidence` through the same loader.
+
+**Decisions for the owner (C4).** The program doc holds only the one-line brief "Watch-workout prompt,
+load signals for the engine", so these readings are mine; each is the more conservative choice.
+- The prompt asks the athlete to start a Watch workout (it cannot tell whether a Watch exists). It
+  shows only before the first set, only when the last three workouts had no Watch heart rate, and is
+  muted per phone. Other reading not built: asking about an Apple Health workout that has no Tracend
+  session (the existing reconciliation card already handles the matched case).
+- The thresholds (50% of reserve, 120 seconds, 12 sets in 2 workouts, 28 days) are Tracend's own and wait
+  for a coach's review, like the progression thresholds.
+- No signal raises confidence or sets anything; whether Coach should see the signals (hook 1) and
+  whether Train should show a rest line (hook 2) are yours.
+- A beta-blocker blunts heart rate, which can only remove a caution; medications are unknown until L3.
+
 ## Next agent starts here
 
-C4 (Watch-workout prompt, load signals for the engine), Phase 4, after C3 merges. Read the profile
+C4 is built and in review (above); what is left is the hooks in "Follow-up after #162". Read the profile
 with `buildHeartRateProfile` (Dart or TypeScript) from `get_my_heart_rate_inputs_v1`; do not read raw
 samples through a new path without updating SECURITY_PRIVACY §4. Sleeping heart rate stays in shadow
-mode (D10) until a reviewed change updates `sleeping_heart_rate_shadow_test.sql`. The lead registers the
-`heart_rate_profile` contributor with E3. The brief is in the program doc.
+mode (D10) until a reviewed change updates `sleeping_heart_rate_shadow_test.sql`. The `heart_rate_profile`
+contributor is registered (E3). The brief is in the program doc.

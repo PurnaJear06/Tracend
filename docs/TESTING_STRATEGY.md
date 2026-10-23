@@ -242,6 +242,16 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   recorder listening to `WorkoutEventHub` (waiting list, retries, refusals, restarts), and the
   summary line; `test/contract/set_heart_rate_contract_test.dart` pins both RPC fixtures.
   `privacy-export/index_test.ts` checks the export lists the table.
+- **Watch-workout suggestion and load signals (C4):** `watch_workout_load_signals_test.sql` (53
+  assertions) covers both RPCs' grants and complete key lists, the three-workout limit, the 28-day
+  window, the 12-workout cap, the 50% coverage line, the workouts left out (discarded, open, Apple
+  Health, an undone set) and isolation between athletes. `load_signals_test.ts` has a test per rule
+  (the 50% of reserve line, the 120 s split, the 30 s rest floor, the tracked-set filter, minimum sets and
+  workouts, the 28-day window, no profile, the slower recovery), a grid proving the output has no load,
+  repetition or sleeping field and never raises confidence, and the loader failing closed. Each was
+  checked by breaking its rule and watching the test fail. `test/workout_hr/watch_workout_prompt_test.dart`
+  covers the rule, the contract fixture `watch_workout_status_v1_0.json`, snooze and mute;
+  `test/phase_3_workout_flow_test.dart` covers the card on the workout screen.
 - **Rest Live Activity (D0):** `test/contract/live_activity_channel_contract_test.dart` plays the
   native side of the `tracend/live_activity` method channel as
   `ios/Runner/Native/WorkoutActivityBridge.swift` implements it, and proves refused, disabled or
