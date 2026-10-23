@@ -355,7 +355,7 @@ select is((select j -> 'changes' -> 0 from r where name = 'reduce'),
       'sets_from', 4, 'sets_to', 3, 'load_note', 'Keep last time''s 60 kg', 'load_kg_from', 62.5,
       'load_kg_to', 60, 'reps_from', 5, 'reps_to', 8, 'rpe_to', 7),
   'the bench: one set fewer, effort one point lower, last time''s load');
-select is((select j -> 'changes' -> 1 ->> 'rpe_to' from r where name = 'reduce'), '7',
+select is((select (j -> 'changes' -> 1 ->> 'rpe_to')::numeric from r where name = 'reduce'), 7.0,
   'and so is the fly');
 select is((select j -> 'confidence' from r where name = 'reduce'), '"medium"'::jsonb,
   'a recovery score without sleep is medium confidence');

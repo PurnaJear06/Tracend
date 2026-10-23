@@ -230,12 +230,13 @@ alter table cfg add column v integer, add column w integer, add column o integer
 update cfg set v = (n - 1) / 210 + 1, w = ((n - 1) % 210) / 30 + 1, o = (n - 1) % 30 + 1;
 select is((select count(*) from cfg), 1800::bigint, 'the matrix has 1,800 exercises');
 
-create temporary table ver as select distinct v, gen_random_uuid() as id from cfg;
+create temporary table ver as select v, gen_random_uuid() as id from (select distinct v from cfg) x;
 insert into public.training_plan_versions(id, user_id, plan_id, version_number, status, block_weeks,
   sessions_per_week, prescription, rationale)
 select id, 'b4a00000-0000-4000-8000-000000000001', 'b4a10000-0000-4000-8000-000000000001', v, 'archived',
   6, 7, '{}', 'Sweep' from ver;
-create temporary table wo as select distinct c.v, c.w, gen_random_uuid() as id from cfg c;
+create temporary table wo as select x.v, x.w, gen_random_uuid() as id
+from (select distinct v, w from cfg) x;
 insert into public.planned_workouts(id, user_id, plan_version_id, workout_order, name, objective,
   preferred_weekday, estimated_minutes, warm_up_guidance, cool_down_guidance)
 select wo.id, 'b4a00000-0000-4000-8000-000000000001', ver.id, wo.w, 'Sweep ' || wo.v || '.' || wo.w,
