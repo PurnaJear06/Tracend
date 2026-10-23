@@ -229,9 +229,20 @@ changes. A night with the Watch off has no row.
   higher), `rest` (`none` or `allow_longer`), `question` (`recovery_check` or null) and the `reasons`.
   `loadWorkoutLoadSignals(client, userId, localDate)` reads both service-role functions and returns null
   when either read fails, so the plan and its progression stand exactly as without heart rate.
-- **Nothing reads the signals yet.** They are not in the Coach context (the registered
-  `heart_rate_profile` contributor is unchanged) and no target changes, because PR #162
-  (`claude/advanced-level-catalog`) owns those files. The hooks are in "Follow-up after #162" below.
+- **Coach reads the signals (owner approved, fixed wording).** The registered `training_plan`
+  contributor (`contributors/training_plan.ts`) loads them with `loadSignalsFromService` (over
+  `coachServiceRpc`; a failed or empty read, or a throw, is no signals and the text is unchanged). With
+  `engine.confidence` = `lower`, a target whose action is `add_load` or `add_reps` gets one fixed sentence
+  after its "Next target" text ("Heart rate shows slower recovery than usual: treat this step as less
+  certain (the target is unchanged)."); a hold, a cut or an exercise with no target gets nothing. With
+  `engine.rest` = `allow_longer`, one fixed sentence ("Heart rate suggests resting a little longer
+  between sets...") sits once before the session's exercise lines, not on each. Both sentences hold no
+  figure and are not marked with `record`, so they ground nothing a reply could quote. The target, load,
+  reps and sets are the same text with or without the signals (test). `createTrainingPlanContributor`
+  takes the signals source as an optional second argument, so every other caller renders as before. The
+  Coach answer schema is untouched (0 optional, 0 unions), and a test proves the largest plan still
+  fits the 12,000-character budget with every sentence the signals can add. Train card and B4 are not
+  done (below).
 - Tests: `load_signals_test.ts` (20 tests: each rule with its edge, the D9 output check, parse and
   loader), `test/workout_hr/watch_workout_prompt_test.dart`, six widget tests in
   `test/phase_3_workout_flow_test.dart`, fixture `watch_workout_status_v1_0.json`.
@@ -244,23 +255,14 @@ a Strength workout on the Watch, log three sets, finish both and wait for the su
 open the next workout: the card no longer shows. (4) With the Watch off for three workouts the card
 shows again.
 
-**Follow-up after #162.** #162 (`claude/advanced-level-catalog`) changes `training_plan.ts`,
-`targets_test.ts` and redefines `private.next_session_targets`, so the hooks wait for it. None of them
-may change a target's action, load, reps or sets.
+**Follow-up (not built).** None may change a target's action, load, reps or sets.
 
-1. Coach text (TypeScript, small): in `contributors/training_plan.ts` `exerciseLine`, after the
-   "Next target" sentence, when `engine.confidence` is `lower` and the target's action is `add_load` or
-   `add_reps`, append one fixed sentence saying the step is less certain because heart rate shows
-   slower recovery. The contributor loads the signals with `loadWorkoutLoadSignals` over
-   `coachServiceRpc` (as `heart_rate.ts` does), marks its numbers with `record()` and renders nothing
-   when the load returns null. When `engine.rest` is `allow_longer` the same place may add "rest
-   a little longer between sets". `engine.question` is the wording seed for B4's recovery question. It
-   changes the Coach prompt, so it needs the A11 bank and the owner's wording (decision below).
-2. Train card (Flutter): the training hub is SQL called straight from the app, so TypeScript signals do
+1. Train card (Flutter): the training hub is SQL called straight from the app, so TypeScript signals do
    not reach it. A card line needs a Dart twin `load_signals.dart` with shared cases (the C3 pattern:
    `profile_cases.json` read by both) and a `get_my_workout_load_inputs_v1` for the signed-in athlete.
-   Not built: it is a second copy of the rules and the owner has not asked for the line.
-3. B4 (same-day readiness) reads `engine.confidence` through the same loader.
+   It is a second copy of the rules and the owner has not asked for the line.
+2. B4 (same-day readiness) reads `engine.confidence` and `engine.question` through
+   `loadWorkoutLoadSignals`.
 
 **Decisions for the owner (C4).** The program doc holds only the one-line brief "Watch-workout prompt,
 load signals for the engine", so these readings are mine; each is the more conservative choice.
@@ -270,13 +272,13 @@ load signals for the engine", so these readings are mine; each is the more conse
   session (the existing reconciliation card already handles the matched case).
 - The thresholds (50% of reserve, 120 seconds, 12 sets in 2 workouts, 28 days) are Tracend's own and wait
   for a coach's review, like the progression thresholds.
-- No signal raises confidence or sets anything; whether Coach should see the signals (hook 1) and
-  whether Train should show a rest line (hook 2) are yours.
+- No signal raises confidence or sets anything. Coach seeing the signals with fixed wording is approved
+  and built; whether Train should show a rest line (follow-up 1) is still yours.
 - A beta-blocker blunts heart rate, which can only remove a caution; medications are unknown until L3.
 
 ## Next agent starts here
 
-C4 is built and in review (above); what is left is the hooks in "Follow-up after #162". Read the profile
+C4 is built and in review (above); what is left is the "Follow-up (not built)" list. Read the profile
 with `buildHeartRateProfile` (Dart or TypeScript) from `get_my_heart_rate_inputs_v1`; do not read raw
 samples through a new path without updating SECURITY_PRIVACY §4. Sleeping heart rate stays in shadow
 mode (D10) until a reviewed change updates `sleeping_heart_rate_shadow_test.sql`. The `heart_rate_profile`

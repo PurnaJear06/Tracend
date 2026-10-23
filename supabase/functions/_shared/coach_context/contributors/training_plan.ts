@@ -37,6 +37,8 @@ import {
   type ProgressionTarget,
 } from "../../training/progression/targets.ts";
 import { plain, record } from "../../recorded_text.ts";
+import { loadWorkoutLoadSignals } from "../../training/heart_rate/load_signals_inputs.ts";
+import type { LoadSignals } from "../../training/heart_rate/load_signals.ts";
 import { blockOf, type CoachContextContributor, sharedRead } from "../host.ts";
 import { coachServiceRpc, type StateSource, stateSourceFromRpc } from "../service_source.ts";
 
@@ -427,11 +429,29 @@ export function pickFocusSession(state: PlanState): FocusSession {
   return { ...base, session: nextFirst, isToday: false, missed: false, nextWeek: true };
 }
 
+// Heart-rate load signals (C4) add two fixed sentences and nothing else: they never change a target
+// or a prescription (D9). They carry no figure, are not marked with `record`, and so ground
+// nothing a reply could quote.
+export const lessCertainStepSentence =
+  "Heart rate shows slower recovery than usual: treat this step as less certain (the target is unchanged).";
+export const longerRestSentence =
+  "Heart rate suggests resting a little longer between sets than usual (the plan's rest times are unchanged).";
+
+/** Whether the signals ask for the step to be called less certain: only a step up, never a hold or a cut. */
+function stepIsLessCertain(
+  target: ProgressionTarget | undefined,
+  signals: LoadSignals | null,
+): boolean {
+  return signals !== null && signals.engine.confidence === "lower" && target !== undefined &&
+    (target.action === "add_load" || target.action === "add_reps");
+}
+
 function exerciseLine(
   exercise: PlanExercise,
   index: number,
   state: PlanState,
   target: ProgressionTarget | undefined,
+  signals: LoadSignals | null,
 ): string {
   const parts = [`${prescription(exercise)}`];
   if (exercise.restSeconds !== null) parts.push(`rest ${record(exercise.restSeconds)} s`);
@@ -443,6 +463,7 @@ function exerciseLine(
       describeTargetAdviceMarked(target)
     }. Last logged ${describeLastSessionMarked(target)}.`
     : " No sets logged for it yet; the plan's prescription stands.";
+  if (stepIsLessCertain(target, signals)) line += ` ${lessCertainStepSentence}`;
   line += ` ${homeText(exercise, state)}`;
   return line;
 }
@@ -575,12 +596,18 @@ function weeklySets(state: PlanState): string {
  * schedule); the lists whose length follows the plan come last, so a cut for size (the host drops
  * whole trailing lines) can only shorten the lists, never remove a rule.
  */
-export function renderTrainingPlan(state: PlanState | null): string | null {
-  const marked = trainingPlanMarked(state);
+export function renderTrainingPlan(
+  state: PlanState | null,
+  signals: LoadSignals | null = null,
+): string | null {
+  const marked = trainingPlanMarked(state, signals);
   return marked === null ? null : plain(marked);
 }
 
-function trainingPlanMarked(state: PlanState | null): string | null {
+function trainingPlanMarked(
+  state: PlanState | null,
+  signals: LoadSignals | null = null,
+): string | null {
   if (state === null || state.sessions.length === 0) return null;
   const focus = pickFocusSession(state);
   const targetById = new Map(state.targets.map((target) => [target.plannedExerciseId, target]));
@@ -637,9 +664,12 @@ function trainingPlanMarked(state: PlanState | null): string | null {
         focus.session.minutes === null ? "" : `, about ${record(focus.session.minutes)} min`
       }).`,
     );
+    if (signals !== null && signals.engine.rest === "allow_longer") {
+      lines.push(longerRestSentence);
+    }
     lines.push(
       ...focus.session.exercises.map((exercise, index) =>
-        "  " + exerciseLine(exercise, index, state, targetById.get(exercise.id))
+        "  " + exerciseLine(exercise, index, state, targetById.get(exercise.id), signals)
       ),
     );
   }
@@ -666,17 +696,48 @@ function trainingPlanMarked(state: PlanState | null): string | null {
   return lines.join("\n");
 }
 
-export function createTrainingPlanContributor(source: StateSource): CoachContextContributor {
+/** The athlete's heart-rate load signals for a coaching date; null when there are none. */
+export type LoadSignalsSource = (userId: string, localDate: string) => Promise<LoadSignals | null>;
+
+/** Reads the signals over the service-role caller; a failed read is no signals, never an error. */
+export const loadSignalsFromService: LoadSignalsSource = async (userId, localDate) => {
+  try {
+    return await loadWorkoutLoadSignals(
+      {
+        rpc: async (name, args) => {
+          const { data, error } = await coachServiceRpc(name, args);
+          return { data, error: error ? { message: "load_signals_unavailable" } : null };
+        },
+      },
+      userId,
+      localDate,
+    );
+  } catch {
+    return null;
+  }
+};
+
+export function createTrainingPlanContributor(
+  source: StateSource,
+  signals?: LoadSignalsSource,
+): CoachContextContributor {
   return {
     id: trainingPlanContributorId,
     slot: "volatile",
     budgetChars: trainingPlanContributorBudgetChars,
     async render(input) {
-      const marked = trainingPlanMarked(
-        parsePlanState(
-          await sharedRead(input, planStateReadKey, () => source(input.userId, input.localDate)),
-        ),
+      const state = parsePlanState(
+        await sharedRead(input, planStateReadKey, () => source(input.userId, input.localDate)),
       );
+      let loaded: LoadSignals | null = null;
+      if (signals !== undefined && state !== null) {
+        try {
+          loaded = await signals(input.userId, input.localDate);
+        } catch {
+          loaded = null;
+        }
+      }
+      const marked = trainingPlanMarked(state, loaded);
       return marked === null ? null : blockOf(marked);
     },
   };
@@ -684,4 +745,5 @@ export function createTrainingPlanContributor(source: StateSource): CoachContext
 
 export const trainingPlanContributor: CoachContextContributor = createTrainingPlanContributor(
   stateSourceFromRpc(coachServiceRpc, "get_coach_plan_state_v1"),
+  loadSignalsFromService,
 );

@@ -297,7 +297,7 @@ must not prevent manual use.
 leave the phone), a heart-rate profile, and sleeping heart rate in shadow mode (D10). Heart rate
 never sets the load (D9). C4 adds a dismissible suggestion on the workout screen to start a Watch
 workout when none of the last three workouts had Watch heart rate, and load signals for the training
-engine (confidence, rest, a question) that nothing reads yet.
+engine (confidence, rest, a question), which Coach shows as two fixed sentences in the plan context.
 
 ### 5.3 Plans and progression
 

@@ -574,7 +574,9 @@ finished workouts (`get_workout_load_inputs_v1`, no load, repetitions or reps in
 heart-rate profile above. Heart rate informs rest, recovery and confidence; it never sets a load, a
 repetition target or a set count (D9), and no signal raises confidence. Sleeping heart rate is not an
 input (D10). The thresholds are Tracend's own choices, not research values, and wait for a coach's
-review. Nothing consumes the signals yet (workout-hr handoff, "Follow-up after #162").
+review. Coach reads them in the plan context: one fixed sentence on a step up (`add_load` or `add_reps`)
+when confidence is `lower`, one fixed rest sentence per session when rest is `allow_longer`; the target
+itself never changes.
 
 - **Tracked set:** a `watch_workout` summary with coverage of at least 60%.
 - **Start of set:** for tracked sets with a start heart rate and a rest of at least 30 seconds before

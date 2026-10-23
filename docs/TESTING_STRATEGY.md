@@ -252,6 +252,10 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   checked by breaking its rule and watching the test fail. `test/workout_hr/watch_workout_prompt_test.dart`
   covers the rule, the contract fixture `watch_workout_status_v1_0.json`, snooze and mute;
   `test/phase_3_workout_flow_test.dart` covers the card on the workout screen.
+  `training_plan_test.ts` covers the two fixed Coach sentences: present with lower confidence on an
+  `add_load` or `add_reps` step, absent with confidence none, on a hold or cut, with no target or
+  when the loader fails or throws; the target text is identical with and without the signals; no
+  digit in either sentence; the largest plan still fits the budget. Each was checked by breaking it.
 - **Rest Live Activity (D0):** `test/contract/live_activity_channel_contract_test.dart` plays the
   native side of the `tracend/live_activity` method channel as
   `ios/Runner/Native/WorkoutActivityBridge.swift` implements it, and proves refused, disabled or

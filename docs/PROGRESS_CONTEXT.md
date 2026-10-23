@@ -33,8 +33,8 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping
   heart rate in shadow. C4 in review (branch `claude/watch-workout-prompt`, migration 34): a card on the
   workout screen suggests starting a Watch workout when the last three had no Watch heart rate, and
-  load signals (rest, recovery, confidence; never a load) are computed for the training engine but read
-  by nothing until the hooks after #162. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
+  load signals (rest, recovery, confidence; never a load) are computed for the training engine and
+  shown to Coach as two fixed sentences in the plan context. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
 - ios-widgets: D0 live (#112). D1 merged (#121: Done, Skip and +30s on the Lock Screen and in the
   Dynamic Island); the owner's device check is pending. D2 merged (#149): Today widgets on the Home Screen and the
   Lock Screen, Lock Screen numbers an off-by-default per-athlete choice, 12-hour expiry, snapshot

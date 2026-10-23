@@ -193,9 +193,10 @@ AI consent is enforced on the server, per purpose:
   and `authenticated`, pgTAP-checked) gives the training engine the finished workouts of the last 28
   days with the rest and the per-set heart-rate summary of each tracked set: no load, repetitions,
   reps in reserve, effort, notes or raw samples. The load signals worked out from it are not stored
-  and, until a hook is added, read by nothing. Sending them to the AI provider (the Coach hook) is a
-  change that must first check the consent notice against the rule in AI_SAFETY_SPEC (a new notice
-  when new data goes to the provider). They lower confidence, suggest a longer rest and prompt a
+  and read by the Coach's plan context only as two fixed sentences with no figure (a step "less certain",
+  "rest a little longer"); no heart-rate value, set summary or signal number reaches the AI provider, only
+  the conclusion in fixed words. That conclusion is derived from the same heart-rate summaries the
+  registered `heart_rate_profile` contributor already sends, so it adds no data category. They lower confidence, suggest a longer rest and prompt a
   question; they never set a load or a prescription (D9).
 
 ## 5. Photos and Media
