@@ -114,7 +114,7 @@ void main() {
 
       expect(controller.timer, isNull);
       expect(alerts.scheduled, isEmpty);
-      expect(alerts.cancels, 1);
+      expect(alerts.cancels, 0);
     });
 
     test('adjust reschedules for the time left', () async {

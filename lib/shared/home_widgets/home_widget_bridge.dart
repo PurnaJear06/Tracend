@@ -8,11 +8,13 @@ import 'package:tracend/app/breadcrumbs.dart';
 /// tapped.
 const homeWidgetChannel = MethodChannel('tracend/home_widgets');
 
-/// The tab a widget asks the app to open (`tracend://today`,
-/// `tracend://train`).
+/// What a tap on a widget or on the workout's Live Activity asks the app to
+/// open: a tab (`tracend://today`, `tracend://train`) or the workout in
+/// progress (`tracend://workout`).
 enum HomeWidgetTab {
   today('today'),
-  train('train');
+  train('train'),
+  workout('workout');
 
   const HomeWidgetTab(this.key);
 

@@ -433,7 +433,7 @@ content.
 
 Local reminders are scheduled by iOS and use only the generic title `Tracend reminder` and body
 `Open Tracend when convenient.` Lock-screen content never names health, nutrition, workouts,
-photos, measurements, or coaching decisions, with two exceptions below (the rest Live Activity, and
+photos, measurements, or coaching decisions, with two exceptions below (the workout Live Activity, and
 the Lock Screen widgets, which show nothing until the athlete turns them on).
 The server stores toggles and coarse permission state, not delivery history or notification
 content. iOS stores only the local boolean choices and repairs missing pending requests after
@@ -452,21 +452,40 @@ its row, and when iOS has not been asked yet, turning it on first shows that tex
 only **Continue** leads to the iOS permission request. Off, **Not now** or a denied permission
 keeps the rest timer in the app only.
 
-**Exception: the rest Live Activity (owner decision, 2026-10-15).** During a workout rest, the
-Lock Screen and Dynamic Island Live Activity may show the exercise name and the next-set label
-(for example "Bench press · Next: Set 3 of Bench press") next to the countdown. Nothing else from
-the workout appears in it: never a load, reps, effort, reps left, heart rate or any health value,
-and never the workout's name. It is local to the phone (ActivityKit started by the app; no push,
-the Live Activity itself uses no App Group, and nothing is sent to the server or to Apple's push service), and the athlete removes it
-with iOS **Settings › Tracend › Live Activities**. Finishing, discarding or leaving the workout removes it at once. A rest that
-ran out or was skipped shows "Rest done" with the next set and a Done button (D1), and the app ends
-it two minutes after the rest's end while the app is on screen. ActivityKit has no timer of its own
-and no push is used, so only app code can dismiss it: with the app away it stays on the Lock Screen
-until the app next runs (the first second on screen, or the launch sweep) or a button on the card
-is pressed after those two minutes, which removes it instead of acting; failing all of those, iOS
-ends it at its own limit (8 hours after it started). It carries nothing beyond the exercise name
-and next-set label above, plus the set's position in the workout (exercise order and set number)
-that the Done button sends back. Sign-out, account deletion and a session Auth refused end it, and the next launch ends any finished one left behind.
+**Exception: the workout Live Activity (owner decision, 2026-10-15; extended from the rest to the set
+in progress by the owner's set-logging request of 2026-10-23, owner to confirm the wording).** While a workout is open, the Lock Screen and Dynamic Island Live Activity may show
+the exercise name and the set's position ("Set 2 of 4") with a **Log set** button; during a rest it
+shows the countdown, the exercise name and the next-set label (for example "Bench press · Next: Set 3
+of Bench press"). Nothing else from the workout appears in it: never effort, reps left, heart rate or
+any health value, and never the workout's name.
+
+- **The set's kg and reps are the athlete's choice and start off.** The target the logger pre-fills for
+  the set ("82.5 kg × 8") is on the card only while **Account › Widgets › Health numbers on the Lock
+  Screen** (D2's setting below, per athlete, device-only) is on. Off, the numbers never leave the app:
+  the card carries the exercise, the set's position and nothing else, and **Log set** still logs
+  exactly what the logger pre-fills. Turning the choice off removes the numbers from a card that is
+  showing at once (`hideNumbers` on the channel). Anyone holding a locked phone can read what the
+  card shows; the Account row says so.
+- **Local only.** ActivityKit started by the app; no push, the Live Activity itself uses no App Group,
+  and nothing is sent to the server or to Apple's push service. The athlete removes it with iOS
+  **Settings › Tracend › Live Activities**.
+- **Lifetime.** It appears when the workout opens (or a set is logged) and stays through the whole
+  workout, however long a set takes: when a rest ends the card turns into the next set by itself
+  (the system re-draws it at the rest's end), and the next logged set starts the next rest in place.
+  Finishing, discarding and leaving the workout (Save and leave) remove it at once. After the last
+  set it says "All sets logged" with **Open**, for two minutes. ActivityKit has no timer of its own
+  and no push is used, so only app code can dismiss it: with the app away it stays until the app
+  next runs, and a launch or a button press removes a card that is over (the all-sets-logged card two
+  minutes after it appeared, or any card the app has not moved for four hours, since a workout lasts
+  three at most); failing all of those, iOS ends it at its own limit (8 hours after it started). It
+  carries nothing beyond the exercise name, the labels, the set's position (exercise order, set number
+  and how many sets), whether the app can log the set, and the target while numbers are on. Sign-out,
+  account deletion and a session Auth refused end it, and the next launch ends any card that is over.
+- **Buttons act through the workout.** **Log set**, Skip and +30s run in the app's process (iOS 17
+  App Intents) and go to the open workout screen's command sink: logging is the in-app "Done set"
+  code, with the same draft, sync, set-timing, heart-rate and audit paths. **Open** and a tap on the
+  card open `tracend://workout`, which only brings the workout in progress forward (no data in the
+  link; with no workout started it opens nothing).
 
 **Exception: Today and Lock Screen widgets (chunk D2; owner approved 2026-10-18).** This is the second
 exception to the rule above, made because the D2 brief asks for Lock Screen widgets, and bounded by an

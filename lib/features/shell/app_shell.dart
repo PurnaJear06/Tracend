@@ -26,6 +26,7 @@ import 'package:tracend/features/shell/floating_tab_bar.dart';
 import 'package:tracend/features/today/check_in_gate.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
+import 'package:tracend/features/train/active_workout_screen.dart';
 import 'package:tracend/features/train/train_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
@@ -150,9 +151,14 @@ class _AppShellState extends State<AppShell> {
   /// on each if its brief is old.
   final _widgetTaps = ValueNotifier<int>(0);
 
+  /// Counts the taps on the workout's Live Activity that ask for the workout
+  /// in progress; Train reopens it when no workout screen is open.
+  final _workoutRequests = ValueNotifier<int>(0);
+
   @override
   void dispose() {
     _widgetTaps.dispose();
+    _workoutRequests.dispose();
     widget.homeWidgets.stopListeningForTab(_openRequestedTab);
     unawaited(_widgetPublisher.dispose());
     _checkInGate.dispose();
@@ -160,15 +166,19 @@ class _AppShellState extends State<AppShell> {
     super.dispose();
   }
 
-  /// Opens the tab a tapped widget asked for (`tracend://today`,
-  /// `tracend://train`).
+  /// Opens what a tap asked for: the tab of a widget (`tracend://today`,
+  /// `tracend://train`), or the workout in progress from its Live Activity
+  /// (`tracend://workout`). With a workout screen already open the app coming
+  /// forward is enough: it shows the logger, and nothing is opened over it.
   Future<void> _openRequestedTab() async {
     final tab = await widget.homeWidgets.takePendingTab();
     if (tab == null || !mounted) return;
+    if (tab == HomeWidgetTab.workout && ActiveWorkoutScreen.isOpen) return;
     _widgetTaps.value++;
+    if (tab == HomeWidgetTab.workout) _workoutRequests.value++;
     _selectTab(switch (tab) {
       HomeWidgetTab.today => 0,
-      HomeWidgetTab.train => 1,
+      HomeWidgetTab.train || HomeWidgetTab.workout => 1,
     });
   }
 
@@ -300,6 +310,7 @@ class _AppShellState extends State<AppShell> {
         health: _health,
         onOpenAccount: _openAccount,
         planChanges: _planChanges,
+        workoutRequests: _workoutRequests,
       ),
       () => CoachScreen(
         key: const ValueKey('tab_coach'),

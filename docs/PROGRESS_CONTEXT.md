@@ -33,9 +33,12 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping
   heart rate in shadow. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
 - ios-widgets: D0 live (#112). D1 merged (#121: Done, Skip and +30s on the Lock Screen and in the
-  Dynamic Island); the owner's device check is pending. D2 in review (#149): Today widgets on the Home Screen and the
+  Dynamic Island); the owner's device check is pending. D2 merged (#149): Today widgets on the Home Screen and the
   Lock Screen, Lock Screen numbers an off-by-default per-athlete choice, 12-hour expiry, snapshot
-  excluded from backups and emptied on every sign-out. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
+  excluded from backups and emptied on every sign-out. Live Activity set logging in review (branch
+  `claude/live-activity-set-logging`): the card shows the set in progress with **Log set** and **Open**
+  (kg and reps only with Lock Screen numbers on), then the rest, the next set, and "All sets logged";
+  Log set is the in-app Done set. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
 - research-library: E1 live (#109: pgvector, library tables, `search_library_v1`, D3 doc rule). E2 merged (#135): 35 sources, 122 chunks embedded in production
   by `library-embed`, retrieval test set (hybrid recall 0.93). E2.1 merged (14 gap sources). E2.2 merged (#152): 57 more
   verified sources (106 in all, 351 chunks) and machine-readable licences with a verbatim flag, review date and supersession

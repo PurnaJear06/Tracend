@@ -22,6 +22,7 @@ import 'package:tracend/features/train/workout_events.dart';
 import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/features/workout_hr/set_heart_rate_recorder.dart';
+import 'package:tracend/shared/home_widgets/lock_screen_numbers.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
@@ -47,6 +48,7 @@ class ActiveWorkoutScreen extends StatefulWidget {
     this.clock = DateTime.now,
     this.events,
     this.activity = const MethodChannelWorkoutActivityBridge(),
+    this.lockScreenNumbers = readLockScreenNumbers,
     super.key,
   });
 
@@ -66,10 +68,21 @@ class ActiveWorkoutScreen extends StatefulWidget {
   /// when none is given, and closes it when it goes away.
   final WorkoutEventHub? events;
 
-  /// The rest's Live Activity. The rest timer is its only driver; the
-  /// workout events above do not touch it. Its Done, Skip and +30s buttons
-  /// arrive as [WorkoutCommand]s through [events]' command sink.
+  /// The workout's Live Activity: the set in progress and the rest. The rest
+  /// timer controller is its only driver; the workout events above do not
+  /// touch it. Its "Log set", Skip and +30s buttons arrive as
+  /// [WorkoutCommand]s through [events]' command sink.
   final WorkoutActivityBridge activity;
+
+  /// Whether the athlete allows numbers on the Lock Screen. Read once when the
+  /// workout opens; the card shows the set's kg and reps only when true.
+  final Future<bool> Function() lockScreenNumbers;
+
+  static int _open = 0;
+
+  /// Whether a workout screen is open anywhere in the app. A link from the
+  /// Live Activity then needs nothing more than the app coming forward.
+  static bool get isOpen => _open > 0;
 
   /// The longest workout the server records (3 hours).
   static const maxSessionSeconds = 10800;
@@ -85,8 +98,15 @@ enum _Leave { save, discard }
 /// What a Done press from the Live Activity did.
 enum _Tick { ticked, stale, unsuggested }
 
-/// What follows a set: the label, and the set it names (1-based).
-typedef _Next = ({String full, String short, int exerciseOrder, int setNumber});
+/// What follows a set: the label, and the set it names (1-based) with the
+/// index of its exercise in the workout.
+typedef _Next = ({
+  String full,
+  String short,
+  int exercise,
+  int exerciseOrder,
+  int setNumber,
+});
 
 /// Schedules the lock-screen alert only while the athlete's toggle is on;
 /// cancelling always goes through, so no alert outlives its rest.
@@ -145,6 +165,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   ExerciseHistoryResult? _history;
   HistoryStatus _historyStatus = HistoryStatus.loading;
 
+  /// The athlete allows kg and reps on the Lock Screen, so the Live Activity
+  /// shows the set's target.
+  bool _targetsOnLockScreen = false;
+
+  /// The exercise page on screen: the set the Live Activity names follows it.
+  int _page = 0;
+
   /// The rest shows full screen; false when it is shrunk to the pill.
   bool _restExpanded = true;
 
@@ -174,6 +201,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   @override
   void initState() {
     super.initState();
+    ActiveWorkoutScreen._open++;
     _commands = _events.handleCommands(_onCommand, clock: widget.clock);
     final repository = widget.repository;
     if (repository is SupabaseWorkoutRepository) {
@@ -190,6 +218,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   @override
   void dispose() {
+    ActiveWorkoutScreen._open--;
     // Finish, discard and save-and-leave stop the rest before the screen
     // goes; anything else (the app returning to sign-in) leaves the rest in
     // the draft and ends only its Live Activity.
@@ -268,9 +297,20 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     _pendingFinish = await widget.repository.loadPendingFinish(
       widget.workout.id,
     );
+    await _loadLockScreenChoice();
     _ready = true;
-    if (mounted) unawaited(widget.activity.attachButtons(_onButton));
     final first = _firstOpenExercise();
+    _page = first;
+    if (mounted) {
+      unawaited(widget.activity.attachButtons(_onButton));
+      if (_pendingFinish == null) {
+        _syncActivity(begin: true);
+      } else {
+        // The workout was finished and waits to be sent: a card left from
+        // before names sets that are done.
+        unawaited(_rest.stop());
+      }
+    }
     if (mounted) setState(() {});
     if (first > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -401,6 +441,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
   }
 
+  Future<void> _loadLockScreenChoice() async {
+    try {
+      _targetsOnLockScreen = await widget.lockScreenNumbers();
+    } catch (e) {
+      debugPrint('Non-critical error: lock screen choice not read: $e');
+      _targetsOnLockScreen = false;
+    }
+  }
+
   Future<void> _loadHistory() async {
     try {
       final result = await widget.repository.loadExerciseHistory([
@@ -411,6 +460,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         _history = result;
         _historyStatus = HistoryStatus.ready;
       });
+      // The pre-filled kg and reps may now come from the history.
+      _syncActivity();
     } catch (e) {
       debugPrint('Non-critical error: exercise history not loaded: $e');
       if (mounted) setState(() => _historyStatus = HistoryStatus.unavailable);
@@ -668,8 +719,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               restSeconds,
               nextLabel: next.full,
               exerciseName: draft.exercise.name,
-              nextExerciseOrder: next.exerciseOrder,
-              nextSetNumber: next.setNumber,
+              next: _activitySet(next),
             )
             .then((_) => _persistRest()),
       );
@@ -684,10 +734,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
         );
       }
-    } else if (_rest.timer == null) {
-      // No rest follows: the "Rest done" activity names a set that is now
-      // logged, so it goes.
-      unawaited(_rest.stop());
+    } else {
+      // No rest follows: the activity names the next set, or says every set
+      // is logged.
+      _rest.present(
+        next == null ? null : _activitySet(next),
+        begin: true,
+        nextLabel: next?.full ?? '',
+      );
     }
     _changed();
   }
@@ -716,6 +770,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
     if (_restAfter == (exercise, set)) _restAfter = null;
     _changed();
+    _syncActivity();
   }
 
   void _setRir(int exercise, int set, int? rir) {
@@ -761,6 +816,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       );
     }
     _changed();
+    _syncActivity();
   }
 
   /// How long a button press waits for the server copy before it answers;
@@ -817,8 +873,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             await _saveForPress();
           case _Tick.stale:
             // The set is no longer the current one (a repeated or late
-            // Done): nothing changes.
-            break;
+            // press): nothing is logged, and the card is redrawn to the true
+            // set.
+            _rest.refresh();
           case _Tick.unsuggested:
             return false;
         }
@@ -882,6 +939,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (skip == null || !mounted) return;
     draft.status = skip ? 'skipped' : 'unknown';
     _changed();
+    _syncActivity();
   }
 
   /// What comes after the current set of [exercise]: its next set, else the
@@ -889,21 +947,24 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   _Next? _nextLabel(int exercise) {
     final draft = _exercises[exercise];
     final set = draft.currentSetIndex;
-    if (set != null) {
+    if (set != null && !draft.skipped) {
       return (
         full: 'Set ${set + 1} of ${draft.exercise.name}',
         short: 'Set ${set + 1}',
+        exercise: exercise,
         exerciseOrder: draft.exercise.order,
         setNumber: set + 1,
       );
     }
     for (var i = 1; i < _exercises.length; i++) {
-      final other = _exercises[(exercise + i) % _exercises.length];
+      final index = (exercise + i) % _exercises.length;
+      final other = _exercises[index];
       final otherSet = other.currentSetIndex;
       if (!other.skipped && otherSet != null) {
         return (
           full: other.exercise.name,
           short: other.exercise.name,
+          exercise: index,
           exerciseOrder: other.exercise.order,
           setNumber: otherSet + 1,
         );
@@ -912,10 +973,67 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     return null;
   }
 
+  /// The set the Live Activity names while no rest runs: the current set of
+  /// the exercise on screen, else the next exercise with a set to do; null
+  /// when every set is logged. "Log set" on the card logs this set with the
+  /// kg and reps the logger pre-fills for it ([suggestSet]).
+  _Next? _setInProgress() => _exercises.isEmpty
+      ? null
+      : _nextLabel(_page.clamp(0, _exercises.length - 1).toInt());
+
+  /// [next] as the Live Activity shows it. The target is the same kg and
+  /// reps the logger pre-fills and "Log set" logs, and only travels while the
+  /// athlete allows numbers on the Lock Screen.
+  ActivitySet _activitySet(_Next next) {
+    final draft = _exercises[next.exercise];
+    final suggestion = suggestSet(
+      draft,
+      next.setNumber - 1,
+      _historyOf(next.exercise),
+    );
+    final reps = num.tryParse(suggestion.reps);
+    final canLog = (reps ?? 0) > 0;
+    return (
+      exerciseOrder: next.exerciseOrder,
+      setNumber: next.setNumber,
+      setCount: draft.sets.length,
+      exerciseName: draft.exercise.name,
+      target: _targetsOnLockScreen && canLog
+          ? describeSet(
+              loadKg: num.tryParse(suggestion.load),
+              repetitions: reps!.round(),
+              assisted: draft.assisted,
+            )
+          : '',
+      canLog: canLog,
+    );
+  }
+
+  /// Shows the set in progress on the Live Activity. [begin] asks for a card
+  /// when none shows (the workout just opened); an edit only moves a card
+  /// that is there, so one the athlete dismissed stays gone.
+  void _syncActivity({bool begin = false}) {
+    if (!mounted ||
+        !_ready ||
+        _closed ||
+        _finishing ||
+        _viewingCompleted ||
+        _pendingFinish != null) {
+      return;
+    }
+    final next = _setInProgress();
+    _rest.present(
+      next == null ? null : _activitySet(next),
+      begin: begin,
+      nextLabel: next?.full ?? '',
+    );
+  }
+
   /// The next set to do in the workout, for a rest restored after a
   /// relaunch.
   _Next? _nextAfterCurrent() {
-    for (final draft in _exercises) {
+    for (var i = 0; i < _exercises.length; i++) {
+      final draft = _exercises[i];
       final set = draft.currentSetIndex;
       if (!draft.skipped && set != null) {
         return (
@@ -923,6 +1041,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               ? draft.exercise.name
               : 'Set ${set + 1} of ${draft.exercise.name}',
           short: set == 0 ? draft.exercise.name : 'Set ${set + 1}',
+          exercise: i,
           exerciseOrder: draft.exercise.order,
           setNumber: set + 1,
         );
@@ -1589,6 +1708,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   void _pageChanged(int page) {
     TracendHaptics.selection();
+    _page = page;
+    _syncActivity();
     final exercise = _exercises[page].exercise;
     _events.emit(
       ExerciseAdvanced(

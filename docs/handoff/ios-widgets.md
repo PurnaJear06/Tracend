@@ -1,6 +1,6 @@
 # iOS Widgets and Live Activity Handoff
 
-**As of:** 2026-10-18
+**As of:** 2026-10-23
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -15,6 +15,101 @@ A WidgetKit extension: a rest-timer Live Activity on the Lock Screen and Dynamic
 D0 (Phase 1); D1 (Phase 2); D2 (Phase 3)
 
 ## State
+
+**Set logging from the Live Activity: in review** (branch `claude/live-activity-set-logging`). The
+activity was rest-only (D0/D1). Now it shows the workout from the moment it opens, so a set can be
+logged from the Lock Screen and the Dynamic Island.
+
+- **What the card shows.** *Set in progress:* the exercise, "Set 2 of 4", the target ("82.5 kg × 8")
+  only while Account › Widgets › Health numbers on the Lock Screen is on (D2's per-athlete,
+  off-by-default setting, reused: `lib/shared/home_widgets/lock_screen_numbers.dart` reads it when
+  the workout screen opens), a lime **Log set** and an **Open** link; Dynamic Island compact shows
+  the glyph and "2/4", minimal the glyph. *Rest:* as before, with the exercise, "Next: …", the
+  countdown, +30s and Skip. *Rest over:* the same card turns into the set it carries (the system
+  marks the card stale at `endsAt` and the view draws the next set from the content state, so it
+  works with the app asleep). *No set left:* "All sets logged", "Finish in Tracend", **Open**; the app
+  removes it two minutes later (`RestTimerController.tick`), and Finish/Discard/Save and leave remove
+  it at once. *No workout open when a button is tapped:* a lime **Open Tracend**.
+- **Content state** (`ios/Shared/RestActivityAttributes.swift`, additive, older states decode):
+  `nextSetCount`, `nextExerciseName`, `nextTarget` (empty unless numbers are on), `nextCanLog`, and a
+  `Phase` (`resting`, `set`, `finished`) derived from `endsAt` and `isStale`, not stored. The type keeps
+  its name (`RestActivityAttributes`) to avoid renaming files in the Xcode project.
+- **Channel** (`tracend/live_activity`): `startRest` and `updateRest` take the `next_*` set keys;
+  new `showSet` (`begin` true requests a card when none runs, false only moves one that is there, so a
+  card the athlete dismissed stays gone; no set keys means every set is logged) and `hideNumbers`
+  (called by `TodayWidgetPublisher.setLockScreenNumbers(false)`: the numbers leave a showing card at
+  once). Dart: `ActivitySet` record, `activitySetArguments`.
+- **Driver.** Still only `RestTimerController` (`present(set, begin)`, `start(next:)`, `refresh`,
+  `tick`, `detach`, `stop`); `ActiveWorkoutScreen._syncActivity` computes the set from the page on
+  screen (`_setInProgress`) and the logger's own `suggestSet` (`_activitySet`), and calls it on open
+  (`begin`), after a set is logged, on an edit, a page change, an undo, a skip toggle and when the
+  history loads. Removed with this change: the "Rest done" linger and the two-minute end after a rest,
+  the stop of the activity after a set with no rest, and `restore` ending an expired rest's card
+  (the old `nextExerciseOrder`/`nextSetNumber` start parameters became `next:`).
+- **Work that changes during a rest.** The card carries the set it turns into, so every change to the
+  remaining work reaches it while the rest runs: `RestTimerController.present` sends `updateRest` with
+  the new set and its "Next: …" label (edit, swipe, undo, skip toggle); when no set is left (the last
+  set logged in the app, or the last exercise skipped) it sends `clear_next`, so the card keeps
+  counting down and then reads "All sets logged", which the app removes two minutes after the rest's
+  end (skip included). Finish, discard and Save and leave end the card.
+- **Write path (unchanged, one only).** Log set → `CompleteSetIntent` (`RestActivityIntents.swift`)
+  → `WorkoutActivityBridge.press` → Dart `press` → `ActiveWorkoutScreen._onButton` →
+  `WorkoutEventHub.send(CompleteCurrentSet)` → `_onCommand`/`_handleCommand` → `_completeSet` →
+  `_doneSet` (the in-app **Done set** function: set times, haptics, events incl. `SetCompleted` for the
+  heart-rate recorder, rest) → `_saveForPress` → `_save` → `repository.saveDraft` +
+  `repository.sync` (`sync_workout_draft`). No second write path.
+- **Idempotency.** There is no per-press key: the press names the set (exercise order, set number)
+  and `_completeSet` logs it only if it is still that exercise's current unticked set and no rest
+  runs; the hub runs commands one at a time. So a double tap, a repeated or late press, and a Log set
+  for a set already logged in the app are ignored (answered true, nothing changes, the card is
+  redrawn with `refresh`). A press older than 8 s is dropped; after finish/discard the screen
+  answers false.
+- **Open.** `tracend://workout` (`TracendLink.workout`, `HomeWidgetTab.workout`), also a tap on the
+  card (`widgetURL`). `AppShell._openRequestedTab`: with a workout screen open
+  (`ActiveWorkoutScreen.isOpen`) it does nothing but let the app come forward; otherwise it opens
+  Train and bumps `workoutRequests`, and `TrainScreen._resumeWorkout` reopens today's workout only if
+  it is not done and has a local draft (a stale card never starts a workout). Offline cold start with
+  no hub: opens Train only.
+- **Steppers on the Lock Screen: not built.** An intent per kg or rep step would have to write the
+  value into the app's draft through the same channel and redraw the card, and each press needs the
+  app awake and a round trip; D1's pattern carries the set identity only. Editing stays in the app,
+  as asked.
+- **Site.** `site/src/components/Page.astro`: the "Coming next" copy no longer promises weight and
+  reps on the Lock Screen. The looping concept film (`site/src/scripts/page.js`, tagged "Concept")
+  still draws kg and reps steppers; left for the owner.
+- **Tests.** `test/live_activity/rest_timer_live_activity_test.dart`, the contract test,
+  `test/phase_3_workout_flow_test.dart` (group "logging the set in progress from the Lock Screen"
+  and the updated button group), `test/live_activity/workout_resume_test.dart`,
+  `today_widget_publisher_test.dart` (hideNumbers), and `WorkoutActivityStateTests` in
+  `RunnerTests.swift` (not run in CI). The widget views and bridge were type-checked with `swiftc`
+  and compiled by `flutter build ios --release --no-codesign`; how they look is proven only on the
+  iPhone.
+- **Known limits.** A press with the app killed still cannot reach the logger (the card turns into
+  **Open Tracend**, which reopens the workout from its draft; this needs the hub, so offline it opens
+  Train). A card is on the Lock Screen for the whole workout (the owner's request; SECURITY_PRIVACY
+  §10 records it as an extension of the 2026-10-15 exception, owner to confirm). iOS removes any
+  activity after 8 hours. The target on the card is the logger's pre-fill, which also changes when
+  history finishes loading.
+
+**Test set logging on the device** (signed build from the branch, `./scripts/install-device.sh`):
+
+1. Account › Widgets: leave Health numbers on the Lock Screen **off**. Start a workout. Lock the
+   phone: the card shows the exercise, "Set 1 of N", **Log set** and **Open**, no kg or reps.
+2. Tap **Log set**: the card becomes the rest with +30s and Skip; unlock and check set 1 is ticked
+   with the kg and reps the logger showed, and the sync state reads Saved.
+3. Let the rest run out with the phone locked: the card turns into "Set 2 of N" by itself. Tap **Log
+   set** again, go on to the next exercise: the card names it. After the last set it reads "All sets
+   logged".
+4. Turn the Lock Screen numbers **on**: the next card shows "82.5 kg × 8"; change the kg in the app,
+   lock: the card follows; Log set logs the changed values. Turn it off while the card shows: the
+   numbers go.
+5. Double-tap **Log set**: one set. Tick the set in the app, then tap the card's Log set: nothing
+   more is logged.
+6. Dynamic Island: the compact view shows the glyph and "2/4", a long press shows the buttons.
+7. Swipe the app away mid-set: tap **Log set**: the card asks to **Open Tracend**; tap it: today's
+   workout reopens on the set. Mid-rest relaunch: the rest is still counting.
+8. Airplane mode: **Log set** logs on the phone (the sync state reads Offline in the app).
+9. Finish or discard from the app: the card goes. Sign out: it goes.
 
 **D0 live** (PR #112; build 395 on the owner's iPhone 18). The owner's Lock Screen and Dynamic
 Island check passed on 2026-10-15. What exists:
@@ -36,7 +131,8 @@ Island check passed on 2026-10-15. What exists:
   countdown on the right. Dynamic Island compact: lime timer glyph | lime countdown; minimal: the
   countdown (max 36 pt wide); expanded: "Rest" (leading), 34 pt countdown (trailing), exercise
   and "Next: …" (bottom). Once stale every presentation reads "Rest done" with a lime check.
-  Empty labels fall back to "Between sets" and no "Next" line. The font file
+  Empty labels fall back to "Between sets" and no "Next" line. (Set logging, above, changed this: a
+  stale card turns into the set in progress, not "Rest done".) The font file
   (`assets/fonts/ArchivoSemiCondensed-ExtraBold.ttf`) is an extension resource listed in its
   `UIAppFonts`; its name is read from the file at runtime because the file's internal name
   ("Archivo-SemiBold") is shared by every Archivo cut. The condensed system face is the fallback.
@@ -74,7 +170,7 @@ Island check passed on 2026-10-15. What exists:
   activity), `test/account_session_test.dart` (a refused session ends it). The fake is
   `test/live_activity/fake_workout_activity_bridge.dart`.
 
-**D1 in review** (branch `claude/d1-live-activity-buttons`): Done, Skip and +30s.
+**D1 merged** (#121; branch `claude/d1-live-activity-buttons`): Done, Skip and +30s.
 
 - **Intents** `ios/Shared/RestActivityIntents.swift` (both targets): `CompleteSetIntent`,
   `SkipRestIntent`, `AddRestIntent`, all `LiveActivityIntent` and hidden from Shortcuts
@@ -105,7 +201,7 @@ Island check passed on 2026-10-15. What exists:
     sends `next_exercise_order` and `next_set_number` (optional, additive), the activity keeps them
     in its content state (`nextExerciseOrder`, `nextSetNumber`), and the Done button builds
     `CompleteSetIntent(exerciseOrder:setNumber:)` with them. The plan README's Contract 3 block
-    still shows the old empty class; update it when D1 merges. Without a set in the state the card
+    shows the v1.1 class. Without a set in the state the card
     shows "Open Tracend to continue" instead of Done. Dart refuses a `press` for Done without both
     numbers (`invalid_arguments`, so the card asks to open the app) and never ticks "whatever is
     current".
@@ -137,18 +233,13 @@ Island check passed on 2026-10-15. What exists:
     A failed or slow update is logged and the press still answers; it never undoes the change.
   - *`tick` only when resumed.* A button press wakes the app in the background, so it does not run
     `tick`; the docs no longer say a press counts as the app running.
-- **Lifecycle change** (`RestTimerController`): Skip and −15 past the end send `updateRest(now)`
+- **Lifecycle change** (`RestTimerController`; set logging, above, replaced the "Rest done" linger):
+  Skip and −15 past the end send `updateRest(now)`
   ("Rest done") instead of `end`; a rest that ran out sends nothing (`ranOut`); `tick` ends "Rest
   done" two minutes after the rest's end and the screen calls it only while the app is resumed; a
   set with no rest after it ends the activity; `detach` also ends "Rest done". SECURITY_PRIVACY §10
   is updated to match (owner to confirm).
-- **Facts for the other authority docs** (kept out of this PR; fold in when D1 merges):
-  ARCHITECTURE §3.1 should say the buttons are iOS 17 `LiveActivityIntent`s in
-  `ios/Shared/RestActivityIntents.swift` (both targets), run in the app's process, that the bridge
-  forwards `press` to the attached workout screen as a Contract 3 command and waits for its answer
-  (8 s at most) and for its queued activity calls, with no App Group. PRD §4 should replace
-  "Planned (Phase 2, D1)" with: Done, Skip and +30s on the Live Activity; Done logs the suggested
-  kg and reps. TESTING_STRATEGY should list the D1 tests below.
+- **Facts for the other authority docs** are folded in (ARCHITECTURE, PRD and TESTING_STRATEGY describe the buttons).
 - **Tests:** contract test (press with set identity and press time, attach/detach, refused
   arguments including an old Done without a set, the answer waiting, a late press dropped),
   `test/live_activity/live_activity_commands_test.dart` (button mapping, the command sink's answers,
@@ -177,7 +268,7 @@ Island check passed on 2026-10-15. What exists:
 11. Let a rest end, leave the phone for five minutes with the app in the background: "Rest done"
     may still show (nothing can dismiss it); tap Done set: the card goes and no set is ticked.
 
-**D2 in review** (branch `claude/d2-widgets`): Today and Lock Screen widgets.
+**D2 merged** (#149; branch `claude/d2-widgets`): Today and Lock Screen widgets.
 
 - **New: the App Group `group.com.tracend.app`**, in `Runner.entitlements` and the new
   `TracendWidgets/TracendWidgets.entitlements`. It exists only so the widget process can read the
@@ -325,7 +416,8 @@ days like the app's.
 
 ## Next agent starts here
 
-D2 (Today and Lock Screen widgets) is in review; the owner's device check is the list above. After
+Set logging from the Live Activity is in review (above); its device check is the second list in State.
+D2 (Today and Lock Screen widgets) is merged (#149); the owner's device check is the list above. After
 it passes, the widgets chunk is done. Follow-ups worth a chunk if the owner wants them: use the
 training hub's progression `next_targets` for the medium widget's exercise lines, and a small
 interactive widget (iOS 17 buttons) for the check-in.

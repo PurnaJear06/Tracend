@@ -8,6 +8,7 @@ import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
 import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
 import 'package:tracend/shared/home_widgets/today_widget_snapshot.dart';
+import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 
 /// Writes Today's snapshot for the Home Screen and Lock Screen widgets
 /// whenever Today loads or changes, and owns the athlete's choice to show
@@ -18,8 +19,9 @@ import 'package:tracend/shared/home_widgets/today_widget_snapshot.dart';
 /// numbers on in Account (SECURITY_PRIVACY.md §10). Another athlete signing
 /// in on the same phone starts off again, and sign-out forgets the choice
 /// (`LocalAccountData.forgetWidgetChoice`). Turning it off removes the
-/// numbers from the shared snapshot at once. The widgets are a convenience,
-/// so nothing here throws.
+/// numbers from the shared snapshot at once, and the kg and reps from the
+/// workout's Live Activity if it is showing them. The widgets are a
+/// convenience, so nothing here throws.
 class TodayWidgetPublisher {
   TodayWidgetPublisher({
     required HomeWidgetBridge bridge,
@@ -27,7 +29,9 @@ class TodayWidgetPublisher {
     SharedPreferencesAsync? preferences,
     HomeWidgetEraser? eraser,
     DateTime Function() clock = DateTime.now,
+    WorkoutActivityBridge activity = const MethodChannelWorkoutActivityBridge(),
   }) : _bridge = bridge,
+       _activity = activity,
        _key = lockScreenNumbersKeyFor(userId),
        _eraser = eraser ?? HomeWidgetEraser(bridge, preferences: preferences),
        _preferences = preferences,
@@ -49,6 +53,7 @@ class TodayWidgetPublisher {
   static const refreshAfter = Duration(minutes: 5);
 
   final HomeWidgetBridge _bridge;
+  final WorkoutActivityBridge _activity;
   final String _key;
   final HomeWidgetEraser _eraser;
   final SharedPreferencesAsync? _preferences;
@@ -95,6 +100,7 @@ class TodayWidgetPublisher {
     } catch (e) {
       debugPrint('Non-critical error: widget setting not saved: $e');
     }
+    if (!shown) unawaited(_activity.hideNumbers());
     final latest = _latest;
     final written = latest != null && await _write(latest, force: true);
     if (shown || written) return true;

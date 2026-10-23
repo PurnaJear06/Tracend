@@ -248,6 +248,18 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   missing native calls are swallowed. `test/live_activity/rest_timer_live_activity_test.dart`
   covers start, adjust, skip, end, leaving the workout, and a rest that ended while the app was
   closed. The Lock Screen and Dynamic Island are checked on the owner's iPhone.
+- **Set logging from the Live Activity:** the contract test also pins `showSet`, `hideNumbers` and the
+  `next_*` set keys; `test/live_activity/rest_timer_live_activity_test.dart` covers the controller's
+  states (set in progress, rest carrying the set it turns into, all sets logged and its two-minute
+  end, no card brought back after a dismissal). `test/phase_3_workout_flow_test.dart` runs a whole
+  workout from the card (set in progress, Log set, rest, +30s, Skip, next set, next exercise, all
+  sets logged), proves Log set writes the same fields as the in-app Done set, double and repeated
+  presses, a press for a set already logged in the app, edits and swipes moving the card,
+  relaunch (mid-rest, mid-set, rest ended away, every set logged), finish and discard,
+  offline logging, and the numbers staying off the card unless chosen.
+  `test/live_activity/workout_resume_test.dart` covers `tracend://workout`. `RunnerTests.swift`
+  (`WorkoutActivityStateTests`, not run in CI) covers the content state's decoding, phases and
+  set keys.
 - **Today and Lock Screen widgets (D2):** `test/home_widgets/today_widget_snapshot_test.dart`
   builds the snapshot from briefs (planned, under way, finished, rest day, no targets, unscored,
   hidden and chosen Lock Screen numbers, the stale limit, no free text);

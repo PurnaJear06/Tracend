@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/train/rest_timer.dart';
+import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 
 import 'fake_workout_activity_bridge.dart';
 
@@ -28,6 +29,21 @@ class _QuietAlerts implements RestAlertScheduler {
   Future<void> cancelRestAlert() async {}
 }
 
+/// Set 2 of 4 of Bench press, as the logger pre-fills it.
+ActivitySet _set({
+  int exerciseOrder = 1,
+  int setNumber = 2,
+  String target = '82.5 kg × 8',
+  bool canLog = true,
+}) => (
+  exerciseOrder: exerciseOrder,
+  setNumber: setNumber,
+  setCount: 4,
+  exerciseName: 'Bench press',
+  target: target,
+  canLog: canLog,
+);
+
 void main() {
   final start = DateTime.utc(2026, 10, 15, 9);
   late DateTime now;
@@ -42,7 +58,7 @@ void main() {
 
   setUp(() {
     now = start;
-    activity = FakeWorkoutActivityBridge();
+    activity = FakeWorkoutActivityBridge(clock: () => now);
     controller = newController();
   });
 
@@ -78,11 +94,22 @@ void main() {
     expect(activity.showingUntil, now.add(const Duration(seconds: 60)));
   });
 
-  test('a zero rest shows nothing and ends any leftover', () async {
+  test('a rest carries the set the card turns into', () async {
+    await controller.start(90, next: _set());
+
+    expect(activity.calls.single.next, _set());
+    expect(activity.set, _set());
+    expect(activity.phase, 'rest');
+
+    now = now.add(const Duration(seconds: 90));
+    expect(activity.phase, 'set');
+  });
+
+  test('a zero rest starts nothing', () async {
     await controller.start(0);
 
-    expect(activity.methods, ['end']);
-    expect(activity.showingUntil, isNull);
+    expect(activity.calls, isEmpty);
+    expect(controller.timer, isNull);
   });
 
   test('+15 and -15 move the end that is showing', () async {
@@ -98,7 +125,7 @@ void main() {
     expect(activity.showingUntil, controller.timer!.endsAt);
   });
 
-  test('-15 past the end turns it to "Rest done" now', () async {
+  test('-15 past the end turns the card into the set now', () async {
     await controller.start(90);
     now = now.add(const Duration(seconds: 80));
 
@@ -125,64 +152,220 @@ void main() {
     expect(activity.calls, isEmpty);
   });
 
-  test('skip turns it to "Rest done" now, so Done can follow', () async {
-    await controller.start(90);
+  test('skip turns the card into the set now, so Log set can follow', () async {
+    await controller.start(90, next: _set());
     now = now.add(const Duration(seconds: 30));
     await controller.skip();
 
     expect(activity.methods, ['startRest', 'updateRest']);
     expect(activity.showingUntil, now);
+    expect(activity.phase, 'set');
+    expect(activity.card, (exerciseOrder: 1, setNumber: 2));
     expect(controller.timer, isNull);
   });
 
   test(
-    'a rest that ran out sends nothing: it already reads "Rest done"',
+    'a rest that ran out sends nothing: the card turns into the set itself',
     () async {
-      await controller.start(90);
+      await controller.start(90, next: _set());
       now = now.add(const Duration(seconds: 95));
       await controller.ranOut();
 
       expect(activity.methods, ['startRest']);
+      expect(activity.phase, 'set');
       expect(controller.timer, isNull);
     },
   );
 
-  test('"Rest done" goes two minutes after the end of the rest', () async {
-    await controller.start(90);
+  test('the set in progress is never ended by the clock', () async {
+    await controller.start(90, next: _set());
     now = now.add(const Duration(seconds: 90));
     await controller.ranOut();
 
-    now = now.add(const Duration(seconds: 119));
+    now = now.add(const Duration(hours: 1));
     controller.tick();
+
     expect(activity.methods, ['startRest']);
-
-    now = now.add(const Duration(seconds: 1));
-    controller.tick();
-    controller.tick();
-    expect(activity.methods, ['startRest', 'end']);
+    expect(activity.phase, 'set');
   });
 
-  test('"Rest done" after a skip goes two minutes after the skip', () async {
-    await controller.start(90);
-    now = now.add(const Duration(seconds: 10));
-    await controller.skip();
-
-    now = now.add(RestTimerController.doneLinger);
-    controller.tick();
-
-    expect(activity.methods, ['startRest', 'updateRest', 'end']);
-  });
-
-  test('the next rest replaces "Rest done" and nothing ends it', () async {
-    await controller.start(90);
+  test('the next rest replaces the set in progress', () async {
+    await controller.start(90, next: _set());
     await controller.skip();
     now = now.add(const Duration(seconds: 40));
-    await controller.start(90);
-
-    now = now.add(RestTimerController.doneLinger);
-    controller.tick();
+    await controller.start(90, next: _set(setNumber: 3));
 
     expect(activity.methods, ['startRest', 'updateRest', 'startRest']);
+    expect(activity.phase, 'rest');
+    expect(activity.card, (exerciseOrder: 1, setNumber: 3));
+  });
+
+  group('the set in progress', () {
+    test('the workout opening asks for a card', () {
+      controller.present(_set(), begin: true);
+
+      expect(activity.calls.single.method, 'showSet');
+      expect(activity.calls.single.begin, isTrue);
+      expect(activity.calls.single.next, _set());
+      expect(activity.phase, 'set');
+    });
+
+    test('an edit moves a card that is there, and never brings one back', () {
+      controller.present(_set(), begin: true);
+      controller.present(_set(target: '85 kg × 8'));
+      expect(activity.set!.target, '85 kg × 8');
+
+      activity.showingUntil = null; // the athlete dismissed it
+      controller.present(_set(target: '87.5 kg × 8'));
+      expect(activity.showing, isFalse);
+      expect(activity.calls.last.begin, isFalse);
+    });
+
+    test('the same set again sends nothing, unless it begins', () {
+      controller.present(_set(), begin: true);
+      controller.present(_set());
+      expect(activity.calls, hasLength(1));
+
+      controller.present(_set(), begin: true);
+      expect(activity.calls, hasLength(2));
+    });
+
+    test('during a rest only the set that follows is updated', () async {
+      await controller.start(90, next: _set());
+      controller.present(_set());
+      expect(activity.calls, hasLength(1));
+
+      controller.present(_set(exerciseOrder: 2, setNumber: 1));
+      expect(activity.methods, ['startRest', 'updateRest']);
+      expect(activity.calls.last.endsAt, controller.timer!.endsAt);
+      expect(activity.calls.last.next!.exerciseOrder, 2);
+      expect(activity.phase, 'rest');
+    });
+
+    test('with no set left a rest goes on, carries no set, and ends as '
+        '"all sets logged"', () async {
+      await controller.start(90, nextLabel: 'Set 2', next: _set());
+
+      controller.present(null);
+      expect(activity.calls.last.method, 'updateRest');
+      expect(activity.calls.last.clearNext, isTrue);
+      expect(activity.calls.last.nextLabel, '');
+      expect(activity.card, isNull);
+      expect(activity.phase, 'rest');
+      expect(controller.timer, isNotNull);
+
+      // The same again sends nothing.
+      controller.present(null);
+      expect(activity.calls, hasLength(2));
+
+      now = now.add(const Duration(seconds: 90));
+      await controller.ranOut();
+      expect(activity.phase, 'finished');
+      now = now.add(RestTimerController.doneLinger);
+      controller.tick();
+      expect(activity.showing, isFalse);
+    });
+
+    test('a skip with no set left goes two minutes after the skip', () async {
+      await controller.start(90, next: _set());
+      controller.present(null);
+      now = now.add(const Duration(seconds: 10));
+      await controller.skip();
+      expect(activity.phase, 'finished');
+
+      now = now.add(const Duration(seconds: 119));
+      controller.tick();
+      expect(activity.showing, isTrue);
+      now = now.add(const Duration(seconds: 1));
+      controller.tick();
+      expect(activity.showing, isFalse);
+    });
+
+    test('a rest with a set is not ended by the clock', () async {
+      await controller.start(90, next: _set());
+      controller.present(_set(setNumber: 3));
+      now = now.add(const Duration(seconds: 90));
+      await controller.ranOut();
+      now = now.add(const Duration(hours: 1));
+      controller.tick();
+
+      expect(activity.phase, 'set');
+      expect(activity.card, (exerciseOrder: 1, setNumber: 3));
+    });
+
+    test('refresh of a rest with no set keeps it without one', () async {
+      await controller.start(90, next: _set());
+      controller.present(null);
+      controller.refresh();
+
+      expect(activity.calls.last.clearNext, isTrue);
+      expect(activity.card, isNull);
+    });
+
+    test('a restored rest with no set left carries none', () async {
+      await controller.start(90, next: _set());
+      final stored = controller.toDraft();
+      final resumed = newController();
+      await resumed.restore(stored);
+
+      resumed.present(null, begin: true);
+
+      expect(activity.calls.last.clearNext, isTrue);
+      expect(activity.card, isNull);
+    });
+
+    test('a set the app cannot log shows the card without a button', () {
+      controller.present(_set(canLog: false), begin: true);
+
+      expect(activity.set!.canLog, isFalse);
+    });
+
+    test('every set logged says so, and the card goes after two minutes', () {
+      controller.present(_set(), begin: true);
+      controller.present(null, begin: true);
+      expect(activity.phase, 'finished');
+
+      now = now.add(const Duration(seconds: 119));
+      controller.tick();
+      expect(activity.showing, isTrue);
+
+      now = now.add(const Duration(seconds: 1));
+      controller.tick();
+      controller.tick();
+      expect(activity.methods, ['showSet', 'showSet', 'end']);
+      expect(activity.showing, isFalse);
+    });
+
+    test('a set logged again within those two minutes keeps the card', () {
+      controller.present(null, begin: true);
+      now = now.add(const Duration(seconds: 90));
+      controller.present(_set());
+      now = now.add(const Duration(minutes: 5));
+      controller.tick();
+
+      expect(activity.methods, ['showSet', 'showSet']);
+      expect(activity.phase, 'set');
+    });
+
+    test('refresh redraws the card as it is, rest or set', () async {
+      controller.present(_set(), begin: true);
+      controller.refresh();
+      expect(activity.calls.last.method, 'showSet');
+      expect(activity.calls.last.begin, isFalse);
+      expect(activity.calls.last.next, _set());
+
+      await controller.start(90, next: _set(setNumber: 3));
+      controller.refresh();
+      expect(activity.calls.last.method, 'updateRest');
+      expect(activity.calls.last.endsAt, controller.timer!.endsAt);
+      expect(activity.calls.last.next, _set(setNumber: 3));
+    });
+
+    test('refresh with nothing shown sends nothing', () {
+      controller.refresh();
+
+      expect(activity.calls, isEmpty);
+    });
   });
 
   test('finishing, discarding or leaving the workout ends it', () async {
@@ -223,12 +406,13 @@ void main() {
     expect(controller.toDraft(), isNotNull);
   });
 
-  test('the screen going away ends "Rest done" too', () async {
-    await controller.start(90);
-    await controller.skip();
+  test('the screen going away ends the set in progress too', () async {
+    controller.present(_set(), begin: true);
+    controller.detach();
     controller.detach();
 
-    expect(activity.methods, ['startRest', 'updateRest', 'end']);
+    expect(activity.methods, ['showSet', 'end']);
+    expect(activity.showing, isFalse);
   });
 
   test('the screen going away with nothing showing sends nothing', () async {
@@ -258,22 +442,26 @@ void main() {
       expect(activity.showingUntil, resumed.timer!.endsAt);
     });
 
-    test('a rest that ended while the app was closed ends it', () async {
-      await controller.start(90);
+    test('a rest that ended while the app was closed leaves the card to '
+        'the set in progress', () async {
+      await controller.start(90, next: _set());
       final stored = controller.toDraft();
 
       now = now.add(const Duration(minutes: 5));
       final resumed = newController();
       await resumed.restore(stored);
-
-      expect(activity.methods, ['startRest', 'end']);
+      expect(activity.methods, ['startRest']);
       expect(resumed.timer, isNull);
+
+      resumed.present(_set(), begin: true);
+      expect(activity.methods, ['startRest', 'showSet']);
+      expect(activity.phase, 'set');
     });
 
-    test('nothing stored ends any leftover activity', () async {
+    test('nothing stored leaves the activity alone', () async {
       await controller.restore(null);
 
-      expect(activity.methods, ['end']);
+      expect(activity.calls, isEmpty);
     });
   });
 

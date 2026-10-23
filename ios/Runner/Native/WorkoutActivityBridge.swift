@@ -2,29 +2,34 @@ import ActivityKit
 import Flutter
 import Foundation
 
-/// The rest-timer Live Activity behind the `tracend/live_activity` channel
-/// (`lib/shared/live_activity/workout_activity_bridge.dart`).
+/// The workout's Live Activity behind the `tracend/live_activity` channel
+/// (`lib/shared/live_activity/workout_activity_bridge.dart`): the set in
+/// progress, and the rest between sets.
 ///
-/// The countdown runs on its own from the end time, so the app only starts,
-/// moves and ends the activity; nothing is pushed. At most one rest activity
-/// shows: a new rest moves the running one in place, or replaces every
-/// earlier one. When the athlete turned Live Activities off, every call
-/// succeeds and shows nothing. Calls run one after another in the order they
-/// arrive.
+/// The countdown runs on its own from the end time, and the card turns into
+/// the set card by itself when the rest ends, so the app only starts, moves
+/// and ends the activity; nothing is pushed. At most one activity shows: a
+/// new rest or set moves the running one in place, or replaces every earlier
+/// one. When the athlete turned Live Activities off, every call succeeds and
+/// shows nothing. Calls run one after another in the order they arrive.
 ///
-/// Its Done, Skip and +30s buttons are `LiveActivityIntent`s
+/// Its "Log set", Skip and +30s buttons are `LiveActivityIntent`s
 /// (`ios/Shared/RestActivityIntents.swift`) that iOS runs in this process,
 /// waking the app in the background; `press` hands each one to the open
 /// workout in Dart and waits until the activity is updated. Each press is
 /// stamped with its time here (`pressed_at_millis`); Dart drops one older
-/// than `pressTimeout`, because by then the card already says "Open Tracend
-/// to continue" and applying it late would log the wrong time.
+/// than `pressTimeout`, because by then the card already says "Open Tracend"
+/// and applying it late would log the wrong time.
 enum WorkoutActivityBridge {
   static let channelName = "tracend/live_activity"
 
-  /// How long a rest that ran out keeps showing "Rest done" when a launch
-  /// finds it left from an earlier run of the app.
+  /// How long the card that says every set is logged keeps showing when a
+  /// launch or a press finds it left from an earlier run of the app.
   static let doneLinger: TimeInterval = 120
+
+  /// How long a card may go without the app moving it before it counts as
+  /// left behind: a workout is at most three hours.
+  static let abandonedAfter: TimeInterval = 4 * 60 * 60
 
   /// How long a press waits for the workout to answer.
   static let pressTimeout: TimeInterval = 8
@@ -35,9 +40,9 @@ enum WorkoutActivityBridge {
   /// A workout screen is open in Dart and takes the buttons.
   @MainActor private static var buttonsAttached = false
 
-  /// Answers the channel, and first ends the rest activities left from an
-  /// earlier launch whose rest is over. A running one stays for the app's
-  /// restore to move or end.
+  /// Answers the channel, and first ends the activities left from an earlier
+  /// launch that are over (`lingerEnd`). One that is still wanted stays for
+  /// the app's restore to move or end.
   static func register(on messenger: FlutterBinaryMessenger) {
     enqueue { await endFinished() }
     let channel = FlutterMethodChannel(name: channelName, binaryMessenger: messenger)
@@ -57,18 +62,18 @@ enum WorkoutActivityBridge {
           result(FlutterError(code: "invalid_arguments", message: nil, details: nil))
           return
         }
-        let nextExerciseOrder = (arguments["next_exercise_order"] as? NSNumber)?.intValue
-        let nextSetNumber = (arguments["next_set_number"] as? NSNumber)?.intValue
+        let next = NextSet(arguments)
         enqueue {
           result(
-            await startRest(
-              RestActivityAttributes.ContentState(
-                endsAt: endsAt,
-                nextLabel: nextLabel,
-                exerciseName: exerciseName,
-                nextExerciseOrder: nextExerciseOrder,
-                nextSetNumber: nextSetNumber
-              )
+            await show(
+              next.applied(
+                to: RestActivityAttributes.ContentState(
+                  endsAt: endsAt,
+                  nextLabel: nextLabel,
+                  exerciseName: exerciseName
+                )
+              ),
+              request: true
             )
           )
         }
@@ -78,7 +83,32 @@ enum WorkoutActivityBridge {
           return
         }
         let nextLabel = arguments["next_label"] as? String
-        enqueue { result(await updateRest(endsAt: endsAt, nextLabel: nextLabel)) }
+        let next = NextSet(arguments)
+        enqueue {
+          result(await updateRest(endsAt: endsAt, nextLabel: nextLabel, next: next))
+        }
+      case "showSet":
+        let next = NextSet(arguments)
+        let request = arguments["begin"] as? Bool == true
+        enqueue {
+          result(
+            await show(
+              next.applied(
+                to: RestActivityAttributes.ContentState(
+                  endsAt: Date(),
+                  nextLabel: "",
+                  exerciseName: next.exerciseName
+                )
+              ),
+              request: request
+            )
+          )
+        }
+      case "hideNumbers":
+        enqueue {
+          await hideNumbers()
+          result(false)
+        }
       case "end":
         enqueue {
           await endAll()
@@ -98,13 +128,13 @@ enum WorkoutActivityBridge {
   /// and drives the activity through the calls above; this waits until those
   /// calls are done, so iOS does not suspend the app halfway. With no
   /// workout open (the app was closed), the activity asks the athlete to
-  /// open the app instead. A card left on the Lock Screen past its "Rest
-  /// done" time (`doneLinger`) is removed instead: ActivityKit has no timer
-  /// of its own, so this is the first moment the app can.
+  /// open the app instead. A card the app left behind (`isOver`) is removed
+  /// instead: ActivityKit has no timer of its own, so this is the first
+  /// moment the app can.
   @MainActor
   static func press(_ button: RestActivityButton) async {
     let pressedAt = Date()
-    if await endLingered(now: pressedAt) { return }
+    if await endOver(now: pressedAt) { return }
     var taken = false
     if buttonsAttached, let channel {
       taken = await send(button, pressedAt: pressedAt, on: channel)
@@ -176,28 +206,94 @@ enum WorkoutActivityBridge {
     activity.activityState == .active || activity.activityState == .stale
   }
 
-  /// Shows a new rest. A running activity (counting down, or "Rest done"
-  /// after the last rest) is moved in place, so a Done tapped on the Lock
-  /// Screen never needs a new request while the app is in the background;
-  /// every other earlier one, an ended one included, is removed. Otherwise a
-  /// new activity is requested. Answers whether it shows: false when Live
-  /// Activities are off, a fixed error code when iOS refused the request.
+  /// The set a call names, as `next_*` keys: `next_exercise_order`,
+  /// `next_set_number`, `next_set_count`, `next_exercise_name`, `next_target`
+  /// and `next_can_log`. Absent when the call names no set. Any key may be
+  /// missing: the card then shows what it can.
+  struct NextSet: Equatable {
+    var present = false
+    var exerciseOrder: Int?
+    var setNumber: Int?
+    var setCount: Int?
+    var exerciseName = ""
+    var target = ""
+    var canLog = true
+
+    /// The call says the card carries no set any more (`clear_next`).
+    var clears = false
+
+    init(_ arguments: [String: Any]) {
+      clears = arguments["clear_next"] as? Bool == true
+      let order = (arguments["next_exercise_order"] as? NSNumber)?.intValue
+      let number = (arguments["next_set_number"] as? NSNumber)?.intValue
+      guard order != nil || number != nil else { return }
+      present = true
+      exerciseOrder = order
+      setNumber = number
+      setCount = (arguments["next_set_count"] as? NSNumber)?.intValue
+      exerciseName = arguments["next_exercise_name"] as? String ?? ""
+      target = arguments["next_target"] as? String ?? ""
+      canLog = arguments["next_can_log"] as? Bool ?? true
+    }
+
+    /// `state` with this set written into its `next*` fields. Without a set
+    /// the fields are cleared when `clearing`, else left as they are.
+    func applied(
+      to state: RestActivityAttributes.ContentState,
+      clearing: Bool = true
+    ) -> RestActivityAttributes.ContentState {
+      guard present || clearing else { return state }
+      var state = state
+      state.nextExerciseOrder = exerciseOrder
+      state.nextSetNumber = setNumber
+      state.nextSetCount = setCount
+      state.nextExerciseName = exerciseName
+      state.nextTarget = target
+      state.nextCanLog = canLog
+      return state
+    }
+  }
+
+  /// The date after which the system marks `state` stale: the end of a
+  /// running rest, which redraws the card as the set card. None once no rest
+  /// is running.
+  private static func staleDate(
+    _ state: RestActivityAttributes.ContentState,
+    now: Date = Date()
+  ) -> Date? {
+    state.endsAt > now ? state.endsAt : nil
+  }
+
+  /// Shows `state`. A running activity (a rest, or the set in progress) is
+  /// moved in place, so a "Log set" tapped on the Lock Screen never needs a
+  /// new request while the app is in the background; every other earlier one,
+  /// an ended one included, is removed. Otherwise a new activity is requested,
+  /// but only when `request` (the workout just opened, a set was logged, a
+  /// rest began): a plain update must not bring back a card the athlete
+  /// dismissed. Answers whether it shows: false when Live Activities are off
+  /// or nothing was requested, a fixed error code when iOS refused the
+  /// request.
   @MainActor
-  private static func startRest(_ state: RestActivityAttributes.ContentState) async -> Any {
+  private static func show(
+    _ state: RestActivityAttributes.ContentState,
+    request: Bool
+  ) async -> Any {
     let running = all.first(where: isRunning)
-    for activity in all
-    where activity.activityState != .dismissed && activity.id != running?.id {
-      await activity.end(nil, dismissalPolicy: .immediate)
+    if request {
+      for activity in all
+      where activity.activityState != .dismissed && activity.id != running?.id {
+        await activity.end(nil, dismissalPolicy: .immediate)
+      }
     }
     if let running {
-      await running.update(ActivityContent(state: state, staleDate: state.endsAt))
+      await running.update(ActivityContent(state: state, staleDate: staleDate(state)))
       return true
     }
-    guard ActivityAuthorizationInfo().areActivitiesEnabled else { return false }
+    guard request, ActivityAuthorizationInfo().areActivitiesEnabled else { return false }
     do {
       _ = try Activity.request(
         attributes: RestActivityAttributes(),
-        content: ActivityContent(state: state, staleDate: state.endsAt),
+        content: ActivityContent(state: state, staleDate: staleDate(state)),
         pushType: nil
       )
       return true
@@ -207,11 +303,15 @@ enum WorkoutActivityBridge {
   }
 
   /// Moves the end of the running rest (±15 s, +30 s, Skip, or a rest
-  /// resumed after a relaunch). An end in the past makes it read "Rest done"
-  /// at once. Without a running rest activity it shows nothing: the athlete
-  /// may have dismissed it.
+  /// resumed after a relaunch), and the set that follows it when given. An
+  /// end in the past turns the card into the set card at once. Without a
+  /// running activity it shows nothing: the athlete may have dismissed it.
   @MainActor
-  private static func updateRest(endsAt: Date, nextLabel: String?) async -> Bool {
+  private static func updateRest(
+    endsAt: Date,
+    nextLabel: String?,
+    next: NextSet
+  ) async -> Bool {
     guard let activity = all.first(where: isRunning) else { return false }
     var state = activity.content.state
     state.endsAt = endsAt
@@ -219,22 +319,34 @@ enum WorkoutActivityBridge {
     if let nextLabel {
       state.nextLabel = nextLabel
     }
-    await activity.update(ActivityContent(state: state, staleDate: endsAt))
+    state = next.applied(to: state, clearing: next.clears)
+    await activity.update(ActivityContent(state: state, staleDate: staleDate(state)))
     return true
   }
 
   /// A button was tapped with no workout open: the running activity swaps
-  /// its buttons for "Open Tracend to continue".
+  /// its buttons for "Open Tracend".
   @MainActor
   private static func showNeedsApp() async {
     guard let activity = all.first(where: isRunning) else { return }
     var state = activity.content.state
     state.needsApp = true
-    await activity.update(ActivityContent(state: state, staleDate: state.endsAt))
+    await activity.update(ActivityContent(state: state, staleDate: staleDate(state)))
   }
 
-  /// Ends every running rest activity at once: the workout closed, the
-  /// "Rest done" time passed, or the athlete signed out.
+  /// The athlete turned Lock Screen numbers off: the running card loses its
+  /// target at once, and shows only the exercise and the set's position.
+  @MainActor
+  private static func hideNumbers() async {
+    for activity in all where isRunning(activity) {
+      var state = activity.content.state
+      state.nextTarget = ""
+      await activity.update(ActivityContent(state: state, staleDate: staleDate(state)))
+    }
+  }
+
+  /// Ends every running activity at once: the workout closed, or the athlete
+  /// signed out.
   @MainActor
   private static func endAll() async {
     for activity in all where isRunning(activity) {
@@ -242,31 +354,47 @@ enum WorkoutActivityBridge {
     }
   }
 
-  /// Ends, at once, every running rest activity whose "Rest done" time has
-  /// run past `doneLinger`. True when it ended any.
+  /// When an activity left on the Lock Screen no longer says anything true,
+  /// and must go: the card that says every set is logged, `doneLinger` after
+  /// it appeared, or any card the app has not moved for `abandonedAfter`.
+  static func lingerEnd(
+    of state: RestActivityAttributes.ContentState,
+    now: Date
+  ) -> Date {
+    switch state.phase(at: now) {
+    case .finished: return state.endsAt.addingTimeInterval(doneLinger)
+    case .set, .resting: return state.endsAt.addingTimeInterval(abandonedAfter)
+    }
+  }
+
+  /// Ends, at once, every running activity that is over (`lingerEnd` has
+  /// passed). True when it ended any.
   @MainActor
-  private static func endLingered(now: Date) async -> Bool {
+  private static func endOver(now: Date) async -> Bool {
     var ended = false
     for activity in all
-    where isRunning(activity)
-      && activity.content.state.endsAt.addingTimeInterval(doneLinger) <= now {
+    where isRunning(activity) && lingerEnd(of: activity.content.state, now: now) <= now {
       await activity.end(activity.content, dismissalPolicy: .immediate)
       ended = true
     }
     return ended
   }
 
-  /// Ends the running rest activities left from an earlier launch whose rest
-  /// is over: "Rest done" stays until `doneLinger` after the end.
+  /// At launch, ends the running activities that are over, and lets the
+  /// card that says every set is logged stay until `doneLinger` after it
+  /// appeared. A card that is still wanted stays for the app's restore to
+  /// move or end.
   @MainActor
   private static func endFinished() async {
     let now = Date()
-    for activity in all where isRunning(activity) && activity.content.state.endsAt <= now {
-      let lingerUntil = activity.content.state.endsAt.addingTimeInterval(doneLinger)
-      await activity.end(
-        activity.content,
-        dismissalPolicy: lingerUntil > now ? .after(lingerUntil) : .immediate
-      )
+    for activity in all where isRunning(activity) {
+      let state = activity.content.state
+      let until = lingerEnd(of: state, now: now)
+      if until <= now {
+        await activity.end(activity.content, dismissalPolicy: .immediate)
+      } else if state.phase(at: now) == .finished {
+        await activity.end(activity.content, dismissalPolicy: .after(until))
+      }
     }
   }
 }

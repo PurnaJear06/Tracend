@@ -106,10 +106,12 @@ enum TodayWidgetStore {
 }
 
 /// A tap on a widget opens the app on a tab: `tracend://today` or
-/// `tracend://train`. Nothing else is accepted.
+/// `tracend://train`; a tap on the workout's Live Activity opens the workout
+/// in progress: `tracend://workout`. Nothing else is accepted.
 enum TracendLink: String {
   case today
   case train
+  case workout
 
   static let scheme = "tracend"
 

@@ -9,6 +9,7 @@ import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 
+import '../live_activity/fake_workout_activity_bridge.dart';
 import 'fake_home_widget_bridge.dart';
 
 const _athlete = '11111111-1111-4111-8111-111111111111';
@@ -39,6 +40,9 @@ DailyBrief _brief({num protein = 80}) => DailyBrief(
 );
 
 void main() {
+  // Turning numbers off also reaches the workout's Live Activity channel,
+  // which has no native side here.
+  TestWidgetsFlutterBinding.ensureInitialized();
   late FakeHomeWidgetBridge bridge;
   late DateTime now;
   late TodayWidgetPublisher publisher;
@@ -120,6 +124,23 @@ void main() {
       });
     },
   );
+
+  test('turning numbers off also takes the kg and reps off the workout card, '
+      'turning them on does not touch it', () async {
+    final activity = FakeWorkoutActivityBridge();
+    final withCard = TodayWidgetPublisher(
+      bridge: bridge,
+      preferences: SharedPreferencesAsync(),
+      clock: () => now,
+      activity: activity,
+    );
+
+    await withCard.setLockScreenNumbers(true);
+    expect(activity.calls, isEmpty);
+
+    await withCard.setLockScreenNumbers(false);
+    expect(activity.methods, ['hideNumbers']);
+  });
 
   test('turning numbers off takes the lock section out at once', () async {
     await publish();
