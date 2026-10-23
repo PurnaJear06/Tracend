@@ -29,6 +29,8 @@ review. Tracend remains a working brand pending trademark and App Store clearanc
 
 - HealthKit summaries, workout references and source metadata;
 - workout performance, check-ins, pain, hunger, mood, and notes;
+- same-day readiness adjustments (`day_adjustments`: the answer, its reasons and the sleep and recovery
+  values the rules read);
 - nutrition logs, meal photos, allergies, and dietary constraints;
 - body measurements, progress photos, and physique analyses;
 - goals, limitations, plan decisions, and coaching history;
@@ -430,6 +432,9 @@ prompts; a report may carry the account ID and device and app details, never nam
 
 Audit events record access and changes using opaque IDs and action codes, not copies of sensitive
 content.
+`day_adjustment_answered` carries the kind, whether it was accepted, the band, the origin and the rules
+version only; the check-in, sleep and recovery values stay in the Restricted `day_adjustments` row.
+Neither widgets nor the Live Activity show a readiness adjustment.
 
 Local reminders are scheduled by iOS and use only the generic title `Tracend reminder` and body
 `Open Tracend when convenient.` Lock-screen content never names health, nutrition, workouts,
@@ -543,7 +548,7 @@ phone; the widgets never call the network and hold no token.
 Initial private-beta defaults:
 
 - account/profile/plans/logs/measurements/decisions: retained until user deletion or explicit record
-  deletion where supported;
+  deletion where supported; same-day readiness answers are retained like check-ins;
 - confirmed meal records: retained until user deletion; source meal image deleted after 30 days
   unless explicitly saved (in practice the upload sets a 7-day deadline and confirmation never
   extends it, so images go about 7 days after upload);
@@ -593,7 +598,8 @@ history.
 - The package contains user-readable JSON/CSV and media organized by purpose, with units,
   provenance, and timestamps. It includes the onboarding profile fields, `onboarding_generations`,
   `onboarding_questions`, `onboarding_screenings` (the pre-plan health check answers),
-  `health_history_months`, `ai_usage_events`, physique analyses and every
+  `health_history_months`, `day_adjustments` (the athlete's readiness answers),
+  `ai_usage_events`, physique analyses and every
   set-timing column. `coach_facts` (what the athlete confirmed for Coach) and `coach_notes` (Coach's own
   notes) are included. Known gap: the table list in `privacy-export` does not yet include Coach
   threads and messages, `user_preferences`, nutrition schedules, HealthKit

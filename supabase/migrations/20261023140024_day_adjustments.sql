@@ -153,8 +153,8 @@ declare
   confidence text;
   missing text[] := '{}';
 begin
-  if not sleep_ok then missing := missing || 'sleep'; end if;
-  if not recovery_ok then missing := missing || 'recovery'; end if;
+  if not sleep_ok then missing := array_append(missing, 'sleep'); end if;
+  if not recovery_ok then missing := array_append(missing, 'recovery'); end if;
   confidence := case
     when sleep_ok and recovery_ok and p_recovery_confidence = 'high' and p_recovery_mode = 'night'
       then 'high'
@@ -178,36 +178,36 @@ begin
   end if;
 
   if p_sleep_quality = 1 then
-    triggers := triggers || 'sleep_very_poor'; subjective := subjective + (pts ->> 'sleep_very_poor')::integer;
+    triggers := array_append(triggers, 'sleep_very_poor'); subjective := subjective + (pts ->> 'sleep_very_poor')::integer;
   elsif p_sleep_quality = 2 then
-    triggers := triggers || 'sleep_poor'; subjective := subjective + (pts ->> 'sleep_poor')::integer;
+    triggers := array_append(triggers, 'sleep_poor'); subjective := subjective + (pts ->> 'sleep_poor')::integer;
   end if;
   if sleep_ok and p_sleep_minutes < (r ->> 'sleep_short_below_minutes')::integer then
-    triggers := triggers || 'sleep_short';
+    triggers := array_append(triggers, 'sleep_short');
   end if;
   if p_energy = 1 then
-    triggers := triggers || 'energy_very_low'; subjective := subjective + (pts ->> 'energy_very_low')::integer;
+    triggers := array_append(triggers, 'energy_very_low'); subjective := subjective + (pts ->> 'energy_very_low')::integer;
   elsif p_energy = 2 then
-    triggers := triggers || 'energy_low'; subjective := subjective + (pts ->> 'energy_low')::integer;
+    triggers := array_append(triggers, 'energy_low'); subjective := subjective + (pts ->> 'energy_low')::integer;
   end if;
   if p_soreness = 5 then
-    triggers := triggers || 'very_sore'; subjective := subjective + (pts ->> 'very_sore')::integer;
+    triggers := array_append(triggers, 'very_sore'); subjective := subjective + (pts ->> 'very_sore')::integer;
   elsif p_soreness = 4 then
-    triggers := triggers || 'sore'; subjective := subjective + (pts ->> 'sore')::integer;
+    triggers := array_append(triggers, 'sore'); subjective := subjective + (pts ->> 'sore')::integer;
   end if;
   if p_mood = 1 then
-    triggers := triggers || 'mood_very_low'; subjective := subjective + (pts ->> 'mood_very_low')::integer;
+    triggers := array_append(triggers, 'mood_very_low'); subjective := subjective + (pts ->> 'mood_very_low')::integer;
   end if;
   if p_pain >= (r ->> 'pain_moderate_from')::integer then
-    triggers := triggers || 'pain_moderate'; subjective := subjective + (pts ->> 'pain_moderate')::integer;
+    triggers := array_append(triggers, 'pain_moderate'); subjective := subjective + (pts ->> 'pain_moderate')::integer;
   elsif p_pain >= (r ->> 'pain_mild_from')::integer then
-    triggers := triggers || 'pain_mild';
+    triggers := array_append(triggers, 'pain_mild');
   end if;
 
   total := subjective;
   if 'sleep_short' = any(triggers) then total := total + (pts ->> 'sleep_short')::integer; end if;
   if recovery_low then
-    triggers := triggers || 'recovery_low';
+    triggers := array_append(triggers, 'recovery_low');
     -- A score from the body's own signals never adjusts a session alone (D9).
     if subjective >= 1 then total := total + (pts ->> 'recovery_low')::integer; end if;
   end if;
@@ -222,7 +222,7 @@ begin
     when total >= (r ->> 'amber_from_points')::integer then
       case when p_can_hold then 'hold_load' else 'none' end
     else 'none' end;
-  if not coalesce(p_available_to_train, false) then triggers := 'not_available' || triggers; end if;
+  if not coalesce(p_available_to_train, false) then triggers := array_prepend('not_available', triggers); end if;
 
   return jsonb_build_object('band', band, 'kind', kind, 'points', total,
     'subjective_points', subjective, 'triggers', to_jsonb(triggers), 'safety_route', null,

@@ -149,8 +149,12 @@ either continuation or a revised plan. The user approves the result.
 5. Daily recommendations may adjust today's execution, but persistent target or plan changes enter a
    separate approval flow.
 
-**Planned (Phase 4, B4):** a same-day readiness adjustment (fewer sets, hold load, or easy cardio)
-that the athlete accepts or declines with one tap, recorded with an audit event.
+**Same-day readiness adjustment (Phase 4, B4; server built in B4-1, app in B4-2):** from today's
+check-in, last night's sleep and the recovery score, Tracend proposes holding last time's loads, one
+set fewer, or easy cardio for today's session only. The athlete accepts or declines with one tap
+(Undo until the workout starts), recorded with an audit event; the plan never changes. A poor check-in
+leads; the recovery score alone never adjusts a session, it informs the athlete and the athlete may
+choose an adjustment themselves. Pain of 7 or more gives a referral and no training change.
 
 Direct Coach questions use the active approved plan plus bounded longitudinal context: the active
 goal and profile, recent check-ins, normalized HealthKit summaries, completed workouts, confirmed
