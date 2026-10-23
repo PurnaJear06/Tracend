@@ -1682,6 +1682,23 @@ nutrition block use it): the raw `nutrition_daily_28d` rows no longer count, onl
 block's week does.
 
 
+## Coach opens a fresh chat after 6 hours (2026-10-24, branch `claude/coach-chat-fresh`)
+
+The owner asked "Should I train legs today?" at 05:00 and the app appended it under a conversation
+from 2026-10-18. `_restoreChat` in `lib/features/coach/coach_screen.dart` now reopens the remembered
+(else newest) conversation only when its `updatedAt` (the server bumps it with every message) is
+under `coachReopenWindow` (6 hours, one constant); otherwise it opens a new conversation and a
+**Continue last chat** row (newest thread's first question as subtitle) sits above the
+suggestions. `CoachScreen.now` is the clock tests set.
+
+Scroll fix: the one-frame `jumpTo(maxScrollExtent)` stopped short because the list is lazy (its
+extent is an estimate that grows as items lay out) and cards load late. Opening a conversation now
+sets `_pinnedToEnd`; a `ScrollMetricsNotification` listener re-jumps to the end whenever the extent
+changes while pinned. A pointer down on the conversation, a send, or New/open ends the pin, so
+tapping to expand a card never jumps. Sending keeps its animated scroll. Tests:
+`test/coach_chat_history_test.dart` ("opening Coach", "landing on the newest message") and the late
+card test in `test/coach_proposal_thread_test.dart`. No migration, no server change.
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in

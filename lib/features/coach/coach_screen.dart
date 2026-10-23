@@ -49,6 +49,12 @@ typedef _TurnFailure = ({
 /// (it would answer "still working" forever) cannot trap Retry.
 const _maxKeyReplays = 2;
 
+/// Opening Coach reopens the last conversation only when its latest message is
+/// newer than this. A day-old chat is a different topic: the athlete starts a
+/// fresh one and can still continue the old one from the "Continue last chat"
+/// row or Saved conversations.
+const coachReopenWindow = Duration(hours: 6);
+
 class CoachScreen extends StatefulWidget {
   const CoachScreen({
     this.repository = const FixtureCoachRepository(),
@@ -57,9 +63,13 @@ class CoachScreen extends StatefulWidget {
     this.proposals,
     this.planChanges,
     this.memory,
+    this.now = DateTime.now,
     super.key,
   });
   final CoachRepository repository;
+
+  /// The clock behind [coachReopenWindow]; tests set it.
+  final DateTime Function() now;
   final CoachThreadMemory threadMemory;
 
   /// Reads and answers the proposals Coach makes (A8). Null without a backend,
@@ -123,6 +133,12 @@ class _CoachScreenState extends State<CoachScreen> {
   int _restoredRows = 0;
   bool _loadingChat = true;
   bool _sending = false;
+
+  /// True after a conversation opens, until the athlete touches the screen or
+  /// sends. While true, content that lays out late (long replies, cards that
+  /// load after the messages) keeps the view on the newest message.
+  bool _pinnedToEnd = false;
+  bool _pinScheduled = false;
 
   /// A problem with the conversations themselves (loading, deleting).
   String? _error;
@@ -215,10 +231,17 @@ class _CoachScreenState extends State<CoachScreen> {
         widget.threadMemory.lastThreadId(),
       ).wait;
       // Reopen the conversation the user last had open; otherwise the one
-      // with the newest message; with none, start a new conversation.
-      final threadId = threads.any((thread) => thread.id == remembered)
-          ? remembered
-          : threads.firstOrNull?.id;
+      // with the newest message; with none, or none touched within
+      // [coachReopenWindow], start a new conversation. The server bumps a
+      // thread's updatedAt with every message, so it is the last message time.
+      final last =
+          threads.where((thread) => thread.id == remembered).firstOrNull ??
+          threads.firstOrNull;
+      final threadId =
+          last != null &&
+              widget.now().difference(last.updatedAt) < coachReopenWindow
+          ? last.id
+          : null;
       final messages = threadId == null
           ? const <CoachMessage>[]
           : await chat.loadMessages(threadId);
@@ -232,7 +255,7 @@ class _CoachScreenState extends State<CoachScreen> {
         _messages = messages;
         _loadingChat = false;
       });
-      _scrollToEnd(animate: false);
+      _showNewest();
     } catch (e) {
       debugPrint('Non-critical error: $e');
       if (mounted) {
@@ -249,6 +272,7 @@ class _CoachScreenState extends State<CoachScreen> {
     if (chat == null) return;
     setState(() {
       _view++;
+      _pinnedToEnd = false;
       _loadingChat = true;
       _threadId = id;
       _threadRemembered = _threads
@@ -267,7 +291,7 @@ class _CoachScreenState extends State<CoachScreen> {
           _messages = messages;
           _loadingChat = false;
         });
-        _scrollToEnd(animate: false);
+        _showNewest();
       }
     } catch (e) {
       debugPrint('Non-critical error: $e');
@@ -282,6 +306,7 @@ class _CoachScreenState extends State<CoachScreen> {
 
   void _newThread() => setState(() {
     _view++;
+    _pinnedToEnd = false;
     _threadId = null;
     _rememberChat = true;
     _threadRemembered = true;
@@ -356,6 +381,7 @@ class _CoachScreenState extends State<CoachScreen> {
     unawaited(TracendHaptics.light());
     // Retry and suggestion chips keep whatever the user is typing.
     if (suggestion == null) _composer.clear();
+    _pinnedToEnd = false;
     final view = _view;
     final key = retrying != null && retrying.reuseKey
         ? retrying.key
@@ -499,6 +525,27 @@ class _CoachScreenState extends State<CoachScreen> {
       }
     }
     return null;
+  }
+
+  /// Opens the view on the newest message and keeps it there while the
+  /// content settles (see [_pinnedToEnd]).
+  void _showNewest() {
+    _pinnedToEnd = true;
+    _scrollToEnd(animate: false);
+  }
+
+  /// Layout changes while pinned (a late card, a long reply) move the end
+  /// further down: follow it.
+  bool _followEnd(ScrollMetricsNotification notification) {
+    if (!_pinnedToEnd || notification.depth != 0 || _pinScheduled) return false;
+    _pinScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pinScheduled = false;
+      if (!mounted || !_pinnedToEnd || !_scroll.hasClients) return;
+      final end = _scroll.position.maxScrollExtent;
+      if ((end - _scroll.position.pixels).abs() > 0.5) _scroll.jumpTo(end);
+    });
+    return false;
   }
 
   void _scrollToEnd({bool animate = true}) {
@@ -687,19 +734,27 @@ class _CoachScreenState extends State<CoachScreen> {
       body: Stack(
         children: [
           Positioned.fill(
-            child: NotificationListener<ScrollUpdateNotification>(
-              // Dragging the conversation puts the keyboard away.
-              onNotification: (notification) {
-                if (notification.dragDetails != null) {
-                  FocusManager.instance.primaryFocus?.unfocus();
-                }
-                return false;
-              },
-              child: PrimaryScrollController(
-                controller: _scroll,
-                child: TracendScrollView(
-                  title: 'Coach',
-                  children: _content(context),
+            // Touching the conversation ends the follow-the-newest pin, so a
+            // tap that expands a card does not jump away.
+            child: Listener(
+              onPointerDown: (_) => _pinnedToEnd = false,
+              child: NotificationListener<ScrollMetricsNotification>(
+                onNotification: _followEnd,
+                child: NotificationListener<ScrollUpdateNotification>(
+                  // Dragging the conversation puts the keyboard away.
+                  onNotification: (notification) {
+                    if (notification.dragDetails != null) {
+                      FocusManager.instance.primaryFocus?.unfocus();
+                    }
+                    return false;
+                  },
+                  child: PrimaryScrollController(
+                    controller: _scroll,
+                    child: TracendScrollView(
+                      title: 'Coach',
+                      children: _content(context),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -783,6 +838,8 @@ class _CoachScreenState extends State<CoachScreen> {
     final colors = context.tracendColors;
     final textTheme = Theme.of(context).textTheme;
     final failure = _turnFailure;
+    // A new conversation offers the one before it.
+    final previous = _threadId == null ? _threads.firstOrNull : null;
     return [
       if (_error != null) ...[
         _Notice(_error!),
@@ -857,6 +914,18 @@ class _CoachScreenState extends State<CoachScreen> {
               sources: snapshot.data,
               loading: snapshot.connectionState == ConnectionState.waiting,
             ),
+          ),
+          const SizedBox(height: TracendSpacing.lg),
+        ],
+        if (previous != null) ...[
+          TracendGroupedList(
+            children: [
+              TracendListRow(
+                title: 'Continue last chat',
+                subtitle: _ThreadRow._title(previous.title),
+                onTap: () => _openThread(previous.id),
+              ),
+            ],
           ),
           const SizedBox(height: TracendSpacing.lg),
         ],

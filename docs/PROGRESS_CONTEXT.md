@@ -71,6 +71,11 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 
+**Coach opens a fresh chat (2026-10-24, branch `claude/coach-chat-fresh`, PR open):** Coach reopens the last
+conversation only if its last message is under 6 hours old, otherwise a new conversation with a **Continue last
+chat** row; opening any conversation now lands on its newest message even when content lays out late. App only, no
+migration. Details: "Coach opens a fresh chat after 6 hours" in [`ai-gateway.md`](./handoff/ai-gateway.md).
+
 **Stale open workouts (2026-10-23, branch `claude/stale-workout-resume`, PR open):** the owner's Legs B resumed a
 session left open since 2026-07-17 (timer 2348 h, today's sets saved on a July date). An open session from an earlier
 local day more than 3 hours old is now closed as `abandoned` (rows and sets kept) when any workout is opened and by an
@@ -295,7 +300,7 @@ Needs a reinstall. See [`docs/handoff/account-session.md`](./handoff/account-ses
   - A2 (#41, merged 2026-09-29): the app side.
     - The app sends request 1.1, so a model failure shows a labeled data summary or safety note,
       with Retry and the beta diagnostic.
-    - Coach reopens the last conversation and creates a thread on its first send.
+    - Coach reopens the last conversation (since 2026-10-24 only within 6 hours) and creates a thread on its first send.
     - It lists only conversations that contain a message (`get_my_coach_threads`).
     - The first install (build 185) had no font files, so every icon showed as a "?" box. Its
       build folder was shared with other checkouts. A rebuild from the same commit, with every font
