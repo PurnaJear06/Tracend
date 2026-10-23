@@ -13,11 +13,13 @@
 --                                           the pure decision: band, triggers, points, kind
 --   5. private.day_adjustment_changes       what each kind changes in today's session
 --   6. private.day_adjustment_explanation   fixed sentences keyed by trigger and kind (no model)
---   7. private.day_adjustment_compute, _stands, _present, _refresh_metrics
+--   7. private.day_adjustment_compute, _stands, _present, _refresh_metrics, and
+--      private.day_adjustment_metric_attempts (one scoring attempt per athlete and day)
 --   8. public.get_my_day_adjustment_v1, public.respond_to_day_adjustment_v1
 --   9. private.progression_decision, private.next_session_targets
 --                                           a session done under an adjustment never lowers a load
 --  10. public.start_workout                 builds the session with the adjusted set count
+--  11. public.get_my_training_hub           1.8: the sessions inside a target gain two keys
 --
 -- A poor check-in alone is enough; the recovery score never applies or picks an adjustment by
 -- itself (decision D9, owner 2026-10-23): it adds a point only next to a point from the check-in, and
@@ -102,7 +104,7 @@ create index workout_sessions_day_adjustment
 
 create function private.readiness_rules()
 returns jsonb language sql immutable set search_path = '' as $$
-  select '{"version":"readiness-v1","points":{"sleep_very_poor":2,"sleep_poor":1,"energy_very_low":2,"energy_low":1,"very_sore":2,"sore":1,"mood_very_low":1,"pain_moderate":2,"pain_mild":0,"sleep_short":1,"recovery_low":1},"pain_referral_from":7,"pain_moderate_from":4,"pain_mild_from":1,"sleep_short_below_minutes":360,"sleep_valid_max_minutes":960,"recovery_low_below":35,"amber_from_points":1,"reduce_from_points":2,"red_from_points":4,"reduce_min_sets":3,"reduce_sets_cut":1,"reduce_rpe_drop":1,"reduce_rpe_floor":6,"easy_cardio_minutes":[20,30],"answers_per_day":20}'::jsonb;
+  select '{"version":"readiness-v1","points":{"sleep_very_poor":2,"sleep_poor":1,"energy_very_low":2,"energy_low":1,"very_sore":2,"sore":1,"mood_very_low":1,"pain_moderate":2,"pain_mild":0,"sleep_short":1,"recovery_low":1},"pain_referral_from":7,"pain_moderate_from":4,"pain_mild_from":1,"sleep_short_below_minutes":360,"sleep_valid_max_minutes":960,"recovery_low_below":35,"amber_from_points":1,"reduce_from_points":2,"red_from_points":4,"reduce_min_sets":3,"reduce_sets_cut":1,"reduce_rpe_drop":1,"reduce_rpe_floor":6,"easy_cardio_minutes":[20,30],"answers_per_day":20,"metrics_retry_minutes":10}'::jsonb;
 $$;
 revoke all on function private.readiness_rules() from public, anon, authenticated;
 
@@ -287,8 +289,9 @@ select jsonb_build_object(
     'sets_from', e.set_count,
     'sets_to', e.sets_to,
     'load_note', case when e.holds_load and e.holds and e.last_load is not null then
-      case when e.assisted
-        then 'Keep last time''s ' || trim_scale(e.last_load)::text || ' kg of help'
+      case when e.assisted and e.last_load = 0 then 'Keep last time''s unassisted reps'
+        when e.assisted then 'Keep last time''s ' || trim_scale(e.last_load)::text || ' kg of help'
+        when e.last_load = 0 then 'Keep last time''s body weight'
         else 'Keep last time''s ' || trim_scale(e.last_load)::text || ' kg' end end,
     'load_kg_from', case when e.holds then e.target_load end,
     'load_kg_to', case when e.holds then e.last_load end,
@@ -309,7 +312,7 @@ revoke all on function private.day_adjustment_changes(uuid, uuid, text, jsonb)
 -- 6. The words: fixed sentences, composed from the triggers and the kind. No model writes them. -------
 create function private.day_adjustment_explanation(
   p_band text, p_kind text, p_triggers text[], p_safety_route text, p_changes jsonb,
-  p_with_reasons boolean
+  p_with_reasons boolean, p_unavailable text
 ) returns text language plpgsql immutable set search_path = '' as $$
 declare
   r constant jsonb := private.readiness_rules();
@@ -330,6 +333,50 @@ begin
   if p_safety_route = 'pain_referral' then
     return 'Pain of 7 or more is too high to train through. Rest the area and see a doctor or physio before you train it again.';
   end if;
+  if 'pain_mild' = any(p_triggers) then
+    note := ' Keep any pain at 3 or below, and stop if it builds from set to set.';
+  end if;
+
+  -- A kind speaks for itself: its sentence depends on the kind and its changes, never on the band
+  -- (an adjustment the athlete chose themselves may come with no check-in at all).
+  if p_kind <> 'none' then
+    select count(*) filter (where (c ->> 'sets_to')::integer < (c ->> 'sets_from')::integer),
+      coalesce(bool_or(c ->> 'load_note' is not null), false)
+    into cut, loads
+    from jsonb_array_elements(coalesce(p_changes, '[]'::jsonb)) c;
+
+    action := case p_kind
+      when 'hold_load' then case when loads
+        then 'Keep last time''s weights instead of adding more.'
+        else 'Repeat last time''s reps instead of adding more.' end
+      when 'reduce_sets' then 'One set fewer on ' || cut
+        || case when cut = 1 then ' exercise' else ' exercises' end
+        || case when loads then ' and last time''s weights.' else '.' end
+      else format('Try %s to %s minutes of easy walking, cycling or swimming at a pace you can talk through. It keeps you moving without adding strain.',
+        r -> 'easy_cardio_minutes' -> 0, r -> 'easy_cardio_minutes' -> 1) end;
+
+    if p_with_reasons then
+      for i in 1..array_length(codes, 1) loop
+        if codes[i] = any(p_triggers) then parts := parts || phrases[i]; end if;
+      end loop;
+      n := coalesce(array_length(parts, 1), 0);
+      if n = 1 then reasons := parts[1];
+      elsif n >= 2 then
+        reasons := array_to_string(parts[1:n - 1], ', ') || ' and ' || parts[n];
+      end if;
+    end if;
+    return case when reasons <> ''
+      then upper(left(reasons, 1)) || substr(reasons, 2) || '. ' else '' end || action || note;
+  end if;
+
+  if p_unavailable is not null then
+    return case p_unavailable
+      when 'no_plan' then 'You have no active plan to adjust.'
+      when 'rest_day' then 'No session is planned today. Nothing in your plan changes.'
+      when 'session_started' then 'Today''s session is under way.'
+      when 'session_done' then 'Today''s session is done.'
+      else 'Coach already adjusted today''s session.' end;
+  end if;
   if p_band = 'unknown' then
     return case when 'recovery_low' = any(p_triggers)
       then 'Your recovery reads low. Check in and Tracend will say whether to adjust today.'
@@ -337,9 +384,6 @@ begin
   end if;
   if 'not_available' = any(p_triggers) then
     return 'You said you can''t train today. Nothing in your plan changes.';
-  end if;
-  if 'pain_mild' = any(p_triggers) then
-    note := ' Keep any pain at 3 or below, and stop if it builds from set to set.';
   end if;
 
   for i in 1..array_length(codes, 1) loop
@@ -350,56 +394,66 @@ begin
   elsif n >= 2 then
     reasons := array_to_string(parts[1:n - 1], ', ') || ' and ' || parts[n];
   end if;
-
-  if p_kind = 'none' then
-    if p_band = 'green' then
-      return case when 'recovery_low' = any(p_triggers)
-        then 'Your recovery reads low, but your check-in looks fine. You can train as planned or choose a lighter session.'
-        else 'Your check-in looks fine. Train as planned.' end || note;
-    end if;
-    return case when n = 0 then 'Nothing in today''s session needs to change.'
-      else upper(left(reasons, 1)) || substr(reasons, 2)
-        || '. Nothing in today''s session needs to change.' end || note;
+  if p_band = 'green' then
+    return case when 'recovery_low' = any(p_triggers)
+      then 'Your recovery reads low, but your check-in looks fine. You can train as planned or choose a lighter session.'
+      else 'Your check-in looks fine. Train as planned.' end || note;
   end if;
-
-  select count(*) filter (where (c ->> 'sets_to')::integer < (c ->> 'sets_from')::integer),
-    coalesce(bool_or(c ->> 'load_note' is not null), false)
-  into cut, loads
-  from jsonb_array_elements(coalesce(p_changes, '[]'::jsonb)) c;
-
-  action := case p_kind
-    when 'hold_load' then case when loads
-      then 'Keep last time''s weights instead of adding more.'
-      else 'Repeat last time''s reps instead of adding more.' end
-    when 'reduce_sets' then 'One set fewer on ' || cut || case when cut = 1 then ' exercise' else ' exercises' end
-      || case when loads then ' and last time''s weights.' else '.' end
-    else format('Try %s to %s minutes of easy walking, cycling or swimming at a pace you can talk through. It keeps you moving without adding strain.',
-      r -> 'easy_cardio_minutes' -> 0, r -> 'easy_cardio_minutes' -> 1) end;
-
-  return case when p_with_reasons and n > 0
-    then upper(left(reasons, 1)) || substr(reasons, 2) || '. ' else '' end || action || note;
+  return case when n = 0 then 'Nothing in today''s session needs to change.'
+    else upper(left(reasons, 1)) || substr(reasons, 2)
+      || '. Nothing in today''s session needs to change.' end || note;
 end $$;
-revoke all on function private.day_adjustment_explanation(text, text, text[], text, jsonb, boolean)
+revoke all on function private.day_adjustment_explanation(text, text, text[], text, jsonb, boolean, text)
   from public, anon, authenticated;
 
 -- 7. Computing the day ------------------------------------------------------------------------------
 
--- Today's scores are made once a day if none exist. A failure leaves the recovery score missing; it
--- never blocks the adjustment (the same guard prepare_daily_coaching uses).
+-- Today's scores are made when none exist, and made again when Apple Health data arrived after
+-- they were computed. A failure leaves the recovery score missing and never blocks the adjustment
+-- (the same guard prepare_daily_coaching uses). Every attempt, failed or not, is recorded, and none
+-- is repeated within metrics_retry_minutes, so a scoring error or a day that cannot be scored is not
+-- retried on every read.
+create table private.day_adjustment_metric_attempts (
+  user_id uuid not null references public.user_accounts (id) on delete cascade,
+  local_date date not null,
+  attempted_at timestamptz not null default now(),
+  failed boolean not null,
+  primary key (user_id, local_date)
+);
+alter table private.day_adjustment_metric_attempts enable row level security;
+alter table private.day_adjustment_metric_attempts force row level security;
+revoke all on private.day_adjustment_metric_attempts from public, anon, authenticated;
+
 create function private.day_adjustment_refresh_metrics(p_user uuid, p_date date)
 returns void language plpgsql security definer set search_path = '' as $$
+declare
+  stale boolean;
+  did_fail boolean := false;
 begin
-  if not exists (select 1 from public.daily_computed_metrics m
-      where m.user_id = p_user and m.local_date = p_date) then
-    begin
-      perform public.compute_daily_metrics(p_user, p_date, coalesce((
-        select z.name from public.user_accounts a
-        join pg_catalog.pg_timezone_names z on z.name = a.timezone
-        where a.id = p_user), 'UTC'));
-    exception when others then
-      null;
-    end;
+  stale := not exists (select 1 from public.daily_computed_metrics m
+      where m.user_id = p_user and m.local_date = p_date)
+    or exists (select 1 from public.daily_computed_metrics m
+      join public.daily_health_summaries h on h.user_id = m.user_id and h.local_date = m.local_date
+        and h.source_scope = 'healthkit'
+      where m.user_id = p_user and m.local_date = p_date and h.last_synced_at > m.computed_at);
+  if not stale or exists (select 1 from private.day_adjustment_metric_attempts t
+      where t.user_id = p_user and t.local_date = p_date
+        and t.attempted_at > now() - make_interval(
+          mins => (private.readiness_rules() ->> 'metrics_retry_minutes')::integer)) then
+    return;
   end if;
+  begin
+    perform public.compute_daily_metrics(p_user, p_date, coalesce((
+      select z.name from public.user_accounts a
+      join pg_catalog.pg_timezone_names z on z.name = a.timezone
+      where a.id = p_user), 'UTC'));
+  exception when others then
+    did_fail := true;
+  end;
+  insert into private.day_adjustment_metric_attempts(user_id, local_date, attempted_at, failed)
+  values (p_user, p_date, now(), did_fail)
+  on conflict (user_id, local_date) do update
+    set attempted_at = excluded.attempted_at, failed = excluded.failed;
 end $$;
 revoke all on function private.day_adjustment_refresh_metrics(uuid, date)
   from public, anon, authenticated;
@@ -498,21 +552,21 @@ begin
     if can_hold then
       options := options || jsonb_build_object('kind', 'hold_load',
         'explanation', private.day_adjustment_explanation(band, 'hold_load', '{}', null,
-          hold_c -> 'changes', false),
+          hold_c -> 'changes', false, null),
         'sets_total_to', (hold_c ->> 'sets_to')::integer, 'changes', hold_c -> 'changes',
         'cardio', null);
     end if;
     if can_reduce then
       options := options || jsonb_build_object('kind', 'reduce_sets',
         'explanation', private.day_adjustment_explanation(band, 'reduce_sets', '{}', null,
-          reduce_c -> 'changes', false),
+          reduce_c -> 'changes', false, null),
         'sets_total_to', (reduce_c ->> 'sets_to')::integer, 'changes', reduce_c -> 'changes',
         'cardio', null);
     end if;
     if (swap_c ->> 'sets_from')::integer > 0 then
       options := options || jsonb_build_object('kind', 'swap_to_easy_cardio',
         'explanation', private.day_adjustment_explanation(band, 'swap_to_easy_cardio', '{}', null,
-          swap_c -> 'changes', false),
+          swap_c -> 'changes', false, null),
         'sets_total_to', 0, 'changes', swap_c -> 'changes', 'cardio', cardio);
     end if;
   end if;
@@ -533,7 +587,7 @@ begin
       'kind', kind,
       'changes', chosen_c -> 'changes',
       'explanation', private.day_adjustment_explanation(band, kind, triggers, safety,
-        chosen_c -> 'changes', true),
+        chosen_c -> 'changes', true, unavailable),
       'status', case when kind = 'none' then 'none' else 'proposed' end,
       'available', unavailable is null,
       'unavailable_reason', unavailable,
@@ -558,40 +612,48 @@ revoke all on function private.day_adjustment_compute(uuid, date) from public, a
 
 -- A stored answer stands while it belongs to today's workout and the rules do not now ask for
 -- something stricter than what they asked for when it was given or than what the athlete answered.
--- Once the session has started or is done, it stands as it is.
+-- Once the session has started or is done, it stands as it is. A safety route stands over every
+-- answer: nothing stored is shown on a day the rules route out.
 create function private.day_adjustment_stands(p_row public.day_adjustments, p_payload jsonb)
 returns boolean language sql immutable set search_path = '' as $$
   select p_row.id is not null
+    and p_payload ->> 'safety_route' is null
     and p_row.planned_workout_id::text = p_payload ->> 'planned_workout_id'
     and (p_payload ->> 'unavailable_reason' in ('session_started', 'session_done')
-      or private.readiness_rank(p_payload ->> 'kind', p_payload ->> 'safety_route')
+      or private.readiness_rank(p_payload ->> 'kind', null)
         <= greatest(private.readiness_rank(p_row.rules_kind, null),
           private.readiness_rank(p_row.kind, null)));
 $$;
 revoke all on function private.day_adjustment_stands(public.day_adjustments, jsonb)
   from public, anon, authenticated;
 
--- The object the app reads: the computed day with the athlete's stored answer laid over it.
+-- The object the app reads: the computed day with the athlete's stored answer laid over it. A
+-- standing answer replaces only the kind, status, changes, cardio, origin and answer time (and the
+-- sentence for them); the band, reasons and totals stay today's. An answer that no longer stands is
+-- named in previous_answer with the reason: a different check-in, or new data (sleep or scores that
+-- arrived after the answer).
 create function private.day_adjustment_present(
-  p_row public.day_adjustments, p_payload jsonb, p_stands boolean
+  p_row public.day_adjustments, p_payload jsonb, p_stands boolean, p_inputs jsonb
 ) returns jsonb language sql immutable set search_path = '' as $$
   select case
-    when p_row.id is null then p_payload
+    when p_row.id is null or p_payload ->> 'safety_route' is not null then p_payload
     when p_stands then p_payload || jsonb_build_object(
-      'status', p_row.status, 'kind', p_row.kind, 'band', p_row.band,
-      'triggers', to_jsonb(p_row.triggers), 'changes', p_row.changes, 'cardio', p_row.cardio,
+      'status', p_row.status, 'kind', p_row.kind, 'changes', p_row.changes, 'cardio', p_row.cardio,
       'sets_total_to', (p_payload ->> 'sets_total_from')::integer - coalesce((
         select sum((c ->> 'sets_from')::integer - (c ->> 'sets_to')::integer)
         from jsonb_array_elements(p_row.changes) c), 0)::integer,
-      'explanation', private.day_adjustment_explanation(p_row.band, p_row.kind, p_row.triggers,
-        null, p_row.changes, p_row.origin = 'proposed'),
+      'explanation', private.day_adjustment_explanation(p_payload ->> 'band', p_row.kind,
+        array(select jsonb_array_elements_text(p_payload -> 'triggers')), null, p_row.changes,
+        p_row.origin = 'proposed', null),
       'origin', p_row.origin, 'answered_at', p_row.answered_at)
     when p_row.planned_workout_id::text = p_payload ->> 'planned_workout_id'
       then p_payload || jsonb_build_object('previous_answer', jsonb_build_object(
-        'kind', p_row.kind, 'status', p_row.status, 'answered_at', p_row.answered_at))
+        'kind', p_row.kind, 'status', p_row.status, 'answered_at', p_row.answered_at,
+        'reason', case when p_row.inputs ->> 'check_in_id' is distinct from p_inputs ->> 'check_in_id'
+          then 'check_in' else 'new_data' end))
     else p_payload end;
 $$;
-revoke all on function private.day_adjustment_present(public.day_adjustments, jsonb, boolean)
+revoke all on function private.day_adjustment_present(public.day_adjustments, jsonb, boolean, jsonb)
   from public, anon, authenticated;
 
 -- 8. The two RPCs -----------------------------------------------------------------------------------
@@ -602,6 +664,7 @@ returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
   uid constant uuid := auth.uid();
   today date;
+  computed jsonb;
   payload jsonb;
   cur public.day_adjustments%rowtype;
 begin
@@ -613,10 +676,12 @@ begin
     raise exception 'only today can be read' using errcode = '22023';
   end if;
   perform private.day_adjustment_refresh_metrics(uid, today);
-  payload := private.day_adjustment_compute(uid, today) -> 'payload';
+  computed := private.day_adjustment_compute(uid, today);
+  payload := computed -> 'payload';
   select * into cur from public.day_adjustments a
   where a.user_id = uid and a.local_date = today and a.superseded_at is null;
-  return private.day_adjustment_present(cur, payload, private.day_adjustment_stands(cur, payload));
+  return private.day_adjustment_present(cur, payload, private.day_adjustment_stands(cur, payload),
+    computed -> 'inputs');
 end $$;
 revoke all on function public.get_my_day_adjustment_v1(date) from public, anon, authenticated;
 grant execute on function public.get_my_day_adjustment_v1(date) to authenticated;
@@ -702,10 +767,12 @@ begin
   -- The same answer again is not a new answer.
   target_status := case when accept then 'accepted' else 'declined' end;
   if stands and cur.kind = target_kind and cur.status = target_status then
-    return private.day_adjustment_present(cur, payload, true);
+    return private.day_adjustment_present(cur, payload, true, computed -> 'inputs');
   end if;
 
-  if (select count(*) from public.day_adjustments a
+  -- Undoing a standing accepted answer is never refused: the athlete can always get back to the plan.
+  if not (not accept and stands and cur.status = 'accepted')
+     and (select count(*) from public.day_adjustments a
       where a.user_id = uid and a.local_date = today)
      >= (private.readiness_rules() ->> 'answers_per_day')::integer then
     raise exception 'too many answers today' using errcode = 'P0001';
@@ -728,7 +795,7 @@ begin
     jsonb_build_object('kind', target_kind, 'accepted', accept, 'band', target_band,
       'origin', target_origin, 'rules_version', payload ->> 'rules_version'));
 
-  return private.day_adjustment_present(new_row, payload, true);
+  return private.day_adjustment_present(new_row, payload, true, computed -> 'inputs');
 end $$;
 revoke all on function public.respond_to_day_adjustment_v1(date, boolean, text)
   from public, anon, authenticated;
@@ -736,10 +803,11 @@ grant execute on function public.respond_to_day_adjustment_v1(date, boolean, tex
   to authenticated;
 
 -- 9. B3 meets the adjustment ------------------------------------------------------------------------
--- A session done under an accepted hold_load or reduce_sets answer is not evidence for lowering a
--- load or for a stall (a single poor workout must not restructure training), and its planned set
--- count is the adjusted one. Each session summary gains `adjusted` (boolean) and `sets_planned`
--- (the adjusted set count of the exercise, else null). Everything else is as in
+-- An exercise that an accepted hold_load or reduce_sets answer lists, done in that session, is not
+-- evidence for lowering its load or for a stall (a single poor workout must not restructure
+-- training), and its planned set count is the adjusted one; an exercise the answer left alone is
+-- judged as ever. Each session summary gains `adjusted` (boolean) and `sets_planned` (the adjusted
+-- set count of the exercise, else null). Everything else is as in
 -- 20261017140023_progression_targets.sql and 20261023100050_advanced_level_catalog.sql.
 
 create or replace function private.progression_decision(
@@ -934,16 +1002,17 @@ with rules as (
   where t.load_kg is not distinct from t.top_load
   group by t.planned_exercise_id, t.session_id, t.local_date, t.completed_at, t.top_load
 ), marked as (
-  -- Done under an accepted hold_load or reduce_sets answer (B4): not evidence for lowering a load,
-  -- and the planned set count is the adjusted one.
-  select s.*, a.id is not null as adjusted,
-    case when a.id is not null then (
-      select (c ->> 'sets_to')::integer from jsonb_array_elements(a.changes) c
-      where c ->> 'planned_exercise_id' = s.logged_exercise_id::text limit 1) end as sets_planned
+  -- Done under an accepted hold_load or reduce_sets answer (B4) and the answer lists this exercise:
+  -- not evidence for lowering its load, and its planned set count is the adjusted one. An exercise
+  -- the answer left alone is judged as ever, however easy the rest of the session was.
+  select s.*, ch.sets_to is not null as adjusted, ch.sets_to as sets_planned
   from sessions s
   join public.workout_sessions ws on ws.id = s.session_id and ws.user_id = p_user
   left join public.day_adjustments a on a.id = ws.day_adjustment_id and a.user_id = p_user
     and a.status = 'accepted' and a.kind in ('hold_load', 'reduce_sets')
+  left join lateral (
+    select (c ->> 'sets_to')::integer as sets_to from jsonb_array_elements(a.changes) c
+    where c ->> 'planned_exercise_id' = s.logged_exercise_id::text limit 1) ch on true
 ), ranked as (
   select s.*, row_number() over (partition by s.planned_exercise_id
     order by s.local_date desc, s.completed_at desc) as rn
@@ -989,11 +1058,14 @@ $$;
 revoke all on function private.next_session_targets(uuid) from public, anon, authenticated;
 
 -- 10. Starting the workout --------------------------------------------------------------------------
--- The definition of 20260711190000_workout_truth_repair.sql plus: an accepted, still-standing answer
--- for this workout and day is linked to the session, and reduce_sets builds the session with the
--- adjusted set counts. An easy-cardio answer links only: starting the strength workout stays
--- allowed and its sets are the plan's (the plan must remain usable). Loads are not written; the app
--- pre-fills them.
+-- The definition of 20260711190000_workout_truth_repair.sql plus: the athlete's accepted answer for
+-- this workout and today is linked to the session and applied as given (it can only make the day
+-- easier; whether the rules would still propose it is a question for the card, not for starting), and
+-- reduce_sets builds the session with the adjusted set counts. An easy-cardio answer links only:
+-- starting the strength workout stays allowed and its sets are the plan's (the plan must remain
+-- usable). A start for any other date, from history, gets the plan as written. The start takes the
+-- same advisory lock as respond_to_day_adjustment_v1 before it reads anything, so an answer and a
+-- start never interleave, and it never computes the day. Loads are not written; the app pre-fills them.
 
 create or replace function public.start_workout(
   p_planned_workout_id uuid,
@@ -1006,6 +1078,9 @@ declare result_id uuid; version_id uuid; exercise record; performance_id uuid; n
   adjustment public.day_adjustments%rowtype; adjusted boolean := false; set_total integer;
 begin
   if auth.uid() is null then raise exception 'authentication required' using errcode='42501'; end if;
+  -- The same lock respond_to_day_adjustment_v1 takes: an answer and a start never interleave.
+  perform pg_advisory_xact_lock(hashtextextended(
+    'day_adjustment:' || auth.uid()::text || coalesce(p_local_date::text, ''), 0));
   select w.plan_version_id into version_id
   from public.planned_workouts w
   join public.training_plan_versions v on v.id=w.plan_version_id and v.user_id=w.user_id
@@ -1029,13 +1104,14 @@ begin
     raise exception 'workout already completed for this coaching day' using errcode='55000';
   end if;
 
-  select * into adjustment from public.day_adjustments a
-  where a.user_id=auth.uid() and a.local_date=p_local_date
-    and a.planned_workout_id=p_planned_workout_id and a.superseded_at is null
-    and a.status='accepted';
-  if found then
-    adjusted := private.day_adjustment_stands(adjustment,
-      private.day_adjustment_compute(auth.uid(), p_local_date) -> 'payload');
+  -- The athlete's accepted answer for today is applied as given (it can only make the day easier);
+  -- a start for any other date, from history, gets the plan as written.
+  if p_local_date = private.local_date_for(auth.uid()) then
+    select * into adjustment from public.day_adjustments a
+    where a.user_id=auth.uid() and a.local_date=p_local_date
+      and a.planned_workout_id=p_planned_workout_id and a.superseded_at is null
+      and a.status='accepted';
+    adjusted := found;
   end if;
 
   insert into public.workout_sessions(
@@ -1069,3 +1145,111 @@ begin
   end loop;
   return result_id;
 end $$;
+
+-- 11. Training hub 1.8 --------------------------------------------------------------------------------
+-- The 1.7 definition of 20261017140023_progression_targets.sql, unchanged except the schema version:
+-- the sessions inside each next target's basis now carry `adjusted` and `sets_planned` (section 9), so
+-- the hub's shape changed. Every 1.7 key is still there.
+create or replace function public.get_my_training_hub(period_days integer default 28)
+returns jsonb language sql security definer set search_path='' stable as $$
+with active_version as (
+  select v.id,v.plan_id,v.version_number,v.block_weeks,v.sessions_per_week,
+    v.rationale,p.title,v.approved_at,v.effective_date,
+    nullif(btrim(v.prescription->>'progression'),'') progression_rule
+  from public.training_plan_versions v
+  join public.training_plans p on p.id=v.plan_id and p.user_id=v.user_id
+  where v.user_id=auth.uid() and v.status='active'
+  limit 1
+), athlete_zone as (
+  select coalesce((select a.timezone from public.user_accounts a
+    join pg_catalog.pg_timezone_names z on z.name=a.timezone
+    where a.id=auth.uid()),'UTC') tz
+), workouts as (
+  select w.*,
+    coalesce((select jsonb_agg(jsonb_build_object(
+      'id',e.id,'order',e.exercise_order,'name',e.display_name_snapshot,
+      'set_count',e.set_count,'rep_min',e.rep_min,'rep_max',e.rep_max,
+      'target_rpe',e.target_rpe,'rest_seconds',e.rest_seconds,'notes',e.notes,
+      'target_load_kg',e.target_load_kg,'exercise_slug',e.exercise_slug,
+      'primary_muscles',coalesce(to_jsonb(c.primary_muscles),to_jsonb(r.primary_muscles),'[]'::jsonb)
+    ) order by e.exercise_order)
+    from public.planned_exercises e
+    left join public.exercise_catalog c on c.slug=e.exercise_slug
+    left join public.exercise_muscle_references r on e.exercise_slug is null
+      and r.name_key=private.exercise_name_key(e.display_name_snapshot)
+    where e.planned_workout_id=w.id and e.user_id=auth.uid()),'[]'::jsonb) exercises
+  from public.planned_workouts w join active_version v on v.id=w.plan_version_id
+  where w.user_id=auth.uid()
+), completed as (
+  select s.id,s.planned_workout_id,s.local_date,s.duration_seconds,
+    s.session_energy,s.session_effort,s.notes,s.completed_at,w.name,
+    s.completion_source,s.session_effort_source
+  from public.workout_sessions s
+  join workouts w on w.id=s.planned_workout_id
+  where s.user_id=auth.uid() and s.state='completed'
+    and s.local_date >= current_date-greatest(7,least(period_days,365))+1
+), progression as (
+  select e.display_name_snapshot exercise,
+    count(distinct s.id)::integer sessions,
+    max(es.load_kg) filter(where es.completed) best_load_kg,
+    max(es.repetitions) filter(where es.completed) best_repetitions,
+    max(s.local_date) latest_date
+  from public.workout_sessions s
+  join public.exercise_performances ep on ep.workout_session_id=s.id
+    and ep.user_id=s.user_id and ep.status='performed'
+  join public.planned_exercises e on e.id=ep.planned_exercise_id
+    and e.user_id=ep.user_id
+  join public.exercise_sets es on es.exercise_performance_id=ep.id
+    and es.user_id=ep.user_id
+  where s.user_id=auth.uid() and s.state='completed' and es.completed
+    and s.local_date >= current_date-greatest(7,least(period_days,365))+1
+  group by e.display_name_snapshot
+), latest_computed as (
+  select dcm.scores_jsonb->'acwr' as acwr,
+         dcm.scores_jsonb->'training_monotony' as monotony,
+         dcm.scores_jsonb->'daily_strain' as today_strain
+  from public.daily_computed_metrics dcm
+  where dcm.user_id=auth.uid()
+    and dcm.local_date=current_date
+  order by dcm.computed_at desc
+  limit 1
+)
+select jsonb_build_object(
+  'schema_version','1.8','period_days',greatest(7,least(period_days,365)),
+  'local_today',private.local_date_for(auth.uid()),
+  'active_plan',(select jsonb_build_object(
+    'id',id,'plan_id',plan_id,'title',title,'version_number',version_number,
+    'block_weeks',block_weeks,'sessions_per_week',sessions_per_week,
+    'rationale',rationale,
+    'effective_date',coalesce(effective_date,
+      (approved_at at time zone (select tz from athlete_zone))::date),
+    'approved_on',(approved_at at time zone (select tz from athlete_zone))::date,
+    'progression_rule',progression_rule) from active_version),
+  'workouts',coalesce((select jsonb_agg(jsonb_build_object(
+    'id',id,'order',workout_order,'weekday',preferred_weekday,'name',name,
+    'objective',objective,'estimated_minutes',estimated_minutes,
+    'warm_up',warm_up_guidance,'cooldown_cardio',cool_down_guidance,
+    'exercises',exercises) order by workout_order) from workouts),'[]'::jsonb),
+  'today_workout',private.planned_workout_for_date(auth.uid(),current_date),
+  'recent_sessions',coalesce((select jsonb_agg(jsonb_build_object(
+    'id',id,'workout_id',planned_workout_id,'name',name,'local_date',local_date,
+    'duration_seconds',duration_seconds,'effort',session_effort,'energy',session_energy,
+    'completion_source',completion_source,'effort_source',session_effort_source
+  ) order by local_date desc) from (select * from completed order by local_date desc limit 12) r),'[]'::jsonb),
+  'adherence',jsonb_build_object(
+    'completed_sessions',(select count(*) from completed),
+    'planned_sessions',coalesce((select sessions_per_week from active_version),0)
+      * greatest(1,ceil(greatest(7,least(period_days,365))/7.0)::integer)),
+  'progression',coalesce((select jsonb_agg(jsonb_build_object(
+    'exercise',exercise,'sessions',sessions,'best_load_kg',best_load_kg,
+    'best_repetitions',best_repetitions,'latest_date',latest_date
+  ) order by latest_date desc) from progression),'[]'::jsonb),
+  'completed_day_set',coalesce(
+    (select jsonb_agg(distinct local_date) from completed),'[]'::jsonb),
+  'computed',(select jsonb_build_object(
+    'acwr',acwr,'training_monotony',monotony,'today_strain',today_strain
+  ) from latest_computed),
+  'daily_load',private.daily_load(auth.uid(),private.local_date_for(auth.uid())),
+  'next_targets',private.next_session_targets(auth.uid())
+);
+$$;

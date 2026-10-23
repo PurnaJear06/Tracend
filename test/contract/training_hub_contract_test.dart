@@ -363,7 +363,6 @@ void main() {
         expect(basis.keys.toList()..sort(), ['last_date', 'recent']);
         for (final session in (basis['recent'] as List).toMapList()) {
           expect(session.keys.toList()..sort(), [
-            'adjusted',
             'effort_known',
             'load_kg',
             'local_date',
@@ -371,7 +370,6 @@ void main() {
             'min_rir',
             'pain',
             'sets',
-            'sets_planned',
             'total_reps',
           ]);
         }
@@ -471,6 +469,47 @@ void main() {
       final fallback = suggestSet(ExerciseDraft(withoutTarget), 0, history);
       expect(fallback.load, '72.5');
       expect(fallback.source, SetSuggestionSource.lastTime);
+    });
+  });
+
+  group('Training Hub contract — get_my_training_hub v1.8', () {
+    test('v1.8 keeps every v1.7 key and adds two keys to a target session', () {
+      final v17 = _loadFixtureJson('training_hub_v1_7.json');
+      final v18 = _loadFixtureJson('training_hub_v1_8.json');
+      expect(v18['schema_version'], '1.8');
+      expect(v18.keys.toSet(), v17.keys.toSet());
+      for (final key in v17.keys.where(
+        (k) => k != 'schema_version' && k != 'next_targets',
+      )) {
+        expect(v18[key], v17[key], reason: '$key is unchanged');
+      }
+      for (final target in (v18['next_targets'] as List).toMapList()) {
+        final basis = Map<String, dynamic>.from(target['basis'] as Map);
+        for (final session in (basis['recent'] as List).toMapList()) {
+          expect(session.keys.toList()..sort(), [
+            'adjusted',
+            'effort_known',
+            'load_kg',
+            'local_date',
+            'min_reps',
+            'min_rir',
+            'pain',
+            'sets',
+            'sets_planned',
+            'total_reps',
+          ]);
+        }
+      }
+    });
+
+    test('a 1.8 hub parses with its targets, as a 1.7 hub does', () {
+      for (final name in ['training_hub_v1_7.json', 'training_hub_v1_8.json']) {
+        final hub = TrainingHubData.fromHubJson(_loadFixtureJson(name));
+        final exercises = hub.workouts.single.exercises;
+        expect(exercises[0].nextTarget!.loadKg, 75, reason: name);
+        expect(exercises[1].nextTarget!.lowConfidence, isTrue, reason: name);
+        expect(exercises[2].nextTarget, isNull, reason: name);
+      }
     });
   });
 

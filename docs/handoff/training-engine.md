@@ -575,14 +575,34 @@ table; Contract 5 in the program plan the payload (1.0 as built).
   something stricter than the greater of what they asked then and what the athlete answered. The
   brief compared only with the answered kind, which would have re-asked a lighter chosen kind; the
   `rules_kind` column fixes that. After the session starts it stands as it is.
-- **`start_workout`** (same signature) links a standing accepted answer and builds `reduce_sets`
-  sessions with the adjusted set counts; hold-load and easy-cardio answers keep the plan's sets.
-  Pinned to the workout-truth definition plus four hunks (`readiness_test.ts`).
+- **`start_workout`** (same signature) takes the athlete's advisory lock for the day (the one
+  `respond_to_day_adjustment_v1` takes), then links and applies the current accepted answer for the
+  workout when the start is for the athlete's own today, without asking the rules again; `reduce_sets`
+  builds the adjusted set counts, hold-load and easy-cardio answers keep the plan's sets. A backdated
+  start gets the plan as written. Pinned to the workout-truth definition plus five hunks
+  (`readiness_test.ts`).
 - **B3 meets the adjustment.** `progression_decision` and `next_session_targets` (from the
-  advanced-level definition) add `adjusted` and `sets_planned` to each session summary; an adjusted
-  session never counts towards lowering a load or a stall and compares its sets with the adjusted
-  count. The hub stays 1.7 (the two keys appear inside `basis.recent`; fixture and Dart contract
-  test updated), `targets.ts` is unchanged.
+  advanced-level definition) add `adjusted` and `sets_planned` to each session summary, per exercise:
+  only an exercise the accepted answer lists is exempt from lowering a load or a stall and compares
+  its sets with the adjusted count. The training hub is now 1.8 (the two keys appear inside
+  `basis.recent`; the 1.7 body is copied with only the version changed; fixtures
+  `training_hub_v1_7.json` and `_v1_8.json` and the Dart contract test cover both), `targets.ts`
+  is unchanged.
+- **Review round 1 (Codex and Opus).** (1) A start applies the accepted answer unconditionally and
+  never computes the day. (2) A safety route wins over every stored answer, a started session
+  included. (3) Respond and start share one advisory lock. (4) A start for another date gets the
+  plan as written. (5) The sentence of a choice depends on the kind alone; a standing answer keeps
+  today's band and reasons. (6) Adjusted is per exercise. (7) Undo is never refused by the 20-answer
+  limit; unavailable days have their own sentences, never "Check in"; a body-weight or unassisted
+  hold reads as such; the day's scores are made again for new Health data and a failed attempt is
+  not repeated within ten minutes; `previous_answer.reason` says `check_in` or `new_data`; hub 1.8.
+- **For B4-2 / other streams.** (a) The app must pass the hub's `local_today` as `local_date` (the
+  server accepts only the athlete's own today by their account time zone; a device date can differ
+  near midnight or when the time zone is unset). (b) Coach is not told about the adjustment yet: the
+  `readiness` context contributor, the reply guard so Coach never contradicts an accepted
+  adjustment, A8's `next_session` refusing on an adjusted day, the A5 daily snapshot and the A11
+  eval cases are contract requests in the program plan. (c) The app words `previous_answer.reason`
+  ("Your check-in changed" or "New data came in").
 - **Tests that fail without each rule.** pgTAP `readiness_sweep_test.sql` (assessment rows and a
   47,628-case sweep; a 1,800-exercise matrix through the three kinds), `day_adjustments_test.sql`,
   new rows in `progression_targets_test.sql`; Deno `readiness_test.ts`; Flutter

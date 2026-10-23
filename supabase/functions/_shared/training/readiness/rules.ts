@@ -113,6 +113,15 @@ export const readinessAnswersPerDay = sourced(
     "or two. In-house.",
 );
 
+/** Minutes before the day's scores are made again after an attempt, failed or not. */
+export const readinessMetricsRetryMinutes = sourced(
+  10,
+  ["tracend_in_house"],
+  "Scores are made when none exist and again when Apple Health data arrives after them; a limit " +
+    "of one attempt in ten minutes keeps a scoring error from being retried on every read. " +
+    "In-house.",
+);
+
 /** Load measures are not inputs. */
 export const readinessUsesLoadRatio = sourced(
   false as const,
@@ -142,5 +151,6 @@ export function readinessRulesJson(): Readonly<Record<string, unknown>> {
     reduce_rpe_floor: readinessReduceSets.value.rpeFloor,
     easy_cardio_minutes: readinessEasyCardioMinutes.value,
     answers_per_day: readinessAnswersPerDay.value,
+    metrics_retry_minutes: readinessMetricsRetryMinutes.value,
   };
 }

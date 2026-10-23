@@ -336,9 +336,11 @@ kept exactly; everything else is additive: each change also carries `planned_exe
 `load_kg_from`, `load_kg_to`, `reps_from`, `reps_to` and `rpe_to`; the object adds `available`,
 `unavailable_reason` (`no_plan`, `rest_day`, `session_started`, `session_done`, `coach_adjusted`),
 `safety_route` (`pain_referral`), `confidence`, `missing`, `cardio`, `planned_workout_id`,
-`workout_name`, `sets_total_from`, `sets_total_to`, `previous_answer`, `answered_at`,
+`workout_name`, `sets_total_from`, `sets_total_to`, `previous_answer` (`kind`, `status`,
+`answered_at`, `reason`: `check_in` or `new_data`), `answered_at`,
 `rules_version`, `origin` (`proposed` or `chosen`), `options` (every kind the athlete may choose,
 with its own changes and sentence) and `signals` (what the recovery score and sleep show).
+The training hub is 1.8 (the sessions inside a target's basis gain `adjusted` and `sets_planned`).
 `respond_to_day_adjustment_v1(local_date, accept, chosen_kind text default null)` takes a third,
 optional argument: with `accept = true` and a `chosen_kind` from `options` the athlete applies a
 kind of their own choosing (D9); `accept = false` declines or undoes (Undo) until the session

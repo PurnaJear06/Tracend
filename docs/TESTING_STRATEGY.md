@@ -304,9 +304,12 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   each with the real B3 decision, through `private.day_adjustment_changes` for all three kinds:
   sets never go up and never reach zero outside the cardio swap, a held load is the last logged one
   and never above the target, effort drops by one point and never below 6, totals add up.
-  `day_adjustments_test.sql` covers real athletes: the keys of the answer, each source of points,
-  the recovery score alone, a safety day, accept, Undo, idempotence, a chosen kind, the staleness
-  rule, `start_workout` building the adjusted sets, B3 reading an adjusted session, rest and
+  `day_adjustments_test.sql` covers real athletes: the keys of the answer (and that the unknown and
+  started-safety contract fixtures are the real answers, key for key), each source of points,
+  the recovery score alone, a safety day, accept, Undo (not refused at the answer limit),
+  idempotence, a chosen kind with and without a check-in, the staleness rule and its reasons, a
+  start after a worse check-in, a backdated start, the day's lock, per-exercise adjusted sessions,
+  the scoring retry bound, `start_workout` building the adjusted sets, B3 reading an adjusted session, rest and
   coach-adjusted days, the 20-answer limit, cross-athlete reads, grants through
   `has_function_privilege`, the session link's foreign key and account deletion. New rows in
   `progression_targets_test.sql` pin the adjusted-session rules and re-run B3's one-step and

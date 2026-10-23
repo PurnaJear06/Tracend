@@ -566,8 +566,8 @@ What each kind changes (per exercise of today's workout; the rest of the week is
 
 ```text
 hold_load            where B3's target is add_load or add_reps: the last working load (for an
-                     assisted exercise the help) and the fewest reps of that session, clamped into
-                     the range; sets and effort unchanged
+                     assisted exercise the help; "body weight" or "unassisted" at 0) and the
+                     fewest reps of that session, clamped into the range; sets and effort unchanged
 reduce_sets          one set fewer on an exercise with 3 or more sets; effort one point lower,
                      not below 6 and never above the plan's; hold_load's loads. Needs at least one
                      set to go, else it falls back to hold_load
@@ -581,20 +581,31 @@ are fixed templates keyed by trigger and kind. Availability: `no_plan`, `rest_da
 today). Only the athlete's own local today can be read or answered.
 
 **Answers.** The athlete accepts the proposed kind, or chooses any kind that would change today's
-session (`options`), with one tap, and can Undo until the session starts (at most 20 answers a day).
-Each answer is stored with the kind the rules proposed at the time. An answer stands while it
-belongs to today's workout and the rules do not now ask for something stricter than what they asked
-then or than what the athlete answered (kind order: none, hold_load, reduce_sets, swap, safety
-route); otherwise the card asks again and names the answer it replaces ("Your check-in changed").
-`start_workout` builds the session with the adjusted set counts for an accepted `reduce_sets`; for
-`hold_load` and the easy-cardio swap it links the answer and keeps the plan's sets (the plan stays
-usable); the app pre-fills held loads.
+session (`options`), with one tap, and can Undo until the session starts (at most 20 answers a day;
+Undo of a standing accepted answer is never refused). The sentence of a choice depends on the kind
+alone, not on whether the athlete has checked in. Each answer is stored with the kind the rules
+proposed at the time. An answer stands while it belongs to today's workout and the rules do not now
+ask for something stricter than what they asked then or than what the athlete answered (kind order:
+none, hold_load, reduce_sets, swap); otherwise the card asks again and names the answer it replaces
+with the reason, `check_in` (a different check-in) or `new_data` (sleep or scores that arrived
+since). A standing answer replaces only the kind, status, changes, cardio and origin; the band and
+reasons stay today's. A safety route wins over every stored answer and over a started or finished
+session: the payload then carries the referral and none of the old answer.
+`start_workout` takes the athlete's lock for the day (the one `respond_to_day_adjustment_v1`
+takes), then applies and links the current accepted answer for this workout when the start is for
+the athlete's own today, whatever the rules say now: it can only make the day easier, and asking
+again is the card's job. It builds the adjusted set counts for `reduce_sets`; for `hold_load` and
+the easy-cardio swap it links the answer and keeps the plan's sets (the plan stays usable); a start
+for another date gets the plan as written; the app pre-fills held loads. Today's scores are made
+when none exist and again when Apple Health data arrived after them, at most once in ten minutes
+per athlete and day, failed attempts included.
 
-**B3 meets the adjustment.** A session started under an accepted hold_load or reduce_sets answer is
-`adjusted`; its planned set count is the adjusted one (`sets_planned`). In the progression decision
-an adjusted session never counts towards lowering a load (rule 4, below the range, holds at the
-minimum instead of lowering; rule 6, a stall, needs three unadjusted sessions), and rule 5 compares
-the sets with `sets_planned`. A good performance on a lighter day still earns add reps or add load.
+**B3 meets the adjustment.** An exercise that an accepted hold_load or reduce_sets answer lists, done
+in that session, is `adjusted`; its planned set count is the adjusted one (`sets_planned`). An
+exercise the answer left alone is judged as ever, however easy the rest of the session was. In the
+progression decision an adjusted session never counts towards lowering a load (rule 4, below the
+range, holds at the minimum instead of lowering; rule 6, a stall, needs three unadjusted
+sessions), and rule 5 compares the sets with `sets_planned`. A good performance on a lighter day still earns add reps or add load.
 A single poor workout never restructures training (PRD section 5.3).
 
 In-house numbers needing a coach's review after four weeks of the owner's data (O2): the points, the

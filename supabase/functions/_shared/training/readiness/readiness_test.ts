@@ -20,6 +20,12 @@ import safetyFixture from "../../../../../test/contract/fixtures/day_adjustment_
 import unknownFixture from "../../../../../test/contract/fixtures/day_adjustment_v1_0_unknown.json" with {
   type: "json",
 };
+import reaskedFixture from "../../../../../test/contract/fixtures/day_adjustment_v1_0_reasked.json" with {
+  type: "json",
+};
+import safetyStartedFixture from "../../../../../test/contract/fixtures/day_adjustment_v1_0_safety_started.json" with {
+  type: "json",
+};
 import { parseDayAdjustment, readinessTriggers } from "./payload.ts";
 import { readinessRulesJson } from "./rules.ts";
 
@@ -37,7 +43,10 @@ Deno.test("the migration's rule numbers are the sourced values", () => {
 
 Deno.test("no rule or word of the readiness SQL reads a heart-rate signal (D9)", () => {
   assert(
-    !/heart|bpm|hrv|resting_|pulse|acwr|monotony|strain_/i.test(code(migration)),
+    // The training hub's unchanged body (section 11) carries the load ratio for the Train screen.
+    !/heart|bpm|hrv|resting_|pulse|acwr|monotony|strain_/i.test(
+      code(migration.slice(0, migration.indexOf("-- 11. Training hub 1.8"))),
+    ),
     "the migration reads the recovery score only, never a heart signal or a load ratio",
   );
 });
@@ -118,6 +127,15 @@ Deno.test("the contract fixtures parse and say what they say", () => {
     "none",
     0,
   ]);
+  const started = parseDayAdjustment(safetyStartedFixture);
+  assertEquals([started?.safetyRoute, started?.unavailableReason, started?.kind, started?.status], [
+    "pain_referral",
+    "session_started",
+    "none",
+    "none",
+  ]);
+  const reasked = parseDayAdjustment(reaskedFixture);
+  assertEquals(reasked?.previousAnswer?.reason, "check_in");
   const unknown = parseDayAdjustment(unknownFixture);
   assertEquals([unknown?.band, unknown?.confidence, unknown?.signals.recoveryLow], [
     "unknown",
@@ -189,12 +207,14 @@ Deno.test("a payload that is not exactly the shape yields nothing", () => {
     null,
     "an easy-cardio option carries its dose",
   );
-  assertEquals(
+  const previous = (answer: Record<string, unknown>) =>
     mutate((p) => {
-      p.previous_answer = { kind: "reduce_sets", status: "maybe" };
-    }),
-    null,
-  );
+      p.previous_answer = answer;
+    });
+  assertEquals(previous({ kind: "reduce_sets", status: "maybe", reason: "check_in" }), null);
+  assertEquals(previous({ kind: "reduce_sets", status: "accepted" }), null, "no reason given");
+  assertEquals(previous({ kind: "reduce_sets", status: "accepted", reason: "whim" }), null);
+  assert(previous({ kind: "reduce_sets", status: "accepted", reason: "new_data" }));
   assertEquals(mutate((p) => p.local_date = 20261024), null);
 });
 
@@ -295,16 +315,17 @@ Deno.test("next_session_targets is the advanced-level definition plus the adjust
     ],
     [
       `), marked as (
-  -- Done under an accepted hold_load or reduce_sets answer (B4): not evidence for lowering a load,
-  -- and the planned set count is the adjusted one.
-  select s.*, a.id is not null as adjusted,
-    case when a.id is not null then (
-      select (c ->> 'sets_to')::integer from jsonb_array_elements(a.changes) c
-      where c ->> 'planned_exercise_id' = s.logged_exercise_id::text limit 1) end as sets_planned
+  -- Done under an accepted hold_load or reduce_sets answer (B4) and the answer lists this exercise:
+  -- not evidence for lowering its load, and its planned set count is the adjusted one. An exercise
+  -- the answer left alone is judged as ever, however easy the rest of the session was.
+  select s.*, ch.sets_to is not null as adjusted, ch.sets_to as sets_planned
   from sessions s
   join public.workout_sessions ws on ws.id = s.session_id and ws.user_id = p_user
   left join public.day_adjustments a on a.id = ws.day_adjustment_id and a.user_id = p_user
     and a.status = 'accepted' and a.kind in ('hold_load', 'reduce_sets')
+  left join lateral (
+    select (c ->> 'sets_to')::integer as sets_to from jsonb_array_elements(a.changes) c
+    where c ->> 'planned_exercise_id' = s.logged_exercise_id::text limit 1) ch on true
 ), ranked as (`,
       "), ranked as (",
     ],
@@ -324,7 +345,11 @@ Deno.test("start_workout is the workout-truth definition plus the day-adjustment
     "create or replace function public.start_workout(",
     "create or replace function public.get_my_workout_session(",
   );
-  const redefined = between(migration, "create or replace function public.start_workout(", null);
+  const redefined = between(
+    migration,
+    "create or replace function public.start_workout(",
+    "-- 11. Training hub 1.8",
+  );
   const hunks: readonly (readonly [string, string])[] = [
     [
       `declare result_id uuid; version_id uuid; exercise record; performance_id uuid; n integer;
@@ -333,13 +358,21 @@ Deno.test("start_workout is the workout-truth definition plus the day-adjustment
       "declare result_id uuid; version_id uuid; exercise record; performance_id uuid; n integer;\n",
     ],
     [
-      `  select * into adjustment from public.day_adjustments a
-  where a.user_id=auth.uid() and a.local_date=p_local_date
-    and a.planned_workout_id=p_planned_workout_id and a.superseded_at is null
-    and a.status='accepted';
-  if found then
-    adjusted := private.day_adjustment_stands(adjustment,
-      private.day_adjustment_compute(auth.uid(), p_local_date) -> 'payload');
+      `  -- The same lock respond_to_day_adjustment_v1 takes: an answer and a start never interleave.
+  perform pg_advisory_xact_lock(hashtextextended(
+    'day_adjustment:' || auth.uid()::text || coalesce(p_local_date::text, ''), 0));
+`,
+      "",
+    ],
+    [
+      `  -- The athlete's accepted answer for today is applied as given (it can only make the day easier);
+  -- a start for any other date, from history, gets the plan as written.
+  if p_local_date = private.local_date_for(auth.uid()) then
+    select * into adjustment from public.day_adjustments a
+    where a.user_id=auth.uid() and a.local_date=p_local_date
+      and a.planned_workout_id=p_planned_workout_id and a.superseded_at is null
+      and a.status='accepted';
+    adjusted := found;
   end if;
 
 `,
@@ -370,4 +403,44 @@ Deno.test("start_workout is the workout-truth definition plus the day-adjustment
     ],
   ];
   assertEquals(undo(redefined, hunks), earlier.trim());
+});
+
+Deno.test("start_workout takes the answer's lock before it reads anything, with respond's key", () => {
+  const start = between(
+    migration,
+    "create or replace function public.start_workout(",
+    "-- 11. Training hub 1.8",
+  );
+  const respond = between(
+    migration,
+    "create function public.respond_to_day_adjustment_v1(",
+    "revoke all on function public.respond_to_day_adjustment_v1",
+  );
+  const lock = start.indexOf("pg_advisory_xact_lock");
+  assert(lock > 0);
+  for (
+    const read of ["select w.plan_version_id", "from public.workout_sessions", "day_adjustments a"]
+  ) {
+    assert(lock < start.indexOf(read), `the lock comes before "${read}"`);
+  }
+  assert(!start.includes("day_adjustment_compute"), "start never depends on the heavy compute");
+  const key = (text: string) =>
+    text.match(/'day_adjustment:' \|\| ([a-z.()_]+)::text \|\| ([a-z_.:()' ,]+?), 0\)/);
+  assert(
+    key(start) && key(respond),
+    "both build the key from 'day_adjustment:', the user and the date",
+  );
+});
+
+Deno.test("the hub 1.8 definition is the 1.7 one with only the schema version changed", async () => {
+  const hub = (sql: string) =>
+    between(sql, "create or replace function public.get_my_training_hub(", "\n$$;");
+  const earlier = hub(
+    await Deno.readTextFile(migrationPath("20261017140023_progression_targets.sql")),
+  );
+  const redefined = hub(migration);
+  assertEquals(
+    undo(redefined, [["'schema_version','1.8'", "'schema_version','1.7'"]]),
+    earlier.trim(),
+  );
 });

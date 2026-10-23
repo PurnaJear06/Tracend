@@ -15,7 +15,14 @@ insert into auth.users(id, role) values
   ('b4000000-0000-4000-8000-000000000007', 'authenticated'),
   ('b4000000-0000-4000-8000-000000000008', 'authenticated'),
   ('b4000000-0000-4000-8000-000000000009', 'authenticated'),
-  ('b4000000-0000-4000-8000-000000000010', 'authenticated');
+  ('b4000000-0000-4000-8000-000000000010', 'authenticated'),
+  ('b4000000-0000-4000-8000-000000000011', 'authenticated'),
+  ('b4000000-0000-4000-8000-000000000012', 'authenticated'),
+  ('b4000000-0000-4000-8000-000000000013', 'authenticated'),
+  ('b4000000-0000-4000-8000-000000000014', 'authenticated'),
+  ('b4000000-0000-4000-8000-000000000015', 'authenticated'),
+  ('b4000000-0000-4000-8000-000000000016', 'authenticated'),
+  ('b4000000-0000-4000-8000-000000000017', 'authenticated');
 
 create temporary table t as
   select private.local_date_for('b4000000-0000-4000-8000-000000000001') as today;
@@ -115,6 +122,35 @@ begin
   end if;
 end $$;
 
+-- A completed session p_days ago: bench 4 x p_reps at 60 kg with one rep left, and optionally the
+-- fly 3 x 10 at 15 kg.
+create function pg_temp.log_bench(p_uid uuid, p_days integer, p_reps integer, p_fly boolean default false)
+returns void language plpgsql as $$
+declare sid uuid := gen_random_uuid(); pid uuid; d date := private.local_date_for(p_uid) - p_days;
+begin
+  insert into public.workout_sessions(id, user_id, plan_version_id, planned_workout_id, local_date,
+    timezone, state, idempotency_key, completed_at, duration_seconds, session_effort,
+    session_effort_source, completion_source)
+  select sid, p_uid, k.version_id, k.workout_id, d, 'UTC', 'completed', gen_random_uuid(),
+    now() - p_days * interval '1 day', 3000, 8, 'athlete', 'manual' from wk k where k.uid = p_uid;
+  insert into public.exercise_performances(user_id, workout_session_id, planned_exercise_id,
+    exercise_order, status, performance_kind)
+  select p_uid, sid, k.e1, 1, 'performed', 'prescribed' from wk k where k.uid = p_uid
+  returning id into pid;
+  insert into public.exercise_sets(user_id, exercise_performance_id, set_number, repetitions, load_kg,
+    rir, completed)
+  select p_uid, pid, n, p_reps, 60, 1, true from generate_series(1, 4) n;
+  if p_fly then
+    insert into public.exercise_performances(user_id, workout_session_id, planned_exercise_id,
+      exercise_order, status, performance_kind)
+    select p_uid, sid, k.e2, 2, 'performed', 'prescribed' from wk k where k.uid = p_uid
+    returning id into pid;
+    insert into public.exercise_sets(user_id, exercise_performance_id, set_number, repetitions, load_kg,
+      completed)
+    select p_uid, pid, n, 10, 15, true from generate_series(1, 3) n;
+  end if;
+end $$;
+
 create function pg_temp.as_user(p_uid text) returns void language plpgsql as $$
 begin
   perform set_config('request.jwt.claim.sub', p_uid, true);
@@ -141,6 +177,24 @@ select pg_temp.seed_history('b4000000-0000-4000-8000-000000000009');
 select pg_temp.metrics('b4000000-0000-4000-8000-000000000009', null, 'low');
 select pg_temp.make_athlete('b4000000-0000-4000-8000-000000000010');
 select pg_temp.metrics('b4000000-0000-4000-8000-000000000010', null, 'low');
+select pg_temp.make_athlete('b4000000-0000-4000-8000-000000000011');
+select pg_temp.seed_history('b4000000-0000-4000-8000-000000000011');
+select pg_temp.metrics('b4000000-0000-4000-8000-000000000011', null, 'low');
+select pg_temp.make_athlete('b4000000-0000-4000-8000-000000000012');
+select pg_temp.seed_history('b4000000-0000-4000-8000-000000000012');
+select pg_temp.metrics('b4000000-0000-4000-8000-000000000012', null, 'low');
+select pg_temp.make_athlete('b4000000-0000-4000-8000-000000000013');
+select pg_temp.seed_history('b4000000-0000-4000-8000-000000000013');
+select pg_temp.metrics('b4000000-0000-4000-8000-000000000013', null, 'low');
+select pg_temp.make_athlete('b4000000-0000-4000-8000-000000000014');
+select pg_temp.make_athlete('b4000000-0000-4000-8000-000000000015');
+select pg_temp.log_bench('b4000000-0000-4000-8000-000000000015', 14, 4);
+select pg_temp.log_bench('b4000000-0000-4000-8000-000000000015', 7, 4, true);
+select pg_temp.metrics('b4000000-0000-4000-8000-000000000015', null, 'low');
+select pg_temp.make_athlete('b4000000-0000-4000-8000-000000000016');
+select pg_temp.seed_history('b4000000-0000-4000-8000-000000000016');
+select pg_temp.metrics('b4000000-0000-4000-8000-000000000016', 60, 'high');
+select pg_temp.make_athlete('b4000000-0000-4000-8000-000000000017');
 
 -- Shape and privileges ----------------------------------------------------------------------------
 
@@ -172,15 +226,17 @@ select ok(not has_function_privilege('authenticated', 'private.readiness_rules()
   and not has_function_privilege('authenticated',
     'private.day_adjustment_changes(uuid, uuid, text, jsonb)', 'execute')
   and not has_function_privilege('authenticated',
-    'private.day_adjustment_explanation(text, text, text[], text, jsonb, boolean)', 'execute')
+    'private.day_adjustment_explanation(text, text, text[], text, jsonb, boolean, text)', 'execute')
   and not has_function_privilege('authenticated',
     'private.day_adjustment_compute(uuid, date)', 'execute')
   and not has_function_privilege('authenticated',
     'private.day_adjustment_stands(public.day_adjustments, jsonb)', 'execute')
   and not has_function_privilege('authenticated',
-    'private.day_adjustment_present(public.day_adjustments, jsonb, boolean)', 'execute')
+    'private.day_adjustment_present(public.day_adjustments, jsonb, boolean, jsonb)', 'execute')
   and not has_function_privilege('authenticated',
-    'private.day_adjustment_refresh_metrics(uuid, date)', 'execute'),
+    'private.day_adjustment_refresh_metrics(uuid, date)', 'execute')
+  and not has_table_privilege('authenticated', 'private.day_adjustment_metric_attempts', 'select')
+  and not has_table_privilege('anon', 'private.day_adjustment_metric_attempts', 'select'),
   'the rules and helpers are private');
 select ok(has_function_privilege('authenticated', 'public.start_workout(uuid, date, text, uuid)', 'execute')
   and not has_function_privilege('anon', 'public.start_workout(uuid, date, text, uuid)', 'execute'),
@@ -219,6 +275,8 @@ select pg_temp.as_user('b4000000-0000-4000-8000-000000000003');
 insert into r select 'no_plan', public.get_my_day_adjustment_v1((select today from t));
 select is((select j ->> 'unavailable_reason' from r where name = 'no_plan'), 'no_plan',
   'an athlete without a plan has nothing to adjust');
+select is((select j ->> 'explanation' from r where name = 'no_plan'),
+  'You have no active plan to adjust.', 'and the words say so');
 select is((select array[j ->> 'kind', j ->> 'status', j ->> 'available'] from r where name = 'no_plan'),
   array['none', 'none', 'false'], 'no kind, no status, not available');
 select is((select j -> 'planned_workout_id' from r where name = 'no_plan'), 'null'::jsonb,
@@ -287,6 +345,20 @@ select is((select j -> 'signals' from r where name = 'low_no_check_in'),
     "recovery_low": true, "sleep_minutes": null}'::jsonb,
   'and tells the athlete what the score shows');
 
+-- The contract fixture day_adjustment_v1_0_unknown.json is exactly what this day returns.
+select is((select j from r where name = 'low_no_check_in'),
+  replace(replace(replace(replace(replace($fx${"schema_version": "1.0", "local_date": "2026-10-24", "band": "unknown", "triggers": ["no_check_in", "recovery_low"], "kind": "none", "changes": [], "explanation": "Your recovery reads low. Check in and Tracend will say whether to adjust today.", "status": "none", "available": true, "unavailable_reason": null, "safety_route": null, "confidence": null, "missing": ["sleep"], "cardio": null, "planned_workout_id": "b4200000-0000-4000-8000-000000000001", "workout_name": "Lower A", "sets_total_from": 9, "sets_total_to": 9, "previous_answer": null, "answered_at": null, "rules_version": "readiness-v1", "origin": null, "options": [{"kind": "hold_load", "explanation": "Keep last time's weights instead of adding more.", "sets_total_to": 9, "changes": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "sets_from": 4, "sets_to": 4, "load_note": "Keep last time's 60 kg", "load_kg_from": 62.5, "load_kg_to": 60, "reps_from": 5, "reps_to": 8, "rpe_to": null}, {"exercise_order": 2, "planned_exercise_id": "b4400000-0000-4000-8000-000000000002", "name": "Cable fly", "sets_from": 3, "sets_to": 3, "load_note": null, "load_kg_from": 15, "load_kg_to": 15, "reps_from": 11, "reps_to": 10, "rpe_to": null}], "cardio": null}, {"kind": "reduce_sets", "explanation": "One set fewer on 2 exercises and last time's weights.", "sets_total_to": 7, "changes": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "sets_from": 4, "sets_to": 3, "load_note": "Keep last time's 60 kg", "load_kg_from": 62.5, "load_kg_to": 60, "reps_from": 5, "reps_to": 8, "rpe_to": 7}, {"exercise_order": 2, "planned_exercise_id": "b4400000-0000-4000-8000-000000000002", "name": "Cable fly", "sets_from": 3, "sets_to": 2, "load_note": null, "load_kg_from": 15, "load_kg_to": 15, "reps_from": 11, "reps_to": 10, "rpe_to": 7}], "cardio": null}, {"kind": "swap_to_easy_cardio", "explanation": "Try 20 to 30 minutes of easy walking, cycling or swimming at a pace you can talk through. It keeps you moving without adding strain.", "sets_total_to": 0, "changes": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "sets_from": 4, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}, {"exercise_order": 2, "planned_exercise_id": "b4400000-0000-4000-8000-000000000002", "name": "Cable fly", "sets_from": 3, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}, {"exercise_order": 3, "planned_exercise_id": "b4400000-0000-4000-8000-000000000003", "name": "Dumbbell curl", "sets_from": 2, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}], "cardio": {"minutes_min": 20, "minutes_max": 30, "effort": "easy", "talk_test": true, "vigorous_allowed": false}}], "signals": {"recovery_score": 20, "recovery_confidence": "high", "recovery_mode": "night", "recovery_low": true, "sleep_minutes": null}}$fx$,
+    'b4200000-0000-4000-8000-000000000001', (select workout_id::text from wk
+      where uid = 'b4000000-0000-4000-8000-000000000001')),
+    'b4400000-0000-4000-8000-000000000001', (select e1::text from wk
+      where uid = 'b4000000-0000-4000-8000-000000000001')),
+    'b4400000-0000-4000-8000-000000000002', (select e2::text from wk
+      where uid = 'b4000000-0000-4000-8000-000000000001')),
+    'b4400000-0000-4000-8000-000000000003', (select e3::text from wk
+      where uid = 'b4000000-0000-4000-8000-000000000001')),
+    '2026-10-24', (select today::text from t))::jsonb,
+  'the fixture the app parses is the real answer, key for key');
+
 select pg_temp.check_in('b4000000-0000-4000-8000-000000000001', 3, 3, 3, 3, 0);
 insert into r select 'low_good_check_in', public.get_my_day_adjustment_v1((select today from t));
 select is((select array[j ->> 'band', j ->> 'kind', j ->> 'status'] from r where name = 'low_good_check_in'),
@@ -296,6 +368,12 @@ select is((select j -> 'triggers' from r where name = 'low_good_check_in'), '["r
 select is((select j ->> 'explanation' from r where name = 'low_good_check_in'),
   'Your recovery reads low, but your check-in looks fine. You can train as planned or choose a lighter session.',
   'with words that offer the choice');
+select is((select array(select o ->> 'explanation' from jsonb_array_elements(j -> 'options') o)
+    from r where name = 'no_check_in'),
+  array['Keep last time''s weights instead of adding more.',
+    'One set fewer on 2 exercises and last time''s weights.',
+    'Try 20 to 30 minutes of easy walking, cycling or swimming at a pace you can talk through. It keeps you moving without adding strain.'],
+  'the sentence of a choice depends on the kind alone, not on whether the athlete has checked in');
 select is((select jsonb_array_length(j -> 'options') from r where name = 'low_good_check_in'), 3,
   'and the three adjustments the athlete may choose');
 select is((select j -> 'confidence' from r where name = 'low_good_check_in'), '"medium"'::jsonb,
@@ -519,12 +597,14 @@ insert into r select 'worse', public.get_my_day_adjustment_v1((select today from
 select is((select array[j ->> 'status', j ->> 'kind'] from r where name = 'worse'),
   array['proposed', 'swap_to_easy_cardio'], 'a worse check-in proposes the stricter kind again');
 select is((select (j -> 'previous_answer') - 'answered_at' from r where name = 'worse'),
-  '{"kind": "reduce_sets", "status": "accepted"}'::jsonb, 'and names the answer it replaces');
+  '{"kind": "reduce_sets", "status": "accepted", "reason": "check_in"}'::jsonb,
+  'and names the answer it replaces and why');
 
 select pg_temp.check_in('b4000000-0000-4000-8000-000000000001', 3, 3, 3, 3, 0);
 insert into r select 'better', public.get_my_day_adjustment_v1((select today from t));
 select is((select array[j ->> 'status', j ->> 'kind', j ->> 'band'] from r where name = 'better'),
-  array['accepted', 'reduce_sets', 'amber'], 'a better check-in leaves the answer standing');
+  array['accepted', 'reduce_sets', 'green'],
+  'a better check-in leaves the answer standing, with today''s band');
 
 -- Starting the workout ---------------------------------------------------------------------------------
 
@@ -608,6 +688,20 @@ select is((select array_agg(c order by o) from (
   array[4::bigint, 3, 2], 'starting the strength workout on an easy-cardio day is allowed: the plan''s sets');
 select ok((select day_adjustment_id is not null from public.workout_sessions
     where idempotency_key = 'b4100000-0000-4000-8000-000000000007'), 'with the answer linked');
+select pg_temp.check_in('b4000000-0000-4000-8000-000000000007', 3, 3, 3, 3, 9);
+insert into r select 'safety_started', public.get_my_day_adjustment_v1((select today from t));
+select is((select array[j ->> 'safety_route', j ->> 'unavailable_reason', j ->> 'kind', j ->> 'status',
+    j ->> 'explanation', jsonb_array_length(j -> 'options')::text, j ->> 'band'] from r
+    where name = 'safety_started'),
+  array['pain_referral', 'session_started', 'none', 'none',
+    'Pain of 7 or more is too high to train through. Rest the area and see a doctor or physio before you train it again.',
+    '0', 'red'],
+  'pain of 9 after the session started carries the referral and none of the stored answer');
+select is((select j - 'local_date' - 'planned_workout_id' - 'signals' - 'sets_total_from'
+    - 'sets_total_to' - 'workout_name' - 'confidence' - 'missing' from r where name = 'safety_started'),
+  ($fx${   "schema_version": "1.0",   "local_date": "2026-10-24",   "band": "red",   "triggers": [     "pain_severe"   ],   "kind": "none",   "changes": [],   "explanation": "Pain of 7 or more is too high to train through. Rest the area and see a doctor or physio before you train it again.",   "status": "none",   "available": false,   "unavailable_reason": "session_started",   "safety_route": "pain_referral",   "confidence": "medium",   "missing": [     "sleep"   ],   "cardio": null,   "planned_workout_id": "b4200000-0000-4000-8000-000000000001",   "workout_name": "Lower A",   "sets_total_from": 9,   "sets_total_to": 9,   "previous_answer": null,   "answered_at": null,   "rules_version": "readiness-v1",   "origin": null,   "options": [],   "signals": {     "recovery_score": 60,     "recovery_confidence": "high",     "recovery_mode": "night",     "recovery_low": false,     "sleep_minutes": null   } }$fx$::jsonb - 'local_date' - 'planned_workout_id' - 'signals' - 'sets_total_from'
+    - 'sets_total_to' - 'workout_name' - 'confidence' - 'missing'),
+  'the contract fixture day_adjustment_v1_0_safety_started.json is the real answer, key for key');
 
 select pg_temp.as_user('b4000000-0000-4000-8000-000000000008');
 select pg_temp.check_in('b4000000-0000-4000-8000-000000000008', 2, 3, 4, 3, 0);
@@ -634,9 +728,10 @@ select is((select array_agg(c order by o) from (
     join public.workout_sessions w on w.id = p.workout_session_id
     left join public.exercise_sets s on s.exercise_performance_id = p.id
     where w.idempotency_key = 'b4100000-0000-4000-8000-000000000009' group by p.exercise_order) x),
-  array[4::bigint, 3, 2], 'an answer the rules no longer stand behind (pain of 9 since) is not applied');
-select ok((select day_adjustment_id is null from public.workout_sessions
-    where idempotency_key = 'b4100000-0000-4000-8000-000000000009'), 'nor linked');
+  array[3::bigint, 2, 2],
+  'an accepted answer is applied as given, even when the check-in has worsened since (pain of 9)');
+select ok((select day_adjustment_id is not null from public.workout_sessions
+    where idempotency_key = 'b4100000-0000-4000-8000-000000000009'), 'and linked');
 
 -- Rest day, coach-adjusted day, safety on a rest day -------------------------------------------------------
 
@@ -648,6 +743,9 @@ select is((select array[j ->> 'available', j ->> 'unavailable_reason', j ->> 'ki
   'a rest day has nothing to adjust');
 select throws_ok($$select public.respond_to_day_adjustment_v1(private.local_date_for(auth.uid()), true)$$,
   '55000', null, 'and cannot be answered');
+select is((select j ->> 'explanation' from r where name = 'rest'),
+  'No session is planned today. Nothing in your plan changes.',
+  'and says so, rather than asking for a check-in');
 select pg_temp.check_in('b4000000-0000-4000-8000-000000000004', 3, 3, 3, 3, 9);
 insert into r select 'rest_pain', public.get_my_day_adjustment_v1((select today from t));
 select is((select array[j ->> 'unavailable_reason', j ->> 'safety_route'] from r where name = 'rest_pain'),
@@ -659,8 +757,9 @@ update public.training_plan_versions set block_kind = 'next_session',
   ends_on = (select today from t), restores_version_id = id
 where user_id = 'b4000000-0000-4000-8000-000000000010';
 insert into r select 'coach', public.get_my_day_adjustment_v1((select today from t));
-select is((select array[j ->> 'unavailable_reason', j ->> 'kind'] from r where name = 'coach'),
-  array['coach_adjusted', 'none'], 'a session Coach already adjusted for today is not adjusted twice');
+select is((select array[j ->> 'unavailable_reason', j ->> 'kind', j ->> 'explanation'] from r where name = 'coach'),
+  array['coach_adjusted', 'none', 'Coach already adjusted today''s session.'],
+  'a session Coach already adjusted for today is not adjusted twice');
 select throws_ok($$select public.respond_to_day_adjustment_v1(private.local_date_for(auth.uid()), true)$$,
   '55000', null, 'and cannot be answered');
 
@@ -669,12 +768,181 @@ select throws_ok($$select public.respond_to_day_adjustment_v1(private.local_date
 select pg_temp.as_user('b4000000-0000-4000-8000-000000000005');
 select pg_temp.check_in('b4000000-0000-4000-8000-000000000005', 3, 3, 3, 3, 0);
 select is((select count(x.answer) from (select public.respond_to_day_adjustment_v1(
-      (select today from t), i % 2 = 1, 'hold_load') as answer from generate_series(1, 20) i) x),
-  20::bigint, 'twenty answers are taken');
+      (select today from t), i % 2 = 1, 'hold_load') as answer from generate_series(1, 19) i) x),
+  19::bigint, 'nineteen answers are taken');
+select public.respond_to_day_adjustment_v1((select today from t), true, 'reduce_sets');
 select throws_ok($$select public.respond_to_day_adjustment_v1(private.local_date_for(auth.uid()), true, 'hold_load')$$,
   'P0001', null, 'the twenty-first is refused');
+select is((select j ->> 'status' from (select public.respond_to_day_adjustment_v1(
+      private.local_date_for(auth.uid()), false) j) x), 'declined',
+  'but Undo of the standing accepted answer is never refused');
 select is((select count(*) from public.day_adjustments where user_id = 'b4000000-0000-4000-8000-000000000005'),
-  20::bigint, 'twenty rows');
+  21::bigint, 'it is the twenty-first row');
+
+-- The accepted answer is applied as given, after a worse check-in (P1) ------------------------------------
+
+select pg_temp.as_user('b4000000-0000-4000-8000-000000000011');
+select pg_temp.check_in('b4000000-0000-4000-8000-000000000011', 2, 3, 4, 3, 0);
+select public.respond_to_day_adjustment_v1((select today from t), true);
+select pg_temp.check_in('b4000000-0000-4000-8000-000000000011', 1, 1, 3, 3, 0);
+insert into r select 'worse11', public.get_my_day_adjustment_v1((select today from t));
+select is((select array[j ->> 'status', j ->> 'kind'] from r where name = 'worse11'),
+  array['proposed', 'swap_to_easy_cardio'], 'the worse check-in asks again');
+select public.start_workout((select workout_id from wk where uid = 'b4000000-0000-4000-8000-000000000011'),
+  (select today from t), 'UTC', 'b4100000-0000-4000-8000-000000000011');
+select is((select array_agg(c order by o) from (
+    select p.exercise_order o, count(s.id) c from public.exercise_performances p
+    join public.workout_sessions w on w.id = p.workout_session_id
+    left join public.exercise_sets s on s.exercise_performance_id = p.id
+    where w.idempotency_key = 'b4100000-0000-4000-8000-000000000011' group by p.exercise_order) x),
+  array[3::bigint, 2, 2], 'but starting still gives the lighter session the athlete accepted');
+select ok((select day_adjustment_id is not null from public.workout_sessions
+    where idempotency_key = 'b4100000-0000-4000-8000-000000000011'), 'linked to it');
+
+-- A start for another date gets the plan as written (P2) --------------------------------------------------
+
+select pg_temp.as_user('b4000000-0000-4000-8000-000000000012');
+select pg_temp.check_in('b4000000-0000-4000-8000-000000000012', 2, 3, 4, 3, 0);
+select public.respond_to_day_adjustment_v1((select today from t), true);
+select public.start_workout((select workout_id from wk where uid = 'b4000000-0000-4000-8000-000000000012'),
+  (select today - 1 from t), 'UTC', 'b4100000-0000-4000-8000-000000000012');
+select is((select array_agg(c order by o) from (
+    select p.exercise_order o, count(s.id) c from public.exercise_performances p
+    join public.workout_sessions w on w.id = p.workout_session_id
+    left join public.exercise_sets s on s.exercise_performance_id = p.id
+    where w.idempotency_key = 'b4100000-0000-4000-8000-000000000012' group by p.exercise_order) x),
+  array[4::bigint, 3, 2], 'a start backdated to yesterday gets the plan as written');
+select ok((select day_adjustment_id is null from public.workout_sessions
+    where idempotency_key = 'b4100000-0000-4000-8000-000000000012'), 'and is not linked to today''s answer');
+
+-- A choice made with no check-in speaks for its kind (O1) ------------------------------------------------
+
+select pg_temp.as_user('b4000000-0000-4000-8000-000000000013');
+insert into r select 'before13', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'chose13', public.respond_to_day_adjustment_v1((select today from t), true, 'hold_load');
+select is((select array[j ->> 'band', j ->> 'status', j ->> 'kind', j ->> 'origin', j ->> 'explanation']
+    from r where name = 'chose13'),
+  array['unknown', 'accepted', 'hold_load', 'chosen', 'Keep last time''s weights instead of adding more.'],
+  'it keeps today''s band (unknown) and the sentence of the kind');
+select is((select j -> 'triggers' from r where name = 'chose13'), '["no_check_in"]'::jsonb,
+  'and today''s reasons');
+insert into r select 'read13', public.get_my_day_adjustment_v1((select today from t));
+select is((select j ->> 'explanation' from r where name = 'read13'),
+  'Keep last time''s weights instead of adding more.', 'reading it back gives the same words');
+
+-- Respond and start take the same lock (P1) -------------------------------------------------------------
+
+select ok((select prosrc like '%pg_advisory_xact_lock(hashtextextended(%day_adjustment:%auth.uid()%'
+    from pg_proc where oid = 'public.start_workout(uuid, date, text, uuid)'::regprocedure)
+  and (select prosrc like '%pg_advisory_xact_lock(hashtextextended(''day_adjustment:'' || uid::text || today::text, 0))%'
+    from pg_proc where oid = 'public.respond_to_day_adjustment_v1(date, boolean, text)'::regprocedure),
+  'both functions take the user-and-day advisory lock');
+select pg_temp.as_user('b4000000-0000-4000-8000-000000000014');
+select ok(not exists (select 1 from pg_locks where locktype = 'advisory' and pid = pg_backend_pid()
+    and ((classid::bigint << 32) | objid::bigint) = hashtextextended(
+      'day_adjustment:' || 'b4000000-0000-4000-8000-000000000014' || (select today::text from t), 0)),
+  'the lock is not held before the start');
+select public.start_workout((select workout_id from wk where uid = 'b4000000-0000-4000-8000-000000000014'),
+  (select today from t), 'UTC', 'b4100000-0000-4000-8000-000000000014');
+select ok(exists (select 1 from pg_locks where locktype = 'advisory' and pid = pg_backend_pid()
+    and ((classid::bigint << 32) | objid::bigint) = hashtextextended(
+      'day_adjustment:' || 'b4000000-0000-4000-8000-000000000014' || (select today::text from t), 0)),
+  'starting a workout takes the athlete''s lock for the day');
+
+-- An exercise the answer left alone is judged as ever (P2) -------------------------------------------------
+
+select pg_temp.as_user('b4000000-0000-4000-8000-000000000015');
+select pg_temp.check_in('b4000000-0000-4000-8000-000000000015', 2, 3, 3, 3, 0);
+insert into r select 'p15', public.get_my_day_adjustment_v1((select today from t));
+select is((select array[j ->> 'kind', (j -> 'changes' -> 0 ->> 'name'), jsonb_array_length(j -> 'changes')::text]
+    from r where name = 'p15'), array['hold_load', 'Cable fly', '1'],
+  'only the fly is held: the bench has failed twice and B3 is lowering it');
+select public.respond_to_day_adjustment_v1((select today from t), true);
+select public.start_workout((select workout_id from wk where uid = 'b4000000-0000-4000-8000-000000000015'),
+  (select today from t), 'UTC', 'b4100000-0000-4000-8000-000000000015');
+update public.exercise_sets s set repetitions = case p.exercise_order when 1 then 4 else 10 end,
+  load_kg = case p.exercise_order when 1 then 60 else 15 end, rir = 1, completed = true
+from public.exercise_performances p, public.workout_sessions w
+where s.exercise_performance_id = p.id and p.workout_session_id = w.id
+  and w.idempotency_key = 'b4100000-0000-4000-8000-000000000015' and p.exercise_order in (1, 2);
+update public.workout_sessions set state = 'completed', completed_at = now(), duration_seconds = 3000,
+  session_effort = 8, session_effort_source = 'athlete', completion_source = 'manual'
+where idempotency_key = 'b4100000-0000-4000-8000-000000000015';
+select is((select tg ->> 'action' from jsonb_array_elements(
+    private.next_session_targets('b4000000-0000-4000-8000-000000000015')) tg
+    where tg ->> 'name' = 'Barbell bench press'), 'lower',
+  'the bench, not in the answer, still lowers after a second session below the range');
+select is((select array[(tg -> 'basis' -> 'recent' -> 0 ->> 'adjusted'),
+      (tg -> 'basis' -> 'recent' -> 0 ->> 'sets_planned')] from jsonb_array_elements(
+    private.next_session_targets('b4000000-0000-4000-8000-000000000015')) tg
+    where tg ->> 'name' = 'Barbell bench press'), array['false', null],
+  'its session is not marked adjusted');
+select is((select array[(tg -> 'basis' -> 'recent' -> 0 ->> 'adjusted'),
+      (tg -> 'basis' -> 'recent' -> 0 ->> 'sets_planned')] from jsonb_array_elements(
+    private.next_session_targets('b4000000-0000-4000-8000-000000000015')) tg
+    where tg ->> 'name' = 'Cable fly'), array['true', '3'],
+  'while the fly, which the answer held, is');
+
+-- New data asks again for its own reason (P3) ----------------------------------------------------------
+
+select pg_temp.as_user('b4000000-0000-4000-8000-000000000016');
+select pg_temp.check_in('b4000000-0000-4000-8000-000000000016', 2, 3, 3, 3, 0);
+select public.respond_to_day_adjustment_v1((select today from t), true);
+select pg_temp.sleep('b4000000-0000-4000-8000-000000000016', 300);
+insert into r select 'new16', public.get_my_day_adjustment_v1((select today from t));
+select is((select array[j ->> 'status', j ->> 'kind', (j -> 'previous_answer' ->> 'reason'),
+      (j -> 'previous_answer' ->> 'kind')] from r where name = 'new16'),
+  array['proposed', 'reduce_sets', 'new_data', 'hold_load'],
+  'sleep that arrives after the answer asks again and says it is new data, not a new check-in');
+
+-- Scores are made again for new Health data, and not retried at once after an attempt (P3) ----------------
+
+select pg_temp.as_user('b4000000-0000-4000-8000-000000000017');
+select is((select count(*) from public.daily_computed_metrics where user_id = 'b4000000-0000-4000-8000-000000000017'),
+  0::bigint, 'no scores yet');
+insert into private.day_adjustment_metric_attempts(user_id, local_date, attempted_at, failed)
+values ('b4000000-0000-4000-8000-000000000017', (select today from t), now(), true);
+select public.get_my_day_adjustment_v1((select today from t));
+select is((select count(*) from public.daily_computed_metrics where user_id = 'b4000000-0000-4000-8000-000000000017'),
+  0::bigint, 'a failed attempt a minute ago is not retried on this read');
+update private.day_adjustment_metric_attempts set attempted_at = now() - interval '11 minutes'
+where user_id = 'b4000000-0000-4000-8000-000000000017';
+select public.get_my_day_adjustment_v1((select today from t));
+select is((select count(*) from public.daily_computed_metrics where user_id = 'b4000000-0000-4000-8000-000000000017'),
+  1::bigint, 'after the wait it is tried again and the scores exist');
+select is((select failed from private.day_adjustment_metric_attempts
+    where user_id = 'b4000000-0000-4000-8000-000000000017'), false, 'and the attempt is recorded as made');
+update public.daily_computed_metrics set computed_at = now() - interval '2 hours'
+where user_id = 'b4000000-0000-4000-8000-000000000017';
+update private.day_adjustment_metric_attempts set attempted_at = now() - interval '11 minutes'
+where user_id = 'b4000000-0000-4000-8000-000000000017';
+select pg_temp.sleep('b4000000-0000-4000-8000-000000000017', 400);
+select public.get_my_day_adjustment_v1((select today from t));
+select ok((select computed_at > now() - interval '1 minute' from public.daily_computed_metrics
+    where user_id = 'b4000000-0000-4000-8000-000000000017'),
+  'Health data that arrived after the scores makes them again');
+
+-- A body-weight or unassisted hold reads as such, not as 0 kg (P3) ---------------------------------------
+
+insert into public.planned_exercises(id, user_id, planned_workout_id, exercise_order,
+  display_name_snapshot, set_count, rep_min, rep_max, target_rpe, rest_seconds, exercise_slug)
+select 'b4300000-0000-4000-8000-000000000001', uid, workout_id, 4, 'Assisted pull-up', 3, 6, 10, 8, 90,
+  'assisted-pull-up' from wk where uid = 'b4000000-0000-4000-8000-000000000010';
+select is((select c -> 'changes' -> 0 ->> 'load_note' from (select private.day_adjustment_changes(
+    'b4000000-0000-4000-8000-000000000010', (select workout_id from wk
+      where uid = 'b4000000-0000-4000-8000-000000000010'), 'hold_load',
+    jsonb_build_array(jsonb_build_object('planned_exercise_id', 'b4300000-0000-4000-8000-000000000001',
+      'action', 'add_load', 'load_kg', 2.5, 'reps', 6, 'basis', jsonb_build_object('recent',
+        jsonb_build_array(jsonb_build_object('load_kg', 0, 'min_reps', 10)))))) c) x),
+  'Keep last time''s unassisted reps', 'an assisted exercise done unassisted');
+select is((select c -> 'changes' -> 0 ->> 'load_note' from (select private.day_adjustment_changes(
+    'b4000000-0000-4000-8000-000000000010', (select workout_id from wk
+      where uid = 'b4000000-0000-4000-8000-000000000010'), 'hold_load',
+    jsonb_build_array(jsonb_build_object('planned_exercise_id', (select e1 from wk
+        where uid = 'b4000000-0000-4000-8000-000000000010'),
+      'action', 'add_load', 'load_kg', 2.5, 'reps', 5, 'basis', jsonb_build_object('recent',
+        jsonb_build_array(jsonb_build_object('load_kg', 0, 'min_reps', 8)))))) c) x),
+  'Keep last time''s body weight', 'and an added-load exercise with no load added');
 
 -- Privacy -----------------------------------------------------------------------------------------------
 

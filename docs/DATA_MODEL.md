@@ -1187,14 +1187,19 @@ Sleep quality:
     `load_kg` (null without a load), `reps`, `sets`, `confidence` (`high`, or `low` when reps in
     reserve were not logged for every working set) and `basis` (`last_date`; `recent`, up to three
     sessions latest first, each `local_date`, `load_kg`, `sets`, `min_reps`, `total_reps`,
-    `min_rir`, `effort_known`, `pain`, and from B4 `adjusted` (the session was done under an
-    accepted hold-load or fewer-sets answer) and `sets_planned` (its adjusted set count, else null)).
-    An exercise without logged sets has no entry.
+    `min_rir`, `effort_known`, `pain`, and from hub 1.8 (B4) `adjusted` (this exercise was listed by
+    the accepted hold-load or fewer-sets answer the session was started under) and `sets_planned`
+    (its adjusted set count, else null)). An exercise without logged sets has no entry.
   - `get_progression_summary_v1(p_user_id)` (service role only) returns `{schema_version: '1.0',
     targets}` with the same entries, for Coach context.
 - `get_my_day_adjustment_v1(local_date)` and `respond_to_day_adjustment_v1(local_date, accept,
   chosen_kind)` 1.0 (B4): today's readiness adjustment and the athlete's answer; the keys are in
-  Contract 5 of the program plan. Neither the training hub nor the daily brief changes version.
+  Contract 5 of the program plan. `previous_answer` carries `kind`, `status`, `answered_at` and
+  `reason` (`check_in` or `new_data`). The training hub is 1.8 (B4; every 1.7 key is unchanged, the
+  sessions inside a target's `basis.recent` gain two keys); the daily brief does not change.
+  `private.day_adjustment_metric_attempts` (private, one row per athlete and day, deleted with the
+  account) records the last attempt to make the day's scores, so a failure is not retried on every
+  read.
 - `get_my_daily_brief` 1.8:
   - `recovery_previous` (yesterday's stored `recovery_score`);
   - `plan` (the active plan's `title`, `version_number`, `block_weeks` and `week_number`, weeks

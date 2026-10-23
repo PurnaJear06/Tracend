@@ -62,6 +62,8 @@ void main() {
     'reduce': _fixture('day_adjustment_v1_0_reduce'),
     'cardio': _fixture('day_adjustment_v1_0_cardio'),
     'safety': _fixture('day_adjustment_v1_0_safety'),
+    'safetyStarted': _fixture('day_adjustment_v1_0_safety_started'),
+    'reasked': _fixture('day_adjustment_v1_0_reasked'),
     'unknown': _fixture('day_adjustment_v1_0_unknown'),
     'answered': _fixture('respond_to_day_adjustment_v1_0'),
   };
@@ -159,6 +161,28 @@ void main() {
       final safety = fixtures['safety']!;
       expect(safety['safety_route'], 'pain_referral');
       expect(safety['triggers'], ['pain_severe']);
+    });
+
+    test('a safety route stands over a started session', () {
+      final started = fixtures['safetyStarted']!;
+      expect(started['safety_route'], 'pain_referral');
+      expect(started['unavailable_reason'], 'session_started');
+      expect(started['kind'], 'none');
+      expect(started['status'], 'none');
+    });
+
+    test('an answer that no longer stands says why', () {
+      final previous = Map<String, dynamic>.from(
+        fixtures['reasked']!['previous_answer'] as Map,
+      );
+      expect(previous.keys.toList()..sort(), [
+        'answered_at',
+        'kind',
+        'reason',
+        'status',
+      ]);
+      expect(previous['reason'], isIn(['check_in', 'new_data']));
+      expect(previous['kind'], isIn(_kinds));
     });
 
     test('without a check-in the band is unknown and nothing is proposed', () {

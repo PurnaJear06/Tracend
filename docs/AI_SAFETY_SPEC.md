@@ -190,9 +190,11 @@ proposes one of three things for today's scheduled workout only, never a plan ve
 - The acute:chronic workload ratio, sleeping heart rate and monotony are not inputs.
 - A pain of 7 or more gives no training change and a safety route (a referral to a doctor or
   physio); it applies on a rest day too. Tracend withholds advice; it does not block the workout.
-- A bad day never lowers the load: the progression targets ignore a session done under an accepted
-  adjustment as evidence for lowering a load or for a stall, and count its adjusted set number as
-  the planned one.
+- A bad day never lowers the load: the progression targets ignore an exercise that an accepted
+  adjustment lists, done under it, as evidence for lowering its load or for a stall, and count its
+  adjusted set number as the planned one. An exercise the adjustment left alone is judged as ever.
+- The athlete's accepted answer is applied when the workout starts, whatever the rules say by then
+  (it can only make the day easier); a safety route stands over every stored answer.
 - Model output never proposes, applies or accepts the adjustment. Its sentences are fixed templates
   keyed by trigger and kind. No answer exists until the athlete taps; the answer, not the proposal,
   is audited (`day_adjustment_answered`, codes only).

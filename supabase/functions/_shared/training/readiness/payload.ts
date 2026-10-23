@@ -92,7 +92,14 @@ export type DayAdjustment = Readonly<{
   workoutName: string | null;
   setsTotalFrom: number;
   setsTotalTo: number;
-  previousAnswer: Readonly<{ kind: AdjustmentKind; status: "accepted" | "declined" }> | null;
+  previousAnswer:
+    | Readonly<{
+      kind: AdjustmentKind;
+      status: "accepted" | "declined";
+      /** Why it no longer stands: a different check-in, or data that arrived since. */
+      reason: "check_in" | "new_data";
+    }>
+    | null;
   answeredAt: string | null;
   rulesVersion: string;
   origin: "proposed" | "chosen" | null;
@@ -230,6 +237,9 @@ export function parseDayAdjustment(raw: unknown): DayAdjustment | null {
   const previousStatus = previous
     ? oneOf(["accepted", "declined"] as const, previous.status)
     : null;
+  const previousReason = previous
+    ? oneOf(["check_in", "new_data"] as const, previous.reason)
+    : null;
   const score = nullable(signals?.recovery_score, whole);
   const sleep = nullable(signals?.sleep_minutes, whole);
   const recoveryConfidence = nullable(signals?.recovery_confidence, text);
@@ -243,7 +253,8 @@ export function parseDayAdjustment(raw: unknown): DayAdjustment | null {
     typeof row.available !== "boolean" || typeof row.explanation !== "string" ||
     typeof row.rules_version !== "string" || typeof signals.recovery_low !== "boolean" ||
     score === undefined || sleep === undefined || recoveryConfidence === undefined ||
-    recoveryMode === undefined || (previous !== null && (!previousKind || !previousStatus)) ||
+    recoveryMode === undefined ||
+    (previous !== null && (!previousKind || !previousStatus || !previousReason)) ||
     row.available !== (reason === null) || (kind === "swap_to_easy_cardio") !== (dose !== null) ||
     (kind === "none") !== (status === "none") || (route !== null && kind !== "none")
   ) return null;
@@ -265,8 +276,8 @@ export function parseDayAdjustment(raw: unknown): DayAdjustment | null {
     workoutName,
     setsTotalFrom: from,
     setsTotalTo: to,
-    previousAnswer: previous && previousKind && previousStatus
-      ? { kind: previousKind, status: previousStatus }
+    previousAnswer: previous && previousKind && previousStatus && previousReason
+      ? { kind: previousKind, status: previousStatus, reason: previousReason }
       : null,
     answeredAt,
     rulesVersion: row.rules_version,
