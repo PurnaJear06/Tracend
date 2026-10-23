@@ -1164,6 +1164,16 @@ UK tables (55.5 and 45 g protein a day, 30 g fibre).
 - `library_full_test.ts`: the full library renders to about 62,900 tokens; the 60,000 line (a limit for
   the rejected whole-library-in-the-prefix option) is now 70,000 (owner decision below).
 
+### Measured in CI (PR #164)
+
+The library retrieval gate ran on the 236 calibration questions with 114 sources: mean recall in the
+top 8 with the floor 0.867 (206 scored questions; 0.855 before E4), multi-source 0.787, MRR 0.792,
+follow-ups 0.964, 27 of 30 no-answer questions shown nothing (90%), and no regional source reached an
+athlete outside its region (0 leaks). All 17 regional questions found their expected source. The
+pgTAP file `regional_modules_test.sql` (37 assertions) passes; on a scratch branch
+(`feature/e4-pgtap-before`, deleted) with the migration minus the regions function it failed exactly
+the four assertions about a stored country (30, 31, 32 and 35).
+
 ### Decisions for the owner
 
 1. **Which regions ship first.** The four D5 names, all built. Canada, the EU and others wait for a

@@ -50,7 +50,7 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   their gates), a word-search floor (recall 0.611, down from 0.795 unfloored), an explicit no-match line, evidence level and Tracend's-reading marks
   on excerpts, the embedding started with the request, a `library_retrieval` log line, the library
   version on each answer, a retire path, the retrieval gate on library pull requests and a deploy
-  check. E4 in review (branch `claude/regional-modules`, migration `20261023120044`): regional
+  check. E4 in review (#164, branch `claude/regional-modules`, migration `20261023120044`): regional
   modules for India, the US, the UK and Australia (eight new sources, 114 in all; each region has a
   nutrition and a body-measure source) and an optional **Country** in Account
   (`user_accounts.country_code`, `get_my_country_v1` and `set_my_country_v1`) that picks the regional
