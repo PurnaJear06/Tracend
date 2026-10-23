@@ -5,6 +5,7 @@ import type { ProgressionTarget } from "../training/progression/targets.ts";
 import { buildCoachProposal } from "./build.ts";
 import { plannedExerciseIdFor, proposalRpcPayloads, stateFixture } from "./fixtures.ts";
 import { parseAthleteState } from "./state.ts";
+import { isRefusal, rulesTraining } from "./plan_rules.ts";
 import { swapCandidates } from "./training.ts";
 import type { AthleteState, StatePlanExercise, TrainingChange } from "./types.ts";
 
@@ -148,4 +149,80 @@ Deno.test("a plan payload without planned exercise ids has no targets to match",
       workout.exercises.every((exercise) => exercise.plannedExerciseId === null)
     ),
   );
+});
+
+// ---- a rebuilt plan carries loads per range for a lift on a heavy and a light day ---------------
+
+/** The fixture plan with the bench press on its first two days, in the given ranges and loads. */
+function benchPlan(days: readonly { repMin: number; repMax: number; loadKg: number | null }[]) {
+  const base = stateFixture().plan!;
+  const workouts = base.workouts.map((workout, index) =>
+    index < days.length
+      ? {
+        ...workout,
+        exercises: [{
+          plannedExerciseId: plannedExerciseIdFor(index, 0),
+          slug: "barbell-bench-press",
+          name: "Barbell Bench Press",
+          sets: 3,
+          repMin: days[index].repMin,
+          repMax: days[index].repMax,
+          targetRpe: 8,
+          restSeconds: 150,
+          notes: "",
+          targetLoadKg: days[index].loadKg,
+        }],
+      }
+      : workout
+  );
+  return { ...base, workouts };
+}
+
+/** Each bench in the plan rebuilt for an advanced athlete: its range and the load it starts at. */
+function rebuiltBenches(old: ReturnType<typeof benchPlan>) {
+  const state = stateFixture({
+    profile: { ...stateFixture().profile, experience: "advanced" },
+    plan: old,
+  });
+  const rebuilt = rulesTraining(state, {}, old);
+  if (isRefusal(rebuilt)) throw new Error(`refused: ${rebuilt.code}`);
+  return rebuilt.workouts.flatMap((workout) =>
+    workout.exercises.filter((exercise) => exercise.slug === "barbell-bench-press").map((e) => ({
+      range: `${e.rep_min}-${e.rep_max}`,
+      load: e.start_load_kg,
+    }))
+  );
+}
+
+Deno.test("a rebuilt plan gives each range of a lift on two days its own load", () => {
+  const benches = rebuiltBenches(
+    benchPlan([{ repMin: 6, repMax: 9, loadKg: 100 }, { repMin: 10, repMax: 12, loadKg: 80 }]),
+  );
+  assert(benches.length > 0);
+  for (const bench of benches) {
+    assertEquals(
+      bench.load,
+      bench.range === "6-9" ? 100 : bench.range === "10-12" ? 80 : undefined,
+    );
+  }
+  assert(benches.some((bench) => bench.range === "6-9" && bench.load === 100));
+});
+
+Deno.test("a rebuilt plan carries nothing for a split lift whose ranges no longer match", () => {
+  const benches = rebuiltBenches(
+    benchPlan([{ repMin: 5, repMax: 6, loadKg: 105 }, { repMin: 10, repMax: 12, loadKg: 82.5 }]),
+  );
+  assert(benches.length > 0);
+  for (const bench of benches) {
+    assertEquals(bench.load, bench.range === "10-12" ? 82.5 : undefined);
+  }
+  assert(benches.some((bench) => bench.range === "6-9"));
+});
+
+Deno.test("a rebuilt plan still carries a lift held in one range by its slug", () => {
+  const benches = rebuiltBenches(
+    benchPlan([{ repMin: 8, repMax: 10, loadKg: 90 }, { repMin: 8, repMax: 10, loadKg: 92.5 }]),
+  );
+  assert(benches.length > 0);
+  for (const bench of benches) assertEquals(bench.load, 92.5);
 });

@@ -523,8 +523,10 @@ Migration `20261023100050_advanced_level_catalog.sql` (additive); no hub or RPC 
   has no target: it never borrows another day's. Known behaviour, kept: an athlete who moves from
   an intermediate to an advanced plan has no target for a split lift's day until that day is logged
   once under its own range (range-matched history only; missing data lowers confidence and is never
-  invented). Not changed: `plan_rules.ts` carries a start load across a plan rebuild keyed by slug
-  (the last day's load wins for a lift on two days).
+  invented). `plan_rules.ts` carries start loads across a plan rebuild: a lift the old plan has in
+  one rep range carries by slug as before; a lift it has in several ranges (heavy and light days)
+  carries only to a new exercise with the same slug and range, else nothing (it used to take the
+  last day's load, so a light day could start at the heavy day's).
 - **Candidates not added** (for the owner): weighted dip and dip station (no dip equipment in the
   picker), trap-bar deadlift (no trap bar), hack squat and pendulum squat, seated leg curl, hammer
   curl and EZ-bar curl, skull crusher, Pendlay and T-bar rows, pause bench (a technique of the bench

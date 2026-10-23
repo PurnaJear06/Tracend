@@ -1119,6 +1119,9 @@ This is deliberate: missing data lowers confidence and is never filled from anot
 next-session adjustment matches its target on the planned exercise id (`get_coach_proposal_inputs_v1`
 1.1 carries it), so a heavy day's target is never applied to the light day of the same lift, and a
 day without a target is adjusted from its planned load only.
+A plan rebuild (a change of training days, a goal or a setup) carries each exercise's start load
+the same way: a lift in one rep range carries by slug, a lift on a heavy and a light day carries
+each range's load only to the same lift in the same range, and otherwise starts without one.
 
 **Screening and safety.** Nothing about the screening gate changes: `moderate_until_cleared` caps
 effort at RPE 7, drops strength emphasis and uses hypertrophy reps (split into heavy and light days
