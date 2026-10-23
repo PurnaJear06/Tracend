@@ -34,6 +34,9 @@ review. Tracend remains a working brand pending trademark and App Store clearanc
 - nutrition logs, meal photos, allergies, and dietary constraints;
 - body measurements, progress photos, and physique analyses;
 - goals, limitations, plan decisions, and coaching history;
+- the account's optional country (`user_accounts.country_code`; set only through
+  `set_my_country_v1`, exported and deleted with the account; it picks the regional library sources
+  inside the database and is not sent to an AI provider, which receives only the chunks chosen);
 - authentication tokens and encrypted contact information; and
 - account exports.
 
@@ -64,8 +67,8 @@ question used as a library search query (or its `gte-small` embedding, computed 
 `library-embed` Edge Function, which Coach chat calls with the worker secret and the question only) keeps the question's classification: it is used for that request only and is never
 written to the library or logged. Coach chat searches with it on every turn (E3); the query may
 carry the athlete's previous question's topic, built in the function and not stored. The search
-reads the athlete's account locale and time zone to pick regional sources (inside the security
-definer function; nothing leaves the database), and the chunks it returns go to the AI provider
+reads the athlete's chosen country (or, with none, the account locale and time zone) to pick
+regional sources (inside the security definer function; nothing leaves the database), and the chunks it returns go to the AI provider
 the athlete's notice names, like the rest of the Coach context.
 
 ## 3. Consent and Transparency

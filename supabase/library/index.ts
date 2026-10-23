@@ -12,6 +12,7 @@ import { nutritionSources } from "./sources/nutrition.ts";
 import { populationSources } from "./sources/populations.ts";
 import { programmingSources } from "./sources/programming.ts";
 import { recoverySources, screeningSources } from "./sources/recovery_screening.ts";
+import { regionalSources } from "./sources/regional.ts";
 import { specialCaseSources } from "./sources/special_cases.ts";
 import { supplementSources } from "./sources/supplements.ts";
 import { trainingSources } from "./sources/training.ts";
@@ -35,4 +36,5 @@ export const librarySources: readonly LibrarySource[] = [
   ...populationSources,
   ...guidelineSources,
   ...indiaSources,
+  ...regionalSources,
 ];

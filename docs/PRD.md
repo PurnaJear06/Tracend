@@ -46,8 +46,16 @@ effort (no strength emphasis, at least 3 reps in reserve, no vigorous conditioni
 else is cleared. The answers, the outcome and the date are stored and exported. Tracend never
 diagnoses or names a condition. Accounts and app builds that never answered read as cleared.
 
-**Planned (Phase 4, E4; D5):** a global audience, with regional nutrition and body-measure modules
-(India ICMR-NIN, US DGA, UK NICE, Australia) chosen by the athlete's region.
+**Regional modules (Phase 4, E4; D5; built):** a global audience, with regional nutrition and
+body-measure modules in the research library for India (ICMR-NIN food guidelines, WHO and Indian
+BMI points), the United States (Dietary Guidelines for Americans, the NIH BMI and waist guide), the
+United Kingdom (Eatwell Guide, Government Dietary Recommendations, NHS BMI and waist guidance) and
+Australia (Australian Dietary Guidelines, protein reference values, activity guidelines). The
+athlete may choose a country in Account (optional); Coach then shows that country's sources next
+to the ones that apply everywhere, and with no country the app behaves as before. A country
+changes which guidelines Coach can cite, never a plan number: rules still set calories, protein and
+safe ranges. NICE's obesity guideline is not in the library yet (its text could not be read), and
+Australia's NHMRC review of the 2013 dietary guidelines may change that module.
 
 **Planned (Phase 4, B5; D6):** knee, back and shoulder training modifications: swaps, range limits,
 a pain check and referral warning signs. No diagnosis and no rehab programs.

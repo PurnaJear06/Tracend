@@ -172,7 +172,25 @@ Deno.test("the sources cover every area the knowledge base was asked to cover", 
   assert(count("screening") >= 2 && count("joint-friendly") >= 3 && count("sleep") >= 2);
   assert(count("india") >= 5 && count("older-adults") >= 3 && count("supplements") >= 5);
   const regions = new Set(librarySources.flatMap((source) => source.region));
-  for (const region of ["global", "US", "GB", "IN"]) assert(regions.has(region), region);
+  for (const region of ["global", "US", "GB", "IN", "AU"]) assert(regions.has(region), region);
+});
+
+Deno.test("each regional module has a nutrition source and a body-measure source for its region", () => {
+  // Decision D5: India, the United States, the United Kingdom and Australia. A body-measure
+  // source covers BMI or waist size, the points that differ by region.
+  for (const region of ["IN", "US", "GB", "AU"]) {
+    const own = librarySources.filter((source) => source.region.includes(region));
+    assert(
+      own.some((source) => source.topics.includes("nutrition")),
+      `${region} has no nutrition source`,
+    );
+    assert(
+      own.some((source) => source.topics.includes("bmi") || source.topics.includes("waist")),
+      `${region} has no body-measure source`,
+    );
+  }
+  const global = librarySources.filter((source) => source.region.includes("global"));
+  assert(global.some((source) => source.topics.includes("waist")), "no global waist source");
 });
 
 async function migrations(): Promise<{ name: string; sql: string }[]> {

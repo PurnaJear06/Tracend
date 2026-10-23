@@ -693,8 +693,12 @@ reply-guard failure (AI_SAFETY_SPEC §11.2). If retrieval is slow or fails, Coac
 (the Contract 7 host's 4-second limit). Retrieval was chosen over putting the whole library in the
 cached prefix after a head-to-head (`docs/handoff/research-library.md`).
 
-> **Planned (coaching platform):** regional modules chosen by the athlete's region (Phase 4 / E4,
-> D5), and plan explanations citing sources (Phase 4 / E5).
+Regional modules (E4, D5) are library sources tagged with a country code. The search shows an
+athlete `global` sources plus the sources of the country the athlete chose in Account
+(`user_accounts.country_code`, optional); with none chosen it falls back to the account locale and
+time zone, as before.
+
+> **Planned (coaching platform):** plan explanations citing sources (Phase 4 / E5).
 
 ### Bounded Coach data lookups (A10)
 

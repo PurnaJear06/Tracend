@@ -112,7 +112,19 @@ confirmed referrals first, then signup order, into `private.signup_invites`.
 ### `user_accounts`
 
 One application-owned row keyed by `id = auth.users.id`: locale, `timezone` (IANA name, default
-`UTC`), unit system, account status, onboarding state, and timestamps. The app writes `timezone`
+`UTC`), optional `country_code`, unit system, account status, onboarding state, and timestamps.
+`country_code` (E4, migration `20261023120044_regional_modules`) is null or two capital letters
+(ISO 3166-1 alpha-2, in practice one of the offered codes; `ZZ` means "another country", kept apart from null so a time zone is not used
+to guess a region for an athlete who answered). The app reads and writes it only through
+`get_my_country_v1` and `set_my_country_v1(p_country_code)`, both `{schema_version: "1.1",
+country_code, effective_regions}`, security definer, authenticated only. `effective_regions` is the
+sorted list the library search uses for the athlete now (`global` plus the stored country or, with
+none, the locale and time-zone guess), so the app can say which country Coach is going by. A blank
+code clears the choice; the set accepts only the codes the app offers (`AU`, `IN`, `GB`, `US`, `ZZ`)
+and raises `22023` otherwise; a signed-out caller gets `42501`. Clients cannot write the column
+directly. An actual change writes an `audit_events` row (`account.country.changed`, target the
+account, metadata `from` and `to`); setting the stored value again or clearing an unset country
+writes none. A new region adds its code to the set function in a later migration. The app writes `timezone`
 only through `set_my_timezone`, which accepts only names Postgres knows; clients cannot write the
 column directly. Readers such as the weekly-review scheduler go through `private.safe_timezone`,
 and `private.local_date_for` gives the athlete's local date.
@@ -1304,8 +1316,8 @@ with no policies; no grants to `anon`, `authenticated` or `service_role`. Edge F
 only through service-role functions. Not part of privacy export or account deletion. `pgvector`
 lives in the `extensions` schema. The tables are empty until ingestion.
 
-> **Planned (Phase 3 / E2):** ingestion and the first 30 sources. **Phase 3 / E3 (code 43):** the
-> library inside Coach chat. **Phase 4 / E4 (code 44):** regional modules.
+> Ingestion (E2), the library inside Coach chat (E3) and the regional modules (E4: eight UK, US,
+> Australian and global body-measure and nutrition sources, and the stored country) are built.
 
 #### `private.library_sources`
 
@@ -1434,10 +1446,13 @@ word, so a whole question matched almost nothing. Returns up to `match_count` ro
   `region`, so a regional caller passes for example `["global", "IN"]`.
 - `target_user_id` (optional): when set and `filters` has no `region`, the search is limited to the
   athlete's regions from `private.library_regions_for_account(uuid)` (not executable by any API
-  role): always `global`, plus the country in `user_accounts.locale` (`en-IN`, `en_US`) and `IN` for
-  the `Asia/Kolkata` and `Asia/Calcutta` time zones, because the app stores no country yet. An
-  unknown account gets `global` only. A source tagged `IN` therefore reaches only athletes in
-  India. When the app stores a country, change that one function.
+  role): always `global`, plus the athlete's stored `user_accounts.country_code` (E4). With none
+  stored, as before E4: the country in `user_accounts.locale` (`en-IN`, `en_US`) and `IN` for the
+  `Asia/Kolkata` and `Asia/Calcutta` time zones. A stored country replaces the guess entirely, so
+  `ZZ` ("another country") sees global sources only, even on an Indian time zone. An unknown
+  account gets `global` only. A source tagged `IN` therefore reaches only athletes in India, an
+  `AU` source only athletes who chose Australia (regions in the library today: `global`, `IN`,
+  `US`, `GB`, `AU`).
 - `public.library_worker_secret_v1()` (same migration): returns the Vault worker secret
   (`private.library_worker_secret()`), executable by `service_role` only. Coach chat uses it as the
   bearer when it calls `library-embed` to embed the question, so gte-small never loads inside
