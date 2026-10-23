@@ -804,14 +804,14 @@ select ok((select day_adjustment_id is not null from public.workout_sessions
 select pg_temp.as_user('b4000000-0000-4000-8000-000000000012');
 select pg_temp.check_in('b4000000-0000-4000-8000-000000000012', 2, 3, 4, 3, 0);
 select public.respond_to_day_adjustment_v1((select today from t), true);
--- An accepted answer left on the same weekday a week ago, as a stale row would be.
+-- An accepted answer left on the same weekday two weeks ago, as a stale row would be.
 insert into public.day_adjustments(user_id, local_date, planned_workout_id, plan_version_id,
   rules_version, band, kind, origin, rules_kind, triggers, changes, cardio, inputs, inputs_hash, status)
-select user_id, local_date - 7, planned_workout_id, plan_version_id, rules_version, band, kind, origin,
+select user_id, local_date - 14, planned_workout_id, plan_version_id, rules_version, band, kind, origin,
   rules_kind, triggers, changes, cardio, inputs, inputs_hash, status from public.day_adjustments
 where user_id = 'b4000000-0000-4000-8000-000000000012' and superseded_at is null;
 select public.start_workout((select workout_id from wk where uid = 'b4000000-0000-4000-8000-000000000012'),
-  (select today - 7 from t), 'UTC', 'b4100000-0000-4000-8000-000000000012');
+  (select today - 14 from t), 'UTC', 'b4100000-0000-4000-8000-000000000012');
 select is((select array_agg(c order by o) from (
     select p.exercise_order o, count(s.id) c from public.exercise_performances p
     join public.workout_sessions w on w.id = p.workout_session_id
