@@ -42,26 +42,26 @@ export const regionalSources: readonly LibrarySource[] = [
       {
         title: "BMI points",
         body:
-          `The page gives two sets of BMI points for adults. For most adults, a BMI from 25 to 29.9 is overweight and 30 or more is obese. For people from a South Asian, Chinese, other Asian, Middle Eastern, Black African or African-Caribbean background, who it says are at risk of health problems at a somewhat lower BMI, the points are lower: 23 to 27.4 is overweight and 27.5 or more is obese.
+          `Two scales are given for adults. The general one calls a BMI of 25 up to 30 overweight and 30 or higher obese. A lower scale is offered to adults whose family background is South Asian, Chinese, other Asian, Middle Eastern, Black African or African-Caribbean, because the page says health risk starts to rise at a somewhat lower BMI for them: overweight begins at 23 (running to 27.4) and obese at 27.5.
 
-It also states that a BMI calculator cannot tell muscle from fat, so someone with a lot of muscle may be placed in the overweight or obese band without much body fat.`,
+The page also warns that its BMI tool does not separate muscle from fat, so a very muscular person can be put in a higher band without carrying much fat.`,
       },
       {
         title: "Waist and when to see a GP",
         body:
-          `For adults with a BMI under 35 the page suggests the waist-to-height ratio as a check on fat carried around the middle, and advises keeping the waist under half of height. It points to a video on how to measure the waist.
+          `For a BMI under 35 the page uses waist-to-height ratio as a check on fat around the middle, and the aim it gives is a waist smaller than half of height. A video on the page shows how to take the measurement.
 
-A GP visit is advised for someone in the overweight or obese band who wants help to lose weight, whose waist is more than half their height, who has pre-diabetes, diabetes, high blood pressure, joint pain, high cholesterol, sleep apnoea or cardiovascular disease, who has a family history of obesity, or who has or may have an eating disorder such as binge eating.`,
+It lists reasons to talk to a GP for someone in the overweight or obese range: wanting help to lose weight, a waist over half of height, an existing condition such as pre-diabetes, diabetes, high blood pressure, high cholesterol, joint pain, sleep apnoea or cardiovascular disease, a family history of obesity, or a suspected eating disorder.`,
       },
       {
         title: "Losing weight",
         body:
-          `The advice for losing weight is to eat and drink fewer calories than the body uses and to be more active. It suggests a steady loss of 0.5 to 1 kg a week, 45 to 60 minutes of activity a day (which can be split into shorter sessions), cutting down on alcohol because it is high in calories, and setting realistic goals. It says an average woman uses about 2,000 calories a day and an average man about 2,500, and that losing 5 to 10 percent of body weight can improve health.`,
+          `The weight-loss advice is to take in fewer calories than the body burns while moving more. The page suggests losing about 0.5 to 1 kg a week, being active for 45 to 60 minutes daily (in shorter blocks if easier), drinking less alcohol because it adds calories, and choosing realistic goals. It puts typical daily energy use at about 2,000 calories for women and 2,500 for men, and says that even a 5 to 10 percent drop in body weight can benefit health.`,
       },
       {
         title: "Practical reading and limits",
         body:
-          `These are population points for reading BMI, not a diagnosis, and Coach never labels an athlete overweight or obese. For a lifter the page's own muscle caveat matters most: a high BMI with a small waist-to-height ratio is not evidence of excess fat, and the waist-to-height ratio does not apply at a BMI of 35 or more. The 0.5 to 1 kg a week and 45 to 60 minutes are the general public's figures; the library's fat-loss sources and the plan's rules set the pace for someone who trains. The lower points for people of Asian origin are the public-health action points WHO set out in 2004. This page is patient guidance, not the NICE guideline itself.`,
+          `These are group-level points for reading BMI, not a diagnosis, and Coach never calls an athlete overweight or obese. For a lifter the muscle warning is the key one: a high BMI alongside a small waist-to-height ratio is not evidence of excess fat, and the waist-to-height check is not meant for a BMI of 35 or above. The weekly loss and daily activity figures are for the general public; the library's fat-loss sources and the plan's rules set the pace for someone who trains. This page is patient guidance, not the NICE guideline behind it.`,
       },
     ],
   },
@@ -94,21 +94,21 @@ A GP visit is advised for someone in the overweight or obese band who wants help
       {
         title: "The five food groups",
         body:
-          `The Eatwell Guide shows what share of a day's food should come from each group, over a day or a week rather than at every meal. Over a third should be fruit and vegetables, at least 5 portions of 80 g a day. Meals should be based on potatoes, bread, rice, pasta or other starchy carbohydrate, wholegrain where possible. Some dairy or alternatives should be included, choosing lower fat and lower sugar versions, and unsweetened calcium-fortified drinks if swapping to a plant drink.`,
+          `The Eatwell Guide is a picture of how a typical day or week of eating should be divided among food groups, rather than a rule for each meal. More than a third should be fruit and vegetables, at least five 80 g portions daily. Starchy foods such as potatoes, bread, rice and pasta form the base of meals, wholegrain where possible. Dairy or dairy alternatives have a place, in lower-fat and lower-sugar forms, and a plant drink should be unsweetened and fortified with calcium.`,
       },
       {
         title: "Proteins, fats and fluid",
         body:
-          `Beans, pulses, fish, eggs, meat and other proteins come next. The guide asks for two portions (140 g each) of fish a week, one of them oily, and no more than 70 g a day of red and processed meat on average. Pulses are named as a low-fat, high-fibre alternative to meat. Unsaturated oils and spreads should be used in small amounts, and foods high in fat, salt and sugar eaten less often and in small amounts.
+          `The protein group covers beans, pulses, fish, eggs, meat and similar foods. The guide asks for fish twice a week at 140 g a portion, with one of the two oily, and puts a ceiling of about 70 g a day on red and processed meat. Pulses are presented as a fibre-rich, low-fat swap for meat. Oils and spreads should be unsaturated and used sparingly, and fatty, salty or sugary foods kept occasional and small.
 
-It advises 6 to 8 glasses of fluid a day, counting water, lower-fat milk and sugar-free drinks including tea and coffee, and limits fruit juice and smoothies to a combined 150 ml a day.`,
+For drinks it points to roughly six to eight glasses of fluid daily, which can include water, lower-fat milk and sugar-free drinks such as tea and coffee, while fruit juice and smoothies together should stay at or under 150 ml a day.`,
       },
       {
         title: "Energy and vitamin D",
         body:
-          `The average energy requirement is given as 2,500 kcal a day for a man and 2,000 for a woman, and the guide says the amount a person needs depends on factors such as how active they are. By convention, on a 2,000 kcal day, about 400 kcal comes at breakfast, 600 at lunch, 600 in the evening and 400 as snacks and drinks.
+          `It gives the average daily energy need as 2,500 kcal for men and 2,000 for women, and notes that individual need varies with things like activity. For a 2,000 kcal day, the usual split is about 400 kcal at breakfast, 600 at lunch, 600 at the evening meal and 400 from snacks and drinks.
 
-For vitamin D, it recommends that everyone aged five and over consider a 10 microgram supplement each day from October to March, and all year round for people with little sun exposure, including people from minority ethnic groups with dark skin such as African, African-Caribbean and South Asian origin. Folic acid advice for women planning a pregnancy is also given.`,
+On supplements, the advice is that everyone from age five should consider 10 micrograms of vitamin D a day through the autumn and winter months (October to March). People with little sun exposure, including people with dark skin of African, African-Caribbean or South Asian origin, should consider it all year. Women trying for a pregnancy are advised to take folic acid.`,
       },
       {
         title: "Practical reading and limits",
@@ -140,14 +140,14 @@ For vitamin D, it recommends that everyone aged five and over consider a 10 micr
       {
         title: "Adult figures",
         body:
-          `For adults aged 19 to 64 the government's daily recommendations are, for men and women respectively: energy 2,500 and 2,000 kcal, protein 55.5 and 45 g, fat under 97 and 78 g, saturated fat under 31 and 24 g, carbohydrate at least 333 and 267 g, free sugars under 33 and 27 g, salt under 6 g and fibre 30 g.
+          `The tables set daily targets for adults aged 19 to 64, men first and women second. Energy: 2,500 and 2,000 kcal. Protein: 55.5 and 45 g. Fat: less than 97 and 78 g, of which saturated fat less than 31 and 24 g. Carbohydrate: at least 333 and 267 g. Free sugars: less than 33 and 27 g. Salt: under 6 g for both. Fibre: 30 g for both.
 
-Older age bands have lower energy and slightly lower protein figures (men aged 65 and over 53.3 g, women 46.5 g).`,
+Beyond age 65 energy and protein figures are a little lower; men aged 65 and over have 53.3 g of protein and women 46.5 g.`,
       },
       {
         title: "Where the numbers come from",
         body:
-          `The tables are a summary of earlier expert advice (COMA and the Scientific Advisory Committee on Nutrition). The energy figures are capped at 2,500 and 2,000 kcal for adults to help address overweight and obesity, and the document says they relate to the general population and individual needs vary. Carbohydrate is set at 50 percent and free sugars at 5 percent of energy, from the 2015 SACN carbohydrate report, and the fibre figure comes from the same report. Salt figures are described as achievable population goals, not ideal intakes. Protein figures come from the 1991 dietary reference values.`,
+          `The figures restate older expert advice from COMA and the Scientific Advisory Committee on Nutrition. Adult energy is capped at 2,500 and 2,000 kcal on purpose, to help tackle overweight and obesity, and the document says these are general-population figures and that real needs differ. Carbohydrate is taken as half of energy and free sugars as 5 percent of energy, both from SACN's 2015 carbohydrate report, which also supplies the fibre figure. Salt targets are described as goals that populations can realistically reach, not ideals. Protein comes from the 1991 UK dietary reference values.`,
       },
       {
         title: "Practical reading and limits",
@@ -189,19 +189,19 @@ Older age bands have lower energy and slightly lower protein figures (men aged 6
       {
         title: "BMI classes and waist lines",
         body:
-          `The guide classes adult BMI as under 18.5 underweight, 18.5 to 24.9 normal, 25 to 29.9 overweight, 30 to 34.9 class I obesity, 35 to 39.9 class II and 40 or more class III. It adds that these relate BMI to disease risk in groups and that the link between BMI and risk varies between individuals and populations.
+          `The guide treats BMI as the main yardstick for adults. Under 18.5 is underweight and 18.5 to 24.9 normal. From 25 to 29.9 is overweight, and obesity runs in three classes: 30 to 34.9, 35 to 39.9 and 40 or more. It stresses that these bands describe average risk in groups; the amount of disease that goes with a given BMI differs between individuals and between populations.
 
-A waist over 40 inches (102 cm) for men or over 35 inches (88 cm) for women adds to the risk of type 2 diabetes, high cholesterol and blood fats, high blood pressure and cardiovascular disease in people with a BMI from 25 to 34.9. A waist over those values moves a person up one risk category. Waist adds little above a BMI of 35.`,
+Waist size adds information for adults with a BMI from 25 to 34.9. Beyond 102 cm (40 inches) for a man or 88 cm (35 inches) for a woman, the odds of type 2 diabetes, abnormal blood fats, high blood pressure and cardiovascular disease climb, and the guide says to place that person one risk step above where BMI alone would. From a BMI of 35 the waist figure is no longer worth taking, since it adds almost no predictive value.`,
       },
       {
         title: "Taking the measurement",
         body:
-          `The waist is measured around the abdomen at the level of the top of the hip bone (the iliac crest), with the tape snug but not pressing into the skin, parallel to the floor, at the end of a normal breath out. BMI is weight in pounds times 703 divided by height in inches squared (or kilograms over metres squared).`,
+          `For the waist, the guide describes passing a tape around the middle at the level of the upper edge of the hip bone (the iliac crest). The tape lies flat and parallel to the floor, touches the skin without pressing in, and is read once the person has breathed out normally. BMI is weight divided by height squared; with pounds and inches, weight is first multiplied by 703.`,
       },
       {
         title: "Muscle, ethnicity and age",
         body:
-          `The guide says BMI can overestimate body fat in very muscular people and underestimate it in people who have lost muscle, such as many older adults, and that clinical judgement is needed with a very muscular patient. It notes that body fat for a given BMI varies with age, sex and possibly ethnicity, and that in some groups, for example Asian Americans, waist circumference is a better indicator of relative disease risk than BMI. It does not give separate BMI points for Asian Americans.`,
+          `The guide is open about BMI being a blunt tool. In a very muscular person it makes fat look greater than it is, and in someone who has lost muscle, as many older people have, it makes them look leaner than they are, so clinical judgement is needed. How BMI relates to body fat also moves with age, sex and perhaps ethnicity. For some groups, Asian Americans among them, the waist tells more about relative risk than BMI does. The guide does not give separate BMI bands for any group.`,
       },
       {
         title: "Practical reading and limits",
@@ -241,21 +241,19 @@ A waist over 40 inches (102 cm) for men or over 35 inches (88 cm) for women adds
       {
         title: "The five guidelines",
         body:
-          `The first guideline is to reach and keep a healthy weight, be physically active and choose amounts of nutritious food that fit energy needs; older people are asked to keep eating well and stay active to keep muscle strength. The second is to enjoy a wide variety of foods from five groups every day, with water: vegetables and legumes; fruit; grain foods, mostly wholegrain; lean meat, poultry, fish, eggs, tofu, nuts, seeds and legumes; and milk, yoghurt, cheese or alternatives, mostly reduced fat.
-
-The third limits saturated fat, added salt, added sugars and alcohol. The fourth supports breastfeeding and the fifth is food safety.`,
+          `The guidelines rest on five messages. The first is to reach and hold a healthy weight by being active and by matching food and drink to energy needs; older people are told to eat well and stay active to keep their muscle strength. The second is to eat widely from five food groups every day and to drink water: vegetables and legumes; fruit; grain foods, mostly wholegrain; lean meat, poultry, fish, eggs, tofu, nuts, seeds and legumes; and milk, yoghurt, cheese or alternatives, mostly in reduced-fat form. The third asks people to restrict saturated fat, added salt, added sugars and alcohol. The remaining two deal with breastfeeding and the safe handling of food.`,
       },
       {
         title: "Serves for adults",
         body:
-          `For the lean meat, poultry, fish, eggs, tofu, nuts, seeds and legumes group the minimum is 3 serves a day for men aged 19 to 50 and 2.5 for women aged 19 to 50, falling to 2.5 and 2 from 51. A serve is, for example, 65 g of cooked lean red meat, 80 g of cooked poultry, 100 g of cooked fish, 2 large eggs, 1 cup (150 g) of cooked legumes or 170 g of tofu. The guidelines say taller or more active people can add serves from the groups to meet higher energy needs, and should then watch weight or waist so intake does not exceed use.`,
+          `The group that holds lean meat, poultry, fish, eggs, tofu, nuts, seeds and legumes has a daily minimum that depends on age and sex: 3 serves for men aged 19 to 50 and 2.5 for women of that age, then 2.5 for men and 2 for women from age 51. Example serves are about 65 g of cooked lean red meat, 80 g of cooked poultry, 100 g of cooked fish, two large eggs, 150 g (a cup) of cooked beans, lentils or chickpeas, or 170 g of tofu. Adults who are tall or active are told they may take extra serves to meet higher energy needs, provided they watch their weight or waist so that intake does not outrun use.`,
       },
       {
         title: "BMI and waist",
         body:
-          `Healthy weight is judged by BMI: under 18.5 underweight, 18.5 to 24.9 healthy, 25 to 29.9 overweight and 30 or more obese. The guidelines say these bands may not suit every group: people of Asian origin may carry equivalent risk at a lower BMI, people of Polynesian origin at a higher one, and a higher BMI range may be desirable over age 70. For Australians of Asian origin it adds that the WHO bands, which were derived mainly from people of European origin, may underestimate body fat and risk.
+          `Weight status is graded by BMI: under 18.5 underweight, 18.5 to 24.9 healthy, 25 to 29.9 overweight and 30 or more obese. The guidelines caution that the bands do not suit everyone. People of Asian origin may face the same risk at a lower BMI and people of Polynesian origin at a higher one, and after age 70 a somewhat higher BMI can be acceptable. For Australians of Asian origin it explains that the WHO bands were built mostly on European populations and may therefore understate body fat and risk.
 
-For waist, risk is increased at 80 cm or more and high at 88 cm or more for women, and increased at 94 cm or more and high at 102 cm or more for men, with the caution that thresholds for other ethnic groups may differ. It suggests measuring weight and waist regularly, for example every two to three months.`,
+For waist, women are at increased risk from 80 cm and high risk from 88 cm, and men from 94 cm and 102 cm, again with a warning that other ethnic groups may need different numbers. It advises checking weight and waist every two to three months.`,
       },
       {
         title: "Practical reading and limits",
@@ -289,12 +287,12 @@ For waist, risk is increased at 80 cm or more and high at 88 cm or more for wome
       {
         title: "Adult values",
         body:
-          `For adults aged 19 to 70 the page gives an estimated average requirement of 0.68 g per kg of body weight a day for men and 0.60 g for women, and a recommended dietary intake (enough for nearly everyone) of 0.84 g per kg for men and 0.75 g for women. For men that is 64 g a day and for women 46 g. Over age 70 the values are raised by 25 percent (men 0.86 and 1.07 g per kg, women 0.75 and 0.94 g per kg), though the page says the evidence for that increase is limited.`,
+          `For healthy adults aged 19 to 70 the page sets the average requirement at 0.68 g of protein per kg of body weight a day for men and 0.60 g for women. The recommended dietary intake, meant to cover nearly everyone, is 0.84 g per kg for men and 0.75 g for women, which works out at 64 g and 46 g a day. For people over 70 both figures are raised: the requirement was increased by a quarter (0.86 g per kg for men, 0.75 for women) and the recommended intake is 1.07 and 0.94 g per kg, though the page concedes that the evidence behind the rise is limited.`,
       },
       {
         title: "Upper level and sources",
         body:
-          `No upper limit in grams a day was set because the data are insufficient. The page recommends an upper level of 25 percent of energy from protein, and says the risk of harm from protein in everyday foods is very low, though it advises caution with supplements of individual amino acids. It notes protein comes from animal and plant foods, that all the essential amino acids can be had from plant sources, and that in Australia and New Zealand meat, poultry and fish give about a third and cereals about a quarter of intake.`,
+          `The page sets no upper limit in grams per day, because the data are too thin. Instead it recommends capping protein at 25 percent of energy, and judges the risk from protein eaten in ordinary food to be very low, while advising care with supplements of single amino acids. It adds that animal and plant foods both supply protein and that plants alone can provide every essential amino acid. In Australia and New Zealand about a third of intake comes from meat, poultry and fish and about a quarter from cereals.`,
       },
       {
         title: "Practical reading and limits",
@@ -326,14 +324,14 @@ For waist, risk is increased at 80 cm or more and high at 88 cm or more for wome
       {
         title: "What adults should do",
         body:
-          `Adults should be active most days, preferably every day. Each week they should do either 2.5 to 5 hours of moderate activity such as brisk walking, golf, mowing or swimming, or 1.25 to 2.5 hours of vigorous activity such as jogging, aerobics, fast cycling or soccer, or an equivalent mix.
+          `The weekly target for adults is either 2.5 to 5 hours of moderate activity (for example brisk walking, golf, mowing the lawn or swimming) or 1.25 to 2.5 hours of vigorous activity (such as jogging, aerobics, fast cycling or soccer), or a mix that adds up to the same. Activity should happen on most days, ideally all of them.
 
-Muscle-strengthening activities should be included on at least 2 days each week. The page lists push-ups, pull-ups, squats or lunges, lifting weights and household tasks that involve lifting, carrying or digging. Any activity is better than none, and an inactive person should start with some and build up slowly.`,
+On at least two days a week the activity should include strength work. Named examples are push-ups, pull-ups, squats, lunges, weight lifting, and chores involving lifting, carrying or digging. The page adds that some activity beats none and that someone starting from zero should begin small and build up.`,
       },
       {
         title: "Sitting and benefits",
         body:
-          `Long periods of sitting can offset the benefits of being active, so the page suggests reducing sitting and breaking it up, for example by walking meetings, a standing desk or a walk at lunch. It lists benefits for adults: lower risk of type 2 diabetes, cardiovascular disease and some cancers, better blood pressure, cholesterol and blood sugar, less unhealthy weight gain, stronger muscles and bones, and better wellbeing.`,
+          `The page says that long spells of sitting can cancel out some of the good done by exercise, so adults are encouraged to sit less and to interrupt sitting, for instance with walking meetings, a standing desk or a lunchtime walk. Benefits it names for regular activity are a lower risk of type 2 diabetes, cardiovascular disease and some cancers; healthier blood pressure, cholesterol and blood sugar; less weight gain; stronger muscles and bones; and better wellbeing and social contact.`,
       },
       {
         title: "Practical reading and limits",
@@ -363,19 +361,19 @@ Muscle-strengthening activities should be included on at least 2 days each week.
       {
         title: "What the consultation found",
         body:
-          `The experts found convincing evidence that a larger waist and a larger waist-to-hip ratio go with more disease risk in many populations, though most of the data came from people of European descent. The measures are related to BMI but do not carry the same information, and the report favours waist circumference over waist-to-hip ratio because it is easier to take. It advises obtaining a BMI where possible and considering the two together, and found too little data to give the waist-to-height ratio priority at the time.`,
+          `The panel concluded with confidence that a bigger waist, and a higher waist-to-hip ratio, go with more disease risk across many populations, although most of the evidence came from people of European descent. The two measures overlap with BMI without duplicating it. The report leans towards waist circumference rather than waist-to-hip ratio because it is easier to take, recommends getting a BMI too where possible and weighing the two together, and says the evidence for waist-to-height ratio was too thin at the time to rank it.`,
       },
       {
         title: "Differences between populations",
         body:
-          `The report finds substantial differences by sex and age and some by ethnicity. Compared with people of European descent, Asian populations carry more visceral fat, and in Asian populations a given waist can go with more risk, so lower thresholds may be needed; for African populations and possibly Pacific Islanders, higher ones may be needed. The experts conclude that one set of BMI and waist cut-offs is not suitable worldwide, but they did not set new cut-offs: that was left to a later WHO process.`,
+          `The report finds clear differences by sex and age and some by ethnicity. Asian populations hold more fat deep in the abdomen than Europeans at the same size, so a given waist may carry more risk and lower thresholds may be warranted; for African populations, and possibly Pacific Islanders, the reverse may hold. The panel's view is that one set of BMI and waist cut-offs cannot be right for the whole world. It set no new cut-offs itself and left that to a later WHO process.`,
       },
       {
         title: "Cut-offs and how to measure",
         body:
-          `The report lists the cut-offs in common use. WHO publications from 1999 and 2000 are the source of 94 cm (men) and 80 cm (women) for increased risk and 102 cm and 88 cm for substantially increased risk, though the second report gave them only as an example from a Dutch sample, not as WHO recommendations. The International Diabetes Federation uses 94 cm and 80 cm for Europeans and 90 cm and 80 cm for South Asians, Chinese and Japanese, and the US cholesterol programme uses 102 cm and 88 cm.
+          `An annex lists the cut-offs in use. The figures often credited to WHO are 94 cm for men and 80 cm for women (increased risk) and 102 cm and 88 cm (substantially increased risk); they come from WHO publications of 1999 and 2000, and the 2000 report gave them only as an example from a Dutch sample, not as a WHO recommendation. The International Diabetes Federation uses 94 and 80 cm for people of European origin and 90 and 80 cm for South Asian, Chinese and Japanese people. The US cholesterol programme uses 102 and 88 cm for everyone.
 
-Protocols differ on where to measure: the WHO STEPS method is at the midpoint between the lowest palpable rib and the top of the hip bone, the US methods at the top of the hip bone.`,
+Measurement sites differ too: the WHO STEPS method takes the waist halfway between the lowest palpable rib and the top of the hip bone, while the US methods use the top of the hip bone.`,
       },
       {
         title: "Practical reading and limits",

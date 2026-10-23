@@ -32,7 +32,7 @@ class _RegionSettingsState extends State<RegionSettings> {
   bool _loaded = false;
   bool _unreadable = false;
   bool _saving = false;
-  String? _code;
+  AccountRegion _region = const AccountRegion();
 
   @override
   void initState() {
@@ -42,10 +42,10 @@ class _RegionSettingsState extends State<RegionSettings> {
 
   Future<void> _load() async {
     try {
-      final code = await widget.repository.load();
+      final region = await widget.repository.load();
       if (mounted) {
         setState(() {
-          _code = code;
+          _region = region;
           _loaded = true;
         });
       }
@@ -58,11 +58,17 @@ class _RegionSettingsState extends State<RegionSettings> {
   String get _subtitle {
     if (_unreadable) return 'Could not be read · open to try again';
     if (!_loaded) return 'Checking…';
-    final label = countryLabel(_code);
+    final code = _region.countryCode;
+    final label = countryLabel(code);
     if (label == null) {
-      return 'Not set · Coach uses guidance that applies everywhere';
+      // Nothing chosen: the account's time zone or language may still select
+      // a country, and the row must say so rather than claim "everywhere".
+      final guess = countryLabel(_region.guidanceCountry);
+      return guess == null
+          ? 'Not set · Coach uses guidance that applies everywhere'
+          : 'Not set · Coach goes by your time zone or language ($guess)';
     }
-    return hasRegionalModule(_code)
+    return hasRegionalModule(code)
         ? '$label · Coach can cite $label’s national guidelines'
         : '$label · Coach uses guidance that applies everywhere';
   }
@@ -79,14 +85,14 @@ class _RegionSettingsState extends State<RegionSettings> {
       context,
       title: 'Country',
       subtitle: 'Optional. Chooses which national guidelines Coach can cite.',
-      builder: (sheetContext) => _CountryChoices(selected: _code),
+      builder: (sheetContext) => _CountryChoices(selected: _region.countryCode),
     );
-    if (pick == null || pick.code == _code || !mounted) return;
+    if (pick == null || pick.code == _region.countryCode || !mounted) return;
     unawaited(TracendHaptics.light());
     setState(() => _saving = true);
     try {
       final stored = await widget.repository.save(pick.code);
-      if (mounted) setState(() => _code = stored);
+      if (mounted) setState(() => _region = stored);
     } catch (error) {
       debugPrint('Non-critical error: country not saved: $error');
       if (mounted) {
@@ -146,7 +152,8 @@ class _CountryChoices extends StatelessWidget {
               child: TracendListRow(
                 title: label,
                 subtitle: switch (code) {
-                  null => 'Coach uses guidance that applies everywhere',
+                  null =>
+                    'Coach goes by your time zone or language, else guidance for everyone',
                   otherCountryCode => 'No national guidance to add yet',
                   _ => null,
                 },

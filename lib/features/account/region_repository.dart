@@ -25,27 +25,63 @@ String? countryLabel(String? code) {
 bool hasRegionalModule(String? code) =>
     code != null && regionalModuleCountries.containsKey(code);
 
-/// Reads the `get_my_country_v1` and `set_my_country_v1` answer: the stored
-/// two-letter code, or null for none. Anything else is refused, so a changed
-/// contract shows up as an error rather than as an unset country.
-String? parseCountryCode(Object? json) {
-  if (json is! Map || json['schema_version'] != '1.0') {
-    throw const FormatException('The country answer is unreadable.');
+/// The athlete's country as the server reports it: the stored choice (null
+/// when none) and the library regions in effect now, which with no choice
+/// still follow the account's time zone or language.
+class AccountRegion {
+  const AccountRegion({
+    this.countryCode,
+    this.effectiveRegions = const ['global'],
+  });
+
+  final String? countryCode;
+  final List<String> effectiveRegions;
+
+  /// The country with national guidance that Coach is using, whether the
+  /// athlete chose it or the account's time zone or language selects it.
+  String? get guidanceCountry {
+    for (final region in effectiveRegions) {
+      if (hasRegionalModule(region)) return region;
+    }
+    return null;
   }
+}
+
+/// Reads the `get_my_country_v1` and `set_my_country_v1` answer (1.x). Anything
+/// unreadable is refused, so a changed contract shows up as an error rather
+/// than as an unset country.
+AccountRegion parseAccountRegion(Object? json) {
+  const unreadable = FormatException('The country answer is unreadable.');
+  if (json is! Map) throw unreadable;
+  final version = json['schema_version'];
+  if (version is! String || !version.startsWith('1.')) throw unreadable;
   final code = json['country_code'];
-  if (code == null) return null;
-  if (code is String && RegExp(r'^[A-Z]{2}$').hasMatch(code)) return code;
-  throw const FormatException('The country answer is unreadable.');
+  if (code != null &&
+      !(code is String && RegExp(r'^[A-Z]{2}$').hasMatch(code))) {
+    throw unreadable;
+  }
+  final regions = json['effective_regions'];
+  if (regions is! List ||
+      !regions.contains('global') ||
+      !regions.every(
+        (region) =>
+            region is String && RegExp(r'^(global|[A-Z]{2})$').hasMatch(region),
+      )) {
+    throw unreadable;
+  }
+  return AccountRegion(
+    countryCode: code as String?,
+    effectiveRegions: List<String>.unmodifiable(regions.cast<String>()),
+  );
 }
 
 /// The athlete's optional country. It only chooses which national guidelines
 /// Coach may cite; no plan number depends on it.
 abstract interface class RegionRepository {
-  /// The stored country code, or null when none is chosen.
-  Future<String?> load();
+  Future<AccountRegion> load();
 
-  /// Stores [countryCode] (null clears it) and returns what is stored.
-  Future<String?> save(String? countryCode);
+  /// Stores [countryCode] (null clears it) and returns what is now in effect.
+  Future<AccountRegion> save(String? countryCode);
 }
 
 class SupabaseRegionRepository implements RegionRepository {
@@ -53,13 +89,13 @@ class SupabaseRegionRepository implements RegionRepository {
   final SupabaseClient _client;
 
   @override
-  Future<String?> load() async =>
-      parseCountryCode(await _client.rpc<dynamic>('get_my_country_v1'));
+  Future<AccountRegion> load() async =>
+      parseAccountRegion(await _client.rpc<dynamic>('get_my_country_v1'));
 
   @override
-  Future<String?> save(String? countryCode) async {
+  Future<AccountRegion> save(String? countryCode) async {
     try {
-      return parseCountryCode(
+      return parseAccountRegion(
         await _client.rpc<dynamic>(
           'set_my_country_v1',
           params: {'p_country_code': countryCode},
@@ -77,9 +113,9 @@ class FixtureRegionRepository implements RegionRepository {
   const FixtureRegionRepository();
 
   @override
-  Future<String?> load() async => null;
+  Future<AccountRegion> load() async => const AccountRegion();
 
   @override
-  Future<String?> save(String? countryCode) =>
+  Future<AccountRegion> save(String? countryCode) =>
       throw StateError('Configure Supabase.');
 }

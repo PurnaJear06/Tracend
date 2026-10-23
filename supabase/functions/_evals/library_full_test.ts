@@ -20,10 +20,13 @@ Deno.test("the full library is deterministic and under the 70,000-token line for
   assertEquals(renderFullLibrary(), renderFullLibrary());
   const size = fullLibrarySize();
   assertEquals(size.sources, librarySources.length);
-  // E3 measured 85,000 characters, about 21,000 to 24,000 tokens, on 2026-10-18 and chose
-  // retrieval, so this line no longer limits the library: it keeps the head-to-head comparison
-  // runnable. E4 raised it from 60,000 to 70,000 for the regional sources (62,900 tokens);
-  // past it the whole library is not a fair candidate for a cached prefix
+  // The whole library as a cached prefix was the option E3's head-to-head compared against
+  // retrieval, and retrieval was chosen. This line guards only that shelved whole-library
+  // evaluation (library_full.ts, library_head_to_head.ts); nothing in production reads it. Sizes:
+  // E3 measured 85,000 characters (21,000 to 24,000 tokens); on main before E4 the 106 sources
+  // render to 201,482 characters (57,566 tokens at 3.5 characters a token); with E4's eight regional
+  // sources, 114 sources and 220,432 characters (62,981 tokens). E4 raised the line from 60,000 to
+  // 70,000; the next expansion either raises it again or retires the evaluation
   // (docs/handoff/research-library.md).
   assert(size.tokens.high < 70_000, `${size.tokens.high} tokens`);
 });

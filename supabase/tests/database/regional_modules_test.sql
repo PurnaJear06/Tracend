@@ -1,5 +1,5 @@
 begin;
-select plan(37);
+select plan(42);
 
 -- The athlete's optional country and the library regions it picks (migration
 -- 20261023120044_regional_modules). Three athletes: A has an Indian time zone, B an en-GB locale,
@@ -35,6 +35,9 @@ select ok(has_function_privilege('authenticated', 'public.set_my_country_v1(text
   'athletes set their country');
 select ok(not has_function_privilege('anon', 'public.set_my_country_v1(text)', 'execute'),
   'signed-out callers cannot set it');
+select ok(not has_function_privilege('authenticated', 'private.my_country_answer(uuid)', 'execute')
+    and not has_function_privilege('service_role', 'private.my_country_answer(uuid)', 'execute'),
+  'the shared answer builder is not callable by any API role');
 select ok((select bool_and(p.prosecdef and p.proconfig @> array['search_path=""'])
     from pg_proc p where p.oid in (
       'public.get_my_country_v1()'::regprocedure, 'public.set_my_country_v1(text)'::regprocedure)),
@@ -46,21 +49,30 @@ set local role authenticated;
 set local "request.jwt.claim.sub" = 'e4000000-0000-4000-8000-000000000001';
 
 select is((select array_agg(k order by k) from jsonb_object_keys(public.get_my_country_v1()) k),
-  array['country_code', 'schema_version'],
+  array['country_code', 'effective_regions', 'schema_version'],
   'the read returns exactly the keys the app parses (add keys, never remove)');
-select is(public.get_my_country_v1() ->> 'schema_version', '1.0', 'it carries a schema version');
+select is(public.get_my_country_v1() ->> 'schema_version', '1.1', 'it carries a schema version');
 select is(public.get_my_country_v1() -> 'country_code', 'null'::jsonb, 'no country is set at first');
+select is(public.get_my_country_v1() -> 'effective_regions', '["IN", "global"]'::jsonb,
+  'with none set the Indian time zone still selects India, and the answer says so');
 select is(public.set_my_country_v1('au') ->> 'country_code', 'AU', 'a code is stored in capitals');
+select is(public.set_my_country_v1('au') -> 'effective_regions', '["AU", "global"]'::jsonb,
+  'and the set reports the regions now in effect');
 select is(public.get_my_country_v1() ->> 'country_code', 'AU', 'and read back');
 select is(public.set_my_country_v1(' in ') ->> 'country_code', 'IN', 'spaces are trimmed');
-select is(public.set_my_country_v1('ZZ') ->> 'schema_version', '1.0', 'the set carries a schema version');
+select is(public.set_my_country_v1('ZZ') -> 'effective_regions', '["ZZ", "global"]'::jsonb,
+  '"another country" is global only, even on an Indian time zone');
 select throws_ok($$select public.set_my_country_v1('AUS')$$, '22023', null,
   'a three-letter code is refused');
 select throws_ok($$select public.set_my_country_v1('1A')$$, '22023', null,
   'a code with a digit is refused');
+select throws_ok($$select public.set_my_country_v1('FR')$$, '22023', null,
+  'a well-formed code the app does not offer is refused');
 select is(public.get_my_country_v1() ->> 'country_code', 'ZZ', 'a refused code changes nothing');
 select is(public.set_my_country_v1('') -> 'country_code', 'null'::jsonb, 'a blank code clears the choice');
 select is(public.get_my_country_v1() -> 'country_code', 'null'::jsonb, 'and it reads as unset');
+select is(public.get_my_country_v1() -> 'effective_regions', '["IN", "global"]'::jsonb,
+  'with the regions back to the time-zone guess');
 select lives_ok($$select public.set_my_country_v1()$$, 'clearing with no argument is fine');
 
 -- B sets its own and cannot move A's

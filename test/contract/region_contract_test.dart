@@ -13,40 +13,83 @@ Map<String, dynamic> _fixture(String name) {
 }
 
 void main() {
-  group('Country contract: get_my_country_v1 / set_my_country_v1 1.0', () {
+  group('Country contract: get_my_country_v1 / set_my_country_v1 1.1', () {
     // The key list is the contract: add keys, never remove or rename them.
     // supabase/tests/database/regional_modules_test.sql asserts the same list
     // against the database.
-    const keys = ['country_code', 'schema_version'];
+    const keys = ['country_code', 'effective_regions', 'schema_version'];
 
     for (final name in const [
-      'my_country_v1_0.json',
-      'my_country_unset_v1_0.json',
+      'my_country_v1_1.json',
+      'my_country_unset_v1_1.json',
     ]) {
       test('$name carries exactly the contract keys', () {
         final fixture = _fixture(name);
-        expect(fixture['schema_version'], '1.0');
+        expect(fixture['schema_version'], '1.1');
         expect(fixture.keys.toList()..sort(), keys);
       });
     }
 
-    test('a stored country reads as its code and an unset one as null', () {
-      expect(parseCountryCode(_fixture('my_country_v1_0.json')), 'AU');
-      expect(parseCountryCode(_fixture('my_country_unset_v1_0.json')), isNull);
+    test('a stored country reads with the regions in effect', () {
+      final region = parseAccountRegion(_fixture('my_country_v1_1.json'));
+      expect(region.countryCode, 'AU');
+      expect(region.effectiveRegions, ['AU', 'global']);
+      expect(region.guidanceCountry, 'AU');
+    });
+
+    test('an unset country can still have a country in effect', () {
+      final region = parseAccountRegion(_fixture('my_country_unset_v1_1.json'));
+      expect(region.countryCode, isNull);
+      expect(region.effectiveRegions, ['IN', 'global']);
+      expect(region.guidanceCountry, 'IN');
+    });
+
+    test('with only global in effect there is no guidance country', () {
+      const region = AccountRegion();
+      expect(region.guidanceCountry, isNull);
+      // A region with no module (a locale of another country) is no country.
+      expect(
+        const AccountRegion(effectiveRegions: ['FR', 'global']).guidanceCountry,
+        isNull,
+      );
+    });
+
+    test('a 1.x answer from a later minor version still reads', () {
+      final region = parseAccountRegion({
+        ..._fixture('my_country_v1_1.json'),
+        'schema_version': '1.2',
+        'future_key': true,
+      });
+      expect(region.countryCode, 'AU');
     });
 
     test('an unreadable answer is refused, never read as unset', () {
+      final good = _fixture('my_country_v1_1.json');
       for (final bad in <Object?>[
         null,
         'AU',
-        {'country_code': 'AU'},
-        {'schema_version': '2.0', 'country_code': 'AU'},
-        {'schema_version': '1.0', 'country_code': 'au'},
-        {'schema_version': '1.0', 'country_code': 'AUS'},
-        {'schema_version': '1.0', 'country_code': 7},
+        {
+          'country_code': 'AU',
+          'effective_regions': ['global'],
+        },
+        {...good, 'schema_version': '2.0'},
+        {...good, 'schema_version': 1.1},
+        {...good, 'country_code': 'au'},
+        {...good, 'country_code': 'AUS'},
+        {...good, 'country_code': 7},
+        {...good}..remove('effective_regions'),
+        {...good, 'effective_regions': 'global'},
+        {
+          ...good,
+          'effective_regions': ['AU'],
+        },
+        {
+          ...good,
+          'effective_regions': ['global', 'australia'],
+        },
       ]) {
         expect(
-          () => parseCountryCode(bad),
+          () => parseAccountRegion(bad),
           throwsFormatException,
           reason: '$bad',
         );

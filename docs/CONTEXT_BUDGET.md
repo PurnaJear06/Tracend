@@ -105,9 +105,13 @@ the same retrieval and inside the same 9,000-character `library` budget, and the
 only changes which sources the search may show. The cached prefix, the digest (still 5,661
 characters as shown; there is no regional digest) and the answer schema are unchanged.
 
-The coaching principles digest (E2) stays in the cached prefix as before. The whole library
-(85,000 characters, about 21,000 to 24,000 tokens) was measured against retrieval and is not in
-the prefix: see the head-to-head in `docs/handoff/research-library.md`.
+The coaching principles digest (E2) stays in the cached prefix as before. The whole library was
+measured against retrieval in E3 (then 85,000 characters, about 21,000 to 24,000 tokens) and is not
+in the prefix: see the head-to-head in `docs/handoff/research-library.md`. It has since grown to
+201,482 characters (57,566 tokens at 3.5 characters a token) on `main` before E4 and 220,432
+characters (62,981 tokens) with E4's regional sources. The 70,000-token line in
+`library_full_test.ts` guards only that shelved whole-library evaluation; no production prompt
+reads it.
 
 ## Budget Layering
 

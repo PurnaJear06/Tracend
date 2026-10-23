@@ -1095,17 +1095,21 @@ States, the United Kingdom and Australia chosen by the athlete's region.
 
 - **The athlete's country.** `user_accounts.country_code`, optional (null, or two capital letters).
   The app reads and writes it only through `get_my_country_v1()` and `set_my_country_v1(p_country_code)`
-  (security definer, authenticated only, both `{schema_version: "1.0", country_code}`; a blank code
-  clears it, a malformed one raises `22023`, a signed-out caller `42501`); clients cannot write the
-  column. `private.library_regions_for_account` (the one function both searches call) is redefined
+  (security definer, authenticated only, both `{schema_version: "1.1", country_code, effective_regions}`
+  built by `private.my_country_answer`; `effective_regions` is the sorted list the library search uses
+  for the athlete now, so "Not set" on an Indian time zone reads `["IN", "global"]`; a blank code clears
+  the choice; the set accepts only the codes the app offers, AU, IN, GB, US and ZZ, and raises `22023`
+  for anything else; a signed-out caller gets `42501`); clients cannot write the column. `private.library_regions_for_account` (the one function both searches call) is redefined
   with the same signature and grants: a stored country gives `['global', <country>]`; with none it
   behaves exactly as before (locale country, and `IN` for an Indian time zone). `ZZ` is the athlete's
   answer "another country" (ISO's user-assigned code): it sees global sources only and is not
   guessed back into India from the time zone. Export is automatic (`select *`) and deletion cascades.
 - **The app.** Account has a **Region** section with one optional row, **Country** (Australia, India,
-  United Kingdom, United States, Another country, Not set). It says what it does ("Not set · Coach uses
-  guidance that applies everywhere"; "India · Coach can cite India's national guidelines") and that no
-  plan number changes. Files: `lib/features/account/region_repository.dart`,
+  United Kingdom, United States, Another country, Not set). It says what it does and reads the server's `effective_regions`
+  ("Not set · Coach uses guidance that applies everywhere" only when nothing but global is in effect;
+  "Not set · Coach goes by your time zone or language (India)" when the account's time zone or language
+  still selects a country; "India · Coach can cite India's national guidelines") and that no plan number
+  changes. Files: `lib/features/account/region_repository.dart`,
   `lib/features/account/widgets/region_settings.dart`; `AccountScreen` takes a `region` repository
   (fixture by default). With nothing chosen the app and the search behave as before. Needs a reinstall
   of the app to show the row; the migration must deploy first (the row shows "Could not be read" until
@@ -1125,13 +1129,27 @@ States, the United Kingdom and Australia chosen by the athlete's region.
 | au_health_2021_adult_activity_guidelines | AU | Australian Department of Health, Disability and Ageing, activity guidelines for adults 18 to 64 (updated 10 May 2021) | health.gov.au/topics/physical-activity-and-exercise/... | proprietary (no notice readable) | no | archived copy of March 2026 |
 | who_2011_waist_circumference_report | global | WHO 2011, Waist circumference and waist-hip ratio (consultation Dec 2008) | who.int/publications/i/item/9789241501491 | proprietary (copyright notice requires permission) | no | WHO library copy via the Internet Archive |
 
-Every summary is in Tracend's own words. The two UK documents allow short quotation (OGL); none is
-quoted. Figures come only from what was read: the NHS page (BMI 23 to 27.4
+Every summary is in Tracend's own words, with its own order and structure rather than the source's
+sentences (the first draft followed the NIH guide and the PHE documents too closely and was rewritten
+after review). The two UK documents allow short quotation (OGL); nothing is quoted from any source.
+Figures come only from what was read: the NHS page (BMI 23 to 27.4
 overweight and 27.5 or more obese for South Asian, Chinese, other Asian, Middle Eastern, Black African
 and African-Caribbean adults; waist under half of height when BMI is under 35), the NHLBI guide (waist
 lines of 40 and 35 inches), the ADG (serves, BMI bands, waist 80/88 cm and 94/102 cm, the notes on
 Asian and Polynesian origin), the NRV page (0.68 and 0.60 g/kg EAR, 0.84 and 0.75 g/kg RDI) and the
 UK tables (55.5 and 45 g protein a day, 30 g fibre).
+
+### Figures checked against the copy read
+
+Each number in the Australian and WHO entries was found again, by text search, in the copy that was read
+(2026-10-23):
+
+| Entry | Copy read | Figures confirmed |
+|---|---|---|
+| NHMRC and NZ MoH 2006, NRV protein | web.archive.org/web/20221103015557/https://www.nrv.gov.au/nutrients/protein | adults 19-70: average requirement 0.68 (men) and 0.60 (women) g/kg, recommended intake 0.84 and 0.75 g/kg, 64 and 46 g a day; over 70: 0.86 and 0.75, then 1.07 and 0.94 g/kg, the 25 percent rise and its limited evidence; no upper level in grams, 25 percent of energy; about 33 percent of intake from meat, poultry and fish, about 25 percent from cereals; page updated 9 April 2014 |
+| NHMRC 2013, Australian Dietary Guidelines | extranet.who.int/ncdccs/Data/AUS_B18_n55_australian_dietary_guidelines.pdf (WHO-hosted copy) | BMI bands 18.5, 25, 30; waist 80/88 cm (women) and 94/102 cm (men); the Asian-origin and Polynesian-origin notes; the over-70 note; check weight and waist every 2 to 3 months; serves table (3 and 2.5 at 19-50, 2.5 and 2 from 51); serve sizes 65 g, 80 g, 100 g, 2 eggs, 1 cup (150 g), 170 g |
+| Australian Dept of Health, adults 18-64 | web.archive.org/web/20260310033757/https://www.health.gov.au/topics/physical-activity-and-exercise/physical-activity-and-exercise-guidelines-for-all-australians/for-adults-18-to-64-years | 2.5 to 5 hours moderate, 1.25 to 2.5 hours vigorous, strength on at least 2 days, the named activities, page updated 10 May 2021 |
+| WHO 2011, waist circumference | web.archive.org/web/20150209033722/http://whqlibdoc.who.int:80/publications/2011/9789241501491_eng.pdf | Annex A cut-offs 94/80 and 102/88 cm and their Dutch-sample origin, IDF 94/80 and 90/80 cm, US cholesterol programme 102/88 cm, the STEPS and US measuring sites, more visceral fat in Asian populations, no universal cut-offs; the publication date (16 May 2011) is from the who.int item page |
 
 ### Considered and left out
 
@@ -1158,11 +1176,13 @@ UK tables (55.5 and 45 g protein a day, 30 g fibre).
   expecting its source; the existing content, region and no-athlete-data tests check them. The
   regional-isolation gate in `library_eval.ts` fails if a regional source reaches an athlete outside its
   region.
-- pgTAP `regional_modules_test.sql` (37 assertions) and `library_ingestion_test.sql` (AU allowed); Flutter
-  `contract/region_contract_test.dart` (fixtures `my_country_v1_0.json`, `my_country_unset_v1_0.json`) and
-  `region_settings_test.dart`.
-- `library_full_test.ts`: the full library renders to about 62,900 tokens; the 60,000 line (a limit for
-  the rejected whole-library-in-the-prefix option) is now 70,000 (owner decision below).
+- pgTAP `regional_modules_test.sql` (42 assertions: the regions in effect with and without a country, a
+  code the app does not offer is refused) and `library_ingestion_test.sql` (AU allowed); Flutter
+  `contract/region_contract_test.dart` (fixtures `my_country_v1_1.json`, `my_country_unset_v1_1.json`) and
+  `region_settings_test.dart` (a time-zone country is named, not hidden).
+- `library_full_test.ts`: before E4 the 106 sources render to 201,482 characters (57,566 tokens at 3.5
+  characters a token); with E4, 114 sources and 220,432 characters (62,981 tokens). The 60,000 line guards
+  only the shelved whole-library evaluation and is now 70,000 (owner decision below).
 
 ### Measured in CI (PR #164)
 
@@ -1184,7 +1204,7 @@ the four assertions about a stored country (30, 31, 32 and 35).
 4. **A country changes citations, not numbers.** No calorie, protein or safe-range rule reads it. A
    regional BMI floor or a lower "high BMI" point for Asian-origin athletes in the plan's rules
    (ALGORITHMS.md uses BMI 18.5 and 25 for everyone) would be a rule change and is not made here.
-5. **The 60,000-token line for the whole library is now 70,000.** Retrieval does not depend on it.
+5. **The 60,000-token line for the whole library is now 70,000.** Retrieval does not depend on it; the line guards only the shelved whole-library evaluation.
 6. **Summary-only licences.** Six of the eight are `proprietary` on purpose: where a notice could not be
    read or was restrictive, the stricter reading applies, as in E2.2.
 7. **ADG and NRV are under NHMRC review** (the dietary guidelines were reported to be under revision

@@ -12,28 +12,44 @@ const _environment = AppEnvironment(
 );
 
 class _FakeRegion implements RegionRepository {
-  _FakeRegion({this.stored, this.failLoads = 0, this.failSaves = false});
+  _FakeRegion({
+    this.stored,
+    this.timeZoneGuess,
+    this.failLoads = 0,
+    this.failSaves = false,
+  });
 
   String? stored;
+
+  /// The country the account's time zone selects while none is stored.
+  final String? timeZoneGuess;
   int failLoads;
   bool failSaves;
   final saved = <String?>[];
 
+  AccountRegion get _now => AccountRegion(
+    countryCode: stored,
+    effectiveRegions: [
+      'global',
+      if (stored != null) stored! else ?timeZoneGuess,
+    ],
+  );
+
   @override
-  Future<String?> load() async {
+  Future<AccountRegion> load() async {
     if (failLoads > 0) {
       failLoads -= 1;
       throw Exception('offline');
     }
-    return stored;
+    return _now;
   }
 
   @override
-  Future<String?> save(String? countryCode) async {
+  Future<AccountRegion> save(String? countryCode) async {
     if (failSaves) throw Exception('offline');
     saved.add(countryCode);
     stored = countryCode;
-    return stored;
+    return _now;
   }
 }
 
@@ -85,6 +101,57 @@ void main() {
     expect(find.text('Country'), findsOneWidget);
     expect(
       find.text('Not set · Coach uses guidance that applies everywhere'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('with none set, a time-zone country is named, not hidden', (
+    tester,
+  ) async {
+    await _pump(tester, _FakeRegion(timeZoneGuess: 'IN'));
+    await _showRegion(tester);
+    expect(
+      find.text('Not set · Coach goes by your time zone or language (India)'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Not set · Coach uses guidance that applies everywhere'),
+      findsNothing,
+    );
+  });
+
+  testWidgets('a time-zone country with no national guidance stays global', (
+    tester,
+  ) async {
+    await _pump(tester, _FakeRegion(timeZoneGuess: 'FR'));
+    await _showRegion(tester);
+    expect(
+      find.text('Not set · Coach uses guidance that applies everywhere'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('clearing the choice returns to the time-zone country', (
+    tester,
+  ) async {
+    final region = _FakeRegion(stored: 'US', timeZoneGuess: 'IN');
+    await _pump(tester, region);
+    await _choose(tester, 'Not set');
+    expect(region.saved, [null]);
+    expect(
+      find.text('Not set · Coach goes by your time zone or language (India)'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('another country overrides the time zone', (tester) async {
+    final region = _FakeRegion(timeZoneGuess: 'IN');
+    await _pump(tester, region);
+    await _choose(tester, 'Another country');
+    expect(
+      find.text(
+        'Another country · Coach uses guidance that applies everywhere',
+      ),
       findsOneWidget,
     );
   });

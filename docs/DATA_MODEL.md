@@ -114,11 +114,15 @@ confirmed referrals first, then signup order, into `private.signup_invites`.
 One application-owned row keyed by `id = auth.users.id`: locale, `timezone` (IANA name, default
 `UTC`), optional `country_code`, unit system, account status, onboarding state, and timestamps.
 `country_code` (E4, migration `20261023120044_regional_modules`) is null or two capital letters
-(ISO 3166-1 alpha-2; `ZZ` means "another country", kept apart from null so a time zone is not used
+(ISO 3166-1 alpha-2, in practice one of the offered codes; `ZZ` means "another country", kept apart from null so a time zone is not used
 to guess a region for an athlete who answered). The app reads and writes it only through
-`get_my_country_v1` and `set_my_country_v1(p_country_code)`, both `{schema_version: "1.0",
-country_code}`, security definer, authenticated only; a blank code clears it, a malformed one
-raises `22023`, a signed-out caller `42501`. Clients cannot write the column directly. The app writes `timezone`
+`get_my_country_v1` and `set_my_country_v1(p_country_code)`, both `{schema_version: "1.1",
+country_code, effective_regions}`, security definer, authenticated only. `effective_regions` is the
+sorted list the library search uses for the athlete now (`global` plus the stored country or, with
+none, the locale and time-zone guess), so the app can say which country Coach is going by. A blank
+code clears the choice; the set accepts only the codes the app offers (`AU`, `IN`, `GB`, `US`, `ZZ`)
+and raises `22023` otherwise; a signed-out caller gets `42501`. Clients cannot write the column
+directly. A new region adds its code to the set function in a later migration. The app writes `timezone`
 only through `set_my_timezone`, which accepts only names Postgres knows; clients cannot write the
 column directly. Readers such as the weekly-review scheduler go through `private.safe_timezone`,
 and `private.local_date_for` gives the athlete's local date.
