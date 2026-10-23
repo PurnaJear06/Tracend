@@ -10,6 +10,7 @@ import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/account/account_screen.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/account/privacy_export_repository.dart';
+import 'package:tracend/features/account/region_repository.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
 import 'package:tracend/features/coach/proposals/coach_proposal_repository.dart';
@@ -267,6 +268,9 @@ class _AppShellState extends State<AppShell> {
         deletion: widget.environment.hasSupabaseConfiguration
             ? SupabaseAccountDeletionRepository(Supabase.instance.client)
             : const FixtureAccountDeletionRepository(),
+        region: widget.environment.hasSupabaseConfiguration
+            ? SupabaseRegionRepository(Supabase.instance.client)
+            : const FixtureRegionRepository(),
         aiConsent: widget.aiConsent,
         widgetPublisher: _widgetPublisher,
       ),

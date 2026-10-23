@@ -1,6 +1,6 @@
 # Research Library Handoff
 
-**As of:** 2026-10-18
+**As of:** 2026-10-23
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -14,7 +14,7 @@ A hybrid (full-text plus gte-small vector) research library behind Coach answers
 
 E1 (Phase 1); E2, E3 (Phase 3); E4, E5 (Phase 4)
 
-E2 (Phase 3, round 2) merged (#135); E2.1, its follow-up with 14 more sources, is merged; E2.2 (57 more sources and machine-readable licences, 106 in all) is merged (#152). E3 (the library in every Coach reply) is merged (#150). E3.1, the engine's production pass (relevance floor, latency, telemetry, versioning), is in review. See the sections below.
+E2 (Phase 3, round 2) merged (#135); E2.1, its follow-up with 14 more sources, is merged; E2.2 (57 more sources and machine-readable licences, 106 in all) is merged (#152). E3 (the library in every Coach reply) is merged (#150). E3.1, the engine's production pass (relevance floor, latency, telemetry, versioning), is in review. E4 (regional modules and the athlete's country, 114 sources) is in review (branch `claude/regional-modules`). See the sections below.
 
 ## State
 
@@ -1085,14 +1085,131 @@ after every migration there (`check-migration-order.sh origin/main`).
   group by 1;` in the SQL editor shows which library content answers were given from.
 - Once no deployed code calls `search_library_v2`, drop it in a cleanup migration.
 
+## E4: regional modules (in review)
+
+Branch `claude/regional-modules`, migration `20261023120044_regional_modules.sql` (code 44, additive).
+Decision D5: a global audience, with nutrition and body-measure modules for India, the United
+States, the United Kingdom and Australia chosen by the athlete's region.
+
+### What shipped
+
+- **The athlete's country.** `user_accounts.country_code`, optional (null, or two capital letters).
+  The app reads and writes it only through `get_my_country_v1()` and `set_my_country_v1(p_country_code)`
+  (security definer, authenticated only, both `{schema_version: "1.0", country_code}`; a blank code
+  clears it, a malformed one raises `22023`, a signed-out caller `42501`); clients cannot write the
+  column. `private.library_regions_for_account` (the one function both searches call) is redefined
+  with the same signature and grants: a stored country gives `['global', <country>]`; with none it
+  behaves exactly as before (locale country, and `IN` for an Indian time zone). `ZZ` is the athlete's
+  answer "another country" (ISO's user-assigned code): it sees global sources only and is not
+  guessed back into India from the time zone. Export is automatic (`select *`) and deletion cascades.
+- **The app.** Account has a **Region** section with one optional row, **Country** (Australia, India,
+  United Kingdom, United States, Another country, Not set). It says what it does ("Not set · Coach uses
+  guidance that applies everywhere"; "India · Coach can cite India's national guidelines") and that no
+  plan number changes. Files: `lib/features/account/region_repository.dart`,
+  `lib/features/account/widgets/region_settings.dart`; `AccountScreen` takes a `region` repository
+  (fixture by default). With nothing chosen the app and the search behave as before. Needs a reinstall
+  of the app to show the row; the migration must deploy first (the row shows "Could not be read" until
+  the RPCs exist).
+- **Eight sources** in `supabase/library/sources/regional.ts` (114 in all). Each of the four regions
+  now has a nutrition source and a body-measure source (BMI and waist, including the points that differ
+  for people of Asian origin); a content test enforces it.
+
+| Key | Region | Citation | Link | Licence | Verbatim | Read from |
+|---|---|---|---|---|---|---|
+| nhs_2026_overweight_obesity_adults | GB | NHS, Overweight and obesity in adults (page reviewed 29 April 2026) | nhs.uk/conditions/obesity | proprietary (NHS terms of use not readable here; the OGL claim was not confirmed) | no | full page |
+| phe_2018_quick_guide_healthy_eating | GB | Public Health England 2018, A Quick Guide to the Government's Healthy Eating Recommendations | assets.publishing.service.gov.uk (PDF) | OGL-UK-3.0 (stated in the PDF) | yes | full document |
+| phe_2016_government_dietary_recommendations | GB | Public Health England 2016, Government Dietary Recommendations | assets.publishing.service.gov.uk (PDF) | OGL-UK-3.0 (stated in the PDF) | yes | full document |
+| nhlbi_2000_practical_guide_obesity | US | NHLBI and NAASO 2000, The Practical Guide (NIH 00-4084) | nhlbi.nih.gov/files/docs/guidelines/prctgd_c.pdf | proprietary (federal publication with a non-government co-sponsor and no rights notice in the text) | no | full document |
+| nhmrc_2013_australian_dietary_guidelines | AU | NHMRC 2013, Australian Dietary Guidelines | eatforhealth.gov.au/guidelines/australian-dietary-guidelines-1-5 | proprietary (the WHO-hosted copy read here allows personal and internal non-commercial use only) | no | full document (WHO-hosted copy) |
+| nhmrc_nz_2006_nrv_protein | AU | NHMRC, Australian Department of Health and NZ Ministry of Health 2006, Nutrient Reference Values: Protein (page updated 9 April 2014) | eatforhealth.gov.au/nutrient-reference-values/nutrients/protein | proprietary (no notice readable) | no | archived copy of 3 November 2022 |
+| au_health_2021_adult_activity_guidelines | AU | Australian Department of Health, Disability and Ageing, activity guidelines for adults 18 to 64 (updated 10 May 2021) | health.gov.au/topics/physical-activity-and-exercise/... | proprietary (no notice readable) | no | archived copy of March 2026 |
+| who_2011_waist_circumference_report | global | WHO 2011, Waist circumference and waist-hip ratio (consultation Dec 2008) | who.int/publications/i/item/9789241501491 | proprietary (copyright notice requires permission) | no | WHO library copy via the Internet Archive |
+
+Every summary is in Tracend's own words. The two UK documents allow short quotation (OGL); none is
+quoted. Figures come only from what was read: the NHS page (BMI 23 to 27.4
+overweight and 27.5 or more obese for South Asian, Chinese, other Asian, Middle Eastern, Black African
+and African-Caribbean adults; waist under half of height when BMI is under 35), the NHLBI guide (waist
+lines of 40 and 35 inches), the ADG (serves, BMI bands, waist 80/88 cm and 94/102 cm, the notes on
+Asian and Polynesian origin), the NRV page (0.68 and 0.60 g/kg EAR, 0.84 and 0.75 g/kg RDI) and the
+UK tables (55.5 and 45 g protein a day, 30 g fibre).
+
+### Considered and left out
+
+- **NICE NG246 (UK obesity guideline, 2025).** The NICE site and its mirror returned 403 from here,
+  and the BMJ summary has no abstract in Europe PMC, so none of its numbers could be read. The NHS page
+  states the same lower BMI points for the same groups, so it covers the need. Add NICE when someone
+  can read it.
+- **CDC adult BMI categories page** (403 from here); the NIH guide covers the US bands.
+- **NHMRC 2013 obesity guidelines** are rescinded (2019); the ADG chapter, which carries the BMI and waist
+  lines, is used instead.
+- **AIHW "Overweight and obesity" pages**: only an archived 2020 copy could be read and it repeats the
+  ADG's waist table, so it adds nothing.
+- **Australian Dietary Guidelines licence.** A search result suggested a later reissue under CC BY 4.0, but
+  that was not read; the stricter notice on the copy that was read applies.
+- Canada, Singapore, Japan, Brazil and others: D5 names four regions; a new region is a source file and
+  a country entry in `regionalModuleCountries`.
+
+### Tests
+
+- `library_content_test.ts`: AU is a known region; each of IN, US, GB and AU has a nutrition and a
+  body-measure source; the migration carries every source's current content (it failed when a summary was
+  edited after the migration was generated, as designed).
+- `library_questions.json`: 17 questions asked from GB, US, AU (and two with no region), each
+  expecting its source; the existing content, region and no-athlete-data tests check them. The
+  regional-isolation gate in `library_eval.ts` fails if a regional source reaches an athlete outside its
+  region.
+- pgTAP `regional_modules_test.sql` (37 assertions) and `library_ingestion_test.sql` (AU allowed); Flutter
+  `contract/region_contract_test.dart` (fixtures `my_country_v1_0.json`, `my_country_unset_v1_0.json`) and
+  `region_settings_test.dart`.
+- `library_full_test.ts`: the full library renders to about 62,900 tokens; the 60,000 line (a limit for
+  the rejected whole-library-in-the-prefix option) is now 70,000 (owner decision below).
+
+### Decisions for the owner
+
+1. **Which regions ship first.** The four D5 names, all built. Canada, the EU and others wait for a
+   request; each is a source file and a line in `regionalModuleCountries`.
+2. **UK's NICE guideline is not in the library** (could not be read). The NHS page stands in.
+3. **Country is optional and the app does not ask in onboarding.** The row sits in Account. Asking in
+   onboarding needs `onboarding_flow.dart` (see "Follow-up after #162").
+4. **A country changes citations, not numbers.** No calorie, protein or safe-range rule reads it. A
+   regional BMI floor or a lower "high BMI" point for Asian-origin athletes in the plan's rules
+   (ALGORITHMS.md uses BMI 18.5 and 25 for everyone) would be a rule change and is not made here.
+5. **The 60,000-token line for the whole library is now 70,000.** Retrieval does not depend on it.
+6. **Summary-only licences.** Six of the eight are `proprietary` on purpose: where a notice could not be
+   read or was restrictive, the stricter reading applies, as in E2.2.
+7. **ADG and NRV are under NHMRC review** (the dietary guidelines were reported to be under revision
+   and a public consultation on the nutrient reference values was reported for early 2026; neither was
+   read here). Re-read both when NHMRC publishes.
+
+### Follow-up after #162
+
+PR #162 owns `onboarding_flow.dart`, the rules plan, `catalog.ts`, `answers.ts`, `prescription.ts`,
+`volume.ts`, `templates/*` and the redefinitions of `private.next_session_targets` and
+`get_coach_plan_state_v1`. After it merges:
+
+- Add an optional **Country** step to onboarding that calls `SupabaseRegionRepository.save` (the same
+  RPC; skipping leaves null). A draft needs no new key: the answer is stored by the RPC, not by the
+  onboarding answers.
+- If the rules plan should ever vary by region (for example protein basis or BMI points), read
+  `user_accounts.country_code` in `onboarding-plan`'s handler beside `timezone` (the handler already reads
+  `user_accounts`). Not needed for E4.
+- E5 (plan explanations citing sources) can pass the athlete's id to `search_library_v3` and the region
+  follows from the stored country.
+
+### After the deploy
+
+- `select country_code, count(*) from public.user_accounts group by 1;` (SQL editor, read-only) is all
+  null until athletes choose.
+- `select public.library_status_v1();` should reach `embedded_chunks = chunks` (the eight sources add
+  29 chunks, 380 in all) in about ten minutes, as in E2.
+- Install the app from the merged commit to get the Region row; the migration deploys first.
+
 ## Next agent starts here
 
-E4 (regional modules) adds sources the same way as E2 (files plus a migration) and should store a
-country on the profile so `private.library_regions_for_account` stops guessing from the locale and
-time zone. A source removed from `index.ts` needs a retire block in the same migration
-(`build_migration.ts --retire`). E5 (plan explanations citing sources) can reuse
-`libraryRetrievalQuery`, the contributor, `relevantRows` and the `library` evidence source. The
-retrieval gate now runs by itself on library pull requests; re-run the floor sweep in its output
-when the question set or the library grows. Decide whether retrieval should skip or down-rank
-`supersededBy` sources (the field lives in the content files only); the full-library render is near
-the 60,000-token line, so the next expansion needs a size decision first.
+E5 (plan explanations citing sources) can reuse `libraryRetrievalQuery`, the contributor,
+`relevantRows` and the `library` evidence source; the athlete's region now follows their stored
+country. A source removed from `index.ts` needs a retire block in the same migration
+(`build_migration.ts --retire`). The retrieval gate runs by itself on library pull requests; re-run the
+floor sweep in its output when the question set or the library grows. Decide whether retrieval should
+skip or down-rank `supersededBy` sources (the field lives in the content files only). Add NICE NG246 for
+the UK when it can be read; re-read the NHMRC pages after its reviews.

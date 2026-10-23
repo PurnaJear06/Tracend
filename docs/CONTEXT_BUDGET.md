@@ -100,6 +100,11 @@ instructions reserve rose from 16,000 to 25,500 characters: the total is 52,800 
 Sonnet 5.5 reservation is about USD 0.38 (0.36 before), a Haiku 5.5 one about USD 0.096, still under the USD 0.50 cap (`coach_chat_provider_route_test.ts`). Opus 5.5 was already over the cap and takes
 today's path. The athlete file carries the hours next to each sleep duration it shows (`341 min (5 h 41 min; 5.7 h)`, about 22 characters a reading, 28 days in the table) and the proposals block one line of figures for each pending proposal (at most three, inside its 1,800 characters); the instructions gained one line about a pending proposal's figures.
 
+Regional modules (E4) add no prompt text and no contributor: they are library sources, reached by
+the same retrieval and inside the same 9,000-character `library` budget, and the athlete's country
+only changes which sources the search may show. The cached prefix, the digest (still 5,661
+characters as shown; there is no regional digest) and the answer schema are unchanged.
+
 The coaching principles digest (E2) stays in the cached prefix as before. The whole library
 (85,000 characters, about 21,000 to 24,000 tokens) was measured against retrieval and is not in
 the prefix: see the head-to-head in `docs/handoff/research-library.md`.

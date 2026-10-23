@@ -7,6 +7,7 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/account/privacy_export_repository.dart';
+import 'package:tracend/features/account/region_repository.dart';
 import 'package:tracend/features/account/widgets/account_sheets.dart';
 import 'package:tracend/features/account/widgets/account_widgets.dart';
 import 'package:tracend/features/account/widgets/ai_usage_screen.dart';
@@ -14,6 +15,7 @@ import 'package:tracend/features/account/widgets/coach_threads_sheet.dart';
 import 'package:tracend/features/account/widgets/consent_history_screen.dart';
 import 'package:tracend/features/account/widgets/notification_settings.dart';
 import 'package:tracend/features/account/widgets/profile_goals_screen.dart';
+import 'package:tracend/features/account/widgets/region_settings.dart';
 import 'package:tracend/features/account/widgets/widget_settings.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
@@ -47,6 +49,7 @@ class AccountScreen extends StatefulWidget {
     this.notifications = const FixtureNotificationRepository(),
     this.exports = const FixturePrivacyExportRepository(),
     this.deletion = const FixtureAccountDeletionRepository(),
+    this.region = const FixtureRegionRepository(),
     this.aiConsent,
     this.widgetPublisher,
     super.key,
@@ -63,6 +66,10 @@ class AccountScreen extends StatefulWidget {
   final NotificationRepository notifications;
   final PrivacyExportRepository exports;
   final AccountDeletionRepository deletion;
+
+  /// The athlete's optional country, which picks the national guidelines Coach
+  /// can cite.
+  final RegionRepository region;
 
   /// Where AI coaching is turned on or off. Null without a backend.
   final AiCoachingConsentController? aiConsent;
@@ -234,6 +241,8 @@ class _AccountScreenState extends State<AccountScreen> {
             const AccountFootnote(
               'Provider keys stay on Tracend’s server, never on this phone.',
             ),
+            const SectionLabel('Region'),
+            RegionSettings(repository: widget.region),
             const SectionLabel('Privacy'),
             TracendGroupedList(
               children: [

@@ -16,11 +16,14 @@ Deno.test("the full library names every source once, with the id the citation gu
   assertStringIncludes(text, "Cite a source only by an id listed here.");
 });
 
-Deno.test("the full library is deterministic and under the 60,000-token line for a cached prefix", () => {
+Deno.test("the full library is deterministic and under the 70,000-token line for a cached prefix", () => {
   assertEquals(renderFullLibrary(), renderFullLibrary());
   const size = fullLibrarySize();
   assertEquals(size.sources, librarySources.length);
-  // E3 measured 85,000 characters, about 21,000 to 24,000 tokens, on 2026-10-18. Past 60,000
-  // tokens the head-to-head option is off the table (docs/handoff/research-library.md).
-  assert(size.tokens.high < 60_000, `${size.tokens.high} tokens`);
+  // E3 measured 85,000 characters, about 21,000 to 24,000 tokens, on 2026-10-18 and chose
+  // retrieval, so this line no longer limits the library: it keeps the head-to-head comparison
+  // runnable. E4 raised it from 60,000 to 70,000 for the regional sources (62,900 tokens);
+  // past it the whole library is not a fair candidate for a cached prefix
+  // (docs/handoff/research-library.md).
+  assert(size.tokens.high < 70_000, `${size.tokens.high} tokens`);
 });
