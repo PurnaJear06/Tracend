@@ -85,7 +85,9 @@ v1 approval now refuses 2.0 proposals.
   - `has_ai_coaching_consent(uuid, purpose)` counts a grant only for the current notice; the
     one-argument form means the Coach chat.
 - `20261002091000_exercise_catalog.sql`:
-  - 72 exercises, `catalog-v1`, mirrored from `_shared/onboarding/catalog.ts`.
+  - 72 exercises, `catalog-v1`, mirrored from `_shared/onboarding/catalog.ts` (four advanced staples
+    were added later by `20261023100050_advanced_level_catalog.sql`; the Training step now also asks
+    intermediate or advanced from three years of training).
   - `planned_exercises.exercise_slug`.
 - `20261002092000_onboarding_plan_v2.sql`:
   - Profile columns that only approval writes, with column grants for the step-0 fields.

@@ -357,13 +357,25 @@ idempotency keys deduplicate retries while older revisions remain immutable hist
 
 ### `exercise_catalog`
 
-Curated exercise definitions (`catalog-v1`, 72 exercises): slug (primary key), name, movement
-pattern, primary muscles (the first is the target), required equipment (empty means bodyweight),
-level (`beginner`, `intermediate`), compound flag, `status` (`active` or `retired`) with
+Curated exercise definitions (`catalog-v1`, 76 exercises: 72 seeded, then four advanced staples):
+slug (primary key), name, movement pattern, primary muscles (the first is the target), required
+equipment (empty means bodyweight), level (`beginner`, `intermediate`, `advanced`; the lowest level
+that is offered the exercise, so an athlete sees every exercise at or below their own level),
+compound flag, `status` (`active` or `retired`) with
 `retired_at`, and catalog version. The rows mirror
 `supabase/functions/_shared/onboarding/catalog.ts`, and a Deno test keeps the two equal. Exercises
 are retired, never deleted; generation uses only active ones. Catalog changes do not rewrite
 historical snapshots.
+
+**Advanced level (migration `20261023100050_advanced_level_catalog.sql`).** The `level` check
+accepts `advanced` (`experience_level` on `user_profiles` already did). Four rows are added, all
+level `advanced` and role `variation`, load step 2.5 kg: `weighted-pull-up` (vertical pull; bar and
+dumbbells), `close-grip-bench-press` and `incline-barbell-bench-press` (horizontal push; barbell and
+bench), `bulgarian-split-squat` (lunge; dumbbells and bench). Seven existing rows gained links to
+them (a progression or a substitute, mirrored); nothing was removed or renamed. `conventional
+deadlift` is not a new row: `barbell-deadlift` is the conventional deadlift. The reviewed muscle
+name "Bulgarian Split Squat" (`exercise_muscle_references`) now equals a catalog name with the same
+muscles; the reviewed list keeps the row for plans that name it without a slug.
 
 **Catalog v2 (B1, migration `20261015170021_exercise_catalog_v2.sql`).** Additive columns, mirrored
 from `_shared/onboarding/catalog_v2.ts` (a Deno test keeps them equal):

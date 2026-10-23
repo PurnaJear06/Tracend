@@ -1,6 +1,6 @@
 # Training Engine Handoff
 
-**As of:** 2026-10-17
+**As of:** 2026-10-23
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -448,6 +448,70 @@ at 2 direct sets); `week_ahead.ts` builds the next 7 days and the back-to-back m
 it, and `standard/volume.ts` holds the rule value (`minimumDaysBetweenSessionsPerMuscle`, 1 day).
 B5 (deloads, joint rules) and the planned Watch-outs block should import these instead of mapping
 muscles again. Full account in [`ai-gateway.md`](./ai-gateway.md) and ALGORITHMS.md.
+
+### Advanced level and staple lifts (2026-10-23, `claude/advanced-level-catalog`)
+
+Why: the Coach simulator found that the top level was "intermediate" and the catalog had no
+weighted pull-up, close-grip bench press, conventional deadlift or Bulgarian split squat. The owner
+(5-6 years of training) approved adding both. Full rules and numbers: ALGORITHMS "Advanced level".
+Migration `20261023100050_advanced_level_catalog.sql` (additive); no hub or RPC shape changed, so no
+`schema_version` bump and no contract fixture.
+
+- **Level, end to end.** The database already had `experience_level` = beginner | intermediate |
+  advanced, so only the catalog's `level` check widened. `ExperienceLevel` and `experienceLevels`
+  (`onboarding/catalog.ts`) replace the two-level literals; `allowedExercises` offers an athlete
+  every exercise at or below their level. `OnboardingAnswers.experience` carries `advanced`, chosen by
+  the athlete (`experience: "advanced"` in the draft, from 3-5 or over 5 years; anything else reads
+  intermediate). Coach's `StateProfile.experience` passes the stored level through (it used to
+  collapse advanced into intermediate). Standard, templates and the rules plan are keyed by the
+  level. The Flutter Training step shows the choice; the review shows "Advanced". Existing athletes
+  keep their level; nothing rewrites it.
+- **Staples** (all level `advanced`, so intermediate and beginner plans, prompts and the 10,080-case
+  digests are byte-identical): `weighted-pull-up` (bar + dumbbells), `close-grip-bench-press`,
+  `incline-barbell-bench-press`, `bulgarian-split-squat` (dumbbells + bench). Each has secondary
+  muscles, an in-house joint-stress rating, links (a pull-up progresses to the weighted pull-up, the
+  Bulgarian split squat follows the dumbbell reverse lunge; the two bench variations substitute the
+  bench press), role `variation` and a 2.5 kg load step. `conventional deadlift` was not added:
+  `barbell-deadlift` is it. None uses the rear-delt split of #156 (`schedule/muscles.ts`); the
+  incline press lists `shoulders`, which that file counts as front and side delts.
+- **Standard** (`standard/`): `moesgaard_2022` and `refalo_2023` added as sources (DOI and PMID checked
+  against PubMed); advanced rows in `repRanges`, `targetRepsInReserve`, `weeklySetsPerMuscle`
+  (`advancedGrowth` 12, `maximum.advanced` 20), `trainingDaysPerWeek`; `undulation` and
+  `undulatedRepRange` (heavy and light compound ranges). No source separates advanced from other
+  trained lifters except ACSM 2009's frequency and loading summary, so only the build-up level (12) and
+  stretch (16) differ from intermediate; reps, reps in reserve, rest, maximum and progression repeat
+  the intermediate values with their own bases.
+- **Templates** (`templates/advanced.ts`): heavy and light days per split, one more direct accessory
+  where a non-strength session has room, and `Slot.prefers` (Bulgarian split squat in the first
+  lower session, incline press on the five-day push day). Intermediate templates are untouched
+  (goldens and digests).
+- **Rules plan:** heavy and light compound rep ranges, a note when an advanced lifter trains fewer
+  than 4 days, a progression line naming the heavy and light days. Screening is unchanged and tested
+  with advanced (moderate effort, see_professional).
+- **Tests.** Deno: `rules_plan_advanced_test.ts` (level plumbing, validity sweep of 1,800 plans, screening,
+  heavy and light ranges, targets, staples, goldens), `coach_proposals/advanced_level_test.ts`,
+  `catalog_test.ts` and `catalog_v2_test.ts` (migration mirrors across both migrations, staples'
+  ratings and links), `templates_test.ts`, `standard_test.ts`. pgTAP `advanced_level_catalog_test.sql`
+  (level check, the four rows, links, progression from 0 kg added) and two updated assertions
+  (`onboarding_plan_v2_test.sql` 76 rows; `exercise_muscle_references_test.sql` allows a reviewed name
+  that is also a catalog name only with the same muscles). Flutter: `phase_2_flow_test.dart` (picker,
+  guard, review), `profile_goals_test.dart`.
+- **Deploy order.** The migration runs before the functions deploy. For that moment the old function
+  offers the four advanced rows to intermediates (it treated every non-beginner as intermediate);
+  they are valid catalog exercises, so nothing breaks. A Flutter build is only needed for the picker.
+- **Candidates not added** (for the owner): weighted dip and dip station (no dip equipment in the
+  picker), trap-bar deadlift (no trap bar), hack squat and pendulum squat, seated leg curl, hammer
+  curl and EZ-bar curl, skull crusher, Pendlay and T-bar rows, pause bench (a technique of the bench
+  press, not a new exercise), walking lunge, back extension. Front squat, Romanian deadlift, barbell
+  hip thrust and the conventional deadlift already exist. Each needs equipment or a rating review
+  before it joins.
+- **Open.** (a) The three-year cut for choosing advanced, the 12/16 build-up and stretch, the
+  heavy/light split point, the extra accessory lists and the joint ratings are in-house values for
+  owner or coach review. (b) No cited deload cadence or advanced progression rate exists in the
+  standard's sources: B5 owns deloads. (c) Session length and the 8-exercise cap bind before the new
+  targets (weekly sets +1.6% at 60 minutes, +2.5% at 90); chest stays low in 60-minute sessions for
+  both levels. (d) Changing level later has no screen of its own: the athlete repeats the Training
+  step in a plan rebuild.
 
 ## Next agent starts here
 

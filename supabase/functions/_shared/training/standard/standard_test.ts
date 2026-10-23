@@ -75,7 +75,7 @@ Deno.test("ranges are ordered and inside today's onboarding policy limits", () =
     }
   }
   for (const emphasis of ["strength", "hypertrophy"] as const) {
-    for (const experience of ["beginner", "intermediate"] as const) {
+    for (const experience of ["beginner", "intermediate", "advanced"] as const) {
       for (const kind of ["compound", "isolation"] as const) {
         const [min, max] = prescription.repRanges[emphasis][experience][kind].value;
         assert(min >= (emphasis === "strength" ? 3 : 6) && max <= 20, `${emphasis} reps`);
@@ -90,4 +90,48 @@ Deno.test("ranges are ordered and inside today's onboarding policy limits", () =
   assert(sets.minimum.value < sets.growth.value);
   assert(sets.growth.value <= sets.maximum.beginner.value);
   assert(sets.maximum.beginner.value <= sets.maximum.intermediate.value);
+  assert(sets.maximum.intermediate.value <= sets.maximum.advanced.value);
+  // An advanced lifter starts the climb at the bottom of Baz-Valle's 12-20 range, inside the maximum.
+  assert(sets.growth.value <= sets.advancedGrowth.value);
+  assert(sets.advancedGrowth.value < sets.maximum.advanced.value);
+  for (const experience of ["beginner", "intermediate", "advanced"] as const) {
+    const [low, high] = volume.trainingDaysPerWeek[experience].value;
+    assert(low <= high && high <= 6);
+  }
+});
+
+Deno.test("every experience level has its own rule value for each prescription", () => {
+  for (const experience of ["beginner", "intermediate", "advanced"] as const) {
+    assert(prescription.targetRepsInReserve[experience].sources.length > 0, experience);
+    for (const emphasis of ["strength", "hypertrophy"] as const) {
+      for (const kind of ["compound", "isolation"] as const) {
+        assert(prescription.repRanges[emphasis][experience][kind].basis.length > 0, experience);
+      }
+    }
+  }
+  // Advanced and intermediate share the cited ranges: no source separates them.
+  assertEquals(
+    prescription.repRanges.strength.advanced.compound.value,
+    prescription.repRanges.strength.intermediate.compound.value,
+  );
+  assertEquals(
+    prescription.targetRepsInReserve.advanced.value,
+    prescription.targetRepsInReserve.intermediate.value,
+  );
+});
+
+Deno.test("undulation splits a compound range into a heavy and a light part that cover it exactly", () => {
+  for (const emphasis of ["strength", "hypertrophy"] as const) {
+    const range = prescription.repRanges[emphasis].advanced.compound.value;
+    const heavy = prescription.undulatedRepRange(range, "heavy");
+    const light = prescription.undulatedRepRange(range, "light");
+    assertEquals(heavy[0], range[0]);
+    assertEquals(light[1], range[1]);
+    assertEquals(light[0], heavy[1] + 1);
+    assert(
+      heavy[1] > heavy[0] && light[1] > light[0],
+      `${emphasis}: each part keeps room to progress`,
+    );
+  }
+  assert(prescription.undulation.sources.includes("moesgaard_2022"));
 });

@@ -33,12 +33,15 @@ select is(
   0::bigint,
   'every reviewed name is stored under its history key');
 
+-- A reviewed name that later became a catalog exercise (Bulgarian split squat, 2026-10) names the
+-- same exercise, so it must carry the same muscles; one that disagrees would show two answers.
 select is(
   (select count(*) from public.exercise_muscle_references r
    join public.exercise_catalog c
-     on private.exercise_name_key(c.name) = r.name_key),
+     on private.exercise_name_key(c.name) = r.name_key
+   where r.primary_muscles is distinct from c.primary_muscles),
   0::bigint,
-  'no reviewed name shadows a catalog name');
+  'no reviewed name shadows a catalog name with different muscles');
 
 create temp table hub(body jsonb) on commit drop;
 grant all on hub to authenticated;

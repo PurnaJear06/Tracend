@@ -3,7 +3,7 @@
 // writes a new version and an audit event (Architecture 2 and 3). The model supplies only an
 // intent: a kind, parameters from closed vocabularies, dates and the athlete's own figures. Nothing
 // in this file or its neighbours calls a model.
-import type { AvoidablePattern, EquipmentItem } from "../onboarding/catalog.ts";
+import type { AvoidablePattern, EquipmentItem, ExperienceLevel } from "../onboarding/catalog.ts";
 import type { DailyActivity, Goal, Sex } from "../onboarding/answers.ts";
 import type { Muscle } from "../onboarding/catalog.ts";
 import type { ScreeningOutcome } from "../training/screening/outcome.ts";
@@ -189,7 +189,7 @@ export type StateProfile = Readonly<{
   age: number;
   birthYear: number;
   heightCm: number;
-  experience: "beginner" | "intermediate";
+  experience: ExperienceLevel;
   dailyActivity: DailyActivity;
   equipment: readonly EquipmentItem[];
   avoidPatterns: readonly AvoidablePattern[];

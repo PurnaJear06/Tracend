@@ -5,6 +5,7 @@ import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import {
   type CatalogExercise,
   type EquipmentItem,
+  type ExperienceLevel,
   type MovementPattern,
   type Muscle,
 } from "../_shared/onboarding/catalog.ts";
@@ -70,7 +71,7 @@ function supabaseStore(
         pattern: row.movement_pattern as MovementPattern,
         muscles: row.primary_muscles as Muscle[],
         equipment: row.equipment_required as EquipmentItem[],
-        level: row.level as "beginner" | "intermediate",
+        level: row.level as ExperienceLevel,
         compound: row.is_compound,
       }));
     },

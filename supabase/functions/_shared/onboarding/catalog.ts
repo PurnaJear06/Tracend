@@ -1,7 +1,8 @@
 // Exercise catalog v1, the only exercises an onboarding plan may use
 // (AI_SAFETY_SPEC §11: "only supplied catalog identifiers"). The database
 // table public.exercise_catalog is seeded from this list
-// (20261002091000_exercise_catalog.sql); catalog_test.ts keeps the two equal.
+// (20261002091000_exercise_catalog.sql, then the advanced staples added by
+// 20261023100050_advanced_level_catalog.sql); catalog_test.ts keeps the two equal.
 
 export const equipmentItems = [
   "dumbbells",
@@ -49,6 +50,14 @@ export const muscles = [
 ] as const;
 export type Muscle = typeof muscles[number];
 
+/**
+ * The athlete's level, lowest first. An exercise's `level` is the lowest level offered it, and an
+ * athlete is offered every exercise at or below their own level, so a new level never changes what
+ * the levels below it are offered.
+ */
+export const experienceLevels = ["beginner", "intermediate", "advanced"] as const;
+export type ExperienceLevel = typeof experienceLevels[number];
+
 export type CatalogExercise = Readonly<{
   slug: string;
   name: string;
@@ -57,7 +66,7 @@ export type CatalogExercise = Readonly<{
   muscles: readonly Muscle[];
   /** Everything required; an empty list means bodyweight only. */
   equipment: readonly EquipmentItem[];
-  level: "beginner" | "intermediate";
+  level: ExperienceLevel;
   compound: boolean;
   /**
    * Ranking only. A variation ranks after the standard form of its pattern on
@@ -76,7 +85,7 @@ const x = (
   pattern: MovementPattern,
   muscleList: Muscle[],
   equipment: EquipmentItem[],
-  level: "beginner" | "intermediate",
+  level: ExperienceLevel,
   compound: boolean,
   role?: ExerciseRole,
 ): CatalogExercise => ({
@@ -589,6 +598,48 @@ export const exerciseCatalogV1: readonly CatalogExercise[] = Object.freeze([
     "beginner",
     false,
   ),
+  // Advanced staples (20261023100050_advanced_level_catalog.sql). Only an advanced athlete is
+  // offered them, so the plans of the levels below are unchanged.
+  x(
+    "weighted-pull-up",
+    "Weighted pull-up",
+    "vertical_pull",
+    ["back", "biceps"],
+    ["pull_up_bar", "dumbbells"],
+    "advanced",
+    true,
+    "variation",
+  ),
+  x(
+    "close-grip-bench-press",
+    "Close-grip bench press",
+    "horizontal_push",
+    ["chest", "triceps"],
+    ["barbell", "bench"],
+    "advanced",
+    true,
+    "variation",
+  ),
+  x(
+    "incline-barbell-bench-press",
+    "Incline barbell bench press",
+    "horizontal_push",
+    ["chest", "shoulders"],
+    ["barbell", "bench"],
+    "advanced",
+    true,
+    "variation",
+  ),
+  x(
+    "bulgarian-split-squat",
+    "Bulgarian split squat",
+    "lunge",
+    ["quads", "glutes"],
+    ["dumbbells", "bench"],
+    "advanced",
+    true,
+    "variation",
+  ),
 ]);
 
 export const catalogBySlug: ReadonlyMap<string, CatalogExercise> = new Map(
@@ -627,13 +678,14 @@ export const avoidablePatternLabels: Readonly<Record<AvoidablePattern, string>> 
 export function allowedExercises(
   catalog: readonly CatalogExercise[],
   equipment: readonly EquipmentItem[],
-  experience: "beginner" | "intermediate",
+  experience: ExperienceLevel,
   avoid: readonly MovementPattern[] = [],
 ): CatalogExercise[] {
   const owned = new Set(equipment);
+  const reach = experienceLevels.indexOf(experience);
   return catalog.filter((exercise) =>
     exercise.equipment.every((item) => owned.has(item)) &&
-    (experience === "intermediate" || exercise.level === "beginner") &&
+    experienceLevels.indexOf(exercise.level) <= reach &&
     !avoid.includes(exercise.pattern)
   );
 }

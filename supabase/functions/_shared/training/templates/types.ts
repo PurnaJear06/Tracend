@@ -3,6 +3,7 @@
 // plan (onboarding/rules_plan.ts) picks the exercise for each slot from the athlete's equipment.
 import type { MovementPattern } from "../../onboarding/catalog.ts";
 import type { Split } from "../../onboarding/policy.ts";
+import type { SessionLoad } from "../standard/prescription.ts";
 
 /**
  * How much a slot matters. A session that is short on time or sets loses its last slots first
@@ -22,6 +23,12 @@ export type Slot = Readonly<{
    * variation of a lat pulldown.
    */
   rotate?: true;
+  /**
+   * Exercises (catalog slugs) the slot takes first when the athlete can do them, after any focus
+   * muscle that still needs sets. Only advanced templates set it, to place the staples an
+   * advanced lifter expects; with none available the slot fills as usual.
+   */
+  prefers?: readonly string[];
 }>;
 
 export type TemplateDay = Readonly<{
@@ -29,6 +36,11 @@ export type TemplateDay = Readonly<{
   objective: string;
   /** Priority order: the plan keeps as many slots, from the first, as the session has room for. */
   slots: readonly Slot[];
+  /**
+   * Advanced templates only: a heavy day takes the lower part of each compound lift's rep range
+   * and a light day the upper part (weekly undulation); absent, the whole range.
+   */
+  load?: SessionLoad;
 }>;
 
 /**
