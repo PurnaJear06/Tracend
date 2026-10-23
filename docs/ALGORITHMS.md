@@ -405,6 +405,13 @@ The logging screen computes these from the sets on the device; the server return
 - **Weight lifted.** `sum(load_kg × reps)` over completed sets with a logged load above 0, exactly
   as entered (a dumbbell load is not doubled). Bodyweight sets and `assistance` exercises are
   excluded. Rounded to 0.1 kg.
+- **Open workouts and the day.** A workout belongs to the day it started on. The elapsed time runs
+  from the session's own start, and an open session from an earlier day is never resumed as
+  today's: the server closes it as `abandoned` once its `local_date` is before the athlete's local
+  today and it started more than 10800 s ago (the cap `complete_workout_v2` applies), and the phone
+  drops a saved draft of such a workout instead of opening today's workout on it
+  (`workoutLeftOnEarlierDay`). A same-day workout left open long enough still shows "Over 3 hours"
+  and saves as 3 hours; one that crossed midnight and is under 3 hours old resumes with its own time.
 - **Rest timer.** The end time is stored in the local workout draft, so a killed app resumes the
   same rest; ±15 s moves the end, skip ends it, and a rest that ended while the app was closed is
   cleared on resume.

@@ -278,7 +278,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       return;
     }
     final saved = await widget.repository.loadDraft(widget.workout.id);
-    final local = saved == null ? null : _decode(saved);
+    var local = saved == null ? null : _decode(saved);
+    if (local != null &&
+        _leftOnEarlierDay(local) &&
+        local['session_id'] != server?['session_id']) {
+      // An unfinished workout from an earlier day stays on its own day (the
+      // server closes it as discarded), so this phone's copy never opens
+      // today's workout or carries its sets and start time into it.
+      await widget.repository.clearDraft(widget.workout.id);
+      local = null;
+    }
     final draft = _newer(server, local);
     if (draft != null) {
       _sessionId = draft['session_id'] as String?;
@@ -355,6 +364,18 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     await _save();
+  }
+
+  bool _leftOnEarlierDay(Map<String, dynamic> draft) {
+    final started = DateTime.tryParse('${draft['actual_started_at'] ?? ''}');
+    if (started == null) return false;
+    final now = widget.clock();
+    return workoutLeftOnEarlierDay(
+      startedAt: started,
+      now: now,
+      sessionDate: widget.sessionDate ?? now,
+      maxSeconds: ActiveWorkoutScreen.maxSessionSeconds,
+    );
   }
 
   static Map<String, dynamic>? _decode(String saved) {

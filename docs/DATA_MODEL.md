@@ -473,7 +473,17 @@ status (`none`, `needs_review`, `corrected`). One open session per planned worko
 
 `state` is `in_progress`, `completed` or `abandoned`. `abandon_workout` discards an open session
 (audited as `workout.abandoned`); the rows stay, and every history, load and hub read counts
-completed sessions only. `completion_source` (`manual`, `healthkit`, or null when no audit evidence
+completed sessions only. An `in_progress` session is also closed as `abandoned` by
+`private.abandon_stale_workouts` when its `local_date` is before the athlete's local today
+(`private.local_date_for`) and it started more than 10800 seconds (the 3-hour cap of
+`complete_workout_v2`) ago: `get_my_workout_session` closes the caller's before it looks, and an
+hourly job (`tracend-abandon-stale-workouts`) closes everyone's. The close touches only `state` and
+`updated_at`: sets, `local_date` and the start stay as they were, `actual_ended_at` stays empty (no
+end was recorded), and the audit event `workout.abandoned` carries `reason: stale`, the number of
+completed sets and the session's `local_date`. A session with logged sets is closed the same way:
+nothing is deleted, moved to another date or completed on the athlete's behalf, and a workout that
+crossed midnight stays open for its three hours. A planned workout repeats every week, so the open
+session is only ever found for its own day. `completion_source` (`manual`, `healthkit`, or null when no audit evidence
 exists) and `session_effort_source` (`athlete`, `legacy_default`, `healthkit_default`) record
 provenance; see ALGORITHMS §4 "Effort Provenance". `complete_workout_v2` is the only writer of
 `athlete` effort.

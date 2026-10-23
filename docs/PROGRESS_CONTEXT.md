@@ -66,6 +66,12 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 
+**Stale open workouts (2026-10-23, branch `claude/stale-workout-resume`, PR open):** the owner's Legs B resumed a
+session left open since 2026-07-17 (timer 2348 h, today's sets saved on a July date). An open session from an earlier
+local day more than 3 hours old is now closed as `abandoned` (rows and sets kept) when any workout is opened and by an
+hourly job, and the phone drops a draft of one. Migration `20261023150021`; `start_workout` untouched. Details:
+"Stale workouts" in [`training-engine.md`](./handoff/training-engine.md).
+
 **Incident 2026-10-18: every Coach chat turn timed out (Refs FLUTTER-K). Fixed by #155 (deploy pending verification: confirm `schema_sha` `274ee4fafead` and a first successful turn in production).** The gateway's answer
 schema had grown to 24 optional properties and 4 unions and listed the day's evidence codes, so
 Claude recompiled its grammar on every turn and passed the 30 s route timeout (`model_runs`:
