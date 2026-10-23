@@ -187,6 +187,19 @@ AI consent is enforced on the server, per purpose:
   score is a later reviewed change that must update this section. The heart-rate profile informs
   rest, cardio and recovery talk; it never sets a load or a prescription (D9).
 
+- **Watch-workout suggestion and load signals (C4, D9).** No new metric is collected and no table is
+  added. `get_my_watch_workout_status_v1` (own data) returns, for the last three finished workouts,
+  how many sets were finished and how many had Watch heart rate; the app uses it to decide whether to
+  suggest starting a Watch workout, and keeps the athlete's answer ("Not now", "I don't use a Watch") in
+  the phone's preferences only. `get_workout_load_inputs_v1` (service role only; revoked from `anon`
+  and `authenticated`, pgTAP-checked) gives the training engine the finished workouts of the last 28
+  days with the rest and the per-set heart-rate summary of each tracked set: no load, repetitions,
+  reps in reserve, effort, notes or raw samples. The load signals worked out from it are not stored
+  and read by the Coach's plan context only as fixed sentences with no figure (a step "less certain",
+  "rest a little longer"); no heart-rate value, set summary or signal number reaches the AI provider, only
+  the conclusion in fixed words. That conclusion is derived from the same heart-rate summaries the
+  registered `heart_rate_profile` contributor already sends, so it adds no data category. They lower confidence and suggest a longer rest; they never set a load or a prescription (D9).
+
 ## 5. Photos and Media
 
 ### Storage

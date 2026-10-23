@@ -1,7 +1,7 @@
-import { blockOf, type CoachContextContributor } from "../host.ts";
+import { blockOf, type CoachContextContributor, sharedRead } from "../host.ts";
 import { plain, record } from "../../recorded_text.ts";
 import { coachServiceRpc } from "../service_source.ts";
-import { loadHeartRateInputs } from "../../training/heart_rate/inputs.ts";
+import { heartRateInputsReadKey, loadHeartRateInputs } from "../../training/heart_rate/inputs.ts";
 import {
   buildHeartRateProfile,
   type HeartRateInputs,
@@ -111,24 +111,31 @@ export function createHeartRateContributor(load: HeartRateInputsLoader): CoachCo
     slot: "volatile",
     budgetChars: heartRateBudgetChars,
     async render(input) {
-      const inputs = await load(input.userId, input.localDate);
+      const inputs = await sharedRead(
+        input,
+        heartRateInputsReadKey,
+        () => load(input.userId, input.localDate),
+      ) as HeartRateInputs | null;
       const marked = inputs === null ? null : heartRateMarked(buildHeartRateProfile(inputs));
       return marked === null ? null : blockOf(marked);
     },
   });
 }
 
+/** The profile's inputs from `get_heart_rate_inputs_v1` over the service role; null when unavailable. */
+export const heartRateInputsFromService: HeartRateInputsLoader = (userId, localDate) =>
+  loadHeartRateInputs(
+    {
+      rpc: async (name, args) => {
+        const { data, error } = await coachServiceRpc(name, args);
+        return { data, error: error ? { message: "heart_rate_inputs_unavailable" } : null };
+      },
+    },
+    userId,
+    localDate,
+  );
+
 /** The registered contributor: it reads `get_heart_rate_inputs_v1` with the service role. */
 export const heartRateContributor: CoachContextContributor = createHeartRateContributor(
-  (userId, localDate) =>
-    loadHeartRateInputs(
-      {
-        rpc: async (name, args) => {
-          const { data, error } = await coachServiceRpc(name, args);
-          return { data, error: error ? { message: "heart_rate_inputs_unavailable" } : null };
-        },
-      },
-      userId,
-      localDate,
-    ),
+  heartRateInputsFromService,
 );

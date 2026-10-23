@@ -656,6 +656,34 @@ sets a load or a prescription (D9). Sleeping heart rate is **not** an input (D10
   readings asleep, the lowest mean of any 10-minute slot holding at least 2 readings (a night with none has no row), readings, minutes asleep and coverage of
   10-minute slots. A night is stored only with at least 20 readings and 50% coverage. No score uses it.
 
+### Heart-Rate Load Signals (C4, 2026-10)
+
+`supabase/functions/_shared/training/heart_rate/load_signals.ts`: arithmetic over the last 28 days of
+finished workouts (`get_workout_load_inputs_v1`, no load, repetitions or reps in reserve) and the
+heart-rate profile above. Heart rate informs rest, recovery and confidence; it never sets a load, a
+repetition target or a set count (D9), and no signal raises confidence. Sleeping heart rate is not an
+input (D10). The thresholds are Tracend's own choices, not research values, and wait for a coach's
+review. The output is only `engine: {confidence: none | lower, rest: none | allow_longer, reasons}`.
+Coach reads it in the plan context (AI_SAFETY_SPEC section 11.1): a fixed sentence on a step up
+(`add_load` or `add_reps`) when confidence is `lower`, a fixed rest sentence once per session when rest
+is `allow_longer`. The signals do not ask the athlete a question (B4 may add one later).
+
+- **Tracked set:** a `watch_workout` summary with coverage of at least 60% (the same line the
+  Watch-workout suggestion uses to count a tracked set).
+- **Start of set:** for tracked sets with a start heart rate and a rest of at least 30 seconds before
+  them (a shorter one is a set ticked during its own rest), the share of heart-rate reserve at the
+  moment the set began: `(start - resting) / (maximum - resting)`. Needs a resting heart rate and a
+  maximum with a reserve of at least 20 bpm (the profile's zones), at least 12 such sets in at least 2
+  workouts; otherwise it fires nothing. The middle (median) share at or above 50% of reserve (where the
+  Easy zone begins) is elevated. Elevated with a middle rest under 120 seconds is `rest_short` (rest
+  `allow_longer`; confidence unchanged, since a longer rest is the cure); elevated with a middle rest of
+  120 seconds or more is `slow_settling` (confidence `lower`). This is a fixed line, not a comparison with
+  the athlete's usual, so it is never worded "than usual".
+- **Recovery:** the profile's recovery state `slower` (a 60-second drop at least 3 bpm below the 28 days
+  before) is `recovery_slower` (confidence `lower`); it is a comparison with the athlete's own earlier
+  weeks and the only reason that may be worded "slower than usual".
+- A heart rate a medicine blunts (beta-blocker) reads low, which only removes a caution.
+
 ### Literature
 
 - Tanaka, H., Monahan, K.D., Seals, D.R. (2001). Age-predicted maximal heart rate revisited. *J Am

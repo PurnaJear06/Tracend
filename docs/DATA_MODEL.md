@@ -590,6 +590,19 @@ before the limit, so untrusted higher peaks never crowd out a valid lower one. T
 formula + 21 (a superset of the exact check), and the profile code applies the exact one.
 Discarded workouts are left out. Sleeping heart rate is never in the object.
 
+**Watch workout status and load inputs (C4).** No new table. `get_my_watch_workout_status_v1(local_date
+default today)` (security definer, authenticated, own data, date within 2 days of today, `schema_version`
+1.0) returns `{schema_version, as_of, recent_sessions: [{local_date, completed_sets, watch_sets}]}`: the
+last three finished workouts of the 28 days up to `as_of` that finished at least one set, newest first;
+`watch_sets` counts finished sets with `watch_workout` heart rate and coverage of at least 0.6.
+`get_workout_load_inputs_v1(target_user, local_date)` (service role only, 1.0) returns
+`{schema_version, as_of, sessions: [{local_date, completed_sets, sets: [{exercise_order, set_number,
+rest_before_seconds, start_bpm, peak_bpm, end_bpm, drop_30s_bpm, drop_60s_bpm, coverage, sample_count,
+source}]}]}`: the newest 12 finished workouts of the 28 days, with the finished sets that have a
+heart-rate summary (120 at most per workout). It carries no load, repetitions, reps in reserve or
+effort. Discarded, open and Apple Health completed (no set) workouts are left out, and so is a set that
+was finished and later undone.
+
 ### `day_adjustments` (B4, migration code 24)
 
 The athlete's answers to the same-day readiness adjustment (rules `readiness-v1`; ALGORITHMS §4).
