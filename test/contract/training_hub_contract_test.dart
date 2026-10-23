@@ -363,6 +363,7 @@ void main() {
         expect(basis.keys.toList()..sort(), ['last_date', 'recent']);
         for (final session in (basis['recent'] as List).toMapList()) {
           expect(session.keys.toList()..sort(), [
+            'adjusted',
             'effort_known',
             'load_kg',
             'local_date',
@@ -370,6 +371,7 @@ void main() {
             'min_rir',
             'pain',
             'sets',
+            'sets_planned',
             'total_reps',
           ]);
         }
