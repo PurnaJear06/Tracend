@@ -51,18 +51,11 @@ export function rulesTraining(
     model: null,
     fallbackReason: null,
   }).training;
-  const loads = new Map<string, number>();
-  for (const workout of carryLoadsFrom?.workouts ?? []) {
-    for (const exercise of workout.exercises) {
-      if (exercise.slug !== null && exercise.targetLoadKg !== null) {
-        loads.set(exercise.slug, exercise.targetLoadKg);
-      }
-    }
-  }
+  const carried = loadsToCarry(carryLoadsFrom);
   const workouts = (training.weekly_structure as TrainingPayloadWorkout[]).map((workout) => ({
     ...workout,
     exercises: workout.exercises.map((exercise) => {
-      const load = exercise.slug === null ? undefined : loads.get(exercise.slug);
+      const load = carried(exercise);
       const { start_load_kg: _dropped, ...rest } = exercise;
       return load === undefined ? rest : { ...rest, start_load_kg: load };
     }),
@@ -71,6 +64,37 @@ export function rulesTraining(
     title: training.title as string,
     blockWeeks: training.block_weeks as number,
     workouts,
+  };
+}
+
+/**
+ * The load a rebuilt exercise starts from, taken from the plan it replaces. A lift the old plan
+ * has in one rep range carries by slug. A lift it has in more than one range (an advanced plan's
+ * heavy and light days) carries only to a new exercise with the same slug and the same range, and
+ * to nothing else: a light day never starts from the heavy day's load or the reverse.
+ */
+function loadsToCarry(
+  from: StatePlan | null,
+): (exercise: { slug: string | null; rep_min: number; rep_max: number }) => number | undefined {
+  const ranges = new Map<string, Set<string>>();
+  const byRange = new Map<string, number>();
+  const bySlug = new Map<string, number>();
+  const rangeKey = (slug: string, repMin: number, repMax: number) => `${slug}|${repMin}|${repMax}`;
+  for (const workout of from?.workouts ?? []) {
+    for (const exercise of workout.exercises) {
+      if (exercise.slug === null) continue;
+      const key = rangeKey(exercise.slug, exercise.repMin, exercise.repMax);
+      ranges.set(exercise.slug, (ranges.get(exercise.slug) ?? new Set()).add(key));
+      if (exercise.targetLoadKg === null) continue;
+      byRange.set(key, exercise.targetLoadKg);
+      bySlug.set(exercise.slug, exercise.targetLoadKg);
+    }
+  }
+  return (exercise) => {
+    if (exercise.slug === null) return undefined;
+    return (ranges.get(exercise.slug)?.size ?? 0) > 1
+      ? byRange.get(rangeKey(exercise.slug, exercise.rep_min, exercise.rep_max))
+      : bySlug.get(exercise.slug);
   };
 }
 

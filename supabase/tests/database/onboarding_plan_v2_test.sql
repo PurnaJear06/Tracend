@@ -12,8 +12,8 @@ select ok(
     'public.onboarding_generations'::regclass, 'public.ai_consent_notices'::regclass,
     'public.ai_notice_current'::regclass, 'public.exercise_catalog'::regclass])),
   'new tables enable and force RLS');
-select is((select count(*) from public.exercise_catalog where status = 'active'), 72::bigint,
-  'the catalog seeds all 72 exercises');
+select is((select count(*) from public.exercise_catalog where status = 'active'), 76::bigint,
+  'the catalog seeds all 76 exercises (72, then four advanced staples)');
 select ok(not has_table_privilege('anon', 'public.exercise_catalog', 'select'),
   'anonymous callers cannot read the catalog');
 select ok(not has_table_privilege('authenticated', 'public.exercise_catalog', 'insert'),

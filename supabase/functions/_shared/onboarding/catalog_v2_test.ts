@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
-import { exerciseCatalogV1, muscles } from "./catalog.ts";
+import { exerciseCatalogV1, experienceLevels, muscles } from "./catalog.ts";
 import {
   type CatalogExerciseV2,
   catalogV2BySlug,
@@ -9,10 +9,12 @@ import {
 import { joints, jointStressLevels } from "../training/standard/joint_stress.ts";
 import { loadingEquipmentOrder, loadStepKgByEquipment } from "../training/standard/progression.ts";
 
-const migration = new URL(
+// The v2 columns come from B1's migration; the advanced-level migration then sets them for its new
+// rows and rewrites the links of existing rows that point at them. A later row for a slug wins.
+const migrations = [
   "../../../migrations/20261015170021_exercise_catalog_v2.sql",
-  import.meta.url,
-);
+  "../../../migrations/20261023100050_advanced_level_catalog.sql",
+].map((path) => new URL(path, import.meta.url));
 
 const links = (exercise: CatalogExerciseV2) => [
   ...exercise.regressions,
@@ -58,7 +60,7 @@ Deno.test("regressions and progressions mirror each other and stay in the patter
       );
       assertEquals(harder.pattern, exercise.pattern, `${exercise.slug} -> ${slug} changes pattern`);
       assert(
-        !(exercise.level === "intermediate" && harder.level === "beginner"),
+        experienceLevels.indexOf(harder.level) >= experienceLevels.indexOf(exercise.level),
         `${slug} is a progression of ${exercise.slug} but a lower level`,
       );
     }
@@ -122,21 +124,80 @@ Deno.test("each load step comes from the exercise's single loading implement", (
   assertEquals(catalogV2BySlug.get("kettlebell-swing")!.loadStepKg, 4);
   assertEquals(catalogV2BySlug.get("pull-up")!.loadStepKg, null);
   assertEquals(catalogV2BySlug.get("band-row")!.loadStepKg, null);
+  // The weighted pull-up is loaded with a dumbbell, so it steps like one.
+  assertEquals(catalogV2BySlug.get("weighted-pull-up")!.loadStepKg, 2.5);
+  assertEquals(catalogV2BySlug.get("close-grip-bench-press")!.loadStepKg, 2.5);
+  assertEquals(catalogV2BySlug.get("bulgarian-split-squat")!.loadStepKg, 2.5);
 });
 
-Deno.test("the catalog v2 migration mirrors catalog_v2.ts exactly", async () => {
-  const sql = await Deno.readTextFile(migration);
+Deno.test("the catalog v2 migrations mirror catalog_v2.ts exactly", async () => {
+  const sql = (await Promise.all(migrations.map((url) => Deno.readTextFile(url)))).join("\n");
   const array = (items: readonly string[]) =>
     items.length ? `array[${items.map((item) => `'${item}'`).join(",")}]::text[]` : "'{}'::text[]";
-  const expected = exerciseCatalogV2.map((exercise) =>
+  const expected = new Map(exerciseCatalogV2.map((exercise) => [
+    exercise.slug,
     ` ('${exercise.slug}',${array(exercise.secondaryMuscles)},'${exercise.jointStress.knee}',` +
     `'${exercise.jointStress.back}','${exercise.jointStress.shoulder}',` +
     `${array(exercise.regressions)},${array(exercise.progressions)},` +
     `${array(exercise.substitutes)},` +
     `${exercise.loadStepKg === null ? "null" : exercise.loadStepKg}::numeric,` +
-    `${exercise.role ? `'${exercise.role}'` : "null::text"})`
+    `${exercise.role ? `'${exercise.role}'` : "null::text"})`,
+  ]));
+  const final = new Map<string, string>();
+  for (const line of sql.split("\n")) {
+    if (!/^ \('[a-z0-9-]+',(array|'\{\}')/.test(line)) continue;
+    const row = line.replace(/,$/, "");
+    final.set(row.slice(3, row.indexOf("'", 3)), row);
+  }
+  assertEquals(final, expected);
+});
+
+Deno.test("the advanced staples are rated, linked and loaded like the exercises beside them", () => {
+  const staple = (slug: string) => catalogV2BySlug.get(slug)!;
+  // Linked to the forms they build on.
+  assertEquals(staple("weighted-pull-up").regressions, ["pull-up", "chin-up"]);
+  assertEquals(staple("pull-up").progressions, ["weighted-pull-up"]);
+  assertEquals(staple("chin-up").progressions, ["weighted-pull-up"]);
+  assertEquals(staple("bulgarian-split-squat").regressions, ["dumbbell-reverse-lunge"]);
+  assert(staple("dumbbell-reverse-lunge").progressions.includes("bulgarian-split-squat"));
+  for (const slug of ["close-grip-bench-press", "incline-barbell-bench-press"]) {
+    assert(staple("barbell-bench-press").substitutes.includes(slug), slug);
+  }
+  for (
+    const slug of [
+      "weighted-pull-up",
+      "close-grip-bench-press",
+      "incline-barbell-bench-press",
+      "bulgarian-split-squat",
+    ]
+  ) {
+    assertEquals(staple(slug).level, "advanced", slug);
+    assertEquals(staple(slug).role, "variation", slug);
+    assert(staple(slug).compound, slug);
+  }
+  // Joint stress (in-house): load added to a pull-up is harsher on the shoulder than the pull-up,
+  // the bench press variations keep the bench press's shoulder rating, and the Bulgarian split
+  // squat loads the front knee at least as much as the lunges it follows.
+  const shoulder = (slug: string) => jointStressLevels.indexOf(staple(slug).jointStress.shoulder);
+  const knee = (slug: string) => jointStressLevels.indexOf(staple(slug).jointStress.knee);
+  assert(shoulder("weighted-pull-up") > shoulder("pull-up"));
+  assertEquals(shoulder("close-grip-bench-press"), shoulder("barbell-bench-press"));
+  assertEquals(shoulder("incline-barbell-bench-press"), shoulder("barbell-bench-press"));
+  assert(knee("bulgarian-split-squat") >= knee("barbell-reverse-lunge"));
+  // Progression increments: the loading implement's step (a dumbbell between the feet for the
+  // weighted pull-up).
+  for (const slug of ["weighted-pull-up", "close-grip-bench-press", "bulgarian-split-squat"]) {
+    assertEquals(staple(slug).loadStepKg, 2.5, slug);
+  }
+});
+
+Deno.test("added load (weight added to the body) is set on the weighted pull-up only", async () => {
+  const sql = await Deno.readTextFile(migrations[1]);
+  assert(/add column added_load boolean not null default false/.test(sql));
+  assertEquals(
+    [...sql.matchAll(/set added_load = true where slug = '([a-z-]+)'/g)].map((match) => match[1]),
+    ["weighted-pull-up"],
   );
-  const rows = sql.split("\n").filter((line) => /^ \('[a-z0-9-]+',(array|'\{\}')/.test(line))
-    .map((line) => line.replace(/,$/, ""));
-  assertEquals(rows, expected);
+  // Its load is a dumbbell hung between the feet, so it steps like a dumbbell.
+  assertEquals(catalogV2BySlug.get("weighted-pull-up")!.equipment, ["pull_up_bar", "dumbbells"]);
 });

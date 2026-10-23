@@ -6,7 +6,7 @@ import { beginnerAccessoryLimit, lengthTierFor, profileForGoal, weekTemplate } f
 import { fractionalWeeklySets, setWeights, strengthWeeklyTarget, weeklyTargets } from "./volume.ts";
 import type { WeekTemplate } from "./types.ts";
 
-const experiences = ["beginner", "intermediate"] as const;
+const experiences = ["beginner", "intermediate", "advanced"] as const;
 
 function templateFor(
   goal: typeof goals[number],
@@ -52,8 +52,8 @@ Deno.test("every goal, day count, experience and length has a template of the ri
       }
     }
   }
-  // goal profile (4: lean covers two goals) x days x experience x length tier (3).
-  assertEquals(ids.size, 4 * 6 * 2 * 3);
+  // goal profile (4: lean covers two goals) x days x experience (3) x length tier (3).
+  assertEquals(ids.size, 4 * 6 * 3 * 3);
 });
 
 const order = (tier: string) => ({ main: 0, support: 1, accessory: 2 })[tier]!;
@@ -97,6 +97,93 @@ Deno.test("golden: the week's shape by split, goal and experience", () => {
     "Push 2",
     "Pull 2",
     "Legs 2",
+  ]);
+});
+
+Deno.test("an advanced template keeps the intermediate sessions and adds heavy and light days, staples and one accessory", () => {
+  for (const goal of goals) {
+    for (const days of [1, 2, 3, 4, 5, 6]) {
+      const intermediate = templateFor(goal, days, "intermediate", 60);
+      const advanced = templateFor(goal, days, "advanced", 60);
+      assertEquals(advanced.id, intermediate.id.replace("intermediate", "advanced"));
+      assertEquals(advanced.accessoryLimit, null);
+      assertEquals(advanced.days.map((day) => day.name), intermediate.days.map((day) => day.name));
+      advanced.days.forEach((day, index) => {
+        const before = intermediate.days[index];
+        // The intermediate slots stay, in order; at most one accessory is added after them.
+        assertEquals(
+          day.slots.slice(0, before.slots.length).map((slot) => slot.patterns),
+          before.slots.map((slot) => slot.patterns),
+        );
+        const added = day.slots.length - before.slots.length;
+        assert(added === 0 || (added === 1 && profileForGoal[goal] !== "strength"), day.name);
+        if (added === 1) assertEquals(day.slots.at(-1)!.tier, "accessory");
+        assert(day.slots.length <= 8, `${advanced.id} ${day.name}`);
+        assert(day.objective.length <= 140, `${advanced.id} ${day.name}`);
+      });
+    }
+  }
+});
+
+Deno.test("golden: the advanced week's heavy and light days, preferences and added accessories", () => {
+  const loads = (goal: typeof goals[number], days: number) =>
+    templateFor(goal, days, "advanced", 60).days.map((day) => `${day.name}:${day.load ?? "-"}`);
+  assertEquals(loads("muscle_gain", 3), [
+    "Full body A:heavy",
+    "Full body B:light",
+    "Full body C:-",
+  ]);
+  // One session a week meets each muscle once: nothing to alternate.
+  assertEquals(loads("muscle_gain", 1), ["Full body A:-"]);
+  assertEquals(loads("strength", 1), ["Full body A:-"]);
+  assertEquals(loads("muscle_gain", 2), ["Full body A:heavy", "Full body B:light"]);
+  assertEquals(loads("muscle_gain", 4), [
+    "Upper A:heavy",
+    "Lower A:heavy",
+    "Upper B:light",
+    "Lower B:light",
+  ]);
+  assertEquals(loads("muscle_gain", 5), [
+    "Upper A:heavy",
+    "Lower A:heavy",
+    "Push:light",
+    "Pull:light",
+    "Legs:light",
+  ]);
+  assertEquals(loads("muscle_gain", 6), [
+    "Push:heavy",
+    "Pull:heavy",
+    "Legs:heavy",
+    "Push 2:light",
+    "Pull 2:light",
+    "Legs 2:light",
+  ]);
+  const prefers = (goal: typeof goals[number], days: number) =>
+    templateFor(goal, days, "advanced", 60).days.flatMap((day) =>
+      day.slots.filter((slot) => slot.prefers).map((slot) =>
+        `${day.name}: ${slot.tier} ${slot.patterns.join("/")} -> ${slot.prefers!.join(",")}`
+      )
+    );
+  assertEquals(prefers("muscle_gain", 3), [
+    "Full body B: support lunge/squat -> bulgarian-split-squat",
+  ]);
+  assertEquals(prefers("muscle_gain", 4), ["Lower A: support lunge -> bulgarian-split-squat"]);
+  assertEquals(prefers("muscle_gain", 5), [
+    "Lower A: support lunge -> bulgarian-split-squat",
+    "Push: main horizontal_push -> incline-barbell-bench-press",
+    "Legs: support lunge -> bulgarian-split-squat",
+  ]);
+  assertEquals(prefers("muscle_gain", 6), ["Legs: support lunge -> bulgarian-split-squat"]);
+  // Strength keeps its few accessories; the others gain one where the session has room.
+  assertEquals(
+    outline(templateFor("strength", 4, "advanced", 60)),
+    outline(templateFor("strength", 4, "intermediate", 60)),
+  );
+  assertEquals(outline(templateFor("muscle_gain", 4, "advanced", 60)), [
+    "Upper A: m:horizontal_push m:horizontal_pull s:vertical_push s:vertical_pull/horizontal_pull a:lateral_raise a:triceps a:biceps a:chest_fly",
+    "Lower A: m:squat m:hinge s:lunge s:hamstring_curl/hinge a:calves a~:core a:quads_isolation",
+    "Upper B: m~:vertical_pull/horizontal_pull m:vertical_push/horizontal_push s:horizontal_pull s:horizontal_push a:rear_delts/lateral_raise a:biceps a:triceps a:chest_fly",
+    "Lower B: m:hinge m:squat/lunge s:quads_isolation/lunge s:hamstring_curl/hinge a:calves a~:core a:hamstring_curl",
   ]);
 });
 
@@ -191,4 +278,11 @@ Deno.test("weekly targets come from the standard: growth level, strength arithme
   });
   assertEquals(strengthWeeklyTarget.value, 6);
   assertEquals(weeklyTargets("strength", "intermediate", muscles), { quads: 6, back: 6, core: 4 });
+  // An advanced lifter starts at 12, the bottom of Baz-Valle's range, and stretches halfway to 20.
+  assertEquals(weeklyTargets("hypertrophy", "advanced", muscles), { quads: 12, back: 12, core: 4 });
+  assertEquals(weeklyTargets("hypertrophy", "advanced", muscles, true), {
+    quads: 16,
+    back: 16,
+    core: 4,
+  });
 });

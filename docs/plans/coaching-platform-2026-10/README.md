@@ -792,4 +792,11 @@ passed, stores `proposalId` on the assistant message (`coach_messages.proposal_i
   cost: some education questions ("does creatine cause dizziness?") now get a referral. A11
   measures it. Merge order: #143 before #142, so no-plan chat never reaches the model without
   the plan status.
+- 2026-10-23: advanced experience level and four staple lifts (owner-approved after the Coach
+  simulator found the top level was intermediate and the catalog lacked a weighted pull-up,
+  close-grip bench press, conventional deadlift and Bulgarian split squat). Advanced is the athlete's
+  choice from three years of training; new exercises are advanced-level so other levels' plans are
+  unchanged; numbers come from the standard's cited sources, and where none separates advanced
+  lifters the intermediate value stands. Details: training-engine handoff and ALGORITHMS "Advanced
+  level".
 - 2026-10-23: E4 (regional modules). The athlete may store an optional country (`user_accounts.country_code`; `ZZ` is "another country") and `private.library_regions_for_account` prefers it over the locale and time-zone guess; no plan rule reads it. D5's four regions each have a nutrition and a body-measure source; NICE is deferred (its text could not be read).

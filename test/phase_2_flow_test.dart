@@ -1217,6 +1217,55 @@ void main() {
       },
     );
 
+    testWidgets(
+      'an athlete with years behind them can choose the advanced level',
+      (tester) async {
+        final repository = _FakeOnboardingRepository(
+          draft: _experiencedDraft('food', {'training_years': null}),
+        );
+        await _pump(tester, repository);
+        await _continue(tester);
+
+        // Nothing to choose before the years are, or with fewer than three.
+        expect(find.text('Which fits you better?'), findsNothing);
+        await _tapText(tester, '1–2 years');
+        expect(find.text('Which fits you better?'), findsNothing);
+        await _tapText(tester, 'Over 5 years');
+        expect(find.text('Which fits you better?'), findsOneWidget);
+        expect(find.text('Intermediate'), findsOneWidget);
+        await _tapText(tester, 'Advanced');
+        await _continue(tester);
+
+        expect(find.text('Recent top sets.'), findsOneWidget);
+        expect(repository.savedPayload!['experience'], 'advanced');
+        expect(repository.savedPayload!['training_years'], 'over_5');
+      },
+    );
+
+    testWidgets('advanced does not stand without the years', (tester) async {
+      // A draft that says advanced with one to two years is sent as intermediate.
+      final repository = _FakeOnboardingRepository(
+        draft: _experiencedDraft('food', {
+          'experience': 'advanced',
+          'training_years': '1_2',
+        }),
+      );
+      await _pump(tester, repository);
+      await _continue(tester);
+      await _continue(tester);
+      expect(repository.savedPayload!['experience'], 'intermediate');
+    });
+
+    testWidgets('the review shows the advanced level', (tester) async {
+      final repository = _FakeOnboardingRepository(
+        draft: _experiencedDraft('review', {'experience': 'advanced'}),
+      );
+      await _pump(tester, repository);
+      final training = find.textContaining('Over 5 years · Advanced');
+      await tester.scrollUntilVisible(training, 200);
+      expect(training, findsOneWidget);
+    });
+
     testWidgets('the coach asks, and the answers go with the plan', (
       tester,
     ) async {

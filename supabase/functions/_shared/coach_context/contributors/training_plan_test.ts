@@ -937,3 +937,26 @@ Deno.test("a workout logged twice finishes its session once, on its first date",
   ]);
   assertEquals(finishedOn(state, state.sessions[0]), mon);
 });
+
+Deno.test("the athlete's level reaches the home alternatives: an advanced lifter's pull-up has a weighted form", () => {
+  const withLevel = (experience: unknown) =>
+    render((payload) => {
+      payload.experience = experience;
+      const today = (payload.sessions as { weekday: number; exercises: { slug: string }[] }[])
+        .find((session) => session.weekday === 6)!;
+      today.exercises[0].slug = "pull-up";
+    })!;
+  assertStringIncludes(withLevel("advanced"), "Weighted pull-up");
+  assert(!withLevel("intermediate").includes("Weighted pull-up"));
+  // An older payload without the level reads as intermediate, as before.
+  assert(!withLevel(undefined).includes("Weighted pull-up"));
+  assertEquals(
+    parsePlanState({ ...ownersPlanPayload(), experience: "advanced" })?.experience,
+    "advanced",
+  );
+  assertEquals(
+    parsePlanState({ ...ownersPlanPayload(), experience: "expert" })?.experience,
+    "intermediate",
+  );
+  assertEquals(parsePlanState(ownersPlanPayload())?.experience, "intermediate");
+});

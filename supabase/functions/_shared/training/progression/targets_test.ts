@@ -192,3 +192,88 @@ Deno.test("an assisted target reads as help, and its reasons are about help", ()
   })]));
   assertStringIncludes(describeTarget(lowered), "the help goes up one step");
 });
+
+// The advanced level planned one lift on a heavy and a light day, and a weighted pull-up logs added
+// load, so the function was redefined. Plans without such a repeat and exercises without added load
+// must keep today's targets: the redefinition is B3's text plus exactly these hunks.
+Deno.test("the redefined next_session_targets is B3's function plus the range split and added load only", async () => {
+  const body = (sql: string, start: string) => {
+    const from = sql.indexOf(start);
+    return sql.slice(
+      from,
+      sql.indexOf("revoke all on function private.next_session_targets", from),
+    );
+  };
+  const original = body(
+    await Deno.readTextFile(migration),
+    "create function private.next_session_targets",
+  );
+  const redefined = body(
+    await Deno.readTextFile(
+      new URL(
+        "../../../../migrations/20261023100050_advanced_level_catalog.sql",
+        import.meta.url,
+      ),
+    ),
+    "create or replace function private.next_session_targets",
+  );
+  const hunks: readonly (readonly [string, string])[] = [
+    ["create or replace function", "create function"],
+    [
+      `    c.load_step_kg as step_kg,
+    coalesce(c.added_load, false) as added_load,
+    -- The same lift planned more than once with different rep ranges (an advanced plan's heavy
+    -- and light days): each range keeps its own history, so a heavy 100 kg x 9 is never read
+    -- as a light day's 100 kg x 10.
+    e.exercise_slug is not null and exists (
+      select 1 from public.planned_exercises o
+      join public.planned_workouts ow on ow.id = o.planned_workout_id and ow.user_id = o.user_id
+      where ow.plan_version_id = v.id and o.user_id = e.user_id
+        and o.exercise_slug = e.exercise_slug
+        and (o.rep_min, o.rep_max) is distinct from (e.rep_min, e.rep_max)) as split_range
+`,
+      "    c.load_step_kg as step_kg\n",
+    ],
+    ["pl.assisted, pl.added_load, p.id as performance_id", "pl.assisted, p.id as performance_id"],
+    [
+      `  where ((pl.exercise_slug is not null and p.exercise_slug = pl.exercise_slug)
+    or (pl.exercise_slug is not null and p.exercise_slug is null
+        and p.performance_kind = 'prescribed'
+        and private.exercise_name_key(coalesce(p.performed_name, pe.display_name_snapshot))
+            = pl.catalog_name_key)
+    or (pl.exercise_slug is null and p.exercise_slug is null
+        and private.exercise_name_key(coalesce(p.performed_name, pe.display_name_snapshot))
+            = pl.name_key))
+    -- A lift planned with several ranges counts only the performances logged against a planned
+    -- exercise with this range, whichever plan version it came from.
+    and (not pl.split_range
+      or (pe.rep_min is not distinct from pl.rep_min and pe.rep_max is not distinct from pl.rep_max))
+`,
+      `  where (pl.exercise_slug is not null and p.exercise_slug = pl.exercise_slug)
+    or (pl.exercise_slug is not null and p.exercise_slug is null
+        and p.performance_kind = 'prescribed'
+        and private.exercise_name_key(coalesce(p.performed_name, pe.display_name_snapshot))
+            = pl.catalog_name_key)
+    or (pl.exercise_slug is null and p.exercise_slug is null
+        and private.exercise_name_key(coalesce(p.performed_name, pe.display_name_snapshot))
+            = pl.name_key)
+`,
+    ],
+    [
+      `    -- Assisted: the load is machine help and 0 is unassisted, so it is kept. Added load (a weighted
+    -- pull-up): the load is the weight added to the body, so no load and 0 both mean none added,
+    -- a real starting point for the first step.
+    case when pf.assisted then es.load_kg
+      when pf.added_load then coalesce(es.load_kg, 0)
+      else nullif(es.load_kg, 0) end as load_kg,`,
+      `    -- Assisted: the load is machine help and 0 is unassisted, so it is kept.
+    case when pf.assisted then es.load_kg else nullif(es.load_kg, 0) end as load_kg,`,
+    ],
+  ];
+  let undone = redefined;
+  for (const [added, was] of hunks) {
+    assert(undone.includes(added), `missing hunk: ${added.slice(0, 60)}`);
+    undone = undone.replace(added, was);
+  }
+  assertEquals(undone.trim(), original.trim());
+});

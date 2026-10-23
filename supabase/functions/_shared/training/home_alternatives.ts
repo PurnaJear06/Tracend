@@ -6,6 +6,7 @@ import {
   allowedExercises,
   type AvoidablePattern,
   type EquipmentItem,
+  type ExperienceLevel,
   type MovementPattern,
 } from "../onboarding/catalog.ts";
 import {
@@ -52,11 +53,13 @@ function candidates(exercise: CatalogExerciseV2, pool: readonly CatalogExerciseV
 
 /**
  * Bodyweight and minimal-kit catalog alternatives for a planned exercise, at most two of each,
- * leaving out movement patterns the athlete asked to avoid. An exercise outside the catalog (an
+ * from the exercises the athlete's level is offered, leaving out movement patterns the athlete
+ * asked to avoid. An exercise outside the catalog (an
  * imported plan, a custom exercise) has none.
  */
 export function homeAlternativesFor(
   slug: string | null,
+  experience: ExperienceLevel,
   avoid: readonly AvoidablePattern[] = [],
 ): HomeAlternatives {
   const exercise = slug === null ? undefined : catalogV2BySlug.get(slug);
@@ -65,13 +68,13 @@ export function homeAlternativesFor(
   const bodyweightPool = allowedExercises(
     exerciseCatalogV2,
     [],
-    "intermediate",
+    experience,
     avoided,
   ) as CatalogExerciseV2[];
   const minimalPool = (allowedExercises(
     exerciseCatalogV2,
     minimalHomeKit,
-    "intermediate",
+    experience,
     avoided,
   ) as CatalogExerciseV2[]).filter((item) => item.equipment.length > 0);
   const names = (pool: CatalogExerciseV2[]) =>

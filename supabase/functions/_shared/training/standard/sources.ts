@@ -111,6 +111,18 @@ export const sources = Object.freeze({
     pmcid: null,
     access: "abstract",
   }),
+  moesgaard_2022: source({
+    id: "moesgaard_2022",
+    label: "Moesgaard 2022",
+    citation: "Moesgaard L, Beck MM, Christiansen L, Aagaard P, Lundbye-Jensen J. Effects of " +
+      "periodization on strength and muscle hypertrophy in volume-equated resistance " +
+      "training programs: a systematic review and meta-analysis. Sports Med. " +
+      "2022;52(7):1647-1666.",
+    doi: "10.1007/s40279-021-01636-1",
+    pmid: "35044672",
+    pmcid: null,
+    access: "abstract",
+  }),
   singer_2024: source({
     id: "singer_2024",
     label: "Singer 2024",
@@ -154,6 +166,17 @@ export const sources = Object.freeze({
     pmid: "38970765",
     pmcid: null,
     access: "abstract",
+  }),
+  refalo_2023: source({
+    id: "refalo_2023",
+    label: "Refalo 2023",
+    citation: "Refalo MC, Helms ER, Trexler ET, Hamilton DL, Fyfe JJ. Influence of resistance " +
+      "training proximity-to-failure on skeletal muscle hypertrophy: a systematic review " +
+      "with meta-analysis. Sports Med. 2023;53(3):649-665.",
+    doi: "10.1007/s40279-022-01784-y",
+    pmid: "36334240",
+    pmcid: "PMC9935748",
+    access: "full_text",
   }),
   tracend_in_house: source({
     id: "tracend_in_house",

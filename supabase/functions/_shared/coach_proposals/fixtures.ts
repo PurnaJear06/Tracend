@@ -21,6 +21,10 @@ export const baseAnswers = answersFor({
   equipment: equipmentSets.gym,
 });
 
+/** A stable planned exercise id for the fixture plan: workout index, then exercise position. */
+export const plannedExerciseIdFor = (workout: number, exercise: number) =>
+  `00000000-0000-4000-8000-${String(workout).padStart(6, "0")}${String(exercise).padStart(6, "0")}`;
+
 export function planFor(
   weekdays: readonly number[],
   overrides: Partial<StatePlan> = {},
@@ -34,14 +38,18 @@ export function planFor(
     model: null,
     fallbackReason: null,
   }).training;
-  const workouts = (training.weekly_structure as TrainingPayloadWorkout[]).map((workout) => ({
+  const workouts = (training.weekly_structure as TrainingPayloadWorkout[]).map((
+    workout,
+    index,
+  ) => ({
     name: workout.name,
     objective: workout.objective,
     weekday: workout.preferred_weekday,
     estimatedMinutes: workout.estimated_minutes,
     warmUp: workout.warm_up_guidance,
     coolDown: workout.cool_down_guidance,
-    exercises: workout.exercises.map((exercise) => ({
+    exercises: workout.exercises.map((exercise, order) => ({
+      plannedExerciseId: plannedExerciseIdFor(index, order),
       slug: exercise.slug,
       name: exercise.name,
       sets: exercise.sets,
@@ -137,7 +145,7 @@ export function proposalRpcPayloads() {
   const plan = state.plan!;
   return {
     inputs: {
-      schema_version: "1.0",
+      schema_version: "1.1",
       local_date: today,
       screening: "cleared",
       profile: {
@@ -169,6 +177,7 @@ export function proposalRpcPayloads() {
           warm_up: workout.warmUp,
           cool_down: workout.coolDown,
           exercises: workout.exercises.map((exercise) => ({
+            planned_exercise_id: exercise.plannedExerciseId,
             slug: exercise.slug,
             name: exercise.name,
             sets: exercise.sets,

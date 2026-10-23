@@ -911,14 +911,16 @@ TDEE = BMR × daily-activity factor + training energy
   - estimated length = 8 min warm-up + Σ sets × (45 s + rest), within the athlete's minutes
     + max(5, 15%).
 - **Weekly sets per target muscle** (the catalog's first muscle): at most 12 for beginners and 20
-  for intermediates. ACSM 2026 gives about 10+ sets per muscle a week; Schoenfeld 2017.
+  for intermediate and advanced lifters. ACSM 2026 gives about 10+ sets per muscle a week;
+  Schoenfeld 2017.
 - **Coverage:** every week includes a squat or lunge, a hinge, a push and a pull. A pattern the
   athlete avoids is not required; a group with no pattern left that they can do is dropped.
 - **Movements to avoid:** squat, lunge, hinge, horizontal push, vertical push, horizontal pull,
   vertical pull. Every exercise with an avoided pattern is excluded.
 - **Prescription ranges:**
   - Reps 6–20, or 3–20 for strength (6–20 until a moderate-effort screening outcome clears).
-  - RPE 7–8.5 for beginners (RIR 2–3) and 7–9 for intermediates (6–7 until cleared).
+  - RPE 7–8.5 for beginners (RIR 2–3) and 7–9 for intermediate and advanced lifters (6–7 until
+    cleared).
   - Rest 60–180 s, or up to 240 s for strength.
   - Sets per exercise 1–5.
 - **Blocks:** 4–8 weeks before a review. The app repeats one weekly template, so the plan never
@@ -976,7 +978,7 @@ the template then depends on the goal, the experience and the session length.
 | --- | --- |
 | Days (split) | Full body A/B/C for 1–3 days; Upper A/B + Lower A/B for 4; Upper A, Lower A, Push, Pull, Legs for 5; Push, Pull, Legs, then Push 2, Pull 2, Legs 2 for 6 |
 | Goal | Strength: main lifts every session, two accessories at most. Muscle gain: shoulders, arms, calves and trunk after the lifts. Aesthetic: shoulders, rear delts and arms first. Fat loss and recomposition: compound-led, trunk first, few isolation exercises |
-| Experience | A beginner keeps at most 2 accessory exercises a session (in-house); only an intermediate is offered pull-ups (catalog level) |
+| Experience | A beginner keeps at most 2 accessory exercises a session (in-house); only an intermediate or advanced lifter is offered pull-ups (catalog level); an advanced lifter gets the advanced variant below |
 | Session length | Slots are in priority order (main, support, accessory); a session keeps as many from the top as its exercise limit (2 + minutes / 15) and set budget (minutes / 3) allow. Length also sets rest (below) |
 
 The plan names a template id (split, days, profile, experience, length) in the Deno tests; the
@@ -992,7 +994,8 @@ the same there. A regression is never the variation.
 catalog muscles, and 0.5 toward each secondary muscle (catalog v2; Pelland 2026, fractional method).
 Weekly targets (indirect sets included): strength goals 6 (2 sessions × 3 sets, the standard's
 frequency and strength sets); other goals the growth level of 10, then, with spare session room, a
-stretch halfway to the experience's maximum (11 beginner, 15 intermediate); trunk 4 (the minimum),
+stretch halfway to the experience's maximum (11 beginner, 15 intermediate, 16 advanced from a growth
+level of 12); trunk 4 (the minimum),
 because every lift braces it. The rules plan starts every exercise at 2 sets, brings the main lifts
 to 3, then adds one set at a time where the weekly shortfall is largest (a main lift before an
 accessory when equal). An added set never passes the session set budget, the session length, the
@@ -1012,7 +1015,7 @@ direct count is a hard limit. An exercise stops at 4 sets (3 for strength goals 
 | Hypertrophy compound rest | from 90 s | 150 s (120 s in short sessions) | 90 s in sessions of 45 minutes or less, otherwise 120 s; both inside the standard (Singer 2024: no clear gain beyond 90 s) and shorter than before, which leaves room for more sets |
 | Hypertrophy compound reps | beginner 8–12, intermediate 6–12 | 8–12 / 6–10 | the standard's ranges |
 | Isolation reps | 10–15 (strength: 8–12 beginner, 6–12 intermediate) | 10–15 | the standard's ranges |
-| Effort | reps in reserve 2–3 beginner, 1–3 intermediate | RPE 7–8.5 / 7–9 | compound lifts stop at the middle of the range (RPE 7.5 beginner, 8 intermediate), isolation at 2 reps left (RPE 8); the half point for short sleep still applies |
+| Effort | reps in reserve 2–3 beginner, 1–3 intermediate and advanced | RPE 7–8.5 / 7–9 | compound lifts stop at the middle of the range (RPE 7.5 beginner, 8 intermediate and advanced), isolation at 2 reps left (RPE 8); the half point for short sleep still applies |
 | Weekly sets | 4 minimum, 10 growth, 12/20 maximum | at most 12/20, no minimum | as above; the model path keeps the policy's direct-set limit |
 
 **Screening (Contract 8).** `PlanPolicies.screening` is optional; a missing outcome means `cleared`.
@@ -1024,6 +1027,117 @@ the same cap. `see_professional` builds no plan: `buildRulesPlan`, `validRulesPl
 `validateOnboardingPlan` and `generateOnboardingProposal` throw `PlanBlockedByScreeningError` before
 any model call, and the caller answers with professional guidance (today's excluded path: the app
 stops at the eligibility step and nothing is built).
+
+### Advanced level (2026-10-23)
+
+Code: rule values in `training/standard/{prescription,volume,sources}.ts`, the week in
+`training/templates/advanced.ts`, exercise choice and prescription in `onboarding/rules_plan.ts`,
+the athlete's choice in `onboarding/answers.ts` and the onboarding Training step, and the four staple
+lifts in the catalog (`catalog.ts`, `catalog_v2.ts`, migration `20261023100050_advanced_level_catalog.sql`).
+Existing athletes keep their level; the level changes only when the athlete chooses it again in
+onboarding (a new plan version they approve) or Coach proposes and they approve a change.
+
+**Who is advanced.** The athlete, from three years of training. The Training step asks which fits
+better (intermediate or advanced) once "3–5 years" or "Over 5 years" is chosen; the server reads
+`experience: "advanced"` only with those years and otherwise reads intermediate (under a year stays
+beginner). ACSM 2009 calls an advanced lifter one with years of training; the three-year cut is
+in-house, because the answer bands are "1–2" and "3–5" years.
+
+**The numbers, and what each rests on.** A level with no source of its own uses the nearest cited value
+and says so.
+
+| Rule | Advanced | Intermediate (unchanged) | Source and note |
+| --- | --- | --- | --- |
+| Weekly sets, build-up level (indirect sets count 0.5) | 12 | 10 | Baz-Valle 2022: below 12 sets was its low-volume group, 12–20 its standard for trained lifters (at least a year of training; no study separates advanced lifters) |
+| Weekly sets, stretch with spare room | 16 (halfway from 12 to 20) | 15 | the halfway rule is in-house (`stretchTarget`) |
+| Weekly sets, maximum | 20 | 20 | Baz-Valle 2022 found no gain above 20 for the quadriceps or biceps; Pelland 2026: returns diminish. No source puts advanced lifters above 20 |
+| Strength weekly target | 6 | 6 | ACSM 2026 (2 sessions × 2–3 sets) |
+| Training days a week | 4–5 (a note when fewer) | 3–4 | ACSM 2009; Pelland 2026: frequency matters little for size once volume is counted |
+| Sessions per muscle | 2 or more | 2 or more | ACSM 2011/2026 |
+| Compound reps | strength 3–6, size 6–12 | same | ACSM 2009 gives intermediate and advanced lifters one recommendation (1–12 RM, eventual emphasis on 1–6 for strength and 6–12 for size); ACSM 2026: ≥ 80% 1RM for strength |
+| Heavy and light days | heavy takes the lower part of the compound range, light the upper | none | ACSM 2009 (periodized); Moesgaard 2022: undulating periodization gave trained lifters a small 1RM gain and no difference for size; ACSM 2026 finds no consistent periodization effect. The split point (lower half rounded down: 3–4 / 5–6, 6–9 / 10–12) is Tracend arithmetic on the cited range |
+| Isolation reps | strength 6–12, size 10–15 | same | ACSM 2009, Iversen 2021 |
+| Reps in reserve | 1–3 (compound mid-range, isolation 2) | 1–3 | Robinson 2024, ACSM 2026, Helms 2016; Refalo 2023 finds no gain from failure, so the range is not narrowed |
+| Rest | by goal and session length, as before | same | ACSM 2009, Singer 2024 |
+| Progression | double progression; one equipment step | same | ACSM 2009 (2–10%); no source sets a slower advanced rate, so none is invented |
+| Deload cadence | none | none | no cited cadence; Bell 2023 gives only the purpose of a deload and Coleman 2024 tested one week off in week 5 of 9 without a cadence. The block model has no deload week; B5 owns deloads |
+
+**Heavy and light days (periodisation inside the block model).** The block stays six weeks and the app
+repeats one week, so the variation is inside the week. Every muscle meets a heavy and a light day:
+full body A heavy, B light, C the whole range; upper/lower: both heavy sessions, then both light;
+upper, lower, push, pull, legs: upper and lower heavy, the three others light; push/pull/legs twice:
+the first pass heavy, the second light. Only compound lifts take the part range; isolation work keeps
+its range. A heavy session's objective says so ("Heavy day: lower reps on the big lifts").
+
+**Specificity.** The sessions are the intermediate sessions plus, in non-strength goals, one more
+direct accessory where the session has room (below 8 slots): the first of a short list for that
+session type that it does not already train directly (biceps, triceps, calves, chest fly, hamstring
+curl, quad extension; no shoulder work, which presses and rows already carry past the standard's
+maximum when indirect sets are counted). The single-leg slot of the first lower session prefers the
+Bulgarian split squat, and the push day of the five-day split presses on an incline (`prefers` on
+a slot: the exercise comes after a focus muscle that still needs sets and only until the week has
+used it). The weighted pull-up and the close-grip bench press arrive through the normal rotation
+of a lift not yet used that week.
+
+**The staples.** `weighted-pull-up` (pull-up bar and dumbbells: a dumbbell held between the feet, load =
+added weight, step 2.5 kg, 0 kg added is a real value for progression), `close-grip-bench-press`,
+`incline-barbell-bench-press`, `bulgarian-split-squat`; all advanced level, so the plans of the other
+levels are unchanged (the 10,080-case digests in `catalog_plans_test.ts` are untouched). The
+conventional deadlift is `barbell-deadlift`. Joint stress is in-house: the weighted pull-up is
+shoulder `high` (the pull-up is `moderate`), the two bench variations keep the bench press's
+shoulder `high` (a narrower grip moves work to elbows and wrists, which are not rated, so no relief
+is claimed), the Bulgarian split squat is knee `high`. A swap into a harsher exercise is never
+offered; a swap away is.
+
+**No muscle loses to a staple.** Preferring a staple can displace a lift that trained a muscle
+(the weighted pull-up wins the vertical pull from the lat pulldown), and the higher advanced targets
+move sets between exercises. After building, `buildAdvancedPlan` compares the plan with the same
+athlete's intermediate plan: no muscle may end below the intermediate plan's weekly sets, capped at
+the growth level (10). If one would, the fewest staples that restore it are left out; if none does,
+all are left out; if the advanced targets alone still leave a muscle short, the plan keeps the
+intermediate week's exercises and set targets with the advanced prescription and heavy/light
+days. A sweep of 4,320 cases (5 goals x 6 day counts x 6 lengths x 4 equipment sets x 2 screening
+outcomes x 3 focus sets) is a permanent test: before the rule 206 plans had a muscle short (132 of
+them below the 10-set growth level where the intermediate twin met it), after it none do and 1,769
+of the 1,800 plans with the equipment keep a staple.
+
+**Progression with heavy and light days.** A lift planned more than once with different rep ranges
+(an advanced plan's bench on a heavy and on a light day) keeps one history per range in
+`private.next_session_targets`: only performances logged against a planned exercise with that range
+count, so a heavy 100 kg x 9 is never read as a light day's 100 kg x 10. A lift repeated with the
+same range, or planned once, keeps one shared history as before; a Deno test pins the redefinition
+as B3's function plus exactly the changed hunks. The weighted pull-up is flagged `added_load` in the
+catalog: its logged load is the weight added to the body, and no load and 0 both read as none added,
+so a set of bodyweight reps at the top of the range earns the first 2.5 kg step. Other exercises
+still read an empty or zero load as no load (a pull-up holds at the top of its range).
+
+Matching by range has one consequence on a level change. An athlete who moves from an intermediate
+plan (one range per lift) to an advanced plan has no target for a split lift's day until that day
+has been logged once under its own range: the earlier sets, logged in the other range, are not read
+as the new day's history. That day keeps the plan's prescription and is shown without a target.
+This is deliberate: missing data lowers confidence and is never filled from another day's sets. A
+next-session adjustment matches its target on the planned exercise id (`get_coach_proposal_inputs_v1`
+1.1 carries it), so a heavy day's target is never applied to the light day of the same lift, and a
+day without a target is adjusted from its planned load only.
+A plan rebuild (a change of training days, a goal or a setup) carries each exercise's start load
+the same way: a lift in one rep range carries by slug, a lift on a heavy and a light day carries
+each range's load only to the same lift in the same range, and otherwise starts without one.
+
+**Screening and safety.** Nothing about the screening gate changes: `moderate_until_cleared` caps
+effort at RPE 7, drops strength emphasis and uses hypertrophy reps (split into heavy and light days
+all the same); `see_professional` builds no plan; the avoided patterns, the joint-stress swaps and
+every policy limit apply to the new exercises as to any other. Advanced never relaxes a policy limit.
+
+**Measured** (the 7 equipment sets × 6 day counts × 5 goals × 5 lengths × 2 avoid × 3 focus sweep of
+`catalog_plans_test.ts`, extended with 120 minutes, 6,300 plans per level, rules plan, intermediate
+against advanced twin): sets per plan 52.2 → 53.2, exercises 18.3 → 18.5; weekly sets by muscle
+(indirect at half) back 11.5 → 11.7, biceps 10.9 → 11.3, quads 10.2 → 10.5, shoulders 14.3 → 14.6,
+triceps 12.4 → 12.7, chest 7.6 → 7.7, glutes 18.9 → 19.2. The growth targets rise (12/16 against
+10/15) but session length and the 8-exercise cap bind first: weekly sets rise 0% at 30 minutes, 0.8%
+at 45, 1.6% at 60 and 2.5% at 90 or more (a 90-minute session is already at the set budget of 30), and
+283 of the 6,300 advanced plans carry slightly fewer weekly sets than their intermediate twin (1 to
+3% in the cases inspected), because the staples change the mix of exercises. Chest remains the muscle the templates serve
+least in 60-minute sessions (two pressing slots), for both levels.
 
 ### Apple Health summary (2026-10)
 
