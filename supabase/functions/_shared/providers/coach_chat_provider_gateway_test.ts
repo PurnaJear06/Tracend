@@ -439,9 +439,11 @@ Deno.test("a DeepSeek route through the gateway restates the schema for JSON mod
 Deno.test("the first attempt's reservation is its own worst case, never clamped", () => {
   const haikuCeiling = coachChatReservationUsd(haiku(), [])!;
   const sonnetCeiling = coachChatReservationUsd(sonnet(), [])!;
-  // (128,000 + 16,000) / 1.5 = 96,000 prompt tokens written plus 4,096 output tokens, once.
-  assertEquals(haikuCeiling, 0.014048);
-  assertEquals(sonnetCeiling, 0.28096);
+  // (128,000 + 25,500) / 1.5 = 102,333 prompt tokens written plus 4,096 output tokens, once.
+  // Haiku's price card changes at 100,000 prompt tokens, so its ceiling steps up here (it is
+  // above that line with the contributors anyway: the registry's worst case is about 0.096).
+  assertEquals(haikuCeiling, 0.07419875);
+  assertEquals(sonnetCeiling, 0.296795);
   assert(sonnetCeiling <= coachChatReservationCapUsd);
 });
 

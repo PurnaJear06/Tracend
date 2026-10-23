@@ -1,5 +1,6 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
 import { factWire, makeFact } from "../../coach_memory/memory_fixtures.ts";
+import { renderedText } from "../host.ts";
 import type { ServiceRpc } from "../service_source.ts";
 import { coachNotesContributorBudgetChars, createCoachNotesContributor } from "./coach_notes.ts";
 import {
@@ -36,7 +37,7 @@ Deno.test("the facts contributor is stable and renders the confirmed facts with 
   const contributor = createConfirmedFactsContributor(createMemorySource(rpc));
   assertEquals(contributor.slot, "stable");
   assertEquals(contributor.budgetChars, confirmedFactsContributorBudgetChars);
-  const text = (await contributor.render(input)) as string;
+  const text = renderedText(await contributor.render(input))!;
   assertStringIncludes(text, "Left knee hurts on deep squats (confirmed 2026-09-01");
   assertStringIncludes(text, "re-check, due since 2026-10-01");
   assertEquals(text.length <= contributor.budgetChars, true);
@@ -52,7 +53,7 @@ Deno.test("the notes contributor is volatile and labels the notes as the Coach's
   const contributor = createCoachNotesContributor(createMemorySource(rpc));
   assertEquals(contributor.slot, "volatile");
   assertEquals(contributor.budgetChars, coachNotesContributorBudgetChars);
-  const text = (await contributor.render(input)) as string;
+  const text = renderedText(await contributor.render(input))!;
   assertStringIncludes(text, "- 2026-10-12: Asked about training.");
   assertStringIncludes(text, "not confirmed by the athlete");
 });

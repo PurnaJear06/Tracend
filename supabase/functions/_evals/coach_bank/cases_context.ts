@@ -584,14 +584,15 @@ export const lookupCases: readonly BankCase[] = [
   {
     id: "lookup-none-home-days",
     category: "lookups",
-    description: "'Train today, then 10-15 days at home' needs no lookup.",
+    description:
+      "'Train today, then 10-15 days at home' is answered from the baseline and the home options: the plan is in the context, so no lookup is needed and a wide sweep is over-fetching.",
     athlete: () => athlete(baseContext("rich")),
     question: "workout in 5 minutes, then 10–15 days at home with no gym, what should I do today?",
     expect: {
       screen: "none",
       length: "routine",
       routine: { exercises: 3 },
-      lookup: { kind: "none" },
+      checks: { maxRequests: 3 },
     },
     good: [
       "Quick one, then. For today, a full-body home session you can start right away:\n- Push-ups: 3 x 10\n- Bodyweight squats: 3 x 15\n- Reverse lunges: 3 x 10 each leg\n- Plank: 3 x 30 seconds\nRest about a minute between sets. For the next 10-15 days, repeat it on your usual training days and add a rep or two each session.",
@@ -599,8 +600,13 @@ export const lookupCases: readonly BankCase[] = [
     goodRequests: [],
     bad: [{
       reply: "I'll pull your history first.",
-      requests: [benchRequest],
-      fails: "data_requests",
+      requests: [
+        benchRequest,
+        mealRequest,
+        { lookup: "recovery", from: "2026-10-01", to: "2026-10-14" },
+        { lookup: "body", from: "2026-08-01", to: "2026-10-14" },
+      ],
+      fails: "over_fetch",
     }],
   },
   {

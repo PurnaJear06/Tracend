@@ -7,7 +7,9 @@ import {
   pickFocusSession,
   renderTrainingPlan,
   trainingPlanContributorBudgetChars,
+  weekAheadOf,
 } from "./training_plan.ts";
+import { overlapFactLine } from "../../training/schedule/week_ahead.ts";
 import { ownersCaseDate, ownersPlanPayload, splitPlanPayload } from "./plan_fixtures.ts";
 
 const render = (mutate?: (payload: Record<string, unknown>) => void) => {
@@ -311,11 +313,13 @@ Deno.test("mid-week: back-to-back sessions that share muscles are named", () => 
   (sessions[5] as Record<string, unknown>).exercises = (sessions[3] as Record<string, unknown>)
     .exercises;
   sessions[4].weekday = 6;
-  const text = renderTrainingPlan(parsePlanState(payload))!;
+  const state = parsePlanState(payload)!;
   assertStringIncludes(
-    text,
+    overlapFactLine(weekAheadOf(state).overlaps)!,
     "Thu 2026-10-15 then Fri 2026-10-16: chest, triceps, front and side delts",
   );
+  // The fact is stated by the watch-outs block, not repeated in the plan block.
+  assert(!renderTrainingPlan(state)!.includes("Same muscles on consecutive days"));
 });
 
 // Wednesday, with Thursday's slot filled by a second pull session that the athlete did early, on
@@ -349,9 +353,10 @@ Deno.test("a session already done this week is not planned again, and no overlap
     (row) => row.planned_workout_id !== "w-chest-b",
   );
   assertStringIncludes(
-    renderTrainingPlan(parsePlanState(open))!,
+    overlapFactLine(weekAheadOf(parsePlanState(open)!).overlaps)!,
     "Wed 2026-10-14 then Thu 2026-10-15: biceps, back, rear delts",
   );
+  assertEquals(weekAheadOf(parsePlanState(wednesdayWithThursdayDoneOnTuesday())!).overlaps, []);
 });
 
 Deno.test("from the next ISO week on, every session is planned again", () => {
@@ -415,7 +420,10 @@ Deno.test("Monday after a Sunday session: yesterday's session, outside the calen
   });
   const text = renderTrainingPlan(parsePlanState(payload))!;
   assertStringIncludes(text, "- Sun 2026-10-18: done: Chest volume and delts (");
-  assertStringIncludes(text, "Sun 2026-10-18 then Mon 2026-10-19: ");
+  assertStringIncludes(
+    overlapFactLine(weekAheadOf(parsePlanState(payload)!).overlaps)!,
+    "Sun 2026-10-18 then Mon 2026-10-19: ",
+  );
 });
 
 Deno.test("a plan whose sessions have no set weekday lists seven days without a session", () => {

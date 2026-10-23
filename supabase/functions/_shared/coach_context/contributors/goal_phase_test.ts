@@ -5,7 +5,7 @@ import {
   goalPhaseSourceFromRpc,
   renderGoalPhasePayload,
 } from "./goal_phase.ts";
-import { renderCoachContext, validateCoachContextContributors } from "../host.ts";
+import { renderCoachContext, renderedText, validateCoachContextContributors } from "../host.ts";
 import { coachContextContributors } from "../registry.ts";
 import { longCutPayload } from "../../training/goal_phase/fixtures.ts";
 import {
@@ -20,7 +20,7 @@ Deno.test("the contributor is volatile and fits its budget on the owner's case",
   const contributor = createGoalPhaseContributor(() => Promise.resolve(longCutPayload));
   assertEquals(contributor.slot, "volatile");
   assertEquals(contributor.budgetChars, goalPhaseContributorBudgetChars);
-  const text = (await contributor.render(input)) as string;
+  const text = renderedText(await contributor.render(input))!;
   assert(text.length <= goalPhaseContributorBudgetChars, `${text.length} chars`);
   const rendered = await renderCoachContext([contributor], input);
   assertEquals(rendered.stable, "");
@@ -69,7 +69,8 @@ Deno.test("the registry holds the goal phase contributor after the screening and
     "coach_proposals",
     "heart_rate_profile",
     "coach_notes",
-    "data_index",
+    "watch_outs",
+    "coverage_brief",
     "library",
   ]);
 });
@@ -97,7 +98,7 @@ Deno.test("eight excluded readings, a long history and a long run still fit with
     readings,
   };
   const contributor = createGoalPhaseContributor(() => Promise.resolve(payload));
-  const text = (await contributor.render({ ...input, localDate: "2026-10-05" })) as string;
+  const text = renderedText(await contributor.render({ ...input, localDate: "2026-10-05" }))!;
   assert(text.length <= goalPhaseContributorBudgetChars, `${text.length} chars`);
   const rendered = await renderCoachContext([contributor], { ...input, localDate: "2026-10-05" });
   assertEquals(rendered.outcomes[0].clipped, false);

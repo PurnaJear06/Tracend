@@ -8,7 +8,8 @@
 // The reply guard (coach_safety/reply_guard.ts) reads the same outcome from the rendered block
 // (`screeningOutcomeIn`), so the model and the guard always work from one value.
 import { type ScreeningOutcome, screeningOutcomes } from "../../training/screening/outcome.ts";
-import type { CoachContextContributor, CoachContributions } from "../host.ts";
+import { blockOf, type CoachContextContributor, type CoachContributions } from "../host.ts";
+import { plain, record as recorded } from "../../recorded_text.ts";
 
 export const screeningContributorId = "screening";
 export const screeningBudgetChars = 900;
@@ -79,16 +80,25 @@ const rules: Readonly<Record<ScreeningOutcome, string>> = {
     "Rule: the athlete must see a doctor or qualified exercise professional before training. Give no training prescriptions of any kind (no workouts, sets, reps, loads, cardio targets or effort advice). Recommend getting clearance first. Recovery, sleep and food questions may be answered in general terms.",
 };
 
-/** The block's text for a screening, or null without one (never screened reads as cleared). */
-export function renderScreening(record: ScreeningRecord | null): string | null {
+/**
+ * The block's text for a screening with its values marked (`../../recorded_text.ts`): the day it
+ * was answered is a record; the rules, and the figures in them, are Tracend's fixed wording.
+ */
+function screeningMarked(record: ScreeningRecord | null): string | null {
   if (!record) return null;
   return [
     `Pre-exercise health check, answered on ${
-      record.screenedAt.slice(0, 10)
+      recorded(record.screenedAt.slice(0, 10))
     }. Tracend calculated the outcome from the athlete's answers; you never change it.`,
     `Outcome: ${record.outcome}`,
     rules[record.outcome],
   ].join("\n");
+}
+
+/** The block's text for a screening, or null without one (never screened reads as cleared). */
+export function renderScreening(record: ScreeningRecord | null): string | null {
+  const marked = screeningMarked(record);
+  return marked === null ? null : plain(marked);
 }
 
 /** The block when the lookup failed or timed out: restricted, never cleared. */
@@ -147,7 +157,8 @@ export function createScreeningContributor(
             timer = setTimeout(() => reject(new Error("screening lookup timed out")), timeoutMs);
           }),
         ]);
-        return renderScreening(record);
+        const marked = screeningMarked(record);
+        return marked === null ? null : blockOf(marked);
       } catch {
         // Fail closed: "could not read" is not "no row".
         return renderScreeningUnknown();

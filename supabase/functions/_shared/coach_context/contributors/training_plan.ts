@@ -20,21 +20,25 @@ import {
   addDays,
   buildWeekAhead,
   dayOf,
-  renderWeekAhead,
+  renderWeekAheadMarked,
   type ScheduleNote,
   type SchedulePoint,
+  type WeekAhead,
   weekAheadDays,
 } from "../../training/schedule/week_ahead.ts";
 import {
-  describeLastSession,
-  describeTargetAdvice,
+  describeLastSessionMarked,
+  describeTargetAdviceMarked,
   parseProgressionSummary,
   type ProgressionTarget,
 } from "../../training/progression/targets.ts";
-import type { CoachContextContributor } from "../host.ts";
+import { plain, record } from "../../recorded_text.ts";
+import { blockOf, type CoachContextContributor, sharedRead } from "../host.ts";
 import { coachServiceRpc, type StateSource, stateSourceFromRpc } from "../service_source.ts";
 
 export const trainingPlanContributorId = "training_plan";
+/** The key under which the turn's plan state is read once for every contributor that needs it. */
+export const planStateReadKey = "plan_state";
 // Sized for the largest plan the app allows: 7 sessions of 9 exercises with long names is about
 // 9,900 characters (training_plan_test.ts), and the host's own ceiling is 12,000.
 export const trainingPlanContributorBudgetChars = 12_000;
@@ -180,10 +184,17 @@ const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satur
 const dayName = (weekday: number | null) =>
   weekday === null ? "no set day" : dayNames[weekday - 1] ?? "no set day";
 
+// The plan's sets, reps, rest, loads and names are the athlete's approved plan: records, marked as
+// such (`../../recorded_text.ts`). The rules of the block, its windows and its home options are
+// Tracend's fixed wording and ground nothing.
 const prescription = (exercise: PlanExercise) =>
-  `${exercise.sets} x ${
-    exercise.repMin === exercise.repMax ? exercise.repMin : `${exercise.repMin}-${exercise.repMax}`
-  }`;
+  record(
+    `${exercise.sets} x ${
+      exercise.repMin === exercise.repMax
+        ? exercise.repMin
+        : `${exercise.repMin}-${exercise.repMax}`
+    }`,
+  );
 
 export type FinishedWorkout = PlanState["completed"][number];
 
@@ -416,14 +427,14 @@ function exerciseLine(
   target: ProgressionTarget | undefined,
 ): string {
   const parts = [`${prescription(exercise)}`];
-  if (exercise.restSeconds !== null) parts.push(`rest ${exercise.restSeconds} s`);
-  if (exercise.targetRpe !== null) parts.push(`RPE ${exercise.targetRpe}`);
-  if (exercise.loadKg !== null) parts.push(`plan load ${exercise.loadKg} kg`);
-  let line = `${index + 1}. ${exercise.name}: ${parts.join(", ")}.`;
+  if (exercise.restSeconds !== null) parts.push(`rest ${record(exercise.restSeconds)} s`);
+  if (exercise.targetRpe !== null) parts.push(`RPE ${record(exercise.targetRpe)}`);
+  if (exercise.loadKg !== null) parts.push(`plan load ${record(exercise.loadKg)} kg`);
+  let line = `${index + 1}. ${record(exercise.name)}: ${parts.join(", ")}.`;
   line += target
-    ? ` Next target (Tracend, from the logged sets): ${describeTargetAdvice(target)}. Last logged ${
-      describeLastSession(target)
-    }.`
+    ? ` Next target (Tracend, from the logged sets): ${
+      describeTargetAdviceMarked(target)
+    }. Last logged ${describeLastSessionMarked(target)}.`
     : " No sets logged for it yet; the plan's prescription stands.";
   line += ` ${homeText(exercise, state)}`;
   return line;
@@ -444,12 +455,12 @@ function compactSession(session: PlanSession, state: PlanState, doneOn: string |
   const exercises = session.exercises.map((exercise) => {
     const home = homeAlternativesFor(exercise.slug, state.avoid);
     const options = [...home.bodyweight.slice(0, 1), ...home.minimal.slice(0, 1)];
-    return `${exercise.name} ${prescription(exercise)}${
+    return `${record(exercise.name)} ${prescription(exercise)}${
       home.already ? " (home-ready)" : options.length ? ` (home: ${options.join(" / ")})` : ""
     }`;
   });
-  return `- ${dayName(session.weekday)}, ${session.name}: ${exercises.join("; ")}${
-    doneOn === null ? "" : ` [done ${doneOn}]`
+  return `- ${dayName(session.weekday)}, ${record(session.name)}: ${exercises.join("; ")}${
+    doneOn === null ? "" : ` [done ${record(doneOn)}]`
   }`;
 }
 
@@ -497,14 +508,15 @@ export function resolveSchedule(
     notes.push({
       date: state.localDate,
       text: `undone earlier this week: ${
-        focus.undone.map((session) => `${session.name} (${dayName(session.weekday)})`).join(", ")
+        focus.undone.map((session) => `${record(session.name)} (${dayName(session.weekday)})`)
+          .join(", ")
       }`,
     });
   }
   if (focus.deferred) {
     notes.push({
       date: state.localDate,
-      text: `${focus.deferred.session.name} is not set for today: it would train ${
+      text: `${record(focus.deferred.session.name)} is not set for today: it would train ${
         focus.deferred.shared.join(", ")
       } on consecutive days with tomorrow's session`,
     });
@@ -516,10 +528,22 @@ export function resolveSchedule(
       points.push({ date, kind: "planned", name: session.name, exercises: exercisesOf(session) });
     }
     for (const { session, doneOn } of doneEarly) {
-      notes.push({ date, text: `${session.name} was already done this week, on ${doneOn}` });
+      notes.push({
+        date,
+        text: `${record(session.name)} was already done this week, on ${record(doneOn)}`,
+      });
     }
   }
   return { points, notes };
+}
+
+/** The next seven days of a plan state, with the muscles shared on consecutive days. */
+export function weekAheadOf(
+  state: PlanState,
+  focus: FocusSession = pickFocusSession(state),
+): WeekAhead {
+  const { points, notes } = resolveSchedule(state, focus);
+  return buildWeekAhead(state.localDate, state.weekday, points, notes);
 }
 
 /** Sets a week of the plan in force today gives each target muscle, from the catalog's first-listed muscle. */
@@ -533,8 +557,9 @@ function weeklySets(state: PlanState): string {
       totals.set(muscle ?? "other", (totals.get(muscle ?? "other") ?? 0) + exercise.sets);
     }
   }
-  return [...totals].sort((a, b) => b[1] - a[1]).map(([muscle, sets]) => `${muscle} ${sets}`)
-    .join(", ");
+  return [...totals].sort((a, b) => b[1] - a[1]).map(([muscle, sets]) =>
+    `${muscle} ${record(sets)}`
+  ).join(", ");
 }
 
 /**
@@ -544,17 +569,24 @@ function weeklySets(state: PlanState): string {
  * whole trailing lines) can only shorten the lists, never remove a rule.
  */
 export function renderTrainingPlan(state: PlanState | null): string | null {
+  const marked = trainingPlanMarked(state);
+  return marked === null ? null : plain(marked);
+}
+
+function trainingPlanMarked(state: PlanState | null): string | null {
   if (state === null || state.sessions.length === 0) return null;
   const focus = pickFocusSession(state);
   const targetById = new Map(state.targets.map((target) => [target.plannedExerciseId, target]));
   const lines = [
-    `Active plan: ${state.title}${state.version === null ? "" : ` v${state.version}`}, ${
-      state.sessionsPerWeek ?? state.sessions.length
-    } sessions a week. Today is ${dayName(state.weekday)} ${state.localDate}.`,
+    `Active plan: ${record(state.title)}${
+      state.version === null ? "" : ` v${record(state.version)}`
+    }, ${record(state.sessionsPerWeek ?? state.sessions.length)} sessions a week. Today is ${
+      dayName(state.weekday)
+    } ${record(state.localDate)}.`,
   ];
   const done = state.completed.map((row) => {
     const session = state.sessions.find((item) => item.id === row.id);
-    return `${session?.name ?? (row.name || "a session")} (${row.localDate})`;
+    return `${record(session?.name ?? (row.name || "a session"))} (${record(row.localDate)})`;
   });
   lines.push(
     done.length
@@ -564,8 +596,10 @@ export function renderTrainingPlan(state: PlanState | null): string | null {
   if (focus.doneToday) {
     lines.push(
       focus.doneOn === state.localDate
-        ? `Today's planned session, ${focus.doneToday.name}, is already logged as done.`
-        : `Today's planned session, ${focus.doneToday.name}, was already done this week (${focus.doneOn}); it is not prescribed again.`,
+        ? `Today's planned session, ${record(focus.doneToday.name)}, is already logged as done.`
+        : `Today's planned session, ${record(focus.doneToday.name)}, was already done this week (${
+          record(focus.doneOn ?? "")
+        }); it is not prescribed again.`,
     );
   }
   lines.push(
@@ -582,8 +616,7 @@ export function renderTrainingPlan(state: PlanState | null): string | null {
         state.equipment.length ? state.equipment.join(", ").replaceAll("_", " ") : "bodyweight only"
       }.`,
   );
-  const { points, notes } = resolveSchedule(state, focus);
-  lines.push(...renderWeekAhead(buildWeekAhead(state.localDate, state.weekday, points, notes)));
+  lines.push(...renderWeekAheadMarked(weekAheadOf(state, focus)));
   if (focus.session) {
     const label = focus.isToday
       ? "Today's planned session"
@@ -593,8 +626,8 @@ export function renderTrainingPlan(state: PlanState | null): string | null {
       ? "No session is set for the rest of this week; the next one is next week's first"
       : "Today has no planned session. The next planned session";
     lines.push(
-      `${label}: ${focus.session.name} (${dayName(focus.session.weekday)}${
-        focus.session.minutes === null ? "" : `, about ${focus.session.minutes} min`
+      `${label}: ${record(focus.session.name)} (${dayName(focus.session.weekday)}${
+        focus.session.minutes === null ? "" : `, about ${record(focus.session.minutes)} min`
       }).`,
     );
     lines.push(
@@ -616,8 +649,10 @@ export function renderTrainingPlan(state: PlanState | null): string | null {
     const back = state.afterBlock.sessions.filter((session) => session.weekday !== null)
       .sort((a, b) => a.weekday! - b.weekday!);
     lines.push(
-      `After the temporary block (last day ${state.afterBlock.endsOn}) the plan returns to: ${
-        back.map((session) => `${dayName(session.weekday)} ${session.name}`).join("; ")
+      `After the temporary block (last day ${
+        record(state.afterBlock.endsOn)
+      }) the plan returns to: ${
+        back.map((session) => `${dayName(session.weekday)} ${record(session.name)}`).join("; ")
       }.`,
     );
   }
@@ -630,7 +665,12 @@ export function createTrainingPlanContributor(source: StateSource): CoachContext
     slot: "volatile",
     budgetChars: trainingPlanContributorBudgetChars,
     async render(input) {
-      return renderTrainingPlan(parsePlanState(await source(input.userId, input.localDate)));
+      const marked = trainingPlanMarked(
+        parsePlanState(
+          await sharedRead(input, planStateReadKey, () => source(input.userId, input.localDate)),
+        ),
+      );
+      return marked === null ? null : blockOf(marked);
     },
   };
 }

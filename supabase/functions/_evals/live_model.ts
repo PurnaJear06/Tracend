@@ -19,7 +19,10 @@ import {
   coachChatTiming,
   generateCoachChat,
 } from "../_shared/providers/coach_chat_provider.ts";
-import { selectCoachChatRoute } from "../_shared/providers/coach_chat_provider_route.ts";
+import {
+  routeSignalsOf,
+  selectCoachChatRoute,
+} from "../_shared/providers/coach_chat_provider_route.ts";
 import { generateCoachChatViaGateway } from "../_shared/providers/coach_chat_provider_gateway.ts";
 
 export type GenerateInput = Readonly<{
@@ -79,9 +82,10 @@ export function routedFetch(baseUrl: string, fetcher: typeof fetch = fetch): typ
 }
 
 /**
- * The gateway path with the route chosen per question by `selectCoachChatRoute`, as coach-chat
- * does: a question that needs analysis takes the strong route (AI_COACH_CHAT_STRONG_*) when it is
- * set and names the default route's vendor (the eval's stand-in for the athlete's notice).
+ * The gateway path with the route chosen per turn by `selectCoachChatRoute`, as coach-chat does: a
+ * turn whose records call for it (an open health check, pain on record, a proposal waiting,
+ * several watch-outs) takes the strong route (AI_COACH_CHAT_STRONG_*) when it is set and names
+ * the default route's vendor (the eval's stand-in for the athlete's notice).
  */
 export function gatewayGenerate(
   coachRoute: AiRoute,
@@ -93,7 +97,12 @@ export function gatewayGenerate(
       question,
       context,
       contextKind,
-      route: selectCoachChatRoute(question, coachRoute, strong, coachRoute.vendor).route,
+      route: selectCoachChatRoute(
+        routeSignalsOf(contributions ?? null),
+        coachRoute,
+        // The eval's stand-in for the athlete's notice is the default route's vendor.
+        strong()?.vendor === coachRoute.vendor ? strong() : null,
+      ).route,
       consentVendor: coachRoute.vendor,
       ...(contributions ? { contributions } : {}),
       ...(lookups ? { lookups } : {}),

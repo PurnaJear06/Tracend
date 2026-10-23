@@ -1,6 +1,6 @@
 # Tracend Current State
 
-**As of:** 2026-10-18
+**As of:** 2026-10-20
 
 **Lifecycle:** owner-only private beta; not approved for public production. Production Auth
 sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
@@ -75,6 +75,21 @@ and one that was not shown is repaired; the app's data summary stays in the thre
 `20261018210031`, `prepare_coach_chat_v10`, trend in kg/week); the same closing question or sentence on
 consecutive turns is repaired and then cut. Answer schema unchanged. Details: "Coach reply guards" in
 [`ai-gateway.md`](./handoff/ai-gateway.md); rules in `AI_SAFETY_SPEC.md` §11, §11.2 and §12.
+
+**Coach investigates first (2026-10-20, branch `claude/coach-investigate-first`, PR open).** Coach
+now checks every relevant kind of record before it answers. A Coverage Brief replaces the data
+index (per kind: what the context shows, what a lookup adds, what exists and how fresh, the kinds to
+check with it), watch-outs computed by code across kinds of record (back-to-back muscles, a session
+due on a poor-recovery day, a pain flag planned again, behind plan, repeated skips, drift, stale
+weigh-in or sync, plan age) join the context, the prompt makes the first reply a sweep (up to 8
+lookups), a refused request gets one corrected round, the model tier follows the state of the
+records, and `coach_messages.lookups` records lookups per round. Migration
+`20261020100017_coach_investigation.sql` (additive; new kinds are filters on existing lookups, so the
+answer schema is unchanged at 2,818 bytes). 37 `inv-` eval cases and a 90% domain-coverage gate; the
+live measurement is still to run. Owner decisions: `past_messages` now returns Coach's own earlier
+replies, labelled and never grounding a figure (AI_SAFETY_SPEC §11.1a); breathing rate and the athlete's
+free text in a workout are held back until a notice names them (§10.3, wording in `ai-gateway.md`). One grounding rule covers every path (records ground both, a pending proposal's figures ground only a figure about the proposal, a model's words and anything undeclared ground nothing: §11.1 "What grounds a figure"), and sleep durations carry their hours so "5.7 h" rests on a "341 min" row. Details: "Coach investigates first" in
+[`ai-gateway.md`](./handoff/ai-gateway.md).
 
 **Coach week-ahead fix (2026-10-18, merged as #156).** On a Sunday Coach
 named only the week's undone session and never said that Monday trains the same muscles. Coach

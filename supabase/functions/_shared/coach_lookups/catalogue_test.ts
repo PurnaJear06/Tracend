@@ -8,6 +8,7 @@ import {
   maxLookupRangeDays,
   maxLookupRounds,
   maxRequestsPerRound,
+  maxRoundResultChars,
   maxScheduleAheadDays,
   validateDataRequests,
 } from "./catalogue.ts";
@@ -31,7 +32,8 @@ Deno.test("the catalogue is a closed list: eleven lookups, each with its own RPC
     assertEquals(spec.rpc, `coach_lookup_${spec.name}_v1`);
   }
   assertEquals(maxLookupRounds, 2);
-  assertEquals(maxRequestsPerRound, 4);
+  assertEquals(maxRequestsPerRound, 8);
+  assertEquals(maxRoundResultChars, 24_000);
   assertEquals(maxLookupRangeDays, 400);
 });
 
@@ -88,19 +90,52 @@ Deno.test("bad dates, a reversed range and a range wholly in the future are refu
   );
 });
 
-Deno.test("more than four requests in a round are refused; repeats are merged", () => {
-  const request = (lookup: string) => ({ lookup, from: "2026-10-01", to: today });
-  assertStringIncludes(
-    refused([
-      request("body"),
-      request("recovery"),
-      request("check_ins"),
-      request("goals"),
-      request("weekly_reviews"),
-    ]),
-    "at most 4 requests",
-  );
+Deno.test("more than eight requests in a round are refused; eight pass; repeats are merged", () => {
+  const request = (lookup: string, filter = "") => ({
+    lookup,
+    from: "2026-10-01",
+    to: today,
+    filter,
+  });
+  const eight = [
+    request("body"),
+    request("recovery"),
+    request("check_ins"),
+    request("goals"),
+    request("weekly_reviews"),
+    request("workouts"),
+    request("meals"),
+    request("plan_history", "proposals"),
+  ];
+  assertEquals(ok(eight).length, 8);
+  assertStringIncludes(refused([...eight, request("health_history")]), "at most 8 requests");
   assertEquals(ok([request("body"), request("body")]).length, 1);
+});
+
+Deno.test("the new kinds of record are filters on existing lookups, so the lookup names are unchanged", () => {
+  assertEquals(coachLookupNames.length, 11);
+  const asked = (lookup: string, filter: string) =>
+    ok([{ lookup, from: "2026-08-01", to: today, filter }])[0].filter;
+  assertEquals(asked("plan_history", "proposals"), "proposals");
+  assertEquals(asked("health_history", "workouts"), "workouts");
+  assertEquals(asked("weekly_reviews", "decisions"), "decisions");
+  // No lookup reaches ahead with them: only the schedule does.
+  assertStringIncludes(
+    refused([{
+      lookup: "health_history",
+      from: "2026-10-18",
+      to: "2026-11-30",
+      filter: "workouts",
+    }]),
+    "in the future",
+  );
+  const text = describeLookupCatalogue();
+  assertStringIncludes(text, "with the filter proposals");
+  assertStringIncludes(text, "with the filter workouts");
+  assertStringIncludes(text, "with the filter decisions");
+  assertStringIncludes(text, "session and exercise notes");
+  assertStringIncludes(text, "Coach's own earlier replies");
+  assertStringIncludes(text, "sleep and its stages");
 });
 
 Deno.test("filters: required for exercise_history, plain words only, dropped where unused", () => {
@@ -211,4 +246,49 @@ Deno.test("the catalogue tells the model the schedule filter and the horizon", (
   const text = describeLookupCatalogue();
   assertStringIncludes(text, "with the filter schedule");
   assertStringIncludes(text, "up to 90 days ahead");
+});
+
+Deno.test("a lookup with modes accepts its modes in any case and refuses a near miss, so the correction round fixes it", () => {
+  const asked = (lookup: string, filter: string) =>
+    validateDataRequests([{ lookup, from: "2026-08-01", to: today, filter }], today);
+  for (
+    const [lookup, mode] of [
+      ["plan_history", "schedule"],
+      ["plan_history", "proposals"],
+      ["health_history", "workouts"],
+      ["weekly_reviews", "decisions"],
+    ]
+  ) {
+    for (const filter of [mode, mode.toUpperCase(), ` ${mode} `]) {
+      const checked = asked(lookup, filter);
+      assertEquals(checked.ok && checked.requests[0].filter, mode, `${lookup} ${filter}`);
+    }
+    // Empty is the default records.
+    assertEquals(asked(lookup, "").ok, true);
+  }
+  for (
+    const [lookup, near] of [
+      ["plan_history", "proposal"],
+      ["plan_history", "schedules"],
+      ["plan_history", "upcoming sessions"],
+      ["health_history", "workout"],
+      ["weekly_reviews", "decision"],
+      ["weekly_reviews", "daily"],
+    ]
+  ) {
+    const checked = asked(lookup, near);
+    assertEquals(checked.ok, false, `${lookup} ${near}`);
+    if (!checked.ok) {
+      assertStringIncludes(checked.reason, `${lookup}: the filter must be `);
+      assertStringIncludes(checked.reason, "or empty");
+    }
+  }
+  // Lookups without modes keep their free filters.
+  assertEquals(asked("meals", "lunch").ok, true);
+  // Every mode the catalogue names is explained in the filter's meaning, and every lookup that has
+  // a mode names them all.
+  for (const spec of coachLookupCatalogue) {
+    if (!("filterModes" in spec)) continue;
+    for (const mode of spec.filterModes) assertStringIncludes(spec.filterMeaning, mode);
+  }
 });

@@ -691,13 +691,28 @@ Coach chat on the gateway route can read the athlete's own records on demand: th
 `data_requests` (a lookup name from a closed catalogue, a date range of at most 400 days, a filter
 that is "" when the lookup takes none; an empty list is a final answer) in its JSON answer, the Edge Function validates them and calls a read-only `SECURITY DEFINER`
 RPC granted to `service_role` for the authenticated athlete, and calls the model again with the dated
-rows. At most 2 rounds; each extra model call has its own budget place; the red-flag screen runs
+rows. At most 2 rounds of at most 8 lookups; each extra model call has its own budget place; the red-flag screen runs
 before everything and every guard runs on the final answer. It is bounded, read-only and in-request:
 not an autonomous agent (no writes, no background runs, a hard cap on rounds) and not native tool
 calling (the gateway sends no tools, so the provider can be swapped). The always-on baseline stays
 small: the goal phase, the screening, today's or the next session with targets and home
-alternatives, this week's complete-day nutrition and an index of what exists; everything else comes
-from lookups. See AI_SAFETY_SPEC §11.1.
+alternatives, the next 7 days with their muscles, this week's complete-day nutrition, the
+watch-outs and the Coverage Brief; everything else comes from lookups. See AI_SAFETY_SPEC §11.1.
+
+**Investigate first (2026-10-20).** Two deterministic contributors make the baseline honest about
+what it leaves out. The **Coverage Brief** (`coverage_brief`, replacing the data index) lists each
+kind of record with what the summary shows, what a lookup adds, how much exists, how fresh it is and
+the neighbouring kinds to check; its neighbour table is static, the same for every question. The
+**watch-outs** (`watch_outs`) are facts computed by code across several kinds of record at once
+(back-to-back muscles, a session due on a poor-recovery day, a pain flag planned again, behind plan,
+repeated skips, drift from the athlete's own usual, stale inputs, an old plan), so no cross-domain
+inference is left to a model with thinking off; each states its dates and figures, so the numbers
+check grounds a reply on it. The instructions make the first reply a sweep: every lookup that could
+change the answer, in one round. A refused request gets one corrected round instead of ending the
+investigation. The route (default or stronger model) is chosen from the state of the records the
+contributors report, never from the words of the question. The newer kinds of record (the proposals
+history, watch workouts of any age, the daily decisions) are filters on existing lookups, so the
+structured-output schema is the same bytes as before.
 
 ### Add vector retrieval over user data only when all are true
 

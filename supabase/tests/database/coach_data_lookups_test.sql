@@ -197,8 +197,9 @@ select is(public.get_coach_nutrition_state_v1('a1000000-0000-4000-8000-000000000
 select is((select array(select k from jsonb_object_keys(
     public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)->'domains') k
     order by k collate "C")),
-  array['body', 'check_ins', 'goals', 'health_history', 'meals', 'plan_history', 'recovery',
-    'weekly_reviews', 'workouts'], 'the index covers every kind of record');
+  array['body', 'check_ins', 'daily_decisions', 'goals', 'health_history', 'meals', 'past_messages',
+    'plan_history', 'proposals', 'recovery', 'watch_workouts', 'weekly_reviews', 'workouts'],
+  'the index covers every kind of record');
 select is(public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)
     ->'domains'->'workouts', jsonb_build_object('first', current_date - 40, 'last', current_date - 5,
     'count', 2), 'with first and last date and a count');
@@ -238,7 +239,7 @@ select is(pg_temp.keys(public.coach_lookup_workouts_v1('a1000000-0000-4000-8000-
     current_date - 60, current_date, null)),
   array['from', 'lookup', 'schema_version', 'sessions', 'to', 'truncated'], 'workouts: complete key list');
 select is(public.coach_lookup_workouts_v1('a1000000-0000-4000-8000-000000000001', current_date - 60,
-    current_date, null)->>'schema_version', '1.0', 'with a schema version');
+    current_date, null)->>'schema_version', '1.1', 'with a schema version');
 select is((public.coach_lookup_workouts_v1('a1000000-0000-4000-8000-000000000001', current_date - 60,
     current_date, null)->'sessions'->0->>'local_date')::date, current_date - 5, 'newest session first');
 select is(jsonb_array_length(public.coach_lookup_workouts_v1('a1000000-0000-4000-8000-000000000001',
@@ -411,7 +412,7 @@ select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000002',
 
 -- The index says which weekdays the plan covers and from when.
 select is(public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)
-    ->>'schema_version', '1.1', 'the index has a schema version');
+    ->>'schema_version', '1.2', 'the index has a schema version');
 select is(public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)
     ->'schedule'->>'starts_on', (current_date - 60)::text, 'the schedule starts when the plan took effect');
 select is(public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)
@@ -763,6 +764,14 @@ select throws_ok($$update public.coach_messages set guard_faults = array['Not a 
   'content-like text cannot be stored in the trace');
 select throws_ok($$update public.coach_messages set lookups = array(select 'x' || n from generate_series(1, 13) n)
     where id = 'a1b00000-0000-4000-8000-000000000001'$$, '23514', null, 'the trace is bounded');
+-- Per round and per mode (migration 20261020100017): its own column, the old one unchanged.
+select lives_ok($$update public.coach_messages set lookup_rounds = array(select 'r1_x' || n || ':3' from generate_series(1, 16) n)
+    || array['correction:1']
+    where id = 'a1b00000-0000-4000-8000-000000000001'$$, 'two rounds of eight lookups and a correction fit the round trace');
+select throws_ok($$update public.coach_messages set lookup_rounds = array(select 'x' || n from generate_series(1, 18) n)
+    where id = 'a1b00000-0000-4000-8000-000000000001'$$, '23514', null, 'the round trace is bounded');
+select throws_ok($$update public.coach_messages set lookup_rounds = array['r1_plan_history.proposals:3']
+    where id = 'a1b00000-0000-4000-8000-000000000001'$$, '23514', null, 'and keeps its format');
 set local role authenticated;
 set local "request.jwt.claim.sub" = 'a1000000-0000-4000-8000-000000000002';
 select is((select count(*) from public.coach_messages where guard_faults is not null), 0::bigint,

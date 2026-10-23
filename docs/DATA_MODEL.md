@@ -751,8 +751,12 @@ A10 adds two nullable columns on an assistant message, written by the Edge Funct
 role and never by the app (the app has select only): `guard_faults text[]` (rule names with counts,
 for example `rule:numbers_not_grounded:2`, `outcome:repair_timeout`, and
 `fallback:provider_response_invalid` when the turn ended in the data summary) and `lookups text[]`
-(the lookups a turn ran with their row counts, for example `exercise_history:14`). Names and counts
-only, never message content; a check limits each to 12 entries of `[a-z0-9_:]`. Row-level security
+(the lookups a turn ran with their row counts summed over rounds, for example `exercise_history:14`).
+Migration `20261020100017` adds a third, `lookup_rounds text[]`: the same per round and per mode of a lookup, for
+example `r1_workouts:4`, `r2_recovery:28`, `r1_plan_history_proposals:3`, and `correction:1` when a refused
+request was corrected. Names and counts
+only, never message content; a check limits `guard_faults` and `lookups` to 12 entries of `[a-z0-9_:]` (unchanged) and
+`lookup_rounds` to 17 entries (two rounds of eight and the correction marker) and 800 characters. Row-level security
 limits both to the message's owner.
 
 E3's production pass (migration `20261018200044_library_search_v3`) adds `library_version text`
@@ -776,16 +780,36 @@ records such as plan versions and goals are the athlete's local days, `private.l
   complete flags, the target, the schedule with what is logged, what was eaten today, where meals
   came from), `get_coach_data_index_v1` (first and last date and count per kind of record, and `schedule`: the
   active plan's weekdays and the date it took effect).
-- Lookups (ten), `(p_user_id, p_from, p_to, p_filter)`, range cut to 400 days, rows capped:
+- Lookups (eleven), `(p_user_id, p_from, p_to, p_filter)`, range cut to 400 days, rows capped:
   `coach_lookup_workouts_v1`, `_exercise_history_v1`, `_meals_v1`, `_body_v1`, `_check_ins_v1`,
   `_recovery_v1`, `_plan_history_v1`, `_goals_v1`, `_weekly_reviews_v1`,
-  `_health_history_v1`. `_plan_history_v1` with the filter `schedule` lays the active plan over the
+  `_health_history_v1`, `_past_messages_v1`. `_plan_history_v1` with the filter `schedule` lays the active plan over the
   range, past or ahead (`private.coach_plan_schedule`): per date the planned sessions of the plan
   version in force that day (the latest non-draft version whose `effective_date` is on or before the
   date; after a temporary block's `ends_on` the version it restores), marked with its version number
   and whether it is a block, the finished sessions with their logged sets, and the athlete's `today`; the range is the one lookup that may end
   after the coaching date (the Edge Function allows 90 days). Check-in notes are cut to 300 characters; a goal returns its target keys only
   (never the free-form details).
+- Coach investigates first (migration `20261020100017_coach_investigation.sql`, additive: keys and
+  one function added, `schema_version` bumped, nothing removed). The filters reach what no lookup
+  reached: `_plan_history_v1` with `proposals` (1.2; the Coach proposals in the range, newest 12,
+  with kind, title, status, why, gain, cost and dates; `private.coach_lookup_proposals`),
+  `_health_history_v1` with `workouts` (1.1; the individual watch workouts of any age, newest 40,
+  with how each stands against the logged sessions: the strongest standing among confirmed,
+  suggested and conflict, and rejected only when nothing else was proposed), `_weekly_reviews_v1` with `decisions` (1.1; the daily
+  `coach_decisions`, newest 30). `_workouts_v1` (1.1) adds the session note (cut to 300),
+  each exercise's note (cut to 200), the kind of performance and the reason for a substitution;
+  `_recovery_v1` (1.1) adds breathing rate, the four sleep stages, night and morning HRV, active
+  energy and workout minutes; `_past_messages_v1` (1.1) adds `coach_replies`, at most 4 of Coach's own
+  earlier replies in remembered chats that match the words (never a data summary), 300
+  characters each. `get_coach_data_index_v1` (1.2) adds `watch_workouts`, `proposals`,
+  `daily_decisions` and `past_messages` (first, last, count). `get_coach_watch_outs_v1(user,
+  local_date)` (1.0, service role) returns the facts the watch-outs are computed from, never a
+  conclusion: the newest night, the newest computed row of today or yesterday (recovery score,
+  sleep quality score, the engine's z-scores for resting heart rate and HRV and the components it
+  could not use), the newest check-in of today or yesterday, exercises flagged for pain in the last
+  14 days, exercises skipped in each of their last two or more sessions (56 days), the newest weigh-in
+  and Apple Health sync dates, and the active plan's number, when the plan began (its first version: a version bump does not reset it), and block length. Skipped exercises count only those the active plan still holds.
 - `private.nutrition_day_totals` and `private.nutrition_complete_day_rules` define a complete
   logging day (ALGORITHMS.md section 6); `evaluate_change_eligibility` averages complete days only.
 
@@ -795,7 +819,11 @@ stored and sets `change_proposals.source_message_id` the other way; the thread l
 the card shows live and on reload. `get_coach_proposals_context_v1(user, local_date)` (service role)
 feeds the Coach context: the running block and its last day, the goal phase and its end date (a
 phase or block that has ended is reported as ended), proposals waiting and how recent ones were
-answered.
+answered. From `schema_version` 1.1 (migration `20261020100017`, additive: only a field was added to
+each proposal) a pending proposal also carries `figures`, what its payload would set (`calories`,
+`protein_g`, `carbohydrate_g`, `fat_g`, `sessions_per_week`, `block_weeks`; a field is absent when the
+proposal does not change it, and `figures` is null once the proposal is answered). They are shown to
+Coach as the proposal's figures, never as the athlete's target.
 
 
 ### `coach_context_snapshots`

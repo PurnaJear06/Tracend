@@ -6,6 +6,7 @@ import {
   coachContextMaxChars,
   cutNote,
   renderCoachContext,
+  sharedRead,
   validateCoachContextContributors,
 } from "./host.ts";
 import { coachContextContributors, coachContextContributorsFor } from "./registry.ts";
@@ -33,13 +34,15 @@ Deno.test("the registry is valid and holds the contributors registered so far", 
     "coach_proposals",
     "heart_rate_profile",
     "coach_notes",
-    "data_index",
+    "watch_outs",
+    "coverage_brief",
     "library",
   ]);
   assertEquals(coachContextContributors.map((item) => item.slot), [
     "stable",
     "stable",
     "stable",
+    "volatile",
     "volatile",
     "volatile",
     "volatile",
@@ -162,13 +165,16 @@ Deno.test("the most a registry can add covers every label", async () => {
   assert(result.stable.length + result.volatile.length <= coachContextMaxChars(list));
 });
 
-Deno.test("the data index and the library, which need the gateway's answer fields, render only on that route", () => {
+Deno.test("the coverage brief and the library, which need the gateway's answer fields, render only on that route", () => {
   assertEquals(
     coachContextContributorsFor(true).map((item) => item.id),
     coachContextContributors.map((item) => item.id),
   );
   const legacy = coachContextContributorsFor(false).map((item) => item.id);
-  assertEquals(legacy.includes("data_index"), false);
+  assertEquals(legacy.includes("coverage_brief"), false);
+  // The watch-outs state facts and need neither lookups nor library evidence: the rollback path
+  // keeps them (it would otherwise lose the back-to-back muscles fact).
+  assertEquals(legacy.includes("watch_outs"), true);
   assertEquals(legacy.includes("library"), false);
   assertEquals(legacy.includes("training_plan"), true);
   assertEquals(legacy.includes("heart_rate_profile"), true);
@@ -214,4 +220,70 @@ Deno.test("a long block loses whole trailing lines and says so", async () => {
   for (const line of body.split("\n").slice(0, -1)) assert(text.split("\n").includes(line), line);
   assertEquals(result.outcomes[0].clipped, true);
   assertEquals(clipLinesToBudget("short", 10), "short");
+});
+
+Deno.test("a read two contributors need is made once for the turn, and again for the next turn", async () => {
+  let reads = 0;
+  const read = () => {
+    reads += 1;
+    return Promise.resolve({ reads });
+  };
+  const seen: unknown[] = [];
+  const asking = (id: string) =>
+    contributor(id, "volatile", async (given) => {
+      seen.push(await sharedRead(given, "plan_state", read));
+      return "text";
+    });
+  await renderCoachContext([asking("first"), asking("second")], input);
+  assertEquals(reads, 1);
+  assertEquals(seen, [{ reads: 1 }, { reads: 1 }]);
+  await renderCoachContext([asking("first"), asking("second")], input);
+  assertEquals(reads, 2);
+  // Without the host's map (a hand-built input) every call reads.
+  await sharedRead({}, "plan_state", read);
+  await sharedRead({}, "plan_state", read);
+  assertEquals(reads, 4);
+});
+
+Deno.test("a read that fails fails for every contributor that asked, and the turn goes on", async () => {
+  const failing = () => Promise.reject(new Error("down"));
+  const result = await renderCoachContext([
+    contributor("first", "volatile", async (given) => {
+      await sharedRead(given, "plan_state", failing);
+      return "x";
+    }),
+    contributor("second", "volatile", async (given) => {
+      await sharedRead(given, "plan_state", failing);
+      return "y";
+    }),
+    contributor("third", "volatile", () => Promise.resolve("fine")),
+  ], input);
+  assertEquals(result.outcomes.map((item) => item.outcome), ["failed", "failed", "rendered"]);
+});
+
+Deno.test("the proposal-figure lines a contributor reports are kept only while they are in the clipped text", async () => {
+  const lines = [
+    "Header line",
+    "Figure line A",
+    "Figure line B that is long enough to be clipped away",
+  ];
+  const rendered = await renderCoachContext(
+    [
+      contributor("coach_proposals", "volatile", () =>
+        Promise.resolve({
+          text: lines.join("\n"),
+          shown: {},
+          figures: [lines[1], lines[2]],
+        }), 30),
+    ],
+    input,
+  );
+  assertStringIncludes(rendered.texts.coach_proposals, "Header line\nFigure line A");
+  assert(!rendered.texts.coach_proposals.includes("Figure line B"));
+  assertEquals(rendered.figures, { coach_proposals: ["Figure line A"] });
+  const none = await renderCoachContext(
+    [contributor("coach_proposals", "volatile", () => Promise.resolve("Only text"))],
+    input,
+  );
+  assertEquals(none.figures, {});
 });

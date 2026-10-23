@@ -641,6 +641,25 @@ the server enforces the same rule for every caller. `coach-chat` answers 403
 `coach-decide` then uses the deterministic provider and `onboarding-plan` the rules plan, so no
 data reaches the AI provider.
 
+**New data and the accepted notice (2026-10-20).** Data reaches the AI only under an accepted notice
+that names it. The Coach notice (v5 and v6 list the same data) names: training plan and workout
+logs, check-ins, Apple Health summaries (sleep, heart rate, HRV, steps and workouts), meals and
+nutrition targets, body measurements, goals, focus muscles and preferences, and the messages the
+athlete sends the Coach. `_shared/ai_notice_coverage.ts` holds the verdict for the fields the
+lookups grew, and `coach-chat` passes the athlete's accepted notice version to the lookup runner:
+- **Not named, held back until a notice names them:** Apple Health breathing rate (`breathing_rate`)
+  and the athlete's free text in a workout: the session note, an exercise's note and the reason for
+  a swap (`workout_notes`). The rows leave them out and say they exist ("Withheld: ... Do not say
+  there are none"). To open one, the owner publishes a notice that names it, then sets the first
+  version number that does in `firstNoticeNaming` in the same change.
+- **Covered, not gated:** sleep stages (they are the Apple Health sleep summary), night and morning
+  HRV (HRV), workout minutes and the watch's workouts (workouts), proposals and daily decisions
+  (Tracend's own text about the plan, targets and goals the notice names), and Coach's own earlier
+  replies (the conversation memory has always sent them; they carry no new data).
+- **Already sent before this change, not named:** active energy (`health_daily_28d` in the athlete
+  file since v8; the Coach list does not name it, the onboarding sentence does). Not gated here
+  because it is not new; the next notice should name it.
+
 **Notices name a vendor.** All three tables have a `provider` column. The meal photo table always
 required one; the other two gained a nullable one in migration A1, and migration code 17 filled
 it for every earlier notice from its label and model (DeepSeek, Groq), so no notice has a null
@@ -1051,13 +1070,17 @@ routes stay available by settings alone for two weeks after the cutover.
   `plan_status` and the athlete file states there is no plan, the reason, the health-check outcome
   and date, and that Coach gives no plan-specific advice (sessions, loads, calorie or protein
   targets). General questions and next steps stay allowed.
-- **Second Coach route.** Questions that ask for analysis (progress, a trend or pace, a change to
-  the plan or a target, a nutrition amount; a domain noun alone is not enough) per
-  `coach_chat_provider_route.ts`, a rules classifier, use the route configured
+- **Second Coach route.** The route is chosen from the state of the athlete's records, never the
+  words of the question (`coach_chat_provider_route.ts`, deterministic): a health check that is not
+  cleared (or could not be read), pain on record (today's or yesterday's check-in, or an exercise
+  flagged for pain in the last 14 days; a pain signal that could not be read counts as pain, as an unreadable health check does), a Coach proposal waiting for the athlete's answer, or two
+  or more watch-outs about training decisions. A turn with any of them uses the route configured
   as `AI_COACH_CHAT_STRONG_*` when it is set, evaluated and its vendor is the one the athlete's
-  accepted notice names; every other question, and every question when it is unset, uses the
-  `coach_chat` route. The budget reservation, the price and the stored provenance follow the route
-  that answers.
+  accepted notice names; every other turn, and every turn when it is unset, uses the `coach_chat`
+  route. The contributors report the counts the choice reads, so it is made after they render; the
+  first budget place covers the dearer of the two routes. The budget, the price and the stored
+  provenance follow the route that answers. (Until 2026-10-20 a keyword list on the question chose
+  the route, so "check my training" stayed on the small model.)
 - Every coach-chat provider uses one shared coach persona (coaching approach, communication style,
   hard boundaries), followed by the null contract and the output accuracy/validation contract so the
   contract's rules take precedence.
@@ -1069,10 +1092,35 @@ records, for any day or period, when the question needs it. This is **not an age
 calling**. The mechanism is part of the JSON answer, so it works with any provider and the Claude
 adapter still sends no tools.
 
-- **A closed catalogue** (`_shared/coach_lookups/catalogue.ts`): ten lookups (`workouts`,
+- **A closed catalogue** (`_shared/coach_lookups/catalogue.ts`): eleven lookups (`workouts`,
   `exercise_history`, `meals`, `body`, `check_ins`, `recovery`, `plan_history`, `goals`,
-  `weekly_reviews`, `health_history`). Each is one `SECURITY DEFINER` RPC granted to
-  `service_role` only, read-only, with a `schema_version`, a row cap and a range clamp.
+  `weekly_reviews`, `health_history`, `past_messages`). Each is one `SECURITY DEFINER` RPC granted to
+  `service_role` only, read-only, with a `schema_version`, a row cap and a range clamp. The names
+  are the closed enum of the answer schema, whose bytes are fixed, so a newer kind of record is
+  reached through a filter on an existing lookup (`plan_history` with `schedule` or `proposals`,
+  `health_history` with `workouts`, `weekly_reviews` with `decisions`), never a new name.
+- **Coach investigates first (2026-10-20).** The always-on context is a summary, and the
+  **Coverage Brief** (`coverage_brief` contributor, gateway route only) says, for each kind of
+  record, what that summary shows, what a lookup adds, how much exists and how fresh it is, and the
+  neighbouring kinds to check with it. The neighbour table is static: the same for every athlete
+  and every question. The brief is shown even when the index read is slow or fails (the counts read "unavailable"). The instructions tell Coach to answer a question about the athlete only after
+  it has requested, in its first round, every lookup that could change the answer (the brief's
+  neighbours of the topic, the detail behind a summary, the days ahead for a question about today
+  or the week), and to skip lookups only for a greeting, thanks, general knowledge, a question about
+  the app and a follow-up the rows already in the conversation answer. The old rules "work only from
+  the prepared context", "do not look up what the context already holds" and "ask for the narrowest
+  range" are gone. The **watch-outs** (`watch_outs` contributor; it stays on the rollback route too) are facts
+  computed by code across kinds of record, at most 8 lines packed into what the contributor's
+  1,200-character budget leaves after its introduction (900 at most), shown when there are any: muscles shared on consecutive days, a session due today or tomorrow on a day with
+  a recovery score below 40, a sleep quality score below 50 or pain on the check-in, a pain flag on
+  an exercise that is planned again, sessions behind the plan this week, a session or exercise
+  skipped on each of its last two chances (only exercises and sessions of the plan in force), resting heart rate or HRV a spread or more from the
+  athlete's own usual (the recovery score's own z-scores), a weigh-in older than 14 days, an Apple
+  Health sync older than 2 days and a plan older than its block (measured from the plan's first version: a version bump does not reset it; a new plan or a temporary block starts a new count). Every threshold is one the product
+  already uses (the evidence-code table, the app's "than usual", the goal phase's stale reading, the
+  app's stale sync) and none is new; each line states its dates and figures, so the numbers check
+  grounds a reply on them. A watch-out is a verified fact, not an instruction: Coach addresses it or
+  says why it does not matter, and a change stays a proposal the athlete approves.
 - **The model names a lookup, a range and a filter; nothing else.** The answer may carry
   `data_requests: [{lookup, from, to, filter}]` instead of a final answer. The athlete's id is bound
   by the Edge Function from the authenticated request when it builds the runner; it is never part of
@@ -1081,29 +1129,80 @@ adapter still sends no tools.
   400 days, a range not wholly in the future (an end after the coaching date is cut to it; the one
   exception is `plan_history` with the filter `schedule`, which reads the plan and may end up to 90
   days after it), at most
-  4 requests a round, a required filter for `exercise_history`, filters of plain words only. A
-  refused request is an invalid answer (rules `lookup_request_invalid`,
-  `lookup_rounds_exceeded`): the one repair attempt must answer without lookups.
+  8 requests a round, a required filter for `exercise_history`, filters of plain words only, and for
+  a lookup with modes (`plan_history`: `schedule`, `proposals`; `health_history`: `workouts`;
+  `weekly_reviews`: `decisions`) a filter that is empty or one of its modes: a near miss such as
+  `proposal` is refused and goes to the corrected round. A
+  request the catalogue refuses (`lookup_request_invalid`: a bad date, a missing filter, too many
+  requests) gets **one corrected round** per turn, if the time and a budget place allow: the model
+  is called again, told why, and may send a corrected list or answer. A second refusal, a request
+  after the rounds are used up (`lookup_rounds_exceeded`) and a correction that cannot be sent end
+  in the one repair attempt, which must answer without lookups.
 - **At most 2 lookup rounds.** After the rows return, the model is called again; after the second
-  round it is told no more lookups exist and must answer. A third request is refused.
+  round it is told no more lookups exist and must answer. A third request is refused. A round's
+  rows add at most 24,000 characters to the prompt (5,000 for each of up to four lookups, the total
+  shared out evenly beyond that).
 - **Budget.** Every extra call, lookup round or repair, reserves its own budget place at its own
   worst case before it is sent. When no place is available the model's interim sentence (it says
   what it is checking and has not seen) is the answer if it passes every guard; otherwise the turn
   ends in the labelled data summary.
 - **Order of guards.** The deterministic red-flag screen runs first and answers before any model
   call or lookup. Every guard (safe ranges, screening cap, claimed actions, the numbers check, the
-  goal-phase rules) runs on the final answer. The rows a lookup returned count as grounded for the
-  numbers check, because they are the athlete's own records; the model's own request text (its
-  filter) never does. The interim sentence is checked only against what the model had seen when it
+  goal-phase rules) runs on the final answer. What the numbers check is given is set by the next
+  item, and the model's own request text (its filter) never counts. The interim sentence is checked only against what the model had seen when it
   wrote it. A lookup call that fails, or a round that cannot start in the time left, also ends in
   the interim sentence, with a note of what was not checked.
+- **What grounds a figure (one rule, every path).** Every stored value Coach is shown is declared as
+  one of three kinds (`_shared/grounding.ts`), and a value that is not declared grounds nothing.
+  *Records* (the athlete's records, Apple Health, Tracend's calculations, what the athlete approved
+  or wrote) ground any figure, including one that states the athlete's own target ("your target is
+  ..."). *Proposal figures* (what Tracend built for a proposal: its title, reason, gain and cost, and
+  the targets a pending proposal would set) ground a figure but never one that states the athlete's
+  own target, because a proposal is not a target until the athlete approves it; Coach is told to
+  write them as the proposal's ("the proposal sets 2,350 kcal"). *Model text* (the reason on a plan
+  or a nutrition target, a daily decision's words, Coach's own earlier replies) is shown and grounds
+  nothing: a model's words do not show a figure is true, and a reason or decision written on an
+  earlier day states figures that were true that day. The plan's title and the names of its
+  workouts and exercises are records on every path, because the athlete approved the plan and the
+  app shows them; its rationale is model text on every path (`columnGrounding` declares each
+  stored column once, and the athlete file, the lookups and the contributors all read it). The
+  three places that show stored values declare their fields in the same way: the lookups field by
+  field (`lookupGrounding`; the rows that ground are rendered again from the payload cut down to
+  the declared fields, so an undeclared field cannot reach them), the athlete file key by key and,
+  for a key that mixes kinds, field by field (`providers/context_grounding.ts`), and the
+  contributors one by one (`coach_context/grounding.ts`). A contributor mixes fixed wording with
+  values (the windows it looks at, the thresholds it applies, the definition of a baseline, an id)
+  and states which are values: it writes each one through `record` while it builds its text
+  (`_shared/recorded_text.ts`), and hands the host the text without the marks and the marked
+  values as structured data (`RenderedBlock.records`, the way proposal figures were already
+  carried: `figure` marks what a pending proposal Tracend built would set, and a proposal's
+  title). Only those values ground; the fixed wording of a contributor grounds nothing, so "last 3"
+  in the brief or "(below 40)" in a watch-out cannot make a made-up "3 kg" or "40 ms" pass, and a
+  contributor that marks nothing grounds nothing. The principles digest is the exception by
+  design (`guidance`: its whole text is general guidance, never the athlete's target), and Coach's
+  notes ground only their dates. A lookup that shows a value declares it (`lookupGrounding`; a
+  rule Tracend applies, such as how many meals make a day complete, is a `thresholds` field: shown,
+  never a ground);
+  the rule that every field a renderer reads is declared is checked by reading the renderer's own
+  field reads, not by what a fixture happened to show. Each records contributor has a probe
+  (`contributor_grounding_test.ts`) that lists every number in its rendered text that is not a
+  record value, asserts none of them grounds a figure or the athlete's own data or target, and
+  asserts every marked value is a value of its fixture. Tests put
+  a change in every field each renderer shows, keeping its type, and fail a shown field that is
+  undeclared or that grounds differently from its declaration; they count the fields verified, not
+  walked, and read the keys the renderer touches. Durations stored in minutes are shown with the
+  hours and minutes the app shows and the hours to one decimal next to them (`341 min (5 h 41 min;
+  5.7 h)`), so "you slept 5.7 h" rests on a record: the numbers check never converts units.
 - **Rows are reference data**, dated and labelled; athlete-written text in them (check-in notes) is
   untrusted data. A lookup that fails is reported to the model as unreadable and it must say it
   could not check.
 - **Nothing is written, nothing runs in the background, no loop is open-ended.** Lookups exist
   only on the gateway route; today's DeepSeek path has none.
 - **Observability**: the lookup names and row counts, never the rows, are stored on the assistant
-  message (`coach_messages.lookups`), with the guard rules each attempt broke and any fallback code
+  message (`coach_messages.lookups`, names and totals) and per round (`coach_messages.lookup_rounds`:
+  `r1_workouts:4`, `r2_recovery:28`, with the mode of a lookup that has modes,
+  `r1_plan_history_proposals:3`, and `correction:1` when a refused request was corrected; 17 entries,
+  so the width of the first round and the follow-up of the second can be measured), with the guard rules each attempt broke and any fallback code
   (`coach_messages.guard_faults`), so the lead can query what Coach looked at and why a turn fell
   back.
 
@@ -1143,8 +1242,13 @@ adapter still sends no tools.
 - **A chat the athlete asked Coach not to remember** gets no notes, no suggestions (the model is not
   offered the field), no search and no appearance in another chat. A red-flag turn writes nothing.
 - **Raw message search** is the `past_messages` lookup: the athlete's own earlier questions in
-  remembered chats, found by their words, at most 12 rows of 300 characters. Coach's replies are not
-  searched, so a wrong claim of the Coach's never returns as memory.
+  remembered chats, found by their words, at most 12 rows of 300 characters. Since 2026-10-20 it
+  also returns, apart from them and labelled "Coach replied (an earlier reply, not a record; it may
+  have been wrong, so check any claim in it against the records)", at most 4 of Coach's own earlier
+  replies in the same remembered chats that match the same words (300 characters each; never a
+  data summary or a reply that failed), so Coach can re-read what it advised. The instructions say
+  such a line is not a record and a claim in it is checked against the records first. A figure in one never grounds the numbers check (the renderer leaves those lines out of the rows that count as given, so the same figure stated afresh is refused unless a record holds it). This replaces
+  the rule that Coach's replies are never searched; it is the owner's to confirm.
 - **Evaluation.** Bank cases cover a contradicted fact (knee, schedule, diet), a respected dislike, a
   confirmed limit in a leg session, a follow-through check against Coach's own note and a chat that
   is not remembered.

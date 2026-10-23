@@ -32,6 +32,12 @@ export const replyGuardCases: readonly BankCase[] = [
     }),
     question: "What should I do with my overhead press next Upper B?",
     expect: { screen: "none" },
+    goodRequests: [{
+      lookup: lookupNames.exerciseHistory,
+      from: "2026-10-01",
+      to: "2026-10-17",
+      filter: "overhead press",
+    }],
     good: [
       "Your overhead press was 55 kg x 6 for 3 sets on 12 October. Next Upper B, overhead press 55 kg x 8 on every set is the aim, and you will hit the weight increase once all three sets reach 8 clean reps. Which set slows down first?",
     ],

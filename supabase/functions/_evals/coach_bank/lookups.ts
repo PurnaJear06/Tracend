@@ -15,6 +15,18 @@ export const lookupNames = Object.freeze(
   } as const satisfies Record<string, CoachLookupName>,
 );
 
+/** The rows of one lookup within the range a request names, which is all the database would return. */
+const served = (
+  rows: Readonly<Record<string, readonly LookupRow[]>>,
+  request: Readonly<{ lookup: string; from: string; to: string }>,
+): LookupRow[] =>
+  (rows[request.lookup] ?? []).filter((row) => row.date >= request.from && row.date <= request.to);
+
+const linesOf = (found: readonly LookupRow[]): string[] =>
+  found.length === 0
+    ? ["No records in this range."]
+    : found.map((row) => `- ${row.date}: ${row.text}`);
+
 /**
  * A runner that serves a case's rows. Every request the loop validated and passed to it is
  * appended to `seen`; a lookup the case has no rows for answers with no records, as the database
@@ -32,13 +44,8 @@ export function bankLookupRunner(
         to: request.to,
         ...(request.filter === null ? {} : { filter: request.filter }),
       });
-      const found = (rows[request.lookup] ?? []).filter((row) =>
-        row.date >= request.from && row.date <= request.to
-      );
-      const lines = found.length === 0
-        ? ["No records in this range."]
-        : found.map((row) => `- ${row.date}: ${row.text}`);
-      return { request, lines, rows: found.length };
+      const found = served(rows, request);
+      return { request, lines: linesOf(found), rows: found.length };
     });
     return Promise.resolve({
       text: "<looked_up_data>\n" + blocks.map((block) =>
@@ -53,9 +60,14 @@ export function bankLookupRunner(
   };
 }
 
-/** Every row of every lookup the case supplies, as grounding text for the numbers check. */
-export function allLookupRows(rows: Readonly<Record<string, readonly LookupRow[]>>): string {
-  return Object.entries(rows).map(([name, list]) =>
-    [`Lookup ${name}:`, ...list.map((row) => `- ${row.date}: ${row.text}`)].join("\n")
-  ).join("\n");
+/**
+ * What the numbers check is given for a turn that asked for `requests`: the rows those requests
+ * return (only the lookups asked for, within the dates asked for), the lines the runner hands the
+ * loop as its grounds. A figure from a row the model did not ask for is not grounded.
+ */
+export function servedGrounds(
+  rows: Readonly<Record<string, readonly LookupRow[]>>,
+  requests: readonly DataRequest[],
+): string[] {
+  return requests.flatMap((request) => linesOf(served(rows, request)));
 }

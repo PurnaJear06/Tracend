@@ -1,6 +1,6 @@
 # AI Gateway Handoff
 
-**As of:** 2026-10-18
+**As of:** 2026-10-20
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -669,8 +669,9 @@ audit (1, 2, 3, 6 deterministic part, 7, 15).
   rule) and a stricter numbers line; the instructions grew from 7,265 to 8,582 characters.
   **The legacy request digests in `coach_chat_parity_test.ts` were recorded again on purpose**
   (persona, answer contract and the Safe Ranges section changed the request).
-- **Second route** (`coach_chat_provider_route.ts`; `coach_chat_strong` added to `aiFeatures`):
-  a rules classifier sends progress, body-weight and goal, nutrition-number and plan questions to
+- **Second route** (`coach_chat_provider_route.ts`; `coach_chat_strong` added to `aiFeatures`;
+  since 2026-10-20 the choice reads the athlete's records, not the question: see "Coach
+  investigates first"): a rules classifier sent progress, body-weight and goal, nutrition-number and plan questions to
   `AI_COACH_CHAT_STRONG_*` when it is set and `EVALUATED=true`, its reservation fits one budget
   place (Sonnet 5.5 at 4,096 output tokens does) and the athlete's accepted notice names its
   vendor; otherwise the default route answers (`coach_chat_strong_route_not_used` is logged for the
@@ -1396,6 +1397,290 @@ Sunday what is coming up and check `model_runs` and the `lookups` column for `pl
 same coaching date; older summaries stay as dated text (pgTAP asserts the date). (2) An athlete-named study
 exempts only the same reference (surname and year, or institution initials and document kind). (3) Evidence
 labels never attach a source. (4) The repeat comparison keeps negation (opposite polarity is never a repeat).
+
+## Coach investigates first (2026-10-20, branch `claude/coach-investigate-first`)
+
+**Trigger.** The owner: "Coach should see everything: once I ask a query, it checks everything and
+answers." A Sunday turn used the plan and the check-in with one lookup (`workouts:4`) and missed
+that Monday trains chest again. The read-only audit (2026-10-18) found Coach was not blind (the
+baseline carries 28 days of training and watch data, 14 of check-ins, the plan week), but nothing
+told it where the holes were, nothing computed facts across kinds of record, the prompt told it not
+to look up what the context "already holds", and a refused request ended the investigation.
+
+**What changed.**
+1. **Coverage Brief** (`coach_context/contributors/coverage_brief.ts`, replaces `data_index.ts`):
+   one line per kind of record (training, plan_ahead, plan_versions, recovery, check_ins, body,
+   nutrition, goals, proposals, decisions, watch_workouts, reviews, apple_health, conversation):
+   what the context shows, what a lookup adds (lookup name and filter), what exists with first and
+   last date and days since the last record, and the kinds to check with it. The neighbour table is
+   static and identical for every question. 2,200 to 2,555 characters (data index: about 1,100);
+   shown without counts when the index read fails.
+2. **Watch-outs** (`watch_outs.ts`): up to 8 lines, 900 characters, strict priority, nothing when
+   nothing is found. The overlap fact of #156 moved here (`overlapFactLine` in `week_ahead.ts`; the
+   plan block no longer carries it; the lookup renderer still does, with its advice). Reads the plan
+   state (shared with the plan block through `sharedRead`, so it is fetched once), the new
+   `get_coach_watch_outs_v1` facts and the plan laid over the last 28 days
+   (`readScheduleBody`, shared with the lookup renderer, so "planned but not logged" is one rule).
+   (The line budget is 1,200 characters with the introduction; the rollback path renders the watch-outs too.) Thresholds, all existing: recovery score < 40 and sleep quality score < 50 (the evidence-code
+   table), one spread from the baseline (the app's "than usual"; the recovery score's own z-scores),
+   weigh-in older than 14 days (goal phase), sync older than 2 days (the app's stale state), plan
+   older than its own `block_weeks`, "repeated" is twice running. `watchOutThresholds` documents each
+   and a test ties two of them to the source text.
+3. **Catalogue gaps** (migration `20261020100017_coach_investigation.sql`, additive, pgTAP
+   `coach_investigation_test.sql`): `plan_history` filter `proposals`, `health_history` filter
+   `workouts` (watch workouts of any age), `weekly_reviews` filter `decisions`, `workouts` returns
+   session/exercise notes and substitution reasons, `recovery` returns breathing rate, sleep stages,
+   night/morning HRV, active energy, workout minutes, `past_messages` returns Coach's own earlier
+   replies (labelled "an earlier reply, not a record"), the index covers four more kinds. New kinds
+   are **filters, not new lookup names**: the structured-output schema is 2,818 bytes, sha
+   `274ee4fafead`, unchanged (a test pins both). The existing pgTAP files were updated for the new
+   keys and versions.
+4. **Prompt**: "work only from the prepared context", "do not look up what the context already
+   holds", "narrowest range" and the do-the-minimum persona lines are rewritten; the new rule is
+   "investigate before you answer: request every lookup that could change the answer in the first
+   round (up to 8), the brief's neighbours, the detail behind a summary, the days ahead". Reply
+   length rules are unchanged ("however much you checked, about 120 words"). `maxRequestsPerRound`
+   4 to 8; a round's rows are capped at 24,000 characters (`lookupBudgetFor`). A refused or
+   malformed `data_requests` gets one corrected round (`lookupCorrectionText`), inside the time and
+   budget rules; a second refusal, a request after the rounds are used up and a correction that
+   cannot be sent still end in the repair, which must answer.
+5. **Route**: `coach_chat_provider_route.ts` no longer reads the question. Signals reported by the
+   contributors (their numeric traces): screening not cleared or unreadable, pain on record, a
+   proposal waiting, two or more training-decision watch-outs. A follow-up turn is not a signal
+   (not a harder question). The route is chosen after the contributors render; the first budget
+   place covers the dearer route. `coach_chat_route` is logged with the reasons.
+6. **Telemetry**: `coach_messages.lookup_rounds` (a new column; `lookups` keeps its names and totals)
+   holds entries per round, `r1_workouts:4`, `r2_recovery:28`, and `correction:1` when a refused
+   request was corrected (also visible as an attempt `invalid` with
+   `rule:lookup_request_invalid` followed by a `lookup` attempt).
+7. **Eval bank**: 37 `inv-` cases (category `investigation`) with `checks.domains` and
+   `checks.maxRequests`, graders `domain_coverage` and `over_fetch`, and the gate "90% of runs with a
+   domain check cover every kind they need" (`bankGates.domainCoverageRate`). Controls: greeting,
+   thanks, general knowledge, an app question (no lookups), narrow questions (at most 2), a
+   baseline-sufficient question (at most 3). The bank now renders the real brief (and the watch-outs
+   when a case gives facts) in every first round. The deterministic half proves the grader, the gate
+   and that the good requests of every case cover it; **the live measurement was not run** (no API
+   key here): `EVAL_CASES=inv- ./scripts/deno.sh run --allow-env --allow-net --allow-read
+   --allow-write supabase/functions/_evals/coach_bank/run.ts`. If the live rate is under 90%, the
+   escalation is the audit's option D: a small planning call before the answer (its own schema,
+   +2 to 3 s a turn); not built.
+
+**Cost and latency (estimates).** Prompt: +about 1,450 characters for the brief, +0 to 450 for the
+watch-outs, +2,450 in the instructions (cached prefix). A turn that investigates makes one more
+model call than before, as before, but now the first round is wide: about 9 to 13 s for a typical
+investigating turn (call 1 of 100 to 250 output tokens, parallel lookups in tens of milliseconds,
+call 2 with 5 to 20k tokens of rows), about 15 to 20 s with a second round, inside the 28 s first
+attempt and the 40 s turn. The new reads add two RPCs to context preparation in parallel (the watch
+facts and the 28-day schedule), inside the contributors' 4 s limit. A turn that needs nothing makes
+no extra call.
+
+**Decisions for the owner.**
+- `past_messages` now returns Coach's own earlier replies (labelled, 4 at most). AI_SAFETY_SPEC
+  §11.1a said Coach's replies were never searched so a wrong claim never returns as memory; it is
+  changed here because the brief asked for it. Veto = delete the `coach_replies` key in the SQL and
+  the renderer, and restore the sentence.
+- The watch-outs' thresholds are the product's existing ones; the list of facts is new and wants the
+  owner's review.
+
+**Open.** pgTAP was not run locally (no database here); CI runs it. After deploy: ask Coach a
+cross-domain question and read `coach_messages.lookups` (`r1_` entries should show 3 to 6 kinds).
+
+**Review round 1 (PR #159, same branch).** 1) Coach's earlier replies never ground a figure: the
+renderer marks them display-only (`Parts.ungrounded`) and `renderLookup` leaves them out of
+`grounds`; the probe "2.7 g per kg ... 3150 kcal" is refused while the same figures from the athlete's
+own words or a record still pass (tested for `ground` and `athleteGround`). 2) The index no longer
+calls `private.local_day` per row: it resolves the time zone once (`private.user_timezone`) and
+converts the aggregated first and last timestamp; `past_messages` and the proposals lookup compare
+timestamps against the range converted once. The brief races its index read against 3 s, so a slow
+database leaves the static map ("counts unavailable"). 3) The route no longer depends on what
+rendered: the host keeps the counts of an empty block, the watch-outs always report `pain`
+(`true`, `false`, or `null` when the facts could not be read), and a failed or timed-out watch-outs
+contributor or an unreadable pain signal counts as pain (`pain_unknown`), like an unreadable health
+check. A proposals contributor that fails reports no waiting proposal (not asked for). 4) Notice
+coverage, per field, below. 5) A watch workout is "matched" only when confirmed; suggested, in
+conflict and rejected read as such, and SQL picks confirmed, then suggested, then conflict, and a
+rejected candidate only when nothing else was ever proposed. 6) The DeepSeek path is a configured
+rollback (the runbook keeps it for two weeks after cutover), so it is reachable; the watch-outs
+now render there too (they need neither lookups nor library), and their facts and schedule reads
+have their own 2.5 s limit so a slow read leaves the plan-only lines (the overlap fact) intact.
+7) The watch-outs budget is 1,200: lines are packed into what the introduction leaves (at most
+900), so the host never cuts a line, and the trace counts only the lines shown. 8) The per-round
+trace carries the mode (`r1_plan_history_proposals:3`); round 2 of the review moved it to its own
+column (see below), so the deployed `lookups` column and its check are untouched. 9) A lookup
+with modes (`filterModes` in the catalogue) accepts an empty filter or one of its modes in any case;
+a near miss is refused and goes to the corrected round. 10) The dead `strongSkipped` branch is
+deleted; `selectCoachChatRoute` takes the stronger route only when coach-chat has already filtered it
+by the notice's vendor. 11) The skipped-twice and repeated-miss watch-outs count only the active
+plan's exercises and the days planned under the version in force; plan age is measured from the
+plan's first version.
+
+*Block start rule used.* No field names a block start. A plan edit is a new version of the same
+`training_plans` row, and a new plan or a temporary block is a new row, so the plan's age counts from
+the earliest `active` or `superseded` version of the active version's plan (`effective_date`, else its
+creation day). The comparison is against that version's `block_weeks`. A new plan resets it, which
+is when a new block starts.
+
+*Notice coverage, per new field* (the Coach notice, ai-coaching-v5 and v6, lists: training plan and
+workout logs, check-ins, Apple Health summaries (sleep, heart rate, HRV, steps and workouts), meals
+and nutrition targets, body measurements, goals, focus muscles and preferences, and the messages the
+athlete sends the Coach): breathing rate, **not named, held back**; the athlete's free text in a
+workout (session note, exercise note, swap reason), **not named, held back**; sleep stages, covered
+by "sleep"; night and morning HRV, covered by "HRV"; Coach's earlier replies, covered (the
+conversation memory already sends them). Active energy is sent today in the athlete file and is not
+named; not new, so not gated. Gating: `_shared/ai_notice_coverage.ts` (`firstNoticeNaming`), fed by
+the notice version that `coach-chat` reads from `get_ai_consent_v2`; the rows leave the fields out and
+tell Coach they were withheld.
+
+**Owner decisions, with the wording needed.** To send breathing rate and workout free text, publish
+a notice (v7) whose Coach-chat list adds, for example: "breathing rate" to the Apple Health summaries,
+"and the notes you write in a workout or when you swap an exercise" to the workout logs, and "active
+energy" (already sent) to the Apple Health summaries; then set `firstNoticeNaming` to 7 for
+`breathing_rate` and `workout_notes`. Until then Coach does not see them. The wording is the owner's;
+none is published here.
+
+**Review round 2 (PR #159, same branch).** (Item 1 below was consolidated in round 4: `Parts.ungrounded` is gone.)
+1) *Model-written text never grounds a number, systemically.* `Parts.ungrounded` is now a map from
+the line shown to the part of it that is still a record (its date, codes and counts). Declared in
+`lookupGrounding` (render.ts), field by field, for every lookup and mode, and checked by
+`render_grounding_test.ts`, which puts a marker in each declared field and reads it back from the
+rows Coach sees and from the rows that ground; a lookup, mode or field without a declaration, or a
+renderer without a fixture, fails the test. Model text: the daily decision's summary and decision,
+the reason on a plan version, on a nutrition target and on a proposal (and its gain and cost), and
+Coach's earlier replies. Records: everything else (the athlete's rows and notes, Apple Health, the
+computed scores, the weekly review's codes and counts, the plan's sessions and sets that the
+athlete approved). Contributors are declared the same way in `coach_context/grounding.ts`
+(`records`, `guidance`, `excluded`; `grounding_test.ts` checks the table against the registry), and
+`replyCheckInputsFor` reads it. One more path found by the audit and closed: the athlete file's
+"Latest Decision" (a model's words about an earlier day) no longer grounds. `coach-decide` does
+check a decision's own figures (`groundingFault`), but they were true on that day.
+2) *Additive migration.* Nothing in the migration drops or replaces anything. `coach_messages.lookups`
+is back to plain names and totals, at most 12, as main writes it (`memory.ts` unchanged); the
+per-round trace has its own new column `lookup_rounds` and check (17 entries, 800 characters, the
+same format), including `correction:1`.
+3) *Elapsed time.* The sync fact is a moment (`health_sync.at`, the last completed or partial
+`health_sync_runs` row, else the newest summary write) next to the database's `as_of`, and the line
+fires when `as_of - at` is more than 2 days, exactly the app's rule
+(`deriveHealthConnectionState`: `now.difference(last) > Duration(days: 2)`). The cases are shared:
+`stale_sync_cases.json` is read by the Deno watch-outs test and by `test/health_stale_sync_cases_test.dart`
+against the app's function, so the two cannot drift. A sync at 00:01 is stale at 00:02 two days
+later, not at the end of that day. The weigh-in rule is the goal phase's own (days between the
+reading's date and today, `goalPhaseThresholds.staleReadingDays`, read from it), and a weigh-in has
+no time; plan age is in whole weeks by date (no product rule measures it).
+4) *Identity, not name.* The repeated-miss streak keys on the planned workout's id (`planned` on
+each schedule day carries the id and whether it was logged); the name is only what the line says.
+Two workouts with one name have two streaks; a workout made up on another day answers its own.
+
+**Review round 3 (PR #159, same branch).** (Consolidated in round 4; the file's declaration is now in the shared form.)
+1) *The athlete file grounds field by field.* `providers/context_grounding.ts` declares every key
+`renderCoachContextParts` reads (`records`, `modelText`, `conversation`, or a record/modelText field
+list for `active_plan`); `contextForGrounds` is the file as it grounds, and `replyCheckInputsFor`
+renders that. Model text, shown and never evidence: the latest daily decision, the active plan's
+title and reason (the onboarding model's), and the whole Plan Proposals section (a proposal is never
+the athlete's target; legacy rows were a model's). The one-off `latest_decision: null` is gone.
+`context_grounding_test.ts` puts a marker in every leaf of a full context, requires each shown leaf
+to be declared and to ground as declared, and reads the keys the renderer touches through a Proxy, so
+a new section or field fails until its author declares it. Probe regressions: figures only in a
+rationale or a declined legacy proposal reach neither `ground` nor `athleteGround`.
+2) *Proposal lookups.* `plan_history/proposals` splits `lookupGrounding` into `grounds` (date, kind,
+title, status, confidence) and `figures` (reason, gain, cost): the figures ground `ground` (via
+`proposalGrounds`, collected by the gateway) but never `athleteGround`; schema 3.0 rows no longer lose them.
+3) *Exhaustive lookup test.* `render_grounding_test.ts` walks every leaf of each fixture and fails a
+shown leaf that is in no list.
+4) *Fail closed.* `groundingOf` of an id nobody declared is `excluded`; the bank harness passes the
+case's lookup rows the way the production loop does (`lookedUp`) instead of a made-up contributor id.
+5) *Stale-sync wording.* The line states hours ("more than 73 hours ago (the app calls more than 48
+hours stale)"), so a sync just over 48 hours old cannot read "2 days ago ... more than 2 days stale".
+**Review round 4 (PR #159, same branch): one grounding model.**
+1) *Three kinds, one vocabulary, every path* (`_shared/grounding.ts`): `records` ground both
+`ground` and `athleteGround`; `figures` (proposal figures) ground `ground` only; `modelText` grounds
+nothing; undeclared grounds nothing (fail closed). The rule is in AI_SAFETY_SPEC §11.1 "What
+grounds a figure". `columnGrounding` declares each stored column once (plan title, workout and
+exercise names: records; plan and nutrition rationale, daily decision text, Coach's earlier reply:
+model text; a proposal's title, reason, gain, cost: figures); the athlete file, the lookups and the
+contributors all import it. The three surfaces are checked against each other in
+`providers/context_grounding_test.ts` (a title and a workout name ground on the file, the lookup and
+the contributor; a rationale on none).
+2) *Pending proposals Tracend built.* The file's `plan_proposals` stays model text as a whole
+(a legacy row was a model's, and the context cannot tell the two apart). The `coach_proposals`
+contributor states a pending proposal's figures on their own line and hands the host that line
+(`RenderedBlock.figures`, `CoachContributions.figures`); `replyCheckInputsFor` puts it in `ground`
+and takes it out of `athleteGround`. The figures come from `get_coach_proposals_context_v1` 1.1
+(additive `figures` on each proposal, null once answered; migration `20261020100017`, pgTAP in
+`coach_proposals_test.sql`). The instructions gained one line: a waiting proposal's figures are the
+proposal's, not the athlete's target (`instructionsMaxChars` 25,500 and the Haiku/Sonnet reservation
+values re-pinned; DeepSeek parity hashes regenerated because the file text changed).
+3) *Grounds are rendered from the declaration.* For lookups the rows that ground are the renderer's
+output on the payload cut down to the declared fields (`pruneTo`), selected by the same row indexes
+as the text, so an undeclared or model-text field cannot appear in them; `Parts.ungrounded` was
+deleted. For a mixed key of the file (`active_plan`) `contextForGrounds` keeps only the declared
+records; a key that is not declared is dropped. `controls` are fields that only select or position
+records (a mode, a key, a cut, the fields the progression parser needs).
+4) *Tests that cannot pass vacuously.* `grounding_probe.ts` changes a field keeping its type (number,
+date, flag, word); a field is shown when the text changes. The lookup test verified 173 fields; the
+file test runs over every eval athlete, an older pre-v8 context and the shapes behind each alias key,
+requires each key to have a verified field, and a recursive Proxy lists every path the renderer
+reads, which must be declared.
+5) *Eval faithfulness.* The bank grades a reply with the rows its accepted requests return
+(`servedGrounds`: only the lookups asked for, within the dates asked for), not every row of the
+case; a case whose good reply cites rows now lists the request that fetches them.
+6) *Durations.* `duration_text.ts`: a duration in minutes is shown as `341 min (5 h 41 min; 5.7 h)`
+(the app's split, recovery_readout_card.dart `_formatMinutes`, and hours to one decimal) for sleep in
+the file, the recovery lookup, the monthly health history (sleep average, workout minutes) and the
+sleep watch-out; nothing is added under an hour. The numbers check still never converts units.
+
+
+**Review round 5 (PR #159, same branch): contributors ground their values, not their text.**
+1) *P1: constants no longer ground.* A contributor declared `records` used to ground its whole text,
+so "last 3" in the brief let "You lost 3 kg" pass and "(below 40)" in a watch-out let "Your HRV was
+40 ms" pass (and a fact's id in brackets grounded its digits). Now each contributor writes its
+record values through `record` (and a proposal's title and figures through `figure`) while it builds
+its text (`_shared/recorded_text.ts`); the host gets the text without marks plus the marked values as
+structured data (`RenderedBlock.records` / `.figures`, `CoachContributions.records`), each as the
+value with the words that give its unit, cut at the nearest digit and the line (so a unit-aware
+match stays unit-aware). `replyCheckInputsFor` grounds only those values (`guidance` still grounds
+its whole text; a records contributor that marks nothing grounds nothing). The host drops a value
+whose line was cut for size. Audited: screening (the day it was answered), confirmed facts (the
+athlete's statements and dates, not the id), goal phase (readings, rates, target; not the 4-week
+window, the 90-reading cap, source years or the thresholds in a reason), training plan, nutrition
+(not the 7/14-day windows or the complete-day rule), proposals (dates records; titles and figures
+`figure`), heart rate (not the formula, its constants or the 28-day windows), Coach's notes (their
+dates only: a note is untrusted and its figures were not confirmed), watch-outs (not the thresholds,
+the 48-hour limit, the scale of 10), coverage brief (counts, dates, ages; not the windows or sizes).
+`coverage_brief`, `watch_outs` and the others keep their plain `renderX` for tests; the `...Marked`
+forms feed the host. `ReviewReason.marked`, `describeTargetAdviceMarked`, `renderWeekAheadMarked`,
+`stampMarked` and `overlapFactLineMarked` are the marked forms of shared helpers.
+2) *Probes.* `contributor_grounding_test.ts` renders every records contributor on fixture data
+(`contributor_probe.ts`), lists every number in the text that is not a marked value (the fixed
+wording, listed in full in each test so a new constant must be classified), asserts none grounds for
+`ground` or `athleteGround`, that every marked value is a number of the fixture (or one listed as
+calculated from it) and grounds, and that the two named replies are still refused. Mutation check:
+marking a threshold as a record makes the watch-outs probe fail.
+3) *P2: lookups.* `drop_60s_bpm` and `rpe` (sets), a goal's `body_fat_pct_min/max`, `physique`, `date`
+and `set_at`, a schedule day's `version`, and a Health month's `month` are declared as records
+(`sessions[].assisted`, `sessions[].version_id` and `days[].done[].planned_workout_id` are controls).
+4) *Test gap.* `render_grounding_test.ts` reads the renderer's own field reads (`pathsRead`, a
+recursive proxy on the renderer alone, not on `renderLookup`, whose prune step reads every field)
+and fails any field read that is not declared, whether or not the fixture's value made it appear.
+Fixtures now fill every field in some row (a second set with `rir` null and `rpe` set, a goal with a
+body-fat range, physique and dates, a schedule day under an earlier version, a month-label shift in
+`variantsOf`), and a test fails a fixture field that is null in every row.
+
+5) *Thresholds in lookups.* `lookupGrounding` has a `thresholds` kind (fields that state a rule
+Tracend applies: shown, cut from the rows that ground, never evidence). `meals` declares
+`rules.min_meals` and `rules.min_target_share` there, so "3 meals" or "70%" from the complete-day
+rule line grounds nothing while the day rows still do (`render_grounding_test.ts`). `controls` was
+not used: those fields are kept when the rows are read again, which would put the rule back into
+the grounds. Every other lookup declaration was audited; none holds another rule, threshold or window.
+
+**Review round 6 (PR #159, last round).** 1) A running block's title (`training_plans.title`) is a
+record (`record()`); only a pending proposal's title stays `figure()`. 2) The domain-coverage grader
+requires a lookup's range to reach the end of the need: the coaching date, or `DomainNeed.until` (a
+future date for "next week"; the baseline reaches six days ahead, `baselineAhead`), as well as back
+to `since`. The two single-day cases name their day as `since` and `until`. 3) `baselineWindow` reads
+`shownDays` (`coverage_brief.ts`), the one place the windows are written (the brief's lines and the
+nutrition block use it): the raw `nutrition_daily_28d` rows no longer count, only the nutrition
+block's week does.
+
 
 ## Next agent starts here
 

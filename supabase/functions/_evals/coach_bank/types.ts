@@ -26,6 +26,7 @@ export const bankCategories = [
   "lookups",
   "proposals",
   "library",
+  "investigation",
 ] as const;
 export type BankCategory = typeof bankCategories[number];
 
@@ -56,6 +57,10 @@ export type Contributors = Readonly<{
   trainingPlan?: unknown;
   /** Rows a data lookup returns, by lookup name (see lookups.ts); empty without lookups. */
   lookupRows?: Readonly<Record<string, readonly LookupRow[]>>;
+  /** A get_coach_watch_outs_v1 payload for the watch_outs contributor, or none. */
+  watchFacts?: unknown;
+  /** A plan_history "schedule" payload for the last four weeks (repeated misses), or none. */
+  schedule?: unknown;
   /**
    * The library sources (manifest keys, best first) whose chunks retrieval returned for the
    * question, rendered from the real library content as the library contributor renders them. An
@@ -127,6 +132,32 @@ export type ProposalExpectation =
     orNone?: boolean;
   }>;
 
+/**
+ * A kind of record (a Coverage Brief domain) the question turns on. The baseline covers it when the
+ * athlete file or a contributor already shows it for the period; otherwise a lookup in the kind
+ * must have been requested. `since`: the kind is needed from this date, which the baseline's
+ * window may not reach. `detail`: the summary the baseline gives is not enough (sets and loads
+ * behind a session total, the plan beyond the next seven days).
+ */
+export type DomainNeed = Readonly<{
+  domain: string;
+  since?: string;
+  /**
+   * The last date the need reaches; the coaching date when absent. A need for the plan ahead names
+   * the future date it must reach ("next week"), and a lookup covers it only through that date.
+   */
+  until?: string;
+  detail?: boolean;
+}>;
+
+/** What the reply's data requests must show about how the turn investigated. */
+export type InvestigationChecks = Readonly<{
+  /** Every kind here is in the baseline or was looked up (the `domain_coverage` grader). */
+  domains?: readonly DomainNeed[];
+  /** Most lookups the turn may request in all: a bound on over-fetching (`over_fetch`). */
+  maxRequests?: number;
+}>;
+
 export type Expect = Readonly<{
   /**
    * The red-flag screen's verdict on the turn, no model involved: a category, a list of them, or
@@ -148,6 +179,8 @@ export type Expect = Readonly<{
   /** Dated rows of the lookup the reply must cite, at least this many distinct dates. */
   citesRows?: number;
   lookup?: LookupExpectation;
+  /** How the turn investigated: the kinds of record it covered, and how much it fetched. */
+  checks?: InvestigationChecks;
   /** The proposal the reply must (or must not) carry. Without it, a reply must carry none. */
   proposal?: ProposalExpectation;
   /**

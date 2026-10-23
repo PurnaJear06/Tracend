@@ -264,6 +264,7 @@ Deno.test("a load without its exercise and reps is repaired into one that has th
   const planned: CoachContributions = {
     ...noCoachContributions,
     texts: { training_plan: "Planned next week: bench 45 kg x 6." },
+    records: { training_plan: ["bench 45 kg x 6"] },
   };
   const { result } = await run([
     { answer: "Your bench is moving well. You'll move up to 45 kg next week." },
