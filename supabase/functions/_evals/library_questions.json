@@ -1,5 +1,5 @@
 {
-  "description": "Realistic athlete questions with the library sources a good answer needs: the calibration set, which chooses the relevance floor and every other threshold. No athlete data. follow_up questions carry the athlete's earlier questions (newest first) in `previous`: Coach searches a follow-up with the topic of the last real question. A question with `region` is asked by an athlete in that region; the others by one outside India. Questions without a kind need one topic's sources; multi_source questions need sources from two or three topics; no_answer questions are near the library but outside it (medication, rehabilitation, specific diseases, sport technique, pregnancy, minors, medical diets, eating disorders, medical reports, drugs) and have no expected sources: a good answer says so. `style: colloquial` marks gym slang, typos and Indian-English phrasing. The first 92 questions were written against the first 49 sources; the rest were written blind from each later source's title and topic, never from its chunk text. library_questions_holdout.json holds the hold-out set.",
+  "description": "Realistic athlete questions with the library sources a good answer needs: the calibration set, which chooses the relevance floor and every other threshold. No athlete data. follow_up questions carry the athlete's earlier questions (newest first) in `previous`: Coach searches a follow-up with the topic of the last real question. A question with `region` is asked by an athlete in that region; the others by one outside India. Questions without a kind need one topic's sources; multi_source questions need sources from two or three topics; no_answer questions are near the library but outside it (medication, rehabilitation, specific diseases, sport technique, pregnancy, minors, medical diets, eating disorders, medical reports, drugs) and have no expected sources: a good answer says so. `style: colloquial` marks gym slang, typos and Indian-English phrasing. The first 92 questions were written against the first 49 sources; the rest were written blind from each later source's title and topic, never from its chunk text. library_questions_holdout.json holds the hold-out set. E4 added 17 questions asked from the UK, the US and Australia (and two from athletes with no region) for the eight regional and body-measure sources; they were written from each source's title and topic before any retrieval was run.",
   "questions": [
     {
       "id": "sets_per_week",
@@ -1797,6 +1797,188 @@
       "text": "I have type 1 diabetes: how should I time my insulin around lifting?",
       "kind": "no_answer",
       "expected": []
+    },
+    {
+      "id": "uk_bmi_south_asian",
+      "text": "What BMI counts as overweight for a British adult from a South Asian background?",
+      "expected": [
+        "nhs_2026_overweight_obesity_adults"
+      ],
+      "region": [
+        "global",
+        "GB"
+      ]
+    },
+    {
+      "id": "uk_waist_half_height",
+      "text": "Should my waist be less than half my height according to the NHS?",
+      "expected": [
+        "nhs_2026_overweight_obesity_adults"
+      ],
+      "region": [
+        "global",
+        "GB"
+      ]
+    },
+    {
+      "id": "uk_eatwell_fish_meat",
+      "text": "How much fish and red meat does the Eatwell Guide recommend each week?",
+      "expected": [
+        "phe_2018_quick_guide_healthy_eating"
+      ],
+      "region": [
+        "global",
+        "GB"
+      ]
+    },
+    {
+      "id": "uk_protein_grams",
+      "text": "What is the government's daily protein figure for adults in the UK?",
+      "expected": [
+        "phe_2016_government_dietary_recommendations"
+      ],
+      "region": [
+        "global",
+        "GB"
+      ]
+    },
+    {
+      "id": "uk_vitamin_d_winter",
+      "text": "Does the UK advise a vitamin D supplement in the winter months?",
+      "expected": [
+        "phe_2018_quick_guide_healthy_eating"
+      ],
+      "region": [
+        "global",
+        "GB"
+      ]
+    },
+    {
+      "id": "us_waist_inches",
+      "text": "What waist size in inches puts an American adult at higher disease risk?",
+      "expected": [
+        "nhlbi_2000_practical_guide_obesity"
+      ],
+      "region": [
+        "global",
+        "US"
+      ]
+    },
+    {
+      "id": "us_bmi_classes",
+      "text": "What BMI classes does the US National Heart, Lung, and Blood Institute use for adults?",
+      "expected": [
+        "nhlbi_2000_practical_guide_obesity"
+      ],
+      "region": [
+        "global",
+        "US"
+      ]
+    },
+    {
+      "id": "us_muscular_bmi_waist",
+      "text": "Can BMI mislead a very muscular person, and how do American guidelines say to measure the waist?",
+      "expected": [
+        "nhlbi_2000_practical_guide_obesity"
+      ],
+      "region": [
+        "global",
+        "US"
+      ]
+    },
+    {
+      "id": "au_serves_meat_legumes",
+      "text": "How many serves of meat, fish, eggs and legumes do the Australian dietary guidelines advise for a man?",
+      "expected": [
+        "nhmrc_2013_australian_dietary_guidelines"
+      ],
+      "region": [
+        "global",
+        "AU"
+      ]
+    },
+    {
+      "id": "au_protein_per_kilo",
+      "text": "What are Australia's recommended protein intakes per kilogram of body weight for adults?",
+      "expected": [
+        "nhmrc_nz_2006_nrv_protein"
+      ],
+      "region": [
+        "global",
+        "AU"
+      ]
+    },
+    {
+      "id": "au_asian_origin_bmi",
+      "text": "Do the Australian guidelines treat BMI differently for people of Asian origin?",
+      "expected": [
+        "nhmrc_2013_australian_dietary_guidelines"
+      ],
+      "region": [
+        "global",
+        "AU"
+      ]
+    },
+    {
+      "id": "au_activity_adults",
+      "text": "How many hours of moderate activity a week do Australian adults need, and which strength activities count?",
+      "expected": [
+        "au_health_2021_adult_activity_guidelines"
+      ],
+      "region": [
+        "global",
+        "AU"
+      ]
+    },
+    {
+      "id": "au_waist_woman",
+      "text": "What waist measurement is high risk for an Australian woman?",
+      "expected": [
+        "nhmrc_2013_australian_dietary_guidelines"
+      ],
+      "region": [
+        "global",
+        "AU"
+      ]
+    },
+    {
+      "id": "waist_cutoffs_differ",
+      "text": "Why are waist size cut-offs not the same in every country?",
+      "expected": [
+        "who_2011_waist_circumference_report"
+      ]
+    },
+    {
+      "id": "waist_where_to_measure",
+      "text": "Where exactly on the body should I measure my waist?",
+      "expected": [
+        "who_2011_waist_circumference_report"
+      ]
+    },
+    {
+      "id": "c_uk_bmi_lifter",
+      "text": "im a lifter in the uk and the nhs bmi thing says overweight, does it even apply to me?",
+      "expected": [
+        "nhs_2026_overweight_obesity_adults"
+      ],
+      "region": [
+        "global",
+        "GB"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "m_au_protein_lifting",
+      "kind": "multi_source",
+      "text": "Australian here: is the official protein allowance per kilo enough if I lift, or do I need more?",
+      "expected": [
+        "nhmrc_nz_2006_nrv_protein",
+        "jager_2017_protein"
+      ],
+      "region": [
+        "global",
+        "AU"
+      ]
     }
   ]
 }

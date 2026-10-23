@@ -309,7 +309,13 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   cosine distances, the embedding-model filter, text ranks, the content digest and its triggers, the
   library version, retiring a source and `coach_messages.library_version`;
   `library_content_test.ts` checks that a source removed from `index.ts` is retired by a migration;
-  `embed_service_test.ts` covers the worker-secret cache and the Sentry gate.
+  `embed_service_test.ts` covers the worker-secret cache and the Sentry gate. E4 added
+  `regional_modules_test.sql` (the optional country: grants, no direct write, the exact key list,
+  capital-letter storage, refused codes, a signed-out caller, the regions an account maps to with and
+  without a country, and the search showing an Australian source only to an athlete who chose
+  Australia), `library_content_test.ts` (each of India, the US, the UK and Australia has a nutrition
+  and a body-measure source), the 17 regional retrieval questions, and in Flutter
+  `contract/region_contract_test.dart` and `region_settings_test.dart` (the Account country row).
 
 ### Supabase boundaries
 
