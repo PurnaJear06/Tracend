@@ -17,6 +17,10 @@ Deno.test("the export includes the pre-exercise screening answers", () => {
   assert(dataTables.includes("onboarding_screenings"));
 });
 
+Deno.test("the export includes the same-day adjustments the athlete answered", () => {
+  assert(dataTables.includes("day_adjustments"));
+});
+
 Deno.test("the export includes the facts the athlete confirmed and the Coach's notes", () => {
   assert(dataTables.includes("coach_facts"));
   assert(dataTables.includes("coach_notes"));

@@ -533,6 +533,96 @@ stands. Missing reps in reserve does not block a target but sets `confidence` to
 is never an input (decision D9). The 14-day and 28-day thresholds, the three-session stall and the
 one-step lowering are Tracend's own choices, not research values, and wait for a coach's review.
 
+### Same-day Readiness Adjustment (B4, rules `readiness-v1`, 2026-10)
+
+Computed in the database (`private.readiness_assessment`, `private.day_adjustment_changes`,
+`private.day_adjustment_compute`, migration `20261023140024`); the numbers are mirrored with their
+sources in `_shared/training/readiness/rules.ts`, and a test keeps the two equal. It proposes one of
+three kinds for **today's scheduled workout only**; nothing in a plan version changes, and a model
+never proposes, applies or accepts it (decision D9; AI_SAFETY_SPEC section 6).
+
+```text
+inputs  today's current check-in (leads); sleep minutes (Apple Health, counted when 1 to 960;
+        0 means none recorded); the recovery score with its confidence and mode (computed
+        once for the day if missing; a failure leaves it missing)
+        NOT inputs: acute:chronic ratio, monotony, strain, sleeping heart rate
+
+points  sleep quality 1 / 2            2 / 1       energy 1 / 2           2 / 1
+        soreness 5 / 4                 2 / 1       mood 1                 1
+        pain 4-6                       2           pain 1-3               0 (a note)
+        sleep under 360 minutes        1           recovery under 35      1, only at medium or high
+                                                   confidence and only when the check-in has at
+                                                   least one point of its own (D9)
+
+gates   (first match wins)
+        check-in pain of 7 or more     band red, kind none, safety route pain_referral
+        no check-in                    band unknown, kind none (a low recovery score adds the
+                                       trigger "recovery_low" and asks for the check-in)
+        the athlete cannot train       band from the points, kind none
+        otherwise, by points P:
+          0     green  none
+          1     amber  hold_load      (none when no exercise would change)
+          2-3   amber  reduce_sets    (hold_load, then none, when no set can go)
+          4+    red    swap_to_easy_cardio
+
+confidence  high  = check-in + sleep + recovery at high confidence from a night
+            medium = check-in + sleep or a recovery at medium or high
+            low   = check-in alone;  unknown band has none
+```
+
+What each kind changes (per exercise of today's workout; the rest of the week is untouched):
+
+```text
+hold_load            where B3's target is add_load or add_reps: the last working load (for an
+                     assisted exercise the help; "body weight" or "unassisted" at 0) and the
+                     fewest reps of that session, clamped into the range; sets and effort unchanged
+reduce_sets          one set fewer on an exercise with 3 or more sets; effort one point lower,
+                     not below 6 and never above the plan's; hold_load's loads. Needs at least one
+                     set to go, else it falls back to hold_load
+swap_to_easy_cardio  every exercise to 0 sets; 20 to 30 minutes of easy cardio you can talk
+                     through (vigorous not allowed)
+```
+
+A load is never above the last logged one, sets never go up, and effort never rises. The sentences
+are fixed templates keyed by trigger and kind. Availability: `no_plan`, `rest_day`,
+`session_started`, `session_done`, `coach_adjusted` (a Coach next-session block already ends
+today). Only the athlete's own local today can be read or answered.
+
+**Answers.** The athlete accepts the proposed kind, or chooses any kind that would change today's
+session (`options`), with one tap, and can Undo until the session starts (at most 20 answers a day;
+Undo of a standing accepted answer is never refused). The sentence of a choice depends on the kind
+alone, not on whether the athlete has checked in. Each answer is stored with the kind the rules
+proposed at the time. An answer stands while it belongs to today's workout and the rules do not now
+ask for something stricter than what they asked then or than what the athlete answered (kind order:
+none, hold_load, reduce_sets, swap); otherwise the card asks again and names the answer it replaces
+with the reason, `check_in` (a different check-in) or `new_data` (sleep or scores that arrived
+since). A standing answer replaces only the kind, status, changes, cardio and origin; the band and
+reasons stay today's. A safety route wins over every stored answer and over a started or finished
+session: the payload then carries the referral and none of the old answer.
+`start_workout` takes the athlete's lock for the day (the one `respond_to_day_adjustment_v1`
+takes), then applies and links the current accepted answer for this workout when the start is for
+the athlete's own today, whatever the rules say now: it can only make the day easier, and asking
+again is the card's job. It builds the adjusted set counts for `reduce_sets`; for `hold_load` and
+the easy-cardio swap it links the answer and keeps the plan's sets (the plan stays usable); a start
+for another date gets the plan as written; the app pre-fills held loads. Today's scores are made
+when none exist and again when anything they read is newer than them (Apple Health data of the last
+35 days, today's check-in, a workout finished since), at most once in ten minutes per athlete and
+day, failed attempts included; a check-in saved after the last attempt always allows one at once.
+
+**B3 meets the adjustment.** An exercise that an accepted hold_load or reduce_sets answer lists, done
+in that session, is `adjusted`; its planned set count is the adjusted one (`sets_planned`). An
+exercise the answer left alone is judged as ever, however easy the rest of the session was. In the
+progression decision an adjusted session never counts towards lowering a load (rule 4, below the
+range, holds at the minimum instead of lowering; rule 6, a stall, needs three unadjusted
+sessions), and rule 5 compares the sets with `sets_planned`. A good performance on a lighter day still earns add reps or add load.
+A single poor workout never restructures training (PRD section 5.3).
+
+In-house numbers needing a coach's review after four weeks of the owner's data (O2): the points, the
+band cut-offs, the pain bands, 360 minutes and 35. Sources are in `rules.ts`: Saw 2016 (the check-in
+leads), Craven 2022 (six hours), Hickmott 2022 (easing back on a poor day), Bell 2023 (fewer sets is
+the way to cut volume), ACSM 2011 and WHO 2020 (the cardio dose), Impellizzeri 2020 (why the load
+ratio is not used).
+
 ### Literature
 
 - Gabbett, T.J. (2016). The training-injury prevention paradox. *Br J Sports Med* 50(5), 273–280.

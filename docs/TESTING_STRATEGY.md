@@ -317,6 +317,33 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   and a body-measure source), the 17 regional retrieval questions, and in Flutter
   `contract/region_contract_test.dart` and `region_settings_test.dart` (the Account country row).
 
+- **Same-day readiness adjustment (B4-1).** pgTAP `readiness_sweep_test.sql` calls the pure
+  `private.readiness_assessment` row by row (each source of points alone, the recovery gate, the
+  fallbacks, the gates, confidence) and over 47,628 combinations of check-in answers, pain, "can
+  train", sleep minutes and recovery score with its confidence: pain of 7 or more always routes out,
+  worsening any one input never gives a less strict kind, zero points from the check-in and no short
+  sleep never gives a kind whatever the recovery score (D9), an athlete who cannot train never gets
+  a kind, a kind always has a reason, and the band and kind follow the points. A second sweep runs
+  1,800 exercises (sets, ranges, RPE, last reps, reps in reserve, loaded, assisted and bodyweight),
+  each with the real B3 decision, through `private.day_adjustment_changes` for all three kinds:
+  sets never go up and never reach zero outside the cardio swap, a held load is the last logged one
+  and never above the target, effort drops by one point and never below 6, totals add up.
+  `day_adjustments_test.sql` covers real athletes: the keys of the answer (and that the unknown and
+  started-safety contract fixtures are the real answers, key for key), each source of points,
+  the recovery score alone, a safety day, accept, Undo (not refused at the answer limit),
+  idempotence, a chosen kind with and without a check-in, the staleness rule and its reasons, a
+  start after a worse check-in, a backdated start, the day's lock, per-exercise adjusted sessions,
+  the scoring retry bound, `start_workout` building the adjusted sets, B3 reading an adjusted session, rest and
+  coach-adjusted days, the 20-answer limit, cross-athlete reads, grants through
+  `has_function_privilege`, the session link's foreign key and account deletion. New rows in
+  `progression_targets_test.sql` pin the adjusted-session rules and re-run B3's one-step and
+  in-range invariants over adjusted sessions. Deno: `readiness_test.ts` keeps the sourced numbers
+  equal to the migration, reads no heart signal and no diagnosis word in the SQL sentences,
+  parses the contract fixtures strictly, and pins the redefinitions of `start_workout`,
+  `private.progression_decision` and `private.next_session_targets` to their earlier definitions
+  plus the intended hunks. Flutter: `day_adjustment_contract_test.dart` pins the fixtures' complete
+  key lists. Each rule is proved by a test that fails without it (the PR lists them).
+
 ### Supabase boundaries
 
 For each exposed table, Storage policy, RPC, and Edge Function, test anonymous access, same-user
