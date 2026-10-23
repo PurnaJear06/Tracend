@@ -478,6 +478,10 @@ exists) and `session_effort_source` (`athlete`, `legacy_default`, `healthkit_def
 provenance; see ALGORITHMS §4 "Effort Provenance". `complete_workout_v2` is the only writer of
 `athlete` effort.
 
+`day_adjustment_id` (nullable, B4) names the `day_adjustments` answer the session was started
+under, through a foreign key on `(day_adjustment_id, user_id)` so a session can only link its own
+athlete's row. `start_workout` sets it for the athlete's current accepted answer for that workout when the start is for their own today, whatever the rules say by then (it can only make the day easier; asking again is the card's job).
+
 ### `exercise_performances`
 
 One row per exercise in a session: order, `status` (`unknown`, `performed` or explicitly
@@ -610,6 +614,31 @@ source}]}]}`: the newest 12 finished workouts of the 28 days, with the finished 
 heart-rate summary (120 at most per workout). It carries no load, repetitions, reps in reserve or
 effort. Discarded, open and Apple Health completed (no set) workouts are left out, and so is a set that
 was finished and later undone.
+
+### `day_adjustments` (B4, migration code 24)
+
+The athlete's answers to the same-day readiness adjustment (rules `readiness-v1`; ALGORITHMS §4).
+An overlay for one day: it never changes a plan version. Rows are only added; the current answer
+for a user and local date is the one with `superseded_at` null (unique partial index).
+
+| Column | Meaning |
+|---|---|
+| `user_id`, `local_date` | owner (cascade from `user_accounts`) and the athlete's local day |
+| `planned_workout_id`, `plan_version_id` | today's scheduled workout and its plan version (composite foreign keys with `user_id`) |
+| `rules_version`, `band` | `readiness-v1`; `green`, `amber`, `red` or `unknown` when answered |
+| `kind`, `origin`, `rules_kind` | `hold_load`, `reduce_sets` or `swap_to_easy_cardio`; `proposed` (the rules' kind) or `chosen` (the athlete's own pick); the kind the rules proposed at the time (`none` allowed) |
+| `triggers` | reason codes from a closed list (`sleep_very_poor`, `sleep_poor`, `sleep_short`, `energy_very_low`, `energy_low`, `very_sore`, `sore`, `mood_very_low`, `pain_moderate`, `pain_mild`, `recovery_low`, `no_check_in`, `not_available`) |
+| `changes` | array (at most 30) of per-exercise changes: `exercise_order`, `planned_exercise_id`, `name`, `sets_from`, `sets_to`, `load_note`, `load_kg_from`, `load_kg_to`, `reps_from`, `reps_to`, `rpe_to` |
+| `cardio` | the easy-cardio dose (`minutes_min`, `minutes_max`, `effort`, `talk_test`, `vigorous_allowed`); not null exactly for `swap_to_easy_cardio` |
+| `inputs`, `inputs_hash` | the values the rules read (check-in id and revision, sleep minutes, recovery score, confidence and mode, screening outcome; Restricted health data) and their SHA-256 |
+| `status` | `accepted` or `declined` |
+| `answered_at`, `superseded_at`, `created_at` | times |
+
+An answer stands while it belongs to today's workout and the rules do not now ask for something
+stricter than what they asked for when it was given or than what the athlete answered; after the
+session starts it stands as it is. RLS is enabled and forced; the owner reads their rows, nobody
+writes them from the client (`respond_to_day_adjustment_v1` is the only writer). At most 20 answers
+a day. Export and account deletion cover it (cascade).
 
 ### `workout_amendments`
 
@@ -1183,9 +1212,19 @@ Sleep quality:
     `load_kg` (null without a load), `reps`, `sets`, `confidence` (`high`, or `low` when reps in
     reserve were not logged for every working set) and `basis` (`last_date`; `recent`, up to three
     sessions latest first, each `local_date`, `load_kg`, `sets`, `min_reps`, `total_reps`,
-    `min_rir`, `effort_known`, `pain`). An exercise without logged sets has no entry.
+    `min_rir`, `effort_known`, `pain`, and from hub 1.8 (B4) `adjusted` (this exercise was listed by
+    the accepted hold-load or fewer-sets answer the session was started under) and `sets_planned`
+    (its adjusted set count, else null)). An exercise without logged sets has no entry.
   - `get_progression_summary_v1(p_user_id)` (service role only) returns `{schema_version: '1.0',
     targets}` with the same entries, for Coach context.
+- `get_my_day_adjustment_v1(local_date)` and `respond_to_day_adjustment_v1(local_date, accept,
+  chosen_kind)` 1.0 (B4): today's readiness adjustment and the athlete's answer; the keys are in
+  Contract 5 of the program plan. `previous_answer` carries `kind`, `status`, `answered_at` and
+  `reason` (`check_in` or `new_data`). The training hub is 1.8 (B4; every 1.7 key is unchanged, the
+  sessions inside a target's `basis.recent` gain two keys); the daily brief does not change.
+  `private.day_adjustment_metric_attempts` (private, one row per athlete and day, deleted with the
+  account) records the last attempt to make the day's scores, so a failure is not retried on every
+  read.
 - `get_my_daily_brief` 1.8:
   - `recovery_previous` (yesterday's stored `recovery_score`);
   - `plan` (the active plan's `title`, `version_number`, `block_weeks` and `week_number`, weeks

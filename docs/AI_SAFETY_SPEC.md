@@ -38,6 +38,7 @@ The active training plan and nutrition targets always remain the last user-appro
 - units, dates, weight and measurement trends;
 - confirmed calorie and macro totals;
 - workout adherence, volume, progression, and performance deltas;
+- the same-day readiness adjustment: its band, triggers, kind and every number in it (B4);
 - HealthKit baselines and deviations;
 - data freshness, sufficiency, and conflicts;
 - persistent-change eligibility;
@@ -140,7 +141,12 @@ Requirements:
 - Control values use documented enums.
 - Evidence codes must exist in the supplied snapshot or policy result.
 - User-visible text cannot introduce unsupported facts.
-- Same-day adjustments expire and never alter plan versions.
+- Same-day adjustments expire and never alter plan versions. The same-day readiness adjustment (B4)
+  is an overlay stored in `day_adjustments`, never a plan version; the athlete's answer changes only
+  today's session. The one exception is Coach's `next_session` proposal (A8), which writes a
+  one-day plan version because the athlete approved it in chat; it is to move onto the overlay so
+  one mechanism remains, and until then the readiness adjustment is not offered on a day Coach has
+  already adjusted.
 - Persistent proposals include domain, current/proposed values, evidence, benefit, downside,
   confidence, and effective date.
 - Unknown fields, invalid ranges, cross-domain actions, policy conflicts, and invalid references are
@@ -165,6 +171,35 @@ These conservative defaults are versioned policy, never prompt-only instructions
 
 May be allowed for a current recovery deviation, schedule limitation, or non-red-flag discomfort. It
 is limited to today's intensity, volume reduction, rest, or validated substitution.
+
+**Built (B4, rules `readiness-v1`; ALGORITHMS section 4, "Same-day readiness adjustment").** A
+deterministic function reads today's check-in, last night's sleep and the recovery score and
+proposes one of three things for today's scheduled workout only, never a plan version:
+
+| Kind | What changes today |
+|---|---|
+| `hold_load` | keep last time's loads and reps where the progression targets say to add |
+| `reduce_sets` | one set fewer on exercises with three or more sets, effort one point lower, last time's loads |
+| `swap_to_easy_cardio` | easy cardio of 20 to 30 minutes instead of the session |
+
+- The check-in leads. Sleep minutes add a point under six hours. The recovery score adds a point only
+  next to a point from the check-in and never adjusts a session by itself: a score built from
+  heart-derived signals informs the athlete and asks for a check-in, and the athlete decides (D9,
+  owner 2026-10-23). The athlete may choose any adjustment that would change today's session, with
+  one tap and Undo until the workout starts.
+- The acute:chronic workload ratio, sleeping heart rate and monotony are not inputs.
+- A pain of 7 or more gives no training change and a safety route (a referral to a doctor or
+  physio); it applies on a rest day too. Tracend withholds advice; it does not block the workout.
+- A bad day never lowers the load: the progression targets ignore an exercise that an accepted
+  adjustment lists, done under it, as evidence for lowering its load or for a stall, and count its
+  adjusted set number as the planned one. An exercise the adjustment left alone is judged as ever.
+- The athlete's accepted answer is applied when the workout starts, whatever the rules say by then
+  (it can only make the day easier); a safety route stands over every stored answer.
+- Model output never proposes, applies or accepts the adjustment. Its sentences are fixed templates
+  keyed by trigger and kind. No answer exists until the athlete taps; the answer, not the proposal,
+  is audited (`day_adjustment_answered`, codes only).
+- Missing data lowers confidence and is never invented. With no Apple Health the check-in alone
+  decides at low confidence; with no check-in the band is unknown and nothing is proposed.
 
 Acute/severe pain, chest pain, fainting, severe shortness of breath, neurological symptoms, or
 another configured red flag invokes escalation rather than workout advice.
@@ -405,7 +440,8 @@ stool; dark or bloody urine after hard training; numbness and tingling in a limb
 sudden pain, a pop, tear or snap, a pain of 7/10 or more; purging, laxatives or diuretics for
 weight, binge-and-compensate, fasting for two or more days, a stated eating disorder; self-harm
 and suicidal statements. With pain of 7 or more on today's check-in (the policy's `escalate`
-outcome, `CHECK_IN_SAFETY_ESCALATION`), a question about training gets the referral too, and this
+outcome, `CHECK_IN_SAFETY_ESCALATION`; the same-day adjustment then returns the
+`pain_referral` safety route and no change), a question about training gets the referral too, and this
 is decided before the consent and budget gates from a cheap read of the newest check-in row (the
 athlete's local date from their timezone), so an athlete with no consent or no budget left still
 gets the referral; food,
@@ -1533,6 +1569,10 @@ Maintain anonymized fixtures covering:
 - plateau with adequate versus poor adherence;
 - isolated bad workouts versus repeated regression;
 - poor sleep, recovery deviations, schedule and equipment changes;
+- the same-day readiness adjustment: each kind, a low recovery score with a good check-in (nothing
+  is proposed), pain of 7 or more (a safety route, no change), an accepted adjustment not lowering a
+  load (pgTAP sweeps in `readiness_sweep_test.sql`; Coach eval cases arrive with the Coach
+  contributor);
 - missing and contradictory data;
 - mixed meals, uncertain portions, and hidden ingredients;
 - inconsistent progress photos;

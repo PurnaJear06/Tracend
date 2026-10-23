@@ -1,11 +1,12 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 import * as jointStress from "./joint_stress.ts";
 import * as prescription from "./prescription.ts";
+import * as readiness from "../readiness/rules.ts";
 import * as progression from "./progression.ts";
 import { type Sourced, sources } from "./sources.ts";
 import * as volume from "./volume.ts";
 
-const ruleModules = { jointStress, prescription, progression, volume };
+const ruleModules = { jointStress, prescription, progression, readiness, volume };
 
 const isSourced = (value: unknown): value is Sourced<unknown> =>
   typeof value === "object" && value !== null && "value" in value && "sources" in value &&

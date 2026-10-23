@@ -541,8 +541,84 @@ Migration `20261023100050_advanced_level_catalog.sql` (additive); no hub or RPC 
   both levels. (d) Changing level later has no screen of its own: the athlete repeats the Training
   step in a plan rebuild.
 
+**B4-1 (review, #165; same-day readiness adjustment, server side; migration `20261023140024`, code 24).**
+Based on the owner-approved B4/B5 design (2026-10-23; O2 to O13 as recommended, O1 amended). ALGORITHMS
+section 4 has the rules; AI_SAFETY_SPEC section 6 the safety text; DATA_MODEL `day_adjustments` the
+table; Contract 5 in the program plan the payload (1.0 as built).
+
+- **An overlay, not a plan version.** `public.day_adjustments` stores the athlete's answers (kind,
+  band, reasons, per-exercise changes, the values the rules read, a hash of them, accepted or
+  declined, `origin` proposed or chosen, and the `rules_kind` the rules proposed at the time). RLS
+  enabled and forced, owner read, no client write; export and deletion cover it.
+  `workout_sessions.day_adjustment_id` links a session to the answer it was started under (composite
+  foreign key, so only its own athlete's row).
+- **Rules** (`private.readiness_rules`, `readiness_rank`, `readiness_assessment`; TS mirror in
+  `_shared/training/readiness/rules.ts`). The check-in leads; sleep under 360 minutes adds a point;
+  the recovery score adds a point only next to a point from the check-in, at medium or high
+  confidence (D9). Pain of 7 or more gives `safety_route: pain_referral`, kind none, even on a rest
+  day. No check-in: band unknown, nothing proposed. Confidence from what was available. Load ratios
+  are not inputs.
+- **Owner amendment to O1 (built).** The recovery score alone never applies or pre-selects an
+  adjustment. The payload carries `signals` (score, confidence, mode, `recovery_low`, sleep minutes)
+  and `options`: every kind that would change today's session, each with its own changes and
+  sentence. `respond_to_day_adjustment_v1(local_date, accept, chosen_kind default null)` takes a
+  third, optional argument so the athlete can pick a kind themselves with one tap; the stored answer
+  has `origin = 'chosen'`. Undo is `accept = false`. A low recovery score with no check-in shows
+  the trigger `recovery_low` and the sentence that asks for the check-in. Deviation from the brief's
+  two-argument signature; additive and absent from old builds.
+- **The kinds** (`private.day_adjustment_changes`, reading B3's targets): `hold_load` (last working
+  load and fewest reps where B3 says add), `reduce_sets` (a set fewer from 3 sets, effort one point
+  lower, not below 6; needs at least one set to go, else it falls back to `hold_load`, a
+  clarification of "changes nothing"), `swap_to_easy_cardio` (every exercise to 0 sets; 20 to 30 easy
+  minutes; no vigorous cardio).
+- **Staleness.** An answer stands while it belongs to today's workout and the rules do not ask for
+  something stricter than the greater of what they asked then and what the athlete answered. The
+  brief compared only with the answered kind, which would have re-asked a lighter chosen kind; the
+  `rules_kind` column fixes that. After the session starts it stands as it is. "Stands" decides what the card shows; `start_workout` does not ask it, and applies the current accepted answer as given.
+- **`start_workout`** (same signature) takes the athlete's advisory lock for the day (the one
+  `respond_to_day_adjustment_v1` takes), then links and applies the current accepted answer for the
+  workout when the start is for the athlete's own today, without asking the rules again; `reduce_sets`
+  builds the adjusted set counts, hold-load and easy-cardio answers keep the plan's sets. A backdated
+  start gets the plan as written. Pinned to the workout-truth definition plus five hunks
+  (`readiness_test.ts`).
+- **B3 meets the adjustment.** `progression_decision` and `next_session_targets` (from the
+  advanced-level definition) add `adjusted` and `sets_planned` to each session summary, per exercise:
+  only an exercise the accepted answer lists is exempt from lowering a load or a stall and compares
+  its sets with the adjusted count. The training hub is now 1.8 (the two keys appear inside
+  `basis.recent`; the 1.7 body is copied with only the version changed; fixtures
+  `training_hub_v1_7.json` and `_v1_8.json` and the Dart contract test cover both), `targets.ts`
+  is unchanged.
+- **Review round 1 (Codex and Opus).** (1) A start applies the accepted answer unconditionally and
+  never computes the day. (2) A safety route wins over every stored answer, a started session
+  included. (3) Respond and start share one advisory lock. (4) A start for another date gets the
+  plan as written. (5) The sentence of a choice depends on the kind alone; a standing answer keeps
+  today's band and reasons. (6) Adjusted is per exercise. (7) Undo is never refused by the 20-answer
+  limit; unavailable days have their own sentences, never "Check in"; a body-weight or unassisted
+  hold reads as such; the day's scores are made again for new Health data and a failed attempt is
+  not repeated within ten minutes; `previous_answer.reason` says `check_in` or `new_data`; hub 1.8.
+- **For B4-2 / other streams.** (a) The app must pass the hub's `local_today` as `local_date` (the
+  server accepts only the athlete's own today by their account time zone; a device date can differ
+  near midnight or when the time zone is unset). (b) Coach is not told about the adjustment yet: the
+  `readiness` context contributor, the reply guard so Coach never contradicts an accepted
+  adjustment, A8's `next_session` refusing on an adjusted day, the A5 daily snapshot and the A11
+  eval cases are contract requests in the program plan. (c) The app words `previous_answer.reason`
+  ("Your check-in changed" or "New data came in").
+- **Tests that fail without each rule.** pgTAP `readiness_sweep_test.sql` (assessment rows and a
+  47,628-case sweep; a 1,800-exercise matrix through the three kinds), `day_adjustments_test.sql`,
+  new rows in `progression_targets_test.sql`; Deno `readiness_test.ts`; Flutter
+  `day_adjustment_contract_test.dart`.
+- **Not in B4-1** (for B4-2 and later): the app (card, toast, Undo, pre-fill, hiding the training
+  note), the Coach `readiness` contributor, the A8/A5 changes and B5. The contract requests are in
+  the program plan. The app should show `signals` in plain numbers against the athlete's baseline
+  from the daily brief's drivers (the payload gives the score, confidence and mode, not the z-scores).
+- **Open.** (a) Every threshold is in-house (O2) and waits for a coach's review after four weeks of
+  data; log band, kind and answer from `day_adjustments`. (b) `explanation` is the full sentence
+  (reasons plus action); the app may use it or compose its own copy from `triggers`. (c) The changes
+  sweep runs a synthetic matrix of plans, not the B2 plan sweep.
+
 ## Next agent starts here
 
-B4 (same-day readiness) and B5 (deloads, cardio dosing, joint rules) build on B3's targets
-(`private.next_session_targets`, hub 1.7) and the templates. B6's server wiring is done (see the B6
+B4-2 (the app side of the readiness adjustment) builds on B4-1's RPCs (see the B4-1 section); B5
+(deloads, cardio dosing, joint rules, pain check) builds on B3's targets (`private.next_session_targets`,
+hub 1.7), the templates and B4-1's `day_adjustments`. B6's server wiring is done (see the B6
 section). The briefs are in the program doc.

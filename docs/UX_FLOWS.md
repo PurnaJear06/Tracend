@@ -426,7 +426,14 @@ Reading order:
    set grouped by exercise, filling lime as sets are logged in Train ("4 of 15 sets logged",
    "Done · 15 sets logged"). The coach's note sits under it: today's first training adjustment,
    else today's training summary, as advice in its own words, labelled "Coach · ‹confidence›"; it
-   never changes the prescribed sets. A decision from another day is not shown. With AI coaching
+   never changes the prescribed sets. A decision from another day is not shown. **Planned (B4-2):** a
+   readiness card sits between the strip and the note when the server proposes an adjustment
+   (`get_my_day_adjustment_v1`): the reasons in plain words, **Hold weights**, **Use lighter
+   session** or **Swap to easy cardio**, and **Train as planned**. One tap applies it with the toast
+   "Today's session is lighter. Undo". The strip then shows the adjusted set total, and the
+   training note is hidden while a card is showing so it cannot contradict it. A low recovery score
+   with no check-in asks for the check-in and offers the same choices; pain of 7 or more shows a
+   fixed referral sheet and no training button. With AI coaching
    off the note says no daily decision is generated and where to turn it on; with no decision it
    says to tap Sync. **Open in Train** (and the header) goes to Train. With no workout it reads
    **Rest day** and names the next planned session.
@@ -794,6 +801,10 @@ confirmation actions. The tab reads top to bottom:
   swipe pages back up to three weeks, never past this week (VoiceOver: "Previous week" and "Next
   week" actions); "Week of 21 September" with a **This week** button shows while another week is
   open.
+- **Readiness adjustment (planned, B4-2).** Directly under the readiness line, the same card as on
+  Today; the exercise lines show the adjusted value ("3 × 6 to 8 · hold 60 kg × 8", the old set
+  count struck through and read as "3 sets, down from 4"), and the workout detail header says
+  "Lighter today: 12 of 15 sets" once accepted.
 - **Readiness line.** One sentence about state, never advice: "Recovery is excellent." (80+),
   "Recovery is good." (65+), "Recovery is moderate." (50+), "Recovery is low today." (35+),
   "Recovery is poor today.", "Building your baseline." with no score, and "Connect Apple Health to
@@ -1101,7 +1112,10 @@ measurement**. Facial recognition, medical inference, and unrelated trait infere
 **Not built yet:** a proposal screen after onboarding. The only approval flows today are the
 initial plan (§4.4), **Use as my focus** (§9) and the Coach's **Remember this ‹category›
 preference?** prompt, which saves a durable preference only on **Save** (**Dismiss** saves nothing).
-**Planned (coaching platform, chunk B4):** a same-day readiness adjustment with one-tap approval.
+The **same-day readiness adjustment** (coaching platform, chunk B4) is not a persistent change, so
+it does not use this flow: it is a one-tap, same-day, reversible choice shown on Today (§5) and
+Train (§7), with Undo until the workout starts and no confirm sheet. Its server side is built
+(B4-1); the app side is planned (B4-2).
 
 ### 10.1 Coach proposal card (A8)
 

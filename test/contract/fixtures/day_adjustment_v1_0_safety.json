@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "local_date": "2026-10-24",
+  "band": "red",
+  "triggers": [
+    "pain_severe"
+  ],
+  "kind": "none",
+  "changes": [],
+  "explanation": "Pain of 7 or more is too high to train through. Rest the area and see a doctor or physio before you train it again.",
+  "status": "none",
+  "available": true,
+  "unavailable_reason": null,
+  "safety_route": "pain_referral",
+  "confidence": "medium",
+  "missing": [
+    "sleep"
+  ],
+  "cardio": null,
+  "planned_workout_id": "b4200000-0000-4000-8000-000000000001",
+  "workout_name": "Lower A",
+  "sets_total_from": 9,
+  "sets_total_to": 9,
+  "previous_answer": null,
+  "answered_at": null,
+  "rules_version": "readiness-v1",
+  "origin": null,
+  "options": [],
+  "signals": {
+    "recovery_score": 60,
+    "recovery_confidence": "high",
+    "recovery_mode": "night",
+    "recovery_low": false,
+    "sleep_minutes": null
+  }
+}

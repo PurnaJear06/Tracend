@@ -21,6 +21,7 @@ export const dataTables = [
   "sleeping_heart_rate_nights",
   "workout_amendments",
   "daily_check_ins",
+  "day_adjustments",
   "health_sync_runs",
   "daily_health_summaries",
   "health_history_months",

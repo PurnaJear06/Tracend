@@ -28,7 +28,12 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   sources; nothing reads it until B2). Phase 3 round 1 merged (2026-10-17): B2 templates and
   fractional volume (#127), B6 screening gate (#128, migration 26). Round 2 merged (2026-10-17): B3 progression from logged sets, hub 1.7 (#132); B7 goal phase review,
   athlete-set targets and no projection as a goal (#136); B7.1 the whole recorded weight history
-  and the continuous loss judged across it (#141). Advanced experience level and four staple lifts (weighted pull-up, close-grip and incline barbell bench press, Bulgarian split squat) in review on `claude/advanced-level-catalog` (2026-10-23, migration `20261023100050`; intermediate plans unchanged, advanced chosen by the athlete from 3 years). Next: A11, A10, E3, A8, D2. Handoff: [`training-engine.md`](./handoff/training-engine.md).
+  and the continuous loss judged across it (#141). Advanced experience level and four staple lifts (weighted pull-up, close-grip and incline barbell bench press, Bulgarian split squat) in review on `claude/advanced-level-catalog` (2026-10-23, migration `20261023100050`; intermediate plans unchanged, advanced chosen by the athlete from 3 years). B4-1 same-day readiness adjustment, server side, in review as #165 (2026-10-23, migration
+  `20261023140024`): `day_adjustments`, `get_my_day_adjustment_v1` / `respond_to_day_adjustment_v1`
+  (hold loads, one set fewer or easy cardio for today only; one tap and Undo; the recovery score never
+  adjusts a session alone, the athlete may choose), `start_workout` building the adjusted sets and B3
+  ignoring adjusted sessions as evidence for lowering a load. Next: B4-2 (app), then B5. Handoff:
+  [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping
   heart rate in shadow. C4 in review (branch `claude/watch-workout-prompt`, migration 34): a card on the

@@ -2,8 +2,11 @@
 // papers and Tracend's own summaries. Every rule value in this folder names at
 // least one of these. Each entry and every value that cites it were checked
 // against its PubMed abstract on 2026-10-15; ACSM 2026's values were also
-// checked in its full text. `access` says what anyone can read for free:
-// "full_text" is open in PubMed Central, "abstract" is the abstract only.
+// checked in its full text. Bell 2023, Hickmott 2022, Craven 2022, Saw 2016,
+// Impellizzeri 2020 and WHO 2020 were added with the readiness rules (B4) and
+// their ids, DOIs and open-access status checked against Europe PMC on 2026-10-23.
+// `access` says what anyone can read for free: "full_text" is open in PubMed Central,
+// "abstract" is the abstract only.
 // Paid course material (NASM, ACE, K11) is never a source.
 
 export type SourceAccess = "full_text" | "abstract" | "in_house";
@@ -176,6 +179,72 @@ export const sources = Object.freeze({
     doi: "10.1007/s40279-022-01784-y",
     pmid: "36334240",
     pmcid: "PMC9935748",
+    access: "full_text",
+  }),
+  bell_2023: source({
+    id: "bell_2023",
+    label: "Bell 2023",
+    citation: "Bell L, Strafford BW, Coleman M, Androulakis Korakakis P, Nolan D. Integrating " +
+      "deloading into strength and physique sports training programmes: an international " +
+      "Delphi consensus approach. Sports Med Open. 2023;9(1):87.",
+    doi: "10.1186/s40798-023-00633-0",
+    pmid: "37730925",
+    pmcid: "PMC10511399",
+    access: "full_text",
+  }),
+  hickmott_2022: source({
+    id: "hickmott_2022",
+    label: "Hickmott 2022",
+    citation: "Hickmott LM, Chilibeck PD, Shaw KA, Butcher SJ. The effect of load and volume " +
+      "autoregulation on muscular strength and hypertrophy: a systematic review and " +
+      "meta-analysis. Sports Med Open. 2022;8(1):9.",
+    doi: "10.1186/s40798-021-00404-9",
+    pmid: "35038063",
+    pmcid: "PMC8762534",
+    access: "full_text",
+  }),
+  craven_2022: source({
+    id: "craven_2022",
+    label: "Craven 2022",
+    citation: "Craven J, McCartney D, Desbrow B, Sabapathy S, Bellinger P, Roberts L, Irwin C. " +
+      "Effects of acute sleep loss on physical performance: a systematic and meta-analytical " +
+      "review. Sports Med. 2022;52(11):2669-2690.",
+    doi: "10.1007/s40279-022-01706-y",
+    pmid: "35708888",
+    pmcid: "PMC9584849",
+    access: "full_text",
+  }),
+  saw_2016: source({
+    id: "saw_2016",
+    label: "Saw 2016",
+    citation: "Saw AE, Main LC, Gastin PB. Monitoring the athlete training response: subjective " +
+      "self-reported measures trump commonly used objective measures: a systematic review. " +
+      "Br J Sports Med. 2016;50(5):281-291.",
+    doi: "10.1136/bjsports-2015-094758",
+    pmid: "26423706",
+    pmcid: "PMC4789708",
+    access: "full_text",
+  }),
+  impellizzeri_2020: source({
+    id: "impellizzeri_2020",
+    label: "Impellizzeri 2020",
+    citation: "Impellizzeri FM, Tenan MS, Kempton T, Novak A, Coutts AJ. Acute:chronic workload " +
+      "ratio: conceptual issues and fundamental pitfalls. Int J Sports Physiol Perform. " +
+      "2020;15(6):907-913.",
+    doi: "10.1123/ijspp.2019-0864",
+    pmid: "32502973",
+    pmcid: null,
+    access: "abstract",
+  }),
+  who_2020: source({
+    id: "who_2020",
+    label: "WHO 2020",
+    citation: "Bull FC, Al-Ansari SS, Biddle S, et al. World Health Organization 2020 " +
+      "guidelines on physical activity and sedentary behaviour. Br J Sports Med. " +
+      "2020;54(24):1451-1462.",
+    doi: "10.1136/bjsports-2020-102955",
+    pmid: "33239350",
+    pmcid: "PMC7719906",
     access: "full_text",
   }),
   tracend_in_house: source({

@@ -1,0 +1,210 @@
+{
+  "schema_version": "1.0",
+  "local_date": "2026-10-24",
+  "band": "red",
+  "triggers": [
+    "sleep_very_poor",
+    "energy_very_low"
+  ],
+  "kind": "swap_to_easy_cardio",
+  "changes": [
+    {
+      "exercise_order": 1,
+      "planned_exercise_id": "b4400000-0000-4000-8000-000000000001",
+      "name": "Barbell bench press",
+      "sets_from": 4,
+      "sets_to": 0,
+      "load_note": null,
+      "load_kg_from": null,
+      "load_kg_to": null,
+      "reps_from": null,
+      "reps_to": null,
+      "rpe_to": null
+    },
+    {
+      "exercise_order": 2,
+      "planned_exercise_id": "b4400000-0000-4000-8000-000000000002",
+      "name": "Cable fly",
+      "sets_from": 3,
+      "sets_to": 0,
+      "load_note": null,
+      "load_kg_from": null,
+      "load_kg_to": null,
+      "reps_from": null,
+      "reps_to": null,
+      "rpe_to": null
+    },
+    {
+      "exercise_order": 3,
+      "planned_exercise_id": "b4400000-0000-4000-8000-000000000003",
+      "name": "Dumbbell curl",
+      "sets_from": 2,
+      "sets_to": 0,
+      "load_note": null,
+      "load_kg_from": null,
+      "load_kg_to": null,
+      "reps_from": null,
+      "reps_to": null,
+      "rpe_to": null
+    }
+  ],
+  "explanation": "You slept very poorly and your energy is very low. Try 20 to 30 minutes of easy walking, cycling or swimming at a pace you can talk through. It keeps you moving without adding strain.",
+  "status": "proposed",
+  "available": true,
+  "unavailable_reason": null,
+  "safety_route": null,
+  "confidence": "medium",
+  "missing": [
+    "sleep"
+  ],
+  "cardio": {
+    "minutes_min": 20,
+    "minutes_max": 30,
+    "effort": "easy",
+    "talk_test": true,
+    "vigorous_allowed": false
+  },
+  "planned_workout_id": "b4200000-0000-4000-8000-000000000001",
+  "workout_name": "Lower A",
+  "sets_total_from": 9,
+  "sets_total_to": 0,
+  "previous_answer": {
+    "kind": "reduce_sets",
+    "status": "accepted",
+    "answered_at": "2026-10-24T06:41:12.345678+00:00",
+    "reason": "check_in"
+  },
+  "answered_at": null,
+  "rules_version": "readiness-v1",
+  "origin": null,
+  "options": [
+    {
+      "kind": "hold_load",
+      "explanation": "Keep last time's weights instead of adding more.",
+      "sets_total_to": 9,
+      "changes": [
+        {
+          "exercise_order": 1,
+          "planned_exercise_id": "b4400000-0000-4000-8000-000000000001",
+          "name": "Barbell bench press",
+          "sets_from": 4,
+          "sets_to": 4,
+          "load_note": "Keep last time's 60 kg",
+          "load_kg_from": 62.5,
+          "load_kg_to": 60,
+          "reps_from": 5,
+          "reps_to": 8,
+          "rpe_to": null
+        },
+        {
+          "exercise_order": 2,
+          "planned_exercise_id": "b4400000-0000-4000-8000-000000000002",
+          "name": "Cable fly",
+          "sets_from": 3,
+          "sets_to": 3,
+          "load_note": null,
+          "load_kg_from": 15,
+          "load_kg_to": 15,
+          "reps_from": 11,
+          "reps_to": 10,
+          "rpe_to": null
+        }
+      ],
+      "cardio": null
+    },
+    {
+      "kind": "reduce_sets",
+      "explanation": "One set fewer on 2 exercises and last time's weights.",
+      "sets_total_to": 7,
+      "changes": [
+        {
+          "exercise_order": 1,
+          "planned_exercise_id": "b4400000-0000-4000-8000-000000000001",
+          "name": "Barbell bench press",
+          "sets_from": 4,
+          "sets_to": 3,
+          "load_note": "Keep last time's 60 kg",
+          "load_kg_from": 62.5,
+          "load_kg_to": 60,
+          "reps_from": 5,
+          "reps_to": 8,
+          "rpe_to": 7
+        },
+        {
+          "exercise_order": 2,
+          "planned_exercise_id": "b4400000-0000-4000-8000-000000000002",
+          "name": "Cable fly",
+          "sets_from": 3,
+          "sets_to": 2,
+          "load_note": null,
+          "load_kg_from": 15,
+          "load_kg_to": 15,
+          "reps_from": 11,
+          "reps_to": 10,
+          "rpe_to": 7
+        }
+      ],
+      "cardio": null
+    },
+    {
+      "kind": "swap_to_easy_cardio",
+      "explanation": "Try 20 to 30 minutes of easy walking, cycling or swimming at a pace you can talk through. It keeps you moving without adding strain.",
+      "sets_total_to": 0,
+      "changes": [
+        {
+          "exercise_order": 1,
+          "planned_exercise_id": "b4400000-0000-4000-8000-000000000001",
+          "name": "Barbell bench press",
+          "sets_from": 4,
+          "sets_to": 0,
+          "load_note": null,
+          "load_kg_from": null,
+          "load_kg_to": null,
+          "reps_from": null,
+          "reps_to": null,
+          "rpe_to": null
+        },
+        {
+          "exercise_order": 2,
+          "planned_exercise_id": "b4400000-0000-4000-8000-000000000002",
+          "name": "Cable fly",
+          "sets_from": 3,
+          "sets_to": 0,
+          "load_note": null,
+          "load_kg_from": null,
+          "load_kg_to": null,
+          "reps_from": null,
+          "reps_to": null,
+          "rpe_to": null
+        },
+        {
+          "exercise_order": 3,
+          "planned_exercise_id": "b4400000-0000-4000-8000-000000000003",
+          "name": "Dumbbell curl",
+          "sets_from": 2,
+          "sets_to": 0,
+          "load_note": null,
+          "load_kg_from": null,
+          "load_kg_to": null,
+          "reps_from": null,
+          "reps_to": null,
+          "rpe_to": null
+        }
+      ],
+      "cardio": {
+        "minutes_min": 20,
+        "minutes_max": 30,
+        "effort": "easy",
+        "talk_test": true,
+        "vigorous_allowed": false
+      }
+    }
+  ],
+  "signals": {
+    "recovery_score": 60,
+    "recovery_confidence": "high",
+    "recovery_mode": "night",
+    "recovery_low": false,
+    "sleep_minutes": null
+  }
+}
