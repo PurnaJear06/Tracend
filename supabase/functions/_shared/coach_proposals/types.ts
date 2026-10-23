@@ -125,6 +125,11 @@ export type CoachProposalIntent =
 export type BlockKind = "temporary_block" | "intensity" | "focus" | "next_session";
 
 export type StatePlanExercise = Readonly<{
+  /**
+   * The planned exercise's id: a next-session target belongs to it, not to the slug (a lift on a
+   * heavy and a light day has two). Null from an older payload, which then has no target.
+   */
+  plannedExerciseId: string | null;
   slug: string | null;
   name: string;
   sets: number;

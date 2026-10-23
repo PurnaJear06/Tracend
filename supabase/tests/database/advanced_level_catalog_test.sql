@@ -257,7 +257,31 @@ select is(public.get_coach_plan_state_v1('b4000000-0000-4000-8000-000000000001',
 select is(public.get_coach_plan_state_v1('b4000000-0000-4000-8000-000000000001', current_date)
     ->>'schema_version', '1.2', 'in plan state 1.2');
 
--- Athletes still read the catalog and cannot change it.
+-- The proposal inputs carry the planned exercise id, so a next-session adjustment matches the heavy
+-- and the light day's target on their own rows and not on the shared slug.
+select is(public.get_coach_proposal_inputs_v1('b4000000-0000-4000-8000-000000000001')
+    ->>'schema_version', '1.1', 'the proposal inputs are 1.1');
+select is(
+  (select jsonb_agg(e->>'planned_exercise_id' order by w.ord)
+   from jsonb_array_elements(
+     public.get_coach_proposal_inputs_v1('b4000000-0000-4000-8000-000000000001') -> 'plan' -> 'workouts'
+   ) with ordinality as w(workout, ord),
+   jsonb_array_elements(w.workout -> 'exercises') e
+   where e->>'slug' = 'barbell-bench-press'),
+  '["b4400000-0000-4000-8000-000000000001","b4400000-0000-4000-8000-000000000002"]'::jsonb,
+  'the heavy and the light bench each carry their own planned exercise id');
+
+-- Athletes read the catalog and cannot change it: the only privilege they hold is select.
+select ok(has_table_privilege('authenticated', 'public.exercise_catalog', 'select'),
+  'athletes can read the catalog');
+select ok(not has_table_privilege('authenticated', 'public.exercise_catalog', 'insert'),
+  'athletes cannot add a catalog row');
+select ok(not has_table_privilege('authenticated', 'public.exercise_catalog', 'update'),
+  'athletes cannot change a catalog row');
+select ok(not has_table_privilege('authenticated', 'public.exercise_catalog', 'delete'),
+  'athletes cannot delete a catalog row');
+select ok(not has_table_privilege('anon', 'public.exercise_catalog', 'select'),
+  'and a signed-out caller cannot read it');
 set local role authenticated;
 select is(
   (select level from public.exercise_catalog where slug = 'bulgarian-split-squat'),

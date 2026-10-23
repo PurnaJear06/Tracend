@@ -1111,6 +1111,15 @@ catalog: its logged load is the weight added to the body, and no load and 0 both
 so a set of bodyweight reps at the top of the range earns the first 2.5 kg step. Other exercises
 still read an empty or zero load as no load (a pull-up holds at the top of its range).
 
+Matching by range has one consequence on a level change. An athlete who moves from an intermediate
+plan (one range per lift) to an advanced plan has no target for a split lift's day until that day
+has been logged once under its own range: the earlier sets, logged in the other range, are not read
+as the new day's history. That day keeps the plan's prescription and is shown without a target.
+This is deliberate: missing data lowers confidence and is never filled from another day's sets. A
+next-session adjustment matches its target on the planned exercise id (`get_coach_proposal_inputs_v1`
+1.1 carries it), so a heavy day's target is never applied to the light day of the same lift, and a
+day without a target is adjusted from its planned load only.
+
 **Screening and safety.** Nothing about the screening gate changes: `moderate_until_cleared` caps
 effort at RPE 7, drops strength emphasis and uses hypertrophy reps (split into heavy and light days
 all the same); `see_professional` builds no plan; the avoided patterns, the joint-stress swaps and

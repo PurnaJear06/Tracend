@@ -21,8 +21,15 @@
 --     pull-up). Default false, so no other exercise changes.
 --   * private.next_session_targets: a lift planned more than once with different rep ranges (an
 --     advanced plan's heavy and light days) keeps one history per range; a plan without such a
---     repeat produces the targets it did before.
+--     repeat produces the targets it did before. Because history is matched by range, an athlete
+--     who moves from an intermediate plan (one range per lift) to an advanced plan (a lift on a
+--     heavy and a light day) has no target for a split lift's day until that day has been logged
+--     once under its own range; the lift's earlier sets, logged in the other range, are not read
+--     as the new day's history. That day keeps the plan's prescription: a missing target lowers
+--     confidence and is never filled from another day's sets.
 --   * get_coach_plan_state_v1 1.2 adds `experience`.
+--   * get_coach_proposal_inputs_v1 1.1 adds `planned_exercise_id` to every plan exercise, so a
+--     next-session adjustment matches its target on the planned exercise and not on the slug.
 
 do $$
 declare
@@ -302,3 +309,78 @@ returns jsonb language sql stable security definer set search_path = '' as $$
         and s.local_date between p_local_date - 1 and p_local_date), '[]'::jsonb),
     'progression', public.get_progression_summary_v1(p_user_id));
 $$;
+
+-- Coach proposal inputs 1.1 ------------------------------------------------------------------------
+-- The definition of 20261018120018_coach_proposals.sql plus the planned exercise id on every plan
+-- exercise. A lift planned on two days with different rep ranges (an advanced plan's heavy and
+-- light days) has one next-session target per planned exercise, so a next-session adjustment must
+-- match its target on the planned exercise and not on the lift's slug. Additive: no key is removed
+-- or renamed, and the Edge Function reads an older payload without the id as having no target.
+
+create or replace function public.get_coach_proposal_inputs_v1(p_user_id uuid)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  today date := private.local_date_for(p_user_id);
+  eligibility jsonb;
+begin
+  if p_user_id is null or not exists (select 1 from public.user_accounts where id = p_user_id) then
+    raise exception 'account not found' using errcode = 'P0002';
+  end if;
+  -- A block whose last day has passed is ended first, so it is never shown or enforced as running.
+  perform private.end_ended_plan_blocks(p_user_id);
+  eligibility := public.evaluate_change_eligibility(p_user_id, today);
+  return jsonb_build_object(
+    'schema_version', '1.1',
+    'local_date', today,
+    'screening', private.current_screening_outcome(p_user_id),
+    'profile', (select jsonb_build_object(
+        'sex', p.sex, 'birth_year', p.birth_year, 'height_cm', p.height_cm,
+        'experience', p.experience_level, 'daily_activity', p.daily_activity,
+        'equipment', to_jsonb(p.equipment), 'avoid_patterns', to_jsonb(p.avoid_patterns),
+        'training_days', to_jsonb(p.training_days), 'session_minutes', p.session_minutes,
+        'priority_muscles', to_jsonb(p.priority_muscles), 'strong_muscles', to_jsonb(p.strong_muscles))
+      from public.user_profiles p where p.user_id = p_user_id),
+    'plan', (select jsonb_build_object(
+        'version_id', v.id, 'plan_id', v.plan_id, 'version_number', v.version_number,
+        'title', tp.title, 'block_weeks', v.block_weeks, 'ends_on', v.ends_on,
+        'block_kind', v.block_kind,
+        'workouts', coalesce((select jsonb_agg(jsonb_build_object(
+            'name', w.name, 'objective', w.objective, 'weekday', w.preferred_weekday,
+            'estimated_minutes', w.estimated_minutes, 'warm_up', w.warm_up_guidance,
+            'cool_down', w.cool_down_guidance,
+            'exercises', coalesce((select jsonb_agg(jsonb_build_object(
+                'planned_exercise_id', e.id, 'slug', e.exercise_slug, 'name', e.display_name_snapshot,
+                'sets', e.set_count,
+                'rep_min', e.rep_min, 'rep_max', e.rep_max, 'target_rpe', e.target_rpe,
+                'rest_seconds', e.rest_seconds, 'notes', e.notes,
+                'target_load_kg', e.target_load_kg) order by e.exercise_order)
+              from public.planned_exercises e
+              where e.planned_workout_id = w.id and e.user_id = p_user_id), '[]'::jsonb))
+            order by w.workout_order)
+          from public.planned_workouts w
+          where w.plan_version_id = v.id and w.user_id = p_user_id), '[]'::jsonb))
+      from public.training_plan_versions v
+      join public.training_plans tp on tp.id = v.plan_id and tp.user_id = v.user_id
+      where v.user_id = p_user_id and v.status = 'active'),
+    'nutrition', (select jsonb_build_object(
+        'version_id', n.id, 'calories', n.calories, 'protein_g', n.protein_g,
+        'carbohydrate_g', n.carbohydrate_g, 'fat_g', n.fat_g)
+      from public.nutrition_target_sets n where n.user_id = p_user_id and n.status = 'active'),
+    'goal', (select jsonb_build_object(
+        'id', g.id, 'goal_type', g.goal_type, 'details', g.details,
+        'activated_on', (g.activated_at at time zone coalesce((
+          select a.timezone from public.user_accounts a
+          join pg_catalog.pg_timezone_names z on z.name = a.timezone
+          where a.id = p_user_id), 'UTC'))::date)
+      from public.user_goals g where g.id = private.active_goal_id(p_user_id)),
+    'eligibility', jsonb_build_object(
+      'training_eligible', (eligibility -> 'training_change' ->> 'eligible')::boolean,
+      'training_detail', eligibility -> 'training_change' ->> 'detail',
+      'nutrition_eligible', (eligibility -> 'nutrition_change' ->> 'eligible')::boolean,
+      'nutrition_detail', eligibility -> 'nutrition_change' ->> 'detail'),
+    'today_workout_done', exists (
+      select 1 from public.workout_sessions s
+      where s.user_id = p_user_id and s.local_date = today and s.state = 'completed'));
+end $$;
+revoke all on function public.get_coach_proposal_inputs_v1(uuid) from public, anon, authenticated;
+grant execute on function public.get_coach_proposal_inputs_v1(uuid) to service_role;

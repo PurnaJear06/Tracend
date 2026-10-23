@@ -515,6 +515,16 @@ Migration `20261023100050_advanced_level_catalog.sql` (additive); no hub or RPC 
   version moved to v2; two tests that could not fail now can. Left over: the twin comparison
   costs two to several builds per advanced plan (a few ms); the plan state's `experience` is the
   profile's stored level, which is null for an athlete who never recorded it (read as intermediate).
+- **Final review (#162).** A next-session adjustment ("make Thursday heavier or lighter") matched
+  its progression target on the lift's slug, so a light day of a lift that is also on a heavy day
+  used the heavy day's load. `get_coach_proposal_inputs_v1` is now 1.1 (same migration, additive) and
+  carries `planned_exercise_id` on every plan exercise; `training.ts` matches the target on it, as
+  the Coach context does, and a planned exercise with no target (or an older payload without the id)
+  has no target: it never borrows another day's. Known behaviour, kept: an athlete who moves from
+  an intermediate to an advanced plan has no target for a split lift's day until that day is logged
+  once under its own range (range-matched history only; missing data lowers confidence and is never
+  invented). Not changed: `plan_rules.ts` carries a start load across a plan rebuild keyed by slug
+  (the last day's load wins for a lift on two days).
 - **Candidates not added** (for the owner): weighted dip and dip station (no dip equipment in the
   picker), trap-bar deadlift (no trap bar), hack squat and pendulum squat, seated leg curl, hammer
   curl and EZ-bar curl, skull crusher, Pendlay and T-bar rows, pause bench (a technique of the bench

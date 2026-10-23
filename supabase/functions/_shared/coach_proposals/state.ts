@@ -69,6 +69,7 @@ function parsePlan(raw: unknown): StatePlan | null | undefined {
         return null;
       }
       return {
+        plannedExerciseId: str(exercise.planned_exercise_id),
         slug: str(exercise.slug),
         name,
         sets,

@@ -1006,7 +1006,7 @@ longer current. A newer pending proposal replaces an open one that would change 
 | `respond_to_coach_proposal_v1(proposal_id, action, note)` | athlete | `approve`, `decline` or `change`; approve re-checks pending, expiry, basis and screening and writes the new version(s) |
 | `undo_coach_proposal_v1(proposal_id)` | athlete | restores what approval replaced, as new versions, within seven days |
 
-All return `schema_version "1.0"`. Approval records a proposal as `expired` (and reports the
+All return `schema_version "1.0"` except `get_coach_proposal_inputs_v1`, which is `"1.1"` and adds `planned_exercise_id` to every plan exercise (a next-session target is matched on it, not on the slug). Approval records a proposal as `expired` (and reports the
 reason) when it is past `expires_at`, when the active plan, nutrition or goal is no longer the one
 in `basis`, when a temporary block's last day has passed, or when a block is already running; it
 also runs again what the build checked. `basis.gates` names the change-eligibility gates the build
