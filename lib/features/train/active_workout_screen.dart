@@ -149,6 +149,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   /// The Watch-workout suggestion shows above the first set only.
   bool _suggestWatch = false;
+
+  /// A set was done or the suggestion was answered: it is not shown again.
+  bool _watchSuggestionOver = false;
   final SetTimingRecorder _timing = SetTimingRecorder();
 
   String? _sessionId;
@@ -583,6 +586,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   };
 
   void _changed() {
+    // A first set ends the suggestion for this workout for good: undoing the
+    // set does not bring the card back.
+    if (_anySetDone) {
+      _watchSuggestionOver = true;
+      _suggestWatch = false;
+    }
     _revision++;
     _saveTimer?.cancel();
     _saveTimer = Timer(const Duration(milliseconds: 250), _save);
@@ -1794,12 +1803,19 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     final source = _watchPrompt;
     if (source == null || _viewingCompleted || _anySetDone) return;
     final suggest = await source.shouldSuggest();
-    if (!suggest || !mounted || _closed || _anySetDone) return;
+    if (!suggest ||
+        !mounted ||
+        _closed ||
+        _watchSuggestionOver ||
+        _anySetDone) {
+      return;
+    }
     setState(() => _suggestWatch = true);
   }
 
   void _answerWatchSuggestion({required bool noWatch}) {
     final source = _watchPrompt;
+    _watchSuggestionOver = true;
     setState(() => _suggestWatch = false);
     if (source == null) return;
     unawaited(noWatch ? source.mute() : source.snooze());
@@ -1825,7 +1841,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
     final pending = _pendingFinish;
     return [
-      if (_suggestWatch && !_viewingCompleted && !_closed && !_anySetDone)
+      if (_suggestWatch && !_viewingCompleted && !_closed)
         WatchWorkoutPromptCard(
           onNotNow: () => _answerWatchSuggestion(noWatch: false),
           onNoWatch: () => _answerWatchSuggestion(noWatch: true),

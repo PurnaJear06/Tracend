@@ -5,6 +5,9 @@ import type { HeartRateInputs, HeartRateSetRow } from "./profile.ts";
 
 export const heartRateInputsRpc = "get_heart_rate_inputs_v1";
 
+/** The key under which the turn reads the profile's inputs once for every contributor that needs them. */
+export const heartRateInputsReadKey = "heart_rate_inputs";
+
 type RpcClient = Readonly<{
   rpc(
     name: string,

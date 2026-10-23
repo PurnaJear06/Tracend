@@ -6,7 +6,7 @@ import {
   type LoadSignalSet,
   type WorkoutLoadInputs,
 } from "./load_signals.ts";
-import { buildHeartRateProfile } from "./profile.ts";
+import { buildHeartRateProfile, type HeartRateInputs } from "./profile.ts";
 
 // Reads `get_workout_load_inputs_v1` (service role only) and the heart-rate profile's inputs, and
 // works the load signals out. Anything malformed is dropped, never repaired; a failed read gives no
@@ -83,14 +83,20 @@ export function parseWorkoutLoadInputs(value: unknown): WorkoutLoadInputs | null
   };
 }
 
-/** One athlete's load signals for a coaching date; null when either read fails or has no payload. */
+/**
+ * One athlete's load signals for a coaching date; null when either read fails or has no payload.
+ * `readHeartRateInputs` is the profile's inputs for the same athlete and date; pass the turn's
+ * shared read so `get_heart_rate_inputs_v1` runs once.
+ */
 export async function loadWorkoutLoadSignals(
   client: RpcClient,
   userId: string,
   localDate: string,
+  readHeartRateInputs: () => Promise<HeartRateInputs | null> = () =>
+    loadHeartRateInputs(client, userId, localDate),
 ): Promise<LoadSignals | null> {
   const [profileInputs, workouts] = await Promise.all([
-    loadHeartRateInputs(client, userId, localDate),
+    readHeartRateInputs(),
     client.rpc(workoutLoadInputsRpc, { target_user: userId, local_date: localDate }),
   ]);
   if (profileInputs === null || workouts.error) return null;

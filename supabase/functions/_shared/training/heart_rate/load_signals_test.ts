@@ -9,6 +9,7 @@ import {
   settleMinimumSessions,
   settleMinimumSets,
   shortRestSeconds,
+  trackedMinimumCoverage,
   type WorkoutLoadInputs,
 } from "./load_signals.ts";
 import { loadWorkoutLoadSignals, parseWorkoutLoadInputs } from "./load_signals_inputs.ts";
@@ -71,94 +72,66 @@ function workouts(start: number, rest: number | null): LoadSignalSession[] {
 const quiet: LoadSignals["engine"] = {
   confidence: "none",
   rest: "none",
-  question: null,
   reasons: [],
 };
 
+const engineOf = (...sessions: LoadSignalSession[]) =>
+  computeLoadSignals(inputs(...sessions), profile).engine;
+
 Deno.test("a heart rate that had not settled after a short rest allows a longer rest", () => {
-  const signals = computeLoadSignals(inputs(...workouts(125, 90)), profile);
-  assertEquals(signals.set_start, {
-    state: "elevated",
-    reason: null,
-    sets: 16,
-    sessions: 2,
-    median_reserve_fraction: 0.53,
-    median_rest_seconds: 90,
-    cause: "rest_short",
-  });
-  assertEquals(signals.engine, {
+  assertEquals(engineOf(...workouts(125, 90)), {
     confidence: "none",
     rest: "allow_longer",
-    question: null,
     reasons: ["rest_short"],
   });
 });
 
-Deno.test("a heart rate that had not settled after a long rest lowers confidence and asks", () => {
-  const signals = computeLoadSignals(inputs(...workouts(125, 150)), profile);
-  assertEquals(signals.set_start.state, "elevated");
-  assertEquals(signals.set_start.cause, "slow_settling");
-  assertEquals(signals.engine, {
+Deno.test("a heart rate that had not settled after a long rest lowers confidence", () => {
+  assertEquals(engineOf(...workouts(125, 150)), {
     confidence: "lower",
     rest: "none",
-    question: "recovery_check",
     reasons: ["slow_settling"],
   });
 });
 
 Deno.test("the rest length that separates the two causes is the stated one", () => {
-  const below = computeLoadSignals(inputs(...workouts(125, shortRestSeconds - 1)), profile);
-  const at = computeLoadSignals(inputs(...workouts(125, shortRestSeconds)), profile);
-  assertEquals(below.set_start.cause, "rest_short");
-  assertEquals(at.set_start.cause, "slow_settling");
+  assertEquals(shortRestSeconds, 120);
+  assertEquals(engineOf(...workouts(125, shortRestSeconds - 1)).reasons, ["rest_short"]);
+  assertEquals(engineOf(...workouts(125, shortRestSeconds)).reasons, ["slow_settling"]);
 });
 
 Deno.test("a heart rate that had settled changes nothing", () => {
-  const signals = computeLoadSignals(inputs(...workouts(100, 90)), profile);
-  assertEquals(signals.set_start.state, "steady");
-  assertEquals(signals.set_start.median_reserve_fraction, 0.33);
-  assertEquals(signals.set_start.cause, null);
-  assertEquals(signals.engine, quiet);
+  assertEquals(engineOf(...workouts(100, 90)), quiet);
 });
 
 Deno.test("the elevated line is the stated share of reserve", () => {
   // 60 + 0.5 x 123 = 121.5: 121 is just under it, 122 just over.
   assertEquals(settleElevatedFraction, 0.5);
-  assertEquals(computeLoadSignals(inputs(...workouts(121, 90)), profile).set_start.state, "steady");
-  assertEquals(
-    computeLoadSignals(inputs(...workouts(122, 90)), profile).set_start.state,
-    "elevated",
-  );
+  assertEquals(engineOf(...workouts(121, 90)), quiet);
+  assertEquals(engineOf(...workouts(122, 90)).reasons, ["rest_short"]);
 });
 
-Deno.test("too few sets or workouts is said plainly and changes nothing", () => {
-  const eleven = [
-    session("2026-10-22", Array(6).fill(130)),
-    session("2026-10-20", Array(5).fill(130)),
-  ];
-  const few = computeLoadSignals(inputs(...eleven), profile);
+Deno.test("too few sets or workouts fires nothing", () => {
   assertEquals(settleMinimumSets, 12);
-  assertEquals(few.set_start.state, "not_enough_data");
-  assertEquals(few.set_start.reason, "too_few_sets");
-  assertEquals(few.set_start.sets, 11);
-  assertEquals(few.engine, quiet);
-
-  const oneWorkout = computeLoadSignals(
-    inputs(session("2026-10-22", Array(16).fill(130))),
-    profile,
+  assertEquals(
+    engineOf(session("2026-10-22", Array(6).fill(130)), session("2026-10-20", Array(5).fill(130))),
+    quiet,
+  );
+  assertEquals(
+    engineOf(session("2026-10-22", Array(6).fill(130)), session("2026-10-20", Array(6).fill(130)))
+      .reasons,
+    ["rest_short"],
   );
   assertEquals(settleMinimumSessions, 2);
-  assertEquals(oneWorkout.set_start.state, "not_enough_data");
-  assertEquals(oneWorkout.set_start.sessions, 1);
-  assertEquals(oneWorkout.engine, quiet);
+  assertEquals(engineOf(session("2026-10-22", Array(16).fill(130))), quiet);
 });
 
 Deno.test("only tracked sets with a start and a real rest are judged", () => {
   const steady = Array(6).fill(100);
   const excluded = (extra: Record<string, unknown>, rest: number | null = 90) =>
     session("2026-10-21", Array(10).fill(140), rest, extra);
-  const signals = computeLoadSignals(
-    inputs(
+  assertEquals(
+    engineOf(
       session("2026-10-22", steady),
       session("2026-10-20", steady),
       excluded({ source: "background" }),
@@ -167,77 +140,46 @@ Deno.test("only tracked sets with a start and a real rest are judged", () => {
       excluded({}, null),
       excluded({}, 29),
     ),
-    profile,
+    quiet,
   );
-  assertEquals(signals.set_start.state, "steady");
-  assertEquals(signals.set_start.sets, 12);
-  assertEquals(signals.engine, quiet);
 });
 
 Deno.test("a set at the minimum rest and the minimum coverage is judged", () => {
+  assertEquals(trackedMinimumCoverage, 0.6);
   const edge = Array(6).fill(130);
-  const signals = computeLoadSignals(
-    inputs(
+  assertEquals(
+    engineOf(
       session("2026-10-22", edge, 30, { coverage: 0.6 }),
       session("2026-10-20", edge, 30, { coverage: 0.6 }),
-    ),
-    profile,
+    ).reasons,
+    ["rest_short"],
   );
-  assertEquals(signals.set_start.state, "elevated");
-  assertEquals(signals.set_start.sets, 12);
 });
 
 Deno.test("the window is the last 28 days and nothing from the future", () => {
   assertEquals(loadSignalWindowDays, 28);
   const high = Array(8).fill(130);
-  const inside = computeLoadSignals(
-    inputs(session("2026-09-26", high), session("2026-10-22", high)),
-    profile,
+  // Two workouts inside the window fire; one of them 28 days old or in the future leaves one.
+  assertEquals(engineOf(session("2026-09-26", high), session("2026-10-22", high)).reasons, [
+    "rest_short",
+  ]);
+  assertEquals(engineOf(session("2026-09-25", high), session("2026-10-22", high)), quiet);
+  assertEquals(engineOf(session("2026-10-24", high), session("2026-10-22", high)), quiet);
+});
+
+Deno.test("a workout with no finished sets counts for nothing", () => {
+  const high = Array(8).fill(130);
+  assertEquals(
+    engineOf(session("2026-10-22", high), { ...session("2026-10-20", high), completed_sets: 0 }),
+    quiet,
   );
-  assertEquals(inside.set_start.sessions, 2);
-  const outside = computeLoadSignals(
-    inputs(session("2026-09-25", high), session("2026-10-22", high), session("2026-10-24", high)),
-    profile,
-  );
-  assertEquals(outside.set_start.sessions, 1);
-  assertEquals(outside.tracking.sessions, 1);
 });
 
 Deno.test("without a resting rate or a maximum there is no start judgment", () => {
   const noResting = buildHeartRateProfile({ ...profileInputs, resting: [] });
-  const signals = computeLoadSignals(inputs(...workouts(150, 150)), noResting);
-  assertEquals(signals.set_start.state, "not_enough_data");
-  assertEquals(signals.set_start.reason, "no_profile");
-  assertEquals(signals.engine, quiet);
-  assertEquals(signals.tracking.watch_sets, 16);
-
+  assertEquals(computeLoadSignals(inputs(...workouts(150, 150)), noResting).engine, quiet);
   const noMaximum = buildHeartRateProfile({ ...profileInputs, birth_year: null });
-  assertEquals(
-    computeLoadSignals(inputs(...workouts(150, 150)), noMaximum).set_start.reason,
-    "no_profile",
-  );
-});
-
-Deno.test("tracking counts the workouts and sets the Watch covered", () => {
-  const signals = computeLoadSignals(
-    inputs(
-      session("2026-10-22", [100, 100, 100]),
-      {
-        local_date: "2026-10-20",
-        completed_sets: 9,
-        sets: [set(0, 100, 90, { source: "background" })],
-      },
-      { local_date: "2026-10-18", completed_sets: 0, sets: [] },
-      { local_date: "2026-10-17", completed_sets: 6, sets: [set(0, 100, 90, { coverage: 0.5 })] },
-    ),
-    profile,
-  );
-  assertEquals(signals.tracking, {
-    sessions: 3,
-    sessions_with_watch: 1,
-    completed_sets: 18,
-    watch_sets: 3,
-  });
+  assertEquals(computeLoadSignals(inputs(...workouts(150, 150)), noMaximum).engine, quiet);
 });
 
 function recoveryProfile(recentDrop: number, priorDrop: number) {
@@ -261,37 +203,30 @@ function recoveryProfile(recentDrop: number, priorDrop: number) {
   });
 }
 
-Deno.test("a slower recovery lowers confidence and asks, even when the start settled", () => {
+Deno.test("a slower recovery lowers confidence, even when the start settled", () => {
   const slower = recoveryProfile(10, 20);
   assertEquals(slower.recovery.state, "slower");
-  const signals = computeLoadSignals(inputs(...workouts(100, 90)), slower);
-  assertEquals(signals.recovery, { state: "slower", change_bpm: -10 });
-  assertEquals(signals.engine, {
+  assertEquals(computeLoadSignals(inputs(...workouts(100, 90)), slower).engine, {
     confidence: "lower",
     rest: "none",
-    question: "recovery_check",
     reasons: ["recovery_slower"],
   });
 });
 
 Deno.test("a steady or improving recovery changes nothing and nothing ever raises confidence", () => {
   for (const [recent, prior] of [[20, 20], [30, 20]]) {
-    const signals = computeLoadSignals(
-      inputs(...workouts(100, 90)),
-      recoveryProfile(recent, prior),
+    assertEquals(
+      computeLoadSignals(inputs(...workouts(100, 90)), recoveryProfile(recent, prior)).engine,
+      quiet,
     );
-    assertEquals(signals.engine, quiet);
   }
 });
 
 Deno.test("both causes together keep both reasons", () => {
-  const signals = computeLoadSignals(inputs(...workouts(125, 90)), recoveryProfile(10, 20));
-  assertEquals(signals.engine, {
-    confidence: "lower",
-    rest: "allow_longer",
-    question: "recovery_check",
-    reasons: ["rest_short", "recovery_slower"],
-  });
+  assertEquals(
+    computeLoadSignals(inputs(...workouts(125, 90)), recoveryProfile(10, 20)).engine,
+    { confidence: "lower", rest: "allow_longer", reasons: ["rest_short", "recovery_slower"] },
+  );
 });
 
 function allKeys(value: unknown, into = new Set<string>()): Set<string> {
@@ -332,7 +267,8 @@ Deno.test("D9: the signals carry no load, repetitions, sets to do or sleeping he
   for (const result of results) {
     const keys = allKeys(result);
     for (const name of forbidden) assertFalse(keys.has(name), `no ${name} in the output`);
-    assertEquals(Object.keys(result.engine).sort(), ["confidence", "question", "reasons", "rest"]);
+    assertEquals(Object.keys(result).sort(), ["engine"]);
+    assertEquals(Object.keys(result.engine).sort(), ["confidence", "reasons", "rest"]);
     assert(result.engine.confidence === "none" || result.engine.confidence === "lower");
     assert(result.engine.rest === "none" || result.engine.rest === "allow_longer");
   }
@@ -448,4 +384,21 @@ Deno.test("a failed or malformed read gives no signals, so the plan stands as it
     null,
   );
   assertEquals(await loadWorkoutLoadSignals(fakeClient("nothing").client, "u", asOf), null);
+});
+
+Deno.test("a shared read of the profile's inputs replaces the loader's own", async () => {
+  const payload = { schema_version: "1.0", as_of: asOf, sessions: workouts(125, 150) };
+  const { client, calls } = fakeClient(payload);
+  let shared = 0;
+  const signals = await loadWorkoutLoadSignals(client, "user-1", asOf, () => {
+    shared += 1;
+    return Promise.resolve(profileInputs);
+  });
+  assertEquals(shared, 1);
+  assertEquals(calls.map(([name]) => name), ["get_workout_load_inputs_v1"]);
+  assertEquals(signals?.engine.reasons, ["slow_settling"]);
+  assertEquals(
+    await loadWorkoutLoadSignals(client, "user-1", asOf, () => Promise.resolve(null)),
+    null,
+  );
 });

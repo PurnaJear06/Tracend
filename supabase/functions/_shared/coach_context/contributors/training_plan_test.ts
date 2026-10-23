@@ -1,14 +1,19 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
-import { cutNote, renderCoachContext } from "../host.ts";
+import { coachContextContributorTimeoutMs, cutNote, renderCoachContext } from "../host.ts";
 import type { LoadSignals } from "../../training/heart_rate/load_signals.ts";
+import type { HeartRateInputs } from "../../training/heart_rate/profile.ts";
+import { createHeartRateContributor } from "./heart_rate.ts";
 import {
   createTrainingPlanContributor,
   finishedOn,
-  lessCertainStepSentence,
+  incompleteRecoverySentence,
+  loadSignalsDeadlineMs,
+  type LoadSignalsSource,
   longerRestSentence,
   parsePlanState,
   pickFocusSession,
   renderTrainingPlan,
+  slowerRecoverySentence,
   trainingPlanContributorBudgetChars,
   weekAheadOf,
 } from "./training_plan.ts";
@@ -964,32 +969,13 @@ Deno.test("the athlete's level reaches the home alternatives: an advanced lifter
   assertEquals(parsePlanState(ownersPlanPayload())?.experience, "intermediate");
 });
 
-// Heart-rate load signals (C4): two fixed sentences, never a changed target (D9).
-const signalsWith = (
-  engine: Partial<LoadSignals["engine"]>,
-): LoadSignals => ({
-  schema_version: "1.0",
-  as_of: ownersCaseDate,
-  window_days: 28,
-  tracking: { sessions: 3, sessions_with_watch: 3, completed_sets: 30, watch_sets: 24 },
-  set_start: {
-    state: "steady",
-    reason: null,
-    sets: 20,
-    sessions: 3,
-    median_reserve_fraction: 0.3,
-    median_rest_seconds: 90,
-    cause: null,
-  },
-  recovery: { state: "steady", change_bpm: 0 },
-  engine: { confidence: "none", rest: "none", question: null, reasons: [], ...engine },
+// Heart-rate load signals (C4): fixed sentences, never a changed target (D9).
+const signalsWith = (engine: Partial<LoadSignals["engine"]>): LoadSignals => ({
+  engine: { confidence: "none", rest: "none", reasons: [], ...engine },
 });
 
-const lowerConfidence = signalsWith({
-  confidence: "lower",
-  question: "recovery_check",
-  reasons: ["slow_settling"],
-});
+const slowerRecovery = signalsWith({ confidence: "lower", reasons: ["recovery_slower"] });
+const slowSettling = signalsWith({ confidence: "lower", reasons: ["slow_settling"] });
 
 const renderWith = (
   signals: LoadSignals | null,
@@ -1003,16 +989,37 @@ const renderWith = (
 const bench = (text: string) => lineOf(text, "  1. Barbell bench press");
 const incline = (text: string) => lineOf(text, "  2. Incline dumbbell press");
 
-Deno.test("lower confidence marks a step up as less certain and changes nothing else", () => {
+Deno.test("slower recovery marks a step up as less certain and changes nothing else", () => {
   const plain = renderWith(null)!;
-  const text = renderWith(lowerConfidence)!;
+  const text = renderWith(slowerRecovery)!;
   assertStringIncludes(bench(text), "add load");
-  assertStringIncludes(bench(text), lessCertainStepSentence);
-  assertStringIncludes(incline(text), lessCertainStepSentence);
-  assert(!lineOf(text, "  3. Cable lateral raise").includes(lessCertainStepSentence));
-  assertEquals(text.split(lessCertainStepSentence).length - 1, 2);
+  assertStringIncludes(bench(text), slowerRecoverySentence);
+  assertStringIncludes(incline(text), slowerRecoverySentence);
+  assert(!lineOf(text, "  3. Cable lateral raise").includes(slowerRecoverySentence));
+  assertEquals(text.split(slowerRecoverySentence).length - 1, 2);
   // Only the sentence differs: the target, the loads and the reps are the same text.
-  assertEquals(text.replaceAll(` ${lessCertainStepSentence}`, ""), plain);
+  assertEquals(text.replaceAll(` ${slowerRecoverySentence}`, ""), plain);
+});
+
+Deno.test("each reason gets its own sentence, and only a comparison says 'than usual'", () => {
+  const settling = renderWith(slowSettling)!;
+  assertStringIncludes(bench(settling), incompleteRecoverySentence);
+  assert(!settling.includes(slowerRecoverySentence));
+  assert(!settling.includes("than usual"), "a fixed line is not a comparison");
+  const slower = renderWith(slowerRecovery)!;
+  assertStringIncludes(slower, "than usual");
+  assert(!slower.includes(incompleteRecoverySentence));
+  // Both reasons: the comparison is true, so it is the one said.
+  const both = renderWith(
+    signalsWith({ confidence: "lower", reasons: ["slow_settling", "recovery_slower"] }),
+  )!;
+  assertStringIncludes(bench(both), slowerRecoverySentence);
+  assert(!both.includes(incompleteRecoverySentence));
+  // The rest sentence is no comparison either.
+  const rest = renderWith(signalsWith({ rest: "allow_longer", reasons: ["rest_short"] }))!;
+  assert(!rest.includes("than usual"));
+  assert(!incompleteRecoverySentence.includes("than usual"));
+  assert(!longerRestSentence.includes("than usual"));
 });
 
 Deno.test("confidence none adds nothing", () => {
@@ -1021,52 +1028,142 @@ Deno.test("confidence none adds nothing", () => {
 
 Deno.test("a hold or a cut is never called less certain", () => {
   for (const action of ["hold", "lower"]) {
-    const text = renderWith(lowerConfidence, (payload) => {
-      const targets = (payload.progression as { targets: Record<string, unknown>[] }).targets;
-      for (const target of targets) target.action = action;
-    })!;
-    assert(!text.includes(lessCertainStepSentence), action);
+    for (const signals of [slowerRecovery, slowSettling]) {
+      const text = renderWith(signals, (payload) => {
+        const targets = (payload.progression as { targets: Record<string, unknown>[] }).targets;
+        for (const target of targets) target.action = action;
+      })!;
+      assert(!text.includes("less certain"), action);
+    }
   }
 });
 
 Deno.test("the sentence needs a target: an exercise with no logged sets has none", () => {
-  const text = renderWith(lowerConfidence, (payload) => {
+  const text = renderWith(slowerRecovery, (payload) => {
     (payload.progression as { targets: unknown[] }).targets = [];
   })!;
-  assert(!text.includes(lessCertainStepSentence));
+  assert(!text.includes("less certain"));
 });
 
 Deno.test("a longer rest is suggested once, before the exercises, when heart rate asks for it", () => {
   const text = renderWith(signalsWith({ rest: "allow_longer", reasons: ["rest_short"] }))!;
   assertEquals(text.split(longerRestSentence).length - 1, 1);
   assert(text.indexOf(longerRestSentence) < text.indexOf("  1. Barbell bench press"));
-  assert(!text.includes(lessCertainStepSentence), "rest alone does not lower confidence");
+  assert(!text.includes("less certain"), "rest alone does not lower confidence");
   assert(!renderWith(signalsWith({}))!.includes(longerRestSentence));
 });
 
 Deno.test("the sentences carry no figure, so a reply can quote nothing from them", () => {
-  assert(!/\d/.test(lessCertainStepSentence), lessCertainStepSentence);
-  assert(!/\d/.test(longerRestSentence), longerRestSentence);
+  for (const sentence of [slowerRecoverySentence, incompleteRecoverySentence, longerRestSentence]) {
+    assert(!/\d/.test(sentence), sentence);
+  }
 });
 
-Deno.test("the registered contributor reads the signals; a failed or empty read renders the plan as before", async () => {
-  const input = { userId: "user-1", question: "q", localDate: ownersCaseDate };
-  const rendered = async (signals?: () => Promise<LoadSignals | null>) =>
-    (await renderCoachContext(
-      [createTrainingPlanContributor(() => Promise.resolve(ownersPlanPayload()), signals)],
-      input,
-    )).texts.training_plan;
-  const without = await rendered();
-  assert(!without.includes(lessCertainStepSentence));
-  const withSignals = await rendered(() => Promise.resolve(lowerConfidence));
-  assertStringIncludes(withSignals, lessCertainStepSentence);
-  assertEquals(await rendered(() => Promise.resolve(null)), without);
-  assertEquals(await rendered(() => Promise.reject(new Error("down"))), without);
+const turn = { userId: "user-1", question: "q", localDate: ownersCaseDate };
+const planSource = () => Promise.resolve(ownersPlanPayload());
+
+async function plan(
+  signals?: LoadSignalsSource,
+  deadlineMs?: number,
+  source: () => Promise<unknown> = planSource,
+) {
+  const rendered = await renderCoachContext(
+    [createTrainingPlanContributor(source, signals, deadlineMs)],
+    turn,
+  );
+  return {
+    text: rendered.texts.training_plan,
+    outcome: rendered.outcomes[0],
+    trace: rendered.traces?.training_plan,
+  };
+}
+
+Deno.test("the registered contributor reads the signals and traces how the read went", async () => {
+  const without = await plan();
+  assert(!without.text.includes("less certain"));
+  assertEquals(without.trace, undefined);
+
+  const ok = await plan(() => Promise.resolve(slowerRecovery));
+  assertStringIncludes(ok.text, slowerRecoverySentence);
+  assertEquals(ok.trace, { load_signals: "ok" });
+
+  for (
+    const [reader, status] of [
+      [() => Promise.resolve(null), "unavailable"],
+      [() => Promise.reject(new Error("down")), "failed"],
+      [() => {
+        throw new Error("sync");
+      }, "failed"],
+    ] as const
+  ) {
+    const result = await plan(reader);
+    assertEquals(result.text, without.text, status);
+    assertEquals(result.outcome.outcome, "rendered");
+    assertEquals(result.trace, { load_signals: status });
+  }
 });
 
-Deno.test("the largest plan still fits its budget with every sentence the signals can add", () => {
+Deno.test("a signals read that never answers cannot hold the plan: it renders as before, in time", async () => {
+  const without = await plan();
+  const started = performance.now();
+  const hung = await plan(() => new Promise(() => {}), 50);
+  assert(performance.now() - started < 1_000, "the deadline is the signals' own");
+  assertEquals(hung.text, without.text);
+  assertEquals(hung.outcome.outcome, "rendered");
+  assertEquals(hung.trace, { load_signals: "timeout" });
+});
+
+Deno.test("with the real deadline the plan still renders well inside the host's budget", async () => {
+  const started = performance.now();
+  const hung = await plan(() => new Promise(() => {}));
+  const elapsed = performance.now() - started;
+  assertEquals(hung.outcome.outcome, "rendered");
+  assert(elapsed >= loadSignalsDeadlineMs - 50 && elapsed < 2_000, `${elapsed} ms`);
+  assert(loadSignalsDeadlineMs < coachContextContributorTimeoutMs);
+});
+
+Deno.test("the signals read starts with the plan read, not after it", async () => {
+  const events: string[] = [];
+  await plan(
+    () => {
+      events.push("signals asked");
+      return Promise.resolve(null);
+    },
+    undefined,
+    async () => {
+      events.push("plan asked");
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      events.push("plan answered");
+      return ownersPlanPayload();
+    },
+  );
+  assertEquals(events, ["plan asked", "signals asked", "plan answered"]);
+});
+
+Deno.test("the profile's inputs are read once for the heart-rate block and the signals", async () => {
+  const inputs = { schema_version: "1.0", as_of: ownersCaseDate } as HeartRateInputs;
+  for (const planFirst of [true, false]) {
+    let reads = 0;
+    let seen: HeartRateInputs | null = null;
+    const load = () => {
+      reads += 1;
+      return Promise.resolve(inputs);
+    };
+    const heart = createHeartRateContributor(load);
+    const planWith = createTrainingPlanContributor(planSource, async (_user, _date, read) => {
+      seen = await read();
+      return null;
+    });
+    await renderCoachContext(planFirst ? [planWith, heart] : [heart, planWith], turn);
+    assertEquals(reads, 1, `plan first: ${planFirst}`);
+    assert(seen === inputs, "the signals got the turn's shared read");
+  }
+});
+
+Deno.test("the largest plan fits its budget with the longest sentence on every step and the rest line", () => {
   const full = renderTrainingPlan(parsePlanState(bigPlan()))!;
-  const room = 9 * (lessCertainStepSentence.length + 1) + longerRestSentence.length + 1;
+  const longest = Math.max(slowerRecoverySentence.length, incompleteRecoverySentence.length);
+  const room = 9 * (longest + 1) + longerRestSentence.length + 1;
   assert(
     full.length + room <= trainingPlanContributorBudgetChars,
     `${full.length} + ${room} characters`,

@@ -244,7 +244,7 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   `privacy-export/index_test.ts` checks the export lists the table.
 - **Watch-workout suggestion and load signals (C4):** `watch_workout_load_signals_test.sql` (53
   assertions) covers both RPCs' grants and complete key lists, the three-workout limit, the 28-day
-  window, the 12-workout cap, the 50% coverage line, the workouts left out (discarded, open, Apple
+  window, the 12-workout cap, the 60% coverage line, the workouts left out (discarded, open, Apple
   Health, an undone set) and isolation between athletes. `load_signals_test.ts` has a test per rule
   (the 50% of reserve line, the 120 s split, the 30 s rest floor, the tracked-set filter, minimum sets and
   workouts, the 28-day window, no profile, the slower recovery), a grid proving the output has no load,
@@ -252,10 +252,14 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   checked by breaking its rule and watching the test fail. `test/workout_hr/watch_workout_prompt_test.dart`
   covers the rule, the contract fixture `watch_workout_status_v1_0.json`, snooze and mute;
   `test/phase_3_workout_flow_test.dart` covers the card on the workout screen.
-  `training_plan_test.ts` covers the two fixed Coach sentences: present with lower confidence on an
-  `add_load` or `add_reps` step, absent with confidence none, on a hold or cut, with no target or
-  when the loader fails or throws; the target text is identical with and without the signals; no
-  digit in either sentence; the largest plan still fits the budget. Each was checked by breaking it.
+  `training_plan_test.ts` covers the fixed Coach sentences: each reason gets its own sentence and only
+  the recovery comparison says "than usual"; absent with confidence none, on a hold or cut, with no
+  target; the target text is identical with and without the signals; no digit in any sentence; a
+  signals read that never answers, fails, throws or returns nothing renders the plan as before (the
+  1-second deadline, tested with the real value and with a short one) and leaves its trace; the read
+  starts with the plan read; the profile's inputs are read once for the heart-rate block and the
+  signals, in either order; the largest plan has room for the longest sentence on nine steps plus the
+  rest line. Each was checked by breaking it.
 - **Rest Live Activity (D0):** `test/contract/live_activity_channel_contract_test.dart` plays the
   native side of the `tracend/live_activity` method channel as
   `ios/Runner/Native/WorkoutActivityBridge.swift` implements it, and proves refused, disabled or

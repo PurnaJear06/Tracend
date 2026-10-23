@@ -109,20 +109,20 @@ select is((select count(*) from public.exercise_set_heart_rate h
     join public.exercise_sets x on x.id = h.exercise_set_id and x.set_number = 5 and not x.completed),
   1::bigint, 'the undone set still has its stored readings');
 
--- Yesterday: two finished sets, one with sparse readings and one with too little coverage.
+-- Yesterday: two finished sets, one with sparse readings and one just under 60% coverage.
 insert into flow select 's2', pg_temp.finished(1, jsonb_build_array(
   pg_temp.s(1, true), pg_temp.s(2, true, 45)));
 select public.persist_set_heart_rate_v1((select id from flow where name = 's2'),
-  jsonb_build_array(pg_temp.hr(1, '{"source":"background"}'), pg_temp.hr(2, '{"coverage":0.4}')));
+  jsonb_build_array(pg_temp.hr(1, '{"source":"background"}'), pg_temp.hr(2, '{"coverage":0.599}')));
 
 -- Five days ago: one finished set, no heart rate.
 insert into flow select 's3', pg_temp.finished(5, jsonb_build_array(pg_temp.s(1, true)));
 
--- Six days ago: three finished sets, the first tracked with exactly half the coverage.
+-- Six days ago: three finished sets, the first tracked with exactly 60% coverage.
 insert into flow select 's7', pg_temp.finished(6, jsonb_build_array(
   pg_temp.s(1, true), pg_temp.s(2, true, 60), pg_temp.s(3, true, 60)));
 select public.persist_set_heart_rate_v1((select id from flow where name = 's7'),
-  jsonb_build_array(pg_temp.hr(1, '{"coverage":0.5}')));
+  jsonb_build_array(pg_temp.hr(1, '{"coverage":0.6}')));
 
 -- Thirty days ago: out of the window.
 insert into flow select 's8', pg_temp.finished(30, jsonb_build_array(pg_temp.s(1, true)));
@@ -169,7 +169,7 @@ select is((select array_agg(k order by k) from jsonb_object_keys(
 select is(public.get_my_watch_workout_status_v1()->'recent_sessions'->0->>'completed_sets', '2',
   'yesterday''s workout finished two sets');
 select is(public.get_my_watch_workout_status_v1()->'recent_sessions'->0->>'watch_sets', '0',
-  'and no Watch workout tracked them: sparse readings and thin coverage do not count');
+  'and no Watch workout tracked them: sparse readings and coverage just under 60% do not count');
 select is(public.get_my_watch_workout_status_v1()->'recent_sessions'->1->>'completed_sets', '4',
   'the workout before finished four sets');
 select is(public.get_my_watch_workout_status_v1()->'recent_sessions'->1->>'watch_sets', '3',
@@ -183,7 +183,7 @@ select is((select array_agg(r->>'local_date' order by ord)
   array[(current_date - 3)::text, (current_date - 5)::text, (current_date - 6)::text],
   'asked for two days ago, it counts from then and 28 days back');
 select is(public.get_my_watch_workout_status_v1(current_date - 2)->'recent_sessions'->2->>'watch_sets', '1',
-  'half the coverage is enough to count');
+  '60% coverage is enough to count');
 select throws_ok($$select public.get_my_watch_workout_status_v1(current_date + 3)$$, '22023', null,
   'a date more than two days ahead is refused');
 select throws_ok($$select public.get_my_watch_workout_status_v1(current_date - 3)$$, '22023', null,
@@ -282,8 +282,8 @@ select is((select count(*) from jsonb_array_elements(
     where (r->>'completed_sets')::integer = 0), 0::bigint,
   'no listed workout is empty');
 select is(public.get_workout_load_inputs_v1('c4400000-0000-4000-8000-000000000001', current_date - 2)
-    ->'sessions'->2->'sets'->0->>'coverage', '0.500',
-  'a set with exactly half the coverage is listed with it');
+    ->'sessions'->2->'sets'->0->>'coverage', '0.600',
+  'a set with exactly 60% coverage is listed with it');
 
 select * from finish();
 rollback;

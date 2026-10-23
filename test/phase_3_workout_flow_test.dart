@@ -2602,6 +2602,8 @@ void main() {
       expect(card, findsOneWidget);
       expect(source.asked, 1);
       expect(find.textContaining('Start a Strength workout'), findsOneWidget);
+      expect(find.textContaining('informs rest and recovery'), findsOneWidget);
+      expect(find.textContaining('informs rest only'), findsNothing);
 
       await tester.tap(find.text('Not now'));
       await tester.pumpAndSettle();
@@ -2640,6 +2642,22 @@ void main() {
 
       expect(card, findsNothing);
       expect((source.snoozed, source.muted), (0, 0));
+    });
+
+    testWidgets('undoing the first set does not bring the card back', (
+      tester,
+    ) async {
+      final source = _WatchPrompt();
+      await _open(tester, _Harness(), watchPrompt: source);
+      expect(card, findsOneWidget);
+
+      await _tapText(tester, 'Done set 1');
+      expect(card, findsNothing);
+      await _tapLabel(tester, 'Skip rest');
+      await _tapLabel(tester, 'Undo set 1');
+
+      expect(find.text('Done set 1'), findsWidgets);
+      expect(card, findsNothing);
     });
 
     testWidgets('is not asked for a workout already under way', (tester) async {

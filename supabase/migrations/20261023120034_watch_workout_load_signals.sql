@@ -13,8 +13,8 @@
 -- 1. The app's status ------------------------------------------------------------------------
 
 -- The last three finished workouts of the last 28 days that had at least one finished set: how many
--- sets they finished and how many of those sets have Watch-workout heart rate with at least half of
--- the set and the minute after it covered. Workouts marked complete from Apple Health (no sets) and
+-- sets they finished and how many of those sets have Watch-workout heart rate with at least 60% of
+-- the set and the minute after it covered (the same line the load signals use). Workouts marked complete from Apple Health (no sets) and
 -- discarded ones are left out.
 create function private.watch_workout_status(target_user uuid, as_of date)
 returns jsonb language sql stable set search_path = '' as $$
@@ -31,7 +31,7 @@ returns jsonb language sql stable set search_path = '' as $$
         cross join lateral (
           select (count(*) filter (where s.completed))::integer as completed_sets,
             (count(*) filter (
-              where s.completed and h.source = 'watch_workout' and h.coverage >= 0.5))::integer as watch_sets
+              where s.completed and h.source = 'watch_workout' and h.coverage >= 0.6))::integer as watch_sets
           from public.exercise_performances p
           join public.exercise_sets s on s.exercise_performance_id = p.id and s.user_id = p.user_id
           left join public.exercise_set_heart_rate h on h.exercise_set_id = s.id and h.user_id = s.user_id

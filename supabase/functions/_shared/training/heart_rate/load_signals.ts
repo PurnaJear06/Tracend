@@ -3,8 +3,7 @@
 // arithmetic over per-set summaries and the heart-rate profile; raw samples never leave the phone.
 //
 // Heart rate informs; it never sets a load or a prescription (program decision D9). A signal can
-// lower the confidence the engine puts in a progression step, suggest a longer rest, and ask the
-// athlete a question. Nothing here can raise a load, a repetition target or a set count: the
+// lower the confidence the engine puts in a progression step or suggest a longer rest. Nothing here can raise a load, a repetition target or a set count: the
 // inputs hold no load, repetitions or reps in reserve (`get_workout_load_inputs_v1`) and the
 // output has no field that could carry one. No signal ever raises confidence, because nothing in
 // the evidence supports saying a heart rate agrees with an effort. Sleeping heart rate is NOT an
@@ -61,36 +60,20 @@ export const settleElevatedFraction = 0.5;
 /** A median rest shorter than this is a short rest for lifting sets; at or above it the rest was ample. */
 export const shortRestSeconds = 120;
 
-export type SetStartState = "steady" | "elevated" | "not_enough_data";
-export type SetStartReason = "no_profile" | "too_few_sets";
-export type SetStartCause = "rest_short" | "slow_settling";
+/** Why the engine is asked to act: the reasons a sentence is chosen by. */
+export type LoadSignalReason = "rest_short" | "slow_settling" | "recovery_slower";
 
+/**
+ * What the training engine may do with the signals. Nothing here carries a load, repetitions or
+ * sets: `confidence` only ever lowers, `rest` only ever allows a longer rest. `reasons` say which
+ * rule fired (`recovery_slower` is a comparison with the athlete's own earlier weeks; `slow_settling`
+ * is a fixed line, so it must never be worded as "than usual").
+ */
 export type LoadSignals = Readonly<{
-  schema_version: "1.0";
-  as_of: string;
-  window_days: number;
-  tracking: Readonly<{
-    sessions: number;
-    sessions_with_watch: number;
-    completed_sets: number;
-    watch_sets: number;
-  }>;
-  set_start: Readonly<{
-    state: SetStartState;
-    reason: SetStartReason | null;
-    sets: number;
-    sessions: number;
-    median_reserve_fraction: number | null;
-    median_rest_seconds: number | null;
-    cause: SetStartCause | null;
-  }>;
-  recovery: Readonly<{ state: HeartRateProfile["recovery"]["state"]; change_bpm: number | null }>;
-  /** What the engine may do with the signals. Nothing here carries a load, repetitions or sets. */
   engine: Readonly<{
     confidence: "none" | "lower";
     rest: "none" | "allow_longer";
-    question: "recovery_check" | null;
-    reasons: readonly ("rest_short" | "slow_settling" | "recovery_slower")[];
+    reasons: readonly LoadSignalReason[];
   }>;
 }>;
 
@@ -107,17 +90,13 @@ function median(values: readonly number[]): number {
   return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-function twoDecimals(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
 function isTracked(set: LoadSignalSet): boolean {
   return set.source === "watch_workout" && set.coverage >= trackedMinimumCoverage;
 }
 
 /**
  * The signals from the stored workouts and the heart-rate profile as of the same date. Anything
- * missing stays missing; a signal with too little behind it says so and changes nothing.
+ * missing stays missing; a rule with too little behind it fires nothing.
  */
 export function computeLoadSignals(
   inputs: WorkoutLoadInputs,
@@ -128,24 +107,14 @@ export function computeLoadSignals(
     return age >= 0 && age < loadSignalWindowDays && session.completed_sets > 0;
   });
 
-  let completedSets = 0;
-  let watchSets = 0;
-  let sessionsWithWatch = 0;
-  for (const session of sessions) {
-    completedSets += session.completed_sets;
-    const tracked = session.sets.filter(isTracked).length;
-    watchSets += tracked;
-    if (tracked > 0) sessionsWithWatch += 1;
-  }
-
+  const reasons: LoadSignalReason[] = [];
   const resting = profile.resting.bpm;
   const max = profile.max.bpm;
-  const hasProfile = profile.zones_missing === null && resting !== null && max !== null;
-  const fractions: number[] = [];
-  const rests: number[] = [];
-  const settleSessions = new Set<string>();
-  if (hasProfile) {
+  if (profile.zones_missing === null && resting !== null && max !== null) {
     const reserve = max - resting;
+    const fractions: number[] = [];
+    const rests: number[] = [];
+    const settleSessions = new Set<number>();
     sessions.forEach((session, index) => {
       for (const set of session.sets) {
         if (
@@ -154,68 +123,24 @@ export function computeLoadSignals(
         ) continue;
         fractions.push((set.start_bpm - resting) / reserve);
         rests.push(set.rest_before_seconds);
-        settleSessions.add(`${index}`);
+        settleSessions.add(index);
       }
     });
+    if (
+      fractions.length >= settleMinimumSets && settleSessions.size >= settleMinimumSessions &&
+      median(fractions) >= settleElevatedFraction
+    ) {
+      reasons.push(Math.round(median(rests)) < shortRestSeconds ? "rest_short" : "slow_settling");
+    }
   }
-
-  let setStart: LoadSignals["set_start"];
-  if (!hasProfile) {
-    setStart = {
-      state: "not_enough_data",
-      reason: "no_profile",
-      sets: 0,
-      sessions: 0,
-      median_reserve_fraction: null,
-      median_rest_seconds: null,
-      cause: null,
-    };
-  } else if (fractions.length < settleMinimumSets || settleSessions.size < settleMinimumSessions) {
-    setStart = {
-      state: "not_enough_data",
-      reason: "too_few_sets",
-      sets: fractions.length,
-      sessions: settleSessions.size,
-      median_reserve_fraction: null,
-      median_rest_seconds: null,
-      cause: null,
-    };
-  } else {
-    const middleFraction = median(fractions);
-    const middleRest = Math.round(median(rests));
-    const elevated = middleFraction >= settleElevatedFraction;
-    setStart = {
-      state: elevated ? "elevated" : "steady",
-      reason: null,
-      sets: fractions.length,
-      sessions: settleSessions.size,
-      median_reserve_fraction: twoDecimals(middleFraction),
-      median_rest_seconds: middleRest,
-      cause: elevated ? (middleRest < shortRestSeconds ? "rest_short" : "slow_settling") : null,
-    };
-  }
-
-  const reasons: LoadSignals["engine"]["reasons"][number][] = [];
-  if (setStart.cause !== null) reasons.push(setStart.cause);
   if (profile.recovery.state === "slower") reasons.push("recovery_slower");
-  const lowersConfidence = reasons.includes("slow_settling") || reasons.includes("recovery_slower");
 
   return {
-    schema_version: "1.0",
-    as_of: inputs.as_of,
-    window_days: loadSignalWindowDays,
-    tracking: {
-      sessions: sessions.length,
-      sessions_with_watch: sessionsWithWatch,
-      completed_sets: completedSets,
-      watch_sets: watchSets,
-    },
-    set_start: setStart,
-    recovery: { state: profile.recovery.state, change_bpm: profile.recovery.change_bpm },
     engine: {
-      confidence: lowersConfidence ? "lower" : "none",
+      confidence: reasons.includes("slow_settling") || reasons.includes("recovery_slower")
+        ? "lower"
+        : "none",
       rest: reasons.includes("rest_short") ? "allow_longer" : "none",
-      question: lowersConfidence ? "recovery_check" : null,
       reasons,
     },
   };

@@ -666,10 +666,10 @@ is sent again without them and the rest of that workout syncs without times.
 
 **Watch-workout suggestion (C4).** Above the first exercise of a workout with no set done, a card:
 "Track your heart rate. Start a Strength workout on your Apple Watch, then log your sets here.
-Afterwards Tracend reads your heart rate to learn how you recover between sets. It informs rest only
+Afterwards Tracend reads your heart rate to learn how you recover between sets. It informs rest and recovery
 and never changes your weights." with **Not now** (quiet for 7 days) and **I don't use a Watch**
 (quiet for good on this phone). It shows only when none of the last three finished workouts had Watch
-heart rate (or there is none yet), disappears when the first set is ticked, and is never shown in a
+heart rate (or there is none yet), disappears when the first set is ticked (undoing it does not bring the card back), and is never shown in a
 workout already under way or a finished one. A server that cannot be read shows nothing.
 
 **Rest.** Done set starts the exercise's rest (`rest_seconds`) when something follows it:

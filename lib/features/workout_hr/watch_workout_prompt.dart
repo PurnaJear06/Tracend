@@ -157,8 +157,8 @@ class WatchWorkoutPromptCard extends StatelessWidget {
             Text(
               'Start a Strength workout on your Apple Watch, then log your '
               'sets here. Afterwards Tracend reads your heart rate to learn '
-              'how you recover between sets. It informs rest only and never '
-              'changes your weights.',
+              'how you recover between sets. It informs rest and recovery and '
+              'never changes your weights.',
               style: text.bodyMedium,
             ),
             const SizedBox(height: TracendSpacing.xs),

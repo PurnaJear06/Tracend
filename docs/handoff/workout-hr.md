@@ -205,8 +205,8 @@ changes. A night with the Watch off has no row.
   no table, so nothing to export or delete): `get_my_watch_workout_status_v1(local_date)`
   (authenticated, own data, date within 2 days of today, `schema_version` 1.0) returns the last three
   finished workouts of the last 28 days that finished at least one set, each with `local_date`,
-  `completed_sets` and `watch_sets` (finished sets with `watch_workout` heart rate and at least 50%
-  coverage). `get_workout_load_inputs_v1(target_user, local_date)` (service role only, 1.0) returns the
+  `completed_sets` and `watch_sets` (finished sets with `watch_workout` heart rate and at least 60%
+  coverage, the same line the load signals use for a tracked set). `get_workout_load_inputs_v1(target_user, local_date)` (service role only, 1.0) returns the
   newest 12 finished workouts of the last 28 days with `completed_sets` and, for each finished set that
   has a heart-rate summary (120 per workout at most), `exercise_order`, `set_number`,
   `rest_before_seconds` and the Contract 4 values. It returns no load, repetitions, reps in reserve or
@@ -217,7 +217,7 @@ changes. A night with the Watch off has no row.
   exercise of a workout with no set done yet: "Track your heart rate. Start a Strength workout on your
   Apple Watch, then log your sets here..." with **Not now** and **I don't use a Watch**. It shows when
   none of the last three finished workouts had Watch heart rate (or there is no finished workout yet),
-  and goes away by itself when the first set is ticked. Not now stays quiet for 7 days; the other button
+  and goes away when the first set is ticked (undoing that set does not bring it back). Not now stays quiet for 7 days; the other button
   for good. Both answers live in `SharedPreferencesAsync` on the phone (`tracend.watch_prompt.muted`,
   `tracend.watch_prompt.snoozed_until`), are not tied to the account, and are checked before the server
   is asked. A server that cannot be read suggests nothing. A workout restored with a set done, or a
@@ -225,26 +225,34 @@ changes. A night with the Watch off has no row.
   `watchPrompt` source, the banner and two small methods (D1 reviews).
 - Load signals (engine, `supabase/functions/_shared/training/heart_rate/load_signals.ts`, loader in
   `load_signals_inputs.ts`): pure maths over the inputs above and the C3 profile, rules and thresholds
-  in ALGORITHMS.md "Heart-Rate Load Signals". Output `engine`: `confidence` (`none` or `lower`, never
-  higher), `rest` (`none` or `allow_longer`), `question` (`recovery_check` or null) and the `reasons`.
-  `loadWorkoutLoadSignals(client, userId, localDate)` reads both service-role functions and returns null
-  when either read fails, so the plan and its progression stand exactly as without heart rate.
+  in ALGORITHMS.md "Heart-Rate Load Signals". The whole output is `engine`: `confidence` (`none` or
+  `lower`, never higher), `rest` (`none` or `allow_longer`) and the `reasons` the sentence is chosen by
+  (`rest_short`, `slow_settling`, `recovery_slower`); nothing the engine does not read is returned.
+  `loadWorkoutLoadSignals(client, userId, localDate, readHeartRateInputs?)` reads both service-role
+  functions and returns null when either read fails, so the plan stands exactly as without heart rate.
+  There is no recovery question: B4 may add one later.
 - **Coach reads the signals (owner approved, fixed wording).** The registered `training_plan`
-  contributor (`contributors/training_plan.ts`) loads them with `loadSignalsFromService` (over
-  `coachServiceRpc`; a failed or empty read, or a throw, is no signals and the text is unchanged). With
-  `engine.confidence` = `lower`, a target whose action is `add_load` or `add_reps` gets one fixed sentence
-  after its "Next target" text ("Heart rate shows slower recovery than usual: treat this step as less
-  certain (the target is unchanged)."); a hold, a cut or an exercise with no target gets nothing. With
-  `engine.rest` = `allow_longer`, one fixed sentence ("Heart rate suggests resting a little longer
-  between sets...") sits once before the session's exercise lines, not on each. Both sentences hold no
-  figure and are not marked with `record`, so they ground nothing a reply could quote. The target, load,
-  reps and sets are the same text with or without the signals (test). `createTrainingPlanContributor`
-  takes the signals source as an optional second argument, so every other caller renders as before. The
-  Coach answer schema is untouched (0 optional, 0 unions), and a test proves the largest plan still
-  fits the 12,000-character budget with every sentence the signals can add. Train card and B4 are not
-  done (below).
-- Tests: `load_signals_test.ts` (20 tests: each rule with its edge, the D9 output check, parse and
-  loader), `test/workout_hr/watch_workout_prompt_test.dart`, six widget tests in
+  contributor (`contributors/training_plan.ts`) starts the read with the plan read (so it never adds
+  to it), gives it its own 1-second deadline (`loadSignalsDeadlineMs`, the host allows the contributor
+  4 seconds) and reads `get_heart_rate_inputs_v1` through the turn's shared read
+  (`heartRateInputsReadKey`), so the `heart_rate_profile` block and the signals share one call. A read
+  that fails, is empty, throws or is late renders the plan exactly as before and leaves the trace
+  `load_signals` = `unavailable`, `failed` or `timeout` (`ok` otherwise), which `coach-chat` logs as
+  `load_signals`. With `engine.confidence` = `lower`, a target whose action is `add_load` or `add_reps`
+  gets one fixed sentence after its "Next target" text: "...slower recovery than usual..." only when
+  `recovery_slower` fired (a comparison with the athlete's own earlier weeks); "...heart rate between
+  sets suggests incomplete recovery..." for `slow_settling` (a fixed 50%-of-reserve line, so no
+  comparison). A hold, a cut or an exercise with no target gets nothing. With `engine.rest` =
+  `allow_longer`, one fixed rest sentence sits once before the session's exercise lines. The sentences
+  hold no figure and are not marked with `record`, so they ground nothing a reply could quote. The
+  target, load, reps and sets are the same text with or without the signals (test).
+  `createTrainingPlanContributor` takes the signals source (and a deadline for tests) as optional
+  arguments, so every other caller renders as before. The Coach answer schema is untouched (0
+  optional, 0 unions), and a test checks the largest plan has room for the longest sentence on nine
+  steps plus the rest line within 12,000 characters. Train card and B4 are not done (below).
+- Tests: `load_signals_test.ts` (each rule with its edge through `engine`, the D9 output check, parse and
+  loader), `training_plan_test.ts` (sentence by reason, deadline, parallel and shared reads, trace),
+  `test/workout_hr/watch_workout_prompt_test.dart`, seven widget tests in
   `test/phase_3_workout_flow_test.dart`, fixture `watch_workout_status_v1_0.json`.
 
 Owner device check (iPhone + Apple Watch, a build from `main` once the migration is deployed): (1)
@@ -261,8 +269,8 @@ shows again.
    not reach it. A card line needs a Dart twin `load_signals.dart` with shared cases (the C3 pattern:
    `profile_cases.json` read by both) and a `get_my_workout_load_inputs_v1` for the signed-in athlete.
    It is a second copy of the rules and the owner has not asked for the line.
-2. B4 (same-day readiness) reads `engine.confidence` and `engine.question` through
-   `loadWorkoutLoadSignals`.
+2. B4 (same-day readiness) reads `engine.confidence` through `loadWorkoutLoadSignals` and may add
+   its own recovery question.
 
 **Decisions for the owner (C4).** The program doc holds only the one-line brief "Watch-workout prompt,
 load signals for the engine", so these readings are mine; each is the more conservative choice.
