@@ -18,11 +18,13 @@
 --   1. private.abandon_stale_workouts   the rule, for one athlete or for everyone
 --   2. get_my_workout_session           closes the caller's stale sessions before it looks
 --   3. an hourly job                    closes them for everyone, opened or not
---   4. the athlete's own late send      a session the rule closed still takes its unsent sets and
+--   4. start_workout                    closes the caller's stale sessions before it looks for an
+--                                       open one (the definition of 20261023140024 plus the close)
+--   5. the athlete's own late send      a session the rule closed still takes its unsent sets and
 --                                       its finish, on its own date
 --
--- start_workout is not changed here: the app always reads the session first, and the hourly job
--- covers the rest.
+-- The app reads the session first, the hourly job covers the rest, and start_workout closes them
+-- itself so a start can never find one.
 
 -- 1. The rule ---------------------------------------------------------------------------------
 
@@ -116,7 +118,92 @@ grant execute on function public.get_my_workout_session(uuid, date) to authentic
 select cron.schedule('tracend-abandon-stale-workouts', '17 * * * *',
   'select private.abandon_stale_workouts()');
 
--- 4. The athlete's own late send ----------------------------------------------------------------
+-- 4. Starting the workout -----------------------------------------------------------------------
+
+create or replace function public.start_workout(
+  p_planned_workout_id uuid,
+  p_local_date date,
+  p_timezone text,
+  p_idempotency_key uuid
+)
+returns uuid language plpgsql security definer set search_path='' as $$
+declare result_id uuid; version_id uuid; exercise record; performance_id uuid; n integer;
+  adjustment public.day_adjustments%rowtype; adjusted boolean := false; set_total integer;
+begin
+  if auth.uid() is null then raise exception 'authentication required' using errcode='42501'; end if;
+  -- The same lock respond_to_day_adjustment_v1 takes: an answer and a start never interleave.
+  perform pg_advisory_xact_lock(hashtextextended(
+    'day_adjustment:' || auth.uid()::text || coalesce(p_local_date::text, ''), 0));
+  select w.plan_version_id into version_id
+  from public.planned_workouts w
+  join public.training_plan_versions v on v.id=w.plan_version_id and v.user_id=w.user_id
+  where w.id=p_planned_workout_id and w.user_id=auth.uid() and v.status='active';
+  if not found then raise exception 'planned workout not found' using errcode='P0002'; end if;
+
+  select id into result_id from public.workout_sessions
+  where user_id=auth.uid() and idempotency_key=p_idempotency_key;
+  if result_id is not null then return result_id; end if;
+
+  -- A session left open from an earlier day is closed first, so it is never found as today's.
+  perform private.abandon_stale_workouts(auth.uid());
+  select id into result_id from public.workout_sessions
+  where user_id=auth.uid() and planned_workout_id=p_planned_workout_id and state='in_progress'
+  order by started_at desc limit 1;
+  if result_id is not null then return result_id; end if;
+
+  if exists (
+    select 1 from public.workout_sessions
+    where user_id=auth.uid() and planned_workout_id=p_planned_workout_id
+      and local_date=p_local_date and state='completed'
+  ) then
+    raise exception 'workout already completed for this coaching day' using errcode='55000';
+  end if;
+
+  -- The athlete's accepted answer for today is applied as given (it can only make the day easier);
+  -- a start for any other date, from history, gets the plan as written.
+  if p_local_date = private.local_date_for(auth.uid()) then
+    select * into adjustment from public.day_adjustments a
+    where a.user_id=auth.uid() and a.local_date=p_local_date
+      and a.planned_workout_id=p_planned_workout_id and a.superseded_at is null
+      and a.status='accepted';
+    adjusted := found;
+  end if;
+
+  insert into public.workout_sessions(
+    user_id,plan_version_id,planned_workout_id,local_date,timezone,idempotency_key,actual_started_at,
+    day_adjustment_id
+  ) values(
+    auth.uid(),version_id,p_planned_workout_id,p_local_date,p_timezone,p_idempotency_key,now(),
+    case when adjusted then adjustment.id end
+  ) returning id into result_id;
+
+  for exercise in select * from public.planned_exercises pe
+    where pe.planned_workout_id=p_planned_workout_id order by exercise_order loop
+    insert into public.exercise_performances(
+      user_id,workout_session_id,planned_exercise_id,exercise_order,status,
+      performance_kind,performed_name,rest_seconds
+    ) values(
+      auth.uid(),result_id,exercise.id,exercise.exercise_order,'unknown',
+      'prescribed',exercise.display_name_snapshot,exercise.rest_seconds
+    ) returning id into performance_id;
+    set_total := exercise.set_count;
+    if adjusted and adjustment.kind='reduce_sets' then
+      select (c ->> 'sets_to')::integer into set_total
+      from jsonb_array_elements(adjustment.changes) c
+      where c ->> 'planned_exercise_id' = exercise.id::text;
+      set_total := coalesce(set_total, exercise.set_count);
+    end if;
+    for n in 1..set_total loop
+      insert into public.exercise_sets(user_id,exercise_performance_id,set_number)
+      values(auth.uid(),performance_id,n);
+    end loop;
+  end loop;
+  return result_id;
+end $$;
+revoke all on function public.start_workout(uuid, date, text, uuid) from public, anon, authenticated;
+grant execute on function public.start_workout(uuid, date, text, uuid) to authenticated;
+
+-- 5. The athlete's own late send ----------------------------------------------------------------
 
 -- A workout finished offline can reach the server after the rule closed it. Only the rule's own
 -- close counts (its audit event carries reason 'stale'); an athlete's discard has no reason and

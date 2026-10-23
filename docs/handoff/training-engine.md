@@ -557,7 +557,7 @@ found again by the same workout months later. The only abandonment was the athle
 The app then rebuilt the screen from the server row (start time in July). A local draft of the old
 session did the same when the server returned nothing.
 
-**Fix (additive; `start_workout` untouched, so no conflict with #165).**
+**Fix (additive migration).**
 
 - `private.abandon_stale_workouts(p_user default null)`: an `in_progress` session whose `local_date`
   is before `private.local_date_for(user)` and that started more than 10800 s ago becomes
@@ -583,9 +583,10 @@ session did the same when the server returned nothing.
   (`persist_set_heart_rate_v1`) still refuse any abandoned session. A leftover for a workout of
   another weekday is sent when that workout is next opened; the server keeps its session
   completable until then.
-- Follow-up after #165 merges: `start_workout` itself could call
-  `private.abandon_stale_workouts(auth.uid())` before its open-session lookup, which would close the
-  window between a failed read and a start.
+- `start_workout` is #165's definition (`20261023140024`, advisory lock first) plus
+  `perform private.abandon_stale_workouts(auth.uid())` right before its open-session lookup, so a
+  start can never find a stale session even when the read before it failed. A unit test pins the
+  redefinition to #165's text plus exactly that line.
 - Existing production rows are not touched by the migration; the hourly job closes the four on its
   first run after the deploy (the app does it sooner when the owner opens any workout).
 

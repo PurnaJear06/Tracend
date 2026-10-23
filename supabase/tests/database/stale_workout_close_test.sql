@@ -1,5 +1,5 @@
 begin;
-select plan(46);
+select plan(52);
 
 -- A trains; B is another athlete. Sessions are inserted the way the app left them months ago.
 insert into auth.users(id, role) values
@@ -278,6 +278,56 @@ select is((select count(*) from public.audit_events
   1::bigint, 'the completion is audited');
 select is((select state::text from public.workout_sessions
     where id = 'd1350000-0000-4000-8000-000000000008'), 'abandoned', 'the self-discarded one stays discarded');
+
+-- Starting without reading first ---------------------------------------------------------------
+
+-- A July workout is still open and today's start is the first call the server hears.
+insert into public.planned_workouts(id, user_id, plan_version_id, workout_order, name, objective,
+  preferred_weekday, estimated_minutes, warm_up_guidance, cool_down_guidance) values
+  ('d1330000-0000-4000-8000-000000000007', 'd1300000-0000-4000-8000-000000000001',
+   'd1320000-0000-4000-8000-000000000001', 7, 'Legs C', 'Squat', 7, 50, 'Warm up', 'Cool down');
+insert into public.planned_exercises(id, user_id, planned_workout_id, exercise_order,
+  display_name_snapshot, set_count, rep_min, rep_max, rest_seconds) values
+  ('d1340000-0000-4000-8000-000000000007', 'd1300000-0000-4000-8000-000000000001',
+   'd1330000-0000-4000-8000-000000000007', 1, 'Front squat', 2, 5, 8, 120);
+insert into public.workout_sessions(id, user_id, plan_version_id, planned_workout_id, local_date,
+  timezone, state, idempotency_key, started_at, actual_started_at)
+select 'd1350000-0000-4000-8000-000000000009', 'd1300000-0000-4000-8000-000000000001',
+  'd1320000-0000-4000-8000-000000000001', 'd1330000-0000-4000-8000-000000000007',
+  today - 98, 'UTC', 'in_progress', 'd1360000-0000-4000-8000-000000000009',
+  now() - interval '98 days', now() - interval '98 days' from t;
+insert into public.exercise_performances(id, user_id, workout_session_id, planned_exercise_id,
+  exercise_order, status, performance_kind, performed_name) values
+  ('d1370000-0000-4000-8000-000000000009', 'd1300000-0000-4000-8000-000000000001',
+   'd1350000-0000-4000-8000-000000000009', 'd1340000-0000-4000-8000-000000000007', 1, 'performed',
+   'prescribed', 'Front squat');
+insert into public.exercise_sets(user_id, exercise_performance_id, set_number, repetitions, load_kg,
+  completed) values
+  ('d1300000-0000-4000-8000-000000000001', 'd1370000-0000-4000-8000-000000000009', 1, 5, 80, true);
+
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'd1300000-0000-4000-8000-000000000001';
+insert into flow select 'fresh', public.start_workout('d1330000-0000-4000-8000-000000000007',
+  (select today from t), 'UTC', 'd1360000-0000-4000-8000-000000000011');
+reset role;
+
+select isnt((select id from flow where name = 'fresh'), 'd1350000-0000-4000-8000-000000000009'::uuid,
+  'starting today does not return the old open session');
+select is((select local_date from public.workout_sessions
+    where id = (select id from flow where name = 'fresh')), (select today from t),
+  'it makes one for today');
+select is((select state::text from public.workout_sessions
+    where id = 'd1350000-0000-4000-8000-000000000009'), 'abandoned', 'and the old one is abandoned');
+select is((select count(*) from public.exercise_sets
+    where exercise_performance_id = 'd1370000-0000-4000-8000-000000000009' and completed),
+  1::bigint, 'with its set intact');
+select is((select count(*) from public.audit_events
+    where target_id = 'd1350000-0000-4000-8000-000000000009' and action_code = 'workout.abandoned'
+      and metadata->>'reason' = 'stale'), 1::bigint, 'closed by the stale rule');
+select is((select count(*) from public.exercise_sets s
+    join public.exercise_performances p on p.id = s.exercise_performance_id
+    where p.workout_session_id = (select id from flow where name = 'fresh') and s.completed),
+  0::bigint, 'and today''s session has none of its sets');
 
 select * from finish();
 rollback;

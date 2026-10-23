@@ -8,6 +8,10 @@ const trainRedesign = new URL(
   "../../../migrations/20261003100000_train_redesign_data.sql",
   import.meta.url,
 );
+const dayAdjustments = new URL(
+  "../../../migrations/20261023140024_day_adjustments.sql",
+  import.meta.url,
+);
 const previous = new URL(
   "../../../migrations/20261015140031_set_timing.sql",
   import.meta.url,
@@ -140,4 +144,22 @@ Deno.test("only the rule's own close can be finished late", async () => {
     sql,
     "revoke all on function private.workout_closed_as_stale(uuid) from public, anon, authenticated;",
   );
+});
+
+// start_workout is the day adjustment migration's function (which keeps its advisory lock first)
+// plus the close of the caller's stale sessions right before the open-session lookup.
+Deno.test("start_workout is the day adjustment version plus the stale close only", async () => {
+  const start = "create or replace function public.start_workout";
+  const original = between(await Deno.readTextFile(dayAdjustments), start, "end $$;");
+  const redefined = between(await Deno.readTextFile(migration), start, "end $$;");
+  const added =
+    `  -- A session left open from an earlier day is closed first, so it is never found as today's.
+  perform private.abandon_stale_workouts(auth.uid());
+`;
+  assert(redefined.includes(added), "missing hunk");
+  assertEquals(redefined.replace(added, () => "").trim(), original.trim());
+  const lock = redefined.indexOf("pg_advisory_xact_lock");
+  const close = redefined.indexOf("private.abandon_stale_workouts");
+  const lookup = redefined.indexOf("state='in_progress'\n  order by started_at desc limit 1;");
+  assert(lock > 0 && lock < close && close < lookup, "lock, then the close, then the lookup");
 });
