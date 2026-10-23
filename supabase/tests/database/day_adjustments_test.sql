@@ -22,7 +22,8 @@ insert into auth.users(id, role) values
   ('b4000000-0000-4000-8000-000000000014', 'authenticated'),
   ('b4000000-0000-4000-8000-000000000015', 'authenticated'),
   ('b4000000-0000-4000-8000-000000000016', 'authenticated'),
-  ('b4000000-0000-4000-8000-000000000017', 'authenticated');
+  ('b4000000-0000-4000-8000-000000000017', 'authenticated'),
+  ('b4000000-0000-4000-8000-000000000018', 'authenticated');
 
 create temporary table t as
   select private.local_date_for('b4000000-0000-4000-8000-000000000001') as today;
@@ -195,6 +196,7 @@ select pg_temp.make_athlete('b4000000-0000-4000-8000-000000000016');
 select pg_temp.seed_history('b4000000-0000-4000-8000-000000000016');
 select pg_temp.metrics('b4000000-0000-4000-8000-000000000016', 60, 'high');
 select pg_temp.make_athlete('b4000000-0000-4000-8000-000000000017');
+select pg_temp.make_athlete('b4000000-0000-4000-8000-000000000018');
 
 -- Shape and privileges ----------------------------------------------------------------------------
 
@@ -927,6 +929,63 @@ select public.get_my_day_adjustment_v1((select today from t));
 select ok((select computed_at > now() - interval '1 minute' from public.daily_computed_metrics
     where user_id = 'b4000000-0000-4000-8000-000000000017'),
   'Health data that arrived after the scores makes them again');
+
+-- A score made before a check-in is made again after it ------------------------------------------------
+
+select pg_temp.as_user('b4000000-0000-4000-8000-000000000018');
+select pg_temp.metrics('b4000000-0000-4000-8000-000000000018', 60, 'high');
+update public.daily_computed_metrics set computed_at = now() - interval '1 hour'
+where user_id = 'b4000000-0000-4000-8000-000000000018';
+select pg_temp.check_in('b4000000-0000-4000-8000-000000000018', 1, 1, 3, 3, 0);
+update public.daily_check_ins set created_at = now() - interval '30 minutes'
+where user_id = 'b4000000-0000-4000-8000-000000000018' and superseded_at is null;
+insert into r select 'fresh18', public.get_my_day_adjustment_v1((select today from t));
+select ok((select (j -> 'signals' ->> 'recovery_score') is distinct from '60' from r where name = 'fresh18')
+  and (select (j -> 'signals' ->> 'recovery_score')::integer is not distinct from m.recovery_score
+    from r, public.daily_computed_metrics m where r.name = 'fresh18'
+      and m.user_id = 'b4000000-0000-4000-8000-000000000018')
+  and (select computed_at > now() - interval '1 minute' from public.daily_computed_metrics
+    where user_id = 'b4000000-0000-4000-8000-000000000018'),
+  'a check-in saved after the score was made gets a new score, not the old one');
+
+-- Even right after an attempt: the check-in is newer than it.
+select pg_temp.metrics('b4000000-0000-4000-8000-000000000018', 60, 'high');
+update public.daily_computed_metrics set computed_at = now() - interval '1 hour'
+where user_id = 'b4000000-0000-4000-8000-000000000018';
+update private.day_adjustment_metric_attempts set attempted_at = now() - interval '5 minutes'
+where user_id = 'b4000000-0000-4000-8000-000000000018';
+update public.daily_check_ins set created_at = now() - interval '1 minute'
+where user_id = 'b4000000-0000-4000-8000-000000000018' and superseded_at is null;
+insert into r select 'bypass18', public.get_my_day_adjustment_v1((select today from t));
+select ok((select (j -> 'signals' ->> 'recovery_score') is distinct from '60' from r where name = 'bypass18'),
+  'a check-in newer than the last attempt is never throttled');
+
+-- Otherwise the attempt limit holds.
+select pg_temp.metrics('b4000000-0000-4000-8000-000000000018', 60, 'high');
+update public.daily_computed_metrics set computed_at = now() - interval '1 hour'
+where user_id = 'b4000000-0000-4000-8000-000000000018';
+update private.day_adjustment_metric_attempts set attempted_at = now() - interval '1 minute'
+where user_id = 'b4000000-0000-4000-8000-000000000018';
+update public.daily_check_ins set created_at = now() - interval '30 minutes'
+where user_id = 'b4000000-0000-4000-8000-000000000018' and superseded_at is null;
+insert into r select 'held18', public.get_my_day_adjustment_v1((select today from t));
+select is((select j -> 'signals' ->> 'recovery_score' from r where name = 'held18'), '60',
+  'with nothing newer than the last attempt, the score is not made again within the limit');
+
+-- A workout finished after the score also makes it stale.
+select pg_temp.metrics('b4000000-0000-4000-8000-000000000018', 60, 'high');
+update public.daily_computed_metrics set computed_at = now() - interval '1 hour'
+where user_id = 'b4000000-0000-4000-8000-000000000018';
+update private.day_adjustment_metric_attempts set attempted_at = now() - interval '11 minutes'
+where user_id = 'b4000000-0000-4000-8000-000000000018';
+update public.daily_check_ins set created_at = now() - interval '2 hours'
+where user_id = 'b4000000-0000-4000-8000-000000000018' and superseded_at is null;
+select pg_temp.log_bench('b4000000-0000-4000-8000-000000000018', 0, 8);
+update public.workout_sessions set completed_at = now() - interval '5 minutes'
+where user_id = 'b4000000-0000-4000-8000-000000000018';
+insert into r select 'workout18', public.get_my_day_adjustment_v1((select today from t));
+select ok((select (j -> 'signals' ->> 'recovery_score') is distinct from '60' from r where name = 'workout18'),
+  'a workout finished after the score was made makes it again');
 
 -- A body-weight or unassisted hold reads as such, not as 0 kg (P3) ---------------------------------------
 

@@ -574,7 +574,7 @@ table; Contract 5 in the program plan the payload (1.0 as built).
 - **Staleness.** An answer stands while it belongs to today's workout and the rules do not ask for
   something stricter than the greater of what they asked then and what the athlete answered. The
   brief compared only with the answered kind, which would have re-asked a lighter chosen kind; the
-  `rules_kind` column fixes that. After the session starts it stands as it is.
+  `rules_kind` column fixes that. After the session starts it stands as it is. "Stands" decides what the card shows; `start_workout` does not ask it, and applies the current accepted answer as given.
 - **`start_workout`** (same signature) takes the athlete's advisory lock for the day (the one
   `respond_to_day_adjustment_v1` takes), then links and applies the current accepted answer for the
   workout when the start is for the athlete's own today, without asking the rules again; `reduce_sets`

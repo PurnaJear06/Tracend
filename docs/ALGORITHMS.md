@@ -597,8 +597,9 @@ the athlete's own today, whatever the rules say now: it can only make the day ea
 again is the card's job. It builds the adjusted set counts for `reduce_sets`; for `hold_load` and
 the easy-cardio swap it links the answer and keeps the plan's sets (the plan stays usable); a start
 for another date gets the plan as written; the app pre-fills held loads. Today's scores are made
-when none exist and again when Apple Health data arrived after them, at most once in ten minutes
-per athlete and day, failed attempts included.
+when none exist and again when anything they read is newer than them (Apple Health data of the last
+35 days, today's check-in, a workout finished since), at most once in ten minutes per athlete and
+day, failed attempts included; a check-in saved after the last attempt always allows one at once.
 
 **B3 meets the adjustment.** An exercise that an accepted hold_load or reduce_sets answer lists, done
 in that session, is `adjusted`; its planned set count is the adjusted one (`sets_planned`). An

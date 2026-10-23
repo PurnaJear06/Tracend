@@ -468,7 +468,7 @@ provenance; see ALGORITHMS §4 "Effort Provenance". `complete_workout_v2` is the
 
 `day_adjustment_id` (nullable, B4) names the `day_adjustments` answer the session was started
 under, through a foreign key on `(day_adjustment_id, user_id)` so a session can only link its own
-athlete's row. `start_workout` sets it for an accepted answer that still stands.
+athlete's row. `start_workout` sets it for the athlete's current accepted answer for that workout when the start is for their own today, whatever the rules say by then (it can only make the day easier; asking again is the card's job).
 
 ### `exercise_performances`
 

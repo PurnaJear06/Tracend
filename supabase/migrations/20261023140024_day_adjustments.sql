@@ -408,11 +408,12 @@ revoke all on function private.day_adjustment_explanation(text, text, text[], te
 
 -- 7. Computing the day ------------------------------------------------------------------------------
 
--- Today's scores are made when none exist, and made again when Apple Health data arrived after
--- they were computed. A failure leaves the recovery score missing and never blocks the adjustment
--- (the same guard prepare_daily_coaching uses). Every attempt, failed or not, is recorded, and none
--- is repeated within metrics_retry_minutes, so a scoring error or a day that cannot be scored is not
--- retried on every read.
+-- Today's scores are made when none exist, and made again when anything the score reads is newer
+-- than it: Apple Health data of the last 35 days, today's check-in, or a workout finished since. A
+-- failure leaves the recovery score missing and never blocks the adjustment (the same guard
+-- prepare_daily_coaching uses). Every attempt, failed or not, is recorded, and none is repeated
+-- within metrics_retry_minutes, except that a check-in saved after the last attempt always allows
+-- an immediate one, so a poor check-in is never answered with a score made before it.
 create table private.day_adjustment_metric_attempts (
   user_id uuid not null references public.user_accounts (id) on delete cascade,
   local_date date not null,
@@ -427,19 +428,32 @@ revoke all on private.day_adjustment_metric_attempts from public, anon, authenti
 create function private.day_adjustment_refresh_metrics(p_user uuid, p_date date)
 returns void language plpgsql security definer set search_path = '' as $$
 declare
+  made_at timestamptz;
+  last_attempt timestamptz;
   stale boolean;
   did_fail boolean := false;
 begin
-  stale := not exists (select 1 from public.daily_computed_metrics m
-      where m.user_id = p_user and m.local_date = p_date)
-    or exists (select 1 from public.daily_computed_metrics m
-      join public.daily_health_summaries h on h.user_id = m.user_id and h.local_date = m.local_date
-        and h.source_scope = 'healthkit'
-      where m.user_id = p_user and m.local_date = p_date and h.last_synced_at > m.computed_at);
-  if not stale or exists (select 1 from private.day_adjustment_metric_attempts t
-      where t.user_id = p_user and t.local_date = p_date
-        and t.attempted_at > now() - make_interval(
-          mins => (private.readiness_rules() ->> 'metrics_retry_minutes')::integer)) then
+  select m.computed_at into made_at from public.daily_computed_metrics m
+  where m.user_id = p_user and m.local_date = p_date;
+  stale := made_at is null
+    or exists (select 1 from public.daily_health_summaries h
+      where h.user_id = p_user and h.source_scope = 'healthkit'
+        and h.local_date between p_date - 35 and p_date and h.last_synced_at > made_at)
+    or exists (select 1 from public.daily_check_ins c
+      where c.user_id = p_user and c.local_date = p_date and c.superseded_at is null
+        and c.created_at > made_at)
+    or exists (select 1 from public.workout_sessions w
+      where w.user_id = p_user and w.state = 'completed' and w.completed_at > made_at);
+  if not stale then
+    return;
+  end if;
+  select t.attempted_at into last_attempt from private.day_adjustment_metric_attempts t
+  where t.user_id = p_user and t.local_date = p_date;
+  if last_attempt > now() - make_interval(
+        mins => (private.readiness_rules() ->> 'metrics_retry_minutes')::integer)
+     and not exists (select 1 from public.daily_check_ins c
+      where c.user_id = p_user and c.local_date = p_date and c.superseded_at is null
+        and c.created_at > last_attempt) then
     return;
   end if;
   begin
