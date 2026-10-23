@@ -37,14 +37,13 @@ class AccountRegion {
   final String? countryCode;
   final List<String> effectiveRegions;
 
-  /// The country with national guidance that Coach is using, whether the
-  /// athlete chose it or the account's time zone or language selects it.
-  String? get guidanceCountry {
-    for (final region in effectiveRegions) {
-      if (hasRegionalModule(region)) return region;
-    }
-    return null;
-  }
+  /// Every country with national guidance that Coach is using, whether the
+  /// athlete chose it or the account's time zone or language selects it (a
+  /// language of one country and a time zone of another select both).
+  List<String> get guidanceCountries => [
+    for (final region in effectiveRegions)
+      if (hasRegionalModule(region)) region,
+  ];
 }
 
 /// Reads the `get_my_country_v1` and `set_my_country_v1` answer (1.x). Anything

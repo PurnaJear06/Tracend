@@ -15,6 +15,7 @@ class _FakeRegion implements RegionRepository {
   _FakeRegion({
     this.stored,
     this.timeZoneGuess,
+    this.secondGuess,
     this.failLoads = 0,
     this.failSaves = false,
   });
@@ -23,6 +24,9 @@ class _FakeRegion implements RegionRepository {
 
   /// The country the account's time zone selects while none is stored.
   final String? timeZoneGuess;
+
+  /// A second country the account's language selects.
+  final String? secondGuess;
   int failLoads;
   bool failSaves;
   final saved = <String?>[];
@@ -31,7 +35,7 @@ class _FakeRegion implements RegionRepository {
     countryCode: stored,
     effectiveRegions: [
       'global',
-      if (stored != null) stored! else ?timeZoneGuess,
+      if (stored != null) stored! else ...[?timeZoneGuess, ?secondGuess],
     ],
   );
 
@@ -119,6 +123,21 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets(
+    'a time zone and a language that select two countries name both',
+    (tester) async {
+      await _pump(tester, _FakeRegion(timeZoneGuess: 'IN', secondGuess: 'GB'));
+      await _showRegion(tester);
+      expect(
+        find.text(
+          'Not set · Coach goes by your time zone or language '
+          '(India, United Kingdom)',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('a time-zone country with no national guidance stays global', (
     tester,

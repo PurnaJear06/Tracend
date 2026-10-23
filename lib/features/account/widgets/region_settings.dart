@@ -63,10 +63,13 @@ class _RegionSettingsState extends State<RegionSettings> {
     if (label == null) {
       // Nothing chosen: the account's time zone or language may still select
       // a country, and the row must say so rather than claim "everywhere".
-      final guess = countryLabel(_region.guidanceCountry);
-      return guess == null
+      final guess = [
+        for (final country in _region.guidanceCountries) countryLabel(country)!,
+      ]..sort();
+      return guess.isEmpty
           ? 'Not set · Coach uses guidance that applies everywhere'
-          : 'Not set · Coach goes by your time zone or language ($guess)';
+          : 'Not set · Coach goes by your time zone or language '
+                '(${guess.join(', ')})';
     }
     return hasRegionalModule(code)
         ? '$label · Coach can cite $label’s national guidelines'

@@ -122,7 +122,9 @@ sorted list the library search uses for the athlete now (`global` plus the store
 none, the locale and time-zone guess), so the app can say which country Coach is going by. A blank
 code clears the choice; the set accepts only the codes the app offers (`AU`, `IN`, `GB`, `US`, `ZZ`)
 and raises `22023` otherwise; a signed-out caller gets `42501`. Clients cannot write the column
-directly. A new region adds its code to the set function in a later migration. The app writes `timezone`
+directly. An actual change writes an `audit_events` row (`account.country.changed`, target the
+account, metadata `from` and `to`); setting the stored value again or clearing an unset country
+writes none. A new region adds its code to the set function in a later migration. The app writes `timezone`
 only through `set_my_timezone`, which accepts only names Postgres knows; clients cannot write the
 column directly. Readers such as the weekly-review scheduler go through `private.safe_timezone`,
 and `private.local_date_for` gives the athlete's local date.

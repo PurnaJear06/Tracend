@@ -1099,7 +1099,8 @@ States, the United Kingdom and Australia chosen by the athlete's region.
   built by `private.my_country_answer`; `effective_regions` is the sorted list the library search uses
   for the athlete now, so "Not set" on an Indian time zone reads `["IN", "global"]`; a blank code clears
   the choice; the set accepts only the codes the app offers, AU, IN, GB, US and ZZ, and raises `22023`
-  for anything else; a signed-out caller gets `42501`); clients cannot write the column. `private.library_regions_for_account` (the one function both searches call) is redefined
+  for anything else; a signed-out caller gets `42501`; an actual change writes an `account.country.changed`
+  audit event with the old and new code, a repeat writes none); clients cannot write the column. `private.library_regions_for_account` (the one function both searches call) is redefined
   with the same signature and grants: a stored country gives `['global', <country>]`; with none it
   behaves exactly as before (locale country, and `IN` for an Indian time zone). `ZZ` is the athlete's
   answer "another country" (ISO's user-assigned code): it sees global sources only and is not

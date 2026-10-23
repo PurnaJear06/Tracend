@@ -79,6 +79,7 @@ set search_path = ''
 as $$
 declare
   code text := nullif(upper(btrim(p_country_code)), '');
+  previous text;
 begin
   if auth.uid() is null then
     raise exception 'authentication required' using errcode = '42501';
@@ -86,12 +87,18 @@ begin
   if code is not null and code <> all (array['AU', 'IN', 'GB', 'US', 'ZZ']) then
     raise exception 'unknown country' using errcode = '22023';
   end if;
-  update public.user_accounts set country_code = code
-    where id = auth.uid() and account_status = 'active' and country_code is distinct from code;
-  if not exists (
-    select 1 from public.user_accounts a where a.id = auth.uid() and a.account_status = 'active'
-  ) then
+  select a.country_code into previous from public.user_accounts a
+    where a.id = auth.uid() and a.account_status = 'active' for update;
+  if not found then
     raise exception 'active account required' using errcode = '42501';
+  end if;
+  -- The country is restricted account data: an actual change leaves an audit event (old and new
+  -- code); setting the value already stored, or clearing an unset country, leaves none.
+  if previous is distinct from code then
+    update public.user_accounts set country_code = code where id = auth.uid();
+    insert into public.audit_events(user_id, action_code, target_type, target_id, outcome, metadata)
+    values (auth.uid(), 'account.country.changed', 'user_account', auth.uid(), 'succeeded',
+      jsonb_build_object('schema_version', '1.0', 'from', previous, 'to', code));
   end if;
   return private.my_country_answer(auth.uid());
 end $$;

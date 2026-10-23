@@ -34,23 +34,32 @@ void main() {
       final region = parseAccountRegion(_fixture('my_country_v1_1.json'));
       expect(region.countryCode, 'AU');
       expect(region.effectiveRegions, ['AU', 'global']);
-      expect(region.guidanceCountry, 'AU');
+      expect(region.guidanceCountries, ['AU']);
     });
 
     test('an unset country can still have a country in effect', () {
       final region = parseAccountRegion(_fixture('my_country_unset_v1_1.json'));
       expect(region.countryCode, isNull);
       expect(region.effectiveRegions, ['IN', 'global']);
-      expect(region.guidanceCountry, 'IN');
+      expect(region.guidanceCountries, ['IN']);
     });
 
     test('with only global in effect there is no guidance country', () {
       const region = AccountRegion();
-      expect(region.guidanceCountry, isNull);
+      expect(region.guidanceCountries, isEmpty);
       // A region with no module (a locale of another country) is no country.
       expect(
-        const AccountRegion(effectiveRegions: ['FR', 'global']).guidanceCountry,
-        isNull,
+        const AccountRegion(
+          effectiveRegions: ['FR', 'global'],
+        ).guidanceCountries,
+        isEmpty,
+      );
+      // A language of one country and a time zone of another select both.
+      expect(
+        const AccountRegion(
+          effectiveRegions: ['GB', 'IN', 'global'],
+        ).guidanceCountries,
+        ['GB', 'IN'],
       );
     });
 

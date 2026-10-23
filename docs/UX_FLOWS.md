@@ -1210,7 +1210,7 @@ Account is one iOS inset-grouped settings page:
   "Not set · Coach uses guidance that applies everywhere" (only when nothing but global is in
   effect), "Not set · Coach goes by your time zone or language (India)" when the account's time zone
   or language still selects a country with national guidance (the server reports the regions in
-  effect), or "India · Coach can cite India's national guidelines"; "Another country" uses guidance
+  effect; with two, both are named, for example "(India, United Kingdom)"), or "India · Coach can cite India's national guidelines"; "Another country" uses guidance
   that applies everywhere even on an Indian time zone. The footnote says it
   only picks which national guidelines Coach can cite and that the plan's numbers do not change. A
   failed save keeps the old choice and shows a toast; an unreadable country shows "Could not be read

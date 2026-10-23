@@ -1,5 +1,5 @@
 begin;
-select plan(42);
+select plan(46);
 
 -- The athlete's optional country and the library regions it picks (migration
 -- 20261023120044_regional_modules). Three athletes: A has an Indian time zone, B an en-GB locale,
@@ -87,6 +87,26 @@ select throws_ok($$select public.set_my_country_v1('IN')$$, '42501', null, 'sett
 reset role;
 select is((select country_code from public.user_accounts where id = 'e4000000-0000-4000-8000-000000000001'),
   null, 'B setting a country did not touch A');
+
+-- Audit: one event per actual change -----------------------------------------------------------
+-- A's changes were null to AU (set twice), AU to IN, IN to ZZ and ZZ to null (set twice); the
+-- refused codes AUS, 1A and FR changed nothing. B went from null to GB.
+
+select is((select count(*) from public.audit_events
+    where user_id = 'e4000000-0000-4000-8000-000000000001' and action_code = 'account.country.changed'),
+  4::bigint, 'each actual change leaves one audit event; a repeat, a refused code and clearing an unset country leave none');
+select ok(exists (select 1 from public.audit_events
+    where user_id = 'e4000000-0000-4000-8000-000000000001' and action_code = 'account.country.changed'
+      and metadata -> 'from' = 'null'::jsonb and metadata ->> 'to' = 'AU'
+      and target_type = 'user_account' and target_id = user_id and outcome = 'succeeded'),
+  'the event records the old and new code, and the account it concerns');
+select ok(exists (select 1 from public.audit_events
+    where user_id = 'e4000000-0000-4000-8000-000000000001' and action_code = 'account.country.changed'
+      and metadata ->> 'from' = 'ZZ' and metadata -> 'to' = 'null'::jsonb),
+  'clearing the choice is recorded too');
+select is((select count(*) from public.audit_events
+    where action_code = 'account.country.changed' and user_id <> 'e4000000-0000-4000-8000-000000000001'),
+  1::bigint, 'B has its own single event');
 
 -- The regions an account maps to ---------------------------------------------------------------
 
