@@ -670,7 +670,7 @@ Afterwards Tracend reads your heart rate to learn how you recover between sets. 
 and never changes your weights." with **Not now** (quiet for 7 days) and **I don't use a Watch**
 (quiet for good on this phone). It shows only when none of the last three finished workouts had Watch
 heart rate (or there is none yet), disappears when the first set is ticked (undoing it does not bring the card back), and is never shown in a
-workout already under way or a finished one. A server that cannot be read shows nothing.
+workout already under way or a finished one. A server that cannot be read, or a reply that is not valid, shows nothing.
 
 **Rest.** Done set starts the exercise's rest (`rest_seconds`) when something follows it:
 

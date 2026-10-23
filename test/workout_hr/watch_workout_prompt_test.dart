@@ -21,46 +21,81 @@ Map<String, dynamic> _fixture() => Map<String, dynamic>.from(
 
 void main() {
   group('the rule', () {
+    WatchWorkoutStatus status(Object? json) =>
+        WatchWorkoutStatus.tryParse(json)!;
+
     test('no finished workout yet suggests a Watch workout', () {
-      expect(WatchWorkoutStatus.fromJson(null).suggestsWatchWorkout, isTrue);
       expect(
-        WatchWorkoutStatus.fromJson({
-          'recent_sessions': <Object?>[],
-        }).suggestsWatchWorkout,
+        status({'recent_sessions': <Object?>[]}).suggestsWatchWorkout,
         isTrue,
       );
     });
 
     test('three workouts with no Watch heart rate suggest one', () {
-      final status = WatchWorkoutStatus.fromJson({
-        'recent_sessions': [
-          for (var i = 0; i < 3; i++) {'completed_sets': 9, 'watch_sets': 0},
-        ],
-      });
-      expect(status.suggestsWatchWorkout, isTrue);
+      expect(
+        status({
+          'recent_sessions': [
+            for (var i = 0; i < 3; i++) {'completed_sets': 9, 'watch_sets': 0},
+          ],
+        }).suggestsWatchWorkout,
+        isTrue,
+      );
     });
 
     test('one tracked workout among the last three keeps it quiet', () {
-      final status = WatchWorkoutStatus.fromJson({
-        'recent_sessions': [
-          {'completed_sets': 9, 'watch_sets': 0},
-          {'completed_sets': 9, 'watch_sets': 1},
-          {'completed_sets': 9, 'watch_sets': 0},
-        ],
-      });
-      expect(status.suggestsWatchWorkout, isFalse);
+      expect(
+        status({
+          'recent_sessions': [
+            {'completed_sets': 9, 'watch_sets': 0},
+            {'completed_sets': 9, 'watch_sets': 1},
+            {'completed_sets': 9, 'watch_sets': 0},
+          ],
+        }).suggestsWatchWorkout,
+        isFalse,
+      );
     });
 
-    test('a row without a count is dropped, never guessed', () {
-      final status = WatchWorkoutStatus.fromJson({
-        'recent_sessions': [
-          {'watch_sets': 4},
-          'nothing',
-          {'completed_sets': 9, 'watch_sets': 0},
-        ],
+    test('a payload that cannot be trusted is no status at all', () {
+      const good = {'completed_sets': 9, 'watch_sets': 0};
+      final malformed = <String, Object?>{
+        'null': null,
+        'not an object': 'nothing',
+        'a list': <Object?>[],
+        'no recent_sessions': <String, Object?>{'as_of': '2026-10-23'},
+        'recent_sessions null': {'recent_sessions': null},
+        'recent_sessions not a list': {'recent_sessions': 'none'},
+        'only malformed rows': {
+          'recent_sessions': [
+            {'watch_sets': 4},
+            'nothing',
+          ],
+        },
+        'a malformed row among good ones': {
+          'recent_sessions': [
+            good,
+            {'watch_sets': 0},
+            good,
+          ],
+        },
+        'a row without watch_sets': {
+          'recent_sessions': [
+            {'completed_sets': 9},
+          ],
+        },
+        'a fractional count': {
+          'recent_sessions': [
+            {'completed_sets': 9, 'watch_sets': 0.5},
+          ],
+        },
+        'a string count': {
+          'recent_sessions': [
+            {'completed_sets': '9', 'watch_sets': 0},
+          ],
+        },
+      };
+      malformed.forEach((name, json) {
+        expect(WatchWorkoutStatus.tryParse(json), isNull, reason: name);
       });
-      expect(status.recentSessions, hasLength(1));
-      expect(status.suggestsWatchWorkout, isTrue);
     });
   });
 
@@ -80,7 +115,7 @@ void main() {
     });
 
     test('reads as the sets the Watch tracked', () {
-      final status = WatchWorkoutStatus.fromJson(json);
+      final status = WatchWorkoutStatus.tryParse(json)!;
       expect(status.recentSessions.map((s) => s.completedSets), [9, 8, 10]);
       expect(status.recentSessions.map((s) => s.watchSets), [0, 6, 0]);
       expect(status.suggestsWatchWorkout, isFalse);
@@ -145,6 +180,22 @@ void main() {
     test('stays quiet when the Watch tracked a recent workout', () async {
       reply = _fixture();
       expect(await source().shouldSuggest(), isFalse);
+    });
+
+    test('a reply that is not a valid status suggests nothing', () async {
+      for (final bad in <Object?>[
+        null,
+        <String, Object?>{},
+        {'recent_sessions': 'none'},
+        {
+          'recent_sessions': [
+            {'watch_sets': 0},
+          ],
+        },
+      ]) {
+        reply = bad;
+        expect(await source().shouldSuggest(), isFalse, reason: '$bad');
+      }
     });
 
     test('a server it cannot read suggests nothing', () async {

@@ -590,7 +590,7 @@ Discarded workouts are left out. Sleeping heart rate is never in the object.
 default today)` (security definer, authenticated, own data, date within 2 days of today, `schema_version`
 1.0) returns `{schema_version, as_of, recent_sessions: [{local_date, completed_sets, watch_sets}]}`: the
 last three finished workouts of the 28 days up to `as_of` that finished at least one set, newest first;
-`watch_sets` counts finished sets with `watch_workout` heart rate and coverage of at least 0.5.
+`watch_sets` counts finished sets with `watch_workout` heart rate and coverage of at least 0.6.
 `get_workout_load_inputs_v1(target_user, local_date)` (service role only, 1.0) returns
 `{schema_version, as_of, sessions: [{local_date, completed_sets, sets: [{exercise_order, set_number,
 rest_before_seconds, start_bpm, peak_bpm, end_bpm, drop_30s_bpm, drop_60s_bpm, coverage, sample_count,

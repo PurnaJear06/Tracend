@@ -22,16 +22,24 @@ class WatchWorkoutSession {
 class WatchWorkoutStatus {
   const WatchWorkoutStatus(this.recentSessions);
 
-  factory WatchWorkoutStatus.fromJson(Object? json) {
+  /// The status from the RPC payload, or null when the payload is not a valid
+  /// one: not an object, no `recent_sessions` list, or any row without whole
+  /// `completed_sets` and `watch_sets`. A status that cannot be trusted never
+  /// suggests anything; an empty list is valid and means no finished workout.
+  static WatchWorkoutStatus? tryParse(Object? json) {
     final rows = json is Map ? json['recent_sessions'] : null;
-    return WatchWorkoutStatus([
-      for (final row in rows is List ? rows : const [])
-        if (row is Map && row['completed_sets'] is num)
-          WatchWorkoutSession(
-            completedSets: (row['completed_sets'] as num).toInt(),
-            watchSets: (row['watch_sets'] as num?)?.toInt() ?? 0,
-          ),
-    ]);
+    if (rows is! List) return null;
+    final sessions = <WatchWorkoutSession>[];
+    for (final row in rows) {
+      if (row is! Map) return null;
+      final completed = row['completed_sets'];
+      final watch = row['watch_sets'];
+      if (completed is! int || watch is! int) return null;
+      sessions.add(
+        WatchWorkoutSession(completedSets: completed, watchSets: watch),
+      );
+    }
+    return WatchWorkoutStatus(sessions);
   }
 
   final List<WatchWorkoutSession> recentSessions;
@@ -95,7 +103,7 @@ class SupabaseWatchWorkoutPromptSource implements WatchWorkoutPromptSource {
               '${today.day.toString().padLeft(2, '0')}',
         },
       );
-      return WatchWorkoutStatus.fromJson(value).suggestsWatchWorkout;
+      return WatchWorkoutStatus.tryParse(value)?.suggestsWatchWorkout ?? false;
     } catch (e) {
       debugPrint('Non-critical error: Watch workout status not read: $e');
       return false;

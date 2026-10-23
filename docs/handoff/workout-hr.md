@@ -220,7 +220,7 @@ changes. A night with the Watch off has no row.
   and goes away when the first set is ticked (undoing that set does not bring it back). Not now stays quiet for 7 days; the other button
   for good. Both answers live in `SharedPreferencesAsync` on the phone (`tracend.watch_prompt.muted`,
   `tracend.watch_prompt.snoozed_until`), are not tied to the account, and are checked before the server
-  is asked. A server that cannot be read suggests nothing. A workout restored with a set done, or a
+  is asked. A server that cannot be read, or a reply that is not a valid status (no `recent_sessions` list, or any row without whole counts), suggests nothing; only a valid reply, even an empty list, can show the card. A workout restored with a set done, or a
   finished one, is never asked. The one touchpoint in `ActiveWorkoutScreen` is the optional
   `watchPrompt` source, the banner and two small methods (D1 reviews).
 - Load signals (engine, `supabase/functions/_shared/training/heart_rate/load_signals.ts`, loader in

@@ -100,6 +100,18 @@ Deno.test("the rest length that separates the two causes is the stated one", () 
   assertEquals(engineOf(...workouts(125, shortRestSeconds)).reasons, ["slow_settling"]);
 });
 
+Deno.test("the median rest is compared as it is, never rounded first", () => {
+  // Sixteen sets: eight rested 119 s and eight 120 s, so the median is 119.5 s, under the line.
+  const starts = Array(8).fill(125);
+  const mixed = (rests: [number, number]) => [
+    { ...session("2026-10-22", starts, rests[0]) },
+    { ...session("2026-10-20", starts, rests[1]) },
+  ];
+  assertEquals(engineOf(...mixed([119, 120])).reasons, ["rest_short"]);
+  assertEquals(engineOf(...mixed([120, 121])).reasons, ["slow_settling"]);
+  assertEquals(engineOf(...mixed([118, 120])).reasons, ["rest_short"]);
+});
+
 Deno.test("a heart rate that had settled changes nothing", () => {
   assertEquals(engineOf(...workouts(100, 90)), quiet);
 });

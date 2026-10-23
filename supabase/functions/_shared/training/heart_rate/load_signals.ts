@@ -130,7 +130,7 @@ export function computeLoadSignals(
       fractions.length >= settleMinimumSets && settleSessions.size >= settleMinimumSessions &&
       median(fractions) >= settleElevatedFraction
     ) {
-      reasons.push(Math.round(median(rests)) < shortRestSeconds ? "rest_short" : "slow_settling");
+      reasons.push(median(rests) < shortRestSeconds ? "rest_short" : "slow_settling");
     }
   }
   if (profile.recovery.state === "slower") reasons.push("recovery_slower");
