@@ -62,8 +62,9 @@ insert into public.workout_sessions(id, user_id, plan_version_id, planned_workou
 select 'd1350000-0000-4000-8000-000000000002', 'd1300000-0000-4000-8000-000000000001',
   'd1320000-0000-4000-8000-000000000001', 'd1330000-0000-4000-8000-000000000002',
   today - 1, 'UTC', 'in_progress', 'd1360000-0000-4000-8000-000000000002',
-  now() - interval '1 hour', now() - interval '1 hour' from t
-union all
+  now() - interval '1 hour', now() - interval '1 hour' from t;
+insert into public.workout_sessions(id, user_id, plan_version_id, planned_workout_id, local_date,
+  timezone, state, idempotency_key, started_at, actual_started_at)
 select 'd1350000-0000-4000-8000-000000000003', 'd1300000-0000-4000-8000-000000000001',
   'd1320000-0000-4000-8000-000000000001', 'd1330000-0000-4000-8000-000000000003',
   today, 'UTC', 'in_progress', 'd1360000-0000-4000-8000-000000000003',
@@ -76,8 +77,9 @@ select 'd1350000-0000-4000-8000-000000000004', 'd1300000-0000-4000-8000-00000000
   'd1320000-0000-4000-8000-000000000001', 'd1330000-0000-4000-8000-000000000002',
   today - 30, 'UTC', 'completed', 'd1360000-0000-4000-8000-000000000004',
   now() - interval '30 days', now() - interval '30 days', now() - interval '29 days',
-  now() - interval '29 days' from t
-union all
+  now() - interval '29 days' from t;
+insert into public.workout_sessions(id, user_id, plan_version_id, planned_workout_id, local_date,
+  timezone, state, idempotency_key, started_at, actual_started_at, completed_at, updated_at)
 select 'd1350000-0000-4000-8000-000000000005', 'd1300000-0000-4000-8000-000000000001',
   'd1320000-0000-4000-8000-000000000001', 'd1330000-0000-4000-8000-000000000002',
   today - 10, 'UTC', 'abandoned', 'd1360000-0000-4000-8000-000000000005',
