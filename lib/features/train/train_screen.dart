@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/features/train/active_workout_screen.dart';
 import 'package:tracend/features/train/train_view_models.dart';
 import 'package:tracend/features/train/widgets/action_cards.dart';
 import 'package:tracend/features/train/widgets/exercise_detail_sheet.dart';
@@ -44,11 +46,16 @@ class TrainScreen extends StatefulWidget {
     this.onOpenAccount,
     this.now,
     this.planChanges,
+    this.workoutRequests,
     super.key,
   });
 
   /// Reloads the hub when a Coach proposal changed the plan.
   final PlanChanges? planChanges;
+
+  /// Counts the taps on the workout's Live Activity that ask for the workout
+  /// in progress. Today's workout reopens when it has a draft on this phone.
+  final ValueListenable<int>? workoutRequests;
   final WorkoutRepository? repository;
   final DailyBriefRepository? brief;
   final CoachRepository coach;
@@ -104,6 +111,10 @@ class _TrainScreenState extends State<TrainScreen> {
 
   BodySide _side = BodySide.front;
 
+  /// The Live Activity asked for the workout in progress and the hub that
+  /// says which workout is today's has not loaded yet.
+  bool _resumePending = false;
+
   DateTime _clock() => (widget.now ?? DateTime.now)();
 
   DateTime get _today => normalizedDate(_hub?.localToday ?? _clock());
@@ -121,12 +132,46 @@ class _TrainScreenState extends State<TrainScreen> {
     _loadHub();
     _fetchCandidate();
     widget.planChanges?.addListener(_planChanged);
+    final requests = widget.workoutRequests;
+    if (requests != null) {
+      _resumePending = requests.value > 0;
+      requests.addListener(_workoutRequested);
+    }
   }
 
   @override
   void dispose() {
     widget.planChanges?.removeListener(_planChanged);
+    widget.workoutRequests?.removeListener(_workoutRequested);
     super.dispose();
+  }
+
+  void _workoutRequested() {
+    _resumePending = true;
+    unawaited(_resumeWorkout());
+  }
+
+  /// Reopens today's workout when it was started and left open: it has a
+  /// draft on this phone and is not done. Nothing opens over a workout that
+  /// is already on screen, and a request the hub could not answer is dropped,
+  /// so it never opens a workout later on its own.
+  Future<void> _resumeWorkout() async {
+    final hub = _hub;
+    if (!_resumePending || hub == null || _hubLoading) return;
+    _resumePending = false;
+    if (ActiveWorkoutScreen.isOpen) return;
+    final today = _today;
+    final workout = hub.workoutForWeekday(today.weekday);
+    if (workout == null || hub.isDayCompleted(today)) return;
+    String? draft;
+    try {
+      draft = await _source.loadDraft(workout.id);
+    } catch (error) {
+      debugPrint('Non-critical error: workout draft not read: $error');
+    }
+    if (draft == null || !mounted || ActiveWorkoutScreen.isOpen) return;
+    _select(today);
+    await _start(workout, today);
   }
 
   void _planChanged() {
@@ -178,8 +223,10 @@ class _TrainScreenState extends State<TrainScreen> {
           _weekStart = mondayOf(_selected);
         }
       });
+      unawaited(_resumeWorkout());
     } catch (error) {
       debugPrint('Train: training hub failed: $error');
+      _resumePending = false;
       if (!mounted) return;
       setState(() {
         _hubError = error;

@@ -59,6 +59,25 @@ const _workout = PlannedWorkout(
   ],
 );
 
+/// An exercise whose plan names no reps, so the logger has nothing to
+/// pre-fill.
+const _noRepsWorkout = PlannedWorkout(
+  id: 'upper-a',
+  name: 'Upper A',
+  objective: 'Press and push.',
+  estimatedMinutes: 45,
+  exercises: [
+    PlannedExercise(
+      order: 1,
+      name: 'Plank',
+      setCount: 2,
+      repMin: 0,
+      repMax: 0,
+      targetRpe: 8,
+    ),
+  ],
+);
+
 ExerciseHistoryResult _history() => ExerciseHistoryResult.fromJson({
   'exercises': [
     {
@@ -259,13 +278,24 @@ class _Clock {
 }
 
 class _Harness {
-  _Harness({bool restAlerts = true})
-    : notifications = _Notifications(restAlerts: restAlerts);
+  _Harness({
+    bool restAlerts = true,
+    _Repository? repository,
+    _Clock? clock,
+    FakeWorkoutActivityBridge? native,
+  }) : notifications = _Notifications(restAlerts: restAlerts),
+       repository = repository ?? _Repository(),
+       clock = clock ?? _Clock(),
+       _native = native;
 
-  final repository = _Repository();
+  final _Repository repository;
+  final FakeWorkoutActivityBridge? _native;
+
+  /// The athlete allows kg and reps on the Lock Screen.
+  bool lockNumbers = false;
   final alerts = _Alerts();
-  late final activity = FakeWorkoutActivityBridge(clock: clock.call);
-  final clock = _Clock();
+  late final activity = _native ?? FakeWorkoutActivityBridge(clock: clock.call);
+  final _Clock clock;
   final _Notifications notifications;
   Object? popped = 'not popped';
 }
@@ -277,6 +307,7 @@ Future<void> _open(
   TracendMotionLevel? motion,
   Size size = const Size(390, 844),
   WorkoutEventHub? events,
+  PlannedWorkout workout = _workout,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -293,13 +324,14 @@ Future<void> _open(
                 MaterialPageRoute(
                   fullscreenDialog: true,
                   builder: (_) => ActiveWorkoutScreen(
-                    workout: _workout,
+                    workout: workout,
                     repository: h.repository,
                     restAlerts: h.alerts,
                     notifications: h.notifications,
                     clock: h.clock.call,
                     events: events,
                     activity: h.activity,
+                    lockScreenNumbers: () async => h.lockNumbers,
                   ),
                 ),
               );
@@ -762,11 +794,21 @@ void main() {
       ),
       isTrue,
     );
+    // The card turns into the next set when the rest ends.
+    expect(start.next, (
+      exerciseOrder: 1,
+      setNumber: 2,
+      setCount: 2,
+      exerciseName: 'Bench press',
+      target: '',
+      canLog: true,
+    ));
 
-    // Skip turns it to "Rest done" now, so the next set's Done can follow.
+    // Skip turns the card into that set now, so its Log set can follow.
     await _tapLabel(tester, 'Skip rest');
     expect(h.activity.methods.last, 'updateRest');
     expect(h.activity.showingUntil, h.clock.now);
+    expect(h.activity.phase, 'set');
   });
 
   group('the Live Activity buttons', () {
@@ -774,15 +816,33 @@ void main() {
         value is String ? DateTime.parse(value).toLocal() : null;
 
     testWidgets('a whole workout runs from the Lock Screen', (tester) async {
-      final h = _Harness();
+      final h = _Harness()..lockNumbers = true;
       await _open(tester, h);
       final t0 = h.clock.now;
       expect(h.activity.onPress, isNotNull);
 
-      // Set 1 is ticked in the app; its rest starts the activity.
-      await _tapText(tester, 'Done set 1');
+      // The workout opened with set 1 in progress, as the logger pre-fills it.
+      expect(h.activity.phase, 'set');
+      expect(h.activity.set, (
+        exerciseOrder: 1,
+        setNumber: 1,
+        setCount: 2,
+        exerciseName: 'Bench press',
+        target: '60 kg × 8',
+        canLog: true,
+      ));
 
-      // +30s, then Skip, then Done for set 2, all from the Lock Screen.
+      // Log set 1 from the Lock Screen; its rest starts the countdown.
+      expect(await h.activity.pressDone(), isTrue);
+      expect(h.repository.savedSet(0, 0)['completed'], isTrue);
+      expect(h.repository.savedSet(0, 0)['load_kg'], '60');
+      expect(h.repository.savedSet(0, 0)['repetitions'], '8');
+      expect(h.activity.phase, 'rest');
+      expect(h.activity.calls.last.method, 'startRest');
+      expect(h.activity.calls.last.next!.setNumber, 2);
+      expect(h.activity.calls.last.next!.target, '60 kg × 8');
+
+      // +30s, then Skip, then Log set for set 2, all from the Lock Screen.
       h.clock.advance(const Duration(seconds: 40));
       expect(await h.activity.pressAdd(30), isTrue);
       expect(h.activity.calls.last.method, 'updateRest');
@@ -791,6 +851,8 @@ void main() {
       h.clock.advance(const Duration(seconds: 20));
       expect(await h.activity.pressSkip(), isTrue);
       expect(h.activity.showingUntil, h.clock.now);
+      expect(h.activity.phase, 'set');
+      expect(h.activity.card, (exerciseOrder: 1, setNumber: 2));
 
       h.clock.advance(const Duration(seconds: 45));
       expect(await h.activity.pressDone(), isTrue);
@@ -798,25 +860,56 @@ void main() {
       expect(rest.method, 'startRest');
       expect(rest.exerciseName, 'Bench press');
       expect(rest.nextLabel, 'Push-up');
+      expect(rest.next, (
+        exerciseOrder: 2,
+        setNumber: 1,
+        setCount: 2,
+        exerciseName: 'Push-up',
+        target: '12 reps',
+        canLog: true,
+      ));
 
       // Each press returned only after the draft on the phone had it.
       expect(h.repository.savedSet(0, 1)['completed'], isTrue);
       expect(h.repository.savedSet(0, 1)['rest_before_seconds'], 60);
 
-      // The rest runs out while the phone sleeps; Done ticks Push-up set 1.
+      // The rest runs out while the phone sleeps; the card is the next
+      // exercise's first set, and Log set ticks Push-up set 1.
       h.clock.advance(const Duration(minutes: 3));
+      expect(h.activity.phase, 'set');
       expect(await h.activity.pressDone(), isTrue);
       expect(h.repository.savedSet(1, 0)['completed'], isTrue);
       expect(h.repository.savedSet(1, 0)['rest_before_seconds'], 90);
       expect(h.activity.calls.last.nextLabel, 'Set 2 of Push-up');
 
-      // The last set has no rest after it: the activity goes.
+      // The last set has no rest after it: the card says every set is
+      // logged, and the workout stays open to finish in the app.
       h.clock.advance(const Duration(seconds: 75));
       expect(await h.activity.pressDone(), isTrue);
       expect(h.repository.savedSet(1, 1)['completed'], isTrue);
-      expect(h.activity.methods.last, 'end');
-      expect(h.activity.showingUntil, isNull);
+      expect(h.activity.methods.last, 'showSet');
+      expect(h.activity.phase, 'finished');
+      expect(h.activity.card, isNull);
+      expect(h.popped, 'not popped');
       await _flushSave(tester);
+    });
+
+    testWidgets('the card shows no kg or reps while numbers are off', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+
+      expect(h.activity.set!.target, '');
+      expect(h.activity.set!.canLog, isTrue);
+      expect(await h.activity.pressDone(), isTrue);
+      await _flushSave(tester);
+
+      // The press still logs the values the logger pre-fills.
+      expect(h.repository.savedSet(0, 0)['load_kg'], '60');
+      for (final call in h.activity.calls) {
+        expect(call.next?.target ?? '', '');
+      }
     });
 
     testWidgets('Skip after the rest ran out unnoticed keeps its real end', (
@@ -839,7 +932,7 @@ void main() {
       );
     });
 
-    testWidgets('"Rest done" goes two minutes after the rest in the app', (
+    testWidgets('the set in progress stays however long the set takes', (
       tester,
     ) async {
       final h = _Harness();
@@ -847,9 +940,30 @@ void main() {
       await _tapText(tester, 'Done set 1');
       await _tapLabel(tester, 'Skip rest');
 
+      h.clock.advance(const Duration(minutes: 30));
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(h.activity.phase, 'set');
+      expect(h.activity.methods.last, 'updateRest');
+      await _tapLabel(tester, 'Leave workout');
+      await tester.tap(find.text('Save and leave'));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('the card that says every set is logged goes after two '
+        'minutes', (tester) async {
+      final h = _Harness();
+      await _open(tester, h);
+      for (var set = 0; set < 3; set++) {
+        expect(await h.activity.pressDone(), isTrue);
+        expect(await h.activity.pressSkip(), isTrue);
+      }
+      expect(await h.activity.pressDone(), isTrue);
+      expect(h.activity.phase, 'finished');
+
       h.clock.advance(const Duration(seconds: 119));
       await tester.pump(const Duration(seconds: 1));
-      expect(h.activity.methods.last, 'updateRest');
+      expect(h.activity.phase, 'finished');
 
       h.clock.advance(const Duration(seconds: 2));
       await tester.pump(const Duration(seconds: 1));
@@ -1084,6 +1198,401 @@ void main() {
         isFalse,
       );
       expect(h.activity.showingUntil, isNull);
+    });
+  });
+
+  group('logging the set in progress from the Lock Screen', () {
+    testWidgets('Log set writes through the same path as Done set', (
+      tester,
+    ) async {
+      final app = _Harness();
+      await _open(tester, app);
+      await _tapText(tester, 'Done set 1');
+      await _flushSave(tester);
+      final inApp = app.repository.syncedSet(0, 0);
+
+      await tester.pumpWidget(const SizedBox());
+      final lock = _Harness();
+      await _open(tester, lock);
+      expect(await lock.activity.pressDone(), isTrue);
+
+      // The same fields, in the draft on the phone and the one sent to the
+      // server before the press answered.
+      final onPhone = lock.repository.savedSet(0, 0);
+      final onServer = lock.repository.syncedSet(0, 0);
+      for (final key in ['load_kg', 'repetitions', 'completed', 'rpe']) {
+        expect(onPhone[key], inApp[key], reason: key);
+        expect(onServer[key], inApp[key], reason: key);
+      }
+      expect(onServer['timing_source'], inApp['timing_source']);
+      expect(lock.repository.synced!['idempotency_key'], isNotNull);
+      expect(
+        lock.repository.synced!['idempotency_key'],
+        lock.repository.savedDraft['idempotency_key'],
+      );
+      await _flushSave(tester);
+    });
+
+    testWidgets('a double tap logs one set', (tester) async {
+      final h = _Harness();
+      await _open(tester, h);
+
+      final answers = await Future.wait([
+        h.activity.pressDone(),
+        h.activity.pressDone(),
+      ]);
+
+      expect(answers, [true, true]);
+      expect(h.repository.savedSet(0, 0)['completed'], isTrue);
+      expect(h.repository.savedSet(0, 1)['completed'], isFalse);
+      expect(h.activity.phase, 'rest');
+      await _flushSave(tester);
+    });
+
+    testWidgets('a repeated tap after the rest logs nothing more', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      expect(await h.activity.pressDone(), isTrue);
+      expect(await h.activity.pressSkip(), isTrue);
+
+      // The same press, delivered again for set 1, which is already logged.
+      expect(
+        await h.activity.pressDone(exerciseOrder: 1, setNumber: 1),
+        isTrue,
+      );
+
+      expect(h.repository.savedSet(0, 1)['completed'], isFalse);
+      expect(h.activity.card, (exerciseOrder: 1, setNumber: 2));
+      await _flushSave(tester);
+    });
+
+    testWidgets('a press for a set the app already logged is ignored', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      final stale = h.activity.card!;
+      await _tapText(tester, 'Done set 1');
+      await _tapLabel(tester, 'Skip rest');
+      final calls = h.activity.calls.length;
+
+      expect(
+        await h.activity.pressDone(
+          exerciseOrder: stale.exerciseOrder,
+          setNumber: stale.setNumber,
+        ),
+        isTrue,
+      );
+
+      // Nothing was logged, and the card was redrawn to the true set.
+      expect(h.repository.savedSet(0, 1)['completed'], isFalse);
+      expect(h.activity.calls.length, calls + 1);
+      expect(h.activity.calls.last.method, 'showSet');
+      expect(h.activity.card, (exerciseOrder: 1, setNumber: 2));
+      await _flushSave(tester);
+    });
+
+    testWidgets('a press for a set that is not current is ignored', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+
+      // Set 2 of Bench press is not its current set; there is no exercise 9.
+      expect(
+        await h.activity.pressDone(exerciseOrder: 1, setNumber: 2),
+        isTrue,
+      );
+      expect(
+        await h.activity.pressDone(exerciseOrder: 9, setNumber: 1),
+        isTrue,
+      );
+      expect(
+        await h.activity.pressDone(exerciseOrder: 1, setNumber: 0),
+        isTrue,
+      );
+
+      expect(h.repository.saved, isNotNull);
+      for (final exercise in [0, 1]) {
+        for (final set in [0, 1]) {
+          expect(h.repository.savedSet(exercise, set)['completed'], isFalse);
+        }
+      }
+      await _flushSave(tester);
+    });
+
+    testWidgets('an edit in the app moves the card, and Log set logs it', (
+      tester,
+    ) async {
+      final h = _Harness()..lockNumbers = true;
+      await _open(tester, h);
+      expect(h.activity.set!.target, '60 kg × 8');
+
+      await _tapLabel(tester, 'More weight');
+      await _flushSave(tester);
+      expect(h.activity.set!.target, '62.5 kg × 8');
+
+      expect(await h.activity.pressDone(), isTrue);
+      expect(h.repository.savedSet(0, 0)['load_kg'], '62.5');
+      expect(h.repository.savedSet(0, 0)['repetitions'], '8');
+      await _flushSave(tester);
+    });
+
+    testWidgets('an edit with numbers off does not touch the card', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      final calls = h.activity.calls.length;
+
+      await _tapLabel(tester, 'More weight');
+      await _flushSave(tester);
+
+      expect(h.activity.calls.length, calls);
+    });
+
+    testWidgets('swiping to another exercise moves the card to its set', (
+      tester,
+    ) async {
+      final h = _Harness()..lockNumbers = true;
+      await _open(tester, h);
+
+      await tester.drag(find.byType(PageView), const Offset(-500, 0));
+      await tester.pumpAndSettle();
+      expect(h.activity.set, (
+        exerciseOrder: 2,
+        setNumber: 1,
+        setCount: 2,
+        exerciseName: 'Push-up',
+        target: '12 reps',
+        canLog: true,
+      ));
+
+      expect(await h.activity.pressDone(), isTrue);
+      expect(h.repository.savedSet(1, 0)['completed'], isTrue);
+      expect(h.repository.savedSet(0, 0)['completed'], isFalse);
+
+      await tester.drag(find.byType(PageView), const Offset(500, 0));
+      await tester.pumpAndSettle();
+      expect(h.activity.set!.exerciseOrder, 1);
+      await _flushSave(tester);
+    });
+
+    testWidgets('undoing a set puts it back on the card', (tester) async {
+      final h = _Harness();
+      await _open(tester, h);
+      expect(await h.activity.pressDone(), isTrue);
+      expect(await h.activity.pressSkip(), isTrue);
+      expect(h.activity.card, (exerciseOrder: 1, setNumber: 2));
+
+      await _tapLabel(tester, 'Undo set 1');
+      await _flushSave(tester);
+
+      expect(h.repository.savedSet(0, 0)['completed'], isFalse);
+      expect(h.activity.card, (exerciseOrder: 1, setNumber: 1));
+      await _flushSave(tester);
+    });
+
+    testWidgets('marking the exercise skipped moves the card on', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+
+      await _tapLabel(tester, 'More for Bench press');
+      await tester.tap(find.text('Mark as skipped'));
+      await tester.pumpAndSettle();
+      await _flushSave(tester);
+
+      expect(h.activity.card, (exerciseOrder: 2, setNumber: 1));
+    });
+
+    testWidgets('a dismissed card stays gone through edits', (tester) async {
+      final h = _Harness()..lockNumbers = true;
+      await _open(tester, h);
+      h.activity.showingUntil = null; // the athlete swiped it away
+
+      await _tapLabel(tester, 'More weight');
+      await _flushSave(tester);
+
+      expect(h.activity.showing, isFalse);
+    });
+
+    /// The app is killed: the screen goes, but iOS keeps the card.
+    Future<_Harness> relaunch(WidgetTester tester, _Harness before) async {
+      final shown = (before.activity.showingUntil, before.activity.set);
+      await tester.pumpWidget(const SizedBox());
+      before.activity
+        ..showingUntil = shown.$1
+        ..set = shown.$2;
+      return _Harness(
+        repository: before.repository,
+        clock: before.clock,
+        native: before.activity,
+      );
+    }
+
+    testWidgets('a relaunch in the middle of a rest brings the rest back', (
+      tester,
+    ) async {
+      final first = _Harness();
+      await _open(tester, first);
+      expect(await first.activity.pressDone(), isTrue);
+      expect(await first.activity.pressSkip(), isTrue);
+      expect(await first.activity.pressDone(), isTrue);
+      await _flushSave(tester);
+      final ends = first.activity.showingUntil;
+
+      final again = await relaunch(tester, first);
+      await _open(tester, again);
+
+      expect(again.activity.phase, 'rest');
+      expect(again.activity.showingUntil!.isAtSameMomentAs(ends!), isTrue);
+      expect(again.activity.card, (exerciseOrder: 2, setNumber: 1));
+      expect(again.activity.onPress, isNotNull);
+
+      again.clock.advance(const Duration(minutes: 2));
+      expect(again.activity.phase, 'set');
+      expect(await again.activity.pressDone(), isTrue);
+      expect(first.repository.savedSet(1, 0)['completed'], isTrue);
+      await _flushSave(tester);
+    });
+
+    testWidgets('a relaunch in the middle of a set brings the set back', (
+      tester,
+    ) async {
+      final first = _Harness();
+      await _open(tester, first);
+      expect(await first.activity.pressDone(), isTrue);
+      expect(await first.activity.pressSkip(), isTrue);
+      await _flushSave(tester);
+
+      final again = await relaunch(tester, first);
+      await _open(tester, again);
+
+      expect(again.activity.phase, 'set');
+      expect(again.activity.card, (exerciseOrder: 1, setNumber: 2));
+      expect(again.activity.calls.first.method, 'showSet');
+      expect(again.activity.calls.first.begin, isTrue);
+      expect(await again.activity.pressDone(), isTrue);
+      expect(first.repository.savedSet(0, 1)['completed'], isTrue);
+      await _flushSave(tester);
+    });
+
+    testWidgets('a rest that ended while the app was away comes back as the '
+        'set', (tester) async {
+      final h = _Harness();
+      await _open(tester, h);
+      await _tapText(tester, 'Done set 1');
+      await _flushSave(tester);
+
+      final again = await relaunch(tester, h);
+      again.clock.advance(const Duration(minutes: 10));
+      await _open(tester, again);
+
+      expect(again.activity.phase, 'set');
+      expect(again.activity.card, (exerciseOrder: 1, setNumber: 2));
+      await _flushSave(tester);
+    });
+
+    testWidgets('a workout with every set logged opens on the finish card', (
+      tester,
+    ) async {
+      final first = _Harness();
+      await _open(tester, first);
+      for (var set = 0; set < 3; set++) {
+        expect(await first.activity.pressDone(), isTrue);
+        expect(await first.activity.pressSkip(), isTrue);
+      }
+      expect(await first.activity.pressDone(), isTrue);
+      await _flushSave(tester);
+
+      final again = await relaunch(tester, first);
+      await _open(tester, again);
+
+      expect(again.activity.phase, 'finished');
+      await _flushSave(tester);
+    });
+
+    testWidgets('finishing removes the card and later presses find nothing', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      for (var set = 0; set < 3; set++) {
+        expect(await h.activity.pressDone(), isTrue);
+        expect(await h.activity.pressSkip(), isTrue);
+      }
+      expect(await h.activity.pressDone(), isTrue);
+      await _flushSave(tester);
+
+      await _tapLabel(tester, 'Finish workout');
+      await _tapLabel(tester, '8, Hard');
+      await _tap(tester, _finishButton);
+
+      expect(find.text('Workout complete'), findsOneWidget);
+      expect(h.activity.showing, isFalse);
+      expect(
+        await h.activity.pressDone(exerciseOrder: 1, setNumber: 1),
+        isFalse,
+      );
+    });
+
+    testWidgets('discarding removes the card and later presses do nothing', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      expect(await h.activity.pressDone(), isTrue);
+
+      await _tapLabel(tester, 'Leave workout');
+      await tester.tap(find.text('Discard workout'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Discard workout').last);
+      await tester.pumpAndSettle();
+
+      expect(h.activity.showing, isFalse);
+      expect(
+        await h.activity.pressDone(exerciseOrder: 1, setNumber: 2),
+        isFalse,
+      );
+    });
+
+    testWidgets(
+      'logging offline logs the set and says Offline, as in the app',
+      (tester) async {
+        final h = _Harness();
+        await _open(tester, h);
+        h.repository.failSync = true;
+
+        expect(await h.activity.pressDone(), isTrue);
+
+        expect(h.repository.savedSet(0, 0)['completed'], isTrue);
+        expect(h.activity.phase, 'rest');
+        await tester.pump();
+        expect(find.text('Offline'), findsOneWidget);
+        h.repository.failSync = false;
+        await _flushSave(tester);
+      },
+    );
+
+    testWidgets('a set with no reps to log gets a card without the button', (
+      tester,
+    ) async {
+      final h = _Harness()..lockNumbers = true;
+      h.repository.history = const ExerciseHistoryResult(exercises: {});
+      await _open(tester, h, workout: _noRepsWorkout);
+
+      expect(h.activity.set!.canLog, isFalse);
+      expect(h.activity.set!.target, '');
+      expect(h.activity.set!.exerciseName, 'Plank');
+
+      // A press that still came is refused, never logged blind.
+      expect(await h.activity.pressDone(), isFalse);
+      await _flushSave(tester);
+      expect(h.repository.savedSet(0, 0)['completed'], isFalse);
     });
   });
 

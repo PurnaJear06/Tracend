@@ -182,12 +182,13 @@ prescribed, substituted, and extra work. The app resumes a server-backed in-prog
 the user may edit it. Completed sessions are immutable through normal UI; corrections create
 audited amendments.
 
-Between sets a rest timer runs. It also shows as a Live Activity on the Lock Screen and Dynamic
-Island: a countdown with the exercise name and the next set's label only. An optional local alert
-says "Rest timer finished" when rest ends while the phone is locked. It is off by default ("Rest
-timer alerts" in Account › Notifications); off or denied, the rest timer stays in the app.
-
-**Planned (Phase 2, D1):** Done, Skip and +30s buttons on the Live Activity.
+Between sets a rest timer runs. The workout also shows as a Live Activity on the Lock Screen and
+Dynamic Island from the moment it opens: the set in progress (exercise, "Set 2 of 4", and its kg and
+reps only if the athlete turned on Lock Screen numbers) with a **Log set** button that logs the
+set at the values the logger pre-fills, then the rest countdown with **+30s** and **Skip**, then
+the next set. Changing reps or load needs the app. An optional local alert says "Rest timer
+finished" when rest ends while the phone is locked. It is off by default ("Rest timer alerts" in
+Account › Notifications); off or denied, the rest timer stays in the app.
 
 When Apple Health records a workout on a day the user has a scheduled Tracend workout but no
 completed session, Train offers a **mark complete from HealthKit** prompt. The user explicitly

@@ -6,8 +6,8 @@ typedef ActivityCall = ({
   DateTime? endsAt,
   String? nextLabel,
   String? exerciseName,
-  int? nextExerciseOrder,
-  int? nextSetNumber,
+  ActivitySet? next,
+  bool? begin,
 });
 
 /// Records every call instead of showing a Live Activity, tracks the one
@@ -20,12 +20,31 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
 
   final calls = <ActivityCall>[];
 
-  /// The set the card's Done button carries (from the last `startRest`),
-  /// or null when the card has none.
-  ({int exerciseOrder, int setNumber})? card;
+  /// The set the card's "Log set" button carries, or null when the card has
+  /// none (every set is logged, or it was never named).
+  ({int exerciseOrder, int setNumber})? get card {
+    final set = this.set;
+    return set == null
+        ? null
+        : (exerciseOrder: set.exerciseOrder, setNumber: set.setNumber);
+  }
 
-  /// The end time of the activity that would be showing, or null.
+  /// The set the card names, with its target as the card would show it.
+  ActivitySet? set;
+
+  /// The end time of the rest the activity would show, the moment the set in
+  /// progress began once no rest runs, or null when nothing shows.
   DateTime? showingUntil;
+
+  bool get showing => showingUntil != null;
+
+  /// What the card would show now: `rest`, `set`, `finished`, or null.
+  String? get phase {
+    final until = showingUntil;
+    if (until == null) return null;
+    if (until.isAfter(clock())) return 'rest';
+    return set == null ? 'finished' : 'set';
+  }
 
   /// When set, every start, update and end records its call at once but
   /// finishes only when this completes, as a slow ActivityKit call would;
@@ -78,37 +97,81 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
     required DateTime endsAt,
     required String nextLabel,
     required String exerciseName,
-    int? nextExerciseOrder,
-    int? nextSetNumber,
+    ActivitySet? next,
   }) async {
     calls.add((
       method: 'startRest',
       endsAt: endsAt,
       nextLabel: nextLabel,
       exerciseName: exerciseName,
-      nextExerciseOrder: nextExerciseOrder,
-      nextSetNumber: nextSetNumber,
+      next: next,
+      begin: null,
     ));
     await _finish(() {
       showingUntil = endsAt;
-      card = nextExerciseOrder == null || nextSetNumber == null
-          ? null
-          : (exerciseOrder: nextExerciseOrder, setNumber: nextSetNumber);
+      set = next;
     });
   }
 
   @override
-  Future<void> updateRest({required DateTime endsAt, String? nextLabel}) async {
+  Future<void> updateRest({
+    required DateTime endsAt,
+    String? nextLabel,
+    ActivitySet? next,
+  }) async {
     calls.add((
       method: 'updateRest',
       endsAt: endsAt,
       nextLabel: nextLabel,
       exerciseName: null,
-      nextExerciseOrder: null,
-      nextSetNumber: null,
+      next: next,
+      begin: null,
     ));
     await _finish(() {
-      if (showingUntil != null) showingUntil = endsAt;
+      if (showingUntil == null) return;
+      showingUntil = endsAt;
+      if (next != null) set = next;
+    });
+  }
+
+  @override
+  Future<void> showSet(ActivitySet? set, {required bool begin}) async {
+    calls.add((
+      method: 'showSet',
+      endsAt: null,
+      nextLabel: null,
+      exerciseName: null,
+      next: set,
+      begin: begin,
+    ));
+    await _finish(() {
+      if (showingUntil == null && !begin) return;
+      showingUntil = clock();
+      this.set = set;
+    });
+  }
+
+  @override
+  Future<void> hideNumbers() async {
+    calls.add((
+      method: 'hideNumbers',
+      endsAt: null,
+      nextLabel: null,
+      exerciseName: null,
+      next: null,
+      begin: null,
+    ));
+    await _finish(() {
+      final shown = set;
+      if (shown == null) return;
+      set = (
+        exerciseOrder: shown.exerciseOrder,
+        setNumber: shown.setNumber,
+        setCount: shown.setCount,
+        exerciseName: shown.exerciseName,
+        target: '',
+        canLog: shown.canLog,
+      );
     });
   }
 
@@ -119,12 +182,12 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
       endsAt: null,
       nextLabel: null,
       exerciseName: null,
-      nextExerciseOrder: null,
-      nextSetNumber: null,
+      next: null,
+      begin: null,
     ));
     await _finish(() {
       showingUntil = null;
-      card = null;
+      set = null;
     });
   }
 

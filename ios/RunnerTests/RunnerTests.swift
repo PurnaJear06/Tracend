@@ -294,8 +294,142 @@ final class TodayWidgetSnapshotTests: XCTestCase {
   func testOnlyWidgetLinksOpenATab() {
     XCTAssertEqual(TracendLink(url: URL(string: "tracend://today")!), .today)
     XCTAssertEqual(TracendLink(url: URL(string: "tracend://train")!), .train)
+    XCTAssertEqual(TracendLink(url: URL(string: "tracend://workout")!), .workout)
     XCTAssertNil(TracendLink(url: URL(string: "tracend://settings")!))
     XCTAssertNil(TracendLink(url: URL(string: "https://example.com/train")!))
     XCTAssertEqual(TracendLink.train.url.absoluteString, "tracend://train")
+    XCTAssertEqual(TracendLink.workout.url.absoluteString, "tracend://workout")
+  }
+}
+
+/// The workout Live Activity's content: what an earlier build stored, what the
+/// card shows when, and what the channel's set keys turn into.
+final class WorkoutActivityStateTests: XCTestCase {
+  private typealias State = RestActivityAttributes.ContentState
+  private let now = Date(timeIntervalSince1970: 1_792_308_600)
+
+  private func set(
+    endsAt: Date,
+    target: String = "82.5 kg × 8",
+    canLog: Bool = true
+  ) -> State {
+    State(
+      endsAt: endsAt,
+      nextLabel: "Set 2 of Bench press",
+      exerciseName: "Bench press",
+      nextExerciseOrder: 1,
+      nextSetNumber: 2,
+      nextSetCount: 4,
+      nextExerciseName: "Bench press",
+      nextTarget: target,
+      nextCanLog: canLog
+    )
+  }
+
+  func testAStateFromAnEarlierBuildStillDecodes() throws {
+    // D1's keys only: no set count, name, target, can-log.
+    let json = """
+      {"endsAt": 782000000, "nextLabel": "Set 2 of Bench press", "exerciseName": "Bench press",
+       "nextExerciseOrder": 1, "nextSetNumber": 2, "needsApp": false}
+      """
+    let state = try JSONDecoder().decode(State.self, from: Data(json.utf8))
+    XCTAssertEqual(state.nextSet?.exerciseOrder, 1)
+    XCTAssertEqual(state.nextSet?.setNumber, 2)
+    XCTAssertNil(state.nextSetCount)
+    XCTAssertEqual(state.nextExerciseName, "")
+    XCTAssertEqual(state.nextTarget, "")
+    XCTAssertTrue(state.nextCanLog)
+    XCTAssertEqual(state.setTitle, "Bench press")
+    XCTAssertEqual(state.setPosition, "Set 2")
+  }
+
+  func testTheNewKeysSurviveEncoding() throws {
+    let state = set(endsAt: now)
+    let again = try JSONDecoder().decode(State.self, from: JSONEncoder().encode(state))
+    XCTAssertEqual(again, state)
+    XCTAssertEqual(again.setPosition, "Set 2 of 4")
+    XCTAssertEqual(again.nextTarget, "82.5 kg × 8")
+  }
+
+  func testARunningRestShowsTheRestAndTheSameCardTurnsIntoTheSetWhenItEnds() {
+    let state = set(endsAt: now.addingTimeInterval(60))
+    XCTAssertEqual(state.phase(at: now), .resting)
+    XCTAssertEqual(state.phase(at: now.addingTimeInterval(60)), .set)
+    // The system marks the card stale at its end, before the clock shows it.
+    XCTAssertEqual(state.phase(at: now, isStale: true), .set)
+  }
+
+  func testAPassedEndWithoutASetMeansEverySetIsLogged() {
+    var state = set(endsAt: now.addingTimeInterval(-1))
+    state.nextExerciseOrder = nil
+    state.nextSetNumber = nil
+    XCTAssertEqual(state.phase(at: now), .finished)
+    // A rest that still runs with no set named (an older card) is a rest.
+    state.endsAt = now.addingTimeInterval(30)
+    XCTAssertEqual(state.phase(at: now), .resting)
+  }
+
+  func testTheTitleFallsBackToTheRestsExercise() {
+    var state = set(endsAt: now)
+    state.nextExerciseName = ""
+    XCTAssertEqual(state.setTitle, "Bench press")
+    state.exerciseName = ""
+    XCTAssertEqual(state.setTitle, "Next set")
+  }
+
+  func testTheChannelNamesTheSetByItsKeys() {
+    let next = WorkoutActivityBridge.NextSet([
+      "next_exercise_order": 2, "next_set_number": 3, "next_set_count": 5,
+      "next_exercise_name": "Squat", "next_target": "100 kg × 5", "next_can_log": false,
+    ])
+    XCTAssertTrue(next.present)
+    let state = next.applied(to: State(endsAt: now, nextLabel: "", exerciseName: ""))
+    XCTAssertEqual(state.nextExerciseOrder, 2)
+    XCTAssertEqual(state.nextSetNumber, 3)
+    XCTAssertEqual(state.nextSetCount, 5)
+    XCTAssertEqual(state.nextExerciseName, "Squat")
+    XCTAssertEqual(state.nextTarget, "100 kg × 5")
+    XCTAssertFalse(state.nextCanLog)
+  }
+
+  func testNoSetKeysClearTheSetForAShowSetAndKeepItForAnUpdate() {
+    let none = WorkoutActivityBridge.NextSet([:])
+    XCTAssertFalse(none.present)
+    let cleared = none.applied(to: set(endsAt: now))
+    XCTAssertNil(cleared.nextSet)
+    XCTAssertEqual(cleared.nextTarget, "")
+    let kept = none.applied(to: set(endsAt: now), clearing: false)
+    XCTAssertEqual(kept.nextSet?.setNumber, 2)
+    XCTAssertEqual(kept.nextTarget, "82.5 kg × 8")
+  }
+
+  func testTheCardThatSaysEverySetIsLoggedGoesAfterTwoMinutes() {
+    var done = set(endsAt: now)
+    done.nextExerciseOrder = nil
+    done.nextSetNumber = nil
+    XCTAssertEqual(
+      WorkoutActivityBridge.lingerEnd(of: done, now: now.addingTimeInterval(1)),
+      now.addingTimeInterval(WorkoutActivityBridge.doneLinger)
+    )
+  }
+
+  func testASetOrRestCardStaysUntilItIsLeftBehind() {
+    let state = set(endsAt: now)
+    XCTAssertEqual(
+      WorkoutActivityBridge.lingerEnd(of: state, now: now.addingTimeInterval(1)),
+      now.addingTimeInterval(WorkoutActivityBridge.abandonedAfter)
+    )
+    // Long enough for any workout, so a set can wait for the athlete.
+    XCTAssertGreaterThan(WorkoutActivityBridge.abandonedAfter, 3 * 60 * 60)
+    let resting = set(endsAt: now.addingTimeInterval(90))
+    XCTAssertGreaterThan(WorkoutActivityBridge.lingerEnd(of: resting, now: now), now)
+  }
+
+  func testLogSetCarriesTheSetTheCardShows() {
+    let button = RestActivityButton.done(exerciseOrder: 1, setNumber: 2)
+    XCTAssertEqual(
+      button.channelArguments as? [String: AnyHashable],
+      ["button": "done", "exercise_order": 1, "set_number": 2]
+    )
   }
 }

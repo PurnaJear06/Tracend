@@ -112,6 +112,17 @@ void main() {
       expect(bridge.pending, isNull);
     });
 
+    testWidgets('the workout card\'s link opens Train, where the workout '
+        'reopens', (tester) async {
+      await pumpShell(tester);
+      expect(find.byKey(const ValueKey('tab_train')), findsNothing);
+
+      bridge.tap(HomeWidgetTab.workout);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('tab_train')), findsOneWidget);
+    });
+
     testWidgets('Today stays when that is what the widget asked for', (
       tester,
     ) async {

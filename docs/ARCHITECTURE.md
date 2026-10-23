@@ -90,19 +90,30 @@ toggle is device-only); pending requests are delivery state and are repaired fro
 reopen. The in-app rest timer keeps its end time in the local workout draft and does not depend on
 the alert.
 
-**Widget extension and rest Live Activity.** The `TracendWidgets` WidgetKit extension
+**Widget extension and workout Live Activity.** The `TracendWidgets` WidgetKit extension
 (`com.tracend.app.TracendWidgets`, embedded in Runner) draws `RestActivityAttributes`
-(`ios/Shared/`, both targets): the rest's end time, the exercise name and the next-set label,
-nothing else (SECURITY_PRIVACY §10 exception). `RestTimerController` is its only driver, through
-`WorkoutActivityBridge` (`lib/shared/live_activity/`, channel `tracend/live_activity`: `startRest`,
-`updateRest`, `end`; native `ios/Runner/Native/WorkoutActivityBridge.swift`), never awaited.
-Sign-out, account deletion and a refused session call `end`, and the native side ends finished
-activities left from an earlier launch. ActivityKit runs the countdown from the end time
-(`Text(timerInterval:)`): no push, no server. The Live Activity itself uses no App Group. It is off
-when iOS Live Activities are off.
+(`ios/Shared/`, both targets), the workout's card: the set in progress, the rest between sets, and
+"all sets logged". It holds the rest's end time, the exercise name, the labels, the set to log
+(exercise order, set number, how many sets) and, only while the athlete chose Lock Screen numbers,
+the kg and reps text (SECURITY_PRIVACY §10 exception). When the rest's end passes the system marks
+the card stale and it draws the set it carries, so it turns into the next set with the app asleep.
+`RestTimerController` is its only driver, through `WorkoutActivityBridge`
+(`lib/shared/live_activity/`, channel `tracend/live_activity`: `startRest`, `updateRest`,
+`showSet`, `hideNumbers`, `end`; native `ios/Runner/Native/WorkoutActivityBridge.swift`), never
+awaited. `ActiveWorkoutScreen` tells it the set in progress (`present`): the pre-filled values come
+from the logger's own `suggestSet`. Sign-out, account deletion and a refused session call `end`,
+and the native side ends cards left from an earlier launch that are over. ActivityKit runs the
+countdown from the end time (`Text(timerInterval:)`): no push, no server. The Live Activity itself
+uses no App Group. It is off when iOS Live Activities are off.
 
-> **Planned (coaching platform, Phase 2 / D1):** Done, Skip and +30s buttons on the Live Activity,
-> driven by Contract 3 commands.
+The buttons (**Log set**, Skip, +30s) are iOS 17 `LiveActivityIntent`s in
+`ios/Shared/RestActivityIntents.swift` (both targets), run in the app's process. The bridge forwards
+each as a `press` to the attached workout screen and waits for its answer (8 s at most) and for its
+queued activity calls; the screen maps it to a Contract 3 command (`CompleteCurrentSet`, `SkipRest`,
+`AddRest`) in its one command sink, and **Log set** runs the same `_doneSet` as the in-app tick, so
+the draft, `sync_workout_draft`, set timing, workout events (and with them the heart-rate recorder)
+and audit are the in-app ones. **Open** and a card tap open `tracend://workout`: with a workout
+screen open it only comes forward; otherwise Train reopens today's workout when it has a draft.
 
 **Today and Lock Screen widgets (D2).** The same extension draws `TodayWidget` (small, medium) and
 `LockScreenWidget` (circular, rectangular, inline). The widget process cannot reach the app's
