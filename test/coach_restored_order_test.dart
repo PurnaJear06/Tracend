@@ -77,7 +77,10 @@ class _Server {
               }
               return 0;
             });
-          return json(sorted);
+          final limit = int.tryParse(
+            request.url.queryParameters['limit'] ?? '',
+          );
+          return json(limit == null ? sorted : sorted.take(limit).toList());
       }
       return json(<Object>[]);
     }),
@@ -124,7 +127,61 @@ Future<void> _open(
   await tester.pumpAndSettle();
 }
 
+Map<String, dynamic> _at(String id, String role, int second) => {
+  'id': id,
+  'thread_id': _threadId,
+  'role': role,
+  'content': id,
+  'created_at': DateTime.utc(
+    2026,
+    10,
+    24,
+    8,
+  ).add(Duration(seconds: second)).toIso8601String(),
+};
+
 void main() {
+  test('a long conversation loads its newest messages, in reading order, '
+      'whichever way ties fall', () async {
+    // 100 question and answer pairs (each pair shares an instant) and one
+    // newer lone message: the newest 200 cut the oldest pair in two.
+    final rows = [
+      for (var i = 0; i < 100; i++) ...[
+        _at('a${i.toString().padLeft(3, '0')}', 'assistant', i),
+        _at('u${i.toString().padLeft(3, '0')}', 'user', i),
+      ],
+      _at('z', 'assistant', 500),
+    ];
+    final loaded = await SupabaseCoachRepository(
+      _Server(rows).client,
+      now: () => _now,
+    ).loadMessages(_threadId);
+
+    expect(loaded, hasLength(coachMessageWindow));
+    expect(
+      [for (final message in loaded) message.id],
+      [
+        'a000',
+        for (var i = 1; i < 100; i++) ...[
+          'u${i.toString().padLeft(3, '0')}',
+          'a${i.toString().padLeft(3, '0')}',
+        ],
+        'z',
+      ],
+    );
+  });
+
+  test('a conversation under the window loads whole', () async {
+    final loaded = await SupabaseCoachRepository(
+      _Server().client,
+      now: () => _now,
+    ).loadMessages(_threadId);
+    expect(
+      [for (final message in loaded) message.id],
+      ['u1', 'a1', 'u2', 'a2'],
+    );
+  });
+
   testWidgets('a restored conversation reads question then answer, newest '
       'last', (tester) async {
     await _open(tester, const Size(800, 2400));
