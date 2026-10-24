@@ -204,6 +204,36 @@ proposes one of three things for today's scheduled workout only, never a plan ve
 Acute/severe pain, chest pain, fainting, severe shortness of breath, neurological symptoms, or
 another configured red flag invokes escalation rather than workout advice.
 
+**Built (B5-1, rules `pain-v1` and `joint-v1`; ALGORITHMS section 4, "Pain check, red flags and joint
+rules").** The pain check and its routing are deterministic and stored before any model sees a
+question:
+
+- The athlete says where the pain is, how strong, when it hurts and whether any of ten red flags
+  applies (bladder or bowel trouble or groin numbness with back pain, chest pain or breathlessness,
+  numbness or weakness in a limb, a pop or sudden sharp pain, being unable to bear weight or move
+  it, quick swelling, a shoulder out of place, a knee that locks or gives way, fever, night pain).
+  The database works out the outcome from those answers alone: `urgent` (emergency care),
+  `clinician_today` (also a severity of 7 or more), `clinician`, then `modify` (4 to 6), `watch`
+  (1 to 3) and `clear`. A flag routes out whatever the severity.
+- A held outcome gives that day a safety route and no training change: no changes, no options, fixed
+  referral words (the emergency number named for `urgent`); it applies with no check-in, on a rest
+  day and after the session started, and stands over every stored answer. The plan stays visible
+  and startable: Tracend withholds advice, it does not block (O12).
+- A held area is excluded from training on later days until the athlete says a clinician cleared it
+  (self-attested, O9), then it is on watch for seven days; a new symptom always holds it again.
+  Pain that has lasted two weeks adds the line to see a physio or doctor.
+- A limited or watched joint changes today's session in fixed ways: a gentler catalog exercise for
+  the same movement, or a shorter pain-free range with the last load held and effort at 7 or lower,
+  or leaving the exercise out. Nothing is rehab, nothing names a condition, and nothing here is a
+  model's output: the sentences are fixed templates and the exercises come from the catalog.
+- The Coach may not give sets, loads or exercises for a joint that is held, tell the athlete to train
+  through a pain of 4 or more in an exercise or through a red flag, or reassure that a red flag is
+  harmless (contract requests 2 and 3 in the program plan carry this to the reply guard and the A9
+  screen; until they land the context view `get_readiness_context_v1` is the only reader).
+- Missing data lowers what is allowed and never raises it: an exercise with no catalog rating counts
+  as moderate on every joint; a report that did not ask the red-flag question is judged by severity
+  alone.
+
 ### Structural training change
 
 Normally requires at least one of:

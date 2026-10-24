@@ -1,10 +1,18 @@
 // The same-day adjustment as the database returns it (public.get_my_day_adjustment_v1 and
-// public.respond_to_day_adjustment_v1, schema 1.0), with a strict parser. A later reader (Coach
-// context) must parse before it uses a field: a payload that is not exactly this shape yields
-// null, never a half-read object. Keys added in a later schema version are ignored; a missing or
-// mistyped key is not.
+// public.respond_to_day_adjustment_v1, schema 1.0 and 1.1), with a strict parser. A later reader
+// (Coach context) must parse before it uses a field: a payload that is not exactly this shape
+// yields null, never a half-read object. Keys added in a later schema version are ignored; a
+// missing or mistyped key is not. Schema 1.1 (B5-1) adds the joint_adjust kind, the joint fields of
+// a change, joint_states, exercise_joint_options and the safety routes urgent, clinician_today and
+// clinician; a 1.0 payload parses with those parts empty.
+import { isRedFlagCode, type RedFlagCode } from "../joints/red_flags.ts";
 
-export const adjustmentKinds = ["hold_load", "reduce_sets", "swap_to_easy_cardio"] as const;
+export const adjustmentKinds = [
+  "hold_load",
+  "reduce_sets",
+  "swap_to_easy_cardio",
+  "joint_adjust",
+] as const;
 export type AdjustmentKind = typeof adjustmentKinds[number];
 
 export const readinessBands = ["green", "amber", "red", "unknown"] as const;
@@ -29,7 +37,8 @@ export const readinessTriggers = [
   "recovery_low",
   "pain_severe",
 ] as const;
-export type ReadinessTrigger = typeof readinessTriggers[number];
+/** A trigger code, or red_flag:<code> for a red flag behind a safety route (schema 1.1). */
+export type ReadinessTrigger = typeof readinessTriggers[number] | `red_flag:${RedFlagCode}`;
 
 export const unavailableReasons = [
   "no_plan",
@@ -40,8 +49,24 @@ export const unavailableReasons = [
 ] as const;
 export type UnavailableReason = typeof unavailableReasons[number];
 
-export const safetyRoutes = ["pain_referral"] as const;
+export const safetyRoutes = ["pain_referral", "urgent", "clinician_today", "clinician"] as const;
 export type SafetyRoute = typeof safetyRoutes[number];
+
+export const jointActions = ["swap", "limit", "drop"] as const;
+export const jointNames = ["knee", "back", "shoulder"] as const;
+export const jointStateNames = ["held", "limited", "watch"] as const;
+export type JointName = typeof jointNames[number];
+export type JointStateName = typeof jointStateNames[number];
+
+/** What a joint state changes about one exercise (schema 1.1); null on an exercise no joint touches. */
+export type JointChange = Readonly<{
+  action: typeof jointActions[number];
+  joint: JointName;
+  state: JointStateName;
+  swapToSlug: string | null;
+  swapToName: string | null;
+  rangeNoteCode: string | null;
+}>;
 
 export type AdjustmentChange = Readonly<{
   exerciseOrder: number;
@@ -55,6 +80,25 @@ export type AdjustmentChange = Readonly<{
   repsFrom: number | null;
   repsTo: number | null;
   rpeTo: number | null;
+  joint: JointChange | null;
+}>;
+
+export type JointState = Readonly<{
+  area: "knee" | "back" | "shoulder" | "other";
+  state: JointStateName;
+  since: string;
+  severity: number;
+  persistent: boolean;
+}>;
+
+/** The gentlest swap per joint for one exercise of today's session, for the in-workout pain chip. */
+export type ExerciseJointOptions = Readonly<{
+  exerciseOrder: number;
+  plannedExerciseId: string;
+  name: string;
+  knee: Readonly<{ slug: string; name: string }> | null;
+  back: Readonly<{ slug: string; name: string }> | null;
+  shoulder: Readonly<{ slug: string; name: string }> | null;
 }>;
 
 export type AdjustmentCardio = Readonly<{
@@ -74,6 +118,7 @@ export type AdjustmentOption = Readonly<{
 }>;
 
 export type DayAdjustment = Readonly<{
+  schemaVersion: "1.0" | "1.1";
   localDate: string;
   band: ReadinessBand;
   triggers: readonly ReadinessTrigger[];
@@ -111,6 +156,8 @@ export type DayAdjustment = Readonly<{
     recoveryLow: boolean;
     sleepMinutes: number | null;
   }>;
+  jointStates: readonly JointState[];
+  exerciseJointOptions: readonly ExerciseJointOptions[];
 }>;
 
 type Json = Record<string, unknown>;
@@ -132,9 +179,37 @@ function nullable<T>(value: unknown, read: (value: unknown) => T | null): T | nu
 const number = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
-function change(raw: unknown): AdjustmentChange | null {
+function jointOf(row: Json): JointChange | null | undefined {
+  const action = row.joint_action;
+  const others = [
+    row.joint,
+    row.joint_state,
+    row.swap_to_slug,
+    row.swap_to_name,
+    row.range_note_code,
+  ];
+  if (action === undefined || action === null) {
+    return others.every((value) => value === undefined || value === null) ? null : undefined;
+  }
+  const kind = oneOf(jointActions, action);
+  const joint = oneOf(jointNames, row.joint);
+  const state = oneOf(jointStateNames, row.joint_state);
+  const slug = nullable(row.swap_to_slug, text);
+  const name = nullable(row.swap_to_name, text);
+  const note = nullable(row.range_note_code, text);
+  if (
+    !kind || !joint || !state || slug === undefined || name === undefined || note === undefined ||
+    (kind === "swap") !== (slug !== null && name !== null) ||
+    (kind !== "swap" && (slug !== null || name !== null)) ||
+    (kind === "limit") !== (note !== null)
+  ) return undefined;
+  return { action: kind, joint, state, swapToSlug: slug, swapToName: name, rangeNoteCode: note };
+}
+
+function change(raw: unknown, withJoint: boolean): AdjustmentChange | null {
   const row = record(raw);
   if (!row) return null;
+  const joint = withJoint ? jointOf(row) : null;
   const loadNote = nullable(row.load_note, text);
   const loadFrom = nullable(row.load_kg_from, number);
   const loadTo = nullable(row.load_kg_to, number);
@@ -148,7 +223,8 @@ function change(raw: unknown): AdjustmentChange | null {
     order === null || typeof row.planned_exercise_id !== "string" || typeof row.name !== "string" ||
     from === null || to === null || to < 0 || to > from || loadNote === undefined ||
     loadFrom === undefined || loadTo === undefined || repsFrom === undefined ||
-    repsTo === undefined || rpeTo === undefined
+    repsTo === undefined || rpeTo === undefined || joint === undefined ||
+    (joint?.action === "drop" && to !== 0)
   ) return null;
   return {
     exerciseOrder: order,
@@ -162,12 +238,13 @@ function change(raw: unknown): AdjustmentChange | null {
     repsFrom,
     repsTo,
     rpeTo,
+    joint,
   };
 }
 
-function changes(raw: unknown): AdjustmentChange[] | null {
+function changes(raw: unknown, withJoint: boolean): AdjustmentChange[] | null {
   if (!Array.isArray(raw)) return null;
-  const parsed = raw.map(change);
+  const parsed = raw.map((item) => change(item, withJoint));
   return parsed.includes(null) ? null : parsed as AdjustmentChange[];
 }
 
@@ -189,10 +266,10 @@ function cardio(raw: unknown): AdjustmentCardio | null | undefined {
   };
 }
 
-function option(raw: unknown): AdjustmentOption | null {
+function option(raw: unknown, withJoint: boolean): AdjustmentOption | null {
   const row = record(raw);
   const kind = oneOf(adjustmentKinds, row?.kind);
-  const list = changes(row?.changes);
+  const list = changes(row?.changes, withJoint);
   const dose = cardio(row?.cardio);
   const total = whole(row?.sets_total_to);
   if (
@@ -202,18 +279,82 @@ function option(raw: unknown): AdjustmentOption | null {
   return { kind, explanation: row.explanation, setsTotalTo: total, changes: list, cardio: dose };
 }
 
+const trigger = (value: unknown): ReadinessTrigger | null => {
+  if (typeof value !== "string") return null;
+  if (value.startsWith("red_flag:")) {
+    const code = value.slice("red_flag:".length);
+    return isRedFlagCode(code) ? value as ReadinessTrigger : null;
+  }
+  return oneOf(readinessTriggers, value);
+};
+
+function jointStates(raw: unknown): JointState[] | null {
+  if (!Array.isArray(raw)) return null;
+  const parsed = raw.map((item): JointState | null => {
+    const row = record(item);
+    const area = oneOf(["knee", "back", "shoulder", "other"] as const, row?.area);
+    const state = oneOf(jointStateNames, row?.state);
+    const severity = whole(row?.severity);
+    if (
+      !row || !area || !state || typeof row.since !== "string" || severity === null ||
+      severity < 0 || severity > 10 || typeof row.persistent !== "boolean"
+    ) return null;
+    return { area, state, since: row.since, severity, persistent: row.persistent };
+  });
+  return parsed.includes(null) ? null : parsed as JointState[];
+}
+
+function jointSwap(value: unknown): Readonly<{ slug: string; name: string }> | null | undefined {
+  if (value === null) return null;
+  const row = record(value);
+  return row && typeof row.slug === "string" && typeof row.name === "string"
+    ? { slug: row.slug, name: row.name }
+    : undefined;
+}
+
+function exerciseJointOptions(raw: unknown): ExerciseJointOptions[] | null {
+  if (!Array.isArray(raw)) return null;
+  const parsed = raw.map((item): ExerciseJointOptions | null => {
+    const row = record(item);
+    const options = record(row?.joint_options);
+    const order = whole(row?.exercise_order);
+    const knee = jointSwap(options?.knee);
+    const back = jointSwap(options?.back);
+    const shoulder = jointSwap(options?.shoulder);
+    if (
+      !row || !options || order === null || typeof row.planned_exercise_id !== "string" ||
+      typeof row.name !== "string" || knee === undefined || back === undefined ||
+      shoulder === undefined
+    ) return null;
+    return {
+      exerciseOrder: order,
+      plannedExerciseId: row.planned_exercise_id,
+      name: row.name,
+      knee,
+      back,
+      shoulder,
+    };
+  });
+  return parsed.includes(null) ? null : parsed as ExerciseJointOptions[];
+}
+
 /**
- * Parses a day-adjustment payload (schema 1.0). Null for anything that is not exactly that shape:
- * a wrong schema version, an unknown kind, band, trigger, status or reason, a change that adds sets
- * or lists more sets than the plan has, a cardio dose on a kind that is not easy cardio.
+ * Parses a day-adjustment payload (schema 1.0 or 1.1). Null for anything that is not exactly that
+ * shape: a wrong schema version, an unknown kind, band, trigger, status or reason, a change that
+ * adds sets or lists more sets than the plan has, a cardio dose on a kind that is not easy cardio,
+ * a joint change that contradicts itself.
  */
 export function parseDayAdjustment(raw: unknown): DayAdjustment | null {
   const row = record(raw);
-  if (!row || row.schema_version !== "1.0" || typeof row.local_date !== "string") return null;
+  if (
+    !row || (row.schema_version !== "1.0" && row.schema_version !== "1.1") ||
+    typeof row.local_date !== "string"
+  ) return null;
+  const withJoint = row.schema_version === "1.1";
   const band = oneOf(readinessBands, row.band);
   const status = oneOf(adjustmentStatuses, row.status);
   const kind = row.kind === "none" ? "none" as const : oneOf(adjustmentKinds, row.kind);
-  const list = changes(row.changes);
+  const list = changes(row.changes, withJoint);
   const dose = cardio(row.cardio);
   const reason = nullable(row.unavailable_reason, (v) => oneOf(unavailableReasons, v));
   const route = nullable(row.safety_route, (v) => oneOf(safetyRoutes, v));
@@ -224,13 +365,15 @@ export function parseDayAdjustment(raw: unknown): DayAdjustment | null {
   const origin = nullable(row.origin, (v) => oneOf(["proposed", "chosen"] as const, v));
   const from = whole(row.sets_total_from);
   const to = whole(row.sets_total_to);
-  const triggers = Array.isArray(row.triggers)
-    ? row.triggers.map((item) => oneOf(readinessTriggers, item))
-    : null;
+  const triggers = Array.isArray(row.triggers) ? row.triggers.map(trigger) : null;
   const missing = Array.isArray(row.missing)
     ? row.missing.map((item) => oneOf(["sleep", "recovery"] as const, item))
     : null;
-  const options = Array.isArray(row.options) ? row.options.map(option) : null;
+  const options = Array.isArray(row.options)
+    ? row.options.map((item) => option(item, withJoint))
+    : null;
+  const states = withJoint ? jointStates(row.joint_states) : [];
+  const exercises = withJoint ? exerciseJointOptions(row.exercise_joint_options) : [];
   const signals = record(row.signals);
   const previous = row.previous_answer === null ? null : record(row.previous_answer);
   const previousKind = previous ? oneOf(adjustmentKinds, previous.kind) : null;
@@ -253,12 +396,14 @@ export function parseDayAdjustment(raw: unknown): DayAdjustment | null {
     typeof row.available !== "boolean" || typeof row.explanation !== "string" ||
     typeof row.rules_version !== "string" || typeof signals.recovery_low !== "boolean" ||
     score === undefined || sleep === undefined || recoveryConfidence === undefined ||
-    recoveryMode === undefined ||
+    recoveryMode === undefined || !states || !exercises ||
     (previous !== null && (!previousKind || !previousStatus || !previousReason)) ||
     row.available !== (reason === null) || (kind === "swap_to_easy_cardio") !== (dose !== null) ||
-    (kind === "none") !== (status === "none") || (route !== null && kind !== "none")
+    (kind === "none") !== (status === "none") || (route !== null && kind !== "none") ||
+    (kind === "joint_adjust" && (list.length === 0 || list.some((c) => c.joint === null)))
   ) return null;
   return {
+    schemaVersion: row.schema_version,
     localDate: row.local_date,
     band,
     triggers: triggers as ReadinessTrigger[],
@@ -290,5 +435,7 @@ export function parseDayAdjustment(raw: unknown): DayAdjustment | null {
       recoveryLow: signals.recovery_low,
       sleepMinutes: sleep,
     },
+    jointStates: states,
+    exerciseJointOptions: exercises,
   };
 }

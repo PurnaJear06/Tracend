@@ -31,6 +31,8 @@ review. Tracend remains a working brand pending trademark and App Store clearanc
 - workout performance, check-ins, pain, hunger, mood, and notes;
 - same-day readiness adjustments (`day_adjustments`: the answer, its reasons and the sleep and recovery
   values the rules read);
+- pain checks (`pain_reports`: the area, severity, pattern, the red-flag answers and the outcome) and
+  the joint states and swaps computed from them;
 - nutrition logs, meal photos, allergies, and dietary constraints;
 - body measurements, progress photos, and physique analyses;
 - goals, limitations, plan decisions, and coaching history;
@@ -450,7 +452,14 @@ Audit events record access and changes using opaque IDs and action codes, not co
 content.
 `day_adjustment_answered` carries the kind, whether it was accepted, the band, the origin and the rules
 version only; the check-in, sleep and recovery values stay in the Restricted `day_adjustments` row.
-Neither widgets nor the Live Activity show a readiness adjustment.
+`pain_check_recorded` carries the source, the area and the outcome only: never the severity, the
+pattern or a red-flag answer. Neither widgets nor the Live Activity show a readiness adjustment,
+a pain check or a joint state. Logs and Sentry carry codes and counts, never a pain severity, area
+or red-flag answer; the Edge Functions and the database write none of them to a log, and the app's
+`beforeSend` scrubber must treat the `pain_*` check-in keys as health values (B5-2 extends its test).
+The Coach context view `get_readiness_context_v1` returns band, kind, status, route and each joint's
+area, state and lasting flag only (service role); the red-flag codes behind a route and the
+severity are not in it.
 
 Local reminders are scheduled by iOS and use only the generic title `Tracend reminder` and body
 `Open Tracend when convenient.` Lock-screen content never names health, nutrition, workouts,
@@ -615,6 +624,7 @@ history.
   provenance, and timestamps. It includes the onboarding profile fields, `onboarding_generations`,
   `onboarding_questions`, `onboarding_screenings` (the pre-plan health check answers),
   `health_history_months`, `day_adjustments` (the athlete's readiness answers),
+  `pain_reports` (the athlete's pain checks),
   `ai_usage_events`, physique analyses and every
   set-timing column. `coach_facts` (what the athlete confirmed for Coach) and `coach_notes` (Coach's own
   notes) are included. Known gap: the table list in `privacy-export` does not yet include Coach

@@ -344,6 +344,37 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   plus the intended hunks. Flutter: `day_adjustment_contract_test.dart` pins the fixtures' complete
   key lists. Each rule is proved by a test that fails without it (the PR lists them).
 
+- **Pain check, red flags and joint rules (B5-1).** pgTAP `pain_checks_test.sql`: the outcome table
+  (severity alone at 0, 1, 3, 4, 6, 7 and 10; each of the ten red flags at every one of those
+  severities; two flags together; a rule with the bands moved up fails it), the table's constraints (an
+  outcome that disagrees with its answers, an unknown flag, area, pattern, source or severity), the
+  check-in with a pain check (an older build makes no report; a new build's area, pattern, flags and
+  follow-ups; idempotence; every refusal saves nothing), the workout chip (the four result keys,
+  idempotence, outcomes and area state, the audit event of codes only, another athlete's exercise,
+  every bad value, the forty-a-day limit), cross-athlete reads, grants through `has_function_privilege`
+  and account deletion. `joint_states_test.sql` has one athlete per case: the 6-, 7- and 8-day
+  boundary for a limit and a watch, a hold that never lapses, clearance (only at 3 or below, never with
+  a flag, and a new symptom holds again), same-day order, areas that do not affect each other, the 13-
+  and 14-day lines for pain that lasts. `joint_rules_test.sql` has real athletes: the swap options on a
+  good day, a held knee on a good day (kind `joint_adjust`, left-out exercises, every option carrying
+  them), accept, a new report making the answer stale, `start_workout` giving no sets to a left-out
+  exercise under every kind, a limited shoulder merged with a lighter day, watch, an athlete who
+  cannot train, the safety routes (a flag recorded in the workout, an urgent flag with a pain of 8, a
+  pain of 8 in an old build, a fever, no check-in, a rest day, a started session, an accepted answer
+  overridden by a flag, yesterday's flag), the Coach context view, and B3 reading answers that limit
+  or swap an exercise or name another one. `joint_swap_sweep_test.sql`: hand-derived swaps, then about
+  19,000 cases (every catalog exercise x joint x seven equipment sets x three levels x movements to
+  avoid x two ceilings) checked against an independent predicate in both directions (every swap is
+  acceptable, no acceptable swap is missed), mutants that allow an equal stress or ignore equipment
+  failing it, and every catalog exercise under all 64 combinations of three joint states checked for
+  completeness, action, sets, effort, cues, swaps, duplicates and monotonicity. Deno: `joints_test.ts`
+  keeps the sourced numbers, the red-flag list, the questions and the range cues equal to the
+  migration, finds no heart signal or diagnosis word, checks the migration is additive and every
+  function's search path and grants, parses the 1.0 and 1.1 contract fixtures strictly, and pins the
+  redefinitions of the day adjustment functions, `start_workout`, `next_session_targets` and
+  `save_daily_check_in` to their earlier definitions plus the intended hunks. Flutter:
+  `pain_check_contract_test.dart` pins the 1.1 fixtures' key lists and that 1.1 only adds keys to 1.0.
+
 ### Supabase boundaries
 
 For each exposed table, Storage policy, RPC, and Edge Function, test anonymous access, same-user

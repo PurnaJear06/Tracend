@@ -22,6 +22,7 @@ export const dataTables = [
   "workout_amendments",
   "daily_check_ins",
   "day_adjustments",
+  "pain_reports",
   "health_sync_runs",
   "daily_health_summaries",
   "health_history_months",

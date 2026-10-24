@@ -348,6 +348,22 @@ starts. Errors: 42501 signed out; 22023 another date, nothing to answer, a kind 
 nothing, or a safety day; 55000 the day cannot be adjusted; P0001 more than 20 answers a day. Old
 builds never call these functions and see no change.
 
+**Version 1.1 as built (B5-1).** Keys are only added. The payload carries `schema_version: "1.1"` and
+two new keys: `joint_states` (`[{area, state, since, severity, persistent}]` for each joint that is
+held, limited or on watch; `area` is `knee`, `back`, `shoulder` or `other`) and
+`exercise_joint_options` (per exercise of today's session `{exercise_order, planned_exercise_id, name,
+joint_options: {knee, back, shoulder}}`, each joint `{slug, name}` of the gentlest low-stress swap or
+null). `kind` gains `joint_adjust` (the changes a joint state makes, alone, on a day the readiness
+rules ask for nothing; also an entry of `options`; the same one tap and Undo). A change on an exercise
+a joint touches also carries `joint_action` (`swap`, `limit`, `drop`), `joint`, `joint_state`,
+`swap_to_slug`, `swap_to_name` and `range_note_code`, all together (an exercise no joint touches
+carries none of them); a `drop` has `sets_to` 0. `safety_route` gains `urgent`, `clinician_today`
+and `clinician` (from today's pain reports; the strictest of those and `pain_referral` wins), and
+`triggers` may hold `red_flag:<code>`. A client that reads 1.0 keeps working: nothing it read changed.
+`record_pain_check_v1(local_date, source, area, severity, pattern, red_flags, cleared_by_clinician,
+exercise_performance_id, idempotency_key)` returns `{schema_version "1.0", id, outcome, area_state}`;
+`save_daily_check_in` takes the optional pain keys described in DATA_MODEL (`pain_reports`).
+
 ### Contract 6: Library search (E1), version 1.1
 
 `search_library_v1(query_text text, query_embedding public.library_embedding, match_count int, filters jsonb)`
@@ -743,12 +759,18 @@ notice when new data goes to the AI provider, AI_SAFETY_SPEC), and non-judgement
 Open, from B4/B5 (none of these files are built in B4-1):
 
 1. **ai-gateway, Coach context:** a volatile `readiness` contributor (Contract 7) rendering today's
-   band, kind, status and `signals` from a service-role reader (B4-1 builds the RPCs the athlete
-   calls; the service-role reader `get_readiness_context_v1(p_user_id, p_local_date)` arrives with
-   B5-1). `_shared/training/readiness/payload.ts` is the strict parser.
-2. **ai-gateway, A9 red-flag screen (with B5-1):** treat today's newest pain report with outcome
-   `urgent`, `clinician_today` or `clinician` like a check-in pain of 7 or more.
-3. **ai-gateway, reply guard (with B5-1):** no sets, loads or exercises for a joint in state `held`.
+   band, kind, status, safety route and each joint's state from the service-role reader
+   `get_readiness_context_v1(p_user_id, p_local_date)` (built in B5-1, version 1.0: `{schema_version,
+   local_date, band, kind, status, available, unavailable_reason, safety_route, triggers, confidence,
+   joint_states [{area, state, persistent}], rules_version}`; codes only, never a red-flag code or a
+   severity; only the athlete's own today). The athlete-facing payload parser is
+   `_shared/training/readiness/payload.ts` (1.0 and 1.1); the reader's shape is not parsed there yet.
+2. **ai-gateway, A9 red-flag screen (B5-1 built the data):** treat today's newest pain report with
+   outcome `urgent`, `clinician_today` or `clinician` like a check-in pain of 7 or more (the context
+   view's `safety_route` says it), and add `pain_reports` to "pain on record" in the route choice.
+3. **ai-gateway, reply guard (B5-1 built the data):** no sets, loads or exercises for a joint in state
+   `held` (`joint_states` in the context view), and no advice to train through a pain of 4 or more or a
+   red flag.
 4. **ai-gateway, A8:** `buildNextSessionAdjustment` for today refuses when an accepted day
    adjustment exists (add `today_adjusted` to `get_coach_proposal_inputs_v1`); deload intents
    delegate to B5-3's builder. Later, move A8's "lighter today" onto the B4 overlay so one mechanism

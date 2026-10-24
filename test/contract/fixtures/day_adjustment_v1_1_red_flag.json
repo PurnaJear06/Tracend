@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.1",
+  "local_date": "2026-10-24",
+  "band": "red",
+  "triggers": [
+    "red_flag:rapid_swelling"
+  ],
+  "kind": "none",
+  "changes": [],
+  "explanation": "Please see a doctor or physio today, before you train this area again. Tracend leaves training aside for today.",
+  "status": "none",
+  "available": true,
+  "unavailable_reason": null,
+  "safety_route": "clinician_today",
+  "confidence": "low",
+  "missing": [
+    "sleep",
+    "recovery"
+  ],
+  "cardio": null,
+  "planned_workout_id": "b4200000-0000-4000-8000-000000000001",
+  "workout_name": "Lower A",
+  "sets_total_from": 16,
+  "sets_total_to": 16,
+  "previous_answer": null,
+  "answered_at": null,
+  "rules_version": "readiness-v1",
+  "origin": null,
+  "options": [],
+  "signals": {
+    "recovery_score": null,
+    "recovery_confidence": "low",
+    "recovery_mode": "night",
+    "recovery_low": false,
+    "sleep_minutes": null
+  },
+  "joint_states": [
+    {
+      "area": "knee",
+      "state": "held",
+      "since": "2026-10-24",
+      "severity": 5,
+      "persistent": false
+    }
+  ],
+  "exercise_joint_options": [
+    {
+      "exercise_order": 1,
+      "planned_exercise_id": "b4400000-0000-4000-8000-000000000001",
+      "name": "Barbell bench press",
+      "joint_options": {
+        "knee": null,
+        "back": null,
+        "shoulder": {
+          "slug": "machine-chest-press",
+          "name": "Machine chest press"
+        }
+      }
+    },
+    {
+      "exercise_order": 2,
+      "planned_exercise_id": "b4400000-0000-4000-8000-000000000002",
+      "name": "Leg extension",
+      "joint_options": {
+        "knee": null,
+        "back": null,
+        "shoulder": null
+      }
+    },
+    {
+      "exercise_order": 3,
+      "planned_exercise_id": "b4400000-0000-4000-8000-000000000003",
+      "name": "Standing calf raise",
+      "joint_options": {
+        "knee": null,
+        "back": null,
+        "shoulder": null
+      }
+    },
+    {
+      "exercise_order": 4,
+      "planned_exercise_id": "b4400000-0000-4000-8000-000000000004",
+      "name": "Cable fly",
+      "joint_options": {
+        "knee": null,
+        "back": null,
+        "shoulder": null
+      }
+    },
+    {
+      "exercise_order": 5,
+      "planned_exercise_id": "b4400000-0000-4000-8000-000000000005",
+      "name": "Dumbbell Romanian deadlift",
+      "joint_options": {
+        "knee": null,
+        "back": {
+          "slug": "cable-pull-through",
+          "name": "Cable pull-through"
+        },
+        "shoulder": null
+      }
+    }
+  ]
+}

@@ -4,7 +4,9 @@
 // against its PubMed abstract on 2026-10-15; ACSM 2026's values were also
 // checked in its full text. Bell 2023, Hickmott 2022, Craven 2022, Saw 2016,
 // Impellizzeri 2020 and WHO 2020 were added with the readiness rules (B4) and
-// their ids, DOIs and open-access status checked against Europe PMC on 2026-10-23.
+// their ids, DOIs and open-access status checked against Europe PMC on 2026-10-23. Finucane 2020,
+// Stiell 1997, Keogh 2017, Schoenfeld 2020, Haugen 2023 and Lopez 2021 were added with the pain
+// check and joint rules (B5-1) and checked against Europe PMC on 2026-10-24.
 // `access` says what anyone can read for free: "full_text" is open in PubMed Central,
 // "abstract" is the abstract only.
 // Paid course material (NASM, ACE, K11) is never a source.
@@ -245,6 +247,71 @@ export const sources = Object.freeze({
     doi: "10.1136/bjsports-2020-102955",
     pmid: "33239350",
     pmcid: "PMC7719906",
+    access: "full_text",
+  }),
+  finucane_2020: source({
+    id: "finucane_2020",
+    label: "Finucane 2020",
+    citation: "Finucane LM, Downie A, Mercer C, et al. International framework for red flags for " +
+      "potential serious spinal pathologies. J Orthop Sports Phys Ther. 2020;50(7):350-372.",
+    doi: "10.2519/jospt.2020.9971",
+    pmid: "32438853",
+    pmcid: null,
+    access: "abstract",
+  }),
+  stiell_1997: source({
+    id: "stiell_1997",
+    label: "Stiell 1997",
+    citation:
+      "Stiell IG, Wells GA, Hoag RH, et al. Implementation of the Ottawa knee rule for the " +
+      "use of radiography in acute knee injuries. JAMA. 1997;278(23):2075-2079.",
+    doi: "10.1001/jama.1997.03550230051036",
+    pmid: "9403421",
+    pmcid: null,
+    access: "abstract",
+  }),
+  keogh_2017: source({
+    id: "keogh_2017",
+    label: "Keogh 2017",
+    citation: "Keogh JWL, Winwood PW. The epidemiology of injuries across the weight-training " +
+      "sports. Sports Med. 2017;47(3):479-501.",
+    doi: "10.1007/s40279-016-0575-0",
+    pmid: "27328853",
+    pmcid: null,
+    access: "abstract",
+  }),
+  schoenfeld_2020_rom: source({
+    id: "schoenfeld_2020_rom",
+    label: "Schoenfeld 2020",
+    citation: "Schoenfeld BJ, Grgic J. Effects of range of motion on muscle development during " +
+      "resistance training interventions: a systematic review. SAGE Open Med. 2020;8:2050312120901559.",
+    doi: "10.1177/2050312120901559",
+    pmid: "32030125",
+    pmcid: "PMC6977096",
+    access: "full_text",
+  }),
+  haugen_2023: source({
+    id: "haugen_2023",
+    label: "Haugen 2023",
+    citation:
+      "Haugen ME, Varvik FT, Larsen S, Haugen AS, van den Tillaar R, Bjornsen T. Effect of " +
+      "free-weight vs. machine-based strength training on maximal strength, hypertrophy and jump " +
+      "performance: a systematic review and meta-analysis. BMC Sports Sci Med Rehabil. " +
+      "2023;15(1):103.",
+    doi: "10.1186/s13102-023-00713-4",
+    pmid: "37582807",
+    pmcid: "PMC10426227",
+    access: "full_text",
+  }),
+  lopez_2021: source({
+    id: "lopez_2021",
+    label: "Lopez 2021",
+    citation: "Lopez P, Radaelli R, Taaffe DR, et al. Resistance training load effects on muscle " +
+      "hypertrophy and strength gain: systematic review and network meta-analysis. Med Sci Sports " +
+      "Exerc. 2021;53(6):1206-1216.",
+    doi: "10.1249/MSS.0000000000002585",
+    pmid: "33433148",
+    pmcid: "PMC8126497",
     access: "full_text",
   }),
   tracend_in_house: source({

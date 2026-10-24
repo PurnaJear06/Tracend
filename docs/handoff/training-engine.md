@@ -669,9 +669,66 @@ table; Contract 5 in the program plan the payload (1.0 as built).
   (reasons plus action); the app may use it or compose its own copy from `triggers`. (c) The changes
   sweep runs a synthetic matrix of plans, not the B2 plan sweep.
 
+**B5-1 (review; pain check, red flags and joint rules, server side; migration `20261024060025`, code 25).**
+Based on the owner-approved B4/B5 design (2026-10-23). ALGORITHMS section 4 ("Pain check, red flags
+and joint rules") has the rules; AI_SAFETY_SPEC section 6 the safety text; DATA_MODEL `pain_reports` the
+table; Contract 5 1.1 in the program plan the payload.
+
+- **The pain check.** `public.pain_reports` (area, severity, pattern, red-flag answers, the clearance
+  the athlete states, the outcome; append-only; RLS forced; export and deletion cover it).
+  `private.pain_outcome(severity, red_flags)` is the one rule and a check constraint keeps a stored
+  outcome equal to it. Ten red-flag codes (closed list); any code is accepted for any area (a stored
+  flag is never wrong to act on). `save_daily_check_in` (phase 3 definition plus the pain check) takes
+  `pain_area`, `pain_pattern`, `pain_red_flags`, `pain_cleared_by_clinician`, `pain_followups`; any of
+  them marks a build that asks the questions, and then nothing is dropped silently (22023). A build
+  that sends none behaves as before. `record_pain_check_v1` is the workout chip's writer
+  (idempotent by key, own performance only, never a future day, 40 reports a day).
+- **Joint states** (`private.joint_states`): held until a clearance (self-attested, severity 3 or
+  less, no flag), limited and watch for 7 days after the newest report, watch for 7 days after a
+  clearance, persistent at 14 days. Reports are ordered by day and then by when they were stored.
+- **Safety routes.** Today's reports with a held outcome give `urgent`, `clinician_today` or
+  `clinician`; the strictest of those and a check-in pain of 7 or more wins; band red, kind none, no
+  options, trigger codes `red_flag:<code>`; applies with no check-in, on a rest day and after the
+  session started, and stands over a stored answer. `private.day_adjustment_compute` is B4-1's plus the
+  hunks (a Deno test pins them).
+- **Joint rules** (`private.joint_changes`, `joint_swap`, `range_note_code`, `joint_options`,
+  `merge_day_changes`): see ALGORITHMS. Joint changes ride on every kind and alone as the new kind
+  `joint_adjust` (the one-tap answer and Undo are B4's). `start_workout` leaves out an exercise the
+  accepted answer drops, under every kind. B3's `next_session_targets` treats an exercise an accepted
+  answer lists, or limits for a joint, as adjusted.
+- **Payload 1.1** is additive: `joint_states`, `exercise_joint_options`, the `joint_adjust` kind, the
+  joint keys of a change (only on an exercise a joint touches), the three new safety routes and
+  `red_flag:<code>` triggers. `_shared/training/readiness/payload.ts` parses 1.0 and 1.1.
+  `get_readiness_context_v1` (service role) is the reader for Coach context.
+- **For B5-2 (app) and the lead.** (a) The installed B4-2 parser reads `kind` and `safety_route`
+  strictly (`DayAdjustmentKind.fromWire` returns null for `joint_adjust`): it must accept the new kind,
+  the new routes and the new keys, or an athlete with a held joint sees no card; B5-2 must land with
+  or before the first app build that sends the pain keys. (b) The app shows referral copy for each
+  route (`safety_copy.dart`), the persistent line, the swap and range cues (`rules.ts` has the
+  cues), and extends the `beforeSend` scrubber test for the `pain_*` keys. (c) Pain keys are only sent
+  with an area and the red-flag answer; a refused check-in (22023) leaves the queue's envelope.
+  (d) The Coach contract requests 1 to 3 (context, red-flag screen, reply guard) are open in the
+  program plan; until they land Coach does not know a joint is held.
+- **Choices where the brief was open (the safer one taken).** `pain_outcome` takes two arguments, not
+  three (the clearance does not change an outcome; it lifts a hold in `joint_states`). A held area
+  needs a clearance even when a later report says 0. A report older than 7 days lapses at 8 days.
+  Persistent counts reports of 4 or more in the episode from the first to the day asked about, so two
+  reports a week apart flag at 14 days. A swap must not trade one sore joint for another and is never
+  harsher on any joint. A limited exercise with no RPE target gets effort 7. An unrated exercise
+  counts as moderate everywhere. A joint change with no readiness kind needs the new kind
+  `joint_adjust`. Today's red-flag reports from every check-in revision count and keep the day's route
+  to the end of the day even if a clearance is recorded the same day (a superseded revision's report
+  does not lapse); a red flag typed by mistake holds its joint until the athlete's clearance, and the
+  next day carries no route.
+- **Tests that fail without each rule.** pgTAP `pain_checks_test.sql`, `joint_states_test.sql`,
+  `joint_rules_test.sql`, `joint_swap_sweep_test.sql` (and the changed keys in
+  `day_adjustments_test.sql`); Deno `joints_test.ts`; Flutter `pain_check_contract_test.dart`.
+- **Not in B5-1.** The app (B5-2), deloads (B5-3), cardio dosing (B5-4), the Coach context
+  contributor, the A9 screen and reply guard changes (contract requests), and the eval cases.
+
 ## Next agent starts here
 
-B4-2 (the app side of the readiness adjustment) builds on B4-1's RPCs (see the B4-1 section); B5
-(deloads, cardio dosing, joint rules, pain check) builds on B3's targets (`private.next_session_targets`,
+B4-2 (the app side of the readiness adjustment) builds on B4-1's RPCs (see the B4-1 section); B5-2
+(the pain check in the app) builds on B5-1's RPCs; B5 (deloads, cardio dosing) builds on B3's targets (`private.next_session_targets`,
 hub 1.7), the templates and B4-1's `day_adjustments`. B6's server wiring is done (see the B6
 section). The briefs are in the program doc.
