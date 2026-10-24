@@ -353,7 +353,7 @@ returns jsonb language plpgsql stable security definer set search_path = '' as $
 declare
   r constant jsonb := private.pain_rules();
   held constant text[] := array['urgent', 'clinician_today', 'clinician'];
-  area text;
+  joint_area text;
   newest public.pain_reports%rowtype;
   latest_hold public.pain_reports%rowtype;
   clearance public.pain_reports%rowtype;
@@ -369,25 +369,25 @@ declare
   persistent boolean;
   found_states jsonb := '[]'::jsonb;
 begin
-  foreach area in array array['knee', 'back', 'shoulder', 'other'] loop
+  foreach joint_area in array array['knee', 'back', 'shoulder', 'other'] loop
     select * into newest from public.pain_reports p
-    where p.user_id = p_user and p.area = joint_states.area and p.local_date <= p_date
+    where p.user_id = p_user and p.area = joint_area and p.local_date <= p_date
     order by p.local_date desc, p.created_at desc, p.id desc limit 1;
     if not found then continue; end if;
 
     select * into latest_hold from public.pain_reports p
-    where p.user_id = p_user and p.area = joint_states.area and p.local_date <= p_date
+    where p.user_id = p_user and p.area = joint_area and p.local_date <= p_date
       and p.outcome = any(held)
     order by p.local_date desc, p.created_at desc, p.id desc limit 1;
     has_hold := found;
 
     select * into clearance from public.pain_reports p
-    where p.user_id = p_user and p.area = joint_states.area and p.local_date <= p_date
+    where p.user_id = p_user and p.area = joint_area and p.local_date <= p_date
       and p.cleared_by_clinician
       and p.severity <= (r ->> 'clearance_max_severity')::integer
       and p.outcome in ('watch', 'clear')
       and exists (select 1 from public.pain_reports h
-        where h.user_id = p_user and h.area = joint_states.area and h.local_date <= p_date
+        where h.user_id = p_user and h.area = joint_area and h.local_date <= p_date
           and h.outcome = any(held)
           and (h.local_date, h.created_at, h.id) < (p.local_date, p.created_at, p.id))
     order by p.local_date desc, p.created_at desc, p.id desc limit 1;
@@ -401,7 +401,7 @@ begin
           > (latest_hold.local_date, latest_hold.created_at, latest_hold.id)) then
       state := 'held';
       select min(p.local_date) into hold_start from public.pain_reports p
-      where p.user_id = p_user and p.area = joint_states.area and p.local_date <= p_date
+      where p.user_id = p_user and p.area = joint_area and p.local_date <= p_date
         and p.outcome = any(held)
         and (not has_clearance
           or (p.local_date, p.created_at, p.id)
@@ -420,13 +420,13 @@ begin
     if state = 'none' then continue; end if;
 
     select * into boundary from public.pain_reports p
-    where p.user_id = p_user and p.area = joint_states.area and p.local_date <= p_date
+    where p.user_id = p_user and p.area = joint_area and p.local_date <= p_date
       and (p.outcome = 'clear' or (has_clearance and p.id = clearance.id))
     order by p.local_date desc, p.created_at desc, p.id desc limit 1;
     has_boundary := found;
     select count(*), min(p.local_date) into strong_reports, first_strong
     from public.pain_reports p
-    where p.user_id = p_user and p.area = joint_states.area and p.local_date <= p_date
+    where p.user_id = p_user and p.area = joint_area and p.local_date <= p_date
       and p.severity >= (r ->> 'persistent_min_severity')::integer
       and (not has_boundary
         or (p.local_date, p.created_at, p.id)
@@ -436,7 +436,7 @@ begin
       or (strong_reports >= 2
         and p_date - first_strong >= (r ->> 'persistent_days')::integer));
 
-    found_states := found_states || jsonb_build_object('area', area, 'state', state,
+    found_states := found_states || jsonb_build_object('area', joint_area, 'state', state,
       'since', since, 'severity', newest.severity, 'persistent', persistent);
   end loop;
   return found_states;
