@@ -721,6 +721,39 @@ Deno.test("a slow facts or schedule read does not cost the back-to-back muscles:
   assertEquals(result.traces?.watch_outs?.pain, null);
 });
 
+Deno.test("a planned day with logged sets left unfinished is not 'not logged', and ends a streak", () => {
+  const unfinished = (date: string) => ({
+    planned_workout_id: "w-pull",
+    local_date: date,
+    name: "Pull day",
+    logged_sets: 12,
+  });
+  const plan = (date: string) =>
+    parsePlanState(splitPlanPayload(3, ["w-chest-a"], { unfinished: [unfinished(date)] }))!;
+  const days = readScheduleBody(scheduleBody([
+    planned("2026-09-30"),
+    planned("2026-10-07"),
+  ]));
+  // Without the unfinished list both days are not logged.
+  assertEquals(linesOf({ schedule: days }), [
+    "- Planned but not logged on each of its last days: Pull day (2026-09-30 and 2026-10-07).",
+  ]);
+  // The newest day was trained: the streak ends there and one missed day is no streak.
+  assertEquals(
+    linesOf({ schedule: days, plan: plan("2026-10-07") }).filter((line) =>
+      line.includes("Planned but not logged")
+    ),
+    [],
+  );
+  // Another day's rows, or another workout, change nothing.
+  assertEquals(
+    linesOf({ schedule: days, plan: plan("2026-10-08") }).filter((line) =>
+      line.includes("Planned but not logged")
+    ).length,
+    1,
+  );
+});
+
 Deno.test("a session missed under an older version of the plan is not raised: only days planned by the plan in force count", () => {
   const older = (date: string) => ({ ...planned(date), version_id: "v2", version: 2 });
   const body = scheduleBody([older("2026-09-23"), older("2026-09-30"), planned("2026-10-07")]);

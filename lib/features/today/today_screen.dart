@@ -132,6 +132,12 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   UnfinishedWorkout? _unfinished;
   bool _answeringUnfinished = false;
 
+  /// Which read of the offer started last, and which answer came last. A
+  /// read that finishes after a newer read started or an answer was given
+  /// (a slow one from before it) is ignored, so it never brings back a card
+  /// the athlete already answered.
+  int _unfinishedLoads = 0;
+
   /// Today's check-in as this phone knows it: saved (also when only queued
   /// offline) or put off with "Not today". Each holds the day it was set.
   String? _checkedInOn;
@@ -247,9 +253,12 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   Future<void> _loadUnfinished() async {
     final source = _unfinishedSource;
     if (source == null) return;
+    final load = ++_unfinishedLoads;
     try {
       final workout = await source.loadUnfinishedWorkout();
-      if (mounted) setState(() => _unfinished = workout);
+      if (mounted && load == _unfinishedLoads) {
+        setState(() => _unfinished = workout);
+      }
     } catch (error) {
       debugPrint('Non-critical error: unfinished workout: $error');
     }
@@ -271,6 +280,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     try {
       await source.saveUnfinishedWorkout(workout, sessionEffort: effort);
       if (!mounted) return;
+      _unfinishedLoads++;
       setState(() {
         _unfinished = null;
         _brief = _loadBrief();
@@ -313,6 +323,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     try {
       await source.discardUnfinishedWorkout(workout);
       if (!mounted) return;
+      _unfinishedLoads++;
       setState(() => _unfinished = null);
     } catch (error) {
       debugPrint(

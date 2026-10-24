@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -35,12 +37,21 @@ class _Offers extends FixtureWorkoutRepository
 
   final List<UnfinishedWorkout> queue;
   final saved = <(String, int)>[];
+
+  /// When set, the next read waits for it (a slow one).
+  Completer<UnfinishedWorkout?>? hold;
   final discarded = <String>[];
   Object? failWith;
 
   @override
-  Future<UnfinishedWorkout?> loadUnfinishedWorkout() async =>
-      queue.isEmpty ? null : queue.first;
+  Future<UnfinishedWorkout?> loadUnfinishedWorkout() async {
+    final waiting = hold;
+    if (waiting != null) {
+      hold = null;
+      return waiting.future;
+    }
+    return queue.isEmpty ? null : queue.first;
+  }
 
   @override
   Future<void> saveUnfinishedWorkout(
@@ -92,7 +103,10 @@ class _Health implements HealthRepository {
   Future<HealthSyncStatus> sync() => loadStatus();
 }
 
-Widget _today(WorkoutRepository? workouts) => MaterialApp(
+Widget _today(
+  WorkoutRepository? workouts, {
+  DateTime Function() clock = DateTime.now,
+}) => MaterialApp(
   theme: TracendTheme.dark,
   home: Scaffold(
     body: TodayScreen(
@@ -102,16 +116,21 @@ Widget _today(WorkoutRepository? workouts) => MaterialApp(
       health: const _Health(),
       nutrition: const FixtureNutritionRepository(),
       coach: const FixtureCoachRepository(),
+      clock: clock,
     ),
   ),
 );
 
-Future<void> _open(WidgetTester tester, WorkoutRepository? workouts) async {
+Future<void> _open(
+  WidgetTester tester,
+  WorkoutRepository? workouts, {
+  DateTime Function() clock = DateTime.now,
+}) async {
   SharedPreferences.setMockInitialValues({});
   tester.view.physicalSize = const Size(390, 1600);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(_today(workouts));
+  await tester.pumpWidget(_today(workouts, clock: clock));
   await tester.pumpAndSettle();
 }
 
@@ -304,6 +323,38 @@ void main() {
 
       expect(find.textContaining("You didn't finish Upper"), findsOneWidget);
     });
+
+    testWidgets(
+      'a slow read from before an answer never brings the card back',
+      (tester) async {
+        final repository = _Offers([_legsB]);
+        var away = Duration.zero;
+        await _open(tester, repository, clock: () => DateTime.now().add(away));
+        expect(_message, findsOneWidget);
+
+        // Coming back to the app starts a read that is slow to answer.
+        final slow = Completer<UnfinishedWorkout?>();
+        repository.hold = slow;
+        away = const Duration(hours: 1);
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pump();
+
+        await tester.tap(_discardButton);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Discard').last);
+        await tester.pumpAndSettle();
+        expect(_message, findsNothing);
+
+        // The read began before the answer and still says it is offered.
+        slow.complete(_legsB);
+        await tester.pumpAndSettle();
+
+        expect(_message, findsNothing);
+        expect(repository.discarded, [_legsB.sessionId]);
+      },
+    );
 
     testWidgets('shows no card when nothing is offered', (tester) async {
       await _open(tester, _Offers([]));

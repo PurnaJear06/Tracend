@@ -103,6 +103,13 @@ Map<String, dynamic> _draft() => {
   'exercises': const [],
 };
 
+/// The one set of the one exercise in a `sync_workout_draft` call.
+Map<String, dynamic> _sentSet(Map<String, dynamic> call) {
+  final draft = call['draft'] as Map;
+  final exercise = (draft['exercises'] as List).single as Map;
+  return Map<String, dynamic>.from((exercise['sets'] as List).single as Map);
+}
+
 void main() {
   late _Server server;
   late SharedPreferencesAsync preferences;
@@ -435,7 +442,32 @@ void main() {
       );
     });
 
+    Map<String, dynamic> unsyncedDraft() => {
+      ..._draft(),
+      'exercises': [
+        {
+          'order': 1,
+          'status': 'performed',
+          'sets': [
+            {
+              'number': 1,
+              'repetitions': '8',
+              'load_kg': '100',
+              'completed': true,
+              'started_at': '2026-10-23T16:58:00Z',
+              'completed_at': '2026-10-23T17:00:00Z',
+            },
+          ],
+        },
+      ],
+    };
+
     test('save sends the athlete effort and removes the draft', () async {
+      server.answer('sync_workout_draft', {
+        'session_id': _sessionId,
+        'client_revision': 4,
+        'replayed': true,
+      });
       server.answer('resolve_unfinished_workout_v1', {
         'schema_version': '1.0',
         'session_id': _sessionId,
@@ -446,8 +478,11 @@ void main() {
 
       await repository.saveUnfinishedWorkout(offered, sessionEffort: 8);
 
-      final (name, params) = server.calls.single;
-      expect(name, 'resolve_unfinished_workout_v1');
+      expect(server.names, [
+        'sync_workout_draft',
+        'resolve_unfinished_workout_v1',
+      ]);
+      final (_, params) = server.calls.last;
       expect(params, {
         'p_session_id': _sessionId,
         'p_action': 'save',
@@ -455,6 +490,131 @@ void main() {
       });
       expect(await repository.loadDraft(_workoutId), isNull);
       expect(breadcrumbs.single.message, 'Unfinished workout saved');
+    });
+
+    test('save sends sets that never reached the server first', () async {
+      await repository.saveDraft(_workoutId, jsonEncode(unsyncedDraft()));
+      server.answer('sync_workout_draft', {
+        'session_id': _sessionId,
+        'client_revision': 4,
+        'replayed': false,
+      });
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'saved',
+        'state': 'completed',
+        'replayed': false,
+      });
+
+      await repository.saveUnfinishedWorkout(offered, sessionEffort: 7);
+
+      expect(server.names, [
+        'sync_workout_draft',
+        'resolve_unfinished_workout_v1',
+      ]);
+      final (_, sent) = server.calls.first;
+      expect(sent['session_id'], _sessionId);
+      expect(sent['client_revision'], 4);
+      final set = _sentSet(sent);
+      expect(set['repetitions'], '8');
+      expect(set['started_at'], '2026-10-23T16:58:00Z');
+      expect(await repository.loadDraft(_workoutId), isNull);
+    });
+
+    test('times the server refuses are sent again without them', () async {
+      await repository.saveDraft(_workoutId, jsonEncode(unsyncedDraft()));
+      var syncs = 0;
+      server.answers['sync_workout_draft'] = (_) {
+        syncs++;
+        return syncs == 1
+            ? _json(400, {'code': '22023', 'message': 'time', 'details': null})
+            : _json(200, {'session_id': _sessionId, 'replayed': false});
+      };
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'saved',
+        'state': 'completed',
+        'replayed': false,
+      });
+
+      await repository.saveUnfinishedWorkout(offered, sessionEffort: 7);
+
+      final retried = _sentSet(server.calls[1].$2);
+      expect(retried.containsKey('started_at'), isFalse);
+      expect(retried['repetitions'], '8');
+      expect(server.names.last, 'resolve_unfinished_workout_v1');
+    });
+
+    test('a failed send answers nothing and keeps the draft', () async {
+      await repository.saveDraft(_workoutId, jsonEncode(unsyncedDraft()));
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'saved',
+        'state': 'completed',
+        'replayed': false,
+      });
+
+      await expectLater(
+        repository.saveUnfinishedWorkout(offered, sessionEffort: 7),
+        throwsA(isA<http.ClientException>()),
+      );
+
+      expect(server.names, ['sync_workout_draft']);
+      expect(jsonDecode((await repository.loadDraft(_workoutId))!), {
+        ...unsyncedDraft(),
+      });
+    });
+
+    test('a refused send keeps the draft and answers nothing', () async {
+      server.refuse('sync_workout_draft', '55000');
+
+      await expectLater(
+        repository.saveUnfinishedWorkout(offered, sessionEffort: 7),
+        throwsA(isA<PostgrestException>()),
+      );
+
+      expect(server.names, ['sync_workout_draft']);
+      expect(await repository.loadDraft(_workoutId), isNotNull);
+    });
+
+    test('a draft of another session is not sent with this one', () async {
+      await repository.saveDraft(
+        _workoutId,
+        jsonEncode({
+          ..._draft(),
+          'session_id': '8a000000-0000-4000-8000-000000000009',
+        }),
+      );
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'saved',
+        'state': 'completed',
+        'replayed': false,
+      });
+
+      await repository.saveUnfinishedWorkout(offered, sessionEffort: 7);
+
+      expect(server.names, ['resolve_unfinished_workout_v1']);
+      expect(await repository.loadDraft(_workoutId), isNotNull);
+    });
+
+    test('without a draft nothing is sent first', () async {
+      await repository.clearDraft(_workoutId);
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'saved',
+        'state': 'completed',
+        'replayed': false,
+      });
+
+      await repository.saveUnfinishedWorkout(offered, sessionEffort: 7);
+
+      expect(server.names, ['resolve_unfinished_workout_v1']);
     });
 
     test('an effort outside 1 to 10 is never sent', () async {

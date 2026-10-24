@@ -624,9 +624,13 @@ history without approval (architecture rule 3), so the athlete is asked.
 
 **App.** Today shows `UnfinishedWorkoutCard` under the hero: "You didn't finish Legs B on Fri 23 Oct ·
 23 sets logged", **Save workout** (the finish sheet, effort 1 to 10 required, then it appears in
-history on its own date) and **Discard** (confirmed). The phone's draft for that session is removed
-after either answer, so opening the workout again cannot send its sets into a closed session; a draft
-of a newer session of the same workout stays. `UnfinishedWorkoutRepository` is implemented by
+history on its own date) and **Discard** (confirmed). Save first sends the phone's draft of that session
+(`sync_workout_draft`, which a stale-closed session still takes; set times the server refuses are sent
+again without them), so sets that never reached the server are not lost; when that send fails nothing is
+answered, the draft stays and the card stays with the error toast. The draft is removed only after the
+server accepted the answer, so opening the workout again cannot send its sets into a closed session; a
+draft of a newer session of the same workout stays. Today ignores an offer read that finishes after a
+newer read or an answer, so a slow read never brings an answered card back. `UnfinishedWorkoutRepository` is implemented by
 `SupabaseWorkoutRepository`; fixture mode offers nothing. Contract fixtures:
 `test/contract/fixtures/unfinished_workout_v1_0*.json` and `resolve_unfinished_workout_v1_0_*.json`.
 
@@ -635,9 +639,10 @@ never that it was not done, skipped or missed"; names, dates and set counts thro
 marks the session in the day-by-day list, and stops treating such a session as undone or as a
 make-up candidate (it is the athlete's to save or discard; discarding returns it to undone). Only a
 workout from the current ISO week stands for that week's session. `watch_outs` reads the same
-`undone` list, so "Behind plan ... not done" no longer names it. The streak line ("Planned but not
-logged on each of its last days") still reads completed sessions only, so an unfinished day can count
-toward a streak of two or more; not changed.
+`undone` list, so "Behind plan ... not done" no longer names it, and its streak line ("Planned but not
+logged on each of its last days") treats a planned day with an unanswered unfinished workout as trained,
+which ends a streak. Limit: that list covers the last 7 days, so an older abandoned session with logged
+sets that was never answered still reads as not logged in a streak.
 
 **B4-1 (review, #165; same-day readiness adjustment, server side; migration `20261023140024`, code 24).**
 Based on the owner-approved B4/B5 design (2026-10-23; O2 to O13 as recommended, O1 amended). ALGORITHMS
