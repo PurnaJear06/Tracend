@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:tracend/features/today/check_in_queue.dart';
 
 void main() {
@@ -273,5 +274,127 @@ void main() {
       );
       expect(await replayCount(athleteB), 0);
     });
+  });
+
+  group('a check-in with a pain check', () {
+    const withPain = {
+      'sleep_quality': 3,
+      'energy': 3,
+      'soreness': 3,
+      'hunger': 3,
+      'mood': 3,
+      'pain_severity': 6,
+      'pain_area': 'knee',
+      'pain_red_flags': <String>['locks_gives_way'],
+      'available_to_train': true,
+      'note': '',
+    };
+
+    Future<CheckInQueue> queued() async {
+      SharedPreferences.setMockInitialValues({});
+      final queue = await buildQueue();
+      await queue.enqueue(
+        payload: withPain,
+        localDate: '2026-10-02',
+        timezone: 'Asia/Kolkata',
+      );
+      return queue;
+    }
+
+    test('waits, with its pain keys, until it is sent', () async {
+      final queue = await queued();
+      expect(queue.painState, CheckInPainState.waiting);
+      Map<String, dynamic>? sent;
+      final outcome = await queue.replay((date, zone, key, payload) async {
+        sent = payload;
+        return false;
+      });
+      expect(outcome, CheckInReplayOutcome.retained);
+      expect(sent!['pain_red_flags'], ['locks_gives_way']);
+      expect(queue.painState, CheckInPainState.waiting);
+    });
+
+    test('a refusal (22023) is kept, marked, and not sent again', () async {
+      final queue = await queued();
+      var calls = 0;
+      Future<bool> refuse(
+        String date,
+        String zone,
+        String key,
+        Map<String, dynamic> payload,
+      ) async {
+        calls++;
+        throw const PostgrestException(message: 'old', code: '22023');
+      }
+
+      expect(await queue.replay(refuse), CheckInReplayOutcome.painRefused);
+      expect(queue.painState, CheckInPainState.refused);
+      expect(await queue.replay(refuse), CheckInReplayOutcome.painRefused);
+      expect(calls, 1, reason: 'a refusal is not retried every launch');
+    });
+
+    test('a refusal without pain keys is just retained', () async {
+      SharedPreferences.setMockInitialValues({});
+      final queue = await buildQueue();
+      await queue.enqueue(
+        payload: const {'energy': 3, 'pain_severity': 0},
+        localDate: '2026-10-02',
+        timezone: 'Asia/Kolkata',
+      );
+      final outcome = await queue.replay((date, zone, key, payload) async {
+        throw const PostgrestException(message: 'no', code: '22023');
+      });
+      expect(outcome, CheckInReplayOutcome.retained);
+      expect(queue.painState, CheckInPainState.none);
+    });
+
+    test(
+      'acknowledging sends the rest of the check-in without the pain',
+      () async {
+        final queue = await queued();
+        await queue.replay((date, zone, key, payload) async {
+          throw const PostgrestException(message: 'old', code: '22023');
+        });
+        Map<String, dynamic>? sent;
+        await queue.acknowledgeRefusedPain((date, zone, key, payload) async {
+          sent = payload;
+          return true;
+        });
+        expect(sent!['energy'], 3);
+        expect(sent!.keys.where((key) => key.startsWith('pain_')), [
+          'pain_severity',
+        ]);
+        expect(queue.painState, CheckInPainState.none);
+        expect(
+          (await SharedPreferences.getInstance()).getString(
+            'daily_check_in_pending',
+          ),
+          isNull,
+        );
+      },
+    );
+
+    test(
+      'acknowledging keeps the rest queued when it cannot be sent',
+      () async {
+        final queue = await queued();
+        await queue.replay((date, zone, key, payload) async {
+          throw const PostgrestException(message: 'old', code: '22023');
+        });
+        await queue.acknowledgeRefusedPain((date, zone, key, payload) async {
+          throw Exception('offline');
+        });
+        expect(queue.painState, CheckInPainState.none);
+        Map<String, dynamic>? sent;
+        expect(
+          await queue.replay((date, zone, key, payload) async {
+            sent = payload;
+            return true;
+          }),
+          CheckInReplayOutcome.delivered,
+        );
+        expect(sent!.containsKey('pain_area'), isFalse);
+      },
+    );
   });
 }
