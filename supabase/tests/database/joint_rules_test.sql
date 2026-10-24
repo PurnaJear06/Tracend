@@ -218,8 +218,8 @@ select is((select metadata from public.audit_events where user_id = pg_temp.u(1)
   '{"kind": "joint_adjust", "accepted": true, "band": "green", "origin": "proposed",
     "rules_version": "readiness-v1"}'::jsonb, 'with an audit event of codes only');
 insert into r select 'knee_again', public.get_my_day_adjustment_v1((select today from t));
-select is((select array[j ->> 'status', j ->> 'sets_total_to', j -> 'previous_answer' #>> '{}']
-    from r where name = 'knee_again'), array['accepted', '10', null], 'the accepted answer stands');
+select is((select array[j ->> 'status', j ->> 'sets_total_to', (j -> 'previous_answer' = 'null'::jsonb)::text]
+    from r where name = 'knee_again'), array['accepted', '10', 'true'], 'the accepted answer stands');
 
 -- A new pain report that asks for more: the answer no longer stands.
 select pg_temp.report(pg_temp.u(1), 0, 'back', 5);
@@ -498,8 +498,8 @@ select public.record_pain_check_v1((select today from t), 'workout', 'knee', 5, 
   array['pop_or_sudden'], false, null, 'b5600000-0000-4000-8000-000000000018');
 insert into r select 'after_flag', public.get_my_day_adjustment_v1((select today from t));
 select is((select array[j ->> 'safety_route', j ->> 'kind', j ->> 'status', jsonb_array_length(j -> 'changes')::text,
-      j ->> 'answered_at', j -> 'previous_answer' #>> '{}'] from r where name = 'after_flag'),
-  array['clinician_today', 'none', 'none', '0', null, null],
+      j ->> 'answered_at', (j -> 'previous_answer' = 'null'::jsonb)::text] from r where name = 'after_flag'),
+  array['clinician_today', 'none', 'none', '0', null, 'true'],
   'the card shows the referral and none of the stored answer');
 select throws_ok($$select public.respond_to_day_adjustment_v1(private.local_date_for(auth.uid()), true)$$,
   '22023', null, 'a new answer is refused on a day with a safety route');
