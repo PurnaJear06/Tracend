@@ -17,17 +17,31 @@ List<CoachProposal> _fixture() => CoachProposal.listFromJson(
 /// Answers like the server: approving makes the proposal accepted with an
 /// undo window; undo makes it undone.
 class _Repository implements CoachProposalRepository {
-  _Repository(this.proposal, {this.answerStatus, this.failure});
+  _Repository(
+    this.proposal, {
+    this.answerStatus,
+    this.failure,
+    this.lostReply,
+    this.loadFailure,
+  });
 
   CoachProposal proposal;
   final String? answerStatus;
   final CoachProposalException? failure;
+
+  /// The server writes the answer, then the reply is lost: the call fails
+  /// and the proposal already holds this status.
+  final CoachProposalStatus? lostReply;
+
+  /// Reading the proposal fails too (the phone is offline).
+  final CoachProposalException? loadFailure;
   final calls = <String>[];
   int loads = 0;
 
   @override
   Future<List<CoachProposal>> load({String? id}) async {
     loads++;
+    if (loadFailure != null) throw loadFailure!;
     return [proposal];
   }
 
@@ -38,6 +52,13 @@ class _Repository implements CoachProposalRepository {
     String? note,
   }) async {
     calls.add(action.wire);
+    if (lostReply != null) {
+      proposal = proposal.withStatus(
+        lostReply!,
+        DateTime.now().add(const Duration(days: 7)),
+      );
+      throw failure!;
+    }
     if (failure != null) throw failure!;
     final status =
         answerStatus ??
@@ -70,6 +91,10 @@ class _Repository implements CoachProposalRepository {
   @override
   Future<CoachProposalAnswer> undo(String id) async {
     calls.add('undo');
+    if (lostReply != null) {
+      proposal = proposal.withStatus(lostReply!, null);
+      throw failure!;
+    }
     if (failure != null) throw failure!;
     proposal = proposal.withStatus(CoachProposalStatus.undone, null);
     return CoachProposalAnswer(
@@ -138,6 +163,218 @@ void main() {
       expect(find.textContaining('Anthropic'), findsNothing);
     },
   );
+
+  group('after an error the proposal is read again', () {
+    const offline = CoachProposalException(
+      'Could not reach Tracend. Check your connection and try again.',
+    );
+    const refused = CoachProposalException(
+      'This change can no longer be applied. Ask Coach again and it will '
+      'start from your latest plan.',
+    );
+
+    testWidgets('offline approve says so and leaves Approve usable', (
+      tester,
+    ) async {
+      final repository = _Repository(
+        pending,
+        failure: offline,
+        loadFailure: offline,
+      );
+      var planChanges = 0;
+      await tester.pumpWidget(
+        _app(
+          CoachProposalCard(
+            proposal: pending,
+            repository: repository,
+            onPlanChanged: () => planChanges++,
+          ),
+        ),
+      );
+      await _approve(tester);
+
+      expect(find.textContaining('Could not reach Tracend'), findsOneWidget);
+      expect(find.text('Waiting for you'), findsOneWidget);
+      expect(planChanges, 0);
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Approve'))
+            .onPressed,
+        isNotNull,
+      );
+    });
+
+    testWidgets('an approve whose reply was lost shows Applied and reloads '
+        'the plan', (tester) async {
+      final repository = _Repository(
+        pending,
+        failure: offline,
+        lostReply: CoachProposalStatus.accepted,
+      );
+      var planChanges = 0;
+      await tester.pumpWidget(
+        _app(
+          CoachProposalCard(
+            proposal: pending,
+            repository: repository,
+            onPlanChanged: () => planChanges++,
+          ),
+        ),
+      );
+      await _approve(tester);
+
+      expect(find.text('Applied'), findsOneWidget);
+      expect(find.text('Undo'), findsOneWidget);
+      expect(find.textContaining('Could not reach Tracend'), findsNothing);
+      expect(planChanges, 1);
+    });
+
+    testWidgets('a retry refused with 55000 on a proposal that is accepted '
+        'shows it applied', (tester) async {
+      final repository = _Repository(
+        pending,
+        failure: refused,
+        lostReply: CoachProposalStatus.accepted,
+      );
+      var planChanges = 0;
+      await tester.pumpWidget(
+        _app(
+          CoachProposalCard(
+            proposal: pending,
+            repository: repository,
+            onPlanChanged: () => planChanges++,
+          ),
+        ),
+      );
+      await _approve(tester);
+
+      expect(find.text('Applied'), findsOneWidget);
+      expect(find.textContaining('can no longer be applied'), findsNothing);
+      expect(planChanges, 1);
+    });
+
+    testWidgets('a 55000 on a proposal that is still waiting keeps the '
+        'error', (tester) async {
+      final repository = _Repository(pending, failure: refused);
+      await tester.pumpWidget(
+        _app(CoachProposalCard(proposal: pending, repository: repository)),
+      );
+      await _approve(tester);
+
+      expect(find.textContaining('can no longer be applied'), findsOneWidget);
+      expect(find.text('Applied'), findsNothing);
+    });
+
+    testWidgets('Not now offline says so and keeps the card', (tester) async {
+      final repository = _Repository(
+        pending,
+        failure: offline,
+        loadFailure: offline,
+      );
+      await tester.pumpWidget(
+        _app(CoachProposalCard(proposal: pending, repository: repository)),
+      );
+      await tester.ensureVisible(find.text('Not now'));
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Could not reach Tracend'), findsOneWidget);
+      expect(find.text('Approve'), findsOneWidget);
+    });
+
+    testWidgets('a Not now whose reply was lost shows Not now', (tester) async {
+      final repository = _Repository(
+        pending,
+        failure: offline,
+        lostReply: CoachProposalStatus.declined,
+      );
+      await tester.pumpWidget(
+        _app(CoachProposalCard(proposal: pending, repository: repository)),
+      );
+      await tester.ensureVisible(find.text('Not now'));
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Could not reach Tracend'), findsNothing);
+      expect(find.text('Approve'), findsNothing);
+    });
+
+    testWidgets('a Change it whose reply was lost still hands the follow-up '
+        'to the chat', (tester) async {
+      final repository = _Repository(
+        pending,
+        failure: offline,
+        lostReply: CoachProposalStatus.changed,
+      );
+      CoachProposal? changed;
+      await tester.pumpWidget(
+        _app(
+          CoachProposalCard(
+            proposal: pending,
+            repository: repository,
+            onChangeIt: (proposal) => changed = proposal,
+          ),
+        ),
+      );
+      await tester.ensureVisible(find.text('Change it'));
+      await tester.tap(find.text('Change it'));
+      await tester.pumpAndSettle();
+
+      expect(changed?.id, pending.id);
+      expect(find.text('Change requested'), findsOneWidget);
+    });
+
+    testWidgets('Undo offline says so and keeps Undo', (tester) async {
+      final repository = _Repository(
+        accepted,
+        failure: offline,
+        loadFailure: offline,
+      );
+      var planChanges = 0;
+      await tester.pumpWidget(
+        _app(
+          CoachProposalCard(
+            proposal: accepted,
+            repository: repository,
+            onPlanChanged: () => planChanges++,
+          ),
+        ),
+      );
+      await tester.ensureVisible(find.text('Undo'));
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Could not reach Tracend'), findsOneWidget);
+      expect(find.text('Undo'), findsOneWidget);
+      expect(planChanges, 0);
+    });
+
+    testWidgets('an Undo whose reply was lost shows Undone and reloads the '
+        'plan', (tester) async {
+      final repository = _Repository(
+        accepted,
+        failure: offline,
+        lostReply: CoachProposalStatus.undone,
+      );
+      var planChanges = 0;
+      await tester.pumpWidget(
+        _app(
+          CoachProposalCard(
+            proposal: accepted,
+            repository: repository,
+            onPlanChanged: () => planChanges++,
+          ),
+        ),
+      );
+      await tester.ensureVisible(find.text('Undo'));
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Undone'), findsOneWidget);
+      expect(find.textContaining('Could not reach Tracend'), findsNothing);
+      expect(planChanges, 1);
+    });
+  });
 
   testWidgets('training changes list the sessions before and after', (
     tester,

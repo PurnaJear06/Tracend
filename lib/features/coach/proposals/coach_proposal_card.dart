@@ -101,7 +101,9 @@ class _CoachProposalCardState extends State<CoachProposalCard> {
         widget.onChangeIt?.call(_proposal);
       }
     } on CoachProposalException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (!await _settledByServer(action) && mounted) {
+        setState(() => _error = error.message);
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -133,9 +135,44 @@ class _CoachProposalCardState extends State<CoachProposalCard> {
         }
       }
     } on CoachProposalException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (!await _settledByServer(null) && mounted) {
+        setState(() => _error = error.message);
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// After an error the answer may still have been written (the reply was
+  /// lost, or a retry met a proposal that is already answered). Reads the
+  /// proposal again: if it moved on, the card shows what the server holds,
+  /// and the plan screens reload when it was applied or restored. True when
+  /// there is nothing left to report as an error.
+  Future<bool> _settledByServer(CoachProposalAction? action) async {
+    final before = _proposal.status;
+    final CoachProposal? fresh;
+    try {
+      final loaded = await widget.repository.load(id: _proposal.id);
+      fresh = loaded.isEmpty ? null : loaded.first;
+    } on CoachProposalException {
+      return false;
+    }
+    if (fresh == null || !mounted) return false;
+    setState(() => _proposal = fresh!);
+    if (fresh.status == before) return false;
+    switch (fresh.status) {
+      case CoachProposalStatus.accepted || CoachProposalStatus.undone:
+        unawaited(TracendHaptics.success());
+        widget.onPlanChanged?.call();
+        return true;
+      case CoachProposalStatus.declined:
+        return true;
+      case CoachProposalStatus.changed:
+        if (action == CoachProposalAction.change)
+          widget.onChangeIt?.call(fresh);
+        return true;
+      case CoachProposalStatus.pending || CoachProposalStatus.expired:
+        return false;
     }
   }
 
