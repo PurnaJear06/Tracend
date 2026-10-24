@@ -39,9 +39,11 @@
 import { librarySources } from "../../library/index.ts";
 import { embeddingModel } from "../_shared/library/embedding.ts";
 import { libraryRowsOf } from "../_shared/library/live.ts";
+import type { PlanFacts } from "../_shared/library/plan_explanation.ts";
 import { libraryRetrievalQuery } from "../_shared/library/query.ts";
 import { libraryKeywordFloor, libraryRelevanceFloor } from "../_shared/library/retrieval.ts";
 import holdoutFile from "./library_questions_holdout.json" with { type: "json" };
+import planFile from "./library_questions_plan.json" with { type: "json" };
 import questionFile from "./library_questions.json" with { type: "json" };
 import {
   floorGrid,
@@ -74,6 +76,7 @@ const minMrr = Number(Deno.env.get("EVAL_MIN_MRR") ?? "0.5");
 const minNoAnswer = Number(Deno.env.get("EVAL_MIN_NO_ANSWER_PRECISION") ?? "0.7");
 const minKeywordRecall = Number(Deno.env.get("EVAL_MIN_KEYWORD_RECALL") ?? "0.55");
 const minKeywordNoAnswer = Number(Deno.env.get("EVAL_MIN_KEYWORD_NO_ANSWER_PRECISION") ?? "0.7");
+const minPlanRecall = Number(Deno.env.get("EVAL_MIN_PLAN_RECALL") ?? "0.5");
 if (serviceKey === "" || workerSecret === "") {
   console.error("Set EVAL_SERVICE_KEY and EVAL_WORKER_SECRET.");
   Deno.exit(2);
@@ -318,6 +321,38 @@ if (hitsFile !== "") {
   console.log(`\nSearch results saved to ${hitsFile}`);
 }
 
+// Plan explanations (chunk E5): the questions an athlete asks to learn why their plan is the way it
+// is, searched as Coach chat searches them (the question and the plan topics) and, for the lift,
+// as the bare question. Scored with the floor as it stands; the calibration set above is untouched.
+const planQuestions = planFile.questions as unknown as (LibraryQuestion & { plan: PlanFacts })[];
+const planScores = async (queriesToRun: string[]) => {
+  const vectors = await embed(queriesToRun);
+  const scores: QuestionScore[] = [];
+  for (const [index, question] of planQuestions.entries()) {
+    const rows = await search(queriesToRun[index], vectors[index], defaultRegion);
+    scores.push(scoreQuestion(question, keysPassing(rows, libraryRelevanceFloor)));
+  }
+  return scores;
+};
+// The hold-out run confirms the floor on the hold-out set only.
+const enrichedPlan = holdout ? [] : await planScores(
+  planQuestions.map((question) => libraryRetrievalQuery(question.text, [], question.plan).text),
+);
+const barePlan = holdout ? [] : await planScores(planQuestions.map((question) => question.text));
+const planSummary = summarise(enrichedPlan);
+if (!holdout) {
+  console.log(
+    `\nPlan explanations (${planQuestions.length} questions, with the floor): mean recall ${
+      planSummary.meanRecall.toFixed(3)
+    }, MRR ${planSummary.mrr.toFixed(3)}, every source found ${
+      (planSummary.fullRecall * 100).toFixed(0)
+    }%; the bare question gives ${summarise(barePlan).meanRecall.toFixed(3)}`,
+  );
+  for (const score of enrichedPlan.filter((entry) => entry.missing.length > 0)) {
+    console.log(`  ${score.id}: missing ${score.missing.join(", ")}`);
+  }
+}
+
 const floored = modes.hybrid_floor;
 const hybrid = summarise(floored);
 const multi = summariseKind(floored, "multi_source");
@@ -341,6 +376,8 @@ const failures = [
   `no-answer precision ${noAnswer.precision.toFixed(3)} is under ${minNoAnswer}`,
   keyword.meanRecall < minKeywordRecall &&
   `word-search recall ${keyword.meanRecall.toFixed(3)} is under ${minKeywordRecall}`,
+  !holdout && planSummary.meanRecall < minPlanRecall &&
+  `plan-explanation recall ${planSummary.meanRecall.toFixed(3)} is under ${minPlanRecall}`,
   keywordNoAnswer.precision < minKeywordNoAnswer &&
   `word-search no-answer precision ${
     keywordNoAnswer.precision.toFixed(3)

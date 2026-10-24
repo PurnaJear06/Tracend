@@ -1035,6 +1035,8 @@ missing data, risk flags, and validity window.
 Bounded persistent proposal: feature snapshot, schema version, proposed training and nutrition,
 evidence, rationale, expected benefit, downside, confidence, effective date, expiry, and status.
 
+Evidence items are `{code, label, source}`. An onboarding proposal's items come from the athlete's answers and the policy (`feature_snapshot`, `policy_evaluation`) and, from E5, one item with `source: "library"` for each research source the plan cites (`code` is the library source id, `label` the retrieved title and year, written by the server). No column or constraint changed: the app lists the library items under "Why this plan".
+
 Onboarding proposals have two schema versions:
 
 - **1.0:** the Phase-2 mock, with names only.

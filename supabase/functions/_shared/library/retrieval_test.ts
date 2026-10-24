@@ -12,6 +12,9 @@ import {
   libraryKeywordFloor,
   libraryMatchCount,
   libraryNoMatchText,
+  libraryPlanNoMatchText,
+  libraryPlanUnavailableText,
+  libraryPlanWordsOnlyText,
   libraryRelevanceFloor,
   type LibraryRow,
   type LibrarySearchRequest,
@@ -23,6 +26,7 @@ import {
   unshownKeysIn,
 } from "./retrieval.ts";
 import { librarySearchViaRpc, prefetchLibraryEmbedding } from "./live.ts";
+import type { PlanFacts } from "./plan_explanation.ts";
 
 const traceOf = (block: unknown) => (block as { trace: Record<string, unknown> }).trace;
 
@@ -626,4 +630,168 @@ Deno.test("the RPC search sends the athlete and the embedding and keeps well-for
     message = (error as Error).message;
   }
   assertEquals(message, "library_search_unavailable");
+});
+
+// ---- plan explanations (E5) ---------------------------------------------------------------
+
+const planFacts: PlanFacts = {
+  sessionsPerWeek: 4,
+  experience: "intermediate",
+  repMin: 6,
+  repMax: 12,
+  hasEffortTarget: true,
+  goal: "muscle_gain",
+  temporaryBlock: false,
+};
+const planInput = { userId: "u", question: "Why is my plan like this?", localDate: "2026-10-24" };
+const near = (key: string) => ({
+  ...row(key, "Ten or more weekly sets gave more growth.", "Results", "Weekly volume", 2017),
+  vectorDistance: 0.05,
+  textRank: 0,
+  libraryVersion: "0123456789abcdef",
+});
+
+Deno.test("a plan question is searched with what the plan is made of, for this athlete", async () => {
+  const requests: LibrarySearchRequest[] = [];
+  const embedded: string[] = [];
+  const contributor = createLibraryContributor({
+    embed: () => (text) => {
+      embedded.push(text);
+      return Promise.resolve([1]);
+    },
+    search: (request) => {
+      requests.push(request);
+      return Promise.resolve([near("schoenfeld_2017_weekly_volume")]);
+    },
+    planFacts: () => Promise.resolve(planFacts),
+  });
+  const block = await contributor.render(planInput) as { text: string; shown: object };
+  assertEquals(requests.length, 1);
+  assertEquals(requests[0].userId, "u");
+  assertStringIncludes(requests[0].text, "Why is my plan like this? Training plan design for");
+  assertStringIncludes(requests[0].text, "4 training days a week");
+  assertStringIncludes(requests[0].text, "small energy surplus to build muscle");
+  assertEquals(embedded, [requests[0].text]);
+  assertStringIncludes(block.text, "The athlete asked why their plan is the way it is.");
+  assertStringIncludes(block.text, "An excerpt never changes a number in the plan.");
+  assertStringIncludes(block.text, "[source: schoenfeld_2017_weekly_volume]");
+  assertEquals(Object.keys(block.shown), ["schoenfeld_2017_weekly_volume"]);
+  assertEquals(traceOf(block).plan_explanation, true);
+  assertEquals(traceOf(block).plan_facts, true);
+  assertEquals(traceOf(block).shown, ["schoenfeld_2017_weekly_volume"]);
+});
+
+Deno.test("a plan question whose facts fail, are missing or are late is searched with the general topics", async () => {
+  const slow = () => new Promise<PlanFacts | null>(() => {});
+  const cases: [string, () => Promise<PlanFacts | null>][] = [
+    ["missing", () => Promise.resolve(null)],
+    ["failing", () => Promise.reject(new Error("plan_state_unavailable"))],
+    ["late", slow],
+  ];
+  for (const [name, planFacts] of cases) {
+    const requests: LibrarySearchRequest[] = [];
+    const contributor = createLibraryContributor({
+      embed: () => () => Promise.resolve([1]),
+      search: (request) => {
+        requests.push(request);
+        return Promise.resolve([near("schoenfeld_2017_weekly_volume")]);
+      },
+      planFacts,
+      planFactsDeadlineMs: 20,
+    });
+    const block = await contributor.render(planInput) as { text: string };
+    assertStringIncludes(
+      requests[0].text,
+      "Training plan design for a lifter: training frequency",
+      name,
+    );
+    assert(!requests[0].text.includes("Nutrition targets"), name);
+    assertEquals(traceOf(block).plan_facts, false, name);
+    assertStringIncludes(block.text, "[source: schoenfeld_2017_weekly_volume]", name);
+  }
+});
+
+Deno.test("a question that is not about the plan never reads the plan facts", async () => {
+  let reads = 0;
+  const requests: LibrarySearchRequest[] = [];
+  const contributor = createLibraryContributor({
+    embed: () => () => Promise.resolve([1]),
+    search: (request) => {
+      requests.push(request);
+      return Promise.resolve(rows);
+    },
+    planFacts: () => {
+      reads++;
+      return Promise.resolve(planFacts);
+    },
+  });
+  const block = await contributor.render({ ...planInput, question: "Do I need creatine?" });
+  assertEquals(reads, 0);
+  assertEquals(requests[0].text, "Do I need creatine?");
+  assertEquals("plan_explanation" in traceOf(block), false);
+});
+
+Deno.test("a plan question with no excerpt close enough says so, in words that keep the plan explained", async () => {
+  const far = { ...near("schoenfeld_2017_weekly_volume"), vectorDistance: 0.9 };
+  const make = (embed: () => Promise<number[]>) =>
+    createLibraryContributor({
+      embed: () => embed,
+      search: () => Promise.resolve([far]),
+      planFacts: () => Promise.resolve(planFacts),
+    });
+  const none = await renderCoachContext([make(() => Promise.resolve([1]))], planInput);
+  assertEquals(none.texts.library, libraryPlanNoMatchText);
+  assertEquals(none.shown, {});
+  assertStringIncludes(libraryPlanNoMatchText, "less certain");
+  assertStringIncludes(libraryPlanNoMatchText, "cite no library source");
+  const wordsOnly = await renderCoachContext(
+    [make(() => Promise.reject(new Error("down")))],
+    planInput,
+  );
+  assertEquals(wordsOnly.texts.library, libraryPlanWordsOnlyText);
+  assertEquals(renderLibraryChunks([], 9_000, true, true).text, libraryPlanWordsOnlyText);
+  assertEquals(renderLibraryChunks([], 9_000, false, true).text, libraryPlanNoMatchText);
+});
+
+Deno.test("a plan question whose search fails is told the library could not be searched", async () => {
+  const contributor = createLibraryContributor({
+    embed: () => () => Promise.resolve([1]),
+    search: () => Promise.reject(new Error("library_search_unavailable")),
+    planFacts: () => Promise.resolve(planFacts),
+  });
+  const result = await renderCoachContext([contributor], planInput);
+  assertEquals(result.outcomes.map((item) => item.outcome), ["rendered"]);
+  assertEquals(result.texts.library, libraryPlanUnavailableText);
+  assertEquals(result.shown, {});
+  assertEquals(result.traces?.library.degraded, "search_unavailable");
+  assertStringIncludes(libraryPlanUnavailableText, "could not check the research");
+  // Any other question is answered without the library: the block is left out.
+  const other = await renderCoachContext([contributor], {
+    ...planInput,
+    question: "Do I need creatine?",
+  });
+  assertEquals(other.outcomes.map((item) => item.outcome), ["failed"]);
+});
+
+Deno.test("the plan note and its excerpts stay inside the library budget", () => {
+  const big = Array.from(
+    { length: 12 },
+    (_, index) => row(`author_${2000 + index}_topic_${index}`, "x".repeat(900)),
+  );
+  const text = renderLibraryChunks(big, libraryBudgetChars, false, true).text;
+  assert(text.length <= libraryBudgetChars, `${text.length}`);
+  assertStringIncludes(text, "The athlete asked why their plan is the way it is.");
+});
+
+Deno.test("the bare question's embedding is not started for a plan question", async () => {
+  let started = 0;
+  const embedder = () => {
+    started++;
+    return Promise.resolve([1]);
+  };
+  assertEquals(prefetchLibraryEmbedding("Why is my plan like this?", embedder), null);
+  assertEquals(prefetchLibraryEmbedding("Why am I doing upper lower in my plan?", embedder), null);
+  assert(prefetchLibraryEmbedding("Do I need creatine?", embedder) !== null);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assertEquals(started, 1);
 });

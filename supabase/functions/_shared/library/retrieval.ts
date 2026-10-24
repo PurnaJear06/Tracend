@@ -1,10 +1,12 @@
 import type {
   CoachContextContributor,
+  CoachContextInput,
   ContributorTrace,
   RenderedBlock,
   ShownSource,
 } from "../coach_context/host.ts";
 import type { Embedder } from "./embedding.ts";
+import { isPlanExplanationQuestion, type PlanFacts } from "./plan_explanation.ts";
 import { libraryRetrievalQuery, topicTerms } from "./query.ts";
 
 // Library retrieval as a Contract 7 contributor (chunk E3): every Coach chat turn searches the
@@ -229,6 +231,24 @@ export const libraryNoMatchText =
 export const libraryWordsOnlyText =
   "The research library could only be searched by keyword this turn and no excerpt matched closely. Cite no library source this turn, do not say the library lacks the topic, and make no research claims from memory.";
 
+// The same three blocks for a turn where the athlete asked why their plan is the way it is (E5).
+// Fixed wording that grounds no figure: the plan's numbers come from Tracend's rules and are
+// explained from the plan sections of the reference data.
+const planNote =
+  "The athlete asked why their plan is the way it is. Explain it from the plan's own numbers and Tracend's rules first (the training plan, the nutrition targets and the goal phase in the reference data), then use these excerpts for the reasoning behind them, citing the source of each. Say plainly when a part of the plan has no excerpt behind it rather than inventing a source. An excerpt never changes a number in the plan.";
+
+/** The block for a plan question when no excerpt is close enough to it. */
+export const libraryPlanNoMatchText =
+  "The athlete asked why their plan is the way it is. No research library excerpt matched closely enough to show. Explain the plan from its own numbers and Tracend's rules, cite no library source, and say plainly that Tracend's library has no source for this part, so the explanation rests on the plan's rules and is less certain. Do not answer from memory.";
+
+/** The block for a plan question when the search ran on the words alone and found no strong match. */
+export const libraryPlanWordsOnlyText =
+  "The athlete asked why their plan is the way it is. The research library could only be searched by keyword this turn and no excerpt matched closely. Explain the plan from its own numbers and Tracend's rules, cite no library source, do not say the library lacks the topic, and make no research claims from memory.";
+
+/** The block for a plan question when the library could not be searched at all. */
+export const libraryPlanUnavailableText =
+  "The athlete asked why their plan is the way it is. The research library could not be searched this turn. Explain the plan from its own numbers and Tracend's rules, cite no library source, and say plainly that you could not check the research behind it. Do not answer from memory.";
+
 /**
  * The block: the introduction, then as many chunks as fit the budget, best first, with the sources
  * they came from. Whole chunks only, so the host never has to cut one. With nothing to show it is
@@ -239,10 +259,32 @@ export function renderLibraryChunks(
   rows: readonly LibraryRow[],
   budgetChars: number = libraryBudgetChars,
   wordsOnly = false,
+  planExplanation = false,
+): RenderedBlock {
+  return renderExcerpts(
+    rows,
+    budgetChars,
+    planExplanation ? `${intro}\n\n${planNote}` : intro,
+    planExplanation
+      ? (wordsOnly ? libraryPlanWordsOnlyText : libraryPlanNoMatchText)
+      : (wordsOnly ? libraryWordsOnlyText : libraryNoMatchText),
+  );
+}
+
+/**
+ * The excerpts under a heading, as many whole chunks as fit the budget, best first; `none` is the
+ * block when no chunk is shown. Exported for the onboarding plan prompt (`plan_library.ts`), which
+ * words its own heading and its own empty blocks.
+ */
+export function renderExcerpts(
+  rows: readonly LibraryRow[],
+  budgetChars: number,
+  heading: string,
+  none: string,
 ): RenderedBlock {
   const blocks: string[] = [];
   const shown: Record<string, ShownSource> = {};
-  let used = intro.length;
+  let used = heading.length;
   for (const row of rows) {
     if (!sourceIdPattern.test(row.sourceId)) continue;
     const about = describe(row);
@@ -258,8 +300,10 @@ export function renderLibraryChunks(
       text: earlier ? `${earlier.text}\n${block}` : block,
     };
   }
-  if (blocks.length > 0) return { text: `${intro}\n\n${blocks.join("\n\n")}`, shown };
-  return { text: wordsOnly ? libraryWordsOnlyText : libraryNoMatchText, shown };
+  return blocks.length > 0 ? { text: `${heading}\n\n${blocks.join("\n\n")}`, shown } : {
+    text: none,
+    shown,
+  };
 }
 
 /** "Title (year)", cut to the evidence label limit. */
@@ -268,8 +312,12 @@ function citationLabel(row: LibraryRow): string {
   return `${row.title.slice(0, 380 - year.length)}${year}`;
 }
 
-/** Why the search ran without its embedding, or "none". */
-export type LibraryDegradedReason = "none" | "embedding_unavailable" | "embedding_timeout";
+/** Why the search ran without its embedding (or not at all), or "none". */
+export type LibraryDegradedReason =
+  | "none"
+  | "embedding_unavailable"
+  | "embedding_timeout"
+  | "search_unavailable";
 
 /** Contributor wiring: how the question becomes an embedding and how the search runs. */
 export type LibraryContributorDeps = Readonly<{
@@ -279,7 +327,41 @@ export type LibraryContributorDeps = Readonly<{
   embedDeadlineMs?: number;
   /** The clock prefetched embeddings are timed on; defaults to performance.now. */
   now?: () => number;
+  /**
+   * What the athlete's plan is made of (E5), for a question that asks why the plan is the way it
+   * is: it gives the search the topics the question lacks. Null or a late answer leaves the
+   * question searched with the general topics of a plan.
+   */
+  planFacts?: (input: CoachContextInput) => Promise<PlanFacts | null>;
+  /** How long the plan facts may take; defaults to `libraryPlanFactsDeadlineMs`. */
+  planFactsDeadlineMs?: number;
 }>;
+
+/** The most the plan facts may take: they are a read already under way for the plan section. */
+export const libraryPlanFactsDeadlineMs = 800;
+
+/** The plan facts, or null when they are missing, fail or take longer than `deadlineMs`. */
+async function planFactsWithin(
+  read: () => Promise<PlanFacts | null>,
+  deadlineMs: number,
+): Promise<PlanFacts | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const pending = Promise.resolve().then(read);
+    // A failure after the deadline must not surface as an unhandled rejection.
+    pending.catch(() => {});
+    return await Promise.race([
+      pending,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), deadlineMs);
+      }),
+    ]);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 const rowText = (row: LibraryRow) => `${row.header}\n${row.body}`;
 const roundTo = (value: number, places: number) => Number(value.toFixed(places));
@@ -292,7 +374,20 @@ export function createLibraryContributor(deps: LibraryContributorDeps): CoachCon
     slot: "volatile",
     budgetChars: libraryBudgetChars,
     async render(input) {
-      const query = libraryRetrievalQuery(input.question, input.previousQuestions ?? []);
+      // A plan question (E5) is searched with what the plan is made of; the prefetched embedding
+      // was of the bare question, so the query is embedded again (the text no longer matches).
+      const asksAboutPlan = isPlanExplanationQuestion(input.question);
+      const facts = asksAboutPlan && deps.planFacts
+        ? await planFactsWithin(
+          () => deps.planFacts!(input),
+          deps.planFactsDeadlineMs ?? libraryPlanFactsDeadlineMs,
+        )
+        : null;
+      const query = libraryRetrievalQuery(
+        input.question,
+        input.previousQuestions ?? [],
+        asksAboutPlan ? facts : undefined,
+      );
       const early = input.queryEmbedding?.text === query.text ? input.queryEmbedding : undefined;
       const startedAt = early?.startedAt ?? now();
       let embedding: number[] | null = null;
@@ -318,16 +413,44 @@ export function createLibraryContributor(deps: LibraryContributorDeps): CoachCon
         clearTimeout(timer);
       }
       const embedMs = Math.round(now() - startedAt);
-      const rows = await deps.search({
-        userId: input.userId,
-        text: query.text,
-        embedding,
-        matchCount: libraryMatchCount,
-      });
+      let rows: readonly LibraryRow[];
+      try {
+        rows = await deps.search({
+          userId: input.userId,
+          text: query.text,
+          embedding,
+          matchCount: libraryMatchCount,
+        });
+      } catch (error) {
+        // Any other turn is answered without the library (the host leaves the block out); a plan
+        // question is told it, so Coach says it could not check the research behind the plan.
+        if (!asksAboutPlan) throw error;
+        return {
+          text: libraryPlanUnavailableText,
+          shown: {},
+          trace: {
+            embed_ms: embedMs,
+            degraded: "search_unavailable" satisfies LibraryDegradedReason,
+            prefetched: early !== undefined,
+            follow_up: false,
+            plan_explanation: true,
+            plan_facts: facts !== null,
+            candidates: 0,
+            shown: [],
+            top_distance: null,
+            library_version: null,
+          },
+        };
+      }
       const shown = embedding === null
         ? keywordRelevantRows(rows, query.text, rowText)
         : relevantRows(rows);
-      const block = renderLibraryChunks(shown, libraryBudgetChars, embedding === null);
+      const block = renderLibraryChunks(
+        shown,
+        libraryBudgetChars,
+        embedding === null,
+        query.planExplanation === true,
+      );
       const distances = rows.flatMap((row) =>
         typeof row.vectorDistance === "number" ? [row.vectorDistance] : []
       );
@@ -336,6 +459,7 @@ export function createLibraryContributor(deps: LibraryContributorDeps): CoachCon
         degraded,
         prefetched: early !== undefined,
         follow_up: query.rewritten,
+        ...(query.planExplanation ? { plan_explanation: true, plan_facts: facts !== null } : {}),
         candidates: rows.length,
         shown: Object.keys(block.shown),
         top_distance: distances.length === 0 ? null : roundTo(Math.min(...distances), 4),

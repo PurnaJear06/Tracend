@@ -1406,6 +1406,46 @@ and shows Coach the chunks it found. The library never decides a number; it grou
   bank's `library` category (Claude gateway route only) grades citations and honesty on fixed chunks;
   `library_head_to_head.ts` compares retrieval with the whole library in the prefix.
 
+### 11.2a Plan explanations that cite sources (E5)
+
+The library also grounds the explanation of the athlete's plan. It never decides a number: the plan's
+calories, protein, sets, reps, effort and rest come from the rules and the athlete's approved plan.
+
+- **Coach chat.** A question that asks why the plan, or a part of it, is the way it is
+  (`isPlanExplanationQuestion`: it names the plan, a split, the targets or the sets and asks for the
+  reason; deterministic, no model call) is searched with what the plan is made of added: training
+  days, weekly sets per muscle, rep ranges, rest, effort, progression and the goal's nutrition
+  topic, from counts and enumerated values read from the plan state and the goal (`plan_facts.ts`;
+  never an exercise name, a load, a weight or a date). It is searched for this athlete, so the
+  region follows from the stored country. Citing, the `citation_not_retrieved` guard, figure grounding
+  and labels are §11.2's. The block adds one fixed note (no figure; it grounds nothing): explain from
+  the plan's own numbers and Tracend's rules first, use the excerpts for the reasoning behind them,
+  say plainly when a part has none. With no excerpt close enough the block says so and tells Coach
+  the explanation rests on the plan's rules and is less certain, to cite nothing and not to answer
+  from memory; a search that fails on a plan turn says the research could not be checked. The plan
+  facts have their own 0.8 s limit and a failure leaves the general topics of a plan.
+- **The onboarding plan** (`onboarding-plan`, gateway route only). Before the prompt is built, two
+  searches for this athlete (training and nutrition, from the enumerated answers; the athlete's own
+  words never enter a query) put up to 6,000 characters of excerpts, whole chunks, into the user
+  message; the rules about them are in the cached system prompt. The model may list the ids it relied
+  on in `sources`; `validateOnboardingPlan` refuses an id the prompt did not show
+  (`source_not_retrieved`), and so does the gateway when the plan's text prints an unshown id or names
+  a study or an institution's document that was not shown. One repair names the rule; a second failure
+  is the rules plan. A cited source becomes a `source: "library"` evidence item on the proposal,
+  labelled from the retrieved title and year, never from the model's words. A figure in an excerpt is
+  never the athlete's number: every number is validated as before.
+- **Missing hits.** A model plan that cites no source adds "No research source is cited for this plan;
+  its numbers come from Tracend's safe ranges and your answers" (or that the library could not be
+  searched) to "Not known yet"; when nothing close enough was found, or the search failed, its
+  confidence is low (Architecture rule 8). The search has a 4 s limit and never throws: the plan is
+  built without excerpts. The rules plan and the settings path (the rollback route) use no library.
+- **Observability.** `onboarding_library` logs the status, the number of searches, the embedding time,
+  the degraded reason, the shown source ids, the nearest distance and the library version; no query,
+  excerpt or answer. Coach plan turns add `plan_explanation` and `plan_facts` to `library_retrieval`.
+- **Evaluation.** `library_eval.ts` also scores `library_questions_plan.json` (plan questions with
+  their plan facts) with the floor as it stands, with and without the plan topics, and fails under
+  `EVAL_MIN_PLAN_RECALL`.
+
 ## 12. Validation and Failure Handling
 
 The invoking Supabase Edge Function validates schema, enums, ranges, evidence, policy permissions,

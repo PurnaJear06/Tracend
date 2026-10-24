@@ -308,7 +308,7 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   library (not a required check). `library_search_v3_test.sql` (E3.1) covers v3's grants and keys,
   cosine distances, the embedding-model filter, text ranks, the content digest and its triggers, the
   library version, retiring a source and `coach_messages.library_version`;
-  `library_content_test.ts` checks that a source removed from `index.ts` is retired by a migration;
+  `library_content_test.ts` checks that a source removed from `index.ts` is retired by a migration; E5 (plan explanations that cite sources) is covered by `plan_explanation_test.ts`, `plan_facts_test.ts`, `plan_library_test.ts`, the plan turns in `retrieval_test.ts`, `plan_contract_library_test.ts` and the library cases of `onboarding-plan/gateway_test.ts`, and the retrieval gate scores `library_questions_plan.json` (plan questions, with and without the plan topics; `EVAL_MIN_PLAN_RECALL`);
   `embed_service_test.ts` covers the worker-secret cache and the Sentry gate. E4 added
   `regional_modules_test.sql` (the optional country: grants, no direct write, the exact key list,
   capital-letter storage, refused codes, a signed-out caller, the regions an account maps to with and

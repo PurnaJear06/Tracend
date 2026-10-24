@@ -36,6 +36,9 @@ import {
   maxReservableCeilingUsd,
   tokenBound,
 } from "../_shared/providers/onboarding_plan_provider.ts";
+import { unshownStudies } from "../_shared/library/mentions.ts";
+import { type PlanLibrary, planLibraryRule } from "../_shared/library/plan_library.ts";
+import { unshownKeysIn } from "../_shared/library/retrieval.ts";
 
 // Onboarding plans and follow-up questions through the AI gateway (Contract 1). The plan contract,
 // the policy and the rules plan stay authoritative exactly as on the settings path: the model's
@@ -164,6 +167,7 @@ export const onboardingPlanJsonSchema = Object.freeze({
     expected_benefit: text,
     downside: text,
     confidence: { type: "string", enum: ["low", "medium", "high"] },
+    sources: lines,
     workouts: {
       type: "array",
       items: {
@@ -230,6 +234,7 @@ export const onboardingPlanJsonSchema = Object.freeze({
     "expected_benefit",
     "downside",
     "confidence",
+    "sources",
     "workouts",
     "nutrition",
   ],
@@ -270,10 +275,25 @@ export function preparePlan(
   health: HealthSummary | null,
   history: HealthHistory | null,
   screening?: ScreeningOutcome,
+  library: PlanLibrary | null = null,
 ): PlanPreparation {
-  const policies = policiesFor(answers, catalog, health, history, screening);
-  const system = `${onboardingSystemPrompt(policies)}\n${noNamesRule}`;
-  const user = onboardingUserMessage(answers, catalog, health, history);
+  const base = policiesFor(answers, catalog, health, history, screening);
+  // The excerpts the prompt shows are the only sources the plan may cite (E5); the labels the app
+  // shows come from them, never from the model.
+  const policies: PlanPolicies = library === null ? base : {
+    ...base,
+    library: {
+      status: library.status,
+      labels: Object.fromEntries(
+        Object.entries(library.shown).map(([id, source]) => [id, source.label]),
+      ),
+    },
+  };
+  const system = `${onboardingSystemPrompt(policies)}\n${noNamesRule}\n${planLibraryRule(library)}`;
+  const user = [
+    onboardingUserMessage(answers, catalog, health, history),
+    ...(library !== null && library.text !== "" ? ["", library.text] : []),
+  ].join("\n");
   const first = tokenBound(system, user, JSON.stringify(onboardingPlanJsonSchema));
   const ceilingUsd = gatewayCeilingUsd(gatewayRoute, [
     first,
@@ -306,6 +326,18 @@ function planText(plan: OnboardingPlan): string {
       ...workout.exercises.map((exercise) => exercise.notes),
     ]),
   ].join("\n");
+}
+
+/**
+ * The plan's text prints a source id, or names a study or an institution's document, that the
+ * prompt did not show: a citation of nothing, which is refused like any other (E5). The sources
+ * the plan cites are checked by the plan contract; this reads the words.
+ */
+export function citesUnshownSource(text: string, policies: PlanPolicies): boolean {
+  const labels = policies.library?.labels ?? {};
+  const shown = Object.fromEntries(Object.entries(labels).map(([id, label]) => [id, { label }]));
+  return unshownKeysIn(text, new Set(Object.keys(labels))).length > 0 ||
+    unshownStudies(text, shown).length > 0;
 }
 
 /** The repair turn: the broken rule, and the rejected candidate as untrusted data. */
@@ -448,6 +480,8 @@ export async function generatePlanViaGateway(
       validateOnboardingPlan(plan, policies);
       if (namesModelOrCompany(planText(plan))) {
         fault = { rule: "names_model_or_company", path: "$" };
+      } else if (citesUnshownSource(planText(plan), policies)) {
+        fault = { rule: "source_not_retrieved", path: "$" };
       }
     } catch (error) {
       if (!(error instanceof OnboardingPlanValidationError)) throw error;

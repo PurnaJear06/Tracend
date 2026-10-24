@@ -2,10 +2,16 @@ import { assert, assertEquals, assertRejects, assertStringIncludes } from "jsr:@
 import {
   createGoalPhaseContributor,
   goalPhaseContributorBudgetChars,
+  goalPhaseInputsReadKey,
   goalPhaseSourceFromRpc,
   renderGoalPhasePayload,
 } from "./goal_phase.ts";
-import { renderCoachContext, renderedText, validateCoachContextContributors } from "../host.ts";
+import {
+  renderCoachContext,
+  renderedText,
+  sharedRead,
+  validateCoachContextContributors,
+} from "../host.ts";
 import { coachContextContributors } from "../registry.ts";
 import { longCutPayload } from "../../training/goal_phase/fixtures.ts";
 import {
@@ -112,4 +118,21 @@ Deno.test("eight excluded readings, a long history and a long run still fit with
   assert(text.indexOf("Review outcome") < text.indexOf("Recorded history"));
   assertEquals(text.split("\n").filter((line) => line.startsWith("- Excluded reading")).length, 3);
   assertStringIncludes(text, "and 5 more excluded readings");
+});
+
+Deno.test("the goal inputs are read once for the turn, whoever asks first (the library's plan facts too)", async () => {
+  let reads = 0;
+  const contributor = createGoalPhaseContributor(() => {
+    reads++;
+    return Promise.resolve(longCutPayload);
+  });
+  const shared = new Map<string, Promise<unknown>>();
+  const turn = { ...input, shared };
+  await sharedRead(turn, goalPhaseInputsReadKey, () => Promise.resolve(longCutPayload));
+  const text = renderedText(await contributor.render(turn))!;
+  assertStringIncludes(text, "-15.2 kg");
+  // The reader that came first started the read; the contributor took its result.
+  assertEquals(reads, 0);
+  await contributor.render({ ...input, shared: new Map() });
+  assertEquals(reads, 1);
 });

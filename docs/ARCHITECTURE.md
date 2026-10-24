@@ -698,7 +698,16 @@ athlete `global` sources plus the sources of the country the athlete chose in Ac
 (`user_accounts.country_code`, optional); with none chosen it falls back to the account locale and
 time zone, as before.
 
-> **Planned (coaching platform):** plan explanations citing sources (Phase 4 / E5).
+Plan explanations cite sources (E5). In Coach chat, a question that asks why the plan is the way it is
+(`isPlanExplanationQuestion`, deterministic) is searched with what the plan is made of added to it
+(the athlete's training days, rep ranges, effort and goal as counts and enumerated values, read once
+for the turn), and the library block carries a fixed note that the explanation starts from the plan's
+own numbers. In the onboarding plan (`onboarding-plan`, gateway route), two searches for the athlete's
+region (training, nutrition) put excerpts into the prompt; the model may list the ids it relied on in
+`sources`, deterministic code refuses an id that was not shown, and a cited source becomes a
+`source: "library"` evidence item labelled from the retrieval and listed in the app under "Why this
+plan". A plan that cites nothing says so in "Not known yet", and one whose search found nothing or
+failed has low confidence. The rules plan and the settings path never use the library.
 
 ### Bounded Coach data lookups (A10)
 

@@ -1,6 +1,6 @@
 # Research Library Handoff
 
-**As of:** 2026-10-23
+**As of:** 2026-10-24
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -14,7 +14,7 @@ A hybrid (full-text plus gte-small vector) research library behind Coach answers
 
 E1 (Phase 1); E2, E3 (Phase 3); E4, E5 (Phase 4)
 
-E2 (Phase 3, round 2) merged (#135); E2.1, its follow-up with 14 more sources, is merged; E2.2 (57 more sources and machine-readable licences, 106 in all) is merged (#152). E3 (the library in every Coach reply) is merged (#150). E3.1, the engine's production pass (relevance floor, latency, telemetry, versioning), is in review. E4 (regional modules and the athlete's country, 114 sources) is in review (branch `claude/regional-modules`). See the sections below.
+E2 (Phase 3, round 2) merged (#135); E2.1, its follow-up with 14 more sources, is merged; E2.2 (57 more sources and machine-readable licences, 106 in all) is merged (#152). E3 (the library in every Coach reply) is merged (#150). E3.1, the engine's production pass (relevance floor, latency, telemetry, versioning), is in review. E4 (regional modules and the athlete's country, 114 sources) is in review (branch `claude/regional-modules`). E5 (plan explanations that cite sources, in Coach chat and in the onboarding plan) is in review (branch `claude/e5-plan-explanations`). See the sections below.
 
 ## State
 
@@ -1235,11 +1235,106 @@ PR #162 owns `onboarding_flow.dart`, the rules plan, `catalog.ts`, `answers.ts`,
   29 chunks, 380 in all) in about ten minutes, as in E2.
 - Install the app from the merged commit to get the Region row; the migration deploys first.
 
+## E5: plan explanations that cite sources (in review)
+
+Branch `claude/e5-plan-explanations`. No migration and no change to any RPC or table: the proposal's
+`evidence` column already takes any list of items, and the search is `search_library_v3` as E3.1 left
+it. Deterministic plan numbers stay authoritative; the library only supplies the reasons.
+
+### What shipped
+
+- **Coach chat, "why is my plan like this?"** `isPlanExplanationQuestion`
+  (`_shared/library/plan_explanation.ts`, deterministic: the question names the plan or a part of it,
+  and asks for a reason) marks the turn. "Why is my plan like this?" has no topic of its own for the
+  search (and "this" even reads as a follow-up), so `libraryRetrievalQuery` adds what a plan is made of
+  (`planTopicText`: training days, weekly sets per muscle, rep ranges, rest, effort and reps in reserve,
+  progression, and the goal's nutrition topic) from the plan facts (`planFactsFrom`,
+  `_shared/library/plan_facts.ts`: counts and enumerated values only, never an exercise name, a load, a
+  weight or a date). The facts come from the plan state and the goal inputs, read once for the turn and
+  shared with the plan and goal-phase sections (`sharedRead`; the goal phase contributor now reads its
+  inputs under the key `goal_phase_inputs`). The search runs for this athlete (their id, so the region
+  follows from the stored country, E4). Facts that fail or take over 0.8 s leave the general topics of
+  a plan in the query; the turn is never held up. The bare question's embedding is not prefetched for
+  these turns (its text would not match the query).
+- **What Coach is told.** The library block of a plan turn adds a fixed note (no figure, grounds
+  nothing): explain from the plan's own numbers and Tracend's rules first, use the excerpts for the
+  reasoning behind them, cite the source of each, say plainly when a part of the plan has no excerpt
+  behind it, an excerpt never changes a number. With nothing close enough the block says the
+  explanation rests on the plan's rules and is less certain, cite no library source, no answer from
+  memory (`libraryPlanNoMatchText`; the words-only variant does not claim the library lacks the topic).
+  A search that fails on a plan turn renders `libraryPlanUnavailableText` (say you could not check the
+  research); on any other turn a failing search still leaves the library out. Citing, the
+  `citation_not_retrieved` guard and figure grounding are E3's, unchanged.
+- **Onboarding plan.** `onboarding-plan` searches the library before it builds the gateway prompt
+  (`retrievePlanLibrary`, `_shared/library/plan_library.ts`): two searches in parallel, one for how
+  the training is built and one for what the nutrition targets rest on, from the enumerated answers
+  (goal, experience, training days, session length, focus muscles; the athlete's free text never
+  enters a query), each embedded by `library-embed` within 1.5 s and searched for the athlete's id with
+  the same relevance floor as Coach. The rows alternate between the two searches, a chunk once, whole
+  chunks only, within 6,000 characters (about 1,700 tokens); the whole retrieval has a 4 s deadline and
+  never throws. The rules about the excerpts go in the cached system prompt (one of three variants by
+  what was found), the excerpts in the user message, so the cost ceiling counts them. The model may
+  list source ids in a new `sources` field (the gateway's JSON schema gains it, required, a list of
+  strings; the settings path's prompt and shape are unchanged and `sources` is optional when parsed).
+  `validateOnboardingPlan` refuses an id the prompt did not show (`source_not_retrieved`, repaired by
+  name once like any rule), and so does the gateway when the plan's text prints an unshown id or names
+  a study or an institution's document that was not shown (`unshownKeysIn`, `unshownStudies`). A cited
+  source becomes an evidence item `{code: <id>, label: "<retrieved title> (<year>)", source: "library"}`
+  on the proposal, labelled from the retrieval, never from the model's words.
+- **Missing hits lower confidence and say so.** A plan from the model that cites nothing adds a line
+  to "Not known yet" ("No research source is cited for this plan; its numbers come from Tracend's safe
+  ranges and your answers", or "The research library could not be searched for this plan, so it cites
+  no source; ..."). When the search found nothing close enough, or failed, confidence also drops to
+  low (it was never above medium: first estimates). Excerpts shown but not cited leave confidence as
+  it was and only add the line. The rules plan and the settings path are built without the library
+  and are unchanged: the plan must stand when the library does not.
+- **The app.** The plan screen reads the proposal's `evidence` and, when the plan cites sources,
+  shows an `EvidenceAccordion` "Research behind this plan" under "Why this plan" listing the labels
+  (`OnboardingProposal.librarySources`). It cites nothing and shows nothing otherwise. Needs a reinstall
+  to show it; nothing breaks on older builds (they ignore `evidence`).
+
+### What `onboarding-propose-plan` is
+
+The task for E5 named `onboarding-propose-plan`, which is the Phase-2 mock kept for installed older
+builds (a fixed plan with fixed wording, no model). The onboarding plan the app now builds, the one
+whose explanation (`rationale`, `assessment`, ...) a model writes, is `onboarding-plan`; E5 is there.
+The mock keeps its fixed text and cites nothing.
+
+### Tests
+
+- Deno: `plan_explanation_test.ts` (the intent in both directions, the topics, the query, the
+  onboarding queries), `plan_facts_test.ts`, `plan_library_test.ts` (both searches for this
+  athlete's id, floor, one search failing, both failing, the deadline, embedding failure and lateness,
+  the budget, the merge, the rules), `retrieval_test.ts` (the contributor on plan turns: the
+  query, facts failing or late, the notes, search failure, budget, no prefetch),
+  `plan_contract_library_test.ts` (parsing, `source_not_retrieved`, evidence and labels,
+  confidence and the note, the rules plan unchanged), `onboarding-plan/gateway_test.ts` (the prompt,
+  the citation in the stored proposal, repair of an invented id or study, no excerpt, library
+  unavailable, no wiring, no route, provider failure), `goal_phase_test.ts` (shared read).
+- Retrieval gate (CI, `library_eval.ts`): a separate set, `library_questions_plan.json` (12 plan
+  questions with their plan facts), is scored with the floor as it stands, once with the bare question
+  and once with Coach's enriched query, and fails under `EVAL_MIN_PLAN_RECALL` (default 0.5). The
+  calibration and hold-out sets are untouched.
+- Flutter: `phase_2_flow_test.dart` ("Research behind the plan": listed, absent, parsing).
+
+### Decisions and limits
+
+1. **Region.** Nothing new: the search takes the athlete's id and `search_library_v3` applies
+   `private.library_regions_for_account` (stored country, E4). A pgTAP test is not added: no SQL changed.
+2. **The retrieval is for the gateway route only**, like E3. The settings (DeepSeek rollback) path
+   builds the plan as before, byte for byte (the golden requests still match).
+3. **The goal's nutrition topic is always added** to a plan question's search (when the athlete has
+   a goal), so a general "why is my plan like this?" also finds the protein and energy sources; a
+   question about one part of the plan carries its own topic as well.
+4. **No citation in the plan text.** The model puts ids in `sources` and never in prose; the app lists
+   the labels under "Why this plan", not inline.
+
 ## Next agent starts here
 
-E5 (plan explanations citing sources) can reuse `libraryRetrievalQuery`, the contributor,
-`relevantRows` and the `library` evidence source; the athlete's region now follows their stored
-country. A source removed from `index.ts` needs a retire block in the same migration
+E5 (above) reused `libraryRetrievalQuery`, the contributor, `relevantRows` and the `library`
+evidence source; the athlete's region follows their stored country. The next step there is to read the
+CI plan-question recall and the `onboarding_library` log lines after the first athletes build plans,
+and to tune `planTopicText` (one fixed string) if a topic is missed. A source removed from `index.ts` needs a retire block in the same migration
 (`build_migration.ts --retire`). The retrieval gate runs by itself on library pull requests; re-run the
 floor sweep in its output when the question set or the library grows. Decide whether retrieval should
 skip or down-rank `supersededBy` sources (the field lives in the content files only). Add NICE NG246 for

@@ -1,4 +1,5 @@
 import { screenMessage } from "../coach_safety/red_flags.ts";
+import { isPlanExplanationQuestion, type PlanFacts, planTopicText } from "./plan_explanation.ts";
 
 // The text Coach chat searches the library with (chunk E3). It is the athlete's question, except
 // that a follow-up ("And on rest days?", "Is that enough?") has no topic of its own, so the
@@ -61,6 +62,8 @@ export type RetrievalQuery = Readonly<{
   text: string;
   /** True when the previous question's topic was added. */
   rewritten: boolean;
+  /** True when what the plan is made of was added (chunk E5); absent otherwise. */
+  planExplanation?: true;
 }>;
 
 /** Longest question and earlier question the query keeps, so the whole stays well under 1,000. */
@@ -76,8 +79,16 @@ export const maxTopicChars = 300;
 export function libraryRetrievalQuery(
   question: string,
   previousQuestions: readonly string[],
+  plan?: PlanFacts | null,
 ): RetrievalQuery {
   const own = question.trim().slice(0, maxQuestionChars);
+  // Why the plan is the way it is (E5): "Why is my plan like this?" names no topic ("this" even
+  // reads as a follow-up), so what the plan is made of is added. `plan` is undefined when the
+  // caller does not know the plan, which leaves every other question as it was; null is a plan
+  // question whose facts could not be read, which still gets the general topics.
+  if (plan !== undefined && isPlanExplanationQuestion(question)) {
+    return { text: `${own} ${planTopicText(plan)}`, rewritten: false, planExplanation: true };
+  }
   if (!isFollowUp(question)) return { text: own, rewritten: false };
   // A question that reported a symptom is answered by the fixed referral and never lends its words
   // to the next search.

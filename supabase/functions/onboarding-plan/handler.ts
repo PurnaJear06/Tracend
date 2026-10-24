@@ -22,6 +22,8 @@ import {
 } from "../_shared/onboarding/plan_contract.ts";
 import type { ScreeningOutcome } from "../_shared/training/screening/outcome.ts";
 import { onboardingPolicyVersion } from "../_shared/onboarding/policy.ts";
+import { onboardingLibraryQueries } from "../_shared/library/plan_explanation.ts";
+import type { PlanLibrary } from "../_shared/library/plan_library.ts";
 import {
   type HealthDay,
   type HealthSummary,
@@ -215,6 +217,12 @@ export type HandlerDeps = Readonly<{
    * path in `resolution`.
    */
   routes?: Readonly<{ plan: () => AiRoute | null; questions: () => AiRoute | null }>;
+  /**
+   * The research library searched for this athlete with the given queries (chunk E5): the excerpts
+   * the gateway plan prompt shows, which the plan may cite. Never throws. Absent (no library
+   * wiring) leaves the plan built without excerpts, as before.
+   */
+  library?: (queries: readonly string[]) => Promise<PlanLibrary>;
   /** The gateway's fetch and clock (tests pass fakes). */
   gateway?: GatewayDeps;
   generate?: typeof generateOnboardingProposal;
@@ -560,6 +568,19 @@ async function runGeneration(
     const gatewayRoute = deps.routes?.plan() ?? null;
     let prepared: PreparedPlan | null = null;
     if (gatewayRoute) {
+      // The library is searched for this athlete before the prompt is built: its excerpts are part
+      // of the prompt and of its cost ceiling. Only the gateway path shows excerpts; the rules plan
+      // and the settings path are built without them.
+      const library = deps.library
+        ? await deps.library(onboardingLibraryQueries({
+          goal: answers.goal,
+          experience: answers.experience,
+          trainingDays: answers.trainingWeekdays.length,
+          sessionMinutes: answers.sessionMinutes,
+          focusMuscles: answers.priorityMuscles,
+        }))
+        : null;
+      if (library) observer.info("onboarding_library", { generationId, ...library.trace });
       const preparation = preparePlan(
         gatewayRoute,
         answers,
@@ -567,6 +588,7 @@ async function runGeneration(
         health,
         history,
         screening,
+        library,
       );
       if (preparation.kind === "ready") prepared = preparation.prepared;
       else observer.warn("onboarding_plan_route_unusable", { fallbackReason: preparation.reason });

@@ -707,6 +707,8 @@ function buildPlan(
     expected_benefit: "A clear starting plan that can be measured before it changes.",
     downside: "Targets are first estimates and need two to three weeks of data to refine.",
     confidence: "medium",
+    // The rules plan is built without the library: it must stand when the library does not.
+    sources: [],
     workouts,
     nutrition: {
       calories,
