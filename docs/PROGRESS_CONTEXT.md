@@ -32,7 +32,7 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   `20261023140024`): `day_adjustments`, `get_my_day_adjustment_v1` / `respond_to_day_adjustment_v1`
   (hold loads, one set fewer or easy cardio for today only; one tap and Undo; the recovery score never
   adjusts a session alone, the athlete may choose), `start_workout` building the adjusted sets and B3
-  ignoring adjusted sessions as evidence for lowering a load. Next: B4-2 (app), then B5. Handoff:
+  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). Next: B5. Handoff:
   [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping
@@ -80,12 +80,27 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 
+**Coach opens a fresh chat (2026-10-24, branch `claude/coach-chat-fresh`, PR open):** Coach reopens the last
+conversation only if its last message is under 6 hours old, otherwise a new conversation with a **Continue last
+chat** row (checked again when the Coach tab is re-activated or the app resumes, never mid-send or with a typed
+draft); opening any conversation now lands on its newest message even when content lays out late. App only, no
+migration. Details: "Coach opens a fresh chat after 6 hours" in [`ai-gateway.md`](./handoff/ai-gateway.md).
+
 **Stale open workouts (2026-10-23, branch `claude/stale-workout-resume`, PR open):** the owner's Legs B resumed a
 session left open since 2026-07-17 (timer 2348 h, today's sets saved on a July date). An open session from an earlier
 local day more than 3 hours old is now closed as `abandoned` (rows and sets kept) when any workout is opened and by an
 hourly job, and the phone sends an earlier day's unsent sets and finish first, then drops its draft; a session the
 rule closed still takes that late send on its own date. Migration `20261023150021`; `start_workout` (as #165 left it) closes the caller's stale sessions after its advisory lock and before its open-session lookup. Details:
 "Stale workouts" in [`training-engine.md`](./handoff/training-engine.md).
+
+**Unfinished workouts (2026-10-24, branch `claude/unfinished-workout`, PR open):** the owner's Legs B (23 sets logged,
+never finished) was closed by the stale rule and Coach then called it "not done". A stale-closed session with logged sets
+is now offered back on Today ("You didn't finish Legs B on Fri 23 Oct · 23 sets logged"): **Save workout** completes it
+on its own date with the athlete's effort, **Discard** keeps it out for good, each audited; nothing is finished for them.
+Coach reads it as "logged N sets, not finished", not undone or missed. Migration `20261024050011`
+(`get_my_unfinished_workout_v1`, `resolve_unfinished_workout_v1`, `get_coach_plan_state_v1` 1.3); needs the migration
+deployed before the app is reinstalled. Details: "Unfinished workouts" in
+[`training-engine.md`](./handoff/training-engine.md).
 
 **Incident 2026-10-18: every Coach chat turn timed out (Refs FLUTTER-K). Fixed by #155 (deploy pending verification: confirm `schema_sha` `274ee4fafead` and a first successful turn in production).** The gateway's answer
 schema had grown to 24 optional properties and 4 unions and listed the day's evidence codes, so
@@ -304,7 +319,7 @@ Needs a reinstall. See [`docs/handoff/account-session.md`](./handoff/account-ses
   - A2 (#41, merged 2026-09-29): the app side.
     - The app sends request 1.1, so a model failure shows a labeled data summary or safety note,
       with Retry and the beta diagnostic.
-    - Coach reopens the last conversation and creates a thread on its first send.
+    - Coach reopens the last conversation (since 2026-10-24 only within 6 hours) and creates a thread on its first send.
     - It lists only conversations that contain a message (`get_my_coach_threads`).
     - The first install (build 185) had no font files, so every icon showed as a "?" box. Its
       build folder was shared with other checkouts. A rebuild from the same commit, with every font

@@ -255,7 +255,7 @@ select is(
 select is(public.get_coach_plan_state_v1('b4000000-0000-4000-8000-000000000001', current_date)
     ->>'experience', 'advanced', 'the Coach plan state reports the advanced level');
 select is(public.get_coach_plan_state_v1('b4000000-0000-4000-8000-000000000001', current_date)
-    ->>'schema_version', '1.2', 'in plan state 1.2');
+    ->>'schema_version', '1.3', 'in plan state 1.3');
 
 -- The proposal inputs carry the planned exercise id, so a next-session adjustment matches the heavy
 -- and the light day's target on their own rows and not on the shared slug.

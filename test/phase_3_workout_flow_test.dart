@@ -108,8 +108,10 @@ class _Repository implements WorkoutRepository {
   /// it does for a phone clock more than 10 minutes ahead.
   bool refuseTimes = false;
 
-  /// The server refuses every draft with this code.
+  /// The server refuses every draft with this code, or only the drafts of
+  /// [refuseOnly] when that is set.
   String? refuseCode;
+  String? refuseOnly;
   int refusals = 0;
   int completeCalls = 0;
 
@@ -157,7 +159,35 @@ class _Repository implements WorkoutRepository {
   Future<Map<String, dynamic>?> loadSession(
     PlannedWorkout workout, {
     DateTime? localDate,
-  }) async => serverSession;
+  }) async => serverSession ?? (started ? _startedSession(workout) : null);
+
+  /// Set once the server created the session, and when (the tests' clock).
+  bool started = false;
+  DateTime? startedAt;
+
+  /// The tests' clock: the server begins a session at this time.
+  DateTime Function()? serverNow;
+
+  /// What the server holds right after `start_workout`: a row for every set.
+  Map<String, dynamic> _startedSession(PlannedWorkout workout) => {
+    'session_id': 'server-session',
+    'state': 'in_progress',
+    'revision': 0,
+    'idempotency_key': 'k',
+    'local_date': '2026-10-03',
+    'actual_started_at': startedAt?.toUtc().toIso8601String(),
+    'exercises': [
+      for (final exercise in workout.exercises)
+        {
+          'order': exercise.order,
+          'status': 'unknown',
+          'sets': [
+            for (var n = 1; n <= exercise.setCount; n++)
+              {'number': n, 'completed': false},
+          ],
+        },
+    ],
+  };
 
   @override
   Future<PlannedWorkout> loadTodayWorkout() async => _workout;
@@ -173,6 +203,8 @@ class _Repository implements WorkoutRepository {
   }) async {
     if (failStart) throw Exception('offline');
     onStart?.call();
+    started = true;
+    startedAt = serverNow?.call();
     return 'server-session';
   }
 
@@ -185,7 +217,7 @@ class _Repository implements WorkoutRepository {
     if (failSync) throw Exception('offline');
     syncedTo.add(sessionId);
     final code = refuseCode;
-    if (code != null) {
+    if (code != null && (refuseOnly == null || refuseOnly == sessionId)) {
       refusals++;
       throw PostgrestException(message: 'refused', code: code);
     }
@@ -293,7 +325,9 @@ class _Harness {
   }) : notifications = _Notifications(restAlerts: restAlerts),
        repository = repository ?? _Repository(),
        clock = clock ?? _Clock(),
-       _native = native;
+       _native = native {
+    this.repository.serverNow = this.clock.call;
+  }
 
   final _Repository repository;
   final FakeWorkoutActivityBridge? _native;
@@ -2029,6 +2063,8 @@ void main() {
               'rpe': 8.0,
               'completed': true,
             },
+            // The server holds a row for every set the session has.
+            {'number': 2, 'completed': false},
           ],
         },
       ],
@@ -2187,6 +2223,31 @@ void main() {
       expect(starts, 0);
       expect(h.repository.saved, isNotNull);
       expect(h.repository.savedDraft['session_id'], 'old-session');
+    },
+  );
+
+  testWidgets(
+    'an earlier day whose session was settled is dropped, and today opens fresh',
+    (tester) async {
+      // The session was saved or discarded on the server (55000: it takes
+      // no more sets), so the draft of it can never be sent and must not
+      // come back as a workout, with its old sets and session.
+      final h = _Harness();
+      var starts = 0;
+      h.repository.onStart = () => starts++;
+      h.repository.refuseCode = '55000';
+      h.repository.refuseOnly = 'old-session';
+      h.repository.saved = jsonEncode(draftStartedAt(DateTime(2026, 7, 17, 9)));
+      await _open(tester, h, size: const Size(390, 1400));
+      await _flushSave(tester);
+      expect(h.repository.syncedTo.first, 'old-session');
+      expect(h.repository.refusals, 1);
+      expect(starts, 1);
+      expect(find.text('0:00'), findsOneWidget);
+      expect(h.repository.syncedSet(0, 0)['completed'], isFalse);
+      expect(h.repository.savedDraft['session_id'], 'server-session');
+      expect(h.repository.syncedTo.skip(1), everyElement('server-session'));
+      expect(h.repository.completedIds, isEmpty);
     },
   );
 

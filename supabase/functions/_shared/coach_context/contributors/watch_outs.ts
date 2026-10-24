@@ -305,7 +305,7 @@ function behindPlan(plan: PlanState): string | null {
  * id), not its name: two workouts can share a name (the plan supports it), and each has its own
  * streak. The name is only what the line says.
  */
-function missedSessions(schedule: ScheduleBody): string | null {
+function missedSessions(schedule: ScheduleBody, plan: PlanState | null): string | null {
   const byWorkout = new Map<string, { name: string; rows: { date: string; missed: boolean }[] }>();
   // Only days planned under the plan in force now: a session of an older plan is not one the
   // athlete is skipping today. Without a plan in force nothing is claimed.
@@ -318,7 +318,13 @@ function missedSessions(schedule: ScheduleBody): string | null {
   for (const row of schedule.days) {
     if (row.versionId !== schedule.planId) continue;
     if (dayOf(row.date) >= dayOf(schedule.today)) continue;
-    for (const item of row.planned) note(item.id, item.name, row.date, !item.logged);
+    // A day the athlete logged sets and left unfinished (not yet saved or discarded) was trained:
+    // it is not "not logged", and it ends a streak like a finished day.
+    const trained = (id: string) =>
+      plan?.unfinished.some((left) => left.id === id && left.localDate === row.date) ?? false;
+    for (const item of row.planned) {
+      note(item.id, item.name, row.date, !item.logged && !trained(item.id));
+    }
     // A workout done on a day it was not planned for answers its own streak (it was made up).
     for (const item of row.done) {
       if (schedule.currentWorkoutIds.has(item.id) && !row.planned.some((p) => p.id === item.id)) {
@@ -436,7 +442,7 @@ export function computeWatchOuts(inputs: WatchOutInputs): WatchOut[] {
     [plan === null || facts === null ? null : loadCheck(plan, facts), "decision"],
     [plan === null || facts === null ? null : painPlannedAgain(plan, facts), "decision"],
     [plan === null ? null : behindPlan(plan), "decision"],
-    [schedule === null ? null : missedSessions(schedule), "decision"],
+    [schedule === null ? null : missedSessions(schedule, plan), "decision"],
     [facts === null ? null : skippedExercises(facts), "decision"],
     [facts === null ? null : drift(facts), "decision"],
     [facts === null ? null : staleWeighIn(facts), "data"],

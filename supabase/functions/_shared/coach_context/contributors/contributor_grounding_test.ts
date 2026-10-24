@@ -255,6 +255,41 @@ Deno.test("training plan: the plan's sets, loads and names ground; the block's o
   assert(inputs.athleteGround!.values.length > 10);
 });
 
+Deno.test("training plan: an unfinished session's sets and day ground as records", async () => {
+  const payload = splitPlanPayload(7, [
+    "w-chest-a",
+    "w-legs-a",
+    "w-pull",
+    "w-chest-b",
+    "w-shoulders",
+  ], {
+    unfinished: [{
+      planned_workout_id: "w-legs-b",
+      local_date: "2026-10-16",
+      name: "Legs B",
+      logged_sets: 23,
+    }],
+  });
+  const block = await blockOf(
+    createTrainingPlanContributor(() => Promise.resolve(payload)),
+    "2026-10-18",
+  );
+  const inputs = probeContributor({
+    id: "training_plan",
+    block,
+    fixture: payload,
+    // The plan's sets a week for each muscle are sums of the plan's sets.
+    calculated: [24, 14, 10, 7, 6, 3],
+    fixed: [],
+  });
+  assert(block.text.includes("(23 sets logged)"));
+  assertEquals(
+    ungroundedNumbers("Legs B logged 23 sets on 2026-10-16.", inputs.athleteGround!),
+    [],
+  );
+  assertEquals(ungroundedNumbers("You did 25 sets of Legs B.", inputs.athleteGround!), ["25"]);
+});
+
 Deno.test("nutrition: days, averages and the target ground; the rule for a complete day and the windows do not", async () => {
   const day = (
     local_date: string,

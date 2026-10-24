@@ -155,6 +155,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   final SetTimingRecorder _timing = SetTimingRecorder();
 
   String? _sessionId;
+
+  /// The logger has taken the set rows the server holds for [_sessionId]. The
+  /// server's `start_workout` decides how many sets a workout has, so nothing
+  /// is synced for a started session until its rows were read once; the draft
+  /// stays on the phone meanwhile.
+  bool _rowsAligned = false;
+
+  /// The code of the last refusal [_send] met.
+  String? _refusalCode;
   String _idempotencyKey = newIdempotencyKey();
   int _revision = 0;
   late DateTime _startedAt = widget.clock();
@@ -304,6 +313,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         _serverStartedAt = DateTime.tryParse(
           '${server['actual_started_at'] ?? ''}',
         );
+        _alignSets(server['exercises']);
+        _rowsAligned = true;
       }
       if (local != null && local['session_id'] == _sessionId) {
         _restoreClearedLoads(local[_clearedLoadsKey]);
@@ -314,6 +325,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           '${local[SetTimingRecorder.draftKey] ?? ''}',
         );
         _timingRefused = local[_timingRefusedKey] == true;
+        _rowsAligned = _rowsAligned || local[_rowsAlignedKey] != false;
       }
     }
     final storedRest = RestTimer.fromJson(local?[RestTimer.draftKey]);
@@ -358,6 +370,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           localDate: widget.sessionDate,
         );
         _sessionId = id;
+        _rowsAligned = false;
         _serverStartedAt ??= await _serverStartOf(id);
       }
     } catch (e) {
@@ -369,32 +382,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     await _save();
   }
 
-  /// The keys of a saved draft that the server reads; the rest only this
-  /// phone needs.
-  static const _serverDraftKeys = [
-    'workout_id',
-    'session_id',
-    'idempotency_key',
-    'revision',
-    'exercises',
-    'notes',
-  ];
-
-  /// The five set keys the server may refuse when this phone's times are off.
-  static const _timingKeys = [
-    'started_at',
-    'completed_at',
-    'rest_before_seconds',
-    'rir',
-    'timing_source',
-  ];
-
   /// Sends what an earlier day's draft holds that the server may not have:
   /// its sets, and its finish when one was saved. True when nothing is left
   /// on this phone that the server lacks, so the draft may go: no set was
   /// done and no finish waits, or everything reached the server. False
   /// keeps the draft (offline, or a draft whose session was never created
-  /// and has no finish to send).
+  /// and has no finish to send). A session that no longer takes sets or a
+  /// finish (55000: it was saved or discarded already, say by an earlier try
+  /// whose answer was lost) is settled: nothing of the draft can reach it, so
+  /// it goes and never opens as a workout.
   Future<bool> _sendLeftOver(Map<String, dynamic> draft) async {
     final repository = widget.repository;
     try {
@@ -414,17 +410,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         );
       }
       final revision = (draft['revision'] as num?)?.toInt() ?? 0;
-      final payload = {
-        for (final key in _serverDraftKeys)
-          if (draft.containsKey(key)) key: draft[key],
-        'session_id': id,
-      };
-      try {
-        await repository.sync(id, revision, payload);
-      } on PostgrestException catch (e) {
-        if (e.code != '22023') rethrow;
-        await repository.sync(id, revision, _withoutTiming(payload));
-      }
+      final payload = serverDraftPayload(draft, id);
+      await syncDraft(repository, id, revision, payload);
       if (finish != null) {
         await repository.completeWithEffort(
           id,
@@ -439,6 +426,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         data: {'finished': finish != null},
       );
       return true;
+    } on PostgrestException catch (e) {
+      if (e.code == '55000') {
+        debugPrint('Non-critical error: earlier workout already settled: $e');
+        return true;
+      }
+      debugPrint('Non-critical error: earlier workout kept on the phone: $e');
+      return false;
     } catch (e) {
       debugPrint('Non-critical error: earlier workout kept on the phone: $e');
       return false;
@@ -457,23 +451,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
     );
   }
-
-  static Map<String, dynamic> _withoutTiming(Map<String, dynamic> payload) => {
-    ...payload,
-    'exercises': [
-      for (final exercise in payload['exercises'] as List)
-        {
-          ...(exercise as Map<String, dynamic>),
-          'sets': [
-            for (final set in exercise['sets'] as List)
-              {
-                for (final entry in (set as Map<String, dynamic>).entries)
-                  if (!_timingKeys.contains(entry.key)) entry.key: entry.value,
-              },
-          ],
-        },
-    ],
-  };
 
   bool _leftOnEarlierDay(Map<String, dynamic> draft) {
     final started = DateTime.tryParse('${draft['actual_started_at'] ?? ''}');
@@ -526,6 +503,29 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
   }
 
+  /// Makes each exercise have as many sets as the server's rows in
+  /// [exercises]. `fits` is false when a set with something on it has no row
+  /// (it is never dropped); `changed` when any count moved.
+  ({bool fits, bool changed}) _alignSets(Object? exercises) {
+    var fits = true;
+    var changed = false;
+    if (exercises is! List) return (fits: fits, changed: changed);
+    for (final row in exercises) {
+      if (row is! Map) continue;
+      final order = (row['order'] as num?)?.toInt();
+      final sets = row['sets'];
+      if (sets is! List || sets.isEmpty) continue;
+      final index = _exercises.indexWhere((e) => e.exercise.order == order);
+      if (index < 0) continue;
+      final draft = _exercises[index];
+      final before = draft.sets.length;
+      draft.alignTo(sets.length);
+      if (draft.sets.length != before) changed = true;
+      if (draft.sets.length != sets.length) fits = false;
+    }
+    return (fits: fits, changed: changed);
+  }
+
   /// Sets whose load the athlete emptied on purpose, kept only in this
   /// phone's draft (the server stores just an empty load), so a restored
   /// workout never suggests a weight there again.
@@ -534,26 +534,53 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// The local draft field that holds [_serverStartedAt].
   static const _serverStartedKey = 'server_started_at';
 
+  /// The local draft field that holds [_rowsAligned]. A draft without it was
+  /// saved before the logger followed the server's rows and counts as aligned.
+  static const _rowsAlignedKey = 'rows_aligned';
+
   /// The local draft field that holds [_timingRefused].
   static const _timingRefusedKey = 'timing_refused';
 
-  /// When the server's copy of session [id] began, read back from the
-  /// server; the phone's clock only when that read fails (an estimate: a
-  /// refused time then falls back to syncing without times).
-  Future<DateTime> _serverStartOf(String id) async {
+  /// The server's copy of session [id], or null when it cannot be read or is
+  /// another session.
+  Future<Map<String, dynamic>?> _readSession(String id) async {
     try {
       final session = await widget.repository.loadSession(
         widget.workout,
         localDate: widget.sessionDate,
       );
-      if (session != null && session['session_id'] == id) {
-        final start = DateTime.tryParse(
-          '${session['actual_started_at'] ?? ''}',
-        );
-        if (start != null) return start;
-      }
+      return session != null && session['session_id'] == id ? session : null;
     } catch (e) {
-      debugPrint('Non-critical error: session start not read back: $e');
+      debugPrint('Non-critical error: session not read back: $e');
+      return null;
+    }
+  }
+
+  /// Takes the set rows the server holds for session [id] (`start_workout`
+  /// applies the athlete's accepted same-day answer, so they are the truth for
+  /// this workout). Null while the session cannot be read: the rows stay
+  /// pending and the caller retries.
+  Future<({bool fits, bool changed})?> _readRows(String id) async {
+    final session = await _readSession(id);
+    if (session == null) return null;
+    final aligned = _alignSets(session['exercises']);
+    _rowsAligned = true;
+    if (mounted) setState(() {});
+    return aligned;
+  }
+
+  /// Reads back the session [id] the server just started and takes its set
+  /// rows. Returns when it began; the phone's clock only when the read fails
+  /// (an estimate: a refused time then falls back to syncing without times),
+  /// and the rows then stay pending.
+  Future<DateTime> _serverStartOf(String id) async {
+    final session = await _readSession(id);
+    if (session != null) {
+      _alignSets(session['exercises']);
+      _rowsAligned = true;
+      if (mounted) setState(() {});
+      final start = DateTime.tryParse('${session['actual_started_at'] ?? ''}');
+      if (start != null) return start;
     }
     return widget.clock();
   }
@@ -708,6 +735,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     'actual_started_at': _startedAt.toUtc().toIso8601String(),
     _serverStartedKey: ?_serverStartedAt?.toUtc().toIso8601String(),
     if (_timingRefused) _timingRefusedKey: true,
+    _rowsAlignedKey: _rowsAligned,
     RestTimer.draftKey: ?_rest.toDraft(),
     SetTimingRecorder.draftKey: ?_timing.pendingStart
         ?.toUtc()
@@ -746,6 +774,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           localDate: widget.sessionDate,
         );
         _sessionId = id;
+        _rowsAligned = false;
         _serverStartedAt = await _serverStartOf(id);
       } catch (e) {
         debugPrint('Non-critical error: workout start still waits: $e');
@@ -753,8 +782,32 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         return _Sync.offline;
       }
     }
+    if (!_rowsAligned && await _readRows(id) == null) {
+      // The server's rows are not known yet: sending sets now could name a
+      // set it does not have. The draft is on the phone; the next save tries
+      // again.
+      if (mounted) setState(() => _sync = _Sync.offline);
+      return _Sync.offline;
+    }
     if (mounted) setState(() => _sync = _Sync.saving);
-    final first = await _send(id);
+    var first = await _send(id);
+    if (_refusalCode == '22023') {
+      // The server may have refused a set number it does not have: read its
+      // rows again, and send once more when they moved. A set with something
+      // on it that has no row is never dropped; that needs attention.
+      final rows = await _readRows(id);
+      if (rows != null && !rows.fits) {
+        if (mounted) setState(() => _sync = _Sync.attention);
+        return _Sync.attention;
+      }
+      if (rows != null && rows.changed) {
+        await widget.repository.saveDraft(
+          widget.workout.id,
+          jsonEncode(_localDraft()),
+        );
+        first = await _send(id);
+      }
+    }
     final _Sync result;
     if (first != null) {
       result = first;
@@ -777,6 +830,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// (22023) while it still carried this phone's set times; any other
   /// refusal needs attention.
   Future<_Sync?> _send(String id) async {
+    _refusalCode = null;
     try {
       await widget.repository.sync(
         id,
@@ -789,6 +843,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       return _Sync.saved;
     } on PostgrestException catch (e) {
       debugPrint('Non-critical error: workout sync refused: ${e.code}');
+      _refusalCode = e.code;
       return e.code == '22023' && !_timingRefused ? null : _Sync.attention;
     } catch (e) {
       debugPrint('Non-critical error: workout sync waits: $e');
@@ -1387,7 +1442,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     await _rest.stop();
     _saveTimer?.cancel();
     final saved = await _save();
-    if (saved == _Sync.attention) {
+    final rowsPending =
+        _sessionId != null &&
+        !_sessionId!.startsWith('pending-') &&
+        !_rowsAligned;
+    if (saved == _Sync.attention || rowsPending) {
       // The server holds older sets than this phone: finishing now would
       // finish from those, and clear the phone's copy.
       if (!mounted) return;

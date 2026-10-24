@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "workout": {
+    "session_id": "d1450000-0000-4000-8000-000000000001",
+    "planned_workout_id": "d1430000-0000-4000-8000-000000000001",
+    "name": "Legs B",
+    "local_date": "2026-10-23",
+    "save_by": "2026-10-30",
+    "started_at": "2026-10-23T16:45:00+00:00",
+    "logged_sets": 23,
+    "total_sets": 25,
+    "first_set_at": "2026-10-23T16:58:00+00:00",
+    "last_set_at": "2026-10-23T18:31:00+00:00"
+  }
+}

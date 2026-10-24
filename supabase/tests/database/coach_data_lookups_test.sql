@@ -152,9 +152,9 @@ select is((select array(select k from jsonb_object_keys(
     public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001', current_date)) k order by k collate "C")),
   array['after_block', 'avoid_patterns', 'completed_this_week', 'equipment', 'experience',
     'local_date', 'plan', 'progression', 'recent_completed', 'schema_version', 'sessions',
-    'weekday'], 'the plan state reports exactly these keys');
+    'unfinished', 'weekday'], 'the plan state reports exactly these keys');
 select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001', current_date)
-    ->>'schema_version', '1.2', 'with a schema version');
+    ->>'schema_version', '1.3', 'with a schema version');
 select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001', current_date)
     ->>'experience', 'intermediate', 'and the athlete''s level');
 select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001', current_date)

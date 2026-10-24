@@ -16,17 +16,27 @@ import 'package:tracend/shared/widgets/tracend_toast.dart';
 /// sheet calls Supabase when the environment is configured.
 /// Resolves true when the check-in was saved, delivered or queued on this
 /// device, and false when the sheet was dismissed.
+///
+/// [localDate] (`YYYY-MM-DD`) is the athlete's own today as the server counts
+/// it, when it is known: the check-in is saved, and queued, under that day, so
+/// the rules that read "today's check-in" find it. Without it the phone's date
+/// is used.
 Future<bool> showCheckInSheet(
   BuildContext context,
   AppEnvironment environment, {
   CheckInSend? sender,
+  String? localDate,
 }) async =>
     await showTracendSheet<bool>(
       context,
       title: 'Daily check-in',
       scrollable: false,
       padding: EdgeInsets.zero,
-      builder: (_) => _CheckInSheet(environment: environment, sender: sender),
+      builder: (_) => _CheckInSheet(
+        environment: environment,
+        sender: sender,
+        localDate: localDate,
+      ),
     ) ??
     false;
 
@@ -97,10 +107,15 @@ const checkInScales = [
 ];
 
 class _CheckInSheet extends StatefulWidget {
-  const _CheckInSheet({required this.environment, required this.sender});
+  const _CheckInSheet({
+    required this.environment,
+    required this.sender,
+    required this.localDate,
+  });
 
   final AppEnvironment environment;
   final CheckInSend? sender;
+  final String? localDate;
 
   @override
   State<_CheckInSheet> createState() => _CheckInSheetState();
@@ -139,7 +154,8 @@ class _CheckInSheetState extends State<_CheckInSheet> {
     }
     setState(() => _saving = true);
     final now = DateTime.now();
-    final localDate = now.toIso8601String().substring(0, 10);
+    final localDate =
+        widget.localDate ?? now.toIso8601String().substring(0, 10);
     final timezone = now.timeZoneName;
     final payload = {
       for (final scale in checkInScales) scale.key: _values[scale.key]!,
