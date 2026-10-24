@@ -39,16 +39,20 @@ Map<String, dynamic> cardioOf(Map<String, dynamic> json) =>
 const deloadProposalId = '00000000-0000-4000-8000-0000000000b1';
 
 /// The lighter-week proposal as `get_my_coach_proposals_v1` carries it.
+///
+/// [byRules] false is a lighter week the athlete asked Coach for: it lacks the
+/// `DELOAD_SIGNALS` evidence the rules' own suggestion carries.
 CoachProposal deloadProposal({
   String status = 'pending',
   bool canUndo = false,
+  bool byRules = true,
 }) => CoachProposal.fromJson({
   'id': deloadProposalId,
   'kind': 'intensity_or_phase',
   'status': status,
   'title': 'Deload until 8 Oct',
   'rationale':
-      'Two or more of your lifts have been heading down. For 1 week your sets '
+      'Two or more of your lifts have stalled or slipped. For 1 week your sets '
       'are halved, loads stay at your current working weights, and effort '
       'stays at 7 or below. Your regular plan returns after 8 Oct.',
   'benefit': 'Recovery while you keep the habit and the movement patterns.',
@@ -56,10 +60,16 @@ CoachProposal deloadProposal({
   'confidence': 'medium',
   'evidence': [
     {
-      'code': 'DELOAD_SIGNALS',
-      'label': 'Your logged lifts, check-ins and training weeks',
-      'source': 'training_guidance',
+      'code': 'TRAINING_STANDARD',
+      'label': "Tracend's weekly volume, effort and rest limits for you",
+      'source': 'policy_evaluation',
     },
+    if (byRules)
+      {
+        'code': 'DELOAD_SIGNALS',
+        'label': 'Your logged lifts, check-ins and training weeks',
+        'source': 'training_guidance',
+      },
   ],
   'before': {
     'rows': [
@@ -100,6 +110,10 @@ class FakeGuidanceRepository implements TrainingGuidanceRepository {
   /// changes its mind, or stores the proposal.
   void Function()? onPrepare;
 
+  /// Holds the answer to a prepare until it completes, for a request still on
+  /// its way.
+  Future<void>? prepareGate;
+
   @override
   Future<TrainingGuidance> load(DateTime localToday) async {
     loads.add(localToday);
@@ -111,6 +125,7 @@ class FakeGuidanceRepository implements TrainingGuidanceRepository {
   Future<String> prepareDeload(DateTime localToday) async {
     prepares.add(localToday);
     onPrepare?.call();
+    await prepareGate;
     if (prepareError != null) throw prepareError!;
     return prepareId;
   }
@@ -122,6 +137,10 @@ class FakeProposals implements CoachProposalRepository {
   FakeProposals(this.proposal);
 
   CoachProposal proposal;
+
+  /// Runs after each answer the server takes ('approve', 'decline', 'undo'):
+  /// the guidance the server would give next changes with it.
+  void Function(String answer)? onAnswer;
   final calls = <String>[];
   final loadedIds = <String?>[];
 
@@ -140,12 +159,17 @@ class FakeProposals implements CoachProposalRepository {
     calls.add(action.wire);
     switch (action) {
       case CoachProposalAction.approve:
-        proposal = deloadProposal(status: 'accepted', canUndo: true);
+        proposal = deloadProposal(
+          status: 'accepted',
+          canUndo: true,
+          byRules: proposal.suggestedByRules,
+        );
       case CoachProposalAction.decline:
         proposal = proposal.withStatus(CoachProposalStatus.declined, null);
       case CoachProposalAction.change:
         proposal = proposal.withStatus(CoachProposalStatus.changed, null);
     }
+    onAnswer?.call(action.wire);
     return CoachProposalAnswer(
       proposalId: id,
       status: switch (action) {
@@ -161,6 +185,7 @@ class FakeProposals implements CoachProposalRepository {
   Future<CoachProposalAnswer> undo(String id) async {
     calls.add('undo');
     proposal = proposal.withStatus(CoachProposalStatus.undone, null);
+    onAnswer?.call('undo');
     return CoachProposalAnswer(
       proposalId: id,
       status: 'undone',

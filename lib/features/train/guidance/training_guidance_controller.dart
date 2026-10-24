@@ -28,7 +28,7 @@ class TrainingGuidanceController extends ChangeNotifier {
   TrainingGuidance? _current;
   TrainingGuidanceFailure? _loadFailure;
   TrainingGuidanceFailure? _prepareFailure;
-  String? _prepareReason;
+  String? _prepareCode;
   bool _loading = false;
   bool _preparing = false;
   DateTime? _knownToday;
@@ -65,8 +65,8 @@ class TrainingGuidanceController extends ChangeNotifier {
   /// Set when the last request to prepare a lighter week did not go through.
   TrainingGuidanceFailure? get prepareFailure => _prepareFailure;
 
-  /// The rules' own words for a refused request.
-  String? get prepareReason => _prepareReason;
+  /// The rule that turned the request down, when one did.
+  String? get prepareCode => _prepareCode;
 
   /// Reads today's guidance. Pass the hub's `local_today` as [localToday]
   /// when it is known; without it the server is asked for its today.
@@ -139,29 +139,38 @@ class TrainingGuidanceController extends ChangeNotifier {
   /// applied: the athlete answers the proposal. Guidance is read again after,
   /// so the card shows what is true.
   Future<String?> prepareDeload() async {
-    final day = _knownToday;
-    if (_preparing || day == null) return null;
+    // Taken before anything is awaited, so a second tap while the first is on
+    // its way sends nothing.
+    if (_preparing) return null;
     _preparing = true;
     _prepareFailure = null;
-    _prepareReason = null;
+    _prepareCode = null;
     notifyListeners();
     String? id;
     TrainingGuidanceFailure? failure;
-    String? reason;
+    String? code;
     try {
+      // The server's today, asked again when the phone's day has changed since
+      // it was learned.
+      final day = await _today();
+      if (day == null) {
+        throw const TrainingGuidanceException(TrainingGuidanceFailure.network);
+      }
       id = await repository.prepareDeload(day);
     } on TrainingGuidanceException catch (error) {
       failure = error.failure;
-      reason = error.reason;
+      code = error.code;
     } on Exception catch (error) {
       debugPrint('Non-critical error: lighter week not prepared: $error');
       failure = TrainingGuidanceFailure.network;
     }
     _preparing = false;
     _prepareFailure = failure;
-    _prepareReason = reason;
+    _prepareCode = code;
     notifyListeners();
-    if (id == null && failure != TrainingGuidanceFailure.network) {
+    if (id == null &&
+        failure != TrainingGuidanceFailure.network &&
+        failure != TrainingGuidanceFailure.otherProposalPending) {
       unawaited(load());
     }
     return id;

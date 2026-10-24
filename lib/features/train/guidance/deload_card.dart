@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/proposals/coach_proposal_card.dart';
+import 'package:tracend/shared/ai_provider_names.dart';
 import 'package:tracend/features/coach/proposals/coach_proposal_repository.dart';
 import 'package:tracend/features/train/guidance/guidance_copy.dart';
 import 'package:tracend/features/train/guidance/training_guidance.dart';
@@ -20,6 +21,10 @@ import 'package:tracend/shared/widgets/tracend_sheet.dart';
 /// The card is shown for a `suggested` or `pending` lighter week and, so Undo
 /// stays within reach, for a `running` one. On a day with a safety route, for
 /// a status this build cannot read, and in every other state it is not there.
+///
+/// Only the rules' own suggestion is "Suggested by Tracend" with its reasons. A
+/// lighter week the athlete asked Coach for (open or running) is Coach's:
+/// the card says so and claims none of the rules' reasons.
 class DeloadCard extends StatefulWidget {
   const DeloadCard({
     required this.controller,
@@ -59,7 +64,6 @@ class _DeloadCardState extends State<DeloadCard> {
         child: CoachProposalLoader(
           proposalId: id,
           repository: widget.proposals,
-          origin: CoachProposalOrigin.tracend,
           allowChange: false,
           onPlanChanged: widget.onPlanChanged,
         ),
@@ -89,6 +93,7 @@ class _DeloadCardState extends State<DeloadCard> {
     final colors = context.tracendColors;
     final textTheme = Theme.of(context).textTheme;
     final running = state == DeloadCardState.running;
+    final byCoach = state != DeloadCardState.suggested && !deload.byTracend;
     final preparing = _controller.preparing;
     final failure = _controller.prepareFailure;
     return Column(
@@ -97,7 +102,9 @@ class _DeloadCardState extends State<DeloadCard> {
         Align(
           alignment: Alignment.centerLeft,
           child: StatusChip(
-            label: deloadSuggestedBy,
+            label: byCoach
+                ? 'Proposed by Coach · $aiProvenanceLine'
+                : deloadSuggestedBy,
             icon: CupertinoIcons.checkmark_shield,
             tone: running ? StatusTone.good : StatusTone.neutral,
           ),
@@ -106,7 +113,11 @@ class _DeloadCardState extends State<DeloadCard> {
         Semantics(
           header: true,
           child: Text(
-            running ? deloadRunningTitle : deloadTitle,
+            running
+                ? deloadRunningTitleFor(deload.endsOn)
+                : byCoach
+                ? deloadCoachTitle
+                : deloadTitle,
             style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
         ),
@@ -116,7 +127,14 @@ class _DeloadCardState extends State<DeloadCard> {
             deloadRunningBody,
             style: textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
           )
-        else ...[
+        else if (byCoach) ...[
+          Text(
+            deloadCoachPendingBody,
+            style: textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+          _Line(deloadNothingChanges),
+        ] else ...[
           for (final reason in deload.reasons)
             Padding(
               padding: const EdgeInsets.only(top: 2),
@@ -153,7 +171,7 @@ class _DeloadCardState extends State<DeloadCard> {
           Semantics(
             liveRegion: true,
             child: _Line(
-              deloadFailureLine(failure, reason: _controller.prepareReason),
+              deloadFailureLine(failure, code: _controller.prepareCode),
               color: colors.stateDanger,
             ),
           ),

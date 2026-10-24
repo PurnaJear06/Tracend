@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:tracend/features/train/guidance/training_guidance.dart';
 import 'package:tracend/features/train/guidance/training_guidance_controller.dart';
 import 'package:tracend/features/train/guidance/training_guidance_repository.dart';
 import 'package:tracend/features/train/train_screen.dart';
+import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/plan_changes.dart';
 
 import 'train_fixtures.dart';
@@ -170,6 +172,7 @@ void main() {
           change: (json) {
             deloadOf(json)
               ..['status'] = 'pending'
+              ..['proposal_origin'] = 'tracend'
               ..['proposal_id'] = deloadProposalId;
           },
         );
@@ -193,6 +196,7 @@ void main() {
           change: (json) {
             deloadOf(json)
               ..['status'] = 'pending'
+              ..['proposal_origin'] = 'tracend'
               ..['proposal_id'] = deloadProposalId;
           },
         ),
@@ -290,8 +294,11 @@ void main() {
       );
       expect(_text(deloadTitle), findsNothing);
       expect(_text(cardioTitle), findsNothing);
-      expect(find.textContaining('min'), findsWidgets);
+      // The rest of Train is there: only the lighter week and the cardio dose
+      // are withheld.
+      expect(_text('Train'), findsWidgets);
       expect(find.textContaining('of 150 min'), findsNothing);
+      expect(_text(cardioNoDataValue), findsNothing);
     });
 
     testWidgets('the server no longer suggests it: nothing is stored, the '
@@ -332,15 +339,22 @@ void main() {
       expect(harness.proposals.calls, isEmpty);
     });
 
-    testWidgets('a refusal shows the rules\' own words', (tester) async {
+    testWidgets('a refusal is worded as Tracend\'s, never in Coach\'s voice', (
+      tester,
+    ) async {
       final harness = await _pump(tester, suggestedJson());
       harness.repository.prepareError = const TrainingGuidanceException(
         TrainingGuidanceFailure.refused,
-        reason: 'Your plan changed. Ask again.',
+        code: 'screening_see_professional',
       );
       await tester.tap(_text(deloadSeeChanges));
       await tester.pumpAndSettle();
-      expect(_text('Your plan changed. Ask again.'), findsOneWidget);
+      expect(
+        _text(deloadRefusalLine('screening_see_professional')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Ask Coach'), findsNothing);
+      expect(find.textContaining('I can'), findsNothing);
     });
 
     testWidgets('without guidance or proposals the screen has no card', (
@@ -523,6 +537,264 @@ void main() {
         findsOneWidget,
       );
       handle.dispose();
+    });
+  });
+
+  group('who made the lighter week', () {
+    Map<String, dynamic> coachPending({String? origin = 'coach'}) =>
+        guidanceJson(
+          'training_guidance_v1_2_coach_pending',
+          change: (json) => deloadOf(json)['proposal_origin'] = origin,
+        );
+
+    testWidgets('a pending lighter week Coach made is Coach\'s: its wording '
+        'and none of the rules\' reasons', (tester) async {
+      await _pump(tester, coachPending());
+      expect(_text('Proposed by Coach · checked by Tracend'), findsOneWidget);
+      expect(_text(deloadCoachTitle), findsOneWidget);
+      expect(_text(deloadCoachPendingBody), findsOneWidget);
+      expect(_text(deloadSuggestedBy), findsNothing);
+      expect(_text(deloadTitle), findsNothing);
+      // The guidance still lists a reason; a Coach card does not claim it.
+      expect(
+        _text('• ${deloadReasonLine(DeloadReason.runDown)}'),
+        findsNothing,
+      );
+      expect(_text(deloadProvenance), findsNothing);
+      expect(_text(deloadWhat), findsNothing);
+    });
+
+    testWidgets('no origin named reads as Coach\'s, never as the rules\'', (
+      tester,
+    ) async {
+      await _pump(tester, coachPending(origin: null));
+      expect(_text('Proposed by Coach · checked by Tracend'), findsOneWidget);
+      expect(_text(deloadSuggestedBy), findsNothing);
+    });
+
+    testWidgets('an origin from a later version reads as Coach\'s', (
+      tester,
+    ) async {
+      await _pump(tester, coachPending(origin: 'someone_new'));
+      expect(_text(deloadSuggestedBy), findsNothing);
+      expect(_text(deloadCoachTitle), findsOneWidget);
+    });
+
+    testWidgets('a pending lighter week the rules made keeps their wording', (
+      tester,
+    ) async {
+      await _pump(tester, coachPending(origin: 'tracend'));
+      expect(_text(deloadSuggestedBy), findsOneWidget);
+      expect(_text(deloadTitle), findsOneWidget);
+      expect(
+        _text('• ${deloadReasonLine(DeloadReason.runDown)}'),
+        findsOneWidget,
+      );
+      expect(_text(deloadCoachTitle), findsNothing);
+    });
+
+    testWidgets('the sheet follows the proposal itself: without the rules\' '
+        'evidence it is Coach\'s', (tester) async {
+      final harness = await _pump(
+        tester,
+        coachPending(origin: 'coach'),
+        proposals: FakeProposals(deloadProposal(byRules: false)),
+      );
+      await tester.tap(_text(deloadSeeChanges));
+      await tester.pumpAndSettle();
+      expect(harness.proposals.loadedIds, [
+        '00000000-0000-4000-8000-000000000002',
+      ]);
+      // The card in the sheet and the card on Train say the same.
+      expect(_text('Proposed by Coach · checked by Tracend'), findsNWidgets(2));
+      expect(_text(deloadSuggestedBy), findsNothing);
+      expect(_text('Change it'), findsNothing);
+    });
+
+    testWidgets('the sheet of the rules\' own proposal says so', (
+      tester,
+    ) async {
+      await _pump(tester, coachPending(origin: 'tracend'));
+      await tester.tap(_text(deloadSeeChanges));
+      await tester.pumpAndSettle();
+      expect(_text(deloadSuggestedBy), findsNWidgets(2));
+      expect(find.textContaining('Proposed by Coach'), findsNothing);
+    });
+
+    testWidgets('a running lighter week Coach made is Coach\'s, with its end '
+        'day', (tester) async {
+      await _pump(
+        tester,
+        guidanceJson(
+          'training_guidance_v1_2_running',
+          change: (json) => deloadOf(json)['proposal_origin'] = 'coach',
+        ),
+      );
+      expect(_text('Proposed by Coach · checked by Tracend'), findsOneWidget);
+      expect(
+        _text(deloadRunningTitleFor(DateTime(2026, 10, 31))),
+        findsOneWidget,
+      );
+      expect(_text(deloadSuggestedBy), findsNothing);
+    });
+
+    testWidgets('a running lighter week the rules made says so, and until '
+        'when', (tester) async {
+      await _pump(tester, guidanceJson('training_guidance_v1_2_running'));
+      expect(_text(deloadSuggestedBy), findsOneWidget);
+      final until = dayAndDate(DateTime(2026, 10, 31));
+      expect(_text('$deloadRunningTitle until $until'), findsOneWidget);
+    });
+
+    testWidgets('a running lighter week with no end day still reads', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        guidanceJson(
+          'training_guidance_v1_2_running',
+          change: (json) => deloadOf(json)['ends_on'] = null,
+        ),
+      );
+      expect(_text(deloadRunningTitle), findsOneWidget);
+    });
+  });
+
+  group('another change is waiting in Coach', () {
+    testWidgets('nothing is stored or expired; the card says to answer it '
+        'first', (tester) async {
+      final harness = await _pump(tester, suggestedJson());
+      harness.repository.prepareError = const TrainingGuidanceException(
+        TrainingGuidanceFailure.otherProposalPending,
+      );
+      await tester.tap(_text(deloadSeeChanges));
+      await tester.pumpAndSettle();
+      expect(
+        _text('You have a change waiting in Coach. Answer it first.'),
+        findsOneWidget,
+      );
+      expect(harness.proposals.loadedIds, isEmpty);
+      expect(harness.proposals.calls, isEmpty);
+      // Still suggested, and the guidance was not read again for nothing.
+      expect(_text(deloadTitle), findsOneWidget);
+      expect(harness.repository.loads.length, 1);
+    });
+  });
+
+  group('taps and Undo', () {
+    testWidgets('a second tap while the first is on its way sends nothing', (
+      tester,
+    ) async {
+      final harness = await _pump(tester, suggestedJson());
+      final gate = Completer<void>();
+      harness.repository.prepareGate = gate.future;
+      final button = find.widgetWithText(FilledButton, deloadSeeChanges);
+      await tester.tap(button);
+      await tester.tap(button, warnIfMissed: false);
+      await tester.pump();
+      await tester.tap(find.byType(FilledButton).first, warnIfMissed: false);
+      await tester.pump();
+      expect(harness.repository.prepares.length, 1);
+      expect(harness.controller.preparing, isTrue);
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(harness.repository.prepares.length, 1);
+      expect(harness.proposals.loadedIds, [
+        deloadProposalId,
+      ], reason: 'one sheet');
+    });
+
+    testWidgets('after Undo the lighter week is gone and is not offered '
+        'again at once', (tester) async {
+      final proposals = FakeProposals(deloadProposal());
+      final harness = await _pump(
+        tester,
+        suggestedJson(),
+        proposals: proposals,
+      );
+      proposals.onAnswer = (answer) {
+        harness.repository.json = switch (answer) {
+          'approve' => guidanceJson(
+            'training_guidance_v1_2_running',
+            change: (json) => deloadOf(json)['proposal_origin'] = 'tracend',
+          ),
+          // Undone: not running, and the quiet days start.
+          _ => suggestedJson(
+            change: (json) {
+              deloadOf(json)
+                ..['status'] = 'not_due'
+                ..['reasons'] = <Object>[]
+                ..['suppressed_by'] = 'declined_recently';
+            },
+          ),
+        };
+      };
+      await tester.tap(_text(deloadSeeChanges));
+      await tester.pumpAndSettle();
+      await tester.tap(_text('Approve'));
+      await tester.pumpAndSettle();
+      await tester.tap(_text('Approve').last);
+      await tester.pumpAndSettle();
+      await tester.tap(_text('Undo'));
+      await tester.pumpAndSettle();
+      expect(proposals.calls, ['approve', 'undo']);
+      await tester.tap(find.bySemanticsLabel(RegExp('Close')).first);
+      await tester.pumpAndSettle();
+      expect(_text(deloadTitle), findsNothing);
+      expect(_text(deloadRunningTitle), findsNothing);
+      expect(find.textContaining(deloadRunningTitle), findsNothing);
+      expect(_text(deloadSeeChanges), findsNothing);
+    });
+
+    testWidgets('after approval the running card appears and opens the same '
+        'proposal for Undo', (tester) async {
+      final proposals = FakeProposals(deloadProposal());
+      final harness = await _pump(
+        tester,
+        suggestedJson(),
+        proposals: proposals,
+      );
+      proposals.onAnswer = (answer) {
+        if (answer == 'approve') {
+          harness.repository.json = guidanceJson(
+            'training_guidance_v1_2_running',
+            change: (json) => deloadOf(json)['proposal_origin'] = 'tracend',
+          );
+        }
+      };
+      await tester.tap(_text(deloadSeeChanges));
+      await tester.pumpAndSettle();
+      await tester.tap(_text('Approve'));
+      await tester.pumpAndSettle();
+      await tester.tap(_text('Approve').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel(RegExp('Close')).first);
+      await tester.pumpAndSettle();
+      expect(find.textContaining(deloadRunningTitle), findsOneWidget);
+      await tester.tap(_text(deloadRunningAction));
+      await tester.pumpAndSettle();
+      expect(_text('Undo'), findsOneWidget);
+    });
+  });
+
+  group('the cardio row follows the week on screen', () {
+    testWidgets('a past week has no cardio row; This week brings it back', (
+      tester,
+    ) async {
+      await _pump(tester, suggestedJson());
+      expect(_text(cardioTitle), findsOneWidget);
+      await tester.fling(
+        find.byKey(const ValueKey('day-box-2026-10-01')),
+        const Offset(300, 0),
+        1500,
+      );
+      await tester.pumpAndSettle();
+      expect(_text('Week of 21 September'), findsOneWidget);
+      expect(_text(cardioTitle), findsNothing);
+      expect(_text('Training load'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'This week'));
+      await tester.pumpAndSettle();
+      expect(_text(cardioTitle), findsOneWidget);
     });
   });
 

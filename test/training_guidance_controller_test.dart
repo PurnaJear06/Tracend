@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/features/train/guidance/training_guidance_controller.dart';
 import 'package:tracend/features/train/guidance/training_guidance_repository.dart';
@@ -130,12 +132,12 @@ void main() {
     expect(controller.preparing, isFalse);
   });
 
-  test('a refusal is kept with its words, and the guidance is read '
+  test('a refusal is kept with its rule, and the guidance is read '
       'again', () async {
     final repository = FakeGuidanceRepository(suggestedJson())
       ..prepareError = const TrainingGuidanceException(
         TrainingGuidanceFailure.refused,
-        reason: 'Your plan changed.',
+        code: 'plan_changed',
       );
     final controller = TrainingGuidanceController(
       repository: repository,
@@ -145,7 +147,7 @@ void main() {
     await controller.load(localToday: DateTime(2026, 10, 2));
     expect(await controller.prepareDeload(), isNull);
     expect(controller.prepareFailure, TrainingGuidanceFailure.refused);
-    expect(controller.prepareReason, 'Your plan changed.');
+    expect(controller.prepareCode, 'plan_changed');
     await Future<void>.delayed(Duration.zero);
     expect(repository.loads.length, 2);
   });
@@ -165,5 +167,69 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(repository.loads.length, 1);
     expect(controller.prepareFailure, TrainingGuidanceFailure.network);
+  });
+
+  test('preparing asks the server for its day again when the phone\'s has '
+      'changed', () async {
+    final repository = FakeGuidanceRepository(suggestedJson());
+    var phone = DateTime(2026, 10, 2, 22);
+    var asked = 0;
+    final controller = TrainingGuidanceController(
+      repository: repository,
+      clock: () => phone,
+      serverToday: () async {
+        asked++;
+        return DateTime(2026, 10, 3);
+      },
+    );
+    addTearDown(controller.dispose);
+    await controller.load(localToday: DateTime(2026, 10, 2));
+    // Midnight passed on the phone while the card was open.
+    phone = DateTime(2026, 10, 3, 0, 5);
+    await controller.prepareDeload();
+    expect(asked, 1);
+    expect(repository.prepares.single, DateTime(2026, 10, 3));
+  });
+
+  test(
+    'a second request while the first is on its way sends nothing',
+    () async {
+      final repository = FakeGuidanceRepository(suggestedJson());
+      final gate = Completer<void>();
+      repository.prepareGate = gate.future;
+      final controller = TrainingGuidanceController(
+        repository: repository,
+        clock: _phoneNow,
+      );
+      addTearDown(controller.dispose);
+      await controller.load(localToday: DateTime(2026, 10, 2));
+      final first = controller.prepareDeload();
+      final second = controller.prepareDeload();
+      expect(await second, isNull);
+      gate.complete();
+      expect(await first, deloadProposalId);
+      expect(repository.prepares.length, 1);
+    },
+  );
+
+  test('a change waiting in Coach is kept as such, and the guidance is not '
+      'read again for it', () async {
+    final repository = FakeGuidanceRepository(suggestedJson())
+      ..prepareError = const TrainingGuidanceException(
+        TrainingGuidanceFailure.otherProposalPending,
+      );
+    final controller = TrainingGuidanceController(
+      repository: repository,
+      clock: _phoneNow,
+    );
+    addTearDown(controller.dispose);
+    await controller.load(localToday: DateTime(2026, 10, 2));
+    expect(await controller.prepareDeload(), isNull);
+    expect(
+      controller.prepareFailure,
+      TrainingGuidanceFailure.otherProposalPending,
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(repository.loads.length, 1);
   });
 }

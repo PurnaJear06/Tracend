@@ -24,6 +24,9 @@ void main() {
       'training_guidance_v1_0',
       'training_guidance_v1_1',
       'training_guidance_v1_1_withheld',
+      'training_guidance_v1_2',
+      'training_guidance_v1_2_coach_pending',
+      'training_guidance_v1_2_running',
     ]) {
       test(name, () {
         final guidance = TrainingGuidance.tryParse(_fixture(name));
@@ -67,6 +70,38 @@ void main() {
       expect(cardio.easyHrReserveMax, 60);
       expect(cardio.windowTo, DateTime(2026, 10, 24));
       expect(cardioRowValue(cardio), '85 of 150 min');
+    });
+
+    test('1.2: who made the proposal, and when a running week ends', () {
+      final suggested = _read('training_guidance_v1_2');
+      expect(suggested.deload!.origin, isNull);
+      expect(deloadCardState(suggested), DeloadCardState.suggested);
+      final pending = _read('training_guidance_v1_2_coach_pending');
+      expect(pending.deload!.status, DeloadStatus.pending);
+      expect(pending.deload!.origin, DeloadOrigin.coach);
+      expect(pending.deload!.byTracend, isFalse);
+      expect(pending.deload!.endsOn, isNull);
+      final running = _read('training_guidance_v1_2_running');
+      expect(running.deload!.origin, DeloadOrigin.tracend);
+      expect(running.deload!.byTracend, isTrue);
+      expect(running.deload!.endsOn, DateTime(2026, 10, 31));
+      expect(deloadCardState(running), DeloadCardState.running);
+    });
+
+    test('before 1.2 there is no origin, which reads as Coach\'s', () {
+      final json = _fixture('training_guidance_v1_1');
+      (json['deload'] as Map<String, dynamic>)
+        ..['status'] = 'pending'
+        ..['proposal_id'] = '00000000-0000-4000-8000-000000000002';
+      final pending = TrainingGuidance.tryParse(json)!;
+      expect(pending.deload!.origin, isNull);
+      expect(pending.deload!.byTracend, isFalse);
+    });
+
+    test('an origin from a later version never claims the rules made it', () {
+      final json = _fixture('training_guidance_v1_2_coach_pending');
+      (json['deload'] as Map<String, dynamic>)['proposal_origin'] = 'someone';
+      expect(TrainingGuidance.tryParse(json)!.deload!.byTracend, isFalse);
     });
 
     test('1.1 on a day with a safety route: no card, no cardio dose', () {
@@ -126,7 +161,6 @@ void main() {
         ];
         final some = TrainingGuidance.tryParse(json)!;
         expect(some.deload!.reasons, [DeloadReason.performanceDrop]);
-        expect(some.deload!.hadUnreadReasons, isTrue);
         expect(deloadCardState(some), DeloadCardState.suggested);
 
         (json['deload'] as Map<String, dynamic>)['reasons'] = [
@@ -330,10 +364,11 @@ void main() {
           {'error': 'not_suggested', 'status': 'not_due'},
           TrainingGuidanceFailure.notSuggested,
         ),
+        (409, {'error': 'plan_changed'}, TrainingGuidanceFailure.refused),
         (
           409,
-          {'error': 'plan_changed', 'reason': 'Your plan changed.'},
-          TrainingGuidanceFailure.refused,
+          {'error': 'other_proposal_pending'},
+          TrainingGuidanceFailure.otherProposalPending,
         ),
         (
           503,
@@ -350,10 +385,10 @@ void main() {
             isA<TrainingGuidanceException>()
                 .having((e) => e.failure, 'failure', failure)
                 .having(
-                  (e) => e.reason,
-                  'reason',
+                  (e) => e.code,
+                  'code',
                   failure == TrainingGuidanceFailure.refused
-                      ? 'Your plan changed.'
+                      ? 'plan_changed'
                       : isNull,
                 ),
           ),

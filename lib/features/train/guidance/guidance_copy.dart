@@ -24,7 +24,7 @@ const deloadWhat =
 /// One reason, in the athlete's own terms.
 String deloadReasonLine(DeloadReason reason) => switch (reason) {
   DeloadReason.performanceDrop =>
-    'Two or more of your lifts have been heading down.',
+    'Two or more of your lifts have stalled or slipped.',
   DeloadReason.runDown =>
     'Your readiness has read low on four or more of the days you checked in '
         'this past week.',
@@ -35,24 +35,59 @@ const deloadPendingBody =
     'Tracend prepared a lighter week for you to look at. It waits for your '
     'answer.';
 
+/// A lighter week the athlete asked Coach for, waiting for an answer. The rules
+/// did not suggest it, so the card claims none of their reasons.
+const deloadCoachTitle = 'A lighter week from Coach';
+const deloadCoachPendingBody =
+    'Coach prepared a lighter week for you to look at. It waits for your '
+    'answer.';
+
 const deloadRunningTitle = 'A lighter week is on';
 const deloadRunningBody =
     'Half the sets, your weights held, effort at 7 or lower. Your regular plan '
     'comes back by itself after the week.';
+
+/// "A lighter week is on until Fri 31 Oct", or without the day when the server
+/// did not name it.
+String deloadRunningTitleFor(DateTime? endsOn) => endsOn == null
+    ? deloadRunningTitle
+    : '$deloadRunningTitle until ${dayAndDate(endsOn)}';
 const deloadRunningAction = 'Details and undo';
 
 const deloadSheetTitle = 'A lighter week';
 
+/// Why the server turned a lighter week down, in Tracend's own words: the
+/// server's are Coach's, in the first person.
+String deloadRefusalLine(String? code) => switch (code) {
+  'screening_see_professional' =>
+    'Your health check says a health professional should clear you before '
+        'Tracend changes your plan.',
+  'no_active_plan' => 'There is no active plan to lighten yet.',
+  'block_already_active' =>
+    'Another change is already running, so a lighter week cannot start now.',
+  'no_change' => 'Your plan is already at that effort.',
+  'profile_incomplete' =>
+    'Tracend needs your profile finished before it can prepare a lighter '
+        'week.',
+  'plan_changed' || 'screening_changed' || 'evidence_changed' =>
+    'Your plan or health check changed just now. Pull down to refresh and '
+        'look again.',
+  _ => 'A lighter week cannot be prepared right now.',
+};
+
+const deloadOtherProposalLine =
+    'You have a change waiting in Coach. Answer it first.';
+
 String deloadFailureLine(
   TrainingGuidanceFailure failure, {
-  String? reason,
+  String? code,
 }) => switch (failure) {
   TrainingGuidanceFailure.wrongDate =>
     'Your day changed while this was open. Pull down to refresh.',
   TrainingGuidanceFailure.notSuggested =>
     'A lighter week is not suggested right now. Nothing was changed.',
-  TrainingGuidanceFailure.refused =>
-    reason ?? 'A lighter week cannot be prepared right now.',
+  TrainingGuidanceFailure.otherProposalPending => deloadOtherProposalLine,
+  TrainingGuidanceFailure.refused => deloadRefusalLine(code),
   TrainingGuidanceFailure.unreadable =>
     'Tracend sent something this version cannot read. Update the app and try '
         'again.',
@@ -85,7 +120,7 @@ const cardioEasyOnlyTitle = 'Easy cardio only today';
 const cardioEasyOnlyIntro = 'Hard cardio opens when all of these are true:';
 const cardioEasyOnlyConditions = [
   'Your health check allows it.',
-  "Today's check-in reads good.",
+  "Today's readiness reads green, which needs today's check-in.",
   'You can train today.',
   'No joint is held or limited.',
 ];

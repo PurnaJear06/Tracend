@@ -1,5 +1,12 @@
 import 'package:flutter/foundation.dart';
 
+DateTime? _isoDate(Object? value) {
+  if (value is! String || !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) {
+    return null;
+  }
+  return DateTime.tryParse(value);
+}
+
 /// Where a lighter week stands today (Contract: `get_my_training_guidance_v1`,
 /// rules `deload-v1`). `notDue` covers every suppression; the server says which
 /// in [DeloadGuidance.suppressedBy].
@@ -38,6 +45,23 @@ enum DeloadReason {
   }
 }
 
+/// Who made an open or running lighter-week proposal.
+enum DeloadOrigin {
+  /// Tracend's rules suggested it from the athlete's own data.
+  tracend,
+
+  /// The athlete asked Coach for it.
+  coach;
+
+  /// Only the word `tracend` claims the rules made it. Anything else, a word
+  /// from a later version included, reads as Coach's, which claims nothing
+  /// about the rules.
+  static DeloadOrigin? fromWire(Object? value) {
+    if (value == null) return null;
+    return value == 'tracend' ? tracend : coach;
+  }
+}
+
 /// The lighter-week part of the guidance. A status or a reason this build does
 /// not know never reaches here: a status it cannot read makes
 /// [TrainingGuidance.deload] null, and an unknown reason is left out of
@@ -48,8 +72,9 @@ class DeloadGuidance {
     required this.status,
     this.reasons = const [],
     this.proposalId,
+    this.origin,
+    this.endsOn,
     this.suppressedBy,
-    this.hadUnreadReasons = false,
   });
 
   final DeloadStatus status;
@@ -60,12 +85,20 @@ class DeloadGuidance {
   /// The open (`pending`) or running (`running`) proposal.
   final String? proposalId;
 
+  /// Who made the open or running proposal; null when there is none, and in a
+  /// payload from before 1.2. A proposal with no origin named reads as Coach's.
+  final DeloadOrigin? origin;
+
+  /// The last day of a running lighter week.
+  final DateTime? endsOn;
+
   /// The rule that holds a suggestion back (`not_due` only). Kept as the
   /// server's word; nothing in the app branches on it.
   final String? suppressedBy;
 
-  /// The server named a reason this build cannot say in words.
-  final bool hadUnreadReasons;
+  /// True when the rules made the open or running proposal. Anything else is
+  /// Coach's.
+  bool get byTracend => origin == DeloadOrigin.tracend;
 
   static DeloadGuidance? tryParse(Object? raw) {
     if (raw is! Map) return null;
@@ -73,15 +106,10 @@ class DeloadGuidance {
     if (status == null) return null;
     final rawReasons = raw['reasons'];
     final reasons = <DeloadReason>[];
-    var unread = false;
     if (rawReasons is List) {
       for (final item in rawReasons) {
         final reason = DeloadReason.fromWire(item);
-        if (reason == null) {
-          unread = true;
-        } else if (!reasons.contains(reason)) {
-          reasons.add(reason);
-        }
+        if (reason != null && !reasons.contains(reason)) reasons.add(reason);
       }
     }
     final proposalId = raw['proposal_id'];
@@ -92,8 +120,9 @@ class DeloadGuidance {
       proposalId: proposalId is String && proposalId.isNotEmpty
           ? proposalId
           : null,
+      origin: DeloadOrigin.fromWire(raw['proposal_origin']),
+      endsOn: _isoDate(raw['ends_on']),
       suppressedBy: suppressedBy is String ? suppressedBy : null,
-      hadUnreadReasons: unread,
     );
   }
 }
@@ -183,21 +212,14 @@ class CardioWeek {
       vigorousCountsAs: _whole(raw['vigorous_counts_as']) ?? 2,
       liftSeparationHours: _whole(raw['lift_separation_hours']) ?? 3,
       easyHrReserveMax: _whole(raw['easy_hr_reserve_max']),
-      windowFrom: _date(raw['window_from']),
-      windowTo: _date(raw['window_to']),
+      windowFrom: _isoDate(raw['window_from']),
+      windowTo: _isoDate(raw['window_to']),
     );
-  }
-
-  static DateTime? _date(Object? value) {
-    if (value is! String || !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) {
-      return null;
-    }
-    return DateTime.tryParse(value);
   }
 }
 
 /// What `get_my_training_guidance_v1` says about today: whether a lighter week
-/// could help and how the week's cardio stands. Versions 1.0 and 1.1 read; a
+/// could help and how the week's cardio stands. Versions 1.0, 1.1 and 1.2 read; a
 /// later 1.x reads what this build knows and leaves the rest out. A part this
 /// build cannot read is null (the card or row is not shown), never guessed.
 @immutable

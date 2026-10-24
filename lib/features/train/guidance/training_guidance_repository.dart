@@ -11,7 +11,12 @@ enum TrainingGuidanceFailure {
   /// rules changed their mind): nothing was stored.
   notSuggested,
 
-  /// The rules turned the request down, with words for the athlete.
+  /// Another change is waiting for the athlete's answer in Coach; storing a
+  /// lighter week would have closed it, so nothing was stored.
+  otherProposalPending,
+
+  /// The rules turned the request down; [TrainingGuidanceException.code] says
+  /// which rule.
   refused,
 
   /// Tracend sent something this version cannot read.
@@ -22,11 +27,13 @@ enum TrainingGuidanceFailure {
 }
 
 class TrainingGuidanceException implements Exception {
-  const TrainingGuidanceException(this.failure, {this.reason});
+  const TrainingGuidanceException(this.failure, {this.code});
   final TrainingGuidanceFailure failure;
 
-  /// Plain words for the athlete, when the server gave them.
-  final String? reason;
+  /// The rule that turned the request down (`screening_see_professional`,
+  /// `plan_changed`, ...). The app words it; the server's own words are
+  /// Coach's.
+  final String? code;
   @override
   String toString() => 'TrainingGuidanceException: ${failure.name}';
 }
@@ -107,7 +114,6 @@ class SupabaseTrainingGuidanceRepository implements TrainingGuidanceRepository {
       debugPrint('Non-critical error: lighter week not prepared: $error');
       final details = error.details;
       final code = details is Map ? details['error'] : null;
-      final reason = details is Map ? details['reason'] : null;
       throw switch ((error.status, code)) {
         (422, 'wrong_date') => const TrainingGuidanceException(
           TrainingGuidanceFailure.wrongDate,
@@ -115,11 +121,13 @@ class SupabaseTrainingGuidanceRepository implements TrainingGuidanceRepository {
         (409, 'not_suggested') => const TrainingGuidanceException(
           TrainingGuidanceFailure.notSuggested,
         ),
-        (409, _) when reason is String && reason.isNotEmpty =>
-          TrainingGuidanceException(
-            TrainingGuidanceFailure.refused,
-            reason: reason,
-          ),
+        (409, 'other_proposal_pending') => const TrainingGuidanceException(
+          TrainingGuidanceFailure.otherProposalPending,
+        ),
+        (409, final String refusal) => TrainingGuidanceException(
+          TrainingGuidanceFailure.refused,
+          code: refusal,
+        ),
         _ => const TrainingGuidanceException(TrainingGuidanceFailure.network),
       };
     }

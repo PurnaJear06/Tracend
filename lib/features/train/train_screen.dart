@@ -714,7 +714,11 @@ class _TrainScreenState extends State<TrainScreen> {
         ? week.where((d) => hub.workoutForWeekday(d.weekday) != null).length
         : hub.plan?.sessionsPerWeek ?? hub.workouts.length;
     final attention = _repairs.isNotEmpty || _reconciliations.isNotEmpty;
-    final cardio = widget.guidance?.current?.cardioWeek;
+    // The cardio week is the last seven days up to today: it belongs to this
+    // week's summary only, never to a past week the athlete paged back to.
+    final cardio = sameDay(_weekStart, _currentWeek)
+        ? widget.guidance?.current?.cardioWeek
+        : null;
     return [
       if (!sameDay(_weekStart, _currentWeek))
         _WeekCaption(
