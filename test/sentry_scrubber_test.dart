@@ -122,6 +122,24 @@ void main() {
       expect(crumb.data!['url'], contains('record_pain_check_v1'));
     });
 
+    test('a row the database refused is not reported with its values', () {
+      final event = SentryEvent(
+        exceptions: [
+          SentryException(
+            type: 'PostgrestException',
+            value:
+                'new row violates check constraint. Failing row contains '
+                '(r1, u1, 2026-10-24, knee, 8, {numb}, clinician_today).',
+          ),
+        ],
+      );
+      final scrubbed = scrubSentryEvent(event, hint)!;
+      final value = scrubbed.exceptions!.single.value!;
+      expect(value, contains('new row violates check constraint'));
+      expect(value, isNot(contains('knee')));
+      expect(value, isNot(contains('2026-10-24')));
+    });
+
     test('a missing breadcrumb stays missing', () {
       expect(scrubSentryBreadcrumb(null, hint), isNull);
     });

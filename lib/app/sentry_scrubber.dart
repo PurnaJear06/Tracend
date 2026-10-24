@@ -74,7 +74,12 @@ final _sensitiveText = RegExp(
   r'locks_gives_way|fever_unwell|night_pain|clinician_today|clinician)',
 );
 
-String _scrubText(String text) => text.replaceAll(_sensitiveText, redacted);
+/// What the database says of a row it refused: the values are the athlete's
+/// answers, so the whole row goes.
+final _refusedRow = RegExp(r'Failing row contains \(.*\)');
+
+String _scrubText(String text) =>
+    text.replaceAll(_refusedRow, redacted).replaceAll(_sensitiveText, redacted);
 
 Object? _scrub(Object? value) {
   if (value is Map) {
