@@ -1,6 +1,7 @@
 import type { PrefetchedQueryEmbedding } from "../coach_context/host.ts";
 import { coachServiceRpc, type ServiceRpc } from "../coach_context/service_source.ts";
 import { type Embedder, embeddingModel } from "./embedding.ts";
+import { planFactsFromService } from "./plan_facts.ts";
 import { isFollowUp, libraryRetrievalQuery } from "./query.ts";
 import { createQueryEmbedder } from "./query_embedder.ts";
 import {
@@ -60,7 +61,7 @@ export function librarySearchViaRpc(rpc: ServiceRpc): LibrarySearch {
 
 // The question is embedded by library-embed, over HTTP, with the same deadline the contributor
 // enforces; the worker secret comes from the database and is kept until library-embed refuses it.
-const embed = createQueryEmbedder({
+export const libraryQueryEmbedder = createQueryEmbedder({
   baseUrl: () => Deno.env.get("SUPABASE_URL") ?? "",
   secret: async () => {
     const { data, error } = await coachServiceRpc("library_worker_secret_v1", {});
@@ -75,11 +76,12 @@ const embed = createQueryEmbedder({
 /**
  * Starts embedding the question at the start of a Coach chat request, so the embedding runs while
  * the context is prepared. Null for a follow-up: its query borrows an earlier question from the
- * prepared context, so the contributor embeds it then.
+ * prepared context, so the contributor embeds it then. A question about why the plan is the way it
+ * is (E5) is prefetched like any other: its first search is the question as asked.
  */
 export function prefetchLibraryEmbedding(
   question: string,
-  embedder: Embedder = embed,
+  embedder: Embedder = libraryQueryEmbedder,
 ): PrefetchedQueryEmbedding | null {
   if (isFollowUp(question)) return null;
   const text = libraryRetrievalQuery(question, []).text;
@@ -91,6 +93,7 @@ export function prefetchLibraryEmbedding(
 }
 
 export const libraryContributor = createLibraryContributor({
-  embed: () => embed,
+  embed: () => libraryQueryEmbedder,
   search: librarySearchViaRpc(coachServiceRpc),
+  planFacts: planFactsFromService,
 });

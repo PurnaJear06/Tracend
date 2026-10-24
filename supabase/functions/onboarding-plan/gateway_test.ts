@@ -14,6 +14,13 @@ import {
   settings,
 } from "../_shared/ai/fakes.ts";
 import type { AiRoute } from "../_shared/ai/types.ts";
+import type { PlanLibrary } from "../_shared/library/plan_library.ts";
+import {
+  planLibraryHeading,
+  planLibraryNoMatchRule,
+  planLibraryRules,
+  planLibraryUnavailableRule,
+} from "../_shared/library/plan_library.ts";
 import { parseOnboardingAnswers } from "../_shared/onboarding/answers.ts";
 import { exerciseCatalogV1 } from "../_shared/onboarding/catalog.ts";
 import { policiesFor, validRulesPlan } from "../_shared/onboarding/generate.ts";
@@ -101,7 +108,13 @@ function harness(options: {
   const rpc: { fn: string; args: Record<string, unknown> }[] = [];
   const usage: { provider: string; model: string; estimatedCostUsd: number; inputUnits: number }[] =
     [];
-  const persisted: { proposal: { training: Record<string, unknown> } }[] = [];
+  const persisted: {
+    proposal: {
+      training: Record<string, unknown>;
+      evidence: readonly Record<string, string>[];
+      confidence: string;
+    };
+  }[] = [];
   const saved = new Map<string, StoredQuestions>();
   const released: string[] = [];
   let consentReads = 0;
@@ -470,7 +483,7 @@ Deno.test("the plan shape is structure only and the contract keeps its limits", 
     assert(!text.includes(keyword), keyword);
   }
   const required = (onboardingPlanJsonSchema as { required: string[] }).required;
-  assertEquals(required.length, 14);
+  assertEquals(required.length, 15);
 });
 
 // --- Budget outcomes ---------------------------------------------------------------------------
@@ -854,4 +867,380 @@ Deno.test("the gateway prompt and policies carry the screening outcome", () => {
   assertEquals(moderate.prepared.policies.screening, "moderate_until_cleared");
   assertEquals(cleared.prepared.policies.screening, undefined);
   assert(moderate.prepared.system !== cleared.prepared.system, "the prompt names the cap");
+});
+
+// --- Research library excerpts and citations (E5) ------------------------------------------------
+
+const shownSources = {
+  schoenfeld_2017_weekly_volume: {
+    label: "Weekly sets and muscle growth (2017)",
+    text:
+      "[source: schoenfeld_2017_weekly_volume] Meta-analysis, 2017. Ten or more weekly sets gave more growth.",
+  },
+  morton_2018_protein: {
+    label: "Protein and strength training (2018)",
+    text: "[source: morton_2018_protein] Meta-analysis, 2018. Protein supports muscle gain.",
+  },
+};
+const foundLibrary = (): PlanLibrary => ({
+  status: "found",
+  text: `${planLibraryHeading}\n\n${
+    Object.values(shownSources).map((source) => source.text).join("\n\n")
+  }`,
+  shown: shownSources,
+  trace: { status: "found", queries: 2, shown: Object.keys(shownSources) },
+});
+const emptyLibrary = (status: "none" | "unavailable"): PlanLibrary => ({
+  status,
+  text: "",
+  shown: {},
+  trace: { status },
+});
+const withLibrary = (library: PlanLibrary, queries: (readonly string[])[] = []) => ({
+  library: (asked: readonly string[]) => {
+    queries.push(asked);
+    return Promise.resolve(library);
+  },
+});
+const bodyOf = (request: { body: Record<string, unknown> }) => {
+  const system = (request.body.system as { text: string }[])[0].text;
+  const user = (request.body.messages as { content: { text: string }[] }[])[0].content[0].text;
+  return { system, user };
+};
+
+Deno.test("the plan schema asks for sources, a plain list of ids", () => {
+  const schema = onboardingPlanJsonSchema as unknown as {
+    required: string[];
+    properties: Record<string, unknown>;
+  };
+  assert(schema.required.includes("sources"));
+  assertEquals(schema.properties.sources, { type: "array", items: { type: "string" } });
+});
+
+Deno.test("excerpts for this athlete reach the prompt, and a plan that cites one gets a labelled source", async () => {
+  const h = harness();
+  const queries: (readonly string[])[] = [];
+  const cited = planWith((plan) => {
+    plan.sources = ["schoenfeld_2017_weekly_volume"];
+  });
+  const { fetch, sent } = fakeFetch(() => claude(cited));
+  const { events } = await run(
+    "plan",
+    h,
+    { plan: planRoute() },
+    fetch,
+    withLibrary(foundLibrary(), queries),
+  );
+  // Two searches, built from the answers: training and nutrition.
+  assertEquals(queries.length, 1);
+  assertEquals(queries[0].length, 2);
+  assert(queries[0][0].includes("training days a week"));
+  assert(queries[0][1].startsWith("Nutrition targets"));
+  assertEquals(sent.length, 1);
+  const { system, user } = bodyOf(sent[0]);
+  assert(system.includes(planLibraryRules));
+  assert(user.includes(planLibraryHeading));
+  assert(user.includes("[source: morton_2018_protein]"));
+  // The excerpts follow the catalog, after the athlete's answers: the rules stay cacheable.
+  assert(user.indexOf("Exercise catalog") < user.indexOf(planLibraryHeading));
+  assertEquals(training(h).origin, "ai");
+  assertEquals(h.persisted[0].proposal.evidence.at(-1), {
+    code: "schoenfeld_2017_weekly_volume",
+    label: "Weekly sets and muscle growth (2017)",
+    source: "library",
+  });
+  const logged = events.find((event) => event.event === "onboarding_library");
+  assert(logged);
+  assertEquals(logged.fields.status, "found");
+  // The reservation covers the larger prompt.
+  const plain = harness();
+  const baseline = fakeFetch(() => claude(JSON.stringify(validPlan())));
+  await run("plan", plain, { plan: planRoute() }, baseline.fetch);
+  assert(
+    (h.reserved()[0].args.ceiling_usd as number) >
+      (plain.reserved()[0].args.ceiling_usd as number),
+  );
+});
+
+Deno.test("a citation of a source that was not shown is repaired by name, then accepted", async () => {
+  const h = harness();
+  const invented = planWith((plan) => {
+    plan.sources = ["made_up_2020_topic"];
+  });
+  const good = planWith((plan) => {
+    plan.sources = ["morton_2018_protein"];
+  });
+  const answers = [invented, good];
+  const { fetch, sent } = fakeFetch(() => claude(answers.shift()!));
+  await run("plan", h, { plan: planRoute() }, fetch, withLibrary(foundLibrary()));
+  assertEquals(sent.length, 2);
+  const repair = (sent[1].body as { messages: { content: { text: string }[] }[] })
+    .messages[0].content[1].text;
+  assert(repair.includes('broke the rule "source_not_retrieved" at $.sources[0]'));
+  assertEquals(training(h).origin, "ai");
+  assertEquals(h.persisted[0].proposal.evidence.at(-1)?.code, "morton_2018_protein");
+});
+
+Deno.test("a plan that prints an id or names a study that was not shown is refused", async () => {
+  for (
+    const text of [
+      "Per Helms 2014 this much protein is needed.",
+      "Backed by [invented_2020_topic] for this block.",
+    ]
+  ) {
+    const h = harness();
+    const named = planWith((plan) => {
+      plan.rationale = text;
+    });
+    const { fetch, sent } = fakeFetch(() => claude(named));
+    await run("plan", h, { plan: planRoute() }, fetch, withLibrary(foundLibrary()));
+    assertEquals(sent.length, 2, text);
+    assertEquals(training(h).origin, "rules", text);
+    assertEquals(training(h).fallback_reason, "source_not_retrieved", text);
+    // The rules plan cites nothing.
+    assertEquals(h.persisted[0].proposal.evidence.some((item) => item.source === "library"), false);
+  }
+});
+
+Deno.test("prose that names a shown source its sources list leaves out is repaired by name, then accepted", async () => {
+  for (
+    const prose of [
+      "Schoenfeld 2017 supports this weekly volume.",
+      "This volume follows [schoenfeld_2017_weekly_volume] closely.",
+    ]
+  ) {
+    const h = harness();
+    const unlisted = planWith((plan) => {
+      plan.rationale = prose;
+    });
+    const answers = [unlisted, JSON.stringify(validPlan())];
+    const { fetch, sent } = fakeFetch(() => claude(answers.shift()!));
+    await run("plan", h, { plan: planRoute() }, fetch, withLibrary(foundLibrary()));
+    assertEquals(sent.length, 2, prose);
+    const repair = (sent[1].body as { messages: { content: { text: string }[] }[] })
+      .messages[0].content[1].text;
+    assert(repair.includes('broke the rule "source_not_listed" at $'), prose);
+    assertEquals(training(h).origin, "ai", prose);
+    // The prose never adds a source: the repaired plan cites none.
+    assertEquals(h.persisted[0].proposal.evidence.some((item) => item.source === "library"), false);
+  }
+});
+
+Deno.test("prose that names a shown source is accepted when the plan lists it", async () => {
+  const h = harness();
+  const listed = planWith((plan) => {
+    plan.rationale = "Schoenfeld 2017 supports this weekly volume.";
+    plan.sources = ["schoenfeld_2017_weekly_volume"];
+  });
+  const { fetch, sent } = fakeFetch(() => claude(listed));
+  await run("plan", h, { plan: planRoute() }, fetch, withLibrary(foundLibrary()));
+  assertEquals(sent.length, 1);
+  assertEquals(training(h).origin, "ai");
+  assertEquals(h.persisted[0].proposal.evidence.at(-1)?.code, "schoenfeld_2017_weekly_volume");
+});
+
+Deno.test("prose that still names an unlisted source after the repair becomes the rules plan", async () => {
+  const h = harness();
+  const unlisted = planWith((plan) => {
+    plan.rationale = "Schoenfeld 2017 supports this weekly volume.";
+  });
+  const { fetch, sent } = fakeFetch(() => claude(unlisted));
+  await run("plan", h, { plan: planRoute() }, fetch, withLibrary(foundLibrary()));
+  assertEquals(sent.length, 2);
+  assertEquals(training(h).origin, "rules");
+  assertEquals(training(h).fallback_reason, "source_not_listed");
+  assertEquals(h.persisted[0].proposal.evidence.some((item) => item.source === "library"), false);
+});
+
+// Excerpts as the library shows them: the author text sits in the header of each.
+const authored = {
+  acsm_2026_resistance_prescription: {
+    label: "Resistance training prescription (2026)",
+    text:
+      "[source: acsm_2026_resistance_prescription] Position stand, 2026. Source: Currier et al. 2026, Resistance training prescription. Section: Volume.\nMore sets help.",
+  },
+  who_2020_physical_activity: {
+    label: "WHO guidelines on physical activity and sedentary behaviour (2020)",
+    text:
+      "[source: who_2020_physical_activity] Guideline, 2020. Source: Bull et al. 2020, WHO guidelines. Section: Adults.\nStrength work twice a week.",
+  },
+  acsm_2011_quantity_quality: {
+    label: "ACSM position stand: quantity and quality of exercise (2011)",
+    text:
+      "[source: acsm_2011_quantity_quality] Position stand, 2011. Source: Garber et al. 2011, Quantity and quality of exercise. Section: Resistance.\nTwo to three days.",
+  },
+  grgic_2018_frequency_strength: {
+    label: "Training frequency and strength (2018)",
+    text:
+      "[source: grgic_2018_frequency_strength] Meta-analysis, 2018. Source: Grgic et al. 2018, frequency. Section: Results.\nFrequency matters little.",
+  },
+};
+const libraryOf = (sources: Record<string, { label: string; text: string }>): PlanLibrary => ({
+  status: "found",
+  text: `${planLibraryHeading}\n\n${
+    Object.values(sources).map((source) => source.text).join("\n\n")
+  }`,
+  shown: sources,
+  trace: { status: "found", queries: 2, shown: Object.keys(sources) },
+});
+
+Deno.test("calorie numbers are not studies: a valid plan with kcal figures in its prose is accepted", async () => {
+  const h = harness();
+  const numbers = planWith((plan) => {
+    plan.rationale = "BMR 1980 kcal, TDEE (2010 kcal), Eat 2000 kcal and Target 1990 kcal a day.";
+  });
+  const { fetch, sent } = fakeFetch(() => claude(numbers));
+  await run("plan", h, { plan: planRoute() }, fetch, withLibrary(foundLibrary()));
+  assertEquals(sent.length, 1);
+  assertEquals(training(h).origin, "ai");
+});
+
+Deno.test("a study that was not shown is refused, and the repair quotes the phrase to change", async () => {
+  const h = harness();
+  const invented = planWith((plan) => {
+    plan.rationale = "Smith 2019 found this volume works.";
+  });
+  const answers = [invented, JSON.stringify(validPlan())];
+  const { fetch, sent } = fakeFetch(() => claude(answers.shift()!));
+  await run("plan", h, { plan: planRoute() }, fetch, withLibrary(foundLibrary()));
+  assertEquals(sent.length, 2);
+  const repair = (sent[1].body as { messages: { content: { text: string }[] }[] })
+    .messages[0].content[1].text;
+  assert(repair.includes('broke the rule "source_not_retrieved" at $.'));
+  assert(repair.includes('"Smith 2019"'));
+  assert(repair.includes("Delete the name"));
+  assertEquals(training(h).origin, "ai");
+});
+
+Deno.test("a listed source named the way its own excerpt names it is accepted; unlisted it is refused by name", async () => {
+  const cases: [string, string][] = [
+    ["Currier et al. 2026 support this volume.", "acsm_2026_resistance_prescription"],
+    ["Bull et al. 2020 and the WHO guidelines agree.", "who_2020_physical_activity"],
+    ["Garber 2011 recommends two to three days.", "acsm_2011_quantity_quality"],
+    ["Grgic et al. found frequency matters little.", "grgic_2018_frequency_strength"],
+    ["This follows [source: grgic_2018_frequency_strength].", "grgic_2018_frequency_strength"],
+    ["This follows grgic_2018_frequency_strength.", "grgic_2018_frequency_strength"],
+  ];
+  for (const [prose, id] of cases) {
+    const listed = harness();
+    const answer = planWith((plan) => {
+      plan.rationale = prose;
+      plan.sources = [id];
+    });
+    const first = fakeFetch(() => claude(answer));
+    await run("plan", listed, { plan: planRoute() }, first.fetch, withLibrary(libraryOf(authored)));
+    assertEquals(first.sent.length, 1, prose);
+    assertEquals(training(listed).origin, "ai", prose);
+    assertEquals(listed.persisted[0].proposal.evidence.at(-1)?.code, id, prose);
+
+    const unlisted = harness();
+    const bad = planWith((plan) => {
+      plan.rationale = prose;
+    });
+    const answers = [bad, JSON.stringify(validPlan())];
+    const second = fakeFetch(() => claude(answers.shift()!));
+    await run(
+      "plan",
+      unlisted,
+      { plan: planRoute() },
+      second.fetch,
+      withLibrary(libraryOf(authored)),
+    );
+    assertEquals(second.sent.length, 2, prose);
+    const repair = (second.sent[1].body as { messages: { content: { text: string }[] }[] })
+      .messages[0].content[1].text;
+    assert(repair.includes('broke the rule "source_not_listed" at $.'), prose);
+    assert(repair.includes(id), prose);
+  }
+});
+
+Deno.test("an author named without a year who was not shown is refused", async () => {
+  const h = harness();
+  const bad = planWith((plan) => {
+    plan.rationale = "Helms et al. found this protein range works.";
+  });
+  const { fetch, sent } = fakeFetch(() => claude(bad));
+  await run("plan", h, { plan: planRoute() }, fetch, withLibrary(libraryOf(authored)));
+  assertEquals(sent.length, 2);
+  assertEquals(training(h).fallback_reason, "source_not_retrieved");
+});
+
+Deno.test("no excerpt found: the prompt says to cite nothing and the plan is low confidence with a note", async () => {
+  const h = harness();
+  const { fetch, sent } = fakeFetch(() => claude(JSON.stringify(validPlan())));
+  await run("plan", h, { plan: planRoute() }, fetch, withLibrary(emptyLibrary("none")));
+  const { system, user } = bodyOf(sent[0]);
+  assert(system.includes(planLibraryNoMatchRule));
+  assert(!user.includes(planLibraryHeading));
+  assertEquals(training(h).origin, "ai");
+  assertEquals(h.persisted[0].proposal.confidence, "low");
+  assert(
+    (training(h).missing_information as string[]).some((line) =>
+      line.startsWith("No research source is cited for this plan")
+    ),
+  );
+});
+
+Deno.test("a library that cannot be searched leaves a usable plan that says so", async () => {
+  const h = harness();
+  const { fetch, sent } = fakeFetch(() => claude(JSON.stringify(validPlan())));
+  await run("plan", h, { plan: planRoute() }, fetch, withLibrary(emptyLibrary("unavailable")));
+  assertEquals(sent.length, 1);
+  assert(bodyOf(sent[0]).system.includes(planLibraryUnavailableRule));
+  assertEquals(training(h).origin, "ai");
+  assertEquals(h.persisted[0].proposal.confidence, "low");
+  assert(
+    (training(h).missing_information as string[]).some((line) =>
+      line.startsWith("The research library could not be searched")
+    ),
+  );
+  // A plan that cites a source anyway is refused: nothing was shown.
+  const cited = harness();
+  const answers = [
+    planWith((plan) => {
+      plan.sources = ["morton_2018_protein"];
+    }),
+    JSON.stringify(validPlan()),
+  ];
+  const second = fakeFetch(() => claude(answers.shift()!));
+  await run(
+    "plan",
+    cited,
+    { plan: planRoute() },
+    second.fetch,
+    withLibrary(emptyLibrary("unavailable")),
+  );
+  assertEquals(second.sent.length, 2);
+  assertEquals(training(cited).origin, "ai");
+});
+
+Deno.test("without library wiring the plan is asked for as before, with no excerpts", async () => {
+  const h = harness();
+  const { fetch, sent } = fakeFetch(() => claude(JSON.stringify(validPlan())));
+  await run("plan", h, { plan: planRoute() }, fetch);
+  const { system, user } = bodyOf(sent[0]);
+  assert(system.includes(planLibraryUnavailableRule));
+  assert(!user.includes(planLibraryHeading));
+  assertEquals(training(h).origin, "ai");
+  assertEquals(h.persisted[0].proposal.evidence.some((item) => item.source === "library"), false);
+});
+
+Deno.test("without a gateway route the library is never searched and the settings path is untouched", async () => {
+  const h = harness();
+  const queries: (readonly string[])[] = [];
+  const { fetch, sent } = fakeFetch(() => claude("{}"));
+  await run("plan", h, {}, fetch, withLibrary(foundLibrary(), queries));
+  assertEquals(queries.length, 0);
+  assertEquals(sent.length, 0);
+  assertEquals(training(h).origin, "rules");
+  assertEquals(h.persisted[0].proposal.evidence.some((item) => item.source === "library"), false);
+});
+
+Deno.test("a provider failure keeps the rules plan, which cites nothing and stays as it was", async () => {
+  const h = harness();
+  const { fetch } = fakeFetch(() => jsonResponse({}, 503));
+  await run("plan", h, { plan: planRoute() }, fetch, withLibrary(foundLibrary()));
+  assertEquals(training(h).origin, "rules");
+  assertEquals(h.persisted[0].proposal.evidence.some((item) => item.source === "library"), false);
+  assertEquals(h.persisted[0].proposal.confidence, "medium");
 });

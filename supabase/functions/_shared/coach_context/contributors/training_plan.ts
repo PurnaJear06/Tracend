@@ -896,7 +896,13 @@ export function createTrainingPlanContributor(
   };
 }
 
+/** The plan state for a user and coaching date (the service-role RPC every reader of it shares). */
+export const planStateFromService: StateSource = stateSourceFromRpc(
+  coachServiceRpc,
+  "get_coach_plan_state_v1",
+);
+
 export const trainingPlanContributor: CoachContextContributor = createTrainingPlanContributor(
-  stateSourceFromRpc(coachServiceRpc, "get_coach_plan_state_v1"),
+  planStateFromService,
   loadSignalsFromService,
 );

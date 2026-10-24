@@ -405,9 +405,11 @@ audit events without storing secrets or unnecessary raw prompt content.
 - Progress-photo interpretation remains separately consented and separately evaluated. Manual use
   and the approved plan survive every provider failure.
 - A research library (decision D3) holds open papers, guidelines and in-house summaries in our own
-  words. Paid course material is never stored. The tables and hybrid search exist; nothing is
-  ingested and no user sees it yet. **Planned (Phases 3–4, E2–E5):** ingestion, use inside Coach
-  chat, regional modules, and plan explanations that cite sources.
+  words. Paid course material is never stored. The tables and hybrid search exist; 114 sources
+  are ingested and shape every Coach reply (E3), regional modules choose the sources for the
+  athlete's country (E4), and plan explanations cite them: Coach chat when the athlete asks why the
+  plan is the way it is, and the onboarding plan, whose "Why this plan" lists the research behind it
+  (E5). A plan with no source to cite says so and is less certain.
 
 ## 6. Evidence-Gated Change Policy
 

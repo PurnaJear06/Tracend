@@ -8,7 +8,7 @@ import {
   reviewGoalPhase,
   summarizeGoalPhase,
 } from "../../training/goal_phase/index.ts";
-import { blockOf, type CoachContextContributor, type RenderedBlock } from "../host.ts";
+import { blockOf, type CoachContextContributor, type RenderedBlock, sharedRead } from "../host.ts";
 import { coachServiceRpc } from "../service_source.ts";
 
 /** Reads the goal phase inputs payload for a user (the service-role RPC). */
@@ -35,6 +35,9 @@ export function serviceRoleGoalPhaseSource(): GoalPhaseSource {
 
 export const goalPhaseContributorBudgetChars = 2_200;
 
+/** The key under which the turn's goal phase inputs are read once for every contributor that needs them. */
+export const goalPhaseInputsReadKey = "goal_phase_inputs";
+
 /** The block for one payload, or null without an active goal: its text, and the values in it. */
 export function renderGoalPhaseBlock(payload: unknown, localDate: string): RenderedBlock | null {
   const summary = summarizeGoalPhase(parseGoalPhaseInputs(payload, localDate));
@@ -53,11 +56,17 @@ export function createGoalPhaseContributor(source: GoalPhaseSource): CoachContex
     slot: "volatile",
     budgetChars: goalPhaseContributorBudgetChars,
     async render(input) {
-      return renderGoalPhaseBlock(await source(input.userId), input.localDate);
+      return renderGoalPhaseBlock(
+        await sharedRead(input, goalPhaseInputsReadKey, () => source(input.userId)),
+        input.localDate,
+      );
     },
   };
 }
 
+/** The goal phase inputs for a user (the service-role RPC every reader of them shares). */
+export const goalPhaseInputsFromService: GoalPhaseSource = serviceRoleGoalPhaseSource();
+
 export const goalPhaseContributor: CoachContextContributor = createGoalPhaseContributor(
-  serviceRoleGoalPhaseSource(),
+  goalPhaseInputsFromService,
 );

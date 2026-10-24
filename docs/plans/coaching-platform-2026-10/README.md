@@ -80,7 +80,7 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 4 | B5 | training-engine | Deloads, cardio dosing, joint rules, pain check, red flags | 25 | B3 | todo | |
 | 4 | C4 | workout-hr | Watch-workout prompt, load signals for the engine | 34 | C3 | review | |
 | 4 | E4 | research-library | Regional modules | 44 | E3 | review | #164 |
-| 4 | E5 | research-library | Plan explanations citing sources | — | E3, B3 | todo | |
+| 4 | E5 | research-library | Plan explanations citing sources | — | E3, B3 | review | #171 |
 
 | 5 | L1 | lifestyle | Lifestyle log: alcohol, smoking and vaping, cannabis and other substances (during beta) | 51 | beta start | todo | |
 | 5 | L2 | lifestyle | Hydration: water target and log, Apple Health water | 52 | beta start | todo | |
@@ -850,6 +850,7 @@ passed, stores `proposalId` on the assistant message (`coach_messages.proposal_i
   lifters the intermediate value stands. Details: training-engine handoff and ALGORITHMS "Advanced
   level".
 - 2026-10-23: E4 (regional modules). The athlete may store an optional country (`user_accounts.country_code`; `ZZ` is "another country") and `private.library_regions_for_account` prefers it over the locale and time-zone guess; no plan rule reads it. D5's four regions each have a nutrition and a body-measure source; NICE is deferred (its text could not be read).
+- 2026-10-24: E5 (plan explanations that cite sources). No migration. Coach chat: a question that asks why the plan is the way it is is searched with what the plan is made of (counts and enumerated values, never the athlete's words) and the library block carries a fixed note; the onboarding plan (`onboarding-plan`, gateway route; `onboarding-propose-plan` is the old mock and cites nothing) searches the library for the athlete, shows the excerpts, lets the model list the ids it relied on in `sources` (refused unless shown) and stores each as a `library` evidence item that the app lists under "Why this plan". A plan with no source to cite says so, and one whose search found nothing or failed is low confidence. The rules plan and the settings path use no library.
 - 2026-10-23 (owner): B4/B5 design approved. O2 to O13 as recommended (in-house points and bands;
   ACWR excluded; one tap with Undo and no confirm sheet; the adjustment is an overlay, not a plan
   version; one-week deloads; pain bands 1-3 watch, 4-6 modify, 7 or more refer; self-attested

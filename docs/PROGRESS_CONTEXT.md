@@ -64,7 +64,16 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   (`user_accounts.country_code`, `get_my_country_v1` and `set_my_country_v1`) that picks the regional
   sources instead of the locale and time-zone guess; no plan number reads it, nothing changes with it
   empty; needs the migration first, then an app reinstall for the row. NICE is not included (its text
-  could not be read). Handoff: [`research-library.md`](./handoff/research-library.md).
+  could not be read). E5 in review (branch `claude/e5-plan-explanations`, no migration): plan
+  explanations cite sources. Coach chat searches a "why is my plan like this?" question with what
+  the plan is made of added (counts and enumerated values) and tells Coach to explain from the plan's
+  own numbers first; the onboarding plan (`onboarding-plan`, gateway route) shows the model library
+  excerpts for the athlete's region, accepts the ids it lists in a new `sources` field only if they
+  were shown, and stores each as a `library` evidence item that the app lists under "Why this plan"
+  ("Research behind this plan"; needs a reinstall). A plan with no source to cite says so in "Not
+  known yet", and one whose search found nothing or failed is low confidence; the rules plan and the
+  settings path use no library. `onboarding-propose-plan` is the old mock and is unchanged. The CI
+  retrieval gate also scores 12 plan questions. Handoff: [`research-library.md`](./handoff/research-library.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.

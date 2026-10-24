@@ -15,6 +15,9 @@ import {
   resolveOnboardingModel,
 } from "../_shared/providers/onboarding_plan_provider.ts";
 import { screeningOutcomes } from "../_shared/training/screening/outcome.ts";
+import { libraryQueryEmbedder, librarySearchViaRpc } from "../_shared/library/live.ts";
+import { retrievePlanLibrary } from "../_shared/library/plan_library.ts";
+import { coachServiceRpc } from "../_shared/coach_context/service_source.ts";
 import { captureException } from "../_shared/sentry.ts";
 import {
   type GenerationClaim,
@@ -278,6 +281,12 @@ Deno.serve(async (request) => {
       mode,
       store: supabaseStore(serviceClient, auth.userId, budget),
       resolution: () => resolveOnboardingModel(),
+      library: (queries) =>
+        retrievePlanLibrary(
+          { embed: () => libraryQueryEmbedder, search: librarySearchViaRpc(coachServiceRpc) },
+          auth.userId,
+          queries,
+        ),
       routes: {
         plan: () => onboardingGatewayRoute("onboarding_plan"),
         questions: () => onboardingGatewayRoute("onboarding_questions"),
