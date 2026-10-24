@@ -201,6 +201,33 @@ void main() {
       expect(memory.remembered, ['t-old']);
     });
 
+    testWidgets('Continue last chat offers the remembered conversation, not '
+        'the newest one', (tester) async {
+      await _tall(tester);
+      final memory = _Memory('t-old');
+      final repository = _HistoryRepository(
+        threads: [
+          _thread('t-new', 'Meal ideas'),
+          _thread('t-old', 'Taking a 15 days break'),
+        ],
+        messages: {
+          't-new': [_user('n1', 'Give me meal ideas')],
+          't-old': [_user('o1', 'I am thinking of taking a break')],
+        },
+      );
+      await tester.pumpWidget(
+        _app(repository, memory, age: const Duration(days: 6)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Taking a 15 days break'), findsOneWidget);
+      await tester.tap(find.text('Continue last chat'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('I am thinking of taking a break'), findsOneWidget);
+      expect(find.text('Give me meal ideas'), findsNothing);
+    });
+
     testWidgets('a new conversation without earlier ones has no Continue row', (
       tester,
     ) async {

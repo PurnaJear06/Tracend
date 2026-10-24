@@ -136,6 +136,10 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
   /// for the visit: it counts as touched then, not at its last message.
   DateTime? _openedAt;
 
+  /// The conversation a fresh view replaced, offered as "Continue last chat".
+  /// Null falls back to the newest saved conversation.
+  String? _previousThreadId;
+
   /// Only the newest thread-list request may replace the list.
   int _threadsRequest = 0;
 
@@ -270,6 +274,7 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
       setState(() {
         _threads = threads;
         _threadId = threadId;
+        _previousThreadId = threadId == null ? last?.id : null;
         _threadRemembered = threads
             .where((thread) => thread.id == threadId)
             .every((thread) => thread.remember);
@@ -312,7 +317,7 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
     if (last == null || widget.now().difference(last) < coachReopenWindow) {
       return;
     }
-    _newThread();
+    _newThread(previous: _threadId);
   }
 
   Future<void> _openThread(String id) async {
@@ -353,9 +358,10 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _newThread() => setState(() {
+  void _newThread({String? previous}) => setState(() {
     _view++;
     _openedAt = null;
+    _previousThreadId = previous;
     _pinnedToEnd = false;
     _threadId = null;
     _rememberChat = true;
@@ -740,7 +746,7 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
             OutlinedButton.icon(
               onPressed: () {
                 Navigator.pop(sheetContext);
-                _newThread();
+                _newThread(previous: _threadId);
               },
               icon: const Icon(CupertinoIcons.square_pencil, size: 20),
               label: const Text('New conversation'),
@@ -889,7 +895,12 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
     final textTheme = Theme.of(context).textTheme;
     final failure = _turnFailure;
     // A new conversation offers the one before it.
-    final previous = _threadId == null ? _threads.firstOrNull : null;
+    final previous = _threadId == null
+        ? _threads
+                  .where((thread) => thread.id == _previousThreadId)
+                  .firstOrNull ??
+              _threads.firstOrNull
+        : null;
     return [
       if (_error != null) ...[
         _Notice(_error!),
