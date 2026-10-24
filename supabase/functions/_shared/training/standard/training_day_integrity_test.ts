@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 
-// The training-day-integrity migration replaces seven functions. Each must be its latest earlier
+// The training-day-integrity migration replaces eight functions. Each must be its latest earlier
 // definition plus the intended hunks and nothing else, so everything else it does is what the earlier
 // migration (and its pgTAP tests) already proved.
 const read = (name: string) =>
@@ -42,15 +42,23 @@ async function pinned(
   assertEquals(undo(redefined, hunks), earlier.trim());
 }
 
-Deno.test("start_workout is the pain-check definition plus the future-day refusal and the workout-identity check only", async () => {
+Deno.test("start_workout is the pain-check definition plus the future-day refusal, the workout-identity checks and the joint rules for another day's workout only", async () => {
   const hunks: Hunks = [
     [
-      "  if auth.uid() is null then raise exception 'authentication required' using errcode='42501'; end if;\n  -- The same lock",
-      "  if auth.uid() is null then raise exception 'authentication required' using errcode='42501'; end if;\n  -- A workout is started on a day that has begun for the athlete, never on one still ahead.\n  if p_local_date > private.local_date_for(auth.uid()) then\n    raise exception 'cannot start a workout on a future day' using errcode='22023';\n  end if;\n  -- The same lock",
+      "  where user_id=auth.uid() and idempotency_key=p_idempotency_key;\n  if result_id is not null then return result_id; end if;\n",
+      "  where user_id=auth.uid() and idempotency_key=p_idempotency_key;\n  if result_id is not null then return result_id; end if;\n  -- A workout is started on a day that has begun for the athlete, never on one still ahead (a repeat of a\n  -- start that was answered above is not a new start).\n  if p_local_date > private.local_date_for(auth.uid()) then\n    raise exception 'cannot start a workout on a future day' using errcode='22023';\n  end if;\n",
+    ],
+    [
+      "  where user_id=auth.uid() and planned_workout_id=p_planned_workout_id and state='in_progress'\n",
+      "  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))) and state='in_progress'\n",
     ],
     [
       "  if exists (\n    select 1 from public.workout_sessions\n    where user_id=auth.uid() and planned_workout_id=p_planned_workout_id\n      and local_date=p_local_date and state='completed'\n  ) then",
-      "  -- The same workout under any plan version: a Coach change, a block or a deload copies the workouts under\n  -- new ids, and a day already logged stays logged.\n  if exists (\n    select 1 from public.workout_sessions\n    where user_id=auth.uid()\n      and planned_workout_id = any(private.workout_identity_ids(auth.uid(), p_planned_workout_id))\n      and local_date=p_local_date and state='completed'\n  ) then",
+      "  -- The same workout under any plan version: a Coach change, a block or a deload copies the workouts under\n  -- new ids, and a day already logged stays logged.\n  if exists (\n    select 1 from public.workout_sessions\n    where user_id=auth.uid()\n      and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id)))\n      and local_date=p_local_date and state='completed'\n  ) then",
+    ],
+    [
+      "      adjusted := false;\n    end if;\n  end if;\n",
+      "      adjusted := false;\n    end if;\n    -- A workout done today that is not the day's scheduled one has no card and no stored answer. The joint\n    -- rules still take out or swap what a held or limited joint asks, as they would on the card; readiness\n    -- answers belong to the scheduled workout.\n    if not adjusted\n       and (private.planned_workout_for_date(auth.uid(), p_local_date) ->> 'id') is distinct from p_planned_workout_id::text then\n      adjustment.changes := coalesce((select jsonb_agg(c) from jsonb_array_elements(\n        private.joint_changes(auth.uid(), p_planned_workout_id,\n          private.joint_states(auth.uid(), p_local_date), '[]'::jsonb)) c\n        where c ->> 'joint_action' in ('drop', 'swap')), '[]'::jsonb);\n      adjusted := jsonb_array_length(adjustment.changes) > 0;\n    end if;\n  end if;\n",
     ],
   ];
   await pinned(
@@ -66,7 +74,7 @@ Deno.test("get_my_workout_session is the stale-close definition plus the earlier
   const hunks: Hunks = [
     [
       "  where user_id=auth.uid() and planned_workout_id=p_planned_workout_id\n    and state<>'abandoned'\n    and (state='in_progress' or local_date=p_local_date)\n",
-      "  where user_id=auth.uid() and state<>'abandoned'\n    and (\n      (planned_workout_id=p_planned_workout_id and (state='in_progress' or local_date=p_local_date))\n      -- The day's finished session of the same workout under an earlier plan version.\n      or (state='completed' and local_date=p_local_date\n        and planned_workout_id = any(private.workout_identity_ids(auth.uid(), p_planned_workout_id)))\n    )\n",
+      "  -- The same workout under any plan version: a session in progress or finished that day under an earlier\n  -- version is the one this workout's day holds.\n  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id)))\n    and state<>'abandoned'\n    and (state='in_progress' or local_date=p_local_date)\n",
     ],
   ];
   await pinned(
@@ -82,7 +90,7 @@ Deno.test("get_healthkit_completion_candidate is the per-date definition plus th
   const hunks: Hunks = [
     [
       "        and s.planned_workout_id = w.id\n",
-      "        and s.planned_workout_id = any(private.workout_identity_ids(w.user_id, w.id))\n",
+      "        and s.planned_workout_id = any((select private.workout_identity_ids(w.user_id, w.id)))\n",
     ],
   ];
   await pinned(
@@ -98,7 +106,7 @@ Deno.test("healthkit_auto_complete_workout is the train-redesign definition plus
   const hunks: Hunks = [
     [
       "      and planned_workout_id = p_planned_workout_id\n      and local_date = p_local_date\n      and state = 'completed'\n",
-      "      and planned_workout_id = any(private.workout_identity_ids(v_user_id, p_planned_workout_id))\n      and local_date = p_local_date\n      and state = 'completed'\n",
+      "      and planned_workout_id = any((select private.workout_identity_ids(v_user_id, p_planned_workout_id)))\n      and local_date = p_local_date\n      and state = 'completed'\n",
     ],
   ];
   await pinned(
@@ -117,14 +125,38 @@ Deno.test("day_adjustment_compute is the pain-check definition plus the workout-
       "create or replace function private.day_adjustment_compute(",
     ],
     [
+      "        and s.planned_workout_id = workout_id and s.state = 'in_progress') then 'session_started'",
+      "        and s.planned_workout_id = any((select private.workout_identity_ids(p_user, workout_id))) and s.state = 'in_progress') then 'session_started'",
+    ],
+    [
       "        and s.planned_workout_id = workout_id and s.local_date = p_date\n        and s.state = 'completed') then 'session_done'",
-      "        and s.planned_workout_id = any(private.workout_identity_ids(p_user, workout_id))\n        and s.local_date = p_date and s.state = 'completed') then 'session_done'",
+      "        and s.planned_workout_id = any((select private.workout_identity_ids(p_user, workout_id)))\n        and s.local_date = p_date and s.state = 'completed') then 'session_done'",
     ],
   ];
   await pinned(
     "20261024060025_pain_checks.sql",
     "create function private.day_adjustment_compute(p_user uuid, p_date date, p_joint boolean default true)",
     "create or replace function private.day_adjustment_compute(p_user uuid, p_date date, p_joint boolean default true)",
+    "end $$;",
+    hunks,
+  );
+});
+
+Deno.test("coach_insert_workouts is the Coach-proposals definition plus the weekdays for a structure that has none only", async () => {
+  const hunks: Hunks = [
+    [
+      "create function private.coach_insert_workouts(",
+      "create or replace function private.coach_insert_workouts(",
+    ],
+    [
+      "    end loop;\n  end loop;\nend $$;",
+      "    end loop;\n  end loop;\n  -- A structure with no weekday at all gets the athlete's training days (or the spread of the week).\n  perform private.fill_workout_weekdays(p_version);\nend $$;",
+    ],
+  ];
+  await pinned(
+    "20261018120018_coach_proposals.sql",
+    "create function private.coach_insert_workouts(",
+    "create or replace function private.coach_insert_workouts(",
     "end $$;",
     hunks,
   );
@@ -138,7 +170,7 @@ Deno.test("unfinished_workouts is the unfinished-workouts definition plus the wo
     ],
     [
       "        and c.planned_workout_id = s.planned_workout_id and c.local_date = s.local_date);",
-      "        and c.planned_workout_id = any(private.workout_identity_ids(s.user_id, s.planned_workout_id))\n        and c.local_date = s.local_date);",
+      "        and c.planned_workout_id = any((select private.workout_identity_ids(s.user_id, s.planned_workout_id)))\n        and c.local_date = s.local_date);",
     ],
   ];
   await pinned(
@@ -213,17 +245,47 @@ Deno.test("a workout's identity is its name and order, across the athlete's own 
   assert(!helper.includes("security definer"), "called from definer functions only");
 });
 
-Deno.test("the future-day refusal comes right after authentication, with the day-adjustment errcodes' neighbours", () => {
+Deno.test("the future-day refusal comes after the idempotent replay and before anything is closed or resumed", () => {
   const start = between(
     integrity,
     "create or replace function public.start_workout(",
     "end $$;",
   );
   const auth = start.indexOf("authentication required");
-  const future = start.indexOf("p_local_date > private.local_date_for(auth.uid())");
   const lock = start.indexOf("pg_advisory_xact_lock");
-  assert(auth > 0 && future > auth && lock > future);
+  const replay = start.indexOf("return result_id; end if;");
+  const future = start.indexOf("p_local_date > private.local_date_for(auth.uid())");
+  const stale = start.indexOf("abandon_stale_workouts");
+  assert(auth > 0 && lock > auth && replay > lock && future > replay && stale > future);
   assert(start.includes("'cannot start a workout on a future day' using errcode='22023'"));
+});
+
+Deno.test("one weekday rule: the default days, the fill and the index", () => {
+  const defaults = between(
+    integrity,
+    "create function private.default_workout_weekdays(",
+    "from public, anon, authenticated;",
+  );
+  assert(defaults.includes("when cardinality(own.days) = p_count then own.days"));
+  assert(defaults.includes("array[1, 3, 5]::smallint[]"));
+  const fill = between(
+    integrity,
+    "create function private.fill_workout_weekdays(",
+    "from public, anon, authenticated;",
+  );
+  assert(
+    fill.includes("not exists (select 1 from public.planned_workouts y"),
+    "only a version with none",
+  );
+  assert(
+    integrity.includes(
+      "create index planned_workouts_user_order on public.planned_workouts(user_id, workout_order);",
+    ),
+  );
+  assert(
+    !integrity.includes("any(private.workout_identity_ids("),
+    "the identity is computed once per statement",
+  );
 });
 
 Deno.test("the hub never reads the database's current_date", () => {

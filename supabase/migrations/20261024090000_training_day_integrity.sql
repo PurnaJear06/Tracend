@@ -9,17 +9,26 @@
 --    a unique index cannot span planned_workouts, and production already holds one same-day repeat.
 --      get_my_training_hub 1.9   builds `completed` from every session by date, not from the active
 --                                version's workouts; recent_sessions gain current_workout_id.
---      start_workout             the already-completed check covers the workout's identity.
---      get_my_workout_session    finds the day's finished session of the same workout under an earlier version.
+--      start_workout             the in-progress lookup and the already-completed check cover the identity.
+--      get_my_workout_session    finds the day's session of the same workout under an earlier version.
 --      get_healthkit_completion_candidate, healthkit_auto_complete_workout, day_adjustment_compute and
 --                                unfinished_workouts  the same identity in their duplicate checks.
--- 2. start_workout refuses a day that has not begun for the athlete (22023).
+-- 2. start_workout refuses a day that has not begun for the athlete (22023). A workout done today that is
+--    not the day's scheduled one takes out or swaps what a held or limited joint asks.
 -- 3. get_my_training_hub reads the athlete's local date everywhere (it mixed in the database's current_date).
+-- 4. One weekday rule on the server. A plan version whose workouts have no weekday at all (a Coach proposal
+--    may omit them) read as rest days to every server reader of preferred_weekday: no readiness card, no
+--    joint adjustment, no Apple Health completion. private.fill_workout_weekdays gives such a version its
+--    weekdays, in plan order: the athlete's profile training days when they are as many as the workouts,
+--    else a spread of the week. coach_insert_workouts calls it, and this migration fills the versions that
+--    already exist (none in production on 2026-10-24).
 --
 -- Every function below is its latest earlier definition plus the hunks pinned in
 -- supabase/functions/_shared/training/standard/training_day_integrity_test.ts.
 
 -- 1. A workout's identity across plan versions -----------------------------------------------------------
+
+create index planned_workouts_user_order on public.planned_workouts(user_id, workout_order);
 
 create function private.workout_identity_ids(p_user uuid, p_workout uuid)
 returns uuid[] language sql stable set search_path = '' as $$
@@ -33,8 +42,81 @@ returns uuid[] language sql stable set search_path = '' as $$
 $$;
 revoke all on function private.workout_identity_ids(uuid, uuid) from public, anon, authenticated;
 
--- 2. Starting the workout ---------------------------------------------------------------------------------
--- The definition of 20261024060025_pain_checks.sql plus the future-day refusal and the identity check.
+-- 2. Weekdays for a plan version that has none ---------------------------------------------------------
+
+-- The training days for p_count workouts: the profile's own days when they are as many as the workouts,
+-- else a spread with rest between them (two: Monday, Thursday; three: Monday, Wednesday, Friday; four:
+-- Monday, Tuesday, Thursday, Friday; one, or five or more: from Monday on).
+create function private.default_workout_weekdays(p_user uuid, p_count integer)
+returns smallint[] language sql stable set search_path = '' as $$
+  select case
+    when cardinality(own.days) = p_count then own.days
+    when p_count = 2 then array[1, 4]::smallint[]
+    when p_count = 3 then array[1, 3, 5]::smallint[]
+    when p_count = 4 then array[1, 2, 4, 5]::smallint[]
+    else array(select g::smallint from generate_series(1, least(greatest(p_count, 1), 7)) g order by g)
+  end
+  from (select coalesce((select array(select distinct d from unnest(p.training_days) d order by d)
+    from public.user_profiles p where p.user_id = p_user), '{}'::smallint[]) as days) own;
+$$;
+revoke all on function private.default_workout_weekdays(uuid, integer) from public, anon, authenticated;
+
+-- Gives the workouts of a plan version their weekdays, in plan order, when none of them has one.
+create function private.fill_workout_weekdays(p_version uuid)
+returns void language sql set search_path = '' as $$
+  update public.planned_workouts w
+  set preferred_weekday = (private.default_workout_weekdays(r.user_id, r.n))[r.pos]
+  from (select x.id, x.user_id, count(*) over () as n, row_number() over (order by x.workout_order) as pos
+    from public.planned_workouts x where x.plan_version_id = p_version) r
+  where w.id = r.id
+    and not exists (select 1 from public.planned_workouts y
+      where y.plan_version_id = p_version and y.preferred_weekday is not null);
+$$;
+revoke all on function private.fill_workout_weekdays(uuid) from public, anon, authenticated;
+
+select private.fill_workout_weekdays(v.plan_version_id)
+from (select distinct plan_version_id from public.planned_workouts where preferred_weekday is null) v;
+
+-- The definition of 20261018120018_coach_proposals.sql plus the weekdays for a structure that has none.
+
+create or replace function private.coach_insert_workouts(
+  p_user uuid, p_version uuid, p_structure jsonb)
+returns void language plpgsql set search_path = '' as $$
+declare
+  workout jsonb;
+  exercise jsonb;
+  new_workout_id uuid;
+begin
+  for workout in select value from jsonb_array_elements(p_structure) loop
+    insert into public.planned_workouts(
+      user_id, plan_version_id, workout_order, name, objective, preferred_weekday,
+      estimated_minutes, warm_up_guidance, cool_down_guidance
+    ) values (
+      p_user, p_version, (workout ->> 'workout_order')::smallint, workout ->> 'name',
+      workout ->> 'objective', (workout ->> 'preferred_weekday')::smallint,
+      (workout ->> 'estimated_minutes')::smallint, workout ->> 'warm_up_guidance',
+      workout ->> 'cool_down_guidance'
+    ) returning id into new_workout_id;
+    for exercise in select value from jsonb_array_elements(workout -> 'exercises') loop
+      insert into public.planned_exercises(
+        user_id, planned_workout_id, exercise_order, display_name_snapshot, set_count,
+        rep_min, rep_max, target_rpe, rest_seconds, notes, exercise_slug, target_load_kg
+      ) values (
+        p_user, new_workout_id, (exercise ->> 'exercise_order')::smallint, exercise ->> 'name',
+        (exercise ->> 'sets')::smallint, (exercise ->> 'rep_min')::smallint,
+        (exercise ->> 'rep_max')::smallint, (exercise ->> 'target_rpe')::numeric,
+        (exercise ->> 'rest_seconds')::smallint, coalesce(exercise ->> 'notes', ''),
+        exercise ->> 'slug', (exercise ->> 'start_load_kg')::numeric
+      );
+    end loop;
+  end loop;
+  -- A structure with no weekday at all gets the athlete's training days (or the spread of the week).
+  perform private.fill_workout_weekdays(p_version);
+end $$;
+
+-- 3. Starting the workout ---------------------------------------------------------------------------------
+-- The definition of 20261024060025_pain_checks.sql plus the future-day refusal, the identity checks and the
+-- joint rules for a workout done today that is not the day's own.
 
 create or replace function public.start_workout(
   p_planned_workout_id uuid,
@@ -48,10 +130,6 @@ declare result_id uuid; version_id uuid; exercise record; performance_id uuid; n
   entry jsonb;
 begin
   if auth.uid() is null then raise exception 'authentication required' using errcode='42501'; end if;
-  -- A workout is started on a day that has begun for the athlete, never on one still ahead.
-  if p_local_date > private.local_date_for(auth.uid()) then
-    raise exception 'cannot start a workout on a future day' using errcode='22023';
-  end if;
   -- The same lock respond_to_day_adjustment_v1 takes: an answer and a start never interleave.
   perform pg_advisory_xact_lock(hashtextextended(
     'day_adjustment:' || auth.uid()::text || coalesce(p_local_date::text, ''), 0));
@@ -64,11 +142,16 @@ begin
   select id into result_id from public.workout_sessions
   where user_id=auth.uid() and idempotency_key=p_idempotency_key;
   if result_id is not null then return result_id; end if;
+  -- A workout is started on a day that has begun for the athlete, never on one still ahead (a repeat of a
+  -- start that was answered above is not a new start).
+  if p_local_date > private.local_date_for(auth.uid()) then
+    raise exception 'cannot start a workout on a future day' using errcode='22023';
+  end if;
 
   -- A session left open from an earlier day is closed first, so it is never found as today's.
   perform private.abandon_stale_workouts(auth.uid());
   select id into result_id from public.workout_sessions
-  where user_id=auth.uid() and planned_workout_id=p_planned_workout_id and state='in_progress'
+  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))) and state='in_progress'
   order by started_at desc limit 1;
   if result_id is not null then return result_id; end if;
 
@@ -77,7 +160,7 @@ begin
   if exists (
     select 1 from public.workout_sessions
     where user_id=auth.uid()
-      and planned_workout_id = any(private.workout_identity_ids(auth.uid(), p_planned_workout_id))
+      and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id)))
       and local_date=p_local_date and state='completed'
   ) then
     raise exception 'workout already completed for this coaching day' using errcode='55000';
@@ -99,6 +182,17 @@ begin
          private.joint_changes(auth.uid(), p_planned_workout_id,
            private.joint_states(auth.uid(), p_local_date), '[]'::jsonb)) then
       adjusted := false;
+    end if;
+    -- A workout done today that is not the day's scheduled one has no card and no stored answer. The joint
+    -- rules still take out or swap what a held or limited joint asks, as they would on the card; readiness
+    -- answers belong to the scheduled workout.
+    if not adjusted
+       and (private.planned_workout_for_date(auth.uid(), p_local_date) ->> 'id') is distinct from p_planned_workout_id::text then
+      adjustment.changes := coalesce((select jsonb_agg(c) from jsonb_array_elements(
+        private.joint_changes(auth.uid(), p_planned_workout_id,
+          private.joint_states(auth.uid(), p_local_date), '[]'::jsonb)) c
+        where c ->> 'joint_action' in ('drop', 'swap')), '[]'::jsonb);
+      adjusted := jsonb_array_length(adjustment.changes) > 0;
     end if;
   end if;
 
@@ -149,8 +243,8 @@ end $$;
 revoke all on function public.start_workout(uuid, date, text, uuid) from public, anon, authenticated;
 grant execute on function public.start_workout(uuid, date, text, uuid) to authenticated;
 
--- 3. Reading a day's session ------------------------------------------------------------------------------
--- The definition of 20261023150021_close_stale_workouts.sql plus the earlier-version completed session.
+-- 4. Reading a day's session ------------------------------------------------------------------------------
+-- The definition of 20261023150021_close_stale_workouts.sql plus the identity of the workout.
 
 create or replace function public.get_my_workout_session(
   p_planned_workout_id uuid,
@@ -162,13 +256,11 @@ begin
   if auth.uid() is null then raise exception 'authentication required' using errcode='42501'; end if;
   perform private.abandon_stale_workouts(auth.uid());
   select * into target from public.workout_sessions
-  where user_id=auth.uid() and state<>'abandoned'
-    and (
-      (planned_workout_id=p_planned_workout_id and (state='in_progress' or local_date=p_local_date))
-      -- The day's finished session of the same workout under an earlier plan version.
-      or (state='completed' and local_date=p_local_date
-        and planned_workout_id = any(private.workout_identity_ids(auth.uid(), p_planned_workout_id)))
-    )
+  -- The same workout under any plan version: a session in progress or finished that day under an earlier
+  -- version is the one this workout's day holds.
+  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id)))
+    and state<>'abandoned'
+    and (state='in_progress' or local_date=p_local_date)
   order by case state when 'in_progress' then 0 else 1 end, started_at desc
   limit 1;
   if not found then return null; end if;
@@ -204,7 +296,7 @@ end $$;
 revoke all on function public.get_my_workout_session(uuid, date) from public, anon, authenticated;
 grant execute on function public.get_my_workout_session(uuid, date) to authenticated;
 
--- 4. HealthKit completion -----------------------------------------------------------------------------------
+-- 5. HealthKit completion -----------------------------------------------------------------------------------
 -- The definitions of 20260718110000_healthkit_candidate_per_date.sql and 20261003100000_train_redesign_data.sql
 -- with the identity check in place of the exact workout id.
 
@@ -239,7 +331,7 @@ as $$
     and not exists (
       select 1 from public.workout_sessions s
       where s.user_id = w.user_id
-        and s.planned_workout_id = any(private.workout_identity_ids(w.user_id, w.id))
+        and s.planned_workout_id = any((select private.workout_identity_ids(w.user_id, w.id)))
         and s.local_date = p_local_date
         and s.state = 'completed'
     )
@@ -284,7 +376,7 @@ begin
   if exists (
     select 1 from public.workout_sessions
     where user_id = v_user_id
-      and planned_workout_id = any(private.workout_identity_ids(v_user_id, p_planned_workout_id))
+      and planned_workout_id = any((select private.workout_identity_ids(v_user_id, p_planned_workout_id)))
       and local_date = p_local_date
       and state = 'completed'
   ) then
@@ -346,9 +438,9 @@ $$;
 revoke all on function public.healthkit_auto_complete_workout(uuid, date) from public, anon;
 grant execute on function public.healthkit_auto_complete_workout(uuid, date) to authenticated;
 
--- 5. The day's readiness and the unfinished list ---------------------------------------------------------------
+-- 6. The day's readiness and the unfinished list ---------------------------------------------------------------
 -- 20261024060025_pain_checks.sql (day_adjustment_compute) and 20261024050011_unfinished_workouts.sql
--- (unfinished_workouts) with the identity check for a day already done.
+-- (unfinished_workouts) with the identity check for a day started or done.
 
 create or replace function private.day_adjustment_compute(p_user uuid, p_date date, p_joint boolean default true)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
@@ -416,9 +508,9 @@ begin
     when version_id is null then 'no_plan'
     when workout_id is null then 'rest_day'
     when exists (select 1 from public.workout_sessions s where s.user_id = p_user
-        and s.planned_workout_id = workout_id and s.state = 'in_progress') then 'session_started'
+        and s.planned_workout_id = any((select private.workout_identity_ids(p_user, workout_id))) and s.state = 'in_progress') then 'session_started'
     when exists (select 1 from public.workout_sessions s where s.user_id = p_user
-        and s.planned_workout_id = any(private.workout_identity_ids(p_user, workout_id))
+        and s.planned_workout_id = any((select private.workout_identity_ids(p_user, workout_id)))
         and s.local_date = p_date and s.state = 'completed') then 'session_done'
     when version_block = 'next_session' and version_ends = p_date then 'coach_adjusted'
   end;
@@ -635,11 +727,11 @@ returns table (
     and not exists (
       select 1 from public.workout_sessions c
       where c.user_id = s.user_id and c.state = 'completed'
-        and c.planned_workout_id = any(private.workout_identity_ids(s.user_id, s.planned_workout_id))
+        and c.planned_workout_id = any((select private.workout_identity_ids(s.user_id, s.planned_workout_id)))
         and c.local_date = s.local_date);
 $$;
 
--- 6. Training hub 1.9 -----------------------------------------------------------------------------------------
+-- 7. Training hub 1.9 -----------------------------------------------------------------------------------------
 -- The 1.8 definition of 20261023140024_day_adjustments.sql plus the hunks above; every 1.8 key is still there.
 
 create or replace function public.get_my_training_hub(period_days integer default 28)
