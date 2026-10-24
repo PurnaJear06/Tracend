@@ -122,7 +122,20 @@ export type PlanState = Readonly<{
     name: string;
     exercises: readonly DayExercise[];
   }>[];
+  /**
+   * Workouts the athlete logged sets in and left unfinished that they have not yet saved or
+   * discarded (get_coach_plan_state_v1 1.3), newest seven days. Empty from an older payload. They
+   * trained: they are neither done nor missed.
+   */
+  unfinished: readonly UnfinishedWorkout[];
   targets: readonly ProgressionTarget[];
+}>;
+
+export type UnfinishedWorkout = Readonly<{
+  id: string;
+  localDate: string;
+  name: string;
+  loggedSets: number;
 }>;
 
 /** The sessions in a plan state's `sessions` or `after_block.sessions` list. */
@@ -193,6 +206,12 @@ export function parsePlanState(payload: unknown): PlanState | null {
         sets: num(exercise.sets) ?? 0,
       })),
     })),
+    unfinished: list(body.unfinished).map((row): UnfinishedWorkout => ({
+      id: str(row.planned_workout_id),
+      localDate: str(row.local_date),
+      name: str(row.name),
+      loggedSets: num(row.logged_sets) ?? 0,
+    })).filter((row) => row.localDate !== "" && row.loggedSets > 0),
     targets: parseProgressionSummary(body.progression),
   };
 }
@@ -293,6 +312,27 @@ export function matchFinished(state: PlanState): ReadonlyMap<string, FinishedWor
 /** The date a session of the plan in force this week was finished, or null (`matchFinished`). */
 export function finishedOn(state: PlanState, session: PlanSession): string | null {
   return matchFinished(state).get(session.id)?.localDate ?? null;
+}
+
+/**
+ * The workout left unfinished this ISO week that a session of the plan in force stands for: the
+ * one with its id, else, when its plan version is gone, the one with its name. One from an earlier
+ * week is another day's workout and never stands for this week's session.
+ */
+export function unfinishedFor(
+  state: PlanState,
+  session: PlanSession,
+): UnfinishedWorkout | undefined {
+  const monday = addDays(state.localDate, 1 - state.weekday);
+  const thisWeek = state.unfinished.filter((row) => row.localDate >= monday);
+  const known = new Set(
+    [...state.sessions, ...(state.afterBlock?.sessions ?? [])].map((item) => item.id),
+  );
+  return thisWeek.find((row) => row.id === session.id) ??
+    thisWeek.find((row) =>
+      row.name !== "" && !known.has(row.id) &&
+      row.name.toLowerCase() === session.name.toLowerCase()
+    );
 }
 
 /**
@@ -404,8 +444,11 @@ export function pickFocusSession(state: PlanState): FocusSession {
   const unfinished = (session: PlanSession) => finishedOn(state, session) === null;
   // Only a session in force today can be undone: the block's own sessions lapse after its last day.
   const inForceToday = new Set(poolOn(state, state.localDate).map((session) => session.id));
+  // A session the athlete logged sets in and left unfinished is neither undone nor made up: it is
+  // theirs to save or discard, and the plan block says so.
   const undone = dated.filter((session) =>
-    session.weekday! < state.weekday && unfinished(session) && inForceToday.has(session.id)
+    session.weekday! < state.weekday && unfinished(session) && inForceToday.has(session.id) &&
+    unfinishedFor(state, session) === undefined
   );
   const base = {
     doneToday: slotDone,
@@ -501,6 +544,11 @@ function homeText(exercise: PlanExercise, state: PlanState): string {
   return bits.length ? `Home: ${bits.join("; ")}.` : "Home: no catalog alternative.";
 }
 
+const unfinishedText = (row: UnfinishedWorkout) =>
+  `${record(row.name || "a session")} on ${record(row.localDate)} (${record(row.loggedSets)} ${
+    row.loggedSets === 1 ? "set" : "sets"
+  } logged)`;
+
 function compactSession(session: PlanSession, state: PlanState, doneOn: string | null): string {
   const exercises = session.exercises.map((exercise) => {
     const home = homeAlternativesFor(exercise.slug, state.experience, state.avoid);
@@ -509,8 +557,15 @@ function compactSession(session: PlanSession, state: PlanState, doneOn: string |
       home.already ? " (home-ready)" : options.length ? ` (home: ${options.join(" / ")})` : ""
     }`;
   });
+  const left = doneOn === null ? unfinishedFor(state, session) : undefined;
   return `- ${dayName(session.weekday)}, ${record(session.name)}: ${exercises.join("; ")}${
     doneOn === null ? "" : ` [done ${record(doneOn)}]`
+  }${
+    left === undefined
+      ? ""
+      : ` [logged ${record(left.loggedSets)} ${left.loggedSets === 1 ? "set" : "sets"} on ${
+        record(left.localDate)
+      }, not finished]`
   }`;
 }
 
@@ -649,6 +704,14 @@ function trainingPlanMarked(
       ? `Finished this week (Monday to today): ${done.join(", ")}.`
       : "Finished this week (Monday to today): no session logged.",
   );
+  if (state.unfinished.length > 0) {
+    lines.push(
+      "Logged but not finished (the athlete has not saved or discarded them yet): " +
+        `${state.unfinished.map(unfinishedText).join(", ")}. Each was trained: say its sets were ` +
+        "logged but the workout was not finished, never that it was not done, skipped or " +
+        "missed; the athlete can save or discard it on Today.",
+    );
+  }
   if (focus.doneToday) {
     lines.push(
       focus.doneOn === state.localDate

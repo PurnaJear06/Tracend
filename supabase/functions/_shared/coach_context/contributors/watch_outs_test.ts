@@ -223,6 +223,22 @@ Deno.test("behind plan: sessions of days already past that are undone, with what
   assertStringIncludes(linesOf({ plan: none })[0], "none finished since Monday");
 });
 
+Deno.test("behind plan: a session logged but not finished is not called undone", () => {
+  const unfinished = [{
+    planned_workout_id: "w-legs-a",
+    local_date: "2026-10-13",
+    name: "Legs A",
+    logged_sets: 9,
+  }];
+  const logged = parsePlanState(splitPlanPayload(3, ["w-chest-a"], { unfinished }))!;
+  assertEquals(linesOf({ plan: logged }), []);
+  // Another session of the same week left undone is still behind plan.
+  const other = parsePlanState(splitPlanPayload(3, [], { unfinished }))!;
+  const line = linesOf({ plan: other })[0];
+  assertStringIncludes(line, "Chest priority and side delts (Monday) not done");
+  assert(!line.includes("Legs A"));
+});
+
 // The plan laid over the last weeks, as the schedule lookup returns it.
 const scheduleBody = (days: Record<string, unknown>[], today = wednesday) => ({
   schema_version: "1.1",

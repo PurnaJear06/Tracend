@@ -10,6 +10,7 @@ import 'package:shared_preferences_platform_interface/shared_preferences_async_p
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/features/train/exercise_history.dart';
+import 'package:tracend/features/train/unfinished_workout.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 
 const _url = 'https://tracend-test.supabase.co';
@@ -32,7 +33,10 @@ class _Server {
         throw http.ClientException('unexpected $path');
       }
       final name = path.substring('/rest/v1/rpc/'.length);
-      final params = Map<String, dynamic>.from(jsonDecode(request.body) as Map);
+      final body = request.body.isEmpty ? null : jsonDecode(request.body);
+      final params = body is Map
+          ? Map<String, dynamic>.from(body)
+          : <String, dynamic>{};
       calls.add((name, params));
       final answer = answers[name];
       if (answer == null) throw http.ClientException('offline');
@@ -365,6 +369,165 @@ void main() {
       expect(discard.queued, isFalse);
       expect(server.calls, isEmpty);
       expect(await repository.loadDraft(_workoutId), isNull);
+    });
+  });
+
+  group('unfinished workout', () {
+    final offered = UnfinishedWorkout(
+      sessionId: _sessionId,
+      plannedWorkoutId: _workoutId,
+      name: 'Legs B',
+      localDate: DateTime(2026, 10, 23),
+      loggedSets: 23,
+      totalSets: 25,
+    );
+
+    Map<String, Object?> payload() => {
+      'schema_version': '1.0',
+      'workout': {
+        'session_id': _sessionId,
+        'planned_workout_id': _workoutId,
+        'name': 'Legs B',
+        'local_date': '2026-10-23',
+        'started_at': '2026-10-23T16:45:00+00:00',
+        'logged_sets': 23,
+        'total_sets': 25,
+        'first_set_at': null,
+        'last_set_at': null,
+      },
+    };
+
+    test('reads the workout the server offers back', () async {
+      server.answer('get_my_unfinished_workout_v1', payload());
+
+      final workout = (await repository.loadUnfinishedWorkout())!;
+
+      expect(workout.sessionId, _sessionId);
+      expect(workout.plannedWorkoutId, _workoutId);
+      expect(workout.name, 'Legs B');
+      expect(workout.localDate, DateTime(2026, 10, 23));
+      expect(workout.loggedSets, 23);
+      expect(workout.unloggedSets, 2);
+    });
+
+    test('reads nothing when nothing is offered', () async {
+      server.answer('get_my_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'workout': null,
+      });
+
+      expect(await repository.loadUnfinishedWorkout(), isNull);
+    });
+
+    test('an answer this build cannot read offers nothing', () {
+      expect(UnfinishedWorkout.fromJson({'session_id': _sessionId}), isNull);
+      expect(UnfinishedWorkout.fromJson('x'), isNull);
+      expect(
+        UnfinishedWorkout.fromJson({
+          'session_id': _sessionId,
+          'planned_workout_id': _workoutId,
+          'name': 'Legs B',
+          'local_date': 'not a date',
+          'logged_sets': 1,
+          'total_sets': 2,
+        }),
+        isNull,
+      );
+    });
+
+    test('save sends the athlete effort and removes the draft', () async {
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'saved',
+        'state': 'completed',
+        'replayed': false,
+      });
+
+      await repository.saveUnfinishedWorkout(offered, sessionEffort: 8);
+
+      final (name, params) = server.calls.single;
+      expect(name, 'resolve_unfinished_workout_v1');
+      expect(params, {
+        'p_session_id': _sessionId,
+        'p_action': 'save',
+        'p_session_effort': 8,
+      });
+      expect(await repository.loadDraft(_workoutId), isNull);
+      expect(breadcrumbs.single.message, 'Unfinished workout saved');
+    });
+
+    test('an effort outside 1 to 10 is never sent', () async {
+      expect(
+        () => repository.saveUnfinishedWorkout(offered, sessionEffort: 11),
+        throwsRangeError,
+      );
+      expect(server.calls, isEmpty);
+    });
+
+    test('discard sends the answer and removes the draft', () async {
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'discarded',
+        'state': 'abandoned',
+        'replayed': false,
+      });
+
+      await repository.discardUnfinishedWorkout(offered);
+
+      final (name, params) = server.calls.single;
+      expect(name, 'resolve_unfinished_workout_v1');
+      expect(params, {'p_session_id': _sessionId, 'p_action': 'discard'});
+      expect(await repository.loadDraft(_workoutId), isNull);
+      expect(breadcrumbs.single.message, 'Unfinished workout discarded');
+    });
+
+    test('a draft of a newer session of the same workout stays', () async {
+      await repository.saveDraft(
+        _workoutId,
+        jsonEncode({
+          ..._draft(),
+          'session_id': '8a000000-0000-4000-8000-000000000009',
+        }),
+      );
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'discarded',
+        'state': 'abandoned',
+        'replayed': false,
+      });
+
+      await repository.discardUnfinishedWorkout(offered);
+
+      expect(await repository.loadDraft(_workoutId), isNotNull);
+    });
+
+    test('a refused answer keeps the draft and says so', () async {
+      server.refuse('resolve_unfinished_workout_v1', '55000');
+
+      await expectLater(
+        repository.discardUnfinishedWorkout(offered),
+        throwsA(isA<PostgrestException>()),
+      );
+
+      expect(await repository.loadDraft(_workoutId), isNotNull);
+    });
+
+    test('a draft that cannot be read does not undo the answer', () async {
+      await repository.saveDraft(_workoutId, 'not json');
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'discarded',
+        'state': 'abandoned',
+        'replayed': false,
+      });
+
+      await repository.discardUnfinishedWorkout(offered);
+
+      expect(server.names, ['resolve_unfinished_workout_v1']);
     });
   });
 

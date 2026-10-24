@@ -413,6 +413,11 @@ Reading order:
      "Recovery not scored yet", and the lines say the score appears once Tracend has enough nights
      to compare. With no computed data at all the verdict reads "Your day" with "Sync Apple Health
      to see how recovered you are." and no ring.
+   - **Unfinished workout**, under the hero when there is one: a workout from the last 7 days
+     that has logged sets and was never finished ("You didn't finish Legs B on Fri 23 Oct · 23
+     sets logged"). **Save workout** asks how hard it was (1 to 10, required) and puts it in
+     history on its own day; **Discard** asks first and keeps it out of history and load for good.
+     It does not count as a workout until the athlete saves it.
 3. **Plan progress**: the plan's title and "Week 3 of 20" with a thin bar; past the block, "Week
    22 · block of 20 done".
 4. **Tiles**: Sleep (tall: duration, sleep debt or quality, a deep/REM share bar from Apple

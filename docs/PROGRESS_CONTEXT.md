@@ -78,6 +78,15 @@ hourly job, and the phone sends an earlier day's unsent sets and finish first, t
 rule closed still takes that late send on its own date. Migration `20261023150021`; `start_workout` (as #165 left it) closes the caller's stale sessions after its advisory lock and before its open-session lookup. Details:
 "Stale workouts" in [`training-engine.md`](./handoff/training-engine.md).
 
+**Unfinished workouts (2026-10-24, branch `claude/unfinished-workout`, PR open):** the owner's Legs B (23 sets logged,
+never finished) was closed by the stale rule and Coach then called it "not done". A stale-closed session with logged sets
+is now offered back on Today ("You didn't finish Legs B on Fri 23 Oct · 23 sets logged"): **Save workout** completes it
+on its own date with the athlete's effort, **Discard** keeps it out for good, each audited; nothing is finished for them.
+Coach reads it as "logged N sets, not finished", not undone or missed. Migration `20261024050011`
+(`get_my_unfinished_workout_v1`, `resolve_unfinished_workout_v1`, `get_coach_plan_state_v1` 1.3); needs the migration
+deployed before the app is reinstalled. Details: "Unfinished workouts" in
+[`training-engine.md`](./handoff/training-engine.md).
+
 **Incident 2026-10-18: every Coach chat turn timed out (Refs FLUTTER-K). Fixed by #155 (deploy pending verification: confirm `schema_sha` `274ee4fafead` and a first successful turn in production).** The gateway's answer
 schema had grown to 24 optional properties and 4 unions and listed the day's evidence codes, so
 Claude recompiled its grammar on every turn and passed the 30 s route timeout (`model_runs`:

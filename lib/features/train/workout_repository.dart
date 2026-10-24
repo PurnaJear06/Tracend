@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/muscle_groups.dart';
+import 'package:tracend/features/train/unfinished_workout.dart';
 
 /// What the next session's target does with last time's result.
 enum NextTargetAction {
@@ -768,7 +769,8 @@ class SupabaseWorkoutRepository
         TrainingHubRepository,
         WorkoutRepairRepository,
         WorkoutReconciliationRepository,
-        HealthkitCandidateRepository {
+        HealthkitCandidateRepository,
+        UnfinishedWorkoutRepository {
   SupabaseWorkoutRepository(this._client, this._preferences);
   final SupabaseClient _client;
   final SharedPreferencesAsync _preferences;
@@ -873,6 +875,57 @@ class SupabaseWorkoutRepository
       'respond_workout_reconciliation',
       params: {'p_reconciliation_id': id, 'p_accept': accept},
     );
+  }
+
+  @override
+  Future<UnfinishedWorkout?> loadUnfinishedWorkout() async {
+    final value = await _client.rpc('get_my_unfinished_workout_v1');
+    if (value is! Map) return null;
+    return UnfinishedWorkout.fromJson(value['workout']);
+  }
+
+  @override
+  Future<void> saveUnfinishedWorkout(
+    UnfinishedWorkout workout, {
+    required int sessionEffort,
+  }) async {
+    RangeError.checkValueInInterval(sessionEffort, 1, 10, 'sessionEffort');
+    await _client.rpc(
+      'resolve_unfinished_workout_v1',
+      params: {
+        'p_session_id': workout.sessionId,
+        'p_action': 'save',
+        'p_session_effort': sessionEffort,
+      },
+    );
+    AppBreadcrumbs.workout('Unfinished workout saved');
+    await _dropDraftOf(workout);
+  }
+
+  @override
+  Future<void> discardUnfinishedWorkout(UnfinishedWorkout workout) async {
+    await _client.rpc(
+      'resolve_unfinished_workout_v1',
+      params: {'p_session_id': workout.sessionId, 'p_action': 'discard'},
+    );
+    AppBreadcrumbs.workout('Unfinished workout discarded');
+    await _dropDraftOf(workout);
+  }
+
+  /// This phone's draft and saved finish of an answered workout. Only the
+  /// draft that belongs to that session goes: opening the planned workout
+  /// again must not find it and send its sets into a session the server no
+  /// longer takes them for, and a draft of a newer session of the same
+  /// workout stays.
+  Future<void> _dropDraftOf(UnfinishedWorkout workout) async {
+    try {
+      final saved = await loadDraft(workout.plannedWorkoutId);
+      if (saved == null) return;
+      if (decodeDraft(saved)['session_id'] != workout.sessionId) return;
+      await clearDraft(workout.plannedWorkoutId);
+    } catch (error) {
+      debugPrint('Non-critical error: workout draft not removed: $error');
+    }
   }
 
   @override

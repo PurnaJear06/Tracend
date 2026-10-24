@@ -570,9 +570,10 @@ session did the same when the server returned nothing.
   minute 17) closes everyone's.
 - App: a saved draft whose workout began on an earlier day than the session date and more than 3
   hours ago is dropped (`workoutLeftOnEarlierDay`), so it cannot open or seed today's workout.
-- Choice for a stale session that has logged sets: **abandon, never offer to finish it for that
-  day.** Finishing would write a completed workout the athlete did not confirm; moving the sets
-  would change their date. The rows stay and the audit event records how many sets they held.
+- Choice for a stale session that has logged sets: **abandon, never finish it for them.** Finishing
+  would write a completed workout the athlete did not confirm; moving the sets would change their
+  date. The rows stay and the audit event records how many sets they held. (Amended 2026-10-24: it
+  is offered back for the athlete to save or discard, see "Unfinished workouts" below.)
 - A workout finished offline is never lost to the close. Server: `sync_workout_draft` and
   `private.complete_workout_session` accept a session whose audit event says `reason: stale`
   (`private.workout_closed_as_stale`), completing it on its own `local_date` with its end at its start
@@ -593,6 +594,50 @@ session did the same when the server returned nothing.
 Tests: `supabase/tests/database/stale_workout_close_test.sql` (see the file),
 `_shared/training/stale_workouts_test.ts` (hunk pin and rule shape), and in Flutter
 `test/phase_3_workout_flow_test.dart` and `test/workout_logic_test.dart`.
+
+### Unfinished workouts (2026-10-24, `claude/unfinished-workout`, migration `20261024050011`)
+
+**Incident.** The owner logged 23 sets of Legs B on Fri 23 Oct from 16:45 and left without tapping
+Finish. The hourly job closed it as `abandoned` at 00:47 and at 05:00 Coach said Legs B "was not
+done". Logged training had silently become "not done". Completing it for them would write durable
+history without approval (architecture rule 3), so the athlete is asked.
+
+**Server (additive).**
+
+- `private.unfinished_workouts(user, today)`: the rule. `abandoned`, closed by the stale rule,
+  `local_date` within the 7 days before today, at least one completed set, and no completed session
+  of the same planned workout on the same day (re-done). A session the athlete discarded in the app
+  has no `stale` reason and is never offered.
+- `get_my_unfinished_workout_v1` (1.0): the newest offered session, or `workout: null`; it closes the
+  caller's stale sessions first. **A small RPC, not a hub field:** Today does not read the training
+  hub (Train does, and the hub is already 1.8); the repair and match cards are separate RPCs too.
+- `resolve_unfinished_workout_v1(session, 'save' | 'discard', effort)` (1.0): Save goes through the
+  same `private.complete_workout_session` that `complete_workout_v2` uses for a stale-closed
+  session, with the athlete's own effort; duration is the start to the last logged set (cap 10800 s)
+  or unknown with no set times. Discard keeps it abandoned for good; `private.workout_closed_as_stale`
+  is redefined so a discard ends the late-send allowance. Both audited `workout.unfinished_resolved`.
+  Pinned: `private.complete_workout_session` is the 20261023150021 definition plus the unknown
+  duration hunk; `workout_closed_as_stale` plus the discard clause; `get_coach_plan_state_v1` is
+  the 20261023100050 (1.2) definition plus `unfinished` and 1.3. pgTAP: `unfinished_workouts_test.sql`.
+- `get_coach_plan_state_v1` 1.3 adds `unfinished`. `coach_data_lookups_test.sql` and
+  `advanced_level_catalog_test.sql` assert 1.3.
+
+**App.** Today shows `UnfinishedWorkoutCard` under the hero: "You didn't finish Legs B on Fri 23 Oct ·
+23 sets logged", **Save workout** (the finish sheet, effort 1 to 10 required, then it appears in
+history on its own date) and **Discard** (confirmed). The phone's draft for that session is removed
+after either answer, so opening the workout again cannot send its sets into a closed session; a draft
+of a newer session of the same workout stays. `UnfinishedWorkoutRepository` is implemented by
+`SupabaseWorkoutRepository`; fixture mode offers nothing. Contract fixtures:
+`test/contract/fixtures/unfinished_workout_v1_0*.json` and `resolve_unfinished_workout_v1_0_*.json`.
+
+**Coach.** `training_plan.ts` parses `unfinished`, adds one fixed line ("Logged but not finished ...
+never that it was not done, skipped or missed"; names, dates and set counts through `record()`),
+marks the session in the day-by-day list, and stops treating such a session as undone or as a
+make-up candidate (it is the athlete's to save or discard; discarding returns it to undone). Only a
+workout from the current ISO week stands for that week's session. `watch_outs` reads the same
+`undone` list, so "Behind plan ... not done" no longer names it. The streak line ("Planned but not
+logged on each of its last days") still reads completed sessions only, so an unfinished day can count
+toward a streak of two or more; not changed.
 
 **B4-1 (review, #165; same-day readiness adjustment, server side; migration `20261023140024`, code 24).**
 Based on the owner-approved B4/B5 design (2026-10-23; O2 to O13 as recommended, O1 amended). ALGORITHMS

@@ -4,6 +4,12 @@ import 'package:tracend/shared/formatting.dart';
 void main() {
   final now = DateTime(2026, 10, 1, 9);
 
+  test('dayAndDate always names the weekday and date', () {
+    expect(dayAndDate(DateTime(2026, 9, 30, 22), now: now), 'Wed 30 Sep');
+    expect(dayAndDate(DateTime(2026, 10, 1), now: now), 'Thu 1 Oct');
+    expect(dayAndDate(DateTime(2025, 12, 31), now: now), 'Wed 31 Dec 2025');
+  });
+
   test('friendlyDate names today, yesterday, then weekday and date', () {
     expect(friendlyDate(DateTime(2026, 10, 1, 22), now: now), 'Today');
     expect(friendlyDate(DateTime(2026, 9, 30), now: now), 'Yesterday');

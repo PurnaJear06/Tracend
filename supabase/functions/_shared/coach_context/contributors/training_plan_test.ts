@@ -18,7 +18,12 @@ import {
   weekAheadOf,
 } from "./training_plan.ts";
 import { overlapFactLine } from "../../training/schedule/week_ahead.ts";
-import { ownersCaseDate, ownersPlanPayload, splitPlanPayload } from "./plan_fixtures.ts";
+import {
+  ownersCaseDate,
+  ownersPlanPayload,
+  splitPlanPayload,
+  splitWeekDate,
+} from "./plan_fixtures.ts";
 
 const render = (mutate?: (payload: Record<string, unknown>) => void) => {
   const payload = ownersPlanPayload();
@@ -289,6 +294,97 @@ Deno.test("an undone session that is tomorrow's own is not made up today; tomorr
     "Chest volume and delts is not set for today",
   );
   assert(!repeats.includes("A session from earlier this week is still undone"));
+});
+
+// The 2026-10-23 incident: Friday's Legs B was logged (23 sets) and never finished, the hourly job
+// closed it, and Coach read it as "not done". It is the athlete's to save or discard.
+const legsBUnfinished = (patch: Record<string, unknown> = {}) => ({
+  planned_workout_id: "w-legs-b",
+  local_date: splitWeekDate(5),
+  name: "Legs B",
+  logged_sets: 23,
+  ...patch,
+});
+const sundayWithLegsBLogged = (unfinished: Record<string, unknown>[]) =>
+  splitPlanPayload(7, ["w-chest-a", "w-legs-a", "w-pull", "w-chest-b", "w-shoulders"], {
+    unfinished,
+  });
+
+Deno.test("a session logged but not finished reads as logged sets, never as not done", () => {
+  const state = parsePlanState(sundayWithLegsBLogged([legsBUnfinished()]))!;
+  const text = renderTrainingPlan(state)!;
+  assertStringIncludes(
+    text,
+    "Logged but not finished (the athlete has not saved or discarded them yet): Legs B on 2026-10-16 (23 sets logged).",
+  );
+  assertStringIncludes(text, "never that it was not done, skipped or missed");
+  assertStringIncludes(text, "the athlete can save or discard it on Today");
+  assertStringIncludes(text, "[logged 23 sets on 2026-10-16, not finished]");
+  // It is not undone, so it is not made up and no line calls it undone.
+  assertEquals(pickFocusSession(state).undone, []);
+  assert(!text.includes("undone earlier this week"));
+  assert(!text.includes("A session from earlier this week is still undone"));
+  assert(!text.includes("no session is planned today"));
+});
+
+Deno.test("the same week without the unfinished list still calls Legs B undone", () => {
+  const text = renderTrainingPlan(parsePlanState(sundayWithLegsBLogged([]))!)!;
+  assert(!text.includes("Logged but not finished"));
+  assertStringIncludes(text, "A session from earlier this week is still undone: Legs B");
+  const older = parsePlanState(
+    splitPlanPayload(7, ["w-chest-a", "w-legs-a", "w-pull", "w-chest-b", "w-shoulders"]),
+  )!;
+  assertEquals(older.unfinished, []);
+});
+
+Deno.test("one set reads as one set, and every unfinished session is listed", () => {
+  const text = renderTrainingPlan(
+    parsePlanState(sundayWithLegsBLogged([
+      legsBUnfinished({ logged_sets: 1 }),
+      legsBUnfinished({
+        planned_workout_id: "w-shoulders",
+        name: "Shoulder width",
+        local_date: splitWeekDate(6),
+        logged_sets: 8,
+      }),
+    ]))!,
+  )!;
+  assertStringIncludes(
+    text,
+    "Legs B on 2026-10-16 (1 set logged), Shoulder width on 2026-10-17 (8 sets logged).",
+  );
+  assertStringIncludes(text, "[logged 1 set on 2026-10-16, not finished]");
+});
+
+Deno.test("a workout left unfinished last week does not stand for this week's session", () => {
+  const state = parsePlanState(
+    sundayWithLegsBLogged([legsBUnfinished({ local_date: "2026-10-09" })]),
+  )!;
+  const text = renderTrainingPlan(state)!;
+  assertStringIncludes(text, "Legs B on 2026-10-09 (23 sets logged)");
+  assertStringIncludes(text, "A session from earlier this week is still undone: Legs B");
+  assert(!text.includes("not finished]"));
+});
+
+Deno.test("a workout left unfinished under an earlier plan version is matched by name", () => {
+  const renamed = parsePlanState(
+    sundayWithLegsBLogged([legsBUnfinished({ planned_workout_id: "w-old-legs" })]),
+  )!;
+  assertEquals(pickFocusSession(renamed).undone, []);
+  const other = parsePlanState(
+    sundayWithLegsBLogged([legsBUnfinished({ planned_workout_id: "w-old-legs", name: "Arms" })]),
+  )!;
+  assertEquals(pickFocusSession(other).undone.map((session) => session.name), ["Legs B"]);
+});
+
+Deno.test("a row without sets or a day is not an unfinished workout", () => {
+  const state = parsePlanState(
+    sundayWithLegsBLogged([
+      legsBUnfinished({ logged_sets: 0 }),
+      legsBUnfinished({ local_date: undefined }),
+    ]),
+  )!;
+  assertEquals(state.unfinished, []);
 });
 
 Deno.test("the schedule block and its overlap fact stay compact", () => {

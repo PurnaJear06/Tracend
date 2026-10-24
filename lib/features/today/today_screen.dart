@@ -17,6 +17,8 @@ import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
+import 'package:tracend/features/train/unfinished_workout.dart';
+import 'package:tracend/features/train/widgets/workout_finish_sheet.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/features/today/check_in_gate.dart';
@@ -28,12 +30,15 @@ import 'package:tracend/features/today/widgets/plan_progress_line.dart';
 import 'package:tracend/features/today/widgets/today_hero.dart';
 import 'package:tracend/features/today/widgets/today_session_card.dart';
 import 'package:tracend/features/today/widgets/today_tiles.dart';
+import 'package:tracend/features/today/widgets/unfinished_workout_card.dart';
 import 'package:tracend/features/today/widgets/your_week_card.dart';
+import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/shared/widgets/tracend_confirm.dart';
 import 'package:tracend/shared/widgets/tracend_skeleton.dart';
 import 'package:tracend/shared/widgets/tracend_toast.dart';
 
@@ -122,6 +127,11 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   late Future<CoachDecision?> _latestDecision;
   bool _syncing = false;
 
+  /// The workout the server offers back (logged, never finished), and
+  /// whether an answer to it is on its way.
+  UnfinishedWorkout? _unfinished;
+  bool _answeringUnfinished = false;
+
   /// Today's check-in as this phone knows it: saved (also when only queued
   /// offline) or put off with "Not today". Each holds the day it was set.
   String? _checkedInOn;
@@ -187,6 +197,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       _meals = _loadMeals();
       _brief = _loadBrief();
     });
+    unawaited(_loadUnfinished());
   }
 
   @override
@@ -221,6 +232,102 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     _restoreCheckInDays();
     _autoSyncHealthIfNeeded();
     _replayPendingCheckIn();
+    unawaited(_loadUnfinished());
+  }
+
+  UnfinishedWorkoutRepository? get _unfinishedSource {
+    final source = widget.workouts;
+    return source is UnfinishedWorkoutRepository
+        ? source as UnfinishedWorkoutRepository
+        : null;
+  }
+
+  /// Asks which workout, if any, was logged and left unfinished. A failed
+  /// read keeps what is shown: the offer is a convenience, never a gate.
+  Future<void> _loadUnfinished() async {
+    final source = _unfinishedSource;
+    if (source == null) return;
+    try {
+      final workout = await source.loadUnfinishedWorkout();
+      if (mounted) setState(() => _unfinished = workout);
+    } catch (error) {
+      debugPrint('Non-critical error: unfinished workout: $error');
+    }
+  }
+
+  /// "Save workout": asks how hard it was, then puts it in the history on
+  /// its own day. Nothing is saved until the athlete answers.
+  Future<void> _saveUnfinished(UnfinishedWorkout workout) async {
+    final source = _unfinishedSource;
+    if (source == null || _answeringUnfinished) return;
+    final effort = await showWorkoutFinishSheet(
+      context,
+      workoutName: workout.name,
+      unloggedSets: workout.unloggedSets,
+      saving: true,
+    );
+    if (effort == null || !mounted) return;
+    setState(() => _answeringUnfinished = true);
+    try {
+      await source.saveUnfinishedWorkout(workout, sessionEffort: effort);
+      if (!mounted) return;
+      setState(() {
+        _unfinished = null;
+        _brief = _loadBrief();
+      });
+      TracendToast.show(
+        context,
+        '${workout.name} saved to ${dayAndDate(workout.localDate)}.',
+        icon: CupertinoIcons.checkmark_alt,
+      );
+    } catch (error) {
+      debugPrint('Non-critical error: unfinished workout not saved: $error');
+      if (!mounted) return;
+      TracendToast.show(
+        context,
+        'Could not save the workout. Try again.',
+        icon: CupertinoIcons.exclamationmark_triangle,
+      );
+    } finally {
+      if (mounted) setState(() => _answeringUnfinished = false);
+    }
+    unawaited(_loadUnfinished());
+  }
+
+  /// "Discard": after a confirmation, keeps the workout out of the history
+  /// for good.
+  Future<void> _discardUnfinished(UnfinishedWorkout workout) async {
+    final source = _unfinishedSource;
+    if (source == null || _answeringUnfinished) return;
+    final confirmed = await showTracendConfirm(
+      context,
+      title: 'Discard ${workout.name}?',
+      message:
+          'It will not count in your history or your training load. This '
+          'cannot be undone.',
+      confirmLabel: 'Discard',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _answeringUnfinished = true);
+    try {
+      await source.discardUnfinishedWorkout(workout);
+      if (!mounted) return;
+      setState(() => _unfinished = null);
+    } catch (error) {
+      debugPrint(
+        'Non-critical error: unfinished workout not discarded: $error',
+      );
+      if (!mounted) return;
+      TracendToast.show(
+        context,
+        'Could not discard the workout. Try again.',
+        icon: CupertinoIcons.exclamationmark_triangle,
+      );
+    } finally {
+      if (mounted) setState(() => _answeringUnfinished = false);
+    }
+    unawaited(_loadUnfinished());
   }
 
   /// Deliver any check-in queued while offline: the sheet persists the
@@ -404,6 +511,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       _targets = widget.nutrition.loadTargets();
       _meals = _loadMeals();
     });
+    unawaited(_loadUnfinished());
   }
 
   Future<void> _autoSyncHealthIfNeeded() async {
@@ -668,6 +776,10 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
                   offerCheckIn:
                       widget.checkInGate == null ||
                       _skippedOn == brief.localDate,
+                  unfinished: _unfinished,
+                  answeringUnfinished: _answeringUnfinished,
+                  onSaveUnfinished: _saveUnfinished,
+                  onDiscardUnfinished: _discardUnfinished,
                 );
               }
               if (snapshot.connectionState == ConnectionState.waiting) {
@@ -818,6 +930,10 @@ class _BriefContent extends StatelessWidget {
     required this.onCheckIn,
     required this.checkedIn,
     required this.offerCheckIn,
+    required this.unfinished,
+    required this.answeringUnfinished,
+    required this.onSaveUnfinished,
+    required this.onDiscardUnfinished,
   });
 
   final DailyBrief brief;
@@ -835,9 +951,16 @@ class _BriefContent extends StatelessWidget {
   final bool checkedIn;
   final bool offerCheckIn;
 
+  /// A workout logged and left unfinished, asked about right under the hero.
+  final UnfinishedWorkout? unfinished;
+  final bool answeringUnfinished;
+  final ValueChanged<UnfinishedWorkout> onSaveUnfinished;
+  final ValueChanged<UnfinishedWorkout> onDiscardUnfinished;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
+    final unfinished = this.unfinished;
     final today = DateTime.tryParse(brief.localDate) ?? DateTime.now();
     final plan = brief.plan;
     var index = 0;
@@ -857,6 +980,17 @@ class _BriefContent extends StatelessWidget {
             onCheckIn: onCheckIn,
           ),
         ),
+        if (unfinished != null) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          enter(
+            UnfinishedWorkoutCard(
+              workout: unfinished,
+              busy: answeringUnfinished,
+              onSave: () => onSaveUnfinished(unfinished),
+              onDiscard: () => onDiscardUnfinished(unfinished),
+            ),
+          ),
+        ],
         if (plan != null) ...[
           const SizedBox(height: TracendSpacing.sm),
           enter(PlanProgressLine(plan: plan)),
