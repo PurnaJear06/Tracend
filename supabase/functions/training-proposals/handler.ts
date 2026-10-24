@@ -6,7 +6,9 @@
 // The caller is the signed-in athlete and nobody else: the user is `auth.uid()` from the JWT, never
 // a field of the body. The guidance is read through the athlete's own reader, so the server's own
 // day, the safety route and every suppression decide whether a deload may be offered at all. The
-// call is idempotent: while a deload is pending it returns that proposal and stores nothing.
+// call is idempotent: while a deload is pending it returns that proposal and stores nothing. The store
+// itself (persist_suggested_deload_v1) refuses, in its own transaction, while another current change
+// waits for the athlete's answer, so a tap here can never expire one unseen.
 import { AuthError, reply, type requireAuth } from "../_shared/auth.ts";
 import { captureException } from "../_shared/sentry.ts";
 import { type ProposalRpc, proposeSuggestedDeload } from "../_shared/coach_proposals/service.ts";
@@ -25,34 +27,6 @@ export const unexpectedEvent = "training_proposals_unexpected";
 
 const sentry = (event: string) =>
   captureException(new Error(event), { functionName: "training-proposals", runtime: "edge" });
-
-/** Proposal kinds that change the plan: storing a new one expires every open one of these. */
-const planChangingKinds = [
-  "temporary_block",
-  "training_schedule",
-  "exercise_swap",
-  "intensity_or_phase",
-  "next_session_adjustment",
-] as const;
-
-/** An open proposal that would be expired by storing a deload, other than a deload itself. */
-function openPlanChange(raw: unknown): boolean | null {
-  const body = typeof raw === "object" && raw !== null ? raw as { proposals?: unknown } : null;
-  if (!body || !Array.isArray(body.proposals)) return null;
-  let open = false;
-  for (const item of body.proposals) {
-    if (typeof item !== "object" || item === null) return null;
-    const { kind, status, title } = item as Record<string, unknown>;
-    if (typeof kind !== "string" || typeof status !== "string") return null;
-    const deload = kind === "intensity_or_phase" && typeof title === "string" &&
-      title.startsWith("Deload until ");
-    if (
-      status === "pending" && !deload &&
-      (planChangingKinds as readonly string[]).includes(kind)
-    ) open = true;
-  }
-  return open;
-}
 
 export const trainingProposalsSchemaVersion = "1.0";
 
@@ -123,13 +97,6 @@ async function handle(request: Request, deps: TrainingProposalsDeps): Promise<Re
   if (deload.status !== "suggested") {
     return reply(409, { error: "not_suggested", status: deload.status });
   }
-
-  // Storing a plan change expires every open one. Another change the athlete has not answered is
-  // theirs to answer first: it is never expired by a tap on a suggestion.
-  const proposals = await auth.userClient.rpc("get_my_coach_proposals_v1", { p_limit: 50 });
-  const open = proposals.error ? null : openPlanChange(proposals.data);
-  if (open === null) return reply(503, { error: "proposals_unavailable" });
-  if (open) return reply(409, { error: "other_proposal_pending" });
 
   const rpc: ProposalRpc = (name, params) => auth.serviceClient.rpc(name, params);
   const stored = await proposeSuggestedDeload(rpc, {

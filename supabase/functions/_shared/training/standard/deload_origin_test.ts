@@ -10,14 +10,38 @@ import running from "../../../../../test/contract/fixtures/training_guidance_v1_
 };
 import { parseTrainingGuidance } from "../guidance/payload.ts";
 
-// The 1.2 migration replaces three functions. Each must be its latest earlier definition plus the
-// intended hunks and nothing else, so everything else it does is what the earlier migrations (and
-// their pgTAP tests) already proved.
-const read = (name: string) =>
-  Deno.readTextFile(new URL(`../../../../migrations/${name}`, import.meta.url));
-const origin = await read("20261024060425_deload_origin_and_undo_cooldown.sql");
-const fixes = await read("20261024060325_deload_cardio_review_fixes.sql");
-const proposals = await read("20261018120018_coach_proposals.sql");
+// The 1.2 migration replaces three functions and adds one. Each replaced function must be its latest
+// earlier definition plus the intended hunks and nothing else, so everything else it does is what the
+// earlier migrations (and their pgTAP tests) already proved. The earlier definition is found by
+// scanning the migrations before this one, newest first, never by a file name.
+const migrations = new URL("../../../../migrations/", import.meta.url);
+const read = (name: string) => Deno.readTextFile(new URL(name, migrations));
+const originName = "20261024060425_deload_origin_and_undo_cooldown.sql";
+const origin = await read(originName);
+
+async function priorDefinition(signature: string): Promise<string> {
+  const files: string[] = [];
+  for await (const entry of Deno.readDir(migrations)) {
+    if (entry.isFile && entry.name.endsWith(".sql") && entry.name < originName) {
+      files.push(entry.name);
+    }
+  }
+  const escaped = signature.replace(/[.()]/g, "\\$&");
+  const pattern = new RegExp(`create (?:or replace )?function ${escaped}\\(`);
+  for (const file of files.sort().reverse()) {
+    const text = await read(file);
+    const found = pattern.exec(text);
+    if (found) {
+      const end = text.indexOf("end $$;", found.index);
+      assert(end > found.index, `${file} ends ${signature}`);
+      return text.slice(found.index, end + "end $$;".length);
+    }
+  }
+  throw new Error(`no earlier migration defines ${signature}`);
+}
+
+const orReplaceFirst = (text: string) =>
+  text.replace(/^create function/, "create or replace function");
 
 function between(text: string, start: string, end: string): string {
   const from = text.indexOf(start);
@@ -42,8 +66,8 @@ function undo(redefined: string, hunks: Hunks): string {
   return text.trim();
 }
 
-Deno.test("deload_signals is the review-round function plus the origin, end date and undo cool-down only", () => {
-  const earlier = between(fixes, "create or replace function private.deload_signals(", "end $$;");
+Deno.test("deload_signals is the latest earlier function plus the origin, end date and undo cool-down only", async () => {
+  const earlier = await priorDefinition("private.deload_signals");
   const redefined = between(
     origin,
     "create or replace function private.deload_signals(",
@@ -70,12 +94,8 @@ Deno.test("deload_signals is the review-round function plus the origin, end date
   assertEquals(undo(redefined, hunks), earlier.trim());
 });
 
-Deno.test("training_guidance is the review-round function at 1.2 with proposal_origin cleared on a route day", () => {
-  const earlier = between(
-    fixes,
-    "create or replace function private.training_guidance(",
-    "end $$;",
-  );
+Deno.test("training_guidance is the latest earlier function at 1.2 with proposal_origin cleared on a route day", async () => {
+  const earlier = await priorDefinition("private.training_guidance");
   const redefined = between(
     origin,
     "create or replace function private.training_guidance(",
@@ -91,30 +111,84 @@ Deno.test("training_guidance is the review-round function at 1.2 with proposal_o
   assertEquals(undo(redefined, hunks), earlier.trim());
 });
 
-Deno.test("persist_coach_proposal_v1 is its earlier definition plus a per-athlete lock only", () => {
-  const earlier = between(
-    proposals,
-    "create function public.persist_coach_proposal_v1(",
-    "end $$;",
-  );
+const storeLock =
+  "pg_advisory_xact_lock(hashtextextended('tracend.coach_proposal_store:' || p_user_id::text, 0))";
+
+Deno.test("persist_coach_proposal_v1 is its latest earlier definition plus a per-athlete lock only", async () => {
+  const earlier = await priorDefinition("public.persist_coach_proposal_v1");
   const redefined = between(
     origin,
     "create or replace function public.persist_coach_proposal_v1(",
     "end $$;",
   );
   const hunks: Hunks = [
-    ["create function", "create or replace function"],
     [
       "    raise exception 'account not found' using errcode = 'P0002';\n  end if;\n",
-      "    raise exception 'account not found' using errcode = 'P0002';\n  end if;\n  -- One proposal is stored at a time per athlete: replacing an open one (below) must not race a second\n  -- store (two taps, or a tap and Coach), which could leave two open proposals.\n  perform pg_advisory_xact_lock(hashtext(p_user_id::text));\n",
+      `    raise exception 'account not found' using errcode = 'P0002';\n  end if;\n  -- One proposal is stored at a time per athlete: replacing an open one (below) must not race a second\n  -- store (two taps, or a tap and Coach), which could leave two open proposals.\n  perform ${storeLock};\n`,
     ],
   ];
-  assertEquals(undo(redefined, hunks), earlier.trim());
+  assertEquals(undo(redefined, hunks), orReplaceFirst(earlier).trim());
   // The lock is taken before the open proposal is replaced.
   assert(redefined.indexOf("pg_advisory_xact_lock") < redefined.indexOf("set status = 'expired'"));
-  // Same signature and owner, so the grants stay: the migration redefines nothing else.
-  assertEquals(origin.match(/create or replace function/g)?.length, 3);
-  assert(!origin.includes("grant "));
+});
+
+Deno.test("persist_suggested_deload_v1 is the rules' store: same arguments, the same lock, the check, then persist", () => {
+  const persist = between(
+    origin,
+    "create or replace function public.persist_coach_proposal_v1(",
+    "returns jsonb",
+  );
+  const wrapper = between(
+    origin,
+    "create or replace function public.persist_suggested_deload_v1(",
+    "end $$;",
+  );
+  const args = (text: string) => text.slice(text.indexOf("(") + 1, text.lastIndexOf(")"));
+  assertEquals(args(wrapper.slice(0, wrapper.indexOf("returns jsonb"))), args(persist));
+  // Lock first, then the refusal, then the store, in that order.
+  const at = (needle: string) => {
+    const found = wrapper.indexOf(needle);
+    assert(found >= 0, needle);
+    return found;
+  };
+  assert(at(storeLock) < at("raise exception"));
+  assert(at("raise exception") < at("return public.persist_coach_proposal_v1("));
+  assert(wrapper.includes("errcode = 'TP001'"));
+  // Only a current, unanswered, unexpired plan change that is not a deload blocks.
+  for (
+    const part of [
+      "cp.schema_version = '3.0' and cp.status = 'pending'",
+      "cp.expires_at > statement_timestamp()",
+      "cp.proposal_payload ? 'training'",
+      "not private.is_deload_proposal(cp.proposal_kind, cp.proposal_payload)",
+      "cp.basis ->> 'training_version_id' = (",
+      "v.user_id = p_user_id and v.status = 'active')",
+    ]
+  ) assert(wrapper.includes(part), part);
+  // Every argument is passed on, in order.
+  assert(
+    wrapper.includes(
+      "public.persist_coach_proposal_v1(p_user_id, p_kind, p_title, p_rationale, p_benefit, p_downside,\n    p_confidence, p_evidence, p_before, p_after, p_payload, p_basis, p_ends_on, p_expires_in_hours,\n    p_source_message_id)",
+    ),
+  );
+  // It is the service role's alone.
+  const after = origin.slice(
+    origin.indexOf("create or replace function public.persist_suggested_deload_v1("),
+  );
+  assert(
+    /revoke all on function public\.persist_suggested_deload_v1\([^)]*\)\s+from public, anon, authenticated;/
+      .test(after),
+  );
+  assert(
+    /grant execute on function public\.persist_suggested_deload_v1\([^)]*\)\s+to service_role;/
+      .test(after),
+  );
+});
+
+Deno.test("the migration redefines three functions, adds one, and grants only the new one", () => {
+  assertEquals(origin.match(/create or replace function/g)?.length, 4);
+  // The redefinitions keep the grants they already have; only the new function is granted here.
+  assertEquals(origin.match(/\bgrant execute\b/g)?.length, 1);
 });
 
 Deno.test("the 1.2 payloads read, with who made the proposal and when a running week ends", () => {

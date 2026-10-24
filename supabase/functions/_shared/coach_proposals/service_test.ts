@@ -2,6 +2,8 @@ import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { proposalRpcPayloads, stateFixture, today } from "./fixtures.ts";
 import { type ProposalRpc, proposeCoachChange, proposeSuggestedDeload } from "./service.ts";
 import { parseAthleteState } from "./state.ts";
+import { buildCoachProposal } from "./build.ts";
+import { buildSuggestedDeload } from "./training.ts";
 
 const user = "00000000-0000-4000-8000-0000000000aa";
 
@@ -18,15 +20,17 @@ function fakeRpc(
     if (override) {
       return Promise.resolve({ data: override.data ?? null, error: override.error ?? null });
     }
+    const stored = {
+      schema_version: "1.0",
+      proposal_id: "p-1",
+      expires_at: "2026-10-21T10:00:00Z",
+    };
     const table: Record<string, unknown> = {
       get_coach_proposal_inputs_v1: data.inputs,
       get_goal_phase_inputs_v1: data.goalPhase,
       get_progression_summary_v1: data.progression,
-      persist_coach_proposal_v1: {
-        schema_version: "1.0",
-        proposal_id: "p-1",
-        expires_at: "2026-10-21T10:00:00Z",
-      },
+      persist_coach_proposal_v1: stored,
+      persist_suggested_deload_v1: stored,
     };
     return Promise.resolve({ data: table[name], error: null });
   };
@@ -223,7 +227,49 @@ Deno.test("the deload the rules suggest needs a reason and is stored without a m
   const result = await proposeSuggestedDeload(rpc, { userId: user, reasons: ["run_down"] });
   assert(result.ok);
   assertEquals(result.kind, "intensity_or_phase");
-  const persist = calls.find((call) => call.name === "persist_coach_proposal_v1")!;
+  const persist = calls.find((call) => call.name === "persist_suggested_deload_v1")!;
   assertEquals(persist.params.p_source_message_id, null);
   assertStringIncludes(String(persist.params.p_rationale), "readiness has read low");
+});
+
+Deno.test("the rules' deload is refused, not stored, while another change waits for an answer", async () => {
+  const { rpc, calls } = fakeRpc({
+    persist_suggested_deload_v1: {
+      error: { code: "TP001", message: "another change is waiting for an answer" },
+    },
+  });
+  const result = await proposeSuggestedDeload(rpc, { userId: user, reasons: ["run_down"] });
+  assert(!result.ok);
+  assertEquals(result.code, "other_proposal_pending");
+  assertEquals(calls.filter((c) => c.name === "persist_coach_proposal_v1"), []);
+});
+
+Deno.test("Coach's own proposals still use the general store", async () => {
+  const { rpc, calls } = fakeRpc();
+  await proposeCoachChange(rpc, { userId: user, intent: lowerIntent, athleteMessage: "x" });
+  assertEquals(calls.filter((c) => c.name === "persist_suggested_deload_v1"), []);
+  assertEquals(calls.filter((c) => c.name === "persist_coach_proposal_v1").length, 1);
+});
+
+Deno.test("only the rules' suggestion carries DELOAD_SIGNALS; a deload Coach builds never does", () => {
+  const state = stateFixture();
+  const coach = buildCoachProposal(
+    { kind: "intensity_or_phase", reason: "fatigue", level: "deload", weeks: 1 },
+    state,
+  );
+  assert(coach.ok);
+  assertEquals(coach.proposal.evidence.some((e) => e.code === "DELOAD_SIGNALS"), false);
+  // Whatever the athlete says about why, the model's intent cannot add it.
+  const withNote = buildCoachProposal({
+    kind: "intensity_or_phase",
+    reason: "athlete_request",
+    note: "DELOAD_SIGNALS",
+    level: "deload",
+    weeks: 1,
+  }, state);
+  assert(withNote.ok);
+  assertEquals(withNote.proposal.evidence.some((e) => e.code === "DELOAD_SIGNALS"), false);
+  const rules = buildSuggestedDeload(["run_down"], state);
+  assert(rules.ok);
+  assertEquals(rules.proposal.evidence.some((e) => e.code === "DELOAD_SIGNALS"), true);
 });

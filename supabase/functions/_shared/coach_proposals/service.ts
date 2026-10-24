@@ -37,7 +37,7 @@ export type ProposeResult =
   }>
   | Readonly<{
     ok: false;
-    code: RefusalCode | "unavailable";
+    code: RefusalCode | "unavailable" | "other_proposal_pending";
     /** Plain words for the athlete; Coach may quote them. */
     reason: string;
   }>;
@@ -104,8 +104,9 @@ async function storeProposal(
   userId: string,
   proposal: CoachProposal,
   sourceMessageId: string | null,
+  store: "persist_coach_proposal_v1" | "persist_suggested_deload_v1" = "persist_coach_proposal_v1",
 ): Promise<ProposeResult> {
-  const stored = await rpc("persist_coach_proposal_v1", {
+  const stored = await rpc(store, {
     p_user_id: userId,
     p_kind: proposal.kind,
     p_title: proposal.title,
@@ -123,6 +124,15 @@ async function storeProposal(
     p_source_message_id: sourceMessageId,
   });
   if (stored.error) {
+    // The rules' deload store refuses, in the same transaction as the store, while another change is
+    // waiting for the athlete's answer (it would have been expired by this one).
+    if (stored.error.code === "TP001") {
+      return {
+        ok: false,
+        code: "other_proposal_pending",
+        reason: "Another change is waiting for your answer. Answer it first.",
+      };
+    }
     return stored.error.code === "55000" ? storeRefusal(stored.error.message ?? "") : unavailable;
   }
   const row = stored.data as { proposal_id?: unknown; expires_at?: unknown } | null;
@@ -159,7 +169,8 @@ export async function proposeCoachChange(
 /**
  * Stores the pending deload the rules suggest (training-proposals). The week is built by the same
  * deterministic builder as a deload Coach proposes; only the reasons come from the rules. It stores
- * a proposal for the athlete to answer and changes nothing else.
+ * a proposal for the athlete to answer and changes nothing else. It uses the rules' own store
+ * (persist_suggested_deload_v1), which refuses while another current change waits for an answer.
  */
 export async function proposeSuggestedDeload(
   rpc: ProposalRpc,
@@ -170,5 +181,11 @@ export async function proposeSuggestedDeload(
   if (!isState(state)) return state;
   const built = buildSuggestedDeload(request.reasons, state);
   if (!built.ok) return built;
-  return await storeProposal(rpc, request.userId, built.proposal, null);
+  return await storeProposal(
+    rpc,
+    request.userId,
+    built.proposal,
+    null,
+    "persist_suggested_deload_v1",
+  );
 }

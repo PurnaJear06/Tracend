@@ -12,6 +12,10 @@
 --   training_guidance  schema_version 1.2; a route day also clears proposal_origin.
 --   persist_coach_proposal_v1  takes a per-athlete transaction lock before it replaces an open proposal and
 --                    stores the new one, so two stores cannot interleave.
+--   persist_suggested_deload_v1  (new, service role only) the store the rules' deload suggestion uses: under
+--                    the same lock it refuses (SQLSTATE TP001) when a current plan change the athlete has
+--                    not answered is open, because storing a training proposal would expire it, then calls
+--                    persist_coach_proposal_v1. The check and the store cannot be split by another store.
 
 -- 1. Deload signals --------------------------------------------------------------------------------------------
 
@@ -231,7 +235,7 @@ begin
   end if;
   -- One proposal is stored at a time per athlete: replacing an open one (below) must not race a second
   -- store (two taps, or a tap and Coach), which could leave two open proposals.
-  perform pg_advisory_xact_lock(hashtext(p_user_id::text));
+  perform pg_advisory_xact_lock(hashtextextended('tracend.coach_proposal_store:' || p_user_id::text, 0));
   if p_kind is null or p_title is null or length(p_title) not between 1 and 120
     or p_rationale is null or length(p_rationale) not between 1 and 2000
     or p_benefit is null or length(p_benefit) not between 1 and 1000
@@ -322,3 +326,50 @@ begin
   return jsonb_build_object('schema_version', '1.0', 'proposal_id', new_id,
     'expires_at', new_expires);
 end $$;
+
+-- 4. The rules' deload store ---------------------------------------------------------------------------------
+
+-- Storing any training proposal expires every open one. A change the athlete asked Coach for and has not
+-- answered is theirs to answer first, so the rules' own suggestion refuses to store over it. Only a change
+-- built on the plan that is active now counts: one built on an older plan could never be approved, and an
+-- unanswered deload is the one a new deload replaces. The refusal and the store are one transaction under
+-- the store lock, so a Coach proposal stored in between cannot be expired unseen.
+create or replace function public.persist_suggested_deload_v1(
+  p_user_id uuid,
+  p_kind text,
+  p_title text,
+  p_rationale text,
+  p_benefit text,
+  p_downside text,
+  p_confidence text,
+  p_evidence jsonb,
+  p_before jsonb,
+  p_after jsonb,
+  p_payload jsonb,
+  p_basis jsonb,
+  p_ends_on date,
+  p_expires_in_hours integer,
+  p_source_message_id uuid default null)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended('tracend.coach_proposal_store:' || p_user_id::text, 0));
+  if exists (
+    select 1 from public.change_proposals cp
+    where cp.user_id = p_user_id and cp.schema_version = '3.0' and cp.status = 'pending'
+      and cp.expires_at > statement_timestamp()
+      and cp.proposal_payload ? 'training'
+      and not private.is_deload_proposal(cp.proposal_kind, cp.proposal_payload)
+      and cp.basis ->> 'training_version_id' = (
+        select v.id::text from public.training_plan_versions v
+        where v.user_id = p_user_id and v.status = 'active')
+  ) then
+    raise exception 'another change is waiting for an answer' using errcode = 'TP001';
+  end if;
+  return public.persist_coach_proposal_v1(p_user_id, p_kind, p_title, p_rationale, p_benefit, p_downside,
+    p_confidence, p_evidence, p_before, p_after, p_payload, p_basis, p_ends_on, p_expires_in_hours,
+    p_source_message_id);
+end $$;
+revoke all on function public.persist_suggested_deload_v1(uuid, text, text, text, text, text, text,
+  jsonb, jsonb, jsonb, jsonb, jsonb, date, integer, uuid) from public, anon, authenticated;
+grant execute on function public.persist_suggested_deload_v1(uuid, text, text, text, text, text,
+  text, jsonb, jsonb, jsonb, jsonb, jsonb, date, integer, uuid) to service_role;

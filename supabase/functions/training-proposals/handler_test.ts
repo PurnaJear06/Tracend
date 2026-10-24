@@ -45,20 +45,10 @@ const guidance = (over: Record<string, unknown> = {}, safetyRoute: string | null
   }),
 });
 
-const noProposals = { schema_version: "1.0", proposals: [] };
-
-const proposal = (kind: string, status: string, title: string) => ({
-  id: "00000000-0000-4000-8000-0000000000c1",
-  kind,
-  status,
-  title,
-});
-
 function setup(
   userAnswer: Answer,
   serviceOverrides: Record<string, Answer> = {},
   inputs: ReturnType<typeof proposalRpcPayloads> = proposalRpcPayloads(),
-  proposals: Answer = { data: noProposals },
 ) {
   const userCalls: Call[] = [];
   const serviceCalls: Call[] = [];
@@ -66,7 +56,7 @@ function setup(
     get_coach_proposal_inputs_v1: inputs.inputs,
     get_goal_phase_inputs_v1: inputs.goalPhase,
     get_progression_summary_v1: inputs.progression,
-    persist_coach_proposal_v1: {
+    persist_suggested_deload_v1: {
       schema_version: "1.0",
       proposal_id: proposalId,
       expires_at: "2026-10-21T10:00:00Z",
@@ -78,8 +68,7 @@ function setup(
     userClient: {
       rpc: (name: string, params: Record<string, unknown>) => {
         userCalls.push({ name, params });
-        const answer = name === "get_my_coach_proposals_v1" ? proposals : userAnswer;
-        return Promise.resolve({ data: answer.data ?? null, error: answer.error ?? null });
+        return Promise.resolve({ data: userAnswer.data ?? null, error: userAnswer.error ?? null });
       },
     },
     serviceClient: {
@@ -108,7 +97,7 @@ const request = (body: unknown = {
     body: method === "POST" ? JSON.stringify(body) : undefined,
   });
 
-const persisted = (calls: Call[]) => calls.filter((c) => c.name === "persist_coach_proposal_v1");
+const persisted = (calls: Call[]) => calls.filter((c) => c.name === "persist_suggested_deload_v1");
 
 Deno.test("a suggested deload is stored as a pending proposal and nothing is applied", async () => {
   const { handler, userCalls, serviceCalls } = setup({ data: guidance() });
@@ -120,11 +109,7 @@ Deno.test("a suggested deload is stored as a pending proposal and nothing is app
     created: true,
   });
   // The athlete's own reader, for the day the app sent.
-  assertEquals(userCalls.map((c) => c.name), [
-    "get_my_training_guidance_v1",
-    "get_my_coach_proposals_v1",
-  ]);
-  assertEquals(userCalls[0].params, { local_date: today });
+  assertEquals(userCalls, [{ name: "get_my_training_guidance_v1", params: { local_date: today } }]);
   const [store] = persisted(serviceCalls);
   assertEquals(persisted(serviceCalls).length, 1);
   assertEquals(store.params.p_user_id, athlete);
@@ -147,7 +132,7 @@ Deno.test("a suggested deload is stored as a pending proposal and nothing is app
   );
   // Only reads and the one store: nothing answers the proposal.
   assertEquals(
-    serviceCalls.map((c) => c.name).filter((n) => n !== "persist_coach_proposal_v1").sort(),
+    serviceCalls.map((c) => c.name).filter((n) => n !== "persist_suggested_deload_v1").sort(),
     ["get_coach_proposal_inputs_v1", "get_goal_phase_inputs_v1", "get_progression_summary_v1"],
   );
 });
@@ -273,7 +258,7 @@ Deno.test("the athlete is the signed-in one and the method is POST", async () =>
   assertEquals(persisted(serviceCalls)[0].params.p_user_id, athlete);
 });
 
-Deno.test("the builder's own refusals come back in plain words and store nothing", async () => {
+Deno.test("the builder's own refusals come back as a code only and store nothing", async () => {
   const data = proposalRpcPayloads();
   data.inputs.screening = "see_professional";
   const { handler, serviceCalls } = setup({ data: guidance() }, {}, data);
@@ -288,7 +273,7 @@ Deno.test("the builder's own refusals come back in plain words and store nothing
 
 Deno.test("a plan that moved on, or a failed store, stores nothing and leaks no detail", async () => {
   const moved = setup({ data: guidance() }, {
-    persist_coach_proposal_v1: {
+    persist_suggested_deload_v1: {
       error: { code: "55000", message: "the plan changed while the proposal was built" },
     },
   });
@@ -296,7 +281,7 @@ Deno.test("a plan that moved on, or a failed store, stores nothing and leaks no 
   assertEquals(changed.status, 409);
   assertEquals((await changed.json()).error, "plan_changed");
   const broken = setup({ data: guidance() }, {
-    persist_coach_proposal_v1: { error: { code: "XX000", message: "relation secret_table" } },
+    persist_suggested_deload_v1: { error: { code: "XX000", message: "relation secret_table" } },
   });
   const failed = await broken.handler(request());
   assertEquals(failed.status, 503);
@@ -305,75 +290,29 @@ Deno.test("a plan that moved on, or a failed store, stores nothing and leaks no 
   assertEquals((await unreadable.handler(request())).status, 409);
 });
 
-Deno.test("an open change waiting in Coach is never expired by a tap on a suggestion", async () => {
-  for (
-    const waiting of [
-      proposal("temporary_block", "pending", "Home block until 30 Oct"),
-      proposal("training_schedule", "pending", "Train 3 days a week"),
-      proposal("exercise_swap", "pending", "Swap Bench for Floor press"),
-      proposal("next_session_adjustment", "pending", "A lighter session"),
-      proposal("intensity_or_phase", "pending", "Moderate effort until 8 Oct"),
-    ]
-  ) {
-    const { handler, serviceCalls } = setup({ data: guidance() }, {}, undefined, {
-      data: { schema_version: "1.0", proposals: [waiting] },
-    });
-    const response = await handler(request());
-    assertEquals(response.status, 409, waiting.title);
-    assertEquals(await response.json(), { error: "other_proposal_pending" });
-    assertEquals(serviceCalls, [], "nothing is read or stored");
-  }
+Deno.test("a change waiting in Coach is never expired by a tap on a suggestion", async () => {
+  // The refusal is the store's own, in the transaction that would have expired it.
+  const { handler, serviceCalls, userCalls } = setup({ data: guidance() }, {
+    persist_suggested_deload_v1: {
+      error: { code: "TP001", message: "another change is waiting for an answer" },
+    },
+  });
+  const response = await handler(request());
+  assertEquals(response.status, 409);
+  assertEquals(await response.json(), { error: "other_proposal_pending" });
+  assertEquals(persisted(serviceCalls).length, 1, "the store was asked once and refused");
+  // No check ahead of the store that another store could slip past.
+  assertEquals(userCalls.map((c) => c.name), ["get_my_training_guidance_v1"]);
 });
 
-Deno.test("only a pending plan change in the way counts", async () => {
-  const stores = async (proposals: unknown[]) => {
-    const { handler, serviceCalls } = setup({ data: guidance() }, {}, undefined, {
-      data: { schema_version: "1.0", proposals },
-    });
-    const response = await handler(request());
-    return [response.status, persisted(serviceCalls).length];
-  };
-  // Answered, expired and undone ones are not waiting.
+Deno.test("the rules' deload is stored through their own store, never the general one", async () => {
+  const { handler, serviceCalls } = setup({ data: guidance() });
+  await handler(request());
   assertEquals(
-    await stores([
-      proposal("temporary_block", "accepted", "Home block until 30 Oct"),
-      proposal("exercise_swap", "declined", "Swap"),
-      proposal("training_schedule", "expired", "Train 3 days a week"),
-      proposal("temporary_block", "undone", "Home block"),
-    ]),
-    [200, 1],
+    serviceCalls.filter((c) => c.name === "persist_coach_proposal_v1"),
+    [],
   );
-  // Nutrition and goal changes are not expired by a training change.
-  assertEquals(
-    await stores([
-      proposal("nutrition_targets", "pending", "Lower your calories"),
-      proposal("goal_or_phase", "pending", "Take a diet break"),
-    ]),
-    [200, 1],
-  );
-  // An older deload proposal is the one a new deload replaces.
-  assertEquals(
-    await stores([proposal("intensity_or_phase", "pending", "Deload until 8 Oct")]),
-    [200, 1],
-  );
-});
-
-Deno.test("proposals that cannot be read store nothing", async () => {
-  for (
-    const answer of [
-      { error: { code: "XX000" } },
-      { data: null },
-      { data: { schema_version: "1.0" } },
-      { data: { proposals: [null] } },
-      { data: { proposals: [{ kind: 1, status: "pending" }] } },
-    ] as Answer[]
-  ) {
-    const { handler, serviceCalls } = setup({ data: guidance() }, {}, undefined, answer);
-    const response = await handler(request());
-    assertEquals(response.status, 503, JSON.stringify(answer));
-    assertEquals((await response.json()).error, "proposals_unavailable");
-    assertEquals(serviceCalls, []);
-  }
+  assertEquals(persisted(serviceCalls).length, 1);
 });
 
 Deno.test("an unexpected failure answers 503 and is reported by a fixed name only", async () => {
