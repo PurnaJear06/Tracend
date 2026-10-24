@@ -80,6 +80,12 @@ class _Server extends FixtureWorkoutRepository {
   /// Reading the session fails while this is true (offline).
   var failReads = false;
 
+  /// Starting the session fails while this is true (offline).
+  var failStart = false;
+
+  /// What each finish sent.
+  final completions = <Map<String, dynamic>>[];
+
   /// The next sync is refused with 22023, as for a set number with no row.
   var refuseNext = false;
 
@@ -121,8 +127,27 @@ class _Server extends FixtureWorkoutRepository {
     String idempotencyKey, {
     DateTime? localDate,
   }) async {
+    if (failStart) throw Exception('offline');
     started = true;
     return 'srv-1';
+  }
+
+  @override
+  Future<WorkoutCompletion> completeWithEffort(
+    String sessionId,
+    int revision,
+    int durationSeconds,
+    Map<String, dynamic> draft, {
+    required int sessionEffort,
+  }) {
+    completions.add(draft);
+    return super.completeWithEffort(
+      sessionId,
+      revision,
+      durationSeconds,
+      draft,
+      sessionEffort: sessionEffort,
+    );
   }
 
   @override
@@ -168,21 +193,29 @@ Future<void> _doneSet(WidgetTester tester, int number) async {
   await _tapLabel(tester, 'Skip rest');
 }
 
-Future<void> _open(WidgetTester tester, _Server server) async {
+Future<void> _open(
+  WidgetTester tester,
+  _Server server, {
+  PlannedWorkout plan = _plan,
+}) async {
   SharedPreferences.setMockInitialValues({});
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  await _mount(tester, server);
+  await _mount(tester, server, plan: plan);
 }
 
 /// Shows the logger over [server]; the draft it kept is read back.
-Future<void> _mount(WidgetTester tester, _Server server) async {
+Future<void> _mount(
+  WidgetTester tester,
+  _Server server, {
+  PlannedWorkout plan = _plan,
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: TracendTheme.dark,
       home: ActiveWorkoutScreen(
-        workout: _plan,
+        workout: plan,
         repository: server,
         restAlerts: _Alerts(),
         notifications: _Notifications(),
@@ -337,8 +370,10 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('logged sets and a substitution the server made meanwhile '
-        'need attention: no rename, nothing synced', (tester) async {
+    testWidgets('logged sets and a substitution the server made meanwhile: '
+        'the sets keep their name, which is sent, and the workout syncs', (
+      tester,
+    ) async {
       final handle = tester.ensureSemantics();
       final server = _Server({1: 3, 2: 3});
       await _open(tester, server);
@@ -351,15 +386,25 @@ void main() {
       server.syncs.clear();
       await _tapLabel(tester, 'More weight');
 
-      expect(server.syncs, isEmpty, reason: 'nothing under another name');
-      expect(find.text('Needs attention'), findsWidgets);
+      expect(find.text('Needs attention'), findsNothing);
       expect(find.text('Bench press'), findsWidgets, reason: 'not renamed');
       expect(find.text('Machine chest press'), findsNothing);
+      expect(server.syncs, isNotEmpty, reason: 'the draft is not stuck');
+      final sent = bench(server.syncs.last);
+      expect(sent['performance_kind'], 'prescribed');
+      expect(sent['performed_name'], 'Bench press');
+      expect(
+        ((sent['sets'] as List).first as Map)['completed'],
+        isTrue,
+        reason: 'the logged set went with its own name',
+      );
       handle.dispose();
     });
 
     testWidgets('a restart with logged sets and a substitution on the server '
-        'opens the draft as it was and needs attention', (tester) async {
+        'opens the draft as it was and sends it under its name', (
+      tester,
+    ) async {
       final handle = tester.ensureSemantics();
       final server = _Server({1: 3, 2: 3});
       await _open(tester, server);
@@ -377,8 +422,50 @@ void main() {
 
       expect(find.text('Bench press'), findsWidgets);
       expect(find.text('Machine chest press'), findsNothing);
-      expect(find.text('Needs attention'), findsWidgets);
-      expect(server.syncs, isEmpty, reason: 'the draft was kept, not sent');
+      expect(find.text('Needs attention'), findsNothing);
+      expect(bench(server.syncs.last)['performance_kind'], 'prescribed');
+      handle.dispose();
+    });
+
+    testWidgets('an accepted swap, started offline, logged on the swap, then '
+        'a prescribed row: the workout finishes with the swap\'s name', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final swapped = _plan.withExercises([
+        _plan.exercises.first.swappedTo(
+          name: 'Machine chest press',
+          slug: 'machine-chest-press',
+        ),
+        _plan.exercises.last,
+      ]);
+      final server = _Server({1: 3, 2: 3})..failStart = true;
+      await _open(tester, server, plan: swapped);
+      expect(find.text('Machine chest press'), findsWidgets);
+      // A swap carries no starting weight or reps: the athlete enters them.
+      await _tapLabel(tester, 'More weight');
+      await _tapLabel(tester, 'One more rep');
+      await _doneSet(tester, 1);
+      expect(server.syncs, isEmpty, reason: 'offline');
+
+      // Back online: the server made a prescribed row for the exercise.
+      server.failStart = false;
+      await _doneSet(tester, 2);
+      expect(find.text('Needs attention'), findsNothing);
+      expect(find.text('Saved'), findsWidgets);
+      final sent = bench(server.syncs.last);
+      expect(sent['performance_kind'], 'substituted');
+      expect(sent['performed_name'], 'Machine chest press');
+
+      // The athlete can finish and save.
+      await _tapLabel(tester, 'Finish workout');
+      await _tapLabel(tester, '7, Hard');
+      await tester.tap(find.widgetWithText(FilledButton, 'Finish workout'));
+      await tester.pumpAndSettle();
+      final finished = bench(server.completions.single);
+      expect(finished['performance_kind'], 'substituted');
+      expect(finished['performed_name'], 'Machine chest press');
+      expect(find.text('Workout complete'), findsOneWidget);
       handle.dispose();
     });
 

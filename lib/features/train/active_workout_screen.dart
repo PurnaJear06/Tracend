@@ -539,9 +539,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// and have as many sets as that row. A row with no sets is an exercise
   /// left out today for a sore joint: it has none here either, so nothing is
   /// logged or synced for it. A substituted row is the gentler exercise it
-  /// names. `fits` is false when a set with something on it has no row or sits
-  /// on an exercise the row names differently (it is never dropped or
-  /// relabelled); `changed` when any count or name moved.
+  /// names. A row that names an exercise differently from what is logged on
+  /// it does not move the logged sets: they keep their identity and it is sent
+  /// with them (see [ExerciseDraft.takeIdentity]). `fits` is false when a set
+  /// with something on it has no row (it is never dropped); `changed` when any
+  /// count or name moved.
   ({bool fits, bool changed}) _alignSets(Object? exercises) {
     var fits = true;
     var changed = false;
@@ -556,7 +558,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       final draft = _exercises[index];
       final before = draft.sets.length;
       final nameBefore = draft.exercise.name;
-      if (draft.takeIdentity(row)) fits = false;
+      draft.takeIdentity(row);
       draft.alignTo(sets.length);
       if (draft.sets.length != before || draft.exercise.name != nameBefore) {
         changed = true;
@@ -765,6 +767,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           // Only this phone needs to know that a swap waits to be confirmed
           // (and which catalog exercise it is), so a restart keeps it.
           if (local && draft.swapPending) 'swap_pending': true,
+          if (local && draft.keepsOwnIdentity) 'keep_identity': true,
           if (local && draft.exercise.swappedFrom != null)
             'exercise_slug': ?draft.exercise.exerciseSlug,
           'sets': [

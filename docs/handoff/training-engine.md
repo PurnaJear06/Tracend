@@ -913,8 +913,8 @@ by the diagnosis-word test with `readiness_copy.dart`).
   `joint_states`, or the server's `area_state` when it answers within 1.5 s) or the day has a safety
   route. `DayAdjustment.jointOptionsFor` is null on a day with a safety route.
 - **Swap and restart.** `swap_pending` and the swap's slug live in the local draft. `takeIdentity` never
-  renames an exercise with entries; every row read (`_alignSets`, from the first read, a retry, or the
-  start) sets `_rowsConflict`, and while it stands the draft is kept, nothing is sent and the sync says
+  renames an exercise with entries (round 2 below: the identity is sent with them instead of blocking).
+  A set with entries and no server row is still a conflict: `_rowsConflict`, draft kept, nothing sent,
   **Needs attention**.
 - **Sentry.** Pain keys go with their values in any text (`pain_area=back`, JSON, query strings), a
   refused row goes to the end of the line, and `pain_reports` and `record_pain_check*` are redacted.
@@ -923,6 +923,29 @@ by the diagnosis-word test with `readiness_copy.dart`).
   build cannot read counts as recorded, with the phone's outcome. A report just made always shows its
   referral (the once-a-day rule is only for what Today opens by itself). "a tear" is now "a ripping
   feeling" in the Dart and TypeScript question copy.
+
+**B5-2 round 2 fixes.**
+- **One ordered path for check-ins.** The check-in sheet no longer sends its envelope directly: it
+  enqueues it and calls `CheckInQueue.replay`, so every older envelope goes first and this one last
+  (the server counts the last one sent as the day's check-in). `CheckInQueue` takes a lock per
+  athlete, changes one envelope by its key (`clearDelivered`, `markPainRefused`; never a list read
+  before an await), and runs replays one after the other, so a check-in saved while a replay waits
+  survives whether that replay lands or is refused. A refused check-in that a newer one for the same
+  day has replaced is marked `superseded` and is let go, unsent, when the athlete reads the notice
+  (sent late it would become the day's check-in again).
+- **Refusals.** The day's limit on pain reports (`P0001`, "too many pain reports today") on a stored
+  envelope with a pain check is a refusal like 22023 (marked, told, later envelopes go on); another
+  `P0001` is retried. A duplicate idempotency key (`23505`) counts as delivered.
+- **A conflicting row never blocks the workout.** `sync_workout_draft` records `performance_kind`,
+  `performed_name` and the reason as sent (`coalesce` over the stored value; `prescribed` and
+  `substituted` both pass the shape check). A server row of `prescribed` against a swap logged on the
+  phone keeps the swap (`swapPending`); a row of `substituted` against sets logged under the plan's
+  name keeps the plan's identity, which is sent as `performance_kind: prescribed` with the plan's name
+  (`ExerciseDraft.keepsOwnIdentity`, kept in the local draft as `keep_identity`). Only a set with
+  entries that has no server row still needs attention.
+- **Smaller.** `area_state` that is not text reads as `none`; a send that fails with an error keeps
+  the report and the answer; the result sheet opens whatever happens to the delivery; the check-in
+  sheet falls back to "waiting" for any failure and never stays on "Saving".
 
 **B4-2 (review; same-day readiness adjustment, app side).** `lib/features/readiness/` holds the
 parser (`day_adjustment.dart`), repository, one shared controller (`DayAdjustmentController`, owned by
