@@ -339,7 +339,7 @@ begin
   insert into public.workout_sessions(id, user_id, plan_version_id, planned_workout_id, local_date, timezone,
     state, idempotency_key, completed_at, duration_seconds, session_effort, session_effort_source,
     completion_source)
-  values (sid, uid, vid, wid, private.local_date_for(uid) - p_ago, 'UTC', p_state, gen_random_uuid(),
+  values (sid, uid, vid, wid, private.local_date_for(uid) - p_ago, 'UTC', p_state::public.workout_session_state, gen_random_uuid(),
     case when p_state = 'completed' then now() end, case when p_state = 'completed' then 3000 end,
     case when p_state = 'completed' then 8 end, case when p_state = 'completed' then 'athlete' end,
     case when p_state = 'completed' then 'manual' end);
