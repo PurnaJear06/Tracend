@@ -96,7 +96,7 @@ void main() {
       expect(scrubbed.exceptions!.single.type, 'PostgrestException');
       final crumb = scrubbed.breadcrumbs!.single;
       expect(crumb.data, {'outcome': 'ok'});
-      expect(crumb.message, contains('record_pain_check_v1'));
+      expect(crumb.message, isNot(contains('record_pain_check')));
     });
 
     test('a breadcrumb the SDK records is scrubbed before it is kept', () {
@@ -115,11 +115,12 @@ void main() {
         hint,
       )!;
       expect(crumb.message, isNot(contains('pain_area')));
-      expect(crumb.message, contains('record_pain_check_v1'));
+      expect(crumb.message, isNot(contains('back')), reason: 'the value too');
+      expect(crumb.message, isNot(contains('record_pain_check')));
       expect(crumb.data.toString(), isNot(contains('numb_weak_limb')));
       expect(crumb.data!.containsKey('request_body'), isTrue);
       expect((crumb.data!['request_body'] as Map).isEmpty, isTrue);
-      expect(crumb.data!['url'], contains('record_pain_check_v1'));
+      expect(crumb.data!['url'], isNot(contains('record_pain_check')));
     });
 
     test('a row the database refused is not reported with its values', () {
@@ -138,6 +139,66 @@ void main() {
       expect(value, contains('new row violates check constraint'));
       expect(value, isNot(contains('knee')));
       expect(value, isNot(contains('2026-10-24')));
+    });
+
+    test(
+      'a row cut short before its bracket is gone to the end of the line',
+      () {
+        final event = SentryEvent(
+          exceptions: [
+            SentryException(
+              type: 'PostgrestException',
+              value:
+                  'new row violates check constraint\nFailing row contains '
+                  '(r1, u1, 2026-10-24, shoulder, 8, {numb_weak_limb}, clin',
+            ),
+          ],
+        );
+        final value = scrubSentryEvent(event, hint)!.exceptions!.single.value!;
+        expect(value, contains('new row violates check constraint'));
+        for (final left in ['shoulder', '2026-10-24', 'r1, u1', 'clin']) {
+          expect(value, isNot(contains(left)));
+        }
+      },
+    );
+
+    test('a pain key and its value go together, in any text', () {
+      final texts = {
+        'pain_area=back': 'back',
+        'saved pain_severity: 8 for the visit': '8 for',
+        'body {"pain_area":"lower back","pain_severity":7}': 'lower back',
+        "args(pain_red_flags: ['night_pain', 'fever_unwell'])": 'fever',
+        'GET /rest/v1/x?area=knee&limit=1': 'knee',
+        "payload {'area': 'shoulder'}": 'shoulder',
+        'red_flags = [numb_weak_limb] failed': 'numb',
+        'cleared_by_clinician=true': 'true',
+      };
+      for (final entry in texts.entries) {
+        final scrubbed = scrubSentryEvent(
+          SentryEvent(message: SentryMessage(entry.key)),
+          hint,
+        )!.message!.formatted;
+        expect(scrubbed, isNot(contains(entry.value)), reason: scrubbed);
+      }
+      final kept = scrubSentryEvent(
+        SentryEvent(message: SentryMessage('limit=1 failed for the workout')),
+        hint,
+      )!.message!.formatted;
+      expect(kept, 'limit=1 failed for the workout');
+    });
+
+    test('the table and the function of the pain check are not named', () {
+      final scrubbed = scrubSentryEvent(
+        SentryEvent(
+          message: SentryMessage(
+            'insert into pain_reports failed in record_pain_check_v1',
+          ),
+        ),
+        hint,
+      )!.message!.formatted;
+      expect(scrubbed, isNot(contains('pain_reports')));
+      expect(scrubbed, isNot(contains('record_pain_check')));
+      expect(scrubbed, contains('failed in'));
     });
 
     test('a missing breadcrumb stays missing', () {

@@ -62,24 +62,39 @@ bool _dropKey(Object? key) =>
     key is String &&
     (_droppedKeys.contains(key) || _droppedPrefixes.any(key.startsWith));
 
+/// A pain key with its value, in any text: `pain_area=back`,
+/// `pain_severity: 8`, `"red_flags":["night_pain"]`, `area = 'knee'`. The whole
+/// expression goes, so the answer does not stay behind the key.
+final _painPair = RegExp(
+  r'''["']?\b(?:pain_[a-z_]+|joint_[a-z_]+|red_flags?|area|area_state|severity|'''
+  r'''cleared_by_clinician|followups|hold_outcome|safety_route|'''
+  r'''range_note_codes?|swap_to_(?:name|slug))["']?\s*[:=]\s*'''
+  r'''(?:\[[^\]]*\]|"[^"]*"|'[^']*'|[^\s,;&})\]]+)''',
+);
+
 /// The words that carry a pain answer or a referral when they appear inside
 /// text: the codes of the red-flag list, the routes and outcomes that name a
-/// referral, and the pain check's own `pain_` and `joint_` tokens. Names of
-/// functions and screens are not among them.
+/// referral, the pain check's own `pain_` and `joint_` tokens, and the names
+/// of its table and function (`pain_reports`, `record_pain_check`). Names of
+/// other functions and screens are not among them.
 final _sensitiveText = RegExp(
   r'(pain_(?:area|severity|pattern|red_flags|followups|cleared_by_clinician|'
-  r'referral|flag|mild|moderate|severe)|red_flag[a-z_:]*|joint_[a-z_]+|'
+  r'referral|flag|mild|moderate|severe|reports)|record_pain_check[a-z0-9_]*|'
+  r'red_flag[a-z_:]*|joint_[a-z_]+|'
   r'bladder_bowel_saddle|chest_or_breath|numb_weak_limb|pop_or_sudden|'
   r'cannot_bear_or_move|rapid_swelling|dislocated_or_cannot_lift|'
   r'locks_gives_way|fever_unwell|night_pain|clinician_today|clinician)',
 );
 
 /// What the database says of a row it refused: the values are the athlete's
-/// answers, so the whole row goes.
-final _refusedRow = RegExp(r'Failing row contains \(.*\)');
+/// answers, so everything from there to the end of the line goes, even when
+/// the message was cut short before its closing bracket.
+final _refusedRow = RegExp(r'Failing row contains \(.*');
 
-String _scrubText(String text) =>
-    text.replaceAll(_refusedRow, redacted).replaceAll(_sensitiveText, redacted);
+String _scrubText(String text) => text
+    .replaceAll(_refusedRow, redacted)
+    .replaceAll(_painPair, redacted)
+    .replaceAll(_sensitiveText, redacted);
 
 Object? _scrub(Object? value) {
   if (value is Map) {
