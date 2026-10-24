@@ -20,11 +20,12 @@ import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_sheet.dart';
 
 /// What the workout overview sheet asks the screen to do.
-enum WorkoutOverviewAction { start, viewSummary }
+enum WorkoutOverviewAction { start, doToday, viewSummary }
 
 /// Opens the workout overview: objective, warm-up, exercises and cooldown,
 /// with Start workout, or View summary once the day is done. A day that has
-/// not begun ([canStart] false) is a preview with no action. Completes with
+/// not begun ([canStart] false) is a preview whose one action is Do it today.
+/// Completes with
 /// the chosen action, or null when dismissed.
 Future<WorkoutOverviewAction?> showWorkoutOverviewSheet(
   BuildContext context, {
@@ -47,12 +48,15 @@ Future<WorkoutOverviewAction?> showWorkoutOverviewSheet(
               Navigator.of(sheetContext).pop(WorkoutOverviewAction.viewSummary),
           child: const Text('View summary'),
         )
-      else if (canStart)
+      else
         FilledButton.icon(
-          onPressed: () =>
-              Navigator.of(sheetContext).pop(WorkoutOverviewAction.start),
+          onPressed: () => Navigator.of(sheetContext).pop(
+            canStart
+                ? WorkoutOverviewAction.start
+                : WorkoutOverviewAction.doToday,
+          ),
           icon: const Icon(CupertinoIcons.play_fill, size: 18),
-          label: const Text('Start workout'),
+          label: Text(canStart ? 'Start workout' : 'Do it today'),
         ),
     ],
   ),

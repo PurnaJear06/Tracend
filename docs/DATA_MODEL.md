@@ -478,15 +478,27 @@ logged under. No lineage is recorded. A workout is the same workout in another v
 the same name (case and outer spaces ignored) and the same `workout_order`, the match Coach's
 context already makes (`completed_this_week`): `private.workout_identity_ids(user, workout)` returns
 every such id of the athlete. Everything that asks whether a day is already logged uses it, not the
-bare id: `start_workout` (a second start for the same workout and day raises `55000`),
-`get_my_workout_session` (finds the day's finished session of an earlier version),
+bare id: `start_workout` (a second start for the same workout and day raises `55000`; a session in
+progress under an earlier version is the one a start of the copy returns, so no second one opens),
+`get_my_workout_session` (finds the day's session of an earlier version, in progress or finished),
 `get_healthkit_completion_candidate`, `healthkit_auto_complete_workout`, `day_adjustment_compute`
-(`session_done`) and `private.unfinished_workouts`. The hub's history does not need it: it counts
+(`session_started` and `session_done`) and `private.unfinished_workouts`. The hub's history does not need it: it counts
 every completed session of the athlete by date. There is no unique index on (athlete, day, workout):
 the identity lives in `planned_workouts`, which an index on `workout_sessions` cannot read, and
 production already holds one athlete-day with the same workout logged twice. A workout renamed or
 reordered by a Coach change is a different workout to these checks. `start_workout` raises `22023`
-for a `p_local_date` after the athlete's local today (`private.local_date_for`).
+for a `p_local_date` after the athlete's local today (`private.local_date_for`), after the replay
+of an idempotent start. A workout started on the athlete's own today that is not the day's scheduled one
+(`planned_workout_for_date`) has no card and no stored answer, so the joint rules still take out or swap
+what a held or limited joint asks for it; readiness answers belong to the scheduled workout.
+
+**Weekdays.** `preferred_weekday` is read by every server reader of the day's workout
+(`planned_workout_for_date`, the readiness card, Apple Health completion, Coach context), so a plan
+version must not lack them. `private.fill_workout_weekdays(version)` gives a version whose workouts have
+none their weekdays in plan order (`private.default_workout_weekdays`: the profile's `training_days`
+when they are as many as the workouts, else a spread: two Monday and Thursday, three Monday, Wednesday and
+Friday, four Monday, Tuesday, Thursday and Friday, otherwise from Monday); `private.coach_insert_workouts`
+calls it, and the migration filled the versions that existed.
 
 `state` is `in_progress`, `completed` or `abandoned`. `abandon_workout` discards an open session
 (audited as `workout.abandoned`); the rows stay, and every history, load and hub read counts

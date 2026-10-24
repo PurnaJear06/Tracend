@@ -41,6 +41,7 @@ class WorkoutHero extends StatelessWidget {
     required this.onViewSummary,
     required this.onOpenMuscles,
     this.doneSession,
+    this.onDoToday,
     this.healthkitCandidate,
     this.onHealthkitComplete,
     this.onHealthkitManual,
@@ -65,6 +66,9 @@ class WorkoutHero extends StatelessWidget {
   final VoidCallback? onStart;
   final VoidCallback onViewSummary;
   final VoidCallback onOpenMuscles;
+
+  /// Starts a coming day's workout today; shown with the preview.
+  final VoidCallback? onDoToday;
 
   final HealthkitCompletionCandidate? healthkitCandidate;
   final VoidCallback? onHealthkitComplete;
@@ -164,12 +168,17 @@ class WorkoutHero extends StatelessWidget {
                   onPressed: onViewSummary,
                   child: const Text('View summary'),
                 )
-              else if (state == HeroDayState.upcoming)
+              else if (state == HeroDayState.upcoming) ...[
                 OutlinedButton(
                   onPressed: onOpenOverview,
                   child: const Text('Preview workout'),
-                )
-              else
+                ),
+                if (onDoToday != null)
+                  TextButton(
+                    onPressed: onDoToday,
+                    child: const Text('Do it today'),
+                  ),
+              ] else
                 FilledButton.icon(
                   onPressed: onStart,
                   icon: const Icon(CupertinoIcons.play_fill, size: 18),

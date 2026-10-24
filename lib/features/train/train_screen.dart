@@ -486,6 +486,8 @@ class _TrainScreenState extends State<TrainScreen> {
     switch (action) {
       case WorkoutOverviewAction.start:
         await _start(_planned(workout), date);
+      case WorkoutOverviewAction.doToday:
+        await _start(_planned(workout), _today);
       case WorkoutOverviewAction.viewSummary:
         _viewSummary(workout, date);
     }
@@ -827,8 +829,9 @@ class _TrainScreenState extends State<TrainScreen> {
         : HeroDayState.planned;
     TrainingSessionSummary? doneSession;
     if (done) {
-      // The session of this workout (under any plan version: the hub names
-      // the active copy as currentWorkoutId); else the day's only session.
+      // The session of this workout, under any plan version: the hub names
+      // the active copy as currentWorkoutId. A day done as another workout
+      // shows no session of its own.
       for (final session in hub.recentSessions) {
         if (sameDay(session.date, date) &&
             (session.workoutId == null ||
@@ -838,9 +841,6 @@ class _TrainScreenState extends State<TrainScreen> {
           break;
         }
       }
-      doneSession ??= hub.recentSessions
-          .where((session) => sameDay(session.date, date))
-          .firstOrNull;
     }
     final candidate = _candidate;
     final canAutoComplete = _source is SupabaseWorkoutRepository;
@@ -861,6 +861,7 @@ class _TrainScreenState extends State<TrainScreen> {
               ? null
               : () => _start(_planned(workout), date),
           onViewSummary: () => _viewSummary(workout, date),
+          onDoToday: upcoming ? () => _start(_planned(workout), _today) : null,
           onOpenMuscles: () => showMusclesSheet(context, workout: workout),
           healthkitCandidate: candidate,
           healthkitBusy: _healthkitBusy,

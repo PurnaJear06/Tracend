@@ -83,6 +83,14 @@ class _Server extends FixtureWorkoutRepository {
   /// The next sync is refused with 22023, as for a set number with no row.
   var refuseNext = false;
 
+  /// `start_workout` answers with this code (22023: the day has not begun,
+  /// 55000: the day is already logged), or fails as offline for 'offline'.
+  String? startRefusal;
+
+  /// What the session read returns once the start was refused with 55000: the
+  /// finished session of an earlier plan version.
+  Map<String, dynamic>? loggedSession;
+
   Map<String, dynamic> _session() => {
     'session_id': 'srv-1',
     'state': 'in_progress',
@@ -109,6 +117,11 @@ class _Server extends FixtureWorkoutRepository {
     String idempotencyKey, {
     DateTime? localDate,
   }) async {
+    final refusal = startRefusal;
+    if (refusal == 'offline') throw Exception('offline');
+    if (refusal != null) {
+      throw PostgrestException(message: 'refused', code: refusal);
+    }
     started = true;
     return 'srv-1';
   }
@@ -119,6 +132,7 @@ class _Server extends FixtureWorkoutRepository {
     DateTime? localDate,
   }) async {
     if (started && failReads) throw Exception('offline');
+    if (loggedSession != null && startRefusal == '55000') return loggedSession;
     return started || alreadyStarted ? _session() : null;
   }
 
@@ -175,7 +189,106 @@ Future<void> _open(WidgetTester tester, _Server server) async {
   await tester.pumpAndSettle();
 }
 
+/// Opens the workout from a button, so closing it has a screen to return to.
+Future<void> _openPushed(WidgetTester tester, _Server server) async {
+  SharedPreferences.setMockInitialValues({});
+  tester.view.physicalSize = const Size(390, 844);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: TracendTheme.dark,
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: FilledButton(
+            onPressed: () => Navigator.of(context).push<bool>(
+              MaterialPageRoute(
+                builder: (_) => ActiveWorkoutScreen(
+                  workout: _plan,
+                  repository: server,
+                  restAlerts: _Alerts(),
+                  notifications: _Notifications(),
+                  activity: FakeWorkoutActivityBridge(),
+                  lockScreenNumbers: () async => false,
+                  clock: () => DateTime(2026, 10, 3, 9),
+                ),
+              ),
+            ),
+            child: const Text('Open workout'),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('Open workout'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
+  group('a start the server refuses for good', () {
+    testWidgets('a day that has not begun (22023) closes with a message, '
+        'not as offline', (tester) async {
+      final server = _Server({1: 3, 2: 3})..startRefusal = '22023';
+      await _openPushed(tester, server);
+      expect(find.byType(ActiveWorkoutScreen), findsNothing);
+      expect(
+        find.text('This day has not started yet. Open the workout on the day.'),
+        findsOneWidget,
+      );
+      expect(server.syncs, isEmpty);
+    });
+
+    testWidgets('a day already logged (55000) opens the finished session, '
+        'with the exercises as they were logged', (tester) async {
+      final server = _Server({1: 3, 2: 3})
+        ..startRefusal = '55000'
+        ..loggedSession = {
+          'session_id': 'done-1',
+          'state': 'completed',
+          'duration_seconds': 3000,
+          'exercises': [
+            {
+              'order': 1,
+              'status': 'performed',
+              'performed_name': 'Incline press',
+              'sets': [
+                {
+                  'number': 1,
+                  'completed': true,
+                  'repetitions': 8,
+                  'load_kg': 50,
+                },
+              ],
+            },
+          ],
+        };
+      await _openPushed(tester, server);
+      expect(find.byType(ActiveWorkoutScreen), findsOneWidget);
+      expect(find.text('Incline press'), findsWidgets);
+      expect(find.text('Bench press'), findsNothing);
+      expect(find.text('Done set 1'), findsNothing);
+      expect(server.syncs, isEmpty);
+    });
+
+    testWidgets('55000 with nothing to show closes with a message', (
+      tester,
+    ) async {
+      final server = _Server({1: 3, 2: 3})..startRefusal = '55000';
+      await _openPushed(tester, server);
+      expect(find.byType(ActiveWorkoutScreen), findsNothing);
+      expect(
+        find.text('This workout is already logged for the day.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a network failure still waits as offline', (tester) async {
+      final server = _Server({1: 3, 2: 3})..startRefusal = 'offline';
+      await _openPushed(tester, server);
+      expect(find.byType(ActiveWorkoutScreen), findsOneWidget);
+    });
+  });
+
   testWidgets('a fresh start takes the set rows the server made', (
     tester,
   ) async {
