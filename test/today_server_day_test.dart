@@ -5,6 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
@@ -127,6 +130,105 @@ Future<void> _checkInWithPain7(WidgetTester tester) async {
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 500));
   await tester.pumpAndSettle(const Duration(milliseconds: 100));
+}
+
+String _key(DateTime value) =>
+    '${value.year.toString().padLeft(4, '0')}-'
+    '${value.month.toString().padLeft(2, '0')}-'
+    '${value.day.toString().padLeft(2, '0')}';
+
+/// Records the day each meals read is for.
+class _Nutrition extends FixtureNutritionRepository {
+  _Nutrition();
+
+  final mealDays = <String>[];
+  final scheduleDays = <String>[];
+
+  @override
+  Future<List<MealEntry>> loadMeals(DateTime date) {
+    mealDays.add(_key(date));
+    return super.loadMeals(date);
+  }
+
+  @override
+  Future<NutritionSchedule> loadSchedule(DateTime date) {
+    scheduleDays.add(_key(date));
+    return super.loadSchedule(date);
+  }
+}
+
+/// A coach whose newest decision is for [day]; counts the decisions it makes.
+class _Coach implements CoachRepository {
+  _Coach(this.day, {this.missingData = const []});
+
+  final String day;
+  final List<String> missingData;
+  int generated = 0;
+
+  @override
+  Future<CoachDecision?> loadLatest() async => CoachDecision(
+    id: 'd',
+    localDate: day,
+    trainingAction: 'PROCEED_AS_PLANNED',
+    trainingSummary: 'Train as planned.',
+    nutritionAction: 'MAINTAIN_TARGETS',
+    nutritionSummary: 'Keep the approved nutrition targets.',
+    finalDecision: 'Proceed as planned.',
+    reason: 'Check-in is available.',
+    confidence: 'medium',
+    evidence: const [],
+    missingData: missingData,
+    riskFlags: const [],
+    createdAt: _phone,
+  );
+
+  @override
+  Future<CoachDecision> generate() async {
+    generated++;
+    return (await loadLatest())!;
+  }
+
+  @override
+  Future<Map<String, dynamic>> loadUsage() async => const {};
+}
+
+/// Grants AI coaching once Today is up, which makes Today check that the
+/// decision it shows is current.
+Future<_Coach> _grantAndCheck(
+  WidgetTester tester, {
+  required String decisionDay,
+  required DayAdjustmentController controller,
+  List<String> missingData = const [],
+}) async {
+  SharedPreferences.setMockInitialValues({});
+  final preferences = await SharedPreferences.getInstance();
+  final coach = _Coach(decisionDay, missingData: missingData);
+  final consent = AiCoachingConsentController(
+    FixtureAiCoachingConsentRepository(AiCoachingChoice.declined),
+    initial: AiCoachingChoice.declined,
+  );
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        extensions: const [TracendColors.dark],
+      ),
+      home: TodayScreen(
+        environment: _live,
+        brief: _Brief(),
+        coach: coach,
+        aiConsent: consent,
+        queueFactory: () => CheckInQueue(preferences),
+        dayAdjustment: controller,
+        clock: () => _phone,
+      ),
+    ),
+  );
+  await _settle(tester);
+  expect(coach.generated, 0, reason: 'AI coaching is off until it is granted');
+  await consent.record(granted: true);
+  await _settle(tester);
+  return coach;
 }
 
 void main() {
@@ -253,6 +355,127 @@ void main() {
       await _settle(tester);
       expect(brief.days.last, '2026-10-02');
       expect(brief.days, hasLength(2));
+    });
+  });
+
+  group('meals and the decision follow the server day, not the phone', () {
+    testWidgets("today's meals are read for the server day once it is known", (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final preferences = await SharedPreferences.getInstance();
+      final nutrition = _Nutrition();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            brightness: Brightness.dark,
+            extensions: const [TracendColors.dark],
+          ),
+          home: TodayScreen(
+            environment: _offline,
+            brief: _Brief(),
+            nutrition: nutrition,
+            queueFactory: () => CheckInQueue(preferences),
+            dayAdjustment: _controller(
+              FakeDayAdjustmentRepository(_noCheckIn()),
+            ),
+            clock: () => _phone,
+          ),
+        ),
+      );
+      await _settle(tester);
+      // The phone's day first, then the server's, for the meals and the plan.
+      expect(nutrition.mealDays, ['2026-10-01', '2026-10-02']);
+      expect(nutrition.scheduleDays, ['2026-10-01', '2026-10-02']);
+    });
+
+    testWidgets(
+      'meals are not read again when the phone and the server agree',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final preferences = await SharedPreferences.getInstance();
+        final nutrition = _Nutrition();
+        final controller = DayAdjustmentController(
+          repository: FakeDayAdjustmentRepository(_noCheckIn()),
+          clock: () => _phone,
+          serverToday: () async => DateTime(2026, 10, 1),
+        );
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(
+              brightness: Brightness.dark,
+              extensions: const [TracendColors.dark],
+            ),
+            home: TodayScreen(
+              environment: _offline,
+              brief: _Brief(),
+              nutrition: nutrition,
+              queueFactory: () => CheckInQueue(preferences),
+              dayAdjustment: controller,
+              clock: () => _phone,
+            ),
+          ),
+        );
+        await _settle(tester);
+        expect(nutrition.mealDays, ['2026-10-01']);
+      },
+    );
+
+    testWidgets("a decision for the server's day is current, whatever the "
+        'phone says', (tester) async {
+      final coach = await _grantAndCheck(
+        tester,
+        decisionDay: '2026-10-02',
+        controller: _controller(FakeDayAdjustmentRepository(_noCheckIn())),
+      );
+      expect(coach.generated, 0, reason: 'already the server day decision');
+    });
+
+    testWidgets("a decision for the phone's day is stale once the server has "
+        'moved on', (tester) async {
+      final coach = await _grantAndCheck(
+        tester,
+        decisionDay: '2026-10-01',
+        controller: _controller(FakeDayAdjustmentRepository(_noCheckIn())),
+      );
+      expect(coach.generated, 1);
+    });
+
+    testWidgets('a server-day decision that cited the check-in missing is '
+        'made again', (tester) async {
+      final coach = await _grantAndCheck(
+        tester,
+        decisionDay: '2026-10-02',
+        missingData: const ['recovery_check_in'],
+        controller: _controller(FakeDayAdjustmentRepository(_noCheckIn())),
+      );
+      expect(coach.generated, 1);
+    });
+
+    testWidgets('until the server day is known the phone day is used', (
+      tester,
+    ) async {
+      final never = DayAdjustmentController(
+        repository: FakeDayAdjustmentRepository(_noCheckIn()),
+        clock: () => _phone,
+        serverToday: () => Completer<DateTime?>().future,
+      );
+      addTearDown(never.dispose);
+      final current = await _grantAndCheck(
+        tester,
+        decisionDay: '2026-10-01',
+        controller: never,
+      );
+      expect(never.serverDay, isNull);
+      expect(current.generated, 0, reason: "the phone's own day is current");
+      await tester.pumpWidget(const SizedBox.shrink());
+      final stale = await _grantAndCheck(
+        tester,
+        decisionDay: '2026-09-30',
+        controller: never,
+      );
+      expect(stale.generated, 1);
     });
   });
 }

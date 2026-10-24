@@ -765,13 +765,14 @@ notice when new data goes to the AI provider, AI_SAFETY_SPEC), and non-judgement
 
 Open, from B4/B5 (none of these files are built in B4-1):
 
-1. **ai-gateway, Coach context:** a volatile `readiness` contributor (Contract 7) rendering today's
+1. **ai-gateway, Coach context (built 2026-10-24, `claude/coach-readiness-context`; the deload signal and cardio week of B5-3/B5-4 join once #174 is on main):** a volatile `readiness` contributor (Contract 7) rendering today's
    band, kind, status, safety route and each joint's state from the service-role reader
    `get_readiness_context_v1(p_user_id, p_local_date)` (built in B5-1, version 1.0: `{schema_version,
    local_date, band, kind, status, available, unavailable_reason, safety_route, triggers, confidence,
    joint_states [{area, state, persistent}], rules_version}`; codes only, never a red-flag code or a
    severity; only the athlete's own today). The athlete-facing payload parser is
-   `_shared/training/readiness/payload.ts` (1.0 and 1.1); the reader's shape is not parsed there yet.
+   `_shared/training/readiness/payload.ts` (1.0 and 1.1); the reader's shape is parsed by
+   `_shared/training/readiness/context_payload.ts`.
 2. **ai-gateway, A9 red-flag screen (B5-1 built the data):** treat today's newest pain report with
    outcome `urgent`, `clinician_today` or `clinician` like a check-in pain of 7 or more (the context
    view's `safety_route` says it), and add `pain_reports` to "pain on record" in the route choice.

@@ -460,11 +460,12 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   /// leaves the schedule null so the card says the plan did not load.
   Future<TodayMeals> _loadMeals() async {
     final nutrition = widget.nutrition;
-    final now = DateTime.now();
+    final day = _briefDay();
+    _mealsRequestedFor = _dateKey(day);
     try {
-      final meals = await nutrition.loadMeals(now);
+      final meals = await nutrition.loadMeals(day);
       final schedule = nutrition is NutritionScheduleRepository
-          ? await (nutrition as NutritionScheduleRepository).loadSchedule(now)
+          ? await (nutrition as NutritionScheduleRepository).loadSchedule(day)
           : const NutritionSchedule(title: '', items: []);
       return (schedule: schedule, meals: meals);
     } catch (error) {
@@ -488,22 +489,33 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   /// The day of the newest brief request, `YYYY-MM-DD`.
   String? _briefRequestedFor;
 
+  /// The day of the newest meals request, `YYYY-MM-DD`.
+  String? _mealsRequestedFor;
+
   /// The athlete's day for the check-in gate and its saved marks: the
   /// server's when known, else the brief's, else the phone's.
   String _dayKey() =>
       _serverDay ?? _lastBrief?.localDate ?? _dateKey(widget.clock());
 
+  /// The day the coaching decision must be dated for to be current: the
+  /// server's once it is known, else the phone's. (The brief's date is not
+  /// used: before the server's day is known it is the phone's own request.)
+  String _decisionDay() => _dateKey(_briefDay());
+
   /// Follows the server's day. It is recorded as soon as the controller learns
-  /// it, whether or not the brief has arrived, and the brief is loaded again
-  /// when the newest request was for another day, whichever of the two
-  /// finishes first.
+  /// it, whether or not the brief has arrived, and the brief and today's meals
+  /// are loaded again when the newest request was for another day, whichever
+  /// of the two finishes first.
   void _dayAdjustmentChanged() {
     final day = widget.dayAdjustment?.serverDay;
     if (!mounted || day == null) return;
     _serverDay = day;
-    if (_briefRequestedFor == day) return;
+    final briefStale = _briefRequestedFor != day;
+    final mealsStale = _mealsRequestedFor != day;
+    if (!briefStale && !mealsStale) return;
     setState(() {
-      _brief = _loadBrief();
+      if (briefStale) _brief = _loadBrief();
+      if (mealsStale) _meals = _loadMeals();
     });
   }
 
@@ -655,7 +667,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       if (widget.environment.hasSupabaseConfiguration) {
         try {
           final latest = await widget.coach.loadLatest();
-          final today = _dateKey(DateTime.now());
+          final today = _decisionDay();
           final citedCheckInMissing =
               latest != null &&
               latest.localDate == today &&
@@ -724,7 +736,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     if (!widget.environment.hasSupabaseConfiguration || !_aiAllowed) return;
     try {
       final latest = await widget.coach.loadLatest();
-      final today = _dateKey(DateTime.now());
+      final today = _decisionDay();
       final citedCheckInMissing =
           latest != null &&
           latest.localDate == today &&

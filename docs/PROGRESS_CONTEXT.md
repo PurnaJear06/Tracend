@@ -111,6 +111,15 @@ held until the athlete says a clinician cleared it. No app change yet (B5-2); th
 the new pain keys until then, and the installed B4-2 build must tolerate the new kind and routes
 (see the handoff). Details: "B5-1" in [`training-engine.md`](./handoff/training-engine.md).
 
+**Coach knows today's readiness card (2026-10-24, branch `claude/coach-readiness-context`, PR open):** a `readiness`
+Coach context block (band, the card's answer state, safety route and strictness, held/limited/watched joints, fixed
+rules; no red-flag code or severity) read from `get_readiness_context_v1` with a 1.5 s deadline and an
+ok/unavailable/failed/timeout trace; the deload and cardio-week part waits for #174 (seam documented). Today's meals
+and the Coach decision's freshness follow the server day on Today, not the phone date. Daily coaching retries a
+busy or failing provider once and names a rejection by its HTTP status (`anthropic_request_failed_status_<n>`,
+`anthropic_overloaded`). Details: "Coach knows today's readiness card" in [`ai-gateway.md`](./handoff/ai-gateway.md).
+Still open: the reply guard and the A9 screen do not read pain reports (contract requests 2 and 3).
+
 **Unfinished workouts (2026-10-24, branch `claude/unfinished-workout`, PR open):** the owner's Legs B (23 sets logged,
 never finished) was closed by the stale rule and Coach then called it "not done". A stale-closed session with logged sets
 is now offered back on Today ("You didn't finish Legs B on Fri 23 Oct · 23 sets logged"): **Save workout** completes it

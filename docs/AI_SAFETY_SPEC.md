@@ -231,7 +231,11 @@ question:
 - The Coach may not give sets, loads or exercises for a joint that is held, tell the athlete to train
   through a pain of 4 or more in an exercise or through a red flag, or reassure that a red flag is
   harmless (contract requests 2 and 3 in the program plan carry this to the reply guard and the A9
-  screen; until they land the context view `get_readiness_context_v1` is the only reader).
+  screen; until they land, Coach is told through the `readiness` context block built from
+  `get_readiness_context_v1`: the band, the card's answer state, the safety route and its strictness, and the
+  held, limited and watched areas, with fixed rules (never contradict the card; no training talk on a safety
+  route; nothing that loads a held area; the athlete decides and Coach never applies; a deload only as a
+  proposal). That is prompt text, not a reply check: the reply guard does not yet catch a held-area prescription).
 - Missing data lowers what is allowed and never raises it: an exercise with no catalog rating counts
   as moderate on every joint; a report that did not ask the red-flag question is judged by severity
   alone.
