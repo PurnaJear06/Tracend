@@ -293,7 +293,7 @@ function permittedEvidenceOf(context: Record<string, unknown>): string[] {
 const charsPerTokenFloor = 1.5;
 // The rules, the answer contract and its evidence codes, the question and every wrapper. The
 // instructions with every block on (lookups, proposals, fact suggestions) and a full list of
-// evidence codes measured 25,495 characters on 2026-10-24 (25,220 on 2026-10-20, before the safety_state rule);
+// evidence codes measured 25,199 characters on 2026-10-24, leaving room for other changes;
 // coach_chat_persona_test.ts fails if they pass this.
 export const instructionsMaxChars = 25_500;
 const reserveCeilingMinUsd = 0.001;
