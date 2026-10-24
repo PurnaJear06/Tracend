@@ -288,6 +288,10 @@ class _AppShellState extends State<AppShell> {
               : const OfflinePainCheckRepository()),
       readiness: _dayAdjustment,
       userId: widget.userId,
+      // Queued reports go only while their own athlete is signed in.
+      signedInUser: live
+          ? () => Supabase.instance.client.auth.currentUser?.id
+          : null,
     );
     _brief = SharedDailyBriefRepository(
       injected?.brief ??

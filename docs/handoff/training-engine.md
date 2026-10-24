@@ -840,27 +840,29 @@ by the diagnosis-word test with `readiness_copy.dart`).
 - **Check-in** (`check_in_sheet.dart`). Area, optional pattern and the area's red-flag questions
   (`redFlagCodesFor`); Save stays closed until the area and an answer (a tick or **None of these**) are
   given; follow-ups for each state in `joint_states` (**Gone** / **Still there**; held: **Yes** with a
-  strength / **Not yet**). Pain keys travel only with an area and the red-flag answer. A 22023 keeps the
-  sheet open ("Tracend could not record these pain answers..."), never queues. A queued envelope is
-  replayed on launch and whenever the app comes forward; `CheckInQueue` marks a pain check the server
-  refuses (`pain_refused`, `painState`) and `acknowledgeRefusedPain` then sends the rest of the
-  check-in without the pain keys.
+  strength / **Not yet**). Pain keys travel only with an area and the red-flag answer. A clinician
+  clearance for an area chosen again as today's pain goes as `pain_cleared_by_clinician` on that one
+  report. A queued envelope is replayed on launch and whenever the app comes forward; `CheckInQueue`
+  marks a pain check the server refuses (`pain_refused`, `pain_refused_too_old`, `painState`) and
+  `acknowledgeRefusedPain` then sends the rest of the check-in without the pain keys. See "Review
+  fixes" below for what the sheet does when a referral is due or the server refuses.
 - **Workout pain chip** (`pain_check_sheet.dart`, `pain_reporting.dart`, `pain_report_queue.dart`,
   `pain_check.dart`). `record_pain_check_v1` with an idempotency key and the server's day
   (`serverDay`); the outcome is computed on the phone by the same table as `private.pain_outcome` (a test
   pins the table), so a referral shows even when nothing can be sent. A report that cannot be sent
   waits in `PainReportQueue` (per athlete), is sent again when the app comes forward and after each
-  workout sync, and a 22023 marks it **refused** (older than yesterday): it is never dropped, Today
-  says so (`PainNoticeCard`) until **I understand**. Account deletion clears the queue and the
+  workout sync, and a 22023 marks it **refused**: it is never dropped, Today says so
+  (`PainNoticeCard`) until **I understand**. Account deletion clears the queue and the
   acknowledgements.
 - **Logger** (`active_workout_screen.dart`, `workout_draft.dart`). `_alignSets` takes each server row
   by its order: a row with **no sets** is `ExerciseDraft.leftOut` (page says "Left out today", no
   set card, nothing logged; the draft carries it with empty `sets`, status `unknown`, never
   skipped); a `substituted` row takes `performed_name` and `exercise_slug` (`takeIdentity`) and the
   draft sends `performance_kind`/`performed_name`/`substitution_reason` (`swapFields`); a swap made in
-  the workout (**Use ‹swap›**, only before any set has an entry) is logged the same way. A name that
-  moves under sets with entries is never relabelled; the sync needs attention instead. Range cues
-  show on a limited exercise.
+  the workout (**Use ‹swap›**, only before any set has an entry) is logged the same way and kept in the
+  local draft as `swap_pending` (with its slug) until a server row says it. A name that differs under
+  sets with entries is never relabelled (`takeIdentity` returns a conflict and changes nothing); the
+  sync needs attention instead. Range cues show on a limited exercise.
 - **`syncDraft`** now takes `readRows` and returns what it sent. Both callers pass it (the earlier
   day's left-over draft, read for the day it was made on; the unfinished-workout save,
   `get_my_workout_session` for the offered session). `alignPayloadToRows` drops only blank trailing
@@ -870,10 +872,9 @@ by the diagnosis-word test with `readiness_copy.dart`).
   check from events and breadcrumbs, by key and by words in strings, and the "Failing row contains"
   text of a refused row. `main.dart` uses it; the old in-file scrubber is gone.
 - **Safer choices where the brief was open.** A 4 to 6 result sheet can be closed (the athlete stays in
-  charge); 7 or more and any Yes cannot. A drained report that the server refuses for any 22023 reason
-  is told as "not recorded" even when the cause is not its date. The queued check-in is still one slot
-  (a second check-in the same day replaces the first, as before); a refused pain answer is reported
-  before the rest is sent without it. Follow-up answers carry no red-flag question (the server's
+  charge); 7 or more, any Yes, a held area and a day with a safety route cannot. A refused report is told
+  as "too old" only when the server's message is the date window (`isPainDateRefusal`); any other 22023
+  gets "could not record it as it stands". Follow-up answers carry no red-flag question (the server's
   `pain_followups` take area, strength and clearance only).
 - **Not done.** The pain keys are not on the Home Screen widget or Live Activity (by design). Today's
   meals and the Coach decision freshness still use the phone's date (B4-2 follow-up, unchanged).
@@ -885,6 +886,43 @@ by the diagnosis-word test with `readiness_copy.dart`).
   `workout_repository_test.dart` (unfinished save fits the rows), `sentry_scrubber_test.dart`,
   `contract/day_adjustment_rpc_contract_test.dart` and `contract/pain_check_contract_test.dart` on the
   1.1 fixtures.
+
+**B5-2 review fixes (Codex and a second hostile review of #176).**
+- **Pain queue.** `PainReportQueue` changes storage only through one lock per athlete and by
+  idempotency key: `drain` reads, sends one report, then removes or marks that one report, so a report
+  added during a drain survives, a dismissed refusal stays dismissed, and `PainReportQueue.clearFor`
+  (account deletion) wins over a drain that is waiting on the network. Drains in flight are joined, and
+  each send first checks that the signed-in athlete (`PainReporting.signedInUser`) is still the queue's.
+  `readiness.load()` runs after a drain only when it sent something (`PainQueueState.sent`).
+- **The answer never waits on the network.** `PainReporting.submit` returns at once with the phone's
+  outcome and a `delivery` future; the chip's form closes with it. A send that has not answered after
+  8 seconds is kept in the queue and forgotten again if it lands. The result sheet shows the referral
+  at once; a server that is silent changes nothing but the small "Saved on this phone" line. The
+  check-in sheet closes at once for a referral (the envelope is queued and sent in the background,
+  `CheckInSaved.pending`; Today then reads today again or says it waits); a check-in with no referral
+  waits at most 8 seconds.
+- **Refused check-in.** A 22023 never discards the check-in: the envelope is kept marked
+  (`markPainRefused`), the local referral is still shown, and Today's notice sends the rest without
+  the pain answers when the athlete has read it. Closing the sheet no longer depends on the answer.
+- **Second offline check-in.** An envelope with a pain check is moved to
+  `daily_check_in_pending.earlier.<uid>` (a list) instead of being overwritten, and every earlier
+  envelope is sent first, in order (the last one sent is the day's check-in; a failure holds the later
+  ones back, a refusal does not).
+- **Held area and safety-route day.** The chip's result sheet is the stop sheet (referral or hold line,
+  **Skip this exercise** / **End workout**) when the report routes out, the area is held (today's
+  `joint_states`, or the server's `area_state` when it answers within 1.5 s) or the day has a safety
+  route. `DayAdjustment.jointOptionsFor` is null on a day with a safety route.
+- **Swap and restart.** `swap_pending` and the swap's slug live in the local draft. `takeIdentity` never
+  renames an exercise with entries; every row read (`_alignSets`, from the first read, a retry, or the
+  start) sets `_rowsConflict`, and while it stands the draft is kept, nothing is sent and the sync says
+  **Needs attention**.
+- **Sentry.** Pain keys go with their values in any text (`pain_area=back`, JSON, query strings), a
+  refused row goes to the end of the line, and `pain_reports` and `record_pain_check*` are redacted.
+- **Smaller.** The chip sends `red_flags: null` ("not asked": it asks 2 of 10; `record_pain_check_v1`
+  takes null and judges by the strength) and the queue keeps that. A successful call whose answer this
+  build cannot read counts as recorded, with the phone's outcome. A report just made always shows its
+  referral (the once-a-day rule is only for what Today opens by itself). "a tear" is now "a ripping
+  feeling" in the Dart and TypeScript question copy.
 
 **B4-2 (review; same-day readiness adjustment, app side).** `lib/features/readiness/` holds the
 parser (`day_adjustment.dart`), repository, one shared controller (`DayAdjustmentController`, owned by

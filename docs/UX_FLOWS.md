@@ -541,10 +541,14 @@ no pain. For an area already held, limited or on watch, a question comes first: 
 knee pain. How is it today?" (**Gone**, **Still there** with a strength) or, for a held area, "Has a
 doctor or physio cleared you to train your shoulder?" (**Yes** with a strength from 0, **Not yet**);
 these go as `pain_followups`. The phone works the strictest referral out from the answers by the same
-rules as the server, so the sheet opens at once even when the check-in can only be queued. If the
-server refuses the pain answers (22023: more than a day from its own date) the sheet stays open
-and says so; a queued check-in refused later waits marked, and Today tells the athlete before the
-rest of it is sent without the pain answers.
+rules as the server, so the sheet closes at once for a referral and the referral opens on Today
+without waiting for the network (the check-in is sent in the background; a check-in with no
+referral waits at most 8 seconds, then waits on the phone). If the server refuses the pain answers
+(22023) the check-in is kept marked, the referral is still shown, and Today tells the athlete (too
+old, or "could not record it as it stands") before the rest of it is sent without the pain answers.
+A referral for a report just made is shown even when the same route was read earlier that day. An
+area a doctor or physio cleared, chosen again as today's pain, is one report that carries the
+clearance.
 
 ### Evidence detail
 
@@ -717,8 +721,11 @@ see Today). The exercise is flagged so the next target holds it. The answer shee
 **Keep it light** for 1 to 3 (**Continue**); **Stop this exercise for today** for 4 to 6, offering
 **Use ‹swap›** (the swap the day's options already named, so it works offline and only before a set
 has an entry) or **Skip this exercise**; **Stop this exercise** with the referral for 7 or more or a
-Yes (**Skip this exercise**, **End workout**; it cannot be dismissed). The referral read there is not
-opened again on Today that day. A swap is logged as a substituted performance for pain.
+Yes (**Skip this exercise**, **End workout**; it cannot be dismissed), and the same sheet, with the
+hold line ("Your shoulder is on hold until you've had it checked.") or the day's referral, when the
+area is already held or the day has a safety route: no swap and no keep going then. The sheet is
+shown at once from the phone's rules; a server that is slow or silent only adds the line "Saved on
+this phone". The referral read there is not opened again on Today that day. A swap is logged as a substituted performance for pain.
 
 **Joint changes in the logger (B5-2).** `start_workout` is the authority for the rows. An exercise
 the server left out for a joint has no set rows: its page says **Left out today** with no set to
