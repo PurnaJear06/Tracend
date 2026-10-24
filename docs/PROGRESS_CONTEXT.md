@@ -71,6 +71,12 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 
+**Coach opens a fresh chat (2026-10-24, branch `claude/coach-chat-fresh`, PR open):** Coach reopens the last
+conversation only if its last message is under 6 hours old, otherwise a new conversation with a **Continue last
+chat** row (checked again when the Coach tab is re-activated or the app resumes, never mid-send or with a typed
+draft); opening any conversation now lands on its newest message even when content lays out late. App only, no
+migration. Details: "Coach opens a fresh chat after 6 hours" in [`ai-gateway.md`](./handoff/ai-gateway.md).
+
 **Stale open workouts (2026-10-23, branch `claude/stale-workout-resume`, PR open):** the owner's Legs B resumed a
 session left open since 2026-07-17 (timer 2348 h, today's sets saved on a July date). An open session from an earlier
 local day more than 3 hours old is now closed as `abandoned` (rows and sets kept) when any workout is opened and by an
@@ -87,6 +93,15 @@ gives a referral and no training change (even on a rest day or with no check-in)
 held until the athlete says a clinician cleared it. No app change yet (B5-2); the app must not offer
 the new pain keys until then, and the installed B4-2 build must tolerate the new kind and routes
 (see the handoff). Details: "B5-1" in [`training-engine.md`](./handoff/training-engine.md).
+
+**Unfinished workouts (2026-10-24, branch `claude/unfinished-workout`, PR open):** the owner's Legs B (23 sets logged,
+never finished) was closed by the stale rule and Coach then called it "not done". A stale-closed session with logged sets
+is now offered back on Today ("You didn't finish Legs B on Fri 23 Oct · 23 sets logged"): **Save workout** completes it
+on its own date with the athlete's effort, **Discard** keeps it out for good, each audited; nothing is finished for them.
+Coach reads it as "logged N sets, not finished", not undone or missed. Migration `20261024050011`
+(`get_my_unfinished_workout_v1`, `resolve_unfinished_workout_v1`, `get_coach_plan_state_v1` 1.3); needs the migration
+deployed before the app is reinstalled. Details: "Unfinished workouts" in
+[`training-engine.md`](./handoff/training-engine.md).
 
 **Incident 2026-10-18: every Coach chat turn timed out (Refs FLUTTER-K). Fixed by #155 (deploy pending verification: confirm `schema_sha` `274ee4fafead` and a first successful turn in production).** The gateway's answer
 schema had grown to 24 optional properties and 4 unions and listed the day's evidence codes, so
@@ -305,7 +320,7 @@ Needs a reinstall. See [`docs/handoff/account-session.md`](./handoff/account-ses
   - A2 (#41, merged 2026-09-29): the app side.
     - The app sends request 1.1, so a model failure shows a labeled data summary or safety note,
       with Retry and the beta diagnostic.
-    - Coach reopens the last conversation and creates a thread on its first send.
+    - Coach reopens the last conversation (since 2026-10-24 only within 6 hours) and creates a thread on its first send.
     - It lists only conversations that contain a message (`get_my_coach_threads`).
     - The first install (build 185) had no font files, so every icon showed as a "?" box. Its
       build folder was shared with other checkouts. A rebuild from the same commit, with every font

@@ -369,32 +369,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     await _save();
   }
 
-  /// The keys of a saved draft that the server reads; the rest only this
-  /// phone needs.
-  static const _serverDraftKeys = [
-    'workout_id',
-    'session_id',
-    'idempotency_key',
-    'revision',
-    'exercises',
-    'notes',
-  ];
-
-  /// The five set keys the server may refuse when this phone's times are off.
-  static const _timingKeys = [
-    'started_at',
-    'completed_at',
-    'rest_before_seconds',
-    'rir',
-    'timing_source',
-  ];
-
   /// Sends what an earlier day's draft holds that the server may not have:
   /// its sets, and its finish when one was saved. True when nothing is left
   /// on this phone that the server lacks, so the draft may go: no set was
   /// done and no finish waits, or everything reached the server. False
   /// keeps the draft (offline, or a draft whose session was never created
-  /// and has no finish to send).
+  /// and has no finish to send). A session that no longer takes sets or a
+  /// finish (55000: it was saved or discarded already, say by an earlier try
+  /// whose answer was lost) is settled: nothing of the draft can reach it, so
+  /// it goes and never opens as a workout.
   Future<bool> _sendLeftOver(Map<String, dynamic> draft) async {
     final repository = widget.repository;
     try {
@@ -414,17 +397,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         );
       }
       final revision = (draft['revision'] as num?)?.toInt() ?? 0;
-      final payload = {
-        for (final key in _serverDraftKeys)
-          if (draft.containsKey(key)) key: draft[key],
-        'session_id': id,
-      };
-      try {
-        await repository.sync(id, revision, payload);
-      } on PostgrestException catch (e) {
-        if (e.code != '22023') rethrow;
-        await repository.sync(id, revision, _withoutTiming(payload));
-      }
+      final payload = serverDraftPayload(draft, id);
+      await syncDraft(repository, id, revision, payload);
       if (finish != null) {
         await repository.completeWithEffort(
           id,
@@ -439,6 +413,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         data: {'finished': finish != null},
       );
       return true;
+    } on PostgrestException catch (e) {
+      if (e.code == '55000') {
+        debugPrint('Non-critical error: earlier workout already settled: $e');
+        return true;
+      }
+      debugPrint('Non-critical error: earlier workout kept on the phone: $e');
+      return false;
     } catch (e) {
       debugPrint('Non-critical error: earlier workout kept on the phone: $e');
       return false;
@@ -457,23 +438,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
     );
   }
-
-  static Map<String, dynamic> _withoutTiming(Map<String, dynamic> payload) => {
-    ...payload,
-    'exercises': [
-      for (final exercise in payload['exercises'] as List)
-        {
-          ...(exercise as Map<String, dynamic>),
-          'sets': [
-            for (final set in exercise['sets'] as List)
-              {
-                for (final entry in (set as Map<String, dynamic>).entries)
-                  if (!_timingKeys.contains(entry.key)) entry.key: entry.value,
-              },
-          ],
-        },
-    ],
-  };
 
   bool _leftOnEarlierDay(Map<String, dynamic> draft) {
     final started = DateTime.tryParse('${draft['actual_started_at'] ?? ''}');

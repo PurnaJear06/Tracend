@@ -413,6 +413,11 @@ Reading order:
      "Recovery not scored yet", and the lines say the score appears once Tracend has enough nights
      to compare. With no computed data at all the verdict reads "Your day" with "Sync Apple Health
      to see how recovered you are." and no ring.
+   - **Unfinished workout**, under the hero when there is one: a workout from the last 7 days
+     that has logged sets and was never finished ("You didn't finish Legs B on Fri 23 Oct · 23
+     sets logged"). **Save workout** asks how hard it was (1 to 10, required) and puts it in
+     history on its own day; **Discard** asks first and keeps it out of history and load for good.
+     It does not count as a workout until the athlete saves it.
 3. **Plan progress**: the plan's title and "Week 3 of 20" with a thin bar; past the block, "Week
    22 · block of 20 done".
 4. **Tiles**: Sleep (tall: duration, sleep debt or quality, a deep/REM share bar from Apple
@@ -533,6 +538,14 @@ Training and Nutrition remain perspectives in one controlled decision pipeline, 
 agents. The Coach tab answers direct questions through the same workflow and never behaves like
 three separate autonomous chatbots.
 
+- **Opening Coach.** Coach reopens the conversation the athlete last had open only when its last
+  message is under 6 hours old. Later, it opens a new conversation (its thread is created by the
+  first send) with one row above the suggestions, **Continue last chat**, whose subtitle is the
+  earlier chat's first question; tapping it opens that conversation. Older conversations stay in
+  Saved conversations. Opening any conversation lands on its newest message, and stays there while
+  late content (a proposal card, a long reply) lays out, until the athlete touches the screen.
+  The same 6-hour check runs when the athlete returns to the Coach tab or the app resumes on it,
+  unless a reply is on its way or a draft is typed; a chat opened on purpose stays for that visit.
 - **AI label.** A reply a model wrote carries the small label **AI answer · checked by Tracend**,
   with no provider name (D11). A reply no model wrote (the deterministic safety boundary, stored
   with provider `mock`) reads **Tracend safety answer · not AI** and never carries the AI badge. A

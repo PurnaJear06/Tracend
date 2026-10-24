@@ -108,8 +108,10 @@ class _Repository implements WorkoutRepository {
   /// it does for a phone clock more than 10 minutes ahead.
   bool refuseTimes = false;
 
-  /// The server refuses every draft with this code.
+  /// The server refuses every draft with this code, or only the drafts of
+  /// [refuseOnly] when that is set.
   String? refuseCode;
+  String? refuseOnly;
   int refusals = 0;
   int completeCalls = 0;
 
@@ -185,7 +187,7 @@ class _Repository implements WorkoutRepository {
     if (failSync) throw Exception('offline');
     syncedTo.add(sessionId);
     final code = refuseCode;
-    if (code != null) {
+    if (code != null && (refuseOnly == null || refuseOnly == sessionId)) {
       refusals++;
       throw PostgrestException(message: 'refused', code: code);
     }
@@ -2187,6 +2189,31 @@ void main() {
       expect(starts, 0);
       expect(h.repository.saved, isNotNull);
       expect(h.repository.savedDraft['session_id'], 'old-session');
+    },
+  );
+
+  testWidgets(
+    'an earlier day whose session was settled is dropped, and today opens fresh',
+    (tester) async {
+      // The session was saved or discarded on the server (55000: it takes
+      // no more sets), so the draft of it can never be sent and must not
+      // come back as a workout, with its old sets and session.
+      final h = _Harness();
+      var starts = 0;
+      h.repository.onStart = () => starts++;
+      h.repository.refuseCode = '55000';
+      h.repository.refuseOnly = 'old-session';
+      h.repository.saved = jsonEncode(draftStartedAt(DateTime(2026, 7, 17, 9)));
+      await _open(tester, h, size: const Size(390, 1400));
+      await _flushSave(tester);
+      expect(h.repository.syncedTo.first, 'old-session');
+      expect(h.repository.refusals, 1);
+      expect(starts, 1);
+      expect(find.text('0:00'), findsOneWidget);
+      expect(h.repository.syncedSet(0, 0)['completed'], isFalse);
+      expect(h.repository.savedDraft['session_id'], 'server-session');
+      expect(h.repository.syncedTo.skip(1), everyElement('server-session'));
+      expect(h.repository.completedIds, isEmpty);
     },
   );
 
