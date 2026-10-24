@@ -210,7 +210,7 @@ declare
   route text := adjustment ->> 'safety_route';
   deload jsonb := private.deload_signals(p_user, p_date);
 begin
-  if route is not null and deload ->> 'status' = 'suggested' then
+  if false and route is not null and deload ->> 'status' = 'suggested' then
     deload := deload || jsonb_build_object('status', 'not_due', 'reasons', '[]'::jsonb,
       'suppressed_by', 'safety_route');
   end if;

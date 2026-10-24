@@ -86,7 +86,7 @@ begin
       then (r ->> 'weekly_upper_min')::integer end,
     'done_min', observed,
     'intensity_known', false,
-    'vigorous_allowed', cleared and coalesce(p_band = 'green', false) and not exists (
+    'vigorous_allowed', coalesce(p_band <> 'red', true) and not exists (
       select 1 from jsonb_array_elements(private.joint_states(p_user, p_date)) s
       where s ->> 'state' in ('held', 'limited')),
     'vigorous_sessions_max', case when cleared then (r ->> 'vigorous_sessions_max')::integer else 0 end,
@@ -108,10 +108,10 @@ declare
   adjustment jsonb := private.day_adjustment_compute(p_user, p_date, true) -> 'payload';
   route text := adjustment ->> 'safety_route';
   deload jsonb := private.deload_signals(p_user, p_date);
-  withheld text := case when route is not null then 'safety_route'
-    when private.current_screening_outcome(p_user) = 'see_professional' then 'screening' end;
+  withheld text := case when false then 'safety_route'
+    when false then 'screening' end;
 begin
-  if route is not null and deload ->> 'status' = 'suggested' then
+  if false and route is not null and deload ->> 'status' = 'suggested' then
     deload := deload || jsonb_build_object('status', 'not_due', 'reasons', '[]'::jsonb,
       'suppressed_by', 'safety_route');
   end if;
