@@ -242,6 +242,22 @@ cross join lateral jsonb_array_elements(private.joint_changes('b5900000-0000-400
    from (values ('knee', cb.knee), ('back', cb.back), ('shoulder', cb.shoulder)) v(a, st)
    where v.st <> 'none'), '[]'::jsonb)) e;
 
+-- The swaps offered to the in-workout pain chip are always low stress on the joint.
+select cmp_ok((select count(*) from public.planned_workouts w
+    cross join lateral jsonb_array_elements(private.joint_options('b5900000-0000-4000-8000-000000000001', w.id)) e
+    cross join (values ('knee'), ('back'), ('shoulder')) j(joint)
+    where w.user_id = 'b5900000-0000-4000-8000-000000000001' and e -> 'joint_options' -> j.joint <> 'null'::jsonb),
+  '>', 20::bigint, 'the chip has swap options to offer across the catalog');
+select is((select count(*) from public.planned_workouts w
+    cross join lateral jsonb_array_elements(private.joint_options('b5900000-0000-4000-8000-000000000001', w.id)) e
+    cross join (values ('knee'), ('back'), ('shoulder')) j(joint)
+    join public.planned_exercises pe on pe.id = (e ->> 'planned_exercise_id')::uuid
+    join public.exercise_catalog o on o.slug = pe.exercise_slug
+    join public.exercise_catalog r on r.slug = e -> 'joint_options' -> j.joint ->> 'slug'
+    where w.user_id = 'b5900000-0000-4000-8000-000000000001'
+      and not (pg_temp.rank_at(r, j.joint) = 1 and pg_temp.rank_at(r, j.joint) < pg_temp.rank_at(o, j.joint))),
+  0::bigint, 'and every one is low stress on its joint and gentler than the exercise');
+
 -- What the rule table asks of each exercise, written out independently of the function.
 create function pg_temp.asked(p_state text, p_stress text) returns integer language sql as $$
   select case p_state

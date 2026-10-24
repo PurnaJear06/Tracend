@@ -385,7 +385,7 @@ begin
     where p.user_id = p_user and p.area = joint_area and p.local_date <= p_date
       and p.cleared_by_clinician
       and p.severity <= (r ->> 'clearance_max_severity')::integer
-      and p.outcome in ('watch', 'clear')
+      and coalesce(cardinality(p.red_flags), 0) = 0
       and exists (select 1 from public.pain_reports h
         where h.user_id = p_user and h.area = joint_area and h.local_date <= p_date
           and h.outcome = any(held)
