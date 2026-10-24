@@ -38,7 +38,7 @@
 
 create function private.deload_rules()
 returns jsonb language sql immutable set search_path = '' as $$
-  select '{"version":"deload-v1","weeks":1,"set_fraction":0.5,"rpe_cap":7,"performance_drop_min_exercises":2,"run_down_window_days":7,"run_down_min_days":4,"block_weeks_min":4,"block_weeks_max":8,"block_done_min_completion_pct":75,"completion_window_days":28,"recent_deload_days":28,"active_week_windows":4,"active_week_windows_min":3}'::jsonb;
+  select '{"version":"deload-v1","weeks":1,"set_fraction":0.5,"rpe_cap":7,"performance_drop_min_exercises":1,"run_down_window_days":8,"run_down_min_days":3,"block_weeks_min":2,"block_weeks_max":24,"block_done_min_completion_pct":50,"completion_window_days":28,"recent_deload_days":27,"active_week_windows":4,"active_week_windows_min":2}'::jsonb;
 $$;
 revoke all on function private.deload_rules() from public, anon, authenticated;
 
