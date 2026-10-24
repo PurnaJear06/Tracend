@@ -699,10 +699,10 @@ athlete `global` sources plus the sources of the country the athlete chose in Ac
 time zone, as before.
 
 Plan explanations cite sources (E5). In Coach chat, a question that asks why the plan is the way it is
-(`isPlanExplanationQuestion`, deterministic) is searched with what the plan is made of added to it
-(the athlete's training days, rep ranges, effort and goal as counts and enumerated values, read once
-for the turn), and the library block carries a fixed note that the explanation starts from the plan's
-own numbers. In the onboarding plan (`onboarding-plan`, gateway route), two searches for the athlete's
+(`isPlanExplanationQuestion`, deterministic) is searched twice, as asked and with what the plan is made of
+added (the athlete's training days, rep ranges, effort and goal as counts and enumerated values, read
+once for the turn), the two result lists merged, and the library block carries a fixed note that the
+explanation starts from the plan's own numbers. In the onboarding plan (`onboarding-plan`, gateway route), two searches for the athlete's
 region (training, nutrition) put excerpts into the prompt; the model may list the ids it relied on in
 `sources`, deterministic code refuses an id that was not shown, and a cited source becomes a
 `source: "library"` evidence item labelled from the retrieval and listed in the app under "Why this

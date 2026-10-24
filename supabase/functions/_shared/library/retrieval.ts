@@ -2,6 +2,7 @@ import type {
   CoachContextContributor,
   CoachContextInput,
   ContributorTrace,
+  PrefetchedQueryEmbedding,
   RenderedBlock,
   ShownSource,
 } from "../coach_context/host.ts";
@@ -366,16 +367,84 @@ async function planFactsWithin(
 const rowText = (row: LibraryRow) => `${row.header}\n${row.body}`;
 const roundTo = (value: number, places: number) => Number(value.toFixed(places));
 
+/** One search of the contributor: how its embedding went, what came back, what passes the floor. */
+type Run = Readonly<{
+  rows: readonly LibraryRow[];
+  shown: readonly LibraryRow[];
+  wordsOnly: boolean;
+  embedMs: number;
+  degraded: LibraryDegradedReason;
+}>;
+
+/**
+ * The rows of each list in turn (best first), a chunk once however many lists hold it: a list never
+ * crowds the others out of the block. Used where one question is searched twice (a plan question,
+ * E5) and where the onboarding plan is searched for two topics.
+ */
+export function interleave(lists: readonly (readonly LibraryRow[])[]): LibraryRow[] {
+  const merged: LibraryRow[] = [];
+  const seen = new Set<string>();
+  for (let index = 0; index < Math.max(0, ...lists.map((list) => list.length)); index++) {
+    for (const list of lists) {
+      const row = list[index];
+      if (row === undefined) continue;
+      const key = `${row.sourceId}\n${row.header}\n${row.body}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(row);
+    }
+  }
+  return merged;
+}
+
 export function createLibraryContributor(deps: LibraryContributorDeps): CoachContextContributor {
   const now = deps.now ?? (() => performance.now());
   const deadline = deps.embedDeadlineMs ?? libraryEmbedDeadlineMs;
+
+  /** Embeds `text` (or uses the prefetched embedding) within the deadline, searches, applies the floor. */
+  async function search(
+    userId: string,
+    text: string,
+    early: PrefetchedQueryEmbedding | undefined,
+  ): Promise<Run> {
+    const startedAt = early?.startedAt ?? now();
+    let embedding: number[] | null = null;
+    let degraded: LibraryDegradedReason = "none";
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const pending = early?.embedding ?? Promise.resolve().then(() => deps.embed()(text));
+      // A late failure of an abandoned embedding must not surface as an unhandled rejection.
+      pending.catch(() => {});
+      const timedOut = new Promise<"timeout">((resolve) => {
+        timer = setTimeout(
+          () => resolve("timeout"),
+          Math.max(0, deadline - (now() - startedAt)),
+        );
+      });
+      const result = await Promise.race([pending, timedOut]);
+      if (result === "timeout") degraded = "embedding_timeout";
+      else embedding = result;
+    } catch {
+      degraded = "embedding_unavailable";
+    } finally {
+      clearTimeout(timer);
+    }
+    const embedMs = Math.round(now() - startedAt);
+    const rows = await deps.search({ userId, text, embedding, matchCount: libraryMatchCount });
+    return {
+      rows,
+      shown: embedding === null ? keywordRelevantRows(rows, text, rowText) : relevantRows(rows),
+      wordsOnly: embedding === null,
+      embedMs,
+      degraded,
+    };
+  }
+
   return Object.freeze({
     id: libraryContributorId,
     slot: "volatile",
     budgetChars: libraryBudgetChars,
     async render(input) {
-      // A plan question (E5) is searched with what the plan is made of; the prefetched embedding
-      // was of the bare question, so the query is embedded again (the text no longer matches).
       const asksAboutPlan = isPlanExplanationQuestion(input.question);
       const facts = asksAboutPlan && deps.planFacts
         ? await planFactsWithin(
@@ -389,47 +458,23 @@ export function createLibraryContributor(deps: LibraryContributorDeps): CoachCon
         asksAboutPlan ? facts : undefined,
       );
       const early = input.queryEmbedding?.text === query.text ? input.queryEmbedding : undefined;
-      const startedAt = early?.startedAt ?? now();
-      let embedding: number[] | null = null;
-      let degraded: LibraryDegradedReason = "none";
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        const pending = early?.embedding ??
-          Promise.resolve().then(() => deps.embed()(query.text));
-        // A late failure of an abandoned embedding must not surface as an unhandled rejection.
-        pending.catch(() => {});
-        const timedOut = new Promise<"timeout">((resolve) => {
-          timer = setTimeout(
-            () => resolve("timeout"),
-            Math.max(0, deadline - (now() - startedAt)),
-          );
-        });
-        const result = await Promise.race([pending, timedOut]);
-        if (result === "timeout") degraded = "embedding_timeout";
-        else embedding = result;
-      } catch {
-        degraded = "embedding_unavailable";
-      } finally {
-        clearTimeout(timer);
-      }
-      const embedMs = Math.round(now() - startedAt);
-      let rows: readonly LibraryRow[];
-      try {
-        rows = await deps.search({
-          userId: input.userId,
-          text: query.text,
-          embedding,
-          matchCount: libraryMatchCount,
-        });
-      } catch (error) {
+      // A plan question (E5) is searched twice, side by side: as asked, which keeps a question about
+      // one part of the plan on its own topic, and with what the plan is made of added, which gives
+      // "Why is my plan like this?" the topics it lacks. Their results are merged.
+      const settled = await Promise.allSettled([
+        search(input.userId, query.text, early),
+        ...(query.planText === undefined ? [] : [search(input.userId, query.planText, undefined)]),
+      ]);
+      const runs = settled.flatMap((entry) => entry.status === "fulfilled" ? [entry.value] : []);
+      if (runs.length === 0) {
         // Any other turn is answered without the library (the host leaves the block out); a plan
         // question is told it, so Coach says it could not check the research behind the plan.
-        if (!asksAboutPlan) throw error;
+        if (!asksAboutPlan) throw (settled[0] as PromiseRejectedResult).reason;
         return {
           text: libraryPlanUnavailableText,
           shown: {},
           trace: {
-            embed_ms: embedMs,
+            embed_ms: 0,
             degraded: "search_unavailable" satisfies LibraryDegradedReason,
             prefetched: early !== undefined,
             follow_up: false,
@@ -442,21 +487,19 @@ export function createLibraryContributor(deps: LibraryContributorDeps): CoachCon
           },
         };
       }
-      const shown = embedding === null
-        ? keywordRelevantRows(rows, query.text, rowText)
-        : relevantRows(rows);
       const block = renderLibraryChunks(
-        shown,
+        runs.length === 1 ? runs[0].shown : interleave(runs.map((run) => run.shown)),
         libraryBudgetChars,
-        embedding === null,
+        runs.every((run) => run.wordsOnly),
         query.planExplanation === true,
       );
+      const rows = runs.flatMap((run) => run.rows);
       const distances = rows.flatMap((row) =>
         typeof row.vectorDistance === "number" ? [row.vectorDistance] : []
       );
       const trace: ContributorTrace = {
-        embed_ms: embedMs,
-        degraded,
+        embed_ms: Math.max(...runs.map((run) => run.embedMs)),
+        degraded: runs.find((run) => run.degraded !== "none")?.degraded ?? "none",
         prefetched: early !== undefined,
         follow_up: query.rewritten,
         ...(query.planExplanation ? { plan_explanation: true, plan_facts: facts !== null } : {}),

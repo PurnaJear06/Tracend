@@ -81,13 +81,17 @@ Deno.test("an unknown goal or experience adds no topic and invents none", () => 
   assert(text.startsWith("Training plan design for a lifter:"));
 });
 
-Deno.test("a plan question's query is the question and the plan topics, never a borrowed topic", () => {
+Deno.test("a plan question's query is the question, with a second search that adds the plan topics", () => {
   const query = libraryRetrievalQuery("Why is my plan like this?", ["How much protein?"], facts);
   assertEquals(query.rewritten, false);
   assertEquals(query.planExplanation, true);
-  assert(query.text.startsWith("Why is my plan like this? Training plan design for"));
-  assert(!query.text.includes("protein?"));
-  assertEquals(libraryRetrievalQuery("Why is my plan like this?", [], null).planExplanation, true);
+  assertEquals(query.text, "Why is my plan like this?");
+  assert(query.planText!.startsWith("Why is my plan like this? Training plan design for"));
+  assert(!query.planText!.includes("protein?"));
+  assertEquals(
+    libraryRetrievalQuery("Why is my plan like this?", [], null).planExplanation,
+    true,
+  );
 });
 
 Deno.test("without plan facts passed, every question is searched as before", () => {

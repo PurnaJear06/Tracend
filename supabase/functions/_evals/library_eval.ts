@@ -39,7 +39,11 @@
 import { librarySources } from "../../library/index.ts";
 import { embeddingModel } from "../_shared/library/embedding.ts";
 import { libraryRowsOf } from "../_shared/library/live.ts";
-import type { PlanFacts } from "../_shared/library/plan_explanation.ts";
+import {
+  type OnboardingLibraryFacts,
+  onboardingLibraryQueries,
+  type PlanFacts,
+} from "../_shared/library/plan_explanation.ts";
 import { libraryRetrievalQuery } from "../_shared/library/query.ts";
 import { libraryKeywordFloor, libraryRelevanceFloor } from "../_shared/library/retrieval.ts";
 import holdoutFile from "./library_questions_holdout.json" with { type: "json" };
@@ -47,6 +51,7 @@ import planFile from "./library_questions_plan.json" with { type: "json" };
 import questionFile from "./library_questions.json" with { type: "json" };
 import {
   floorGrid,
+  interleaveKeys,
   keysPassing,
   keywordGrid,
   keywordKeysPassing,
@@ -77,6 +82,7 @@ const minNoAnswer = Number(Deno.env.get("EVAL_MIN_NO_ANSWER_PRECISION") ?? "0.7"
 const minKeywordRecall = Number(Deno.env.get("EVAL_MIN_KEYWORD_RECALL") ?? "0.55");
 const minKeywordNoAnswer = Number(Deno.env.get("EVAL_MIN_KEYWORD_NO_ANSWER_PRECISION") ?? "0.7");
 const minPlanRecall = Number(Deno.env.get("EVAL_MIN_PLAN_RECALL") ?? "0.5");
+const minOnboardingRecall = Number(Deno.env.get("EVAL_MIN_ONBOARDING_RECALL") ?? "0.4");
 if (serviceKey === "" || workerSecret === "") {
   console.error("Set EVAL_SERVICE_KEY and EVAL_WORKER_SECRET.");
   Deno.exit(2);
@@ -321,25 +327,50 @@ if (hitsFile !== "") {
   console.log(`\nSearch results saved to ${hitsFile}`);
 }
 
-// Plan explanations (chunk E5): the questions an athlete asks to learn why their plan is the way it
-// is, searched as Coach chat searches them (the question and the plan topics) and, for the lift,
-// as the bare question. Scored with the floor as it stands; the calibration set above is untouched.
-const planQuestions = planFile.questions as unknown as (LibraryQuestion & { plan: PlanFacts })[];
-const planScores = async (queriesToRun: string[]) => {
-  const vectors = await embed(queriesToRun);
+// Plan explanations (chunk E5). A plan question is searched as Coach chat searches it: as asked and
+// with the plan topics added, the two lists (each with the floor) merged; the lift is measured
+// against the bare question. The onboarding plan's two searches (training, nutrition) are scored the
+// same way against the sources a good plan prompt needs. The calibration set above is untouched.
+type PlanQuestion = LibraryQuestion & { plan: PlanFacts };
+type OnboardingCase = { id: string; facts: OnboardingLibraryFacts; expected: string[] };
+const planQuestions = planFile.questions as unknown as PlanQuestion[];
+const onboardingCases = planFile.onboarding as unknown as OnboardingCase[];
+const mergedKeys = async (texts: readonly string[]): Promise<string[]> => {
+  const vectors = await embed([...texts]);
+  const lists: string[][] = [];
+  for (const [index, text] of texts.entries()) {
+    lists.push(
+      keysPassing(await search(text, vectors[index], defaultRegion), libraryRelevanceFloor),
+    );
+  }
+  return interleaveKeys(lists);
+};
+const planScores = async (searches: (question: PlanQuestion) => readonly string[]) => {
   const scores: QuestionScore[] = [];
-  for (const [index, question] of planQuestions.entries()) {
-    const rows = await search(queriesToRun[index], vectors[index], defaultRegion);
-    scores.push(scoreQuestion(question, keysPassing(rows, libraryRelevanceFloor)));
+  for (const question of planQuestions) {
+    scores.push(scoreQuestion(question, await mergedKeys(searches(question))));
   }
   return scores;
 };
 // The hold-out run confirms the floor on the hold-out set only.
-const enrichedPlan = holdout ? [] : await planScores(
-  planQuestions.map((question) => libraryRetrievalQuery(question.text, [], question.plan).text),
-);
-const barePlan = holdout ? [] : await planScores(planQuestions.map((question) => question.text));
+const enrichedPlan = holdout ? [] : await planScores((question) => {
+  const query = libraryRetrievalQuery(question.text, [], question.plan);
+  return [query.text, query.planText!];
+});
+const barePlan = holdout ? [] : await planScores((question) => [question.text]);
+const onboardingScores: QuestionScore[] = [];
+if (!holdout) {
+  for (const entry of onboardingCases) {
+    onboardingScores.push(
+      scoreQuestion(
+        { id: entry.id, text: "", expected: entry.expected },
+        await mergedKeys(onboardingLibraryQueries(entry.facts)),
+      ),
+    );
+  }
+}
 const planSummary = summarise(enrichedPlan);
+const onboardingSummary = summarise(onboardingScores);
 if (!holdout) {
   console.log(
     `\nPlan explanations (${planQuestions.length} questions, with the floor): mean recall ${
@@ -350,6 +381,18 @@ if (!holdout) {
   );
   for (const score of enrichedPlan.filter((entry) => entry.missing.length > 0)) {
     console.log(`  ${score.id}: missing ${score.missing.join(", ")}`);
+  }
+  console.log(
+    `Onboarding plan searches (${onboardingCases.length} athletes, with the floor): mean recall ${
+      onboardingSummary.meanRecall.toFixed(3)
+    }, every source found ${(onboardingSummary.fullRecall * 100).toFixed(0)}%`,
+  );
+  for (const score of onboardingScores) {
+    console.log(
+      `  ${score.id}: found ${score.found.length} of ${score.found.length + score.missing.length}${
+        score.missing.length === 0 ? "" : `, missing ${score.missing.join(", ")}`
+      }`,
+    );
   }
 }
 
@@ -378,6 +421,10 @@ const failures = [
   `word-search recall ${keyword.meanRecall.toFixed(3)} is under ${minKeywordRecall}`,
   !holdout && planSummary.meanRecall < minPlanRecall &&
   `plan-explanation recall ${planSummary.meanRecall.toFixed(3)} is under ${minPlanRecall}`,
+  !holdout && onboardingSummary.meanRecall < minOnboardingRecall &&
+  `onboarding plan recall ${
+    onboardingSummary.meanRecall.toFixed(3)
+  } is under ${minOnboardingRecall}`,
   keywordNoAnswer.precision < minKeywordNoAnswer &&
   `word-search no-answer precision ${
     keywordNoAnswer.precision.toFixed(3)

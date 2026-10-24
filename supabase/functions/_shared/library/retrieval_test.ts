@@ -5,6 +5,7 @@ import { renderCoachContext, validateCoachContextContributors } from "../coach_c
 import {
   createLibraryContributor,
   crossReferenceNote,
+  interleave,
   keywordRelevantRows,
   libraryBudgetChars,
   libraryContributorId,
@@ -651,7 +652,7 @@ const near = (key: string) => ({
   libraryVersion: "0123456789abcdef",
 });
 
-Deno.test("a plan question is searched with what the plan is made of, for this athlete", async () => {
+Deno.test("a plan question is searched twice for this athlete: as asked, and with what the plan is made of", async () => {
   const requests: LibrarySearchRequest[] = [];
   const embedded: string[] = [];
   const contributor = createLibraryContributor({
@@ -661,24 +662,55 @@ Deno.test("a plan question is searched with what the plan is made of, for this a
     },
     search: (request) => {
       requests.push(request);
-      return Promise.resolve([near("schoenfeld_2017_weekly_volume")]);
+      return Promise.resolve([
+        near(
+          request.text === planInput.question
+            ? "singer_2024_rest_intervals"
+            : "schoenfeld_2017_weekly_volume",
+        ),
+      ]);
     },
     planFacts: () => Promise.resolve(planFacts),
   });
   const block = await contributor.render(planInput) as { text: string; shown: object };
-  assertEquals(requests.length, 1);
-  assertEquals(requests[0].userId, "u");
-  assertStringIncludes(requests[0].text, "Why is my plan like this? Training plan design for");
-  assertStringIncludes(requests[0].text, "4 training days a week");
-  assertStringIncludes(requests[0].text, "small energy surplus to build muscle");
-  assertEquals(embedded, [requests[0].text]);
+  assertEquals(requests.map((request) => request.userId), ["u", "u"]);
+  // The first search is the question as asked: a question about one part keeps its own topic.
+  assertEquals(requests[0].text, "Why is my plan like this?");
+  assertStringIncludes(requests[1].text, "Why is my plan like this? Training plan design for");
+  assertStringIncludes(requests[1].text, "4 training days a week");
+  assertStringIncludes(requests[1].text, "small energy surplus to build muscle");
+  assertEquals(embedded, requests.map((request) => request.text));
   assertStringIncludes(block.text, "The athlete asked why their plan is the way it is.");
   assertStringIncludes(block.text, "An excerpt never changes a number in the plan.");
-  assertStringIncludes(block.text, "[source: schoenfeld_2017_weekly_volume]");
-  assertEquals(Object.keys(block.shown), ["schoenfeld_2017_weekly_volume"]);
+  // The two searches' sources are both shown, the first search's first.
+  assertEquals(Object.keys(block.shown), [
+    "singer_2024_rest_intervals",
+    "schoenfeld_2017_weekly_volume",
+  ]);
   assertEquals(traceOf(block).plan_explanation, true);
   assertEquals(traceOf(block).plan_facts, true);
-  assertEquals(traceOf(block).shown, ["schoenfeld_2017_weekly_volume"]);
+  assertEquals(traceOf(block).candidates, 2);
+});
+
+Deno.test("a plan question's first search reuses the embedding started with the request", async () => {
+  const question = "Why do I rest so long between sets in my plan?";
+  const embedded: string[] = [];
+  const contributor = createLibraryContributor({
+    embed: () => (text) => {
+      embedded.push(text);
+      return Promise.resolve([2]);
+    },
+    search: () => Promise.resolve([near("singer_2024_rest_intervals")]),
+    planFacts: () => Promise.resolve(planFacts),
+  });
+  const block = await contributor.render({
+    ...planInput,
+    question,
+    queryEmbedding: { text: question, startedAt: 0, embedding: Promise.resolve([1]) },
+  });
+  assertEquals(embedded.length, 1);
+  assertStringIncludes(embedded[0], "Training plan design for");
+  assertEquals(traceOf(block).prefetched, true);
 });
 
 Deno.test("a plan question whose facts fail, are missing or are late is searched with the general topics", async () => {
@@ -700,12 +732,13 @@ Deno.test("a plan question whose facts fail, are missing or are late is searched
       planFactsDeadlineMs: 20,
     });
     const block = await contributor.render(planInput) as { text: string };
+    assertEquals(requests[0].text, "Why is my plan like this?", name);
     assertStringIncludes(
-      requests[0].text,
+      requests[1].text,
       "Training plan design for a lifter: training frequency",
       name,
     );
-    assert(!requests[0].text.includes("Nutrition targets"), name);
+    assert(!requests[1].text.includes("Nutrition targets"), name);
     assertEquals(traceOf(block).plan_facts, false, name);
     assertStringIncludes(block.text, "[source: schoenfeld_2017_weekly_volume]", name);
   }
@@ -753,7 +786,7 @@ Deno.test("a plan question with no excerpt close enough says so, in words that k
   assertEquals(renderLibraryChunks([], 9_000, false, true).text, libraryPlanNoMatchText);
 });
 
-Deno.test("a plan question whose search fails is told the library could not be searched", async () => {
+Deno.test("a plan question whose searches fail is told the library could not be searched", async () => {
   const contributor = createLibraryContributor({
     embed: () => () => Promise.resolve([1]),
     search: () => Promise.reject(new Error("library_search_unavailable")),
@@ -773,6 +806,36 @@ Deno.test("a plan question whose search fails is told the library could not be s
   assertEquals(other.outcomes.map((item) => item.outcome), ["failed"]);
 });
 
+Deno.test("one of a plan question's two searches failing leaves the other's excerpts", async () => {
+  const contributor = createLibraryContributor({
+    embed: () => () => Promise.resolve([1]),
+    search: (request) =>
+      request.text === planInput.question
+        ? Promise.reject(new Error("library_search_unavailable"))
+        : Promise.resolve([near("schoenfeld_2017_weekly_volume")]),
+    planFacts: () => Promise.resolve(planFacts),
+  });
+  const result = await renderCoachContext([contributor], planInput);
+  assertEquals(Object.keys(result.shown), ["schoenfeld_2017_weekly_volume"]);
+  assertEquals(result.traces?.library.candidates, 1);
+});
+
+Deno.test("a chunk both searches find is shown once, and a list never crowds out the other", () => {
+  const a = near("schoenfeld_2017_weekly_volume");
+  const b = near("singer_2024_rest_intervals");
+  const c = near("pelland_2026_volume_frequency");
+  assertEquals(interleave([[a, b], [a, c]]).map((item) => item.sourceId), [
+    "schoenfeld_2017_weekly_volume",
+    "singer_2024_rest_intervals",
+    "pelland_2026_volume_frequency",
+  ]);
+  assertEquals(interleave([[], []]), []);
+  // Two chunks of one section share a header but not a body: both stay.
+  const first = { ...a, body: "First part." };
+  const second = { ...a, body: "Second part." };
+  assertEquals(interleave([[first, second]]).length, 2);
+});
+
 Deno.test("the plan note and its excerpts stay inside the library budget", () => {
   const big = Array.from(
     { length: 12 },
@@ -783,15 +846,19 @@ Deno.test("the plan note and its excerpts stay inside the library budget", () =>
   assertStringIncludes(text, "The athlete asked why their plan is the way it is.");
 });
 
-Deno.test("the bare question's embedding is not started for a plan question", async () => {
+Deno.test("a plan question is prefetched like any other, unless it reads as a follow-up", async () => {
   let started = 0;
   const embedder = () => {
     started++;
     return Promise.resolve([1]);
   };
+  const prefetched = prefetchLibraryEmbedding(
+    "Why do I rest so long between sets in my plan?",
+    embedder,
+  );
+  assertEquals(prefetched?.text, "Why do I rest so long between sets in my plan?");
+  // "this" points back, so the question is embedded when its context is known.
   assertEquals(prefetchLibraryEmbedding("Why is my plan like this?", embedder), null);
-  assertEquals(prefetchLibraryEmbedding("Why am I doing upper lower in my plan?", embedder), null);
-  assert(prefetchLibraryEmbedding("Do I need creatine?", embedder) !== null);
   await new Promise((resolve) => setTimeout(resolve, 0));
   assertEquals(started, 1);
 });

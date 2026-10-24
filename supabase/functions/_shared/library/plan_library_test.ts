@@ -1,6 +1,5 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
 import {
-  interleave,
   planLibraryBudgetChars,
   planLibraryHeading,
   planLibraryMatchCount,
@@ -10,7 +9,7 @@ import {
   planLibraryUnavailableRule,
   retrievePlanLibrary,
 } from "./plan_library.ts";
-import type { LibraryRow, LibrarySearchRequest } from "./retrieval.ts";
+import { interleave, type LibraryRow, type LibrarySearchRequest } from "./retrieval.ts";
 
 const row = (key: string, distance: number | null, header = `Source: ${key}.`): LibraryRow => ({
   sourceId: key,

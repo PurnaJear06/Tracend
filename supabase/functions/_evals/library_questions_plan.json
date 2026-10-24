@@ -1,5 +1,5 @@
 {
-  "description": "Plan explanation questions (chunk E5): what an athlete asks when they want to know why their plan is the way it is, each with the plan facts Coach chat adds to the search (PlanFacts: counts and enumerated values only) and the sources a good answer needs. Kept apart from the calibration and hold-out sets, which choose the relevance floor: this set is scored with the floor as it stands, once with the bare question and once with the plan topics Coach adds, so the lift of the enrichment is measured. Written from each source's title and topic, not from its chunk text.",
+  "description": "Plan explanation questions (chunk E5): what an athlete asks when they want to know why their plan is the way it is, each with the plan facts Coach chat adds to the search (PlanFacts: counts and enumerated values only) and the sources a good answer needs. Kept apart from the calibration and hold-out sets, which choose the relevance floor: this set is scored with the floor as it stands, once with the bare question and once as Coach chat searches it (the question, and the question with the plan topics added, the two result lists merged), so the lift of the enrichment is measured. `onboarding` holds athletes' answers (OnboardingLibraryFacts) with the sources a good plan prompt needs from the training search and the nutrition search together; they are scored as the onboarding plan searches them (two searches, each with the floor, merged). Written from each source's title and topic, not from its chunk text.",
   "questions": [
     {
       "id": "plan_generic_gain",
@@ -201,6 +201,85 @@
       "expected": [
         "schoenfeld_2017_weekly_volume",
         "acsm_2009_progression"
+      ]
+    }
+  ],
+  "onboarding": [
+    {
+      "id": "onb_beginner_fat_loss",
+      "facts": {
+        "goal": "fat_loss",
+        "experience": "beginner",
+        "trainingDays": 3,
+        "sessionMinutes": 60,
+        "focusMuscles": []
+      },
+      "expected": [
+        "acsm_2009_progression",
+        "jager_2017_protein",
+        "aragon_2017_diets_body_composition"
+      ]
+    },
+    {
+      "id": "onb_intermediate_gain",
+      "facts": {
+        "goal": "muscle_gain",
+        "experience": "intermediate",
+        "trainingDays": 4,
+        "sessionMinutes": 75,
+        "focusMuscles": []
+      },
+      "expected": [
+        "schoenfeld_2017_weekly_volume",
+        "schoenfeld_2016_frequency_hypertrophy",
+        "slater_2019_energy_surplus"
+      ]
+    },
+    {
+      "id": "onb_advanced_strength",
+      "facts": {
+        "goal": "strength",
+        "experience": "advanced",
+        "trainingDays": 5,
+        "sessionMinutes": 90,
+        "focusMuscles": []
+      },
+      "expected": [
+        "acsm_2026_resistance_prescription",
+        "schoenfeld_2021_loading_continuum",
+        "jager_2017_protein"
+      ]
+    },
+    {
+      "id": "onb_beginner_recomp",
+      "facts": {
+        "goal": "recomposition",
+        "experience": "beginner",
+        "trainingDays": 3,
+        "sessionMinutes": 45,
+        "focusMuscles": []
+      },
+      "expected": [
+        "acsm_2009_progression",
+        "barakat_2020_recomposition"
+      ]
+    },
+    {
+      "id": "onb_intermediate_aesthetic",
+      "facts": {
+        "goal": "aesthetic",
+        "experience": "intermediate",
+        "trainingDays": 4,
+        "sessionMinutes": 60,
+        "focusMuscles": [
+          "chest",
+          "shoulders"
+        ]
+      },
+      "expected": [
+        "schoenfeld_2017_weekly_volume",
+        "jager_2017_protein",
+        "helms_2023_energy_surplus"
       ]
     }
   ]

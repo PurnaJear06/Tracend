@@ -1,12 +1,18 @@
 import { assert, assertAlmostEquals, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { librarySources } from "../../library/index.ts";
 import { isFollowUp, libraryRetrievalQuery } from "../_shared/library/query.ts";
-import { isPlanExplanationQuestion, type PlanFacts } from "../_shared/library/plan_explanation.ts";
+import {
+  isPlanExplanationQuestion,
+  type OnboardingLibraryFacts,
+  onboardingLibraryQueries,
+  type PlanFacts,
+} from "../_shared/library/plan_explanation.ts";
 import holdoutFile from "./library_questions_holdout.json" with { type: "json" };
 import planFile from "./library_questions_plan.json" with { type: "json" };
 import questionFile from "./library_questions.json" with { type: "json" };
 import {
   floorGrid,
+  interleaveKeys,
   keysPassing,
   keywordGrid,
   keywordKeysPassing,
@@ -280,15 +286,44 @@ Deno.test("the plan-explanation questions are plan questions with plan facts and
     assert(!others.has(question.text), `${question.id} repeats a calibration question`);
     assert(question.expected.length >= 1 && question.expected.length <= 3, question.id);
     for (const key of question.expected) assert(keys.has(key), `${question.id}: unknown ${key}`);
-    // The plan topics are added to the question, and nothing is borrowed from an earlier one.
+    // The first search is the question as asked, the second adds the plan topics, and nothing is
+    // borrowed from an earlier question.
     const query = libraryRetrievalQuery(question.text, ["How much protein?"], question.plan);
     assertEquals(query.planExplanation, true, question.id);
-    assert(query.text.startsWith(question.text), question.id);
-    assert(!query.text.includes("protein?"), question.id);
+    assertEquals(query.text, question.text, question.id);
+    assert(query.planText!.startsWith(question.text), question.id);
+    assert(query.planText!.length > question.text.length, question.id);
+    assert(!query.planText!.includes("protein?"), question.id);
   }
   // The facts cover each goal the plan can have, so each nutrition topic is searched.
   const goals = new Set(planQuestions.map((question) => question.plan.goal));
   for (const goal of ["fat_loss", "muscle_gain", "recomposition", "strength"]) {
     assert(goals.has(goal), goal);
   }
+});
+
+Deno.test("the onboarding cases name known sources and build two searches from enumerated facts", () => {
+  const keys = new Set(librarySources.map((source) => source.slug));
+  const cases = planFile.onboarding as unknown as {
+    id: string;
+    facts: OnboardingLibraryFacts;
+    expected: string[];
+  }[];
+  assert(cases.length >= 4, `${cases.length} onboarding cases`);
+  assertEquals(new Set(cases.map((entry) => entry.id)).size, cases.length);
+  for (const entry of cases) {
+    assert(entry.expected.length >= 2 && entry.expected.length <= 3, entry.id);
+    for (const key of entry.expected) assert(keys.has(key), `${entry.id}: unknown ${key}`);
+    assertEquals(onboardingLibraryQueries(entry.facts).length, 2, entry.id);
+  }
+  const goals = new Set(cases.map((entry) => entry.facts.goal));
+  for (const goal of ["fat_loss", "muscle_gain", "recomposition", "strength", "aesthetic"]) {
+    assert(goals.has(goal), goal);
+  }
+});
+
+Deno.test("merged result lists alternate, best first, and keep each source once", () => {
+  assertEquals(interleaveKeys([["a", "b", "c"], ["d", "a", "e"]]), ["a", "d", "b", "c", "e"]);
+  assertEquals(interleaveKeys([["a"], []]), ["a"]);
+  assertEquals(interleaveKeys([]), []);
 });

@@ -1,6 +1,7 @@
 import type { ShownSource } from "../coach_context/host.ts";
 import type { Embedder } from "./embedding.ts";
 import {
+  interleave,
   keywordRelevantRows,
   libraryEmbedDeadlineMs,
   type LibraryRow,
@@ -119,23 +120,6 @@ async function searchOnce(
     ? keywordRelevantRows(candidates, query, rowText)
     : relevantRows(candidates);
   return { rows, embedMs, degraded, candidates };
-}
-
-/** The rows of each search in turn (best first), a chunk once however many searches found it. */
-export function interleave(lists: readonly (readonly LibraryRow[])[]): LibraryRow[] {
-  const merged: LibraryRow[] = [];
-  const seen = new Set<string>();
-  for (let index = 0; index < Math.max(0, ...lists.map((list) => list.length)); index++) {
-    for (const list of lists) {
-      const row = list[index];
-      if (row === undefined) continue;
-      const key = `${row.sourceId}\n${row.header}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(row);
-    }
-  }
-  return merged;
 }
 
 const unavailable = (

@@ -1413,17 +1413,17 @@ calories, protein, sets, reps, effort and rest come from the rules and the athle
 
 - **Coach chat.** A question that asks why the plan, or a part of it, is the way it is
   (`isPlanExplanationQuestion`: it names the plan, a split, the targets or the sets and asks for the
-  reason; deterministic, no model call) is searched with what the plan is made of added: training
-  days, weekly sets per muscle, rep ranges, rest, effort, progression and the goal's nutrition
-  topic, from counts and enumerated values read from the plan state and the goal (`plan_facts.ts`;
+  reason; deterministic, no model call) is searched twice, side by side, and the lists are merged: as asked, and with what the plan is
+  made of added: training days, weekly sets per muscle, rep ranges, rest, effort, progression and the
+  goal's nutrition topic, from counts and enumerated values read from the plan state and the goal (`plan_facts.ts`;
   never an exercise name, a load, a weight or a date). It is searched for this athlete, so the
   region follows from the stored country. Citing, the `citation_not_retrieved` guard, figure grounding
   and labels are §11.2's. The block adds one fixed note (no figure; it grounds nothing): explain from
   the plan's own numbers and Tracend's rules first, use the excerpts for the reasoning behind them,
   say plainly when a part has none. With no excerpt close enough the block says so and tells Coach
   the explanation rests on the plan's rules and is less certain, to cite nothing and not to answer
-  from memory; a search that fails on a plan turn says the research could not be checked. The plan
-  facts have their own 0.8 s limit and a failure leaves the general topics of a plan.
+  from memory; a plan turn whose two searches both fail says the research could not be checked. The
+  plan facts have their own 0.8 s limit and a failure leaves the general topics of a plan.
 - **The onboarding plan** (`onboarding-plan`, gateway route only). Before the prompt is built, two
   searches for this athlete (training and nutrition, from the enumerated answers; the athlete's own
   words never enter a query) put up to 6,000 characters of excerpts, whole chunks, into the user
@@ -1443,8 +1443,8 @@ calories, protein, sets, reps, effort and rest come from the rules and the athle
   the degraded reason, the shown source ids, the nearest distance and the library version; no query,
   excerpt or answer. Coach plan turns add `plan_explanation` and `plan_facts` to `library_retrieval`.
 - **Evaluation.** `library_eval.ts` also scores `library_questions_plan.json` (plan questions with
-  their plan facts) with the floor as it stands, with and without the plan topics, and fails under
-  `EVAL_MIN_PLAN_RECALL`.
+  their plan facts) and athletes' onboarding answers with the floor as it stands, and fails under
+  `EVAL_MIN_PLAN_RECALL` and `EVAL_MIN_ONBOARDING_RECALL`.
 
 ## 12. Validation and Failure Handling
 

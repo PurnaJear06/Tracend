@@ -62,8 +62,13 @@ export type RetrievalQuery = Readonly<{
   text: string;
   /** True when the previous question's topic was added. */
   rewritten: boolean;
-  /** True when what the plan is made of was added (chunk E5); absent otherwise. */
+  /**
+   * Set when the question asks why the plan is the way it is (chunk E5). `text` stays the question
+   * as asked, so its search keeps the question's own topic; `planText` is the second search: the
+   * question with what the plan is made of added. The two result lists are merged.
+   */
   planExplanation?: true;
+  planText?: string;
 }>;
 
 /** Longest question and earlier question the query keeps, so the whole stays well under 1,000. */
@@ -83,11 +88,18 @@ export function libraryRetrievalQuery(
 ): RetrievalQuery {
   const own = question.trim().slice(0, maxQuestionChars);
   // Why the plan is the way it is (E5): "Why is my plan like this?" names no topic ("this" even
-  // reads as a follow-up), so what the plan is made of is added. `plan` is undefined when the
-  // caller does not know the plan, which leaves every other question as it was; null is a plan
-  // question whose facts could not be read, which still gets the general topics.
+  // reads as a follow-up), so a second search adds what the plan is made of; a question about one
+  // part ("Why do I rest so long?") is found by the first, which the added topics would dilute.
+  // `plan` is undefined when the caller does not know the plan, which leaves every other question
+  // as it was; null is a plan question whose facts could not be read, which still gets the general
+  // topics.
   if (plan !== undefined && isPlanExplanationQuestion(question)) {
-    return { text: `${own} ${planTopicText(plan)}`, rewritten: false, planExplanation: true };
+    return {
+      text: own,
+      rewritten: false,
+      planExplanation: true,
+      planText: `${own} ${planTopicText(plan)}`,
+    };
   }
   if (!isFollowUp(question)) return { text: own, rewritten: false };
   // A question that reported a symptom is answered by the fixed referral and never lends its words

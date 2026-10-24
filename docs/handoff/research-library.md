@@ -1246,24 +1246,31 @@ it. Deterministic plan numbers stay authoritative; the library only supplies the
 - **Coach chat, "why is my plan like this?"** `isPlanExplanationQuestion`
   (`_shared/library/plan_explanation.ts`, deterministic: the question names the plan or a part of it,
   and asks for a reason) marks the turn. "Why is my plan like this?" has no topic of its own for the
-  search (and "this" even reads as a follow-up), so `libraryRetrievalQuery` adds what a plan is made of
-  (`planTopicText`: training days, weekly sets per muscle, rep ranges, rest, effort and reps in reserve,
-  progression, and the goal's nutrition topic) from the plan facts (`planFactsFrom`,
-  `_shared/library/plan_facts.ts`: counts and enumerated values only, never an exercise name, a load, a
-  weight or a date). The facts come from the plan state and the goal inputs, read once for the turn and
-  shared with the plan and goal-phase sections (`sharedRead`; the goal phase contributor now reads its
-  inputs under the key `goal_phase_inputs`). The search runs for this athlete (their id, so the region
+  search (and "this" even reads as a follow-up), so the contributor makes a second search beside the
+  question as asked: `libraryRetrievalQuery` returns the question as `text` and, in `planText`, the
+  question with what a plan is made of added (`planTopicText`: training days, weekly sets per muscle,
+  rep ranges, rest, effort and reps in reserve, progression, and the goal's nutrition topic). The two
+  result lists are merged (`interleave`: a chunk once, the first search's first). The first CI run
+  showed why one enriched query is not enough: it found 0.54 of the expected sources against 0.29 for
+  the bare question, but missed questions about one part of the plan ("why do I rest so long?") that
+  the added topics diluted; the as-asked search keeps those. The plan facts (`planFactsFrom`,
+  `_shared/library/plan_facts.ts`: counts and enumerated values only, never an exercise name, a load,
+  a weight or a date) come from the plan state and the goal inputs, read once for the turn and shared
+  with the plan and goal-phase sections (`sharedRead`; the goal phase contributor now reads its inputs
+  under the key `goal_phase_inputs`). Both searches run for this athlete (their id, so the region
   follows from the stored country, E4). Facts that fail or take over 0.8 s leave the general topics of
-  a plan in the query; the turn is never held up. The bare question's embedding is not prefetched for
-  these turns (its text would not match the query).
+  a plan in the second query; the turn is never held up. The first search reuses the embedding started
+  with the request (a question that reads as a follow-up, like "Why is my plan like this?", is embedded
+  when its context is known, as for any follow-up); the second embeds its own text in parallel.
 - **What Coach is told.** The library block of a plan turn adds a fixed note (no figure, grounds
   nothing): explain from the plan's own numbers and Tracend's rules first, use the excerpts for the
   reasoning behind them, cite the source of each, say plainly when a part of the plan has no excerpt
   behind it, an excerpt never changes a number. With nothing close enough the block says the
   explanation rests on the plan's rules and is less certain, cite no library source, no answer from
   memory (`libraryPlanNoMatchText`; the words-only variant does not claim the library lacks the topic).
-  A search that fails on a plan turn renders `libraryPlanUnavailableText` (say you could not check the
-  research); on any other turn a failing search still leaves the library out. Citing, the
+  A plan turn's block is built when either of its two searches works; when both fail it renders
+  `libraryPlanUnavailableText` (say you could not check the research); on any other turn a failing
+  search still leaves the library out. Citing, the
   `citation_not_retrieved` guard and figure grounding are E3's, unchanged.
 - **Onboarding plan.** `onboarding-plan` searches the library before it builds the gateway prompt
   (`retrievePlanLibrary`, `_shared/library/plan_library.ts`): two searches in parallel, one for how
@@ -1306,15 +1313,17 @@ The mock keeps its fixed text and cites nothing.
   onboarding queries), `plan_facts_test.ts`, `plan_library_test.ts` (both searches for this
   athlete's id, floor, one search failing, both failing, the deadline, embedding failure and lateness,
   the budget, the merge, the rules), `retrieval_test.ts` (the contributor on plan turns: the
-  query, facts failing or late, the notes, search failure, budget, no prefetch),
+  the two searches, facts failing or late, the notes, one or both searches failing, budget, prefetch reuse),
   `plan_contract_library_test.ts` (parsing, `source_not_retrieved`, evidence and labels,
   confidence and the note, the rules plan unchanged), `onboarding-plan/gateway_test.ts` (the prompt,
   the citation in the stored proposal, repair of an invented id or study, no excerpt, library
   unavailable, no wiring, no route, provider failure), `goal_phase_test.ts` (shared read).
-- Retrieval gate (CI, `library_eval.ts`): a separate set, `library_questions_plan.json` (12 plan
-  questions with their plan facts), is scored with the floor as it stands, once with the bare question
-  and once with Coach's enriched query, and fails under `EVAL_MIN_PLAN_RECALL` (default 0.5). The
-  calibration and hold-out sets are untouched.
+- Retrieval gate (CI, `library_eval.ts`): a separate set, `library_questions_plan.json`, is scored with
+  the floor as it stands: 12 plan questions with their plan facts, once as the bare question and once
+  as Coach searches them (two searches merged), failing under `EVAL_MIN_PLAN_RECALL` (default 0.5); and
+  5 athletes' answers through the onboarding plan's two searches against the sources a good plan
+  prompt needs, failing under `EVAL_MIN_ONBOARDING_RECALL` (default 0.4). The calibration and
+  hold-out sets are untouched.
 - Flutter: `phase_2_flow_test.dart` ("Research behind the plan": listed, absent, parsing).
 
 ### Decisions and limits

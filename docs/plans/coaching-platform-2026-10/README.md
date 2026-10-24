@@ -80,7 +80,7 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 4 | B5 | training-engine | Deloads, cardio dosing, joint rules, pain check, red flags | 25 | B3 | todo | |
 | 4 | C4 | workout-hr | Watch-workout prompt, load signals for the engine | 34 | C3 | review | |
 | 4 | E4 | research-library | Regional modules | 44 | E3 | review | #164 |
-| 4 | E5 | research-library | Plan explanations citing sources | — | E3, B3 | review | |
+| 4 | E5 | research-library | Plan explanations citing sources | — | E3, B3 | review | #171 |
 
 | 5 | L1 | lifestyle | Lifestyle log: alcohol, smoking and vaping, cannabis and other substances (during beta) | 51 | beta start | todo | |
 | 5 | L2 | lifestyle | Hydration: water target and log, Apple Health water | 52 | beta start | todo | |

@@ -1,7 +1,6 @@
 import type { PrefetchedQueryEmbedding } from "../coach_context/host.ts";
 import { coachServiceRpc, type ServiceRpc } from "../coach_context/service_source.ts";
 import { type Embedder, embeddingModel } from "./embedding.ts";
-import { isPlanExplanationQuestion } from "./plan_explanation.ts";
 import { planFactsFromService } from "./plan_facts.ts";
 import { isFollowUp, libraryRetrievalQuery } from "./query.ts";
 import { createQueryEmbedder } from "./query_embedder.ts";
@@ -77,14 +76,14 @@ export const libraryQueryEmbedder = createQueryEmbedder({
 /**
  * Starts embedding the question at the start of a Coach chat request, so the embedding runs while
  * the context is prepared. Null for a follow-up: its query borrows an earlier question from the
- * prepared context, so the contributor embeds it then. Null too for a question about why the plan
- * is the way it is (E5): its query adds what the plan is made of, which is read later.
+ * prepared context, so the contributor embeds it then. A question about why the plan is the way it
+ * is (E5) is prefetched like any other: its first search is the question as asked.
  */
 export function prefetchLibraryEmbedding(
   question: string,
   embedder: Embedder = libraryQueryEmbedder,
 ): PrefetchedQueryEmbedding | null {
-  if (isPlanExplanationQuestion(question) || isFollowUp(question)) return null;
+  if (isFollowUp(question)) return null;
   const text = libraryRetrievalQuery(question, []).text;
   const startedAt = performance.now();
   const embedding = Promise.resolve().then(() => embedder(text));
