@@ -9,7 +9,7 @@ select no_plan();
 
 insert into auth.users(id, role)
 select ('b5300000-0000-4000-8000-0000000000' || lpad(n::text, 2, '0'))::uuid, 'authenticated'
-from generate_series(1, 43) n;
+from generate_series(1, 44) n;
 
 create function pg_temp.u(p_n integer) returns uuid language sql as $$
   select ('b5300000-0000-4000-8000-0000000000' || lpad(p_n::text, 2, '0'))::uuid
@@ -57,12 +57,12 @@ end $$;
 
 -- A completed session p_days ago with no logged sets (it only counts as trained).
 create function pg_temp.session(p_n integer, p_days integer) returns uuid language plpgsql as $$
-declare sid uuid := gen_random_uuid(); uid uuid := pg_temp.u(p_n);
+declare sid uuid := gen_random_uuid(); athlete uuid := pg_temp.u(p_n);
 begin
   insert into public.workout_sessions(id, user_id, plan_version_id, planned_workout_id, local_date,
     timezone, state, idempotency_key, completed_at, duration_seconds, session_effort,
     session_effort_source, completion_source)
-  select sid, uid, k.version_id, k.workout_id, private.local_date_for(uid) - p_days, 'UTC', 'completed',
+  select sid, athlete, k.version_id, k.workout_id, private.local_date_for(athlete) - p_days, 'UTC', 'completed',
     gen_random_uuid(), now() - p_days * interval '1 day', 3000, 8, 'athlete', 'manual'
   from wk k where k.uid = pg_temp.u(p_n);
   return sid;
@@ -80,21 +80,21 @@ end $$;
 create function pg_temp.lifts(p_n integer, p_days integer, p_bench_reps integer, p_curl_reps integer default null,
   p_bench_sets integer default 4, p_curl_sets integer default 3, p_bench_kg numeric default 60,
   p_curl_kg numeric default 20) returns void language plpgsql as $$
-declare sid uuid := pg_temp.session(p_n, p_days); uid uuid := pg_temp.u(p_n); pid uuid;
+declare sid uuid := pg_temp.session(p_n, p_days); athlete uuid := pg_temp.u(p_n); pid uuid;
 begin
   insert into public.exercise_performances(user_id, workout_session_id, planned_exercise_id,
     exercise_order, status, performance_kind)
-  select uid, sid, k.e1, 1, 'performed', 'prescribed' from wk k where k.uid = pg_temp.u(p_n)
+  select athlete, sid, k.e1, 1, 'performed', 'prescribed' from wk k where k.uid = pg_temp.u(p_n)
   returning id into pid;
   insert into public.exercise_sets(user_id, exercise_performance_id, set_number, repetitions, load_kg, completed)
-  select uid, pid, s, p_bench_reps, p_bench_kg, true from generate_series(1, p_bench_sets) s;
+  select athlete, pid, s, p_bench_reps, p_bench_kg, true from generate_series(1, p_bench_sets) s;
   if p_curl_reps is not null then
     insert into public.exercise_performances(user_id, workout_session_id, planned_exercise_id,
       exercise_order, status, performance_kind)
-    select uid, sid, k.e2, 2, 'performed', 'prescribed' from wk k where k.uid = pg_temp.u(p_n)
+    select athlete, sid, k.e2, 2, 'performed', 'prescribed' from wk k where k.uid = pg_temp.u(p_n)
     returning id into pid;
     insert into public.exercise_sets(user_id, exercise_performance_id, set_number, repetitions, load_kg, completed)
-    select uid, pid, s, p_curl_reps, p_curl_kg, true from generate_series(1, p_curl_sets) s;
+    select athlete, pid, s, p_curl_reps, p_curl_kg, true from generate_series(1, p_curl_sets) s;
   end if;
 end $$;
 
@@ -549,6 +549,13 @@ select pg_temp.lifts(39, 2, 6, 8);
 select is(pg_temp.d(39) ->> 'suppressed_by', 'not_enough_training',
   'three sessions in one week of four is nothing to recover from');
 select is(pg_temp.d(39) -> 'reasons', '[]'::jsonb, 'and no reason is given');
+
+select pg_temp.make_athlete(44);
+select pg_temp.lifts(44, 9, 6, 8);
+select pg_temp.lifts(44, 3, 6, 8);
+select pg_temp.lifts(44, 2, 6, 8);
+select is(pg_temp.d(44) ->> 'suppressed_by', 'not_enough_training',
+  'sessions in two of the last four weeks are not enough either');
 
 select pg_temp.make_athlete(40);
 select pg_temp.lifts(40, 16, 6, 8);
