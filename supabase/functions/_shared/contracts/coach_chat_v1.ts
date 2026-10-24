@@ -124,6 +124,11 @@ export type CoachChatAnswerBreak = Readonly<{
   rules?: readonly CoachChatValidationRule[];
   detail?: string;
   count?: number;
+  /**
+   * The sentences of the reply that broke a rule, as the check read them, for the repair only.
+   * They are athlete-facing model text, so they are never logged.
+   */
+  sentences?: readonly string[];
 }>;
 
 export class CoachChatAnswerValidationError extends Error {
@@ -135,6 +140,8 @@ export class CoachChatAnswerValidationError extends Error {
     readonly rules: readonly CoachChatValidationRule[] = [rule],
     /** Repair instruction only; never logged. */
     readonly detail?: string,
+    /** The sentences that broke a rule: repair instruction only; never logged. */
+    readonly sentences?: readonly string[],
   ) {
     super(`invalid_chat_answer:${rule}:${path}`);
     this.name = "CoachChatAnswerValidationError";
@@ -402,6 +409,7 @@ export function parseCoachChatAnswer(
       broken.count,
       broken.rules ?? [broken.rule],
       broken.detail,
+      broken.sentences,
     );
   }
   if (cited.length === 0) return answer as unknown as CoachChatAnswerV2;

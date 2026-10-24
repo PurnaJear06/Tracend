@@ -417,35 +417,54 @@ export function coachReplyCheck(inputs: ReplyCheckInputs): CoachChatAnswerCheck 
   const shown = shownOf(inputs);
   return (answer, citedLibrarySources = [], replyText): CoachChatAnswerBreak | null => {
     const broken: CoachChatValidationRule[] = [];
-    const weight = inputs.weightClaim(answer);
-    if (weight) broken.push(weight);
     const sentences = sentencesOf(answer);
-    const has = (test: (sentence: string) => boolean) => sentences.some(test);
-    if (has((s) => belowCalorieFloor(s, inputs.ranges.calorieFloorKcal))) {
-      broken.push("calories_below_floor");
+    // The sentences that broke a rule, in reply order: the repair names them, because a rule's
+    // hint alone does not say which sentence it read as advice (a refusal that restates the figure,
+    // a follow-up chip in the athlete's voice), and a repair that cannot find it fails again.
+    const flagged = new Set<string>();
+    const flag = (rule: CoachChatValidationRule, test: (sentence: string) => boolean) => {
+      const hits = sentences.filter(test);
+      if (hits.length === 0) return;
+      if (!broken.includes(rule)) broken.push(rule);
+      for (const sentence of hits) flagged.add(sentence);
+    };
+    const weight = inputs.weightClaim(answer);
+    if (weight) {
+      broken.push(weight);
+      for (const sentence of sentences) if (inputs.weightClaim(sentence)) flagged.add(sentence);
     }
-    if (has((s) => lossAboveCeiling(s, inputs.ranges))) broken.push("loss_rate_above_ceiling");
-    if (has((s) => aboveScreeningCap(s, inputs.screening))) {
-      broken.push("effort_above_screening_cap");
-    }
-    if (has((s) => trainingOnPainDay(s, inputs.ranges.painEscalated))) {
-      broken.push("training_advice_on_pain_day");
-    }
-    if (has(claimsAnAction)) broken.push("claimed_action");
+    flag("calories_below_floor", (s) => belowCalorieFloor(s, inputs.ranges.calorieFloorKcal));
+    flag("loss_rate_above_ceiling", (s) => lossAboveCeiling(s, inputs.ranges));
+    flag("effort_above_screening_cap", (s) => aboveScreeningCap(s, inputs.screening));
+    flag(
+      "training_advice_on_pain_day",
+      (s) => trainingOnPainDay(s, inputs.ranges.painEscalated),
+    );
+    flag("claimed_action", claimsAnAction);
     // A sentence about the athlete's own target or prescription takes its numbers from the
     // athlete's data alone; any other sentence may also use the digest and a library source the
     // reply cites.
+    const otherGround = mergeGrounds(inputs.ground, ...libraryGround(citedLibrarySources));
+    const ownGround = inputs.athleteGround ?? inputs.ground;
     const own = sentences.filter(statesOwnTarget);
     const other = sentences.filter((sentence) => !statesOwnTarget(sentence));
     const ungrounded = [
-      ...ungroundedNumbers(
-        other.join("\n"),
-        mergeGrounds(inputs.ground, ...libraryGround(citedLibrarySources)),
-      ),
-      ...ungroundedNumbers(own.join("\n"), inputs.athleteGround ?? inputs.ground),
+      ...ungroundedNumbers(other.join("\n"), otherGround),
+      ...ungroundedNumbers(own.join("\n"), ownGround),
     ];
-    if (ungrounded.length > 0) broken.push("numbers_not_grounded");
-    if (unshownNames(inputs, answer, shown).length > 0) broken.push("citation_not_retrieved");
+    if (ungrounded.length > 0) {
+      broken.push("numbers_not_grounded");
+      for (const sentence of sentences) {
+        const ground = statesOwnTarget(sentence) ? ownGround : otherGround;
+        if (ungroundedNumbers(sentence, ground).length > 0) flagged.add(sentence);
+      }
+    }
+    if (unshownNames(inputs, answer, shown).length > 0) {
+      broken.push("citation_not_retrieved");
+      for (const sentence of sentences) {
+        if (unshownNames(inputs, sentence, shown).length > 0) flagged.add(sentence);
+      }
+    }
     if (inputs.repetition) {
       const repeats = repeatsOf(replyText ?? answer, inputs.repetition);
       if (repeats.closing !== null || repeats.sentences.length > 0) {
@@ -453,6 +472,9 @@ export function coachReplyCheck(inputs: ReplyCheckInputs): CoachChatAnswerCheck 
       }
     }
     if (broken.length === 0) return null;
+    const quoted = [...flagged].slice(0, maxFlaggedSentences).map((sentence) =>
+      sentence.length > maxFlaggedChars ? `${sentence.slice(0, maxFlaggedChars)}...` : sentence
+    );
     return {
       rule: broken[0],
       rules: broken,
@@ -462,9 +484,14 @@ export function coachReplyCheck(inputs: ReplyCheckInputs): CoachChatAnswerCheck 
           ...(broken[0] === "numbers_not_grounded" ? { count: ungrounded.length } : {}),
         }
         : {}),
+      ...(quoted.length > 0 ? { sentences: quoted } : {}),
     };
   };
 }
+
+/** At most this many flagged sentences go to the repair, each cut to this many characters. */
+const maxFlaggedSentences = 6;
+const maxFlaggedChars = 300;
 
 // ---- salvage: a reply that fails only these rules is cut, not thrown away ----------------------
 
