@@ -260,36 +260,56 @@ class _NutritionScreenState extends State<NutritionScreen> {
 
   String get _dateLabel => friendlyDate(_date);
 
-  Future<void> _openManualMeal({
+  Future<void> _openManualMeal({ScheduledMeal? scheduled, String? mealType}) =>
+      showTracendSheet<void>(
+        context,
+        title: 'Enter meal',
+        subtitle: 'It counts toward your totals as soon as you confirm it.',
+        scrollable: false,
+        builder: (_) => ManualMealSheet(
+          initialMealType: mealType ?? defaultMealType(DateTime.now()),
+          onSave: (input) => _saveManualMeal(scheduled, input),
+        ),
+      );
+
+  /// Saves a meal from the manual sheet, which stays open with what was typed
+  /// if this throws. The day is reloaded either way: a save whose reply was
+  /// lost may still have been written, and the retry (same key) adds nothing.
+  Future<void> _saveManualMeal(
     ScheduledMeal? scheduled,
-    String? mealType,
-  }) async {
-    final input = await showTracendSheet<ManualMealResult>(
-      context,
-      title: 'Enter meal',
-      subtitle: 'It counts toward your totals as soon as you confirm it.',
-      scrollable: false,
-      builder: (_) => ManualMealSheet(
-        initialMealType: mealType ?? defaultMealType(DateTime.now()),
-      ),
-    );
-    if (input == null) return;
-    await _run(successMessage: 'Meal logged', () {
-      final repository = widget.repository;
+    ManualMealResult input,
+  ) async {
+    final repository = widget.repository;
+    try {
       if (scheduled != null && repository is ScheduledMealLogger) {
-        return (repository as ScheduledMealLogger).saveScheduledMeal(
+        await (repository as ScheduledMealLogger).saveScheduledMeal(
           date: _date,
           scheduleItemId: scheduled.id,
           mealType: input.mealType,
           food: input.food,
+          idempotencyKey: input.idempotencyKey,
+        );
+      } else {
+        await repository.saveManualMeal(
+          date: _date,
+          mealType: input.mealType,
+          food: input.food,
+          idempotencyKey: input.idempotencyKey,
         );
       }
-      return repository.saveManualMeal(
-        date: _date,
-        mealType: input.mealType,
-        food: input.food,
-      );
-    });
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      if (mounted) unawaited(_refresh());
+      rethrow;
+    }
+    unawaited(TracendHaptics.success());
+    if (!mounted) return;
+    TracendToast.show(
+      context,
+      'Meal logged',
+      icon: CupertinoIcons.checkmark_alt,
+    );
+    unawaited(_refresh());
   }
 
   Future<void> _reviewFixture(String mealType) async {
@@ -419,7 +439,10 @@ class _NutritionScreenState extends State<NutritionScreen> {
         context,
         title: 'Review candidates',
         scrollable: false,
-        builder: (_) => CandidateSheet(candidates: candidates),
+        builder: (_) => CandidateSheet(
+          candidates: candidates,
+          onDiscard: () => _discardDraft(mealId),
+        ),
       );
       if (selected == null || selected.isEmpty) return;
       await _run(
@@ -478,6 +501,14 @@ class _NutritionScreenState extends State<NutritionScreen> {
     } finally {
       if (mounted) setState(() => _working = false);
     }
+  }
+
+  /// Deletes a draft meal that has nothing to review, then reloads the day.
+  Future<void> _discardDraft(String mealId) async {
+    await widget.repository.deleteMeal(mealId);
+    if (!mounted) return;
+    TracendToast.show(context, 'Draft deleted', icon: CupertinoIcons.delete);
+    unawaited(_refresh());
   }
 
   Future<void> _deleteMeal(MealEntry meal) async {
