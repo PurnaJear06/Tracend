@@ -1312,7 +1312,7 @@ The mock keeps its fixed text and cites nothing.
 - Deno: `plan_explanation_test.ts` (the intent in both directions, the topics, the query, the
   onboarding queries), `plan_facts_test.ts`, `plan_library_test.ts` (both searches for this
   athlete's id, floor, one search failing, both failing, the deadline, embedding failure and lateness,
-  the budget, the merge, the rules), `retrieval_test.ts` (the contributor on plan turns: the
+  the budget, the merge, the rules), `retrieval_test.ts` (the contributor on plan turns:
   the two searches, facts failing or late, the notes, one or both searches failing, budget, prefetch reuse),
   `plan_contract_library_test.ts` (parsing, `source_not_retrieved`, evidence and labels,
   confidence and the note, the rules plan unchanged), `onboarding-plan/gateway_test.ts` (the prompt,
@@ -1325,6 +1325,22 @@ The mock keeps its fixed text and cites nothing.
   prompt needs, failing under `EVAL_MIN_ONBOARDING_RECALL` (default 0.4). The calibration and
   hold-out sets are untouched.
 - Flutter: `phase_2_flow_test.dart` ("Research behind the plan": listed, absent, parsing).
+
+### Measured in CI (PR #171)
+
+The retrieval gate ran with 114 sources (the calibration numbers are unchanged: hybrid with the floor
+0.867 recall, multi-source 0.787, follow-ups 0.964, 27 of 30 no-answer questions shown nothing, 0
+regional leaks). Plan explanations, 12 questions with the floor: **0.750** mean recall (every source
+found for 58%) when searched as Coach does (as asked and with the plan topics, merged), against 0.208
+for the bare question; the single enriched query of the first run scored 0.542 and missed questions
+about one part of the plan. Still missed: the weekly-volume source on the two generic questions
+("why is my plan like this?", "how was it decided?"), `lopez_2021_load_network` on rep ranges, and the
+effort pair (`robinson_2024_proximity_to_failure`, `zourdos_2016_rir_scale`) on "why does my program
+stop my sets short of failure?". The onboarding plan's two searches over five athletes: **0.733**
+(fat loss and recomposition found every source; the muscle-gain and aesthetic cases missed
+`schoenfeld_2017_weekly_volume`, the strength case `acsm_2026_resistance_prescription`). The gates
+(`EVAL_MIN_PLAN_RECALL` 0.5, `EVAL_MIN_ONBOARDING_RECALL` 0.4) leave headroom; the next tuning
+target is `planTopicText`'s wording for volume and for effort.
 
 ### Decisions and limits
 
