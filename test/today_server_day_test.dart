@@ -517,5 +517,60 @@ void main() {
       );
       expect(coach.asked, ['2026-10-01']);
     });
+
+    testWidgets('midnight passes while Today is open: one decision for the new '
+        'day, none for the old, and none again on the next check', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final preferences = await SharedPreferences.getInstance();
+      var phone = DateTime(2026, 10, 1, 23, 50);
+      var serverDay = DateTime(2026, 10, 1);
+      final controller = DayAdjustmentController(
+        repository: FakeDayAdjustmentRepository(_noCheckIn()),
+        clock: () => phone,
+        serverToday: () async => serverDay,
+      );
+      addTearDown(controller.dispose);
+      final coach = _Coach('2026-10-01');
+      final consent = AiCoachingConsentController(
+        FixtureAiCoachingConsentRepository(AiCoachingChoice.declined),
+        initial: AiCoachingChoice.declined,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            brightness: Brightness.dark,
+            extensions: const [TracendColors.dark],
+          ),
+          home: TodayScreen(
+            environment: _live,
+            brief: _Brief(),
+            coach: coach,
+            aiConsent: consent,
+            queueFactory: () => CheckInQueue(preferences),
+            dayAdjustment: controller,
+            clock: () => phone,
+          ),
+        ),
+      );
+      await _settle(tester);
+      await consent.record(granted: true);
+      await _settle(tester);
+      expect(coach.asked, isEmpty, reason: "the first day's decision stands");
+
+      // Midnight where the athlete is; the app comes back to the front.
+      phone = DateTime(2026, 10, 2, 0, 10);
+      serverDay = DateTime(2026, 10, 2);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await _settle(tester);
+      expect(coach.asked, ['2026-10-02']);
+
+      // The next check finds that decision current.
+      await consent.record(granted: false);
+      await consent.record(granted: true);
+      await _settle(tester);
+      expect(coach.asked, ['2026-10-02']);
+    });
   });
 }

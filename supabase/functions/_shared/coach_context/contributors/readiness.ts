@@ -85,7 +85,7 @@ const areaWords: Readonly<Record<ContextJointArea, string>> = Object.freeze({
   knee: "knee",
   back: "lower back",
   shoulder: "shoulder",
-  other: "pain reported elsewhere",
+  other: "an area reported elsewhere",
 });
 
 const routeRules: Readonly<Record<SafetyRoute, string>> = Object.freeze({
@@ -152,18 +152,20 @@ function readinessLines(card: ReadinessContext): string[] {
       }. Suggest no exercise, load, stretch, range or test that works that area; never say it is healed, safe or fine, and never lift the hold yourself, only the athlete's own clearance does.`,
     );
   }
-  if (limited.length > 0) {
+  // On a safety route the card changes no training, so no instruction about swaps, range or load
+  // for a limited or watched area is given: only the referral and the holds above.
+  if (card.safetyRoute === null && limited.length > 0) {
     lines.push(
       `Limited: ${
         joinAreas(limited)
       }. Keep to the card's swaps and shorter range for that area; do not push load or range there or suggest exercises that work it harder.`,
     );
   }
-  if (watch.length > 0) {
+  if (card.safetyRoute === null && watch.length > 0) {
     lines.push(
       `Watch: ${
         joinAreas(watch)
-      }. The pain is mild and being watched; do not turn it into a problem or wave it away, and do not push through it.`,
+      }. Tracend is only watching this area; do not turn it into a problem or wave it away, and let what the athlete says about it lead.`,
     );
   }
   const lasting = card.jointStates.filter((joint) => joint.persistent).map((joint) => joint.area);

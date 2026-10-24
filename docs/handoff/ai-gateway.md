@@ -1770,6 +1770,14 @@ rate limit applies; `prepare_daily_coaching` does not compare it with the athlet
 it right. (2) The readiness block no longer names a check-in, sleep or recovery: a card can come from a pain
 report or a hold alone (tested without a check-in).
 
+**Review round 2.** (1) On a safety route the readiness block gives no instruction about limited or watched
+areas (no swaps, range or keep-training lines): only the referral, the holds and the lasting-area referral. (2) A
+watched area is only "being watched": the watch state also follows a clinician clearance, so the block never
+calls it painful or mild (an area reported elsewhere is named that, not "pain reported elsewhere"). (3) Today
+makes the decision current whenever the server day changes while it is open, and the sync and the other checks
+(`_makeDecisionCurrent`) run one at a time, so a day never makes two decisions (tested across midnight).
+The guidance reader `get_training_guidance_for_v1` stays unwired here: it needs a cost measurement first.
+
 **Daily coaching retry and error codes.** Production showed `anthropic_request_failed` for about 5 of 9 daily
 calls, about 400 ms each. Reading the path: coach-decide made one request per run and no retry, and
 `gatewayFailureCode` folded every 5xx, 529, 4xx and broken connection into one code, so the cause could not be

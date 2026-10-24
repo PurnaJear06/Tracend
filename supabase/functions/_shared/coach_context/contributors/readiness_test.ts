@@ -257,7 +257,7 @@ Deno.test("held, limited and watched areas each get their rule, and lasting ones
   }));
   assertStringIncludes(
     result.text,
-    "Held (on hold until the athlete has had it checked): knee, pain reported elsewhere.",
+    "Held (on hold until the athlete has had it checked): knee, an area reported elsewhere.",
   );
   assertStringIncludes(
     result.text,
@@ -542,4 +542,53 @@ Deno.test("a card from a pain report or a hold alone does not claim a check-in, 
     );
     assert(!/check-in|sleep|recover|confidence/i.test(result.text), result.text);
   }
+});
+
+Deno.test("on a safety route a limited or watched area gets no training instruction, only the referral and the holds", async () => {
+  const result = await rendered(payload({
+    band: "red",
+    confidence: null,
+    safety_route: "urgent",
+    joint_states: [
+      { area: "knee", state: "held", persistent: false },
+      { area: "back", state: "limited", persistent: false },
+      { area: "shoulder", state: "watch", persistent: false },
+    ],
+  }));
+  assertStringIncludes(result.text, "Held (on hold until the athlete has had it checked): knee.");
+  assertStringIncludes(result.text, "Point to the referral on the card");
+  assert(
+    !/swap|range|Limited|Watch|keep to|harder/i.test(
+      // The fixed rules and the held line name range as something not to suggest.
+      result.text.split("\n").filter((line) =>
+        !line.startsWith("Held") && !line.startsWith("A safety route")
+      )
+        .join("\n"),
+    ),
+    result.text,
+  );
+  assert(!result.text.includes("back"), "the limited area is not named");
+  assert(!result.text.includes("shoulder"), "the watched area is not named");
+  // Without a route the same areas do get their lines.
+  const open = await rendered(payload({
+    joint_states: [
+      { area: "back", state: "limited", persistent: false },
+      { area: "shoulder", state: "watch", persistent: false },
+    ],
+  }));
+  assertStringIncludes(open.text, "Limited: lower back.");
+  assertStringIncludes(open.text, "Watch: shoulder.");
+});
+
+Deno.test("a watched area is not called painful: the watch state also follows a clearance", async () => {
+  const result = await rendered(payload({
+    confidence: null,
+    joint_states: [
+      { area: "shoulder", state: "watch", persistent: false },
+      { area: "other", state: "watch", persistent: false },
+    ],
+  }));
+  assertStringIncludes(result.text, "Watch: shoulder, an area reported elsewhere.");
+  assertStringIncludes(result.text, "only watching this area");
+  assert(!/pain|mild|hurt|sore/i.test(result.text), result.text);
 });
