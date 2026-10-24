@@ -276,14 +276,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _sync = _Sync.offline;
     }
     if (server != null && server['state'] == 'completed') {
-      _sessionId = server['session_id'] as String?;
-      _viewingCompleted = true;
-      _completedFromHealth = server['completion_source'] == 'healthkit';
-      _completedDuration = (server['duration_seconds'] as num?)?.toInt();
-      _hydrate(server['exercises']);
-      _ready = true;
-      if (mounted) setState(() {});
-      unawaited(_loadHistory());
+      _showCompleted(server);
       return;
     }
     final saved = await widget.repository.loadDraft(widget.workout.id);
@@ -374,12 +367,92 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         _serverStartedAt ??= await _serverStartOf(id);
       }
     } catch (e) {
+      if (await _settleRefusedStart(e)) return;
       debugPrint('Non-critical error: workout start waits: $e');
       _sessionId ??= 'pending-$_idempotencyKey';
       _sync = _Sync.offline;
     }
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     await _save();
+  }
+
+  /// Opens the finished session [server] read-only. The exercises are named
+  /// as they were logged: the plan may have been copied since, so this
+  /// workout's own exercises can be other ones.
+  void _showCompleted(Map<String, dynamic> server) {
+    _sessionId = server['session_id'] as String?;
+    _viewingCompleted = true;
+    _completedFromHealth = server['completion_source'] == 'healthkit';
+    _completedDuration = (server['duration_seconds'] as num?)?.toInt();
+    final rows = server['exercises'];
+    if (rows is List) {
+      for (final row in rows) {
+        if (row is! Map) continue;
+        final name = row['performed_name'];
+        final order = (row['order'] as num?)?.toInt();
+        final index = _exercises.indexWhere((e) => e.exercise.order == order);
+        if (name is String &&
+            name.trim().isNotEmpty &&
+            index >= 0 &&
+            _exercises[index].exercise.name != name) {
+          _exercises[index] = ExerciseDraft(
+            _exercises[index].exercise.renamed(name),
+          );
+        }
+      }
+    }
+    _hydrate(rows);
+    _ready = true;
+    if (mounted) setState(() {});
+    unawaited(_loadHistory());
+  }
+
+  /// The server's final answers to `start_workout`: 22023 (the day has not
+  /// begun) and 55000 (the day is already logged). No retry changes either,
+  /// so neither is the workout being offline.
+  static bool _startRefused(Object error) =>
+      error is PostgrestException &&
+      (error.code == '22023' || error.code == '55000');
+
+  /// Settles a refused start. A day already logged (55000) opens the finished
+  /// session; a day that has not begun (22023) closes the workout with a
+  /// message, and any set already logged stays in the draft on this phone for
+  /// the left-over path. True when the screen took the answer.
+  Future<bool> _settleRefusedStart(Object error) async {
+    if (!_startRefused(error)) return false;
+    final code = (error as PostgrestException).code;
+    debugPrint('Non-critical error: workout start refused: $code');
+    _saveTimer?.cancel();
+    await _rest.stop();
+    if (code == '55000') {
+      Map<String, dynamic>? server;
+      try {
+        server = await widget.repository.loadSession(
+          widget.workout,
+          localDate: widget.sessionDate,
+        );
+      } catch (e) {
+        debugPrint('Non-critical error: logged session not read: $e');
+      }
+      if (server != null && server['state'] == 'completed') {
+        _showCompleted(server);
+        return true;
+      }
+    }
+    _closed = true;
+    if (!_anySetDone) await widget.repository.clearDraft(widget.workout.id);
+    _events.emit(WorkoutEnded(at: widget.clock(), completed: false));
+    if (!mounted) return true;
+    unawaited(TracendHaptics.warning());
+    TracendToast.show(
+      context,
+      code == '22023'
+          ? 'This day has not started yet. Open the workout on the day.'
+          : 'This workout is already logged for the day.',
+      icon: CupertinoIcons.exclamationmark_triangle,
+    );
+    Navigator.of(context).pop(false);
+    return true;
   }
 
   /// Sends what an earlier day's draft holds that the server may not have:
@@ -777,6 +850,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         _rowsAligned = false;
         _serverStartedAt = await _serverStartOf(id);
       } catch (e) {
+        if (await _settleRefusedStart(e)) return null;
         debugPrint('Non-critical error: workout start still waits: $e');
         if (mounted) setState(() => _sync = _Sync.offline);
         return _Sync.offline;
@@ -1354,7 +1428,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     await _rest.stop();
     _saveTimer?.cancel();
     await _save();
-    if (!mounted) return;
+    // A refused start already closed the screen or opened the logged session.
+    if (!mounted || _closed || _viewingCompleted) return;
     _closed = true;
     _events.emit(WorkoutEnded(at: widget.clock(), completed: false));
     // The toast lives in the root overlay, so it outlasts this screen.
@@ -1442,6 +1517,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     await _rest.stop();
     _saveTimer?.cancel();
     final saved = await _save();
+    if (_closed || _viewingCompleted) {
+      // A refused start already closed the screen or opened the logged session.
+      if (mounted) setState(() => _finishing = false);
+      return;
+    }
     final rowsPending =
         _sessionId != null &&
         !_sessionId!.startsWith('pending-') &&

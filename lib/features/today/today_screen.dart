@@ -819,13 +819,25 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       }
     }
     if (workout == null || !mounted) return;
+    // The session's day is the server's: a phone date a day ahead of it (the
+    // brief can be loaded for the phone's day before the server's is known)
+    // would be refused as a day that has not begun.
+    final readiness = widget.dayAdjustment;
+    if (readiness != null && readiness.serverDay == null) {
+      await readiness.load();
+      if (!mounted) return;
+    }
+    final sessionDay =
+        DateTime.tryParse(readiness?.serverDay ?? '') ??
+        DateTime.tryParse(brief.localDate) ??
+        DateTime.now();
     final completed = await Navigator.of(context).push<bool>(
       CupertinoPageRoute(
         builder: (_) => WorkoutDetailScreen(
           repository: widget.workouts,
           dayAdjustment: widget.dayAdjustment,
           workout: workout,
-          sessionDate: DateTime.tryParse(brief.localDate) ?? DateTime.now(),
+          sessionDate: sessionDay,
         ),
       ),
     );

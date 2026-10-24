@@ -20,10 +20,13 @@ import 'package:tracend/features/today/widgets/today_hero.dart';
 import 'package:tracend/features/today/widgets/today_session_card.dart';
 import 'package:tracend/features/today/widgets/today_tiles.dart';
 import 'package:tracend/features/today/widgets/your_week_card.dart';
+import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
 import 'package:tracend/shared/widgets/tracend_skeleton.dart';
+
+import 'day_adjustment_fixtures.dart';
 
 Widget _wrap(Widget child) {
   return MaterialApp(
@@ -1516,6 +1519,42 @@ void main() {
       expect(screen.workout?.name, 'Pull day');
       expect(screen.workout?.exercises.single.name, 'Lat pulldown');
       expect(screen.sessionDate, DateTime(2026, 8, 23));
+    });
+
+    testWidgets("opens the workout on the server's day, not a phone date "
+        'ahead of it', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      // The brief was loaded for the phone's day (23 August); the server's
+      // day is the 22nd, and a start for the 23rd would be refused.
+      final controller = DayAdjustmentController(
+        repository: FakeDayAdjustmentRepository(
+          adjustmentJson(day: '2026-08-22'),
+        ),
+        clock: () => DateTime(2026, 8, 23, 9),
+        serverToday: () async => DateTime(2026, 8, 22),
+      );
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: Scaffold(
+            body: TodayScreen(
+              environment: _environment,
+              brief: _PlannedBriefRepository(),
+              dayAdjustment: controller,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Pull day'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pull day'));
+      await tester.pumpAndSettle();
+      final screen = tester.widget<WorkoutDetailScreen>(
+        find.byType(WorkoutDetailScreen),
+      );
+      expect(screen.sessionDate, DateTime(2026, 8, 22));
     });
 
     testWidgets('goes to Train when the shell wires it', (tester) async {
