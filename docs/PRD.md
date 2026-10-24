@@ -164,6 +164,15 @@ set fewer, or easy cardio for today's session only. The athlete accepts or decli
 leads; the recovery score alone never adjusts a session, it informs the athlete and the athlete may
 choose an adjustment themselves. Pain of 7 or more gives a referral and no training change.
 
+**Pain check and joint rules (Phase 4, B5; server built in B5-1, app in B5-2):** an athlete with pain
+says where it is, how strong, when it hurts and whether any of ten red flags applies. The database
+works out the outcome: a red flag or a pain of 7 or more gives a referral (the emergency number when
+urgent) and no training change, applies on a rest day too, and holds the joint until the athlete says a
+clinician cleared it; 4 to 6 limits the joint for a week, 1 to 3 puts it on watch. A limited or held
+joint changes today's session (a gentler exercise for the same movement, a shorter pain-free range with
+the load held, or leaving the exercise out) through the same one-tap adjustment. Tracend never names a
+condition, never prescribes rehab, and never blocks the workout: it withholds advice.
+
 Direct Coach questions use the active approved plan plus bounded longitudinal context: the active
 goal and profile, recent check-ins, normalized HealthKit summaries, completed workouts, confirmed
 nutrition totals, measurements, the latest weekly and daily decisions, and the current thread.

@@ -668,11 +668,11 @@ for a user and local date is the one with `superseded_at` null (unique partial i
 | `user_id`, `local_date` | owner (cascade from `user_accounts`) and the athlete's local day |
 | `planned_workout_id`, `plan_version_id` | today's scheduled workout and its plan version (composite foreign keys with `user_id`) |
 | `rules_version`, `band` | `readiness-v1`; `green`, `amber`, `red` or `unknown` when answered |
-| `kind`, `origin`, `rules_kind` | `hold_load`, `reduce_sets` or `swap_to_easy_cardio`; `proposed` (the rules' kind) or `chosen` (the athlete's own pick); the kind the rules proposed at the time (`none` allowed) |
+| `kind`, `origin`, `rules_kind` | `hold_load`, `reduce_sets`, `swap_to_easy_cardio` or (B5-1) `joint_adjust`; `proposed` (the rules' kind) or `chosen` (the athlete's own pick); the kind the rules proposed at the time (`none` allowed) |
 | `triggers` | reason codes from a closed list (`sleep_very_poor`, `sleep_poor`, `sleep_short`, `energy_very_low`, `energy_low`, `very_sore`, `sore`, `mood_very_low`, `pain_moderate`, `pain_mild`, `recovery_low`, `no_check_in`, `not_available`) |
-| `changes` | array (at most 30) of per-exercise changes: `exercise_order`, `planned_exercise_id`, `name`, `sets_from`, `sets_to`, `load_note`, `load_kg_from`, `load_kg_to`, `reps_from`, `reps_to`, `rpe_to` |
+| `changes` | array (at most 30) of per-exercise changes: `exercise_order`, `planned_exercise_id`, `name`, `sets_from`, `sets_to`, `load_note`, `load_kg_from`, `load_kg_to`, `reps_from`, `reps_to`, `rpe_to`; from B5-1 an exercise a joint touches also carries `joint_action` (`swap`, `limit`, `drop`), `joint`, `joint_state`, `swap_to_slug`, `swap_to_name`, `range_note_code` |
 | `cardio` | the easy-cardio dose (`minutes_min`, `minutes_max`, `effort`, `talk_test`, `vigorous_allowed`); not null exactly for `swap_to_easy_cardio` |
-| `inputs`, `inputs_hash` | the values the rules read (check-in id and revision, sleep minutes, recovery score, confidence and mode, screening outcome; Restricted health data) and their SHA-256 |
+| `inputs`, `inputs_hash` | the values the rules read (check-in id and revision, sleep minutes, recovery score, confidence and mode, screening outcome, and from B5-1 the joint states; Restricted health data) and their SHA-256 |
 | `status` | `accepted` or `declined` |
 | `answered_at`, `superseded_at`, `created_at` | times |
 
@@ -681,6 +681,33 @@ stricter than what they asked for when it was given or than what the athlete ans
 session starts it stands as it is. RLS is enabled and forced; the owner reads their rows, nobody
 writes them from the client (`respond_to_day_adjustment_v1` is the only writer). At most 20 answers
 a day. Export and account deletion cover it (cascade).
+
+### `pain_reports` (B5-1, migration `20261024060025`)
+
+The athlete's pain checks (rules `pain-v1`; ALGORITHMS §4, "Pain check, red flags and joint rules").
+Rows are only added; the newest report per area (by day, then by time stored) sets the area's state.
+
+| Column | Meaning |
+|---|---|
+| `user_id`, `local_date` | owner (cascade from `user_accounts`) and the athlete's local day of the report |
+| `source` | `check_in` (made in the daily check-in; `check_in_id` set, composite foreign key with `user_id`) or `workout` (the "Pain or discomfort" chip; may name its own `exercise_performance_id`) |
+| `area`, `severity`, `pattern` | `knee`, `back`, `shoulder` or `other`; 0 to 10; `movement`, `rest` or null |
+| `red_flags` | codes from `private.pain_red_flag_codes()` (ten, closed; sorted, no duplicates); empty = "none of these"; null = not asked |
+| `cleared_by_clinician` | the athlete says a doctor or physio cleared them; self-attested |
+| `outcome` | `urgent`, `clinician_today`, `clinician`, `modify`, `watch` or `clear`; a check constraint keeps it equal to `private.pain_outcome(severity, red_flags)` |
+| `idempotency_key`, `created_at` | a retried workout report returns the first (unique per user); time stored |
+
+One report per area per check-in (unique `(check_in_id, area)`); at most 40 reports a day that do not
+route out (a report that routes out is always stored). A report's day is the server's today or
+yesterday; a phone a day ahead is stored under the server's today. RLS is
+enabled and forced; the owner reads their rows, nobody writes them from the client
+(`save_daily_check_in` and `record_pain_check_v1` are the only writers, through
+`private.insert_pain_report`, which also records the audit event `pain_check_recorded` with the
+source, area and outcome only). Export and account deletion cover it. `save_daily_check_in` takes the
+optional keys `pain_area`, `pain_pattern`, `pain_red_flags`, `pain_cleared_by_clinician` and
+`pain_followups` (`[{area, severity, cleared_by_clinician}]` for areas already active); any of them
+marks a build that asks the questions, and then a pain above 0 needs an area and the red-flag answer
+and red flags need an area (22023, nothing saved). A build that sends none behaves as before.
 
 ### `workout_amendments`
 
@@ -1263,8 +1290,16 @@ Sleep quality:
   - `get_progression_summary_v1(p_user_id)` (service role only) returns `{schema_version: '1.0',
     targets}` with the same entries, for Coach context.
 - `get_my_day_adjustment_v1(local_date)` and `respond_to_day_adjustment_v1(local_date, accept,
-  chosen_kind)` 1.0 (B4): today's readiness adjustment and the athlete's answer; the keys are in
-  Contract 5 of the program plan. `previous_answer` carries `kind`, `status`, `answered_at` and
+  chosen_kind)` 1.1 (B4, B5-1): today's readiness adjustment and the athlete's answer; the keys are in
+  Contract 5 of the program plan (1.1 adds `joint_states`, `exercise_joint_options`, the
+  `joint_adjust` kind, the joint keys of a change (with `range_note_codes`), `hold_outcome` on a held
+  state, and the safety routes `urgent`, `clinician_today` and `clinician`, which last while the area is
+  held).
+- `record_pain_check_v1(local_date, source, area, severity, pattern, red_flags, cleared_by_clinician,
+  exercise_performance_id, idempotency_key)` 1.0 (B5-1, authenticated): a pain check made in the
+  workout; returns `{schema_version, id, outcome, area_state}`. `get_readiness_context_v1(p_user_id,
+  p_local_date)` 1.0 (service role only): the band, kind, status, safety route, reason codes (never a
+  red-flag code) and each joint's area, state and lasting flag for Coach context. `previous_answer` carries `kind`, `status`, `answered_at` and
   `reason` (`check_in` or `new_data`). The training hub is 1.8 (B4; every 1.7 key is unchanged, the
   sessions inside a target's `basis.recent` gain two keys); the daily brief does not change.
   `private.day_adjustment_metric_attempts` (private, one row per athlete and day, deleted with the

@@ -209,16 +209,16 @@ select ok(has_table_privilege('authenticated', 'public.day_adjustments', 'select
   and not has_table_privilege('authenticated', 'public.day_adjustments', 'delete')
   and not has_table_privilege('anon', 'public.day_adjustments', 'select'),
   'athletes read their answers and cannot write them; signed-out callers read nothing');
-select ok(has_function_privilege('authenticated', 'public.get_my_day_adjustment_v1(date)', 'execute')
+select ok(has_function_privilege('authenticated', 'public.get_my_day_adjustment_v1(date, boolean)', 'execute')
   and has_function_privilege('authenticated',
-    'public.respond_to_day_adjustment_v1(date, boolean, text)', 'execute')
-  and not has_function_privilege('anon', 'public.get_my_day_adjustment_v1(date)', 'execute')
+    'public.respond_to_day_adjustment_v1(date, boolean, text, boolean)', 'execute')
+  and not has_function_privilege('anon', 'public.get_my_day_adjustment_v1(date, boolean)', 'execute')
   and not has_function_privilege('anon',
-    'public.respond_to_day_adjustment_v1(date, boolean, text)', 'execute'),
+    'public.respond_to_day_adjustment_v1(date, boolean, text, boolean)', 'execute'),
   'athletes call the two functions; signed-out callers cannot');
 select ok((select bool_and(prosecdef and proconfig = array['search_path=""']) from pg_proc
-    where oid in ('public.get_my_day_adjustment_v1(date)'::regprocedure,
-      'public.respond_to_day_adjustment_v1(date, boolean, text)'::regprocedure)),
+    where oid in ('public.get_my_day_adjustment_v1(date, boolean)'::regprocedure,
+      'public.respond_to_day_adjustment_v1(date, boolean, text, boolean)'::regprocedure)),
   'both are security definer with an empty search path');
 select ok(not has_function_privilege('authenticated', 'private.readiness_rules()', 'execute')
   and not has_function_privilege('authenticated', 'private.readiness_rank(text, text)', 'execute')
@@ -230,7 +230,7 @@ select ok(not has_function_privilege('authenticated', 'private.readiness_rules()
   and not has_function_privilege('authenticated',
     'private.day_adjustment_explanation(text, text, text[], text, jsonb, boolean, text)', 'execute')
   and not has_function_privilege('authenticated',
-    'private.day_adjustment_compute(uuid, date)', 'execute')
+    'private.day_adjustment_compute(uuid, date, boolean)', 'execute')
   and not has_function_privilege('authenticated',
     'private.day_adjustment_stands(public.day_adjustments, jsonb)', 'execute')
   and not has_function_privilege('authenticated',
@@ -288,12 +288,13 @@ select pg_temp.as_user('b4000000-0000-4000-8000-000000000001');
 insert into r select 'no_check_in', public.get_my_day_adjustment_v1((select today from t));
 select is((select array(select k from jsonb_object_keys(j) k order by k collate "C")
     from r where name = 'no_check_in'),
-  array['answered_at', 'available', 'band', 'cardio', 'changes', 'confidence', 'explanation', 'kind',
-    'local_date', 'missing', 'options', 'origin', 'planned_workout_id', 'previous_answer',
-    'rules_version', 'safety_route', 'schema_version', 'sets_total_from', 'sets_total_to', 'signals',
-    'status', 'triggers', 'unavailable_reason', 'workout_name'],
-  'the answer has exactly the contract keys');
-select is((select j ->> 'schema_version' from r where name = 'no_check_in'), '1.0', 'at schema version 1.0');
+  array['answered_at', 'available', 'band', 'cardio', 'changes', 'confidence', 'exercise_joint_options',
+    'explanation', 'joint_states', 'kind', 'local_date', 'missing', 'options', 'origin',
+    'planned_workout_id', 'previous_answer', 'rules_version', 'safety_route', 'schema_version',
+    'sets_total_from', 'sets_total_to', 'signals', 'status', 'triggers', 'unavailable_reason',
+    'workout_name'],
+  'the answer has exactly the contract keys: the 1.0 keys and the two B5-1 added');
+select is((select j ->> 'schema_version' from r where name = 'no_check_in'), '1.1', 'at schema version 1.1');
 select is((select j ->> 'local_date' from r where name = 'no_check_in'), (select today::text from t),
   'for the athlete''s own today');
 select is((select array[j ->> 'band', j ->> 'kind', j ->> 'status', j ->> 'available'] from r
@@ -347,8 +348,10 @@ select is((select j -> 'signals' from r where name = 'low_no_check_in'),
     "recovery_low": true, "sleep_minutes": null}'::jsonb,
   'and tells the athlete what the score shows');
 
--- The contract fixture day_adjustment_v1_0_unknown.json is exactly what this day returns.
-select is((select j from r where name = 'low_no_check_in'),
+-- The contract fixture day_adjustment_v1_0_unknown.json is what this day returns, key for key: schema 1.1
+-- only adds keys (joint_states, exercise_joint_options), so every 1.0 value is unchanged.
+select is((select j - 'schema_version' - 'joint_states' - 'exercise_joint_options'
+    from r where name = 'low_no_check_in'),
   replace(replace(replace(replace(replace($fx${"schema_version": "1.0", "local_date": "2026-10-24", "band": "unknown", "triggers": ["no_check_in", "recovery_low"], "kind": "none", "changes": [], "explanation": "Your recovery reads low. Check in and Tracend will say whether to adjust today.", "status": "none", "available": true, "unavailable_reason": null, "safety_route": null, "confidence": null, "missing": ["sleep"], "cardio": null, "planned_workout_id": "b4200000-0000-4000-8000-000000000001", "workout_name": "Lower A", "sets_total_from": 9, "sets_total_to": 9, "previous_answer": null, "answered_at": null, "rules_version": "readiness-v1", "origin": null, "options": [{"kind": "hold_load", "explanation": "Keep last time's weights instead of adding more.", "sets_total_to": 9, "changes": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "sets_from": 4, "sets_to": 4, "load_note": "Keep last time's 60 kg", "load_kg_from": 62.5, "load_kg_to": 60, "reps_from": 5, "reps_to": 8, "rpe_to": null}, {"exercise_order": 2, "planned_exercise_id": "b4400000-0000-4000-8000-000000000002", "name": "Cable fly", "sets_from": 3, "sets_to": 3, "load_note": null, "load_kg_from": 15, "load_kg_to": 15, "reps_from": 11, "reps_to": 10, "rpe_to": null}], "cardio": null}, {"kind": "reduce_sets", "explanation": "One set fewer on 2 exercises and last time's weights.", "sets_total_to": 7, "changes": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "sets_from": 4, "sets_to": 3, "load_note": "Keep last time's 60 kg", "load_kg_from": 62.5, "load_kg_to": 60, "reps_from": 5, "reps_to": 8, "rpe_to": 7}, {"exercise_order": 2, "planned_exercise_id": "b4400000-0000-4000-8000-000000000002", "name": "Cable fly", "sets_from": 3, "sets_to": 2, "load_note": null, "load_kg_from": 15, "load_kg_to": 15, "reps_from": 11, "reps_to": 10, "rpe_to": 7}], "cardio": null}, {"kind": "swap_to_easy_cardio", "explanation": "Try 20 to 30 minutes of easy walking, cycling or swimming at a pace you can talk through. It keeps you moving without adding strain.", "sets_total_to": 0, "changes": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "sets_from": 4, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}, {"exercise_order": 2, "planned_exercise_id": "b4400000-0000-4000-8000-000000000002", "name": "Cable fly", "sets_from": 3, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}, {"exercise_order": 3, "planned_exercise_id": "b4400000-0000-4000-8000-000000000003", "name": "Dumbbell curl", "sets_from": 2, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}], "cardio": {"minutes_min": 20, "minutes_max": 30, "effort": "easy", "talk_test": true, "vigorous_allowed": false}}], "signals": {"recovery_score": 20, "recovery_confidence": "high", "recovery_mode": "night", "recovery_low": true, "sleep_minutes": null}}$fx$,
     'b4200000-0000-4000-8000-000000000001', (select workout_id::text from wk
       where uid = 'b4000000-0000-4000-8000-000000000001')),
@@ -358,7 +361,7 @@ select is((select j from r where name = 'low_no_check_in'),
       where uid = 'b4000000-0000-4000-8000-000000000001')),
     'b4400000-0000-4000-8000-000000000003', (select e3::text from wk
       where uid = 'b4000000-0000-4000-8000-000000000001')),
-    '2026-10-24', (select today::text from t))::jsonb,
+    '2026-10-24', (select today::text from t))::jsonb - 'schema_version',
   'the fixture the app parses is the real answer, key for key');
 
 select pg_temp.check_in('b4000000-0000-4000-8000-000000000001', 3, 3, 3, 3, 0);
@@ -533,7 +536,7 @@ select is((select array[kind, status, origin, band, rules_version, (triggers)::t
 select is((select inputs - 'check_in_id' - 'check_in_revision' from public.day_adjustments
     where user_id = 'b4000000-0000-4000-8000-000000000001'),
   '{"screening": "cleared", "sleep_minutes": null, "recovery_mode": "night", "recovery_score": 60,
-    "data_confidence": "high"}'::jsonb,
+    "data_confidence": "high", "joint_states": []}'::jsonb,
   'and the values the rules read');
 select is((select a.inputs ->> 'check_in_id' from public.day_adjustments a
     where a.user_id = 'b4000000-0000-4000-8000-000000000001'),
@@ -700,9 +703,10 @@ select is((select array[j ->> 'safety_route', j ->> 'unavailable_reason', j ->> 
     '0', 'red'],
   'pain of 9 after the session started carries the referral and none of the stored answer');
 select is((select j - 'local_date' - 'planned_workout_id' - 'signals' - 'sets_total_from'
-    - 'sets_total_to' - 'workout_name' - 'confidence' - 'missing' from r where name = 'safety_started'),
+    - 'sets_total_to' - 'workout_name' - 'confidence' - 'missing' - 'schema_version' - 'joint_states'
+    - 'exercise_joint_options' from r where name = 'safety_started'),
   ($fx${   "schema_version": "1.0",   "local_date": "2026-10-24",   "band": "red",   "triggers": [     "pain_severe"   ],   "kind": "none",   "changes": [],   "explanation": "Pain of 7 or more is too high to train through. Rest the area and see a doctor or physio before you train it again.",   "status": "none",   "available": false,   "unavailable_reason": "session_started",   "safety_route": "pain_referral",   "confidence": "medium",   "missing": [     "sleep"   ],   "cardio": null,   "planned_workout_id": "b4200000-0000-4000-8000-000000000001",   "workout_name": "Lower A",   "sets_total_from": 9,   "sets_total_to": 9,   "previous_answer": null,   "answered_at": null,   "rules_version": "readiness-v1",   "origin": null,   "options": [],   "signals": {     "recovery_score": 60,     "recovery_confidence": "high",     "recovery_mode": "night",     "recovery_low": false,     "sleep_minutes": null   } }$fx$::jsonb - 'local_date' - 'planned_workout_id' - 'signals' - 'sets_total_from'
-    - 'sets_total_to' - 'workout_name' - 'confidence' - 'missing'),
+    - 'sets_total_to' - 'workout_name' - 'confidence' - 'missing' - 'schema_version'),
   'the contract fixture day_adjustment_v1_0_safety_started.json is the real answer, key for key');
 
 select pg_temp.as_user('b4000000-0000-4000-8000-000000000008');
@@ -843,7 +847,7 @@ select is((select j ->> 'explanation' from r where name = 'read13'),
 select ok((select prosrc like '%pg_advisory_xact_lock(hashtextextended(%day_adjustment:%auth.uid()%'
     from pg_proc where oid = 'public.start_workout(uuid, date, text, uuid)'::regprocedure)
   and (select prosrc like '%pg_advisory_xact_lock(hashtextextended(''day_adjustment:'' || uid::text || today::text, 0))%'
-    from pg_proc where oid = 'public.respond_to_day_adjustment_v1(date, boolean, text)'::regprocedure),
+    from pg_proc where oid = 'public.respond_to_day_adjustment_v1(date, boolean, text, boolean)'::regprocedure),
   'both functions take the user-and-day advisory lock');
 select pg_temp.as_user('b4000000-0000-4000-8000-000000000014');
 select ok(not exists (select 1 from pg_locks where locktype = 'advisory' and pid = pg_backend_pid()

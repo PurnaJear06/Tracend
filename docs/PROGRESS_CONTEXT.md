@@ -101,6 +101,16 @@ hourly job, and the phone sends an earlier day's unsent sets and finish first, t
 rule closed still takes that late send on its own date. Migration `20261023150021`; `start_workout` (as #165 left it) closes the caller's stale sessions after its advisory lock and before its open-session lookup. Details:
 "Stale workouts" in [`training-engine.md`](./handoff/training-engine.md).
 
+**B5-1 pain check, red flags and joint rules, server side (2026-10-24, branch `claude/b5-1-pain-red-flags`, PR open):**
+migration `20261024060025` adds `pain_reports`, `record_pain_check_v1`, the optional pain keys of
+`save_daily_check_in`, joint states (held, limited, watch), joint swaps and range cues, the safety
+routes `urgent`, `clinician_today` and `clinician`, the `joint_adjust` kind and payload 1.1 of the
+day adjustment, and `get_readiness_context_v1` for Coach context. A red flag or a pain of 7 or more
+gives a referral and no training change (even on a rest day or with no check-in); a held joint stays
+held until the athlete says a clinician cleared it. No app change yet (B5-2); the app must not offer
+the new pain keys until then, and the installed B4-2 build must tolerate the new kind and routes
+(see the handoff). Details: "B5-1" in [`training-engine.md`](./handoff/training-engine.md).
+
 **Unfinished workouts (2026-10-24, branch `claude/unfinished-workout`, PR open):** the owner's Legs B (23 sets logged,
 never finished) was closed by the stale rule and Coach then called it "not done". A stale-closed session with logged sets
 is now offered back on Today ("You didn't finish Legs B on Fri 23 Oct · 23 sets logged"): **Save workout** completes it

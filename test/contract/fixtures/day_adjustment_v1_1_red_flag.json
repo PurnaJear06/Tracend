@@ -40,7 +40,8 @@
       "state": "held",
       "since": "2026-10-24",
       "severity": 5,
-      "persistent": false
+      "persistent": false,
+      "hold_outcome": "clinician_today"
     }
   ],
   "exercise_joint_options": [

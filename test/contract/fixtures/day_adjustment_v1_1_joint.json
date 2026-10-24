@@ -22,7 +22,10 @@
       "joint_state": "watch",
       "swap_to_slug": null,
       "swap_to_name": null,
-      "range_note_code": "shoulder_press_depth"
+      "range_note_code": "shoulder_press_depth",
+      "range_note_codes": [
+        "shoulder_press_depth"
+      ]
     }
   ],
   "explanation": "Your shoulder is on watch. 1 exercise kept in a pain-free range.",
@@ -67,7 +70,10 @@
           "joint_state": "watch",
           "swap_to_slug": null,
           "swap_to_name": null,
-          "range_note_code": "shoulder_press_depth"
+          "range_note_code": "shoulder_press_depth",
+          "range_note_codes": [
+            "shoulder_press_depth"
+          ]
         },
         {
           "exercise_order": 2,
@@ -146,7 +152,10 @@
           "joint_state": "watch",
           "swap_to_slug": null,
           "swap_to_name": null,
-          "range_note_code": "shoulder_press_depth"
+          "range_note_code": "shoulder_press_depth",
+          "range_note_codes": [
+            "shoulder_press_depth"
+          ]
         },
         {
           "exercise_order": 2,
@@ -231,7 +240,10 @@
           "joint_state": "watch",
           "swap_to_slug": null,
           "swap_to_name": null,
-          "range_note_code": "shoulder_press_depth"
+          "range_note_code": "shoulder_press_depth",
+          "range_note_codes": [
+            "shoulder_press_depth"
+          ]
         }
       ],
       "cardio": null
@@ -250,7 +262,8 @@
       "state": "watch",
       "since": "2026-10-24",
       "severity": 2,
-      "persistent": false
+      "persistent": false,
+      "hold_outcome": null
     }
   ],
   "exercise_joint_options": [
