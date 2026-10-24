@@ -268,7 +268,8 @@ class _UsageRepository implements CoachRepository {
   @override
   Future<CoachDecision?> loadLatest() async => null;
   @override
-  Future<CoachDecision> generate() => throw StateError('not needed');
+  Future<CoachDecision> generate({String? localDate}) =>
+      throw StateError('not needed');
   @override
   Future<Map<String, dynamic>> loadUsage() async => usage;
 }
@@ -277,7 +278,8 @@ class _LoadingUsageRepository implements CoachRepository {
   @override
   Future<CoachDecision?> loadLatest() async => null;
   @override
-  Future<CoachDecision> generate() => throw StateError('not needed');
+  Future<CoachDecision> generate({String? localDate}) =>
+      throw StateError('not needed');
   @override
   Future<Map<String, dynamic>> loadUsage() =>
       Completer<Map<String, dynamic>>().future;
@@ -289,7 +291,8 @@ class _FlakyUsageRepository implements CoachRepository {
   @override
   Future<CoachDecision?> loadLatest() async => null;
   @override
-  Future<CoachDecision> generate() => throw StateError('not needed');
+  Future<CoachDecision> generate({String? localDate}) =>
+      throw StateError('not needed');
   @override
   Future<Map<String, dynamic>> loadUsage() async {
     calls += 1;
@@ -304,7 +307,8 @@ class _CountingUsageRepository implements CoachRepository {
   @override
   Future<CoachDecision?> loadLatest() async => null;
   @override
-  Future<CoachDecision> generate() => throw StateError('not needed');
+  Future<CoachDecision> generate({String? localDate}) =>
+      throw StateError('not needed');
   @override
   Future<Map<String, dynamic>> loadUsage() async {
     calls += 1;

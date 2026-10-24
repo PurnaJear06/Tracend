@@ -74,7 +74,7 @@ class _GatedCoach implements CoachRepository, CoachChatRepository {
   }
 
   @override
-  Future<CoachDecision> generate() async {
+  Future<CoachDecision> generate({String? localDate}) async {
     generated++;
     throw StateError('not needed');
   }

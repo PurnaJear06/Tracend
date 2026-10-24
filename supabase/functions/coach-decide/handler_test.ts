@@ -125,6 +125,7 @@ async function run(
     provider: {
       environment: { get: (name: string) => options.settings?.[name] },
       gateway: { fetch: fake.fetch },
+      wait: () => Promise.resolve(),
     },
   });
   const { result: response } = await captureLogs(() => handler(request()));
@@ -166,15 +167,36 @@ Deno.test("gateway: a grounded answer is stored with its vendor, model and cost"
   assertEquals(result.named("settle_ai_budget").length, 1);
 });
 
-Deno.test("gateway: unbilled failures release the budget place", async () => {
+Deno.test("gateway: unbilled failures release the budget place, after one retry when they may pass", async () => {
   const cases: [Parameters<typeof run>[0], string, number][] = [
+    // Busy or failing on its side: tried twice, then named by what it said.
     [
       { path: gateway, respond: () => jsonResponse({}, 429) },
       "anthropic_request_failed_status_429",
+      2,
+    ],
+    [{ path: gateway, respond: () => jsonResponse({}, 529) }, "anthropic_overloaded", 2],
+    [
+      { path: gateway, respond: () => jsonResponse({}, 500) },
+      "anthropic_request_failed_status_500",
+      2,
+    ],
+    [
+      { path: gateway, respond: () => jsonResponse({}, 502) },
+      "anthropic_request_failed_status_502",
+      2,
+    ],
+    // Will not change: tried once, named by its status class.
+    [
+      { path: gateway, respond: () => jsonResponse({}, 400) },
+      "anthropic_request_failed_status_400",
       1,
     ],
-    [{ path: gateway, respond: () => jsonResponse({}, 529) }, "anthropic_request_failed", 1],
-    [{ path: gateway, respond: () => jsonResponse({}, 500) }, "anthropic_request_failed", 1],
+    [
+      { path: gateway, respond: () => jsonResponse({}, 401) },
+      "anthropic_request_failed_status_401",
+      1,
+    ],
     [{ path: gateway, snapshot: false }, "feature_context_unavailable", 0],
   ];
   for (const [options, code, sent] of cases) {
@@ -185,6 +207,22 @@ Deno.test("gateway: unbilled failures release the budget place", async () => {
     assertEquals(result.named("settle_ai_budget").length, 1, code);
     assertEquals(result.sent, sent, code);
   }
+});
+
+Deno.test("gateway: a provider that is busy once and then answers gives the athlete the decision", async () => {
+  let sent = 0;
+  const result = await run({
+    path: gateway,
+    respond: () => ++sent === 1 ? jsonResponse({}, 529) : claude("Your recovery score is 68."),
+  });
+  assertEquals(result.status, 200);
+  assertEquals(result.sent, 2);
+  assertEquals(result.named("persist_failed_coaching_run_v2").length, 0);
+  const persisted = result.named("persist_daily_coaching_result_v2")[0].params;
+  assertEquals([persisted.run_provider, persisted.run_model], ["anthropic", "claude-sonnet-5-5"]);
+  // One answer, one price, one settled place.
+  assertEquals(persisted.run_estimated_cost_usd, 0.004);
+  assertEquals(result.named("settle_ai_budget").length, 1);
 });
 
 Deno.test("gateway: billed or unknown spend keeps the budget place open", async () => {

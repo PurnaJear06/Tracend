@@ -345,7 +345,8 @@ today's path.
   no model or company names) and the day's context in the user turn inside `<coaching_context>`.
   JSON via the gateway with today's `decisionSchema`; context cap 12,000 characters as today.
   Failures use today's code forms: `<vendor>_timeout`, `<vendor>_request_failed`,
-  `<vendor>_request_failed_status_429`, `<vendor>_response_invalid`, plus `<vendor>_refused`.
+  `<vendor>_request_failed_status_<n>`, `<vendor>_overloaded`, `<vendor>_response_invalid`, plus
+  `<vendor>_refused`; one retry of a transient unbilled failure (2026-10-24, below).
   The eval router is refused (no notice names it).
 - `parseCoachDecision` still runs on every path's output in coach-decide before anything is
   stored; a forbidden answer is a 503 `coaching_unavailable`, as today.
@@ -1761,6 +1762,75 @@ now settles against the server instead of guessing; switching Coach conversation
 Tests: `test/coach_thread_switching_test.dart`, `test/coach_restored_order_test.dart`,
 `test/coach_proposal_card_test.dart`, `test/coach_proposal_repository_test.dart`, `test/phase_2_flow_test.dart`
 ("an answer to the plan whose reply is lost"), `test/nutrition_lost_reply_test.dart`, `test/health_sync_key_test.dart`.
+
+## Coach knows today's readiness card; daily coaching retries a busy provider (2026-10-24, branch `claude/coach-readiness-context`)
+
+**Readiness contributor.** `_shared/coach_context/contributors/readiness.ts` (volatile, right after the training
+plan, on the gateway and the rollback route) reads `get_readiness_context_v1(p_user_id, p_local_date)` with the
+service role and tells Coach, read-only: the band and confidence, the adjustment the card offers and whether
+the athlete accepted or declined it or has not answered, why the card is closed, the safety route (`pain_referral`,
+`urgent`, `clinician_today`, `clinician`), and the held, limited and watched joint areas with the "lasted two
+weeks" flag. Its fixed sentences: never contradict the card; the athlete decides on the card, Coach explains and
+never applies, accepts, declines or changes it; on a safety route suggest no training, loads, exercises or cardio,
+point to the card's referral, never diagnose (urgent: care now; clinician_today: seen today); a held area gets no
+exercise, load, stretch, range or test and is never called healed or safe, and only the athlete's own clearance
+lifts it; limited areas keep to the card's swaps and shorter range; a lasting area should be seen by a physio or
+doctor; a deload is only ever a proposal the athlete approves. The parser (`training/readiness/context_payload.ts`)
+keeps only the fields the text uses, so no red-flag code, trigger, pain severity or free text reaches the model
+even if the reader later returns more (tests feed it all of them; a drift test reads the migration and fails
+when the reader's keys change). The only figure in the block is the card's date, marked with `record()`
+(declared `records` in `grounding.ts`, probed in `contributor_grounding_test.ts`); the output schema is
+untouched (0 optional fields, 0 unions).
+
+**Read, deadline, trace.** The read has its own 1.5 s deadline (`readinessDeadlineMs`); the trace
+`{readiness: ok | unavailable | failed | timeout}` is logged as `readiness_context` by coach-chat (a word, never a
+value). A card that cannot be read, is for another day than the coaching date (the reader answers only the
+athlete's own server day) or is not exactly the expected shape renders a short block saying so ("do not say what
+the card shows or that nothing is wrong with a joint; anything the athlete tells you about pain still counts"),
+never silence. Budget 2,400 characters; see CONTEXT_BUDGET.
+
+**Seam for B5-3/B5-4 (not wired: `get_training_guidance_for_v1` is on main since #174, but it needs a cost measurement before Coach reads it).** `get_training_guidance_for_v1`
+(deload signal, cardio week, cardio withheld) joins in `readinessLines`: read it in parallel with the card under
+the same deadline through `parseTrainingGuidance` (`training/guidance/payload.ts`), add its lines (a
+suggested or running deload is offered only through the A8 proposal path; the cardio target and what was done,
+nothing when `cardio_withheld` names a reason, no deload line on a safety-route day), a second trace key
+`guidance`, and a case in `readiness_test.ts` per state.
+
+**Open contract requests** (program plan 2 to 5): the A9 red-flag screen and the route choice still do not read
+`pain_reports`; the reply guard has no `training_advice_for_held_area` check, so a held area is enforced by the
+prompt text only; A8 `buildNextSessionAdjustment` and the A5 daily snapshot do not know the day adjustment.
+`intensity_or_phase` tool text now says a deload is one week (send 1).
+
+**Review round 1.** (1) The daily decision is now requested for the server day: `CoachRepository.generate({localDate})`
+sends it to coach-decide (the phone's date only before the server day is known), so the decision Today treats as
+current is the one it asked for and a second refresh does not make another (tested with phone day != server day).
+coach-decide accepts any well-formed `YYYY-MM-DD` and does not bound or override it server-side (only the daily
+rate limit applies; `prepare_daily_coaching` does not compare it with the athlete's day), so the app is what keeps
+it right. (2) The readiness block no longer names a check-in, sleep or recovery: a card can come from a pain
+report or a hold alone (tested without a check-in).
+
+**Review round 2.** (1) On a safety route the readiness block gives no instruction about limited or watched
+areas (no swaps, range or keep-training lines): only the referral, the holds and the lasting-area referral. (2) A
+watched area is only "being watched": the watch state also follows a clinician clearance, so the block never
+calls it painful or mild (an area reported elsewhere is named that, not "pain reported elsewhere"). (3) Today
+makes the decision current whenever the server day changes while it is open, and the sync and the other checks
+(`_makeDecisionCurrent`) run one at a time, so a day never makes two decisions (tested across midnight).
+The guidance reader `get_training_guidance_for_v1` stays unwired here: it needs a cost measurement first.
+
+**Daily coaching retry and error codes.** Production showed `anthropic_request_failed` for about 5 of 9 daily
+calls, about 400 ms each. Reading the path: coach-decide made one request per run and no retry, and
+`gatewayFailureCode` folded every 5xx, 529, 4xx and broken connection into one code, so the cause could not be
+told from the run row. Now `GatewayDecisionProvider` retries once, after a pause, a failure that billed nothing
+and is transient (429, 503, 529, other 5xx): the pause is the provider's `retry-after`, else 1 s, and a
+provider asking for more than 5 s is not waited for; a rejection that took longer than half the route timeout is
+not retried; a timeout or a broken connection (may have been answered) and 4xx or a bad answer (would fail
+again) are not. Codes: 429 `<vendor>_request_failed_status_429` (as before), 503/529 `<vendor>_overloaded`, any other
+HTTP error `<vendor>_request_failed_status_<n>` (the number only, never a body), no response or unsendable
+`<vendor>_request_failed`. Contract 1 gets one additive optional field: a failed `AiResult` carries
+`httpStatus` for a `provider_error` that was an HTTP error response. The eval harness's transport-failure
+pattern matches the new codes. Budget: a retry follows an unbilled failure, so at most one answer is ever billed
+per run. The root cause of the 400 ms rejections is not known from the code: a fast, repeated failure points at
+a request the provider rejects (a 4xx) rather than a busy provider, and the new code will say which status.
 
 ## Next agent starts here
 

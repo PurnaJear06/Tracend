@@ -769,8 +769,9 @@ table; Contract 5 1.1 in the program plan the payload.
   route (`safety_copy.dart`), the persistent line, the swap and range cues (`rules.ts` has the
   cues), and extends the `beforeSend` scrubber test for the `pain_*` keys. (c) Pain keys are only sent
   with an area and the red-flag answer; a refused check-in (22023) leaves the queue's envelope.
-  (d) The Coach contract requests 1 to 3 (context, red-flag screen, reply guard) are open in the
-  program plan; until they land Coach does not know a joint is held.
+  (d) Contract request 1 (context) is built: Coach reads `get_readiness_context_v1` through the `readiness`
+  contributor (see "Coach knows today's readiness card" in [`ai-gateway.md`](./ai-gateway.md)). Requests 2 and 3
+  (red-flag screen, reply guard) are still open: a held joint is enforced by the prompt text alone.
 - **Review round 1 (Opus).** (1) A hold on `urgent` or `clinician_today` keeps the safety route every
   day until the athlete's clearance (the copy says "until you've been seen"); a `clinician` hold gives
   a daily reminder line even with no exercise change; held states carry `hold_outcome`. (2) A stored
