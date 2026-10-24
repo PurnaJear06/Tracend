@@ -1285,7 +1285,7 @@ it. Deterministic plan numbers stay authoritative; the library only supplies the
   strings; the settings path's prompt and shape are unchanged and `sources` is optional when parsed).
   `validateOnboardingPlan` refuses an id the prompt did not show (`source_not_retrieved`, repaired by
   name once like any rule), and so does the gateway when the plan's text prints an unshown id or names
-  a study or an institution's document that was not shown (`unshownKeysIn`, `unshownStudies`). A cited
+  a study or an institution's document that was not shown (`unshownKeysIn`, `unshownStudies`). The reverse is refused too (`source_not_listed`, repaired once, then the rules plan): prose that names a source the prompt showed (its id, or "Schoenfeld 2017") while `sources` leaves it out; naming a listed source is fine, and sources are never added from prose. A cited
   source becomes an evidence item `{code: <id>, label: "<retrieved title> (<year>)", source: "library"}`
   on the proposal, labelled from the retrieval, never from the model's words.
 - **Missing hits lower confidence and say so.** A plan from the model that cites nothing adds a line
@@ -1341,6 +1341,12 @@ stop my sets short of failure?". The onboarding plan's two searches over five at
 `schoenfeld_2017_weekly_volume`, the strength case `acsm_2026_resistance_prescription`). The gates
 (`EVAL_MIN_PLAN_RECALL` 0.5, `EVAL_MIN_ONBOARDING_RECALL` 0.4) leave headroom; the next tuning
 target is `planTopicText`'s wording for volume and for effort.
+
+**Codex review round 1 changes.** A search that failed with no excerpts left is "unavailable" ("could
+not be checked"), not "none"; "none" needs every search to succeed with nothing close enough (the
+onboarding `PlanLibrary` and the Coach plan turn). The eval now searches at the production counts
+(`libraryMatchCount` 8 for Coach plan questions, `planLibraryMatchCount` 6 for the onboarding cases);
+the numbers above were measured at 8 for both.
 
 ### Decisions and limits
 

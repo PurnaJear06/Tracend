@@ -1430,14 +1430,14 @@ calories, protein, sets, reps, effort and rest come from the rules and the athle
   message; the rules about them are in the cached system prompt. The model may list the ids it relied
   on in `sources`; `validateOnboardingPlan` refuses an id the prompt did not show
   (`source_not_retrieved`), and so does the gateway when the plan's text prints an unshown id or names
-  a study or an institution's document that was not shown. One repair names the rule; a second failure
+  a study or an institution's document that was not shown, and prose that names a source the prompt showed while `sources` leaves it out is refused the same way (`source_not_listed`; sources are never added from prose). One repair names the rule; a second failure
   is the rules plan. A cited source becomes a `source: "library"` evidence item on the proposal,
   labelled from the retrieved title and year, never from the model's words. A figure in an excerpt is
   never the athlete's number: every number is validated as before.
 - **Missing hits.** A model plan that cites no source adds "No research source is cited for this plan;
   its numbers come from Tracend's safe ranges and your answers" (or that the library could not be
   searched) to "Not known yet"; when nothing close enough was found, or the search failed, its
-  confidence is low (Architecture rule 8). The search has a 4 s limit and never throws: the plan is
+  confidence is low (Architecture rule 8); a search that failed with no excerpts left counts as failing, never as "nothing matched". The search has a 4 s limit and never throws: the plan is
   built without excerpts. The rules plan and the settings path (the rollback route) use no library.
 - **Observability.** `onboarding_library` logs the status, the number of searches, the embedding time,
   the degraded reason, the shown source ids, the nearest distance and the library version; no query,
