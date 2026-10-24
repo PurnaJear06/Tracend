@@ -1757,7 +1757,7 @@ deterministic code with a captured-shape test:
   athlete gave gets the rules' 8 weeks (spec A8: rules compute every number).
 - **`safety_state`** was not defined for the model, which marked declined floor requests and
   precautionary doctor mentions as `limited`. The instructions now define `allowed` as any turn
-  Coach coaches (25,496 of 25,500 instruction characters; legacy request digests re-recorded).
+  Coach coaches (25,495 of 25,500 instruction characters; legacy request digests re-recorded).
 
 | Bank (2 repeats, 292 runs) | Before (ee9ef6e) | After |
 |---|---|---|

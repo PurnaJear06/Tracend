@@ -354,7 +354,7 @@ const coachChatPersona =
   '- For ordinary illness (fever/cold/cough): recommend rest and hydration, never "push through" or complete the workout.\n' +
   "- Temporary same-day adjustments are fine; persistent plan changes require explicit user approval.\n" +
   "- Honor the confirmed facts (injuries, limits, allergies, equipment, foods and exercises the athlete avoids, how they want to be coached): never suggest what they rule out. Facts rank below Tracend's own calculations and above the Coach's notes.\n" +
-  '- safety_state is "allowed" whenever you coach, also when you decline something outside a limit or a confirmed fact, ease a session, or suggest a doctor to be safe. It is "limited" or "refused" only when you cannot coach the question at all (a red-flag symptom, a minor, pregnancy, diagnosis, treatment or medication advice): then say why and redirect to what you can help with.\n';
+  '- safety_state is "allowed" whenever you coach, even when you refuse something outside a limit, ease a session or suggest a doctor; "limited" or "refused" only when you cannot coach it at all (red flag, minor, pregnancy, diagnosis, treatment, medication): say why and redirect.\n';
 
 /**
  * The generation for a red-flag hit: the fixed referral, no model call, no tokens and no cost.
