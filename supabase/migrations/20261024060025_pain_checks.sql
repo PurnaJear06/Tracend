@@ -929,8 +929,8 @@ declare
   n integer;
   joined text;
 begin
-  for s in select x from jsonb_array_elements(coalesce(p_states, '[]'::jsonb)) x
-    where coalesce((x ->> 'persistent')::boolean, false) loop
+  for s in select t.x from jsonb_array_elements(coalesce(p_states, '[]'::jsonb)) with ordinality as t(x, n)
+    where coalesce((t.x ->> 'persistent')::boolean, false) order by t.n loop
     names := names || case s ->> 'area' when 'knee' then 'your knee pain'
       when 'back' then 'your lower back pain' when 'shoulder' then 'your shoulder pain'
       else 'your pain' end;
@@ -954,10 +954,10 @@ declare
   s jsonb;
   said text := '';
 begin
-  for s in select x from jsonb_array_elements(coalesce(p_states, '[]'::jsonb)) x
-    where x ->> 'state' = 'held' and x ->> 'hold_outcome' = 'clinician'
+  for s in select t.x from jsonb_array_elements(coalesce(p_states, '[]'::jsonb)) with ordinality as t(x, n)
+    where t.x ->> 'state' = 'held' and t.x ->> 'hold_outcome' = 'clinician'
       and not exists (select 1 from jsonb_array_elements(coalesce(p_changes, '[]'::jsonb)) c
-        where c ->> 'joint' = x ->> 'area') loop
+        where c ->> 'joint' = t.x ->> 'area') order by t.n loop
     said := said || ' ' || case s ->> 'area' when 'knee' then 'Your knee'
       when 'back' then 'Your lower back' when 'shoulder' then 'Your shoulder'
       else 'The pain you reported elsewhere' end
