@@ -966,8 +966,9 @@ and cardio dosing") the boundaries. No app change, no new table, no Edge Functio
   Start); `lib/features/train/widgets/workout_hero.dart` (`HeroDayState.upcoming`).
 - **One date for the hub.** Every `current_date` in the hub is the athlete's local date.
 - **A plan with no weekdays** (a Coach proposal may omit them) shows its workouts in plan order on
-  spread days (`TrainingHubData.unscheduledWeekdays`: 1 Monday; 2 Monday, Thursday; 3 Monday, Wednesday,
+  spread days (`TrainingHubData.unscheduledWeekdays`: 2 Monday, Thursday; 3 Monday, Wednesday,
   Friday; 4 Monday, Tuesday, Thursday, Friday; more from Monday on), not the first workout every day.
+  A lone workout with no weekday stays available on every day (the fixture plan and its tests).
   Today's brief, readiness adjustment and Apple Health completion still read the weekday on the server
   and call such a day a rest day; a plan the server builds always has weekdays.
 - **Tests.** pgTAP `training_day_integrity_test.sql` (logged under v1, copied to v2: hub, start,

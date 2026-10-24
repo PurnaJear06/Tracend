@@ -873,9 +873,9 @@ confirmation actions. The tab reads top to bottom:
     nothing logged, **Preview workout** for a day that has not begun (it opens the overview, which
     then has no Start; the server refuses a start for a future date), or **View summary** for a
     done day. A day done under an earlier plan version (a Coach change, a block or a deload copies the
-    workouts) shows as done, with its session. A plan whose workouts have no weekday shows them in plan
-    order on spread days (one: Monday; two: Monday, Thursday; three: Monday, Wednesday, Friday; four:
-    Monday, Tuesday, Thursday, Friday; five or more from Monday). The summary sheet shows "Done on ‹date›",
+    workouts) shows as done, with its session. A plan whose workouts have no weekday shows a lone workout on
+    every day and several in plan order on spread days (two: Monday, Thursday; three: Monday,
+    Wednesday, Friday; four: Monday, Tuesday, Thursday, Friday; five or more from Monday). The summary sheet shows "Done on ‹date›",
     time, sets logged of planned, the athlete's own effort ("N of 10", or "Not rated" for app
     defaults) and **What you logged** per exercise. "Auto-completed from Apple Health. Sets were not
     logged in Tracend." shows only when `completion_source` is `healthkit`.

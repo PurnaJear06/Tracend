@@ -1022,13 +1022,22 @@ void main() {
     });
 
     test('every count of workouts has distinct days within the week', () {
-      for (var count = 1; count <= 7; count++) {
+      for (var count = 2; count <= 7; count++) {
         final days = TrainingHubData.unscheduledWeekdays(count);
         expect(days, hasLength(count));
         expect(days.toSet(), hasLength(count));
         expect(days.every((day) => day >= 1 && day <= 7), isTrue);
       }
+      expect(TrainingHubData.unscheduledWeekdays(1), isEmpty);
       expect(TrainingHubData.unscheduledWeekdays(0), isEmpty);
+    });
+
+    test('a lone workout with no weekday is available on any day', () {
+      final hub = trainHub(workouts: [unscheduled(upperA)]);
+      for (var day = 1; day <= 7; day++) {
+        expect(hub.workoutForWeekday(day)?.name, 'Upper body A');
+      }
+      expect(trainHub(workouts: const []).workoutForWeekday(1), isNull);
     });
 
     test('a plan with some weekdays keeps them, and no day is invented', () {

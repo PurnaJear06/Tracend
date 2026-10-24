@@ -626,8 +626,9 @@ class TrainingHubData {
   );
 
   /// The workout planned for an ISO [weekday] (1 Monday to 7 Sunday). A plan
-  /// whose workouts have no weekday at all follows [unscheduledWeekdays]: its
-  /// workouts, in plan order, on spread training days.
+  /// whose workouts have no weekday at all is not scheduled: a lone workout
+  /// is available on any day, and several follow [unscheduledWeekdays], in
+  /// plan order on spread training days.
   PlannedWorkout? workoutForWeekday(int weekday) {
     for (final workout in workouts) {
       if (workout.weekday == weekday) return workout;
@@ -636,17 +637,17 @@ class TrainingHubData {
       (workout) => workout.weekday != null,
     );
     if (hasAssignedWeekdays || workouts.isEmpty) return null;
+    if (workouts.length == 1) return workouts.first;
     final index = unscheduledWeekdays(workouts.length).indexOf(weekday);
     return index < 0 ? null : workouts[index];
   }
 
-  /// The training days of a week for [count] workouts that carry no weekday,
-  /// spread with rest between them: one, Monday; two, Monday and Thursday;
-  /// three, Monday, Wednesday and Friday; four, Monday, Tuesday, Thursday and
-  /// Friday; five or more, from Monday on.
+  /// The training days of a week for [count] (two or more) workouts that
+  /// carry no weekday, spread with rest between them: two, Monday and
+  /// Thursday; three, Monday, Wednesday and Friday; four, Monday, Tuesday,
+  /// Thursday and Friday; five or more, from Monday on.
   static List<int> unscheduledWeekdays(int count) => switch (count) {
-    <= 0 => const [],
-    1 => const [1],
+    <= 1 => const [],
     2 => const [1, 4],
     3 => const [1, 3, 5],
     4 => const [1, 2, 4, 5],
