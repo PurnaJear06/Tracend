@@ -943,19 +943,85 @@ and cardio dosing") the boundaries. No app change, no new table, no Edge Functio
   `next_session_targets` twice (through the day adjustment and the deload signals) and the screening
   outcome three times; passing them in would change several signatures. Run EXPLAIN ANALYZE on
   `get_training_guidance_for_v1` before the Coach reads it every turn.
-- **Not built.** The `training-proposals` Edge Function (O7): it needs `supabase/config.toml` and the
-  deploy workflow (lead); until then a rules-suggested deload has no card and an athlete gets one by asking
-  Coach. The Train card and the Cardio row (app); the `readiness` contributor (ai-gateway); eval cases. The
-  contract requests 7 to 9 in the program doc say what each needs.
+- **Not built.** The `readiness` contributor (ai-gateway); eval cases. The contract requests 8 in the
+  program doc says what it needs. (The `training-proposals` function, the Train card and the Cardio row
+  are built: see "B5-3/B5-4 app and function" below.)
 - **In-house numbers needing a coach's review before an external beta:** the half, the cap of 7, the
   thresholds (two lifts, four of seven days, 75%, 28 days, three of four weeks), the stretch-goal mapping,
   the two hard sessions, the 180-minute cap and the five-of-seven-days rule.
 - **Tests that fail without each rule.** pgTAP `deloads_test.sql`, `cardio_dosing_test.sql`; Deno
   `deload_cardio_test.ts` and the deload tests in `coach_proposals/build_test.ts`.
 
+**B5-3/B5-4 app and function (review; branch `claude/train-deload-cardio-ui`).**
+- **`training-proposals` (O7).** `supabase/functions/training-proposals/` (JWT; in `config.toml`,
+  `deploy.yml`, `hotfix.yml`). Body `{schema_version "1.0", kind "deload", local_date}` and nothing else (a
+  `user_id` key makes it 422). The user is `auth.uid()`; the guidance is read through the athlete's own
+  `get_my_training_guidance_v1` with the server day the app sends (22023 -> 422 `wrong_date`) and parsed with the
+  strict `_shared/training/guidance/payload.ts`. `pending` returns that proposal (`created: false`, nothing
+  stored: idempotent); `suggested` stores a pending proposal through `proposeSuggestedDeload`
+  (`_shared/coach_proposals/service.ts`) = `buildSuggestedDeload` (`training.ts`, the same `deloadWeek()` builder
+  as Coach, with the rules' reason sentences and a `DELOAD_SIGNALS` evidence line instead of an athlete's
+  words) + `persist_coach_proposal_v1`; any other status is 409 `not_suggested`; a builder refusal is 409 with its
+  code and plain `reason`; an unreadable guidance or a failed store is 503 without detail. No model call, nothing
+  applied. Two quick taps could store two proposals; the second replaces the first (an expired-by-replacement
+  proposal does not count as a decline) and the app disables the button while one is on its way.
+- **App.** `lib/features/train/guidance/`: `training_guidance.dart` (tolerant parser: a later 1.x reads; an
+  unknown deload status makes `deload` null, unknown reasons are dropped, a suggestion left with no sayable
+  reason, a proposal status with no id, and a suggestion or open proposal on any `safety_route` day all hide the
+  card; `cardio_week` needs `done_min` present, null stays null and is never shown as 0), the repository
+  (`get_my_training_guidance_v1` + `training-proposals`), `TrainingGuidanceController` (the B4-2 server-day
+  pattern: Train passes the hub's `local_today` after each hub load, the shell's `_serverToday` is the fallback
+  and the retry on 22023), `guidance_copy.dart` (all the words), `deload_card.dart`, `cardio_week_sheet.dart`.
+  The card is placed under the readiness card. **See what changes** prepares the proposal when the status is
+  `suggested` (opening it applies nothing), then opens the existing `CoachProposalLoader` in a sheet with
+  `origin: tracend` ("Suggested by Tracend", no AI line) and `allowChange: false` (Change it sends a Coach chat
+  message, so it is not offered here). Approve/Not now/Undo are the existing `respond_to_coach_proposal_v1` /
+  `undo_coach_proposal_v1`; approve and undo announce `PlanChanges`, which reloads the hub and the guidance. The
+  sheet closing reloads the guidance.
+- **Review of PR #178 (guidance 1.2, migration `20261024060425_deload_origin_and_undo_cooldown.sql`).**
+  (H1) The card no longer calls a Coach-made week "Suggested by Tracend": guidance 1.2 adds `deload.proposal_origin`
+  (`tracend` when the proposal's evidence has `DELOAD_SIGNALS`, which only `buildSuggestedDeload` adds; else
+  `coach`; null with no proposal) and `deload.ends_on` (a running week's last day). A pending or running Coach week
+  shows "Proposed by Coach", no rule reasons and no "No AI" line; a missing or unknown origin reads as Coach's. The
+  proposal sheet takes its origin from the proposal's own evidence (`CoachProposal.suggestedByRules`), so the two
+  always agree. The running card says "until <day>". (M1) The rules' deload is stored through `public.persist_suggested_deload_v1` (service role only,
+  same arguments as `persist_coach_proposal_v1`). Under the store lock it refuses with SQLSTATE `TP001` when a
+  pending, unexpired 3.0 proposal with a `training` payload that is not a deload is built on the active plan
+  version, because storing a training proposal expires every open one; one built on an older plan, one that ran
+  out, and an unanswered deload do not block. `training-proposals` maps `TP001` to 409 `other_proposal_pending`
+  and keeps no read of its own, so a Coach proposal stored between a check and the store cannot be expired
+  unseen. The card says "You have a change waiting in Coach. Answer it first." (M2) An undone deload holds new suggestions back 14 days from the day it was undone
+  (`declined_recently`); it is still not the last deload. (L1) The handler answers an unexpected throw with 503 and
+  reports only the fixed name `training_proposals_unexpected` to Sentry. (L2) `persist_coach_proposal_v1` takes
+  `pg_advisory_xact_lock(hashtextextended('tracend.coach_proposal_store:' || p_user_id::text, 0))` (the repo's
+  lock naming) before it replaces an open proposal; the redefinition is the latest earlier definition plus that
+  hunk, found by scanning earlier migrations and pinned by `deload_origin_test.ts`. (L3) The function returns refusal codes only and the
+  app words them (`deloadRefusalLine`); `proposal_notices.dart` words stale and refused answers for a card the rules
+  made (no "Coach", no first person, "Pull down on Train"), and a deload approved on a route day says a lighter week
+  can't start on a day with a referral. (L4) "stalled or slipped"; "Today's readiness reads green, which needs
+  today's check-in." (L5) `prepareDeload` asks `_today()` so a day that rolled over is refreshed first. (L6)
+  `hadUnreadReasons` is gone. (L7) The cardio row is hidden while a past week is on screen. The TS parser
+  (`guidance/payload.ts`) reads 1.2 and refuses an origin on a status with no proposal or an end date off a running
+  week. pgTAP: `deload_origin_test.sql`; `deloads_test.sql` and `cardio_dosing_test.sql` carry the new keys and the
+  undone-deload cool-down.
+- **Decisions.** (a) A `running` status shows a quiet card "A lighter week is on" with **Details and undo**: the
+  brief listed only suggested and pending, but a rules-originated week has no chat message to carry its Undo.
+  (b) The Cardio row sits in "This week" after Training load. It shows "85 of 150 min" or "Not enough Apple Health
+  data", and is absent on a safety-route or `see_professional` day (withheld) and for a cardio week the app cannot
+  read. (c) Easy-only reasons: the payload gives only `vigorous_allowed`, so the sheet lists the four conditions
+  that open hard cardio instead of guessing which one failed. (d) The sheet always carries the note that a denied
+  Apple Health workout permission can read as 0 minutes. (e) The easy heart-rate line in beats per minute is still
+  not shown (needs the C3 profile on Train); the sheet gives the talk test and "about 60% of heart rate reserve" as a
+  guide. (f) The card shows without a selected-day check: a lighter week belongs to the week.
+- **Tests.** Deno `training-proposals/handler_test.ts` and the `proposeSuggestedDeload` test in
+  `coach_proposals/service_test.ts`; Flutter `contract/training_guidance_contract_test.dart` (the three
+  fixtures, later-1.x tolerance, the parameters), `training_guidance_controller_test.dart`,
+  `train_guidance_test.dart` (suggested, pending, running, declined_recently and the other suppressions, safety
+  route, unknown status and reason, failures, cardio met/partial/zero/null/easy-only/hard/unreadable, copy lint).
+
 ## Next agent starts here
 
 B4-2 (the app side of the readiness adjustment) is in review; B5-2 (the pain check in the app) builds on
-B5-1's RPCs and B4-1's; B5-3 and B5-4 (deloads, cardio dosing; server) are in review: the app card and
-cardio row and the `training-proposals` function are what is left of them. B6's server wiring is done (see the B6
+B5-1's RPCs and B4-1's; B5-3 and B5-4 (deloads, cardio dosing) are in review with their app card, cardio row and the
+`training-proposals` function; the Coach contributor is what is left of them. B6's server wiring is done (see the B6
 section). The briefs are in the program doc.

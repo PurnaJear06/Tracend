@@ -194,6 +194,9 @@ verify_jwt = true
 [functions.coach-decide]
 verify_jwt = true
 
+[functions.training-proposals]
+verify_jwt = true
+
 # Configure passkey sign-ins.
 # [auth.passkey]
 # enabled = false
