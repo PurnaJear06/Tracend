@@ -489,6 +489,32 @@ privacy were recorded.
   migrations (N entries)". A difference on that first run would be production drift or a real
   dump loss; the job prints the object names.
 
+## Local gate never reset the database (2026-10-17)
+
+- **Found:** `scripts/pre-deploy.sh` used `RESET` both as the `--skip-reset` flag and as the ANSI
+  reset colour. The colour block always overwrote the flag (with `""` or `\033[0m`), so the flag
+  was never `true` and `supabase db reset` never ran, with or without a terminal. The gate printed
+  "Skipped db reset (--skip-reset)" and ran pgTAP on whatever the local database already held. CI
+  pgTAP and the deploy drill were not affected: neither calls this script.
+- **Done:** the colour variables are now `C_BOLD` … `C_RESET`; no other colour name matches a
+  flag. Colours are on only when stdout is a terminal and `COLOUR_CLEAN` is not `true` (the old
+  check also coloured piped output and ignored `COLOUR_CLEAN=true` on a terminal).
+- **Agent use:** `--skip-colima --skip-reset` still starts Supabase, runs pgTAP and the production
+  dry-run, so it needs a running container runtime. Without one, run `--deno-only` and
+  `--flutter-only` and rely on CI pgTAP. Colima cannot start from a `.claude/worktrees/…`
+  checkout: the socket paths `container.sh` builds from the checkout path exceed macOS's
+  104-character limit.
+- **Cleanup scope (same day):** cleanup used to stop Colima and Supabase in every mode, including
+  `--deno-only` and `--flutter-only`, which could stop a container runtime another session was
+  using. It now stops only what the run started: Supabase whenever the database step ran, Colima
+  unless `--skip-colima` was passed. `--deno-only` and `--flutter-only` stop nothing, and
+  `--no-cleanup` still keeps both running. A Colima that was already running when the gate called
+  `container.sh start` counts as started, so pass `--skip-colima` to keep a shared runtime up.
+- **Start failures (same day):** a failed `container.sh start` or `supabase.sh start` used to end
+  the script through `set -e` with no `✗` line and no cleanup. Each now prints
+  "Colima failed to start" or "Supabase failed to start", stops what the run started and exits 1,
+  as the `db reset` step does.
+
 ## Recorded follow-ups — out of scope
 
 - Add short per-request row evidence aliases (`E1…En`) mapped server-side; never expose UUIDs to the
