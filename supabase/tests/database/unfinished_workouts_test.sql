@@ -20,7 +20,10 @@ insert into public.training_plan_versions(id, user_id, plan_id, version_number, 
   (pg_temp.u(42, 1), pg_temp.u(40, 1), pg_temp.u(41, 1), 1, 'active', 6, 3, '{}', 'Approved', now(),
    current_date),
   (pg_temp.u(42, 2), pg_temp.u(40, 2), pg_temp.u(41, 2), 1, 'active', 6, 1, '{}', 'Approved', now(),
-   current_date);
+   current_date),
+  -- An earlier version of A's plan: a plan version holds at most 7 workouts.
+  (pg_temp.u(42, 3), pg_temp.u(40, 1), pg_temp.u(41, 1), 2, 'superseded', 6, 2, '{}', 'Earlier',
+   now(), current_date - 120);
 
 create temporary table t as
   select private.local_date_for(pg_temp.u(40, 1)) today;
@@ -28,23 +31,24 @@ grant select on t to authenticated;
 create temporary table h(name text primary key, j jsonb);
 grant all on h to authenticated;
 
--- n: the workout and session; ago: days before today; done and total: sets logged and planned;
--- timed: the sets carry start and end times (the first set ends 30 minutes after the session began).
-create temporary table fx(n integer primary key, name text, ago integer, done integer, total integer,
-  timed boolean);
+-- n: the workout and session; ver: its plan version (1 active, 3 earlier) and ord its place in it;
+-- ago: days before today; done and total: sets logged and planned; timed: the sets carry start and
+-- end times (the first set ends 30 minutes after the session began).
+create temporary table fx(n integer primary key, ver integer, ord integer, name text, ago integer,
+  done integer, total integer, timed boolean);
 insert into fx values
-  (1, 'Legs B', 1, 3, 5, true),   -- the owner's case: logged, never finished
-  (2, 'Upper', 2, 1, 3, false),
-  (3, 'Pull', 3, 2, 4, false),
-  (4, 'Push', 9, 1, 2, false),    -- older than the window
-  (5, 'Dup', 4, 1, 2, false),     -- the athlete finished the same workout that day (session 6)
-  (7, 'Blank', 5, 0, 2, false),   -- nothing logged
-  (8, 'Self', 6, 1, 2, false),    -- the athlete discarded it herself in the app
-  (10, 'Edge', 7, 1, 2, false);   -- the last day inside the window
+  (1, 1, 1, 'Legs B', 1, 3, 5, true),   -- the owner's case: logged, never finished
+  (2, 1, 2, 'Upper', 2, 1, 3, false),
+  (3, 1, 3, 'Pull', 3, 2, 4, false),
+  (4, 1, 4, 'Push', 9, 1, 2, false),    -- older than the window
+  (5, 1, 5, 'Dup', 4, 1, 2, false),     -- the athlete finished the same workout that day (session 6)
+  (7, 1, 6, 'Blank', 5, 0, 2, false),   -- nothing logged
+  (8, 3, 1, 'Self', 6, 1, 2, false),    -- the athlete discarded it herself in the app
+  (10, 3, 2, 'Edge', 7, 1, 2, false);   -- the last day inside the window
 
 insert into public.planned_workouts(id, user_id, plan_version_id, workout_order, name, objective,
   preferred_weekday, estimated_minutes, warm_up_guidance, cool_down_guidance)
-select pg_temp.u(43, n), pg_temp.u(40, 1), pg_temp.u(42, 1), n, name, 'Train', 1, 50, 'Warm up',
+select pg_temp.u(43, n), pg_temp.u(40, 1), pg_temp.u(42, ver), ord, name, 'Train', 1, 50, 'Warm up',
   'Cool down' from fx;
 insert into public.planned_workouts(id, user_id, plan_version_id, workout_order, name, objective,
   preferred_weekday, estimated_minutes, warm_up_guidance, cool_down_guidance) values
@@ -60,7 +64,7 @@ insert into public.planned_exercises(id, user_id, planned_workout_id, exercise_o
 -- Every session was left open 30 hours ago.
 insert into public.workout_sessions(id, user_id, plan_version_id, planned_workout_id, local_date,
   timezone, state, idempotency_key, started_at, actual_started_at)
-select pg_temp.u(45, n), pg_temp.u(40, 1), pg_temp.u(42, 1), pg_temp.u(43, n), t.today - ago, 'UTC',
+select pg_temp.u(45, n), pg_temp.u(40, 1), pg_temp.u(42, ver), pg_temp.u(43, n), t.today - ago, 'UTC',
   'in_progress', pg_temp.u(47, n), now() - interval '30 hours', now() - interval '30 hours'
 from fx cross join t;
 insert into public.workout_sessions(id, user_id, plan_version_id, planned_workout_id, local_date,
@@ -208,7 +212,7 @@ select is((select array(select k from jsonb_object_keys(public.get_coach_plan_st
 select is((select public.get_coach_plan_state_v1(pg_temp.u(40, 1), (select today from t))
     ->'plan'->>'title'), 'Plan A', 'the active plan is still read');
 select is((select jsonb_array_length(public.get_coach_plan_state_v1(pg_temp.u(40, 1),
-    (select today from t))->'sessions')), 8, 'with every planned session');
+    (select today from t))->'sessions')), 6, 'with every planned session of the active version');
 
 -- Answers that are refused ------------------------------------------------------------------------
 
