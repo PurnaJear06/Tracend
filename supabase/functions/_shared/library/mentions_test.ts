@@ -45,8 +45,14 @@ Deno.test("dates, seasons and training initials are not studies", () => {
   assertEquals(studyMentions("Thu 2026-10-15: Chest volume and delts"), []);
   assertEquals(studyMentions("Mon 2026/10/12, Sat 2026.10.17 and Sun 2026-10-18"), []);
   // A citation year still counts at the end of a sentence or before a page range.
-  assertEquals(studyMentions("As Maughan 2018. Then more."), [{ authors: ["maughan"], year: 2018 }]);
-  assertEquals(studyMentions("Pelland et al. (2026), p. 4"), [{ authors: ["pelland"], year: 2026 }]);
+  assertEquals(studyMentions("As Maughan 2018. Then more."), [{
+    authors: ["maughan"],
+    year: 2018,
+  }]);
+  assertEquals(studyMentions("Pelland et al. (2026), p. 4"), [{
+    authors: ["pelland"],
+    year: 2026,
+  }]);
 });
 
 Deno.test("a study named in the text matches the shown source by id, title, initials or excerpt", () => {

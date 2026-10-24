@@ -1089,7 +1089,10 @@ routes stay available by settings alone for two weeks after the cutover.
   everything the athlete can see: the answer,
   the follow-up chips, the missing-data notes, the evidence labels and the reasoning chain, in one
   pass. Sentences that warn against a thing ("never go below ...") or
-  describe the athlete's own past ("you lost 0.9 kg a week") are not advice. A reply that breaks
+  describe the athlete's own past ("you lost 0.9 kg a week") are not advice, nor is Coach's own
+  refusal that governs the figure, pace or effort in its clause ("I can't support 800 kcal a day",
+  "10 kg in 4 weeks isn't safe", "intervals are off the table"). The repair quotes the sentences
+  that broke a rule. A reply that breaks
   several rules is repaired once with all of them named.
 - **Numbers check.** Every figure the athlete would read as fact about themselves (kg, kcal, %, g,
   bpm, BMI, dates, minutes and hours above five, and any count above ten or decimal) must appear
