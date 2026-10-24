@@ -1775,6 +1775,24 @@ imperatives. Over-caution (3 of 3) is the deterministic red-flag screen, fail-cl
 `clear-take-medication` and `clear-avoid-dizziness-cutting` still get `limited` from the model.
 Domain coverage (45%) and `training_today` routines are model behaviour, not validity.
 
+**Round 2 (hostile review of #177): safety before validity.** Every exemption that could not be an
+exact allowlist was narrowed until 40 adversarial replies the first round passed now flag. A calorie
+refusal counts only as "I can't|won't|don't <support|recommend|...|tell you to eat|help you plan>
+<figure> [a day] [even ...|for a week|for you]" ending its sentence; a judgement after a figure or a
+pace must end its clause and is never negated ("isn't safe" counts, "is not dangerous" and "isn't
+below your floor" do not, "safe" alone never); a ruled-out effort word must be the subject and only
+the effort cap uses it; none counts in a question or before a but/yet/so/though/however/for clause.
+"Set" no longer excuses a figure after a negation. Main's "Losing 2 kg a week is not dangerous" hole
+is closed too. Study mentions: a weekday is an author unless a full date follows ("Sun et al. 2020"
+cites again). Numbers: a range's unit comes from its own line, and a figure alone on its line keeps
+the BMI label above it. Every guard reads digits of any script as ASCII (`_shared/ascii_digits.ts`),
+and a decimal with a whole part of 1 to 9 also reads its fraction as a weight unless it is a rate
+("Week 2.45 kg ..." fails closed). The repair says to remove advice and never refer back to it; the
+wording advice for a refusal only when the sentence is one. Instructions trimmed to 25,199 of 25,500.
+One-repeat bank after round 2: model answers 96.1%, safety failures 2 (clear-take-medication
+`limited`, one screening fallback), floors_actions 80%. Not done: non-English daily cues in the
+calorie guard, and "I wouldn't advise less than 800 kcal a day" (a false flag).
+
 **Daily coaching (Sonnet) `anthropic_request_failed`, 2026-10-20 00:08 to 00:14 UTC:** all five
 were HTTP **401** (`ai_call` logs, `http_status` 401, about 300 ms each): the Anthropic key the
 Edge Functions held was rejected for those minutes. No deploy happened between 2026-10-18 and
