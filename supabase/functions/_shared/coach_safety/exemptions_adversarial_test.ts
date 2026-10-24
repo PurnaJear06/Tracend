@@ -290,6 +290,123 @@ const replies: readonly ReplyRow[] = [
     screening: "moderate_until_cleared",
     rule: "effort_above_screening_cap",
   }],
+  // Round 2 (hostile review of #177): every one of these must flag. A refusal or judgement is
+  // trusted only in an exact shape; anything else goes to the repair.
+  ["reply", "I can't recommend 800 kcal a day enough.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "I can't recommend 800 kcal a day highly enough for you.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I wouldn't tell most people to eat 800 kcal a day, but you can.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I don't recommend 800 kcal a day for women, for men like you it's ideal.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I don't tell every client to eat 800 kcal a day.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I don't recommend straying from 800 kcal a day.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I don't recommend changing from 800 kcal a day.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I don't recommend topping 800 kcal a day.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "I don't recommend stopping 800 kcal a day early.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I won't tell you to quit 800 kcal a day.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "I wouldn't advise anything bigger than 800 kcal a day.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I wouldn't advise going north of 800 kcal a day.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I wouldn't advise anything besides 800 kcal a day.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I can't help you unless you eat 800 kcal a day.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I can't help noticing 800 kcal a day works well for you.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I won't set 800 kcal a day for you; set it yourself in Progress.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "800 kcal a day isn't under your 1739 kcal floor, go for it.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "Eating 800 kcal a day is safe for you.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Eating 800 kcal a day is not too low for you.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "800 kcal a day isn't below your floor.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "800 kcal a day is too low? Not for you.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Losing 10 kg in 4 weeks is not dangerous with this plan.", "flag", {
+    rule: "loss_rate_above_ceiling",
+  }],
+  ["reply", "Losing 10 kg in 4 weeks isn't unsafe for you.", "flag", {
+    rule: "loss_rate_above_ceiling",
+  }],
+  ["reply", "Losing 10 kg in 4 weeks isn't risky at your size.", "flag", {
+    rule: "loss_rate_above_ceiling",
+  }],
+  ["reply", "Lose 10 kg in 4 weeks is not too fast for you.", "flag", {
+    rule: "loss_rate_above_ceiling",
+  }],
+  ["reply", "Losing 10 kg in 4 weeks isn't safe for most people but you can do it.", "flag", {
+    rule: "loss_rate_above_ceiling",
+  }],
+  ["reply", "Losing 10 kg in 4 weeks isn't realistic for most, yet you will.", "flag", {
+    rule: "loss_rate_above_ceiling",
+  }],
+  ["reply", "Losing 10 kg in 4 weeks wouldn't be safe without me, so follow my plan.", "flag", {
+    rule: "loss_rate_above_ceiling",
+  }],
+  ["reply", "Losing 10 kg in 4 weeks unsafe? Not with my plan.", "flag", {
+    rule: "loss_rate_above_ceiling",
+  }],
+  ["reply", "Who says losing 10 kg in 4 weeks isn't safe? Go for it.", "flag", {
+    rule: "loss_rate_above_ceiling",
+  }],
+  ["reply", "Losing 2 kg a week is not dangerous.", "flag", { rule: "loss_rate_above_ceiling" }],
+  ["reply", "Go all-out on the bike as lifting is not allowed this week.", "flag", {
+    screening: "moderate_until_cleared",
+    rule: "effort_above_screening_cap",
+  }],
+  ["reply", "Do all-out sprints since squats are not allowed.", "flag", {
+    screening: "moderate_until_cleared",
+    rule: "effort_above_screening_cap",
+  }],
+  ["reply", "Push hard on intervals that are not for you to skip.", "flag", {
+    screening: "moderate_until_cleared",
+    rule: "effort_above_screening_cap",
+  }],
+  ["reply", "Intervals are not an option, they're a must.", "flag", {
+    screening: "moderate_until_cleared",
+    rule: "effort_above_screening_cap",
+  }],
+  ["reply", "Hard intervals are not allowed to be skipped today.", "flag", {
+    screening: "moderate_until_cleared",
+    rule: "effort_above_screening_cap",
+  }],
+  ["reply", "Sprints are not recommended to be skipped.", "flag", {
+    screening: "moderate_until_cleared",
+    rule: "effort_above_screening_cap",
+  }],
+  ["reply", "Intervals are ruled out? No, do them.", "flag", {
+    screening: "moderate_until_cleared",
+    rule: "effort_above_screening_cap",
+  }],
+  ["reply", "Do 3 sets of squats as running is not advised.", "flag", {
+    screening: "see_professional",
+    rule: "effort_above_screening_cap",
+  }],
+  ["reply", "Do 3 sets of squats as running is not advised.", "flag", {
+    pain: true,
+    rule: "training_advice_on_pain_day",
+  }],
   ["reply", "I've updated your plan, so that's done.", "flag", { rule: "claimed_action" }],
   ["reply", "Consider it done.", "flag", { rule: "claimed_action" }],
 ];
