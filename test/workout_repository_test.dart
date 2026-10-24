@@ -586,9 +586,7 @@ void main() {
       await repository.saveUnfinishedWorkout(offered, sessionEffort: 7);
 
       final sent = server.calls[1].$2;
-      final exercises =
-          ((sent['draft'] ?? sent['p_draft'] ?? sent) as Map)['exercises']
-              as List;
+      final exercises = (sent['draft'] as Map)['exercises'] as List;
       expect((exercises[0] as Map)['sets'], hasLength(2));
       expect((exercises[1] as Map)['sets'], isEmpty);
     });
