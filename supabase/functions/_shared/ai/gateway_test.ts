@@ -132,7 +132,12 @@ Deno.test("429 is rate_limited with retry-after; 529 and 503 are overloaded; oth
     retryAfterSeconds: 5,
   });
   for (const code of [400, 401, 404, 500]) {
-    assertEquals(await status(code), { ok: false, reason: "provider_error", usage: null });
+    assertEquals(await status(code), {
+      ok: false,
+      reason: "provider_error",
+      usage: null,
+      httpStatus: code,
+    });
   }
 });
 

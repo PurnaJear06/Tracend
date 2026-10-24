@@ -548,11 +548,12 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   /// leaves the schedule null so the card says the plan did not load.
   Future<TodayMeals> _loadMeals() async {
     final nutrition = widget.nutrition;
-    final now = DateTime.now();
+    final day = _briefDay();
+    _mealsRequestedFor = _dateKey(day);
     try {
-      final meals = await nutrition.loadMeals(now);
+      final meals = await nutrition.loadMeals(day);
       final schedule = nutrition is NutritionScheduleRepository
-          ? await (nutrition as NutritionScheduleRepository).loadSchedule(now)
+          ? await (nutrition as NutritionScheduleRepository).loadSchedule(day)
           : const NutritionSchedule(title: '', items: []);
       return (schedule: schedule, meals: meals);
     } catch (error) {
@@ -576,19 +577,28 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   /// The day of the newest brief request, `YYYY-MM-DD`.
   String? _briefRequestedFor;
 
+  /// The day of the newest meals request, `YYYY-MM-DD`.
+  String? _mealsRequestedFor;
+
   /// The athlete's day for the check-in gate and its saved marks: the
   /// server's when known, else the brief's, else the phone's.
   String _dayKey() =>
       _serverDay ?? _lastBrief?.localDate ?? _dateKey(widget.clock());
 
+  /// The day the coaching decision must be dated for to be current: the
+  /// server's once it is known, else the phone's. (The brief's date is not
+  /// used: before the server's day is known it is the phone's own request.)
+  String _decisionDay() => _dateKey(_briefDay());
+
   /// Follows the server's day. It is recorded as soon as the controller learns
-  /// it, whether or not the brief has arrived, and the brief is loaded again
-  /// when the newest request was for another day, whichever of the two
-  /// finishes first.
+  /// it, whether or not the brief has arrived, and the brief and today's meals
+  /// are loaded again when the newest request was for another day, whichever
+  /// of the two finishes first.
   void _dayAdjustmentChanged() {
     final readiness = widget.dayAdjustment;
     final day = readiness?.serverDay;
     if (!mounted || day == null) return;
+    final rolledOver = _serverDay != null && _serverDay != day;
     _serverDay = day;
     // A route that came in with the read (a report made in a workout, a hold
     // that stands from an earlier day) is said here when nothing else is on
@@ -599,9 +609,15 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         ModalRoute.of(context)?.isCurrent != false) {
       unawaited(_showSafetyOnce());
     }
-    if (_briefRequestedFor == day) return;
+    // The server's day moved on while Today was open (midnight where the
+    // athlete is): yesterday's decision is no longer today's.
+    if (rolledOver) unawaited(_refreshDecisionAfterEvidence());
+    final briefStale = _briefRequestedFor != day;
+    final mealsStale = _mealsRequestedFor != day;
+    if (!briefStale && !mealsStale) return;
     setState(() {
-      _brief = _loadBrief();
+      if (briefStale) _brief = _loadBrief();
+      if (mealsStale) _meals = _loadMeals();
     });
   }
 
@@ -752,24 +768,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       _reloadBriefAndHealth();
       if (widget.environment.hasSupabaseConfiguration) {
         try {
-          final latest = await widget.coach.loadLatest();
-          final today = _dateKey(DateTime.now());
-          final citedCheckInMissing =
-              latest != null &&
-              latest.localDate == today &&
-              latest.missingData.contains('recovery_check_in');
-          if (_aiAllowed &&
-              (latest == null ||
-                  latest.localDate != today ||
-                  citedCheckInMissing)) {
-            // Same freshness rule as _refreshDecisionAfterEvidence: a
-            // decision generated before the check-in landed is stale.
-            await widget.coach.generate();
-          }
-          if (!mounted) return;
-          setState(() {
-            _latestDecision = widget.coach.loadLatest();
-          });
+          await _makeDecisionCurrent();
         } catch (_) {
           failures.add('coach decision');
         }
@@ -821,27 +820,40 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   Future<void> _refreshDecisionAfterEvidence() async {
     if (!widget.environment.hasSupabaseConfiguration || !_aiAllowed) return;
     try {
-      final latest = await widget.coach.loadLatest();
-      final today = _dateKey(DateTime.now());
-      final citedCheckInMissing =
-          latest != null &&
-          latest.localDate == today &&
-          latest.missingData.contains('recovery_check_in');
-      // Checked again after the load: Today stays mounted while AI coaching
-      // is turned off in Account, so the answer can change during the wait.
-      if (_aiAllowed &&
-          (latest == null ||
-              latest.localDate != today ||
-              citedCheckInMissing)) {
-        await widget.coach.generate();
-      }
-      if (!mounted) return;
-      setState(() {
-        _latestDecision = widget.coach.loadLatest();
-      });
+      await _makeDecisionCurrent();
     } catch (_) {
       // Stale-but-valid decision stays on screen; the hero sync retries.
     }
+  }
+
+  /// The checks that make the decision current, one at a time: a check that
+  /// starts while another is making a decision waits for it and then sees
+  /// that decision, so one day never makes two.
+  Future<void> _decisionChain = Future<void>.value();
+
+  Future<void> _makeDecisionCurrent() {
+    final check = _decisionChain.then((_) => _checkDecision());
+    _decisionChain = check.then<void>((_) {}, onError: (_) {});
+    return check;
+  }
+
+  Future<void> _checkDecision() async {
+    final latest = await widget.coach.loadLatest();
+    final today = _decisionDay();
+    final citedCheckInMissing =
+        latest != null &&
+        latest.localDate == today &&
+        latest.missingData.contains('recovery_check_in');
+    // Checked again after the load: Today stays mounted while AI coaching
+    // is turned off in Account, so the answer can change during the wait.
+    if (_aiAllowed &&
+        (latest == null || latest.localDate != today || citedCheckInMissing)) {
+      await widget.coach.generate(localDate: today);
+    }
+    if (!mounted) return;
+    setState(() {
+      _latestDecision = widget.coach.loadLatest();
+    });
   }
 
   Future<void> _openCheckIn() async {

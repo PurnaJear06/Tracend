@@ -20,7 +20,10 @@ import {
   dailyDecisionConsent,
   dailyDecisionPath,
   dailyDecisionProviderFor,
+  DecisionCallError,
   decisionCeilingUsd,
+  decisionRetryMaxWaitMs,
+  type DecisionSpend,
   decisionSystemPrompt,
   failedRunProvenance,
   GatewayDecisionProvider,
@@ -354,8 +357,12 @@ Deno.test("gateway failures map to today's error-code forms", async () => {
   const safeReason = /^[a-z][a-z0-9_]{0,60}$/;
   const cases: [() => Response, string][] = [
     [() => jsonResponse({}, 429, { "retry-after": "3" }), "anthropic_request_failed_status_429"],
-    [() => jsonResponse({}, 529), "anthropic_request_failed"],
-    [() => jsonResponse({}, 500), "anthropic_request_failed"],
+    [() => jsonResponse({}, 529), "anthropic_overloaded"],
+    [() => jsonResponse({}, 503), "anthropic_overloaded"],
+    [() => jsonResponse({}, 500), "anthropic_request_failed_status_500"],
+    [() => jsonResponse({}, 502), "anthropic_request_failed_status_502"],
+    [() => jsonResponse({}, 400), "anthropic_request_failed_status_400"],
+    [() => jsonResponse({}, 401), "anthropic_request_failed_status_401"],
     [() => jsonResponse(claudeMessage({ stop_reason: "refusal" })), "anthropic_refused"],
     [() => jsonResponse(claudeMessage()), "anthropic_response_invalid"],
     // A proposal breaks the schema (maxItems 0), so it never reaches the contract.
@@ -366,7 +373,11 @@ Deno.test("gateway failures map to today's error-code forms", async () => {
   ];
   for (const [respond, code] of cases) {
     const fake = fakeFetch(respond);
-    const provider = new GatewayDecisionProvider(evaluatedRoute(), { fetch: fake.fetch });
+    const provider = new GatewayDecisionProvider(
+      evaluatedRoute(),
+      { fetch: fake.fetch },
+      instantWait().wait,
+    );
     await captureLogs(() => assertRejects(() => provider.generateDecision(request), Error, code));
     assert(safeReason.test(code), code);
   }
@@ -386,6 +397,149 @@ Deno.test("gateway failures map to today's error-code forms", async () => {
     }
   }
   assertEquals(gatewayFailureCode("anthropic", "timeout"), "anthropic_timeout");
+  assertEquals(gatewayFailureCode("anthropic", "network"), "anthropic_request_failed");
+  assertEquals(gatewayFailureCode("anthropic", "provider_error"), "anthropic_request_failed");
+  assertEquals(
+    gatewayFailureCode("anthropic", "provider_error", 404),
+    "anthropic_request_failed_status_404",
+  );
+  // Only a real HTTP error status is written into the code.
+  for (const odd of [200, 399, 600, 4.5, Number.NaN, -1]) {
+    assertEquals(
+      gatewayFailureCode("anthropic", "provider_error", odd),
+      "anthropic_request_failed",
+    );
+  }
+  assertEquals(gatewayFailureCode("deepseek", "overloaded"), "deepseek_overloaded");
+});
+
+/** A pause that records how long it was asked to wait and returns at once. */
+function instantWait() {
+  const waited: number[] = [];
+  return {
+    waited,
+    wait: (ms: number) => {
+      waited.push(ms);
+      return Promise.resolve();
+    },
+  };
+}
+
+/** The responses in order; the last one repeats. */
+function sequence(...responses: (() => Response)[]) {
+  let index = 0;
+  return () => responses[Math.min(index++, responses.length - 1)]();
+}
+
+const answered = () => claudeAnswer(validDecision());
+
+Deno.test("a busy or failing provider gets one retry after a pause, and a good answer then stands", async () => {
+  const cases: [Response, number][] = [
+    [jsonResponse({}, 429, { "retry-after": "3" }), 3_000],
+    [jsonResponse({}, 429), 1_000],
+    [jsonResponse({}, 529), 1_000],
+    [jsonResponse({}, 503, { "retry-after": "2" }), 2_000],
+    [jsonResponse({}, 500), 1_000],
+    [jsonResponse({}, 502), 1_000],
+    [jsonResponse({}, 504), 1_000],
+    [jsonResponse({}, 429, { "retry-after": `${decisionRetryMaxWaitMs / 1000}` }), 5_000],
+  ];
+  for (const [rejection, pause] of cases) {
+    const fake = fakeFetch(sequence(() => rejection.clone(), answered));
+    const { waited, wait } = instantWait();
+    const provider = new GatewayDecisionProvider(evaluatedRoute(), { fetch: fake.fetch }, wait);
+    const generated = await captureLogs(() => provider.generateDecision(request));
+    assertEquals(generated.result.decision, validDecision(), `${rejection.status}`);
+    assertEquals(fake.sent.length, 2, `${rejection.status}`);
+    assertEquals(waited, [pause], `${rejection.status}`);
+    // Only the answer that arrived is priced.
+    assertEquals(generated.result.estimatedCostUsd, 0.004);
+  }
+});
+
+Deno.test("when the retry fails too the code names the second failure, after one pause only", async () => {
+  const fake = fakeFetch(sequence(() => jsonResponse({}, 529), () => jsonResponse({}, 502)));
+  const { waited, wait } = instantWait();
+  const provider = new GatewayDecisionProvider(evaluatedRoute(), { fetch: fake.fetch }, wait);
+  const failure = await captureLogs(() =>
+    assertRejects(
+      () => provider.generateDecision(request),
+      DecisionCallError,
+      "anthropic_request_failed_status_502",
+    )
+  );
+  assertEquals(failure.result.spend, "none");
+  assertEquals(fake.sent.length, 2, "never a third request");
+  assertEquals(waited, [1_000]);
+});
+
+Deno.test("a rejection that will not change, or may have been answered, is not retried", async () => {
+  const cases: [() => Response | Promise<Response>, string, DecisionSpend][] = [
+    [() => jsonResponse({}, 400), "anthropic_request_failed_status_400", "none"],
+    [() => jsonResponse({}, 401), "anthropic_request_failed_status_401", "none"],
+    [() => jsonResponse({}, 404), "anthropic_request_failed_status_404", "none"],
+    [
+      () => jsonResponse({}, 429, { "retry-after": "6" }),
+      "anthropic_request_failed_status_429",
+      "none",
+    ],
+    [() => jsonResponse({}, 529, { "retry-after": "60" }), "anthropic_overloaded", "none"],
+    [() => Promise.reject(new TypeError("reset")), "anthropic_request_failed", "unknown"],
+    [() => jsonResponse(claudeMessage()), "anthropic_response_invalid", "billed"],
+    [() => jsonResponse(claudeMessage({ stop_reason: "refusal" })), "anthropic_refused", "billed"],
+  ];
+  for (const [respond, code, spend] of cases) {
+    const fake = fakeFetch(respond);
+    const { waited, wait } = instantWait();
+    const provider = new GatewayDecisionProvider(evaluatedRoute(), { fetch: fake.fetch }, wait);
+    const failure = await captureLogs(() =>
+      assertRejects(() => provider.generateDecision(request), DecisionCallError, code)
+    );
+    assertEquals(failure.result.spend, spend, code);
+    assertEquals(fake.sent.length, 1, code);
+    assertEquals(waited, [], code);
+  }
+});
+
+Deno.test("a rejection that came late is not retried", async () => {
+  const route = evaluatedRoute();
+  let clock = 0;
+  const fake = fakeFetch(() => {
+    clock += route.timeoutMs; // the provider took the whole time allowed before it said 500
+    return jsonResponse({}, 500);
+  });
+  const { waited, wait } = instantWait();
+  const provider = new GatewayDecisionProvider(
+    route,
+    { fetch: fake.fetch, now: () => clock },
+    wait,
+  );
+  await captureLogs(() =>
+    assertRejects(
+      () => provider.generateDecision(request),
+      DecisionCallError,
+      "anthropic_request_failed_status_500",
+    )
+  );
+  assertEquals(fake.sent.length, 1);
+  assertEquals(waited, []);
+});
+
+Deno.test("the retry's answer is billed and checked like any other", async () => {
+  const fake = fakeFetch(
+    sequence(() => jsonResponse({}, 429), () => jsonResponse(claudeMessage())),
+  );
+  const { wait } = instantWait();
+  const provider = new GatewayDecisionProvider(evaluatedRoute(), { fetch: fake.fetch }, wait);
+  const failure = await captureLogs(() =>
+    assertRejects(
+      () => provider.generateDecision(request),
+      DecisionCallError,
+      "anthropic_response_invalid",
+    )
+  );
+  assertEquals(failure.result.spend, "billed");
+  assertEquals(fake.sent.length, 2);
 });
 
 Deno.test("gateway: an oversized context or a router route sends nothing", async () => {
