@@ -51,7 +51,8 @@ void main() {
       expect(read('day_adjustment_v1_0_safety_started').sessionBegun, isTrue);
       final reasked = read('day_adjustment_v1_0_reasked');
       expect(reasked.previousAnswer?.reason, 'check_in');
-      expect(reasked.appliedKind, DayAdjustmentKind.reduceSets);
+      expect(reasked.previousAnswer?.kind, DayAdjustmentKind.reduceSets);
+      expect(reasked.appliedKind, isNull);
       final unknown = read('day_adjustment_v1_0_unknown');
       expect(unknown.band, DayBand.unknown);
       expect(unknown.signals.recoveryLow, isTrue);

@@ -51,6 +51,13 @@ String kindPhrase(DayAdjustmentKind kind) => switch (kind) {
   DayAdjustmentKind.swapToEasyCardio => 'easy cardio',
 };
 
+/// "fewer sets": [kind] in brackets, for an earlier answer said in words only.
+String kindShort(DayAdjustmentKind kind) => switch (kind) {
+  DayAdjustmentKind.holdLoad => 'weights held',
+  DayAdjustmentKind.reduceSets => 'fewer sets',
+  DayAdjustmentKind.swapToEasyCardio => 'easy cardio',
+};
+
 /// The title once [kind] is accepted and can still be changed.
 String kindAppliedTitle(DayAdjustmentKind kind) => switch (kind) {
   DayAdjustmentKind.holdLoad => 'Weights held for today.',
@@ -115,8 +122,8 @@ String previousAnswerLine(PreviousDayAnswer previous) {
   };
   final kind = previous.kind;
   if (previous.status == DayAdjustmentStatus.accepted && kind != null) {
-    return '$why. Your earlier choice, ${kindPhrase(kind)}, stays until you '
-        'choose again.';
+    return '$why. Your earlier choice (${kindShort(kind)}) still applies until '
+        'you choose again.';
   }
   if (previous.status == DayAdjustmentStatus.declined) {
     return '$why, so Tracend looked again. You had chosen to train as '

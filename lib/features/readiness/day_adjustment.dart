@@ -355,29 +355,20 @@ class DayAdjustment {
       unavailableReason == 'session_started' ||
       unavailableReason == 'session_done';
 
-  /// The kind of answer the athlete gave that is in force for today's session:
-  /// the standing accepted answer, or an accepted one the rules no longer back.
-  /// The server keeps an accepted answer until the athlete answers again and
-  /// applies it when the workout starts, so the app does too. Null on a day
-  /// with a safety route, or when nothing accepted is in force.
-  DayAdjustmentKind? get appliedKind {
-    if (hasSafetyRoute) return null;
-    if (isAccepted) return kind;
-    final earlier = previousAnswer;
-    return earlier?.status == DayAdjustmentStatus.accepted
-        ? earlier?.kind
-        : null;
-  }
+  /// The kind of the accepted answer standing for today: set only for an
+  /// answer the rules still back, whose stored changes this payload carries.
+  /// Null on a day with a safety route.
+  ///
+  /// An earlier accepted answer that no longer stands is not here: the server
+  /// keeps it in force and `start_workout` applies it, but `previous_answer`
+  /// carries no changes, so the app says it in words only and shows no sets
+  /// or weights for it. The logger follows the rows the server made.
+  DayAdjustmentKind? get appliedKind =>
+      hasSafetyRoute || !isAccepted ? null : kind;
 
-  /// What the answer in force changes. An earlier answer's own changes are not
-  /// sent again; its kind decides the set counts the same way today, so they
-  /// come from today's option of that kind.
-  List<DayAdjustmentChange> get appliedChanges {
-    final applied = appliedKind;
-    if (applied == null) return const [];
-    if (isAccepted) return changes;
-    return optionFor(applied)?.changes ?? const [];
-  }
+  /// What the standing accepted answer changes; empty otherwise.
+  List<DayAdjustmentChange> get appliedChanges =>
+      appliedKind == null ? const [] : changes;
 
   /// An accepted answer made today's strength session lighter (an easy-cardio
   /// answer leaves the plan's sets as they are).
@@ -385,11 +376,6 @@ class DayAdjustment {
       appliedChanges.isNotEmpty &&
       (appliedKind == DayAdjustmentKind.holdLoad ||
           appliedKind == DayAdjustmentKind.reduceSets);
-
-  /// The accepted answer cuts the number of sets.
-  bool get cutsSets =>
-      appliedKind == DayAdjustmentKind.reduceSets &&
-      appliedChanges.any((change) => change.setsTo < change.setsFrom);
 
   /// The option for [wanted], when the server offers it today.
   DayAdjustmentOption? optionFor(DayAdjustmentKind wanted) {

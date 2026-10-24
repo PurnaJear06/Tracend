@@ -267,6 +267,40 @@ void main() {
         },
       );
 
+      testWidgets('an accepted answer that a cannot-train check-in overtook: '
+          'words only, and the logger gets the plan\'s sets', (tester) async {
+        await _pump(
+          tester,
+          adjustmentJson(
+            exercises: _upper,
+            kind: 'none',
+            status: 'none',
+            band: 'amber',
+            triggers: const ['not_available'],
+            explanation:
+                "You said you can't train today. Nothing in your plan changes.",
+            previous: {
+              'kind': 'reduce_sets',
+              'status': 'accepted',
+              'answered_at': '2026-10-02T06:41:12+00:00',
+              'reason': 'check_in',
+            },
+          ),
+        );
+        expect(
+          find.textContaining('Your earlier choice (fewer sets) still applies'),
+          findsOneWidget,
+        );
+        // No numbers from today's options: the lines and totals are the plan's.
+        expect(find.text('16 sets'), findsOneWidget);
+        expect(find.text('3 × 6 to 8 at 72.5 kg'), findsOneWidget);
+        expect(find.textContaining('sets become'), findsNothing);
+        await startFromHero(tester);
+        final bench = given(tester).exercises.first;
+        expect(bench.setCount, 3);
+        expect(bench.loadHeld, isFalse);
+      });
+
       testWidgets('Start waits while an answer is on its way', (tester) async {
         final (fake, _, _) = await _pump(
           tester,

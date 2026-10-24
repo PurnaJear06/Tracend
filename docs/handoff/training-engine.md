@@ -688,19 +688,29 @@ the shell and given to Today and Train), the card (`day_adjustment_card.dart`) a
   sleep or recovery data came in"); any other value reads "Things changed since you answered". An
   accepted earlier answer is said to stay until the athlete chooses again, because `start_workout`
   applies the accepted unsuperseded row; the preview uses today's option of that kind.
-- **Applied state.** `DayAdjustment.applyTo(workout)` previews an accepted answer (lower set counts,
-  held target) on Train's lines, hero and overview and on Today's strip; the plan is never edited. The
-  logger is not built from that preview: it gets the plan's set counts plus the held weights
-  (`applyTo(..., sets: false)`), and after `start` it reads the session back (`get_my_workout_session`)
-  and `ExerciseDraft.alignTo` makes each exercise have exactly the set rows the server made (untouched
-  trailing sets go, missing ones are added; a restored draft or server session follows its rows too).
-  `start_workout` is the only authority for the set shape, so a pending answer or an accepted row the
-  phone does not know of (a safety day after reduce_sets) cannot desync the logger. Start is disabled
-  while an answer is on its way, and the adjustment is read again whenever a workout screen closes.
-  Easy cardio leaves the sets. `nextTargetWhy` explains a `day_adjustment` target.
+- **Applied state.** `DayAdjustment.applyTo(workout)` previews a standing accepted answer (lower set
+  counts, held target) on Train's lines, hero and overview and on Today's strip; the plan is never
+  edited. An earlier accepted answer that no longer stands is shown in words only ("Your earlier
+  choice (fewer sets) still applies until you choose again"): `previous_answer` carries no stored
+  changes, so nothing is derived from today's options. The logger is not built from the preview: it
+  gets the plan's set counts plus the held weights (`applyTo(..., sets: false)`).
+- **Logger rows.** `start_workout` is the only authority for the set shape. After `start` the logger
+  reads the session back (`get_my_workout_session`) and `ExerciseDraft.alignTo` makes each exercise
+  have exactly the rows the server made. Until a started session's rows were read once
+  (`_rowsAligned`, kept in the local draft as `rows_aligned`; a draft without it counts as aligned)
+  nothing is synced and the draft stays on the phone, and a finish waits; every save retries the
+  read. A 22023 from a sync reads the rows again, aligns, and sends once more when they moved; a set
+  with entries that has no row is never dropped and the sync shows Needs attention.
 - **One day.** The card shows only when its `local_date` equals the date the surrounding data was
-  loaded for: Train reloads its readiness numbers for the hub's day, Today reloads the brief for the
-  server's day when the adjustment names another one.
+  loaded for. The controller exposes `serverDay` (the hub's or the server's today, known even when
+  the read failed). Today records it as soon as it arrives, whether or not the brief has, and loads
+  the brief for it (reloading when the newest request was for another day, in either order); the
+  check-in sheet saves, and queues, under it (`showCheckInSheet(localDate:)`), so the rules find
+  today's check-in and a pain-7 referral is not missed; the gate's day marks use it. Until the day
+  is known the phone's date is used. Train reloads its readiness numbers for the hub's day.
+- **Follow-up (not changed).** Today's meals (`loadMeals(DateTime.now())`) and the Coach decision
+  freshness (`_dateKey(DateTime.now())`) still use the phone's date; they should follow
+  `_serverDay` too.
 - **Talk to Coach.** `CoachDraftRequests` (shell-owned) puts a question in the Coach composer; it is
   never sent for the athlete.
 - **Not done.** The easy-cardio heart-rate line ("under N bpm, the top of your Easy zone") is not

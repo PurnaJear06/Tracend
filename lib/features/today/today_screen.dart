@@ -139,10 +139,10 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   String? _checkedInOn;
   String? _skippedOn;
 
-  /// The server's today, once the readiness adjustment named a day other than
-  /// the one the brief was loaded for (a phone date that differs from the
-  /// athlete's day): the brief is then loaded for it, so the card, the numbers
-  /// and the session all describe one day.
+  /// The server's today (`YYYY-MM-DD`), once the readiness controller learned
+  /// it, whatever the phone's date says. The brief is loaded for it, and a
+  /// check-in is saved under it, so the card, the numbers, the session and the
+  /// check-in all describe one day. Until it is known the phone's date is used.
   String? _serverDay;
 
   /// The day and route of the safety sheet already shown, so it opens once.
@@ -202,7 +202,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         loadedAt == null ||
         brief == null ||
         now.difference(loadedAt) > _staleBriefAfter ||
-        brief.localDate != _dateKey(_serverDay == null ? now : _briefDay());
+        brief.localDate != _dateKey(_briefDay());
     if (!stale) return;
     setState(() {
       _targets = widget.nutrition.loadTargets();
@@ -340,26 +340,30 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   /// never overwrites the newer day's brief, gate or widgets.
   int _briefLoads = 0;
 
-  /// The day the brief is loaded for: the server's once it is known to differ
-  /// from the phone's, else the phone's.
+  /// The day the brief is loaded for: the server's once it is known, else the
+  /// phone's.
   DateTime _briefDay() {
     final day = _serverDay == null ? null : DateTime.tryParse(_serverDay!);
     return day ?? widget.clock();
   }
 
-  /// Follows the server's day: when the readiness adjustment is for another
-  /// day than the brief, the brief is loaded again for that day.
+  /// The day of the newest brief request, `YYYY-MM-DD`.
+  String? _briefRequestedFor;
+
+  /// The athlete's day for the check-in gate and its saved marks: the
+  /// server's when known, else the brief's, else the phone's.
+  String _dayKey() =>
+      _serverDay ?? _lastBrief?.localDate ?? _dateKey(widget.clock());
+
+  /// Follows the server's day. It is recorded as soon as the controller learns
+  /// it, whether or not the brief has arrived, and the brief is loaded again
+  /// when the newest request was for another day, whichever of the two
+  /// finishes first.
   void _dayAdjustmentChanged() {
-    final day = widget.dayAdjustment?.current?.localDate;
-    final brief = _lastBrief;
-    if (!mounted ||
-        day == null ||
-        brief == null ||
-        day == brief.localDate ||
-        _serverDay == day) {
-      return;
-    }
+    final day = widget.dayAdjustment?.serverDay;
+    if (!mounted || day == null) return;
     _serverDay = day;
+    if (_briefRequestedFor == day) return;
     setState(() {
       _brief = _loadBrief();
     });
@@ -369,7 +373,9 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   /// hands it to the widgets.
   Future<DailyBrief> _loadBrief() {
     final load = ++_briefLoads;
-    final future = widget.brief.load(_briefDay());
+    final day = _briefDay();
+    _briefRequestedFor = _dateKey(day);
+    final future = widget.brief.load(day);
     future.then((brief) {
       if (!mounted || load != _briefLoads) return;
       _lastBrief = brief;
@@ -446,7 +452,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
 
   /// "Not today": the tab bar comes back until tomorrow.
   void _skipCheckIn() {
-    final day = _lastBrief?.localDate ?? _dateKey(DateTime.now());
+    final day = _dayKey();
     setState(() => _skippedOn = day);
     _updateGate();
     _rememberDay(_skippedKey, day);
@@ -606,9 +612,10 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       context,
       widget.environment,
       sender: widget.checkInSender,
+      localDate: _serverDay,
     );
     if (saved && mounted) {
-      final day = _lastBrief?.localDate ?? _dateKey(DateTime.now());
+      final day = _dayKey();
       setState(() => _checkedInOn = day);
       _updateGate();
       // The widgets say the check-in is done at once: the brief reloaded

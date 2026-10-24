@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/train/active_workout_screen.dart';
@@ -71,10 +72,16 @@ class _Notifications implements NotificationRepository {
 class _Server extends FixtureWorkoutRepository {
   _Server(this.rows, {this.alreadyStarted = false});
 
-  final Map<int, int> rows;
+  Map<int, int> rows;
   final bool alreadyStarted;
   var started = false;
   final syncs = <Map<String, dynamic>>[];
+
+  /// Reading the session fails while this is true (offline).
+  var failReads = false;
+
+  /// The next sync is refused with 22023, as for a set number with no row.
+  var refuseNext = false;
 
   Map<String, dynamic> _session() => {
     'session_id': 'srv-1',
@@ -110,14 +117,40 @@ class _Server extends FixtureWorkoutRepository {
   Future<Map<String, dynamic>?> loadSession(
     PlannedWorkout workout, {
     DateTime? localDate,
-  }) async => started || alreadyStarted ? _session() : null;
+  }) async {
+    if (started && failReads) throw Exception('offline');
+    return started || alreadyStarted ? _session() : null;
+  }
 
   @override
   Future<void> sync(
     String sessionId,
     int revision,
     Map<String, dynamic> draft,
-  ) async => syncs.add(draft);
+  ) async {
+    if (refuseNext) {
+      refuseNext = false;
+      throw const PostgrestException(message: 'no such set', code: '22023');
+    }
+    syncs.add(draft);
+  }
+}
+
+int _benchSets(Map<String, dynamic> draft) =>
+    (((draft['exercises'] as List).first as Map)['sets'] as List).length;
+
+Future<void> _tapLabel(WidgetTester tester, String label) async {
+  await tester.tap(find.bySemanticsLabel(label).first);
+  await tester.pump(const Duration(milliseconds: 300));
+  await tester.pumpAndSettle();
+}
+
+/// Logs the current set and skips the rest that follows.
+Future<void> _doneSet(WidgetTester tester, int number) async {
+  await tester.tap(find.text('Done set $number'));
+  await tester.pump(const Duration(milliseconds: 300));
+  await tester.pumpAndSettle();
+  await _tapLabel(tester, 'Skip rest');
 }
 
 Future<void> _open(WidgetTester tester, _Server server) async {
@@ -170,6 +203,65 @@ void main() {
   ) async {
     await _open(tester, _Server({1: 3, 2: 3}));
     expect(find.text('Set 1 of 3'), findsOneWidget);
+  });
+
+  group('the rows are read before anything is synced', () {
+    testWidgets('a failed first read keeps the draft on the phone, then '
+        'aligns and syncs', (tester) async {
+      final handle = tester.ensureSemantics();
+      final server = _Server({1: 2, 2: 3})..failReads = true;
+      await _open(tester, server);
+      expect(server.started, isTrue);
+      // Rows unread: still the plan's sets, and nothing was sent.
+      expect(find.text('Set 1 of 3'), findsOneWidget);
+      expect(server.syncs, isEmpty);
+      await _doneSet(tester, 1);
+      expect(server.syncs, isEmpty, reason: 'still unread, still not sent');
+
+      server.failReads = false;
+      await tester.tap(find.text('Done set 2'));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+      expect(server.syncs, isNotEmpty);
+      expect(_benchSets(server.syncs.last), 2, reason: "the server's rows");
+      handle.dispose();
+    });
+
+    testWidgets('a 22023 reads the rows again, aligns and sends once more', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final server = _Server({1: 3, 2: 3});
+      await _open(tester, server);
+      expect(find.text('Set 1 of 3'), findsOneWidget);
+      // The server's rows turn out to be fewer than the phone assumed.
+      server.rows = {1: 2, 2: 3};
+      server.refuseNext = true;
+      server.syncs.clear();
+      await _tapLabel(tester, 'More weight');
+      expect(server.syncs, hasLength(1));
+      expect(_benchSets(server.syncs.single), 2);
+      handle.dispose();
+    });
+
+    testWidgets('a set with entries that has no row is kept and needs '
+        'attention', (tester) async {
+      final handle = tester.ensureSemantics();
+      final server = _Server({1: 3, 2: 3});
+      await _open(tester, server);
+      await _doneSet(tester, 1);
+      await _doneSet(tester, 2);
+      // Set 3 gets an entry, then the server turns out to hold two rows.
+      await _tapLabel(tester, 'More weight');
+      server.rows = {1: 2, 2: 3};
+      server.refuseNext = true;
+      server.syncs.clear();
+      await _tapLabel(tester, 'One more rep');
+      expect(server.syncs, isEmpty, reason: 'nothing is sent for a lost set');
+      expect(find.text('Needs attention'), findsWidgets);
+      expect(find.text('Set 3 of 3'), findsOneWidget, reason: 'kept');
+      handle.dispose();
+    });
   });
 
   group('aligning an exercise to the server\'s rows', () {

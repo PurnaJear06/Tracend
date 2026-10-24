@@ -224,12 +224,16 @@ class FakeDayAdjustmentRepository implements DayAdjustmentRepository {
   DayAdjustmentException? loadError;
   DayAdjustmentException? respondError;
 
+  /// When set, a read waits for it.
+  Completer<void>? loadGate;
+
   /// When set, an answer waits for it: the answer is on its way.
   Completer<void>? respondGate;
 
   @override
   Future<DayAdjustment> load(DateTime localToday) async {
     loads.add(localToday);
+    await loadGate?.future;
     if (loadError != null) throw loadError!;
     return _parse();
   }

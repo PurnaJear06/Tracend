@@ -62,6 +62,14 @@ class DayAdjustmentController extends ChangeNotifier {
     return value;
   }
 
+  /// The server's today as `YYYY-MM-DD`, once the hub or the server has named
+  /// it; null before that. It is known even when the adjustment itself could
+  /// not be read.
+  String? get serverDay {
+    final day = _knownToday;
+    return day == null ? null : _iso(day);
+  }
+
   bool get loading => _loading;
 
   /// An answer is on its way.
@@ -122,7 +130,11 @@ class DayAdjustmentController extends ChangeNotifier {
     final ask = serverToday;
     if (ask == null) return known;
     final day = await ask();
-    if (day != null) _learn(day);
+    if (day != null) {
+      _learn(day);
+      // Screens that follow the server's day need not wait for the read.
+      notifyListeners();
+    }
     return day ?? known;
   }
 

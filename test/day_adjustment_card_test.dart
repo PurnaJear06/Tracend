@@ -641,12 +641,16 @@ void main() {
         );
         expect(find.textContaining(words), findsOneWidget);
         expect(
-          find.textContaining('stays until you choose again'),
+          find.textContaining(
+            'Your earlier choice (fewer sets) still applies until you choose '
+            'again.',
+          ),
           findsOneWidget,
           reason:
               'the server keeps an accepted answer until the athlete '
               'answers again',
         );
+        expect(find.textContaining('sets become'), findsNothing);
       });
     }
 
@@ -687,7 +691,7 @@ void main() {
       }
     });
 
-    test('an accepted answer that no longer stands is still applied', () {
+    test('an accepted answer that no longer stands has no numeric preview', () {
       final adjustment = DayAdjustment.tryParse(
         adjustmentJson(
           kind: 'swap_to_easy_cardio',
@@ -699,13 +703,12 @@ void main() {
           },
         ),
       )!;
-      expect(adjustment.appliedKind, DayAdjustmentKind.reduceSets);
-      expect(adjustment.cutsSets, isTrue);
-      expect(
-        adjustment.appliedChanges.map((c) => c.setsTo),
-        [2, 2, 2],
-        reason: 'the start applies the earlier answer, so the sets follow it',
-      );
+      // previous_answer carries no stored changes, so nothing is derived from
+      // today's options: the earlier answer is in words only.
+      expect(adjustment.appliedKind, isNull);
+      expect(adjustment.appliedChanges, isEmpty);
+      expect(adjustment.easesSession, isFalse);
+      expect(adjustment.previousAnswer?.kind, DayAdjustmentKind.reduceSets);
     });
   });
 
