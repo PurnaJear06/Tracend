@@ -358,7 +358,7 @@ Deno.test("day_adjustment_stands is B4's function plus the joint-coverage hunk o
     ],
     [
       "      or private.readiness_rank(p_payload ->> 'kind', null)\n        <= greatest(private.readiness_rank(p_row.rules_kind, null),\n          private.readiness_rank(p_row.kind, null)));",
-      "      or (private.readiness_rank(p_payload ->> 'kind', null)\n          <= greatest(private.readiness_rank(p_row.rules_kind, null),\n            private.readiness_rank(p_row.kind, null))\n        and not exists (\n          select 1 from jsonb_array_elements(coalesce((\n            select o -> 'changes' from jsonb_array_elements(p_payload -> 'options') o\n            where o ->> 'kind' = 'joint_adjust' limit 1), '[]'::jsonb)) c\n          where private.joint_action_rank(c ->> 'joint_action') > coalesce((\n            select max(private.joint_action_rank(s ->> 'joint_action'))\n            from jsonb_array_elements(p_row.changes) s\n            where s ->> 'planned_exercise_id' = c ->> 'planned_exercise_id'), 0))));",
+      "      or (private.readiness_rank(p_payload ->> 'kind', null)\n          <= greatest(private.readiness_rank(p_row.rules_kind, null),\n            private.readiness_rank(p_row.kind, null))\n        and private.joint_change_keys(p_row.changes) = private.joint_change_keys((\n          select o -> 'changes' from jsonb_array_elements(p_payload -> 'options') o\n          where o ->> 'kind' = 'joint_adjust' limit 1))));",
     ],
   ];
   assertEquals(undo(redefined, hunks), earlier.trim());
@@ -382,7 +382,7 @@ Deno.test("day_adjustment_present is B4's function plus the lasting-pain sentenc
     ],
     [
       "        array(select jsonb_array_elements_text(p_payload -> 'triggers')), null, p_row.changes,\n        p_row.origin = 'proposed', null),",
-      "        array(select jsonb_array_elements_text(p_payload -> 'triggers')), null, p_row.changes,\n        p_row.origin = 'proposed', null) || private.persistent_sentence(p_payload -> 'joint_states'),",
+      "        array(select jsonb_array_elements_text(p_payload -> 'triggers')), null, p_row.changes,\n        p_row.origin = 'proposed', null) || private.persistent_sentence(p_payload -> 'joint_states')\n        || private.hold_reminder(p_payload -> 'joint_states', p_row.changes),",
     ],
   ];
   assertEquals(undo(redefined, hunks), earlier.trim());
@@ -406,27 +406,47 @@ Deno.test("day_adjustment_compute is B4's function plus the joint and red-flag h
     ],
     [
       "  inputs jsonb;\nbegin\n",
-      "  inputs jsonb;\n  states jsonb;\n  joint_arr jsonb := '[]'::jsonb;\n  joint_c jsonb;\n  exercise_options jsonb := '[]'::jsonb;\n  report_route text;\n  report_severe boolean;\n  report_codes text[];\nbegin\n",
+      "  inputs jsonb;\n  states jsonb;\n  joint_arr jsonb := '[]'::jsonb;\n  joint_c jsonb;\n  exercise_options jsonb := '[]'::jsonb;\n  report_route text;\n  report_severe boolean;\n  report_codes text[];\n  states_full jsonb;\n  joint_only boolean := false;\n  hold_route text;\n  hold_severe boolean;\n  hold_codes text[];\nbegin\n",
     ],
     [
       "  workout_id := (workout ->> 'id')::uuid;\n",
-      "  workout_id := (workout ->> 'id')::uuid;\n  states := private.joint_states(p_user, p_date);\n",
+      "  workout_id := (workout ->> 'id')::uuid;\n  states_full := private.joint_states_detail(p_user, p_date);\n  states := coalesce((select jsonb_agg(t.s - 'hold_codes' - 'hold_severe' order by t.n)\n    from jsonb_array_elements(states_full) with ordinality as t(s, n)), '[]'::jsonb);\n",
+    ],
+    [
+      "    when version_block = 'next_session' and version_ends = p_date then 'coach_adjusted'\n  end;\n",
+      "    when version_block = 'next_session' and version_ends = p_date then 'coach_adjusted'\n  end;\n  -- On a day Coach already adjusted, the readiness kinds are not offered twice, but a joint that is held,\n  -- limited or on watch still changes the exercises start_workout will create for that day.\n  joint_only := unavailable = 'coach_adjusted';\n",
     ],
     [
       "    can_reduce := (reduce_c ->> 'sets_to')::integer < (reduce_c ->> 'sets_from')::integer;\n  end if;\n",
-      "    can_reduce := (reduce_c ->> 'sets_to')::integer < (reduce_c ->> 'sets_from')::integer;\n    exercise_options := private.joint_options(p_user, workout_id);\n    joint_arr := private.joint_changes(p_user, workout_id, states, hold_c -> 'changes');\n  end if;\n  -- A joint that is held, limited or on watch changes the exercises it touches in every kind (the\n  -- stricter value per exercise wins), and alone as the joint_adjust kind.\n  hold_c := private.day_changes_merged(hold_c, joint_arr);\n  reduce_c := private.day_changes_merged(reduce_c, joint_arr);\n  swap_c := private.day_changes_merged(swap_c, joint_arr);\n  joint_c := private.day_changes_merged(jsonb_build_object('changes', '[]'::jsonb,\n    'sets_from', (swap_c ->> 'sets_from')::integer, 'sets_to', (swap_c ->> 'sets_from')::integer),\n    joint_arr);\n",
+      "    can_reduce := (reduce_c ->> 'sets_to')::integer < (reduce_c ->> 'sets_from')::integer;\n    exercise_options := private.joint_options(p_user, workout_id, states);\n    joint_arr := private.joint_changes(p_user, workout_id, states, hold_c -> 'changes');\n  end if;\n  -- A joint that is held, limited or on watch changes the exercises it touches in every kind (the\n  -- stricter value per exercise wins), and alone as the joint_adjust kind.\n  hold_c := private.day_changes_merged(hold_c, joint_arr);\n  reduce_c := private.day_changes_merged(reduce_c, joint_arr);\n  swap_c := private.day_changes_merged(swap_c, joint_arr);\n  joint_c := private.day_changes_merged(jsonb_build_object('changes', '[]'::jsonb,\n    'sets_from', (swap_c ->> 'sets_from')::integer, 'sets_to', (swap_c ->> 'sets_from')::integer),\n    joint_arr);\n",
     ],
     [
       "  triggers := array(select jsonb_array_elements_text(assessment -> 'triggers'));\n",
-      "  triggers := array(select jsonb_array_elements_text(assessment -> 'triggers'));\n  -- Today's pain reports with a red flag, or a severity of 7 or more, route out just as a check-in pain\n  -- of 7 or more does, even with no check-in, on a rest day or after the session started. The\n  -- stricter route wins.\n  select (array['clinician', 'clinician_today', 'urgent'])[max(\n      case pr.outcome when 'urgent' then 3 when 'clinician_today' then 2 else 1 end)],\n    coalesce(bool_or(pr.severity >= (private.pain_rules() ->> 'clinician_today_from')::integer), false)\n  into report_route, report_severe\n  from public.pain_reports pr\n  where pr.user_id = p_user and pr.local_date = p_date\n    and pr.outcome in ('urgent', 'clinician_today', 'clinician');\n  if report_route is not null then\n    report_codes := array(select distinct 'red_flag:' || f from public.pain_reports pr,\n      unnest(pr.red_flags) f\n      where pr.user_id = p_user and pr.local_date = p_date\n        and pr.outcome in ('urgent', 'clinician_today', 'clinician') order by 1);\n    if safety is null\n       or private.safety_route_rank(report_route) > private.safety_route_rank(safety) then\n      safety := report_route;\n    end if;\n    triggers := array(select distinct t from unnest(\n      case when assessment ->> 'safety_route' is not null then array['pain_severe']\n        else '{}'::text[] end\n      || report_codes\n      || case when report_severe then array['pain_severe'] else '{}'::text[] end) t order by t);\n    band := 'red';\n  end if;\n",
+      "  triggers := array(select jsonb_array_elements_text(assessment -> 'triggers'));\n  -- A pain report that routes out (a red flag, or a severity of 7 or more) gives the day a safety route\n  -- just as a check-in pain of 7 or more does, even with no check-in, on a rest day or after the session\n  -- started: from reports dated today or stored today (a phone's date can differ from the server's), and\n  -- on every later day while the area stays held on an urgent or clinician_today outcome, until the\n  -- athlete's own clearance. A hold on a clinician outcome gives no route on later days, only a reminder\n  -- in the day's words. The strictest route wins.\n  select (array['clinician', 'clinician_today', 'urgent'])[max(\n      case pr.outcome when 'urgent' then 3 when 'clinician_today' then 2 else 1 end)],\n    coalesce(bool_or(pr.severity >= (private.pain_rules() ->> 'clinician_today_from')::integer), false)\n  into report_route, report_severe\n  from public.pain_reports pr\n  where pr.user_id = p_user and pr.outcome in ('urgent', 'clinician_today', 'clinician')\n    and (pr.local_date = p_date or private.local_day_of(p_user, pr.created_at) = p_date);\n  report_codes := array(select distinct 'red_flag:' || f from public.pain_reports pr,\n    unnest(pr.red_flags) f\n    where pr.user_id = p_user and pr.outcome in ('urgent', 'clinician_today', 'clinician')\n      and (pr.local_date = p_date or private.local_day_of(p_user, pr.created_at) = p_date)\n    order by 1);\n  select (array['clinician_today', 'urgent'])[max(case h ->> 'hold_outcome' when 'urgent' then 2 else 1 end)],\n    coalesce(bool_or((h ->> 'hold_severe')::boolean), false),\n    array(select distinct 'red_flag:' || c from jsonb_array_elements(states_full) h2,\n      jsonb_array_elements_text(h2 -> 'hold_codes') c\n      where h2 ->> 'state' = 'held' and h2 ->> 'hold_outcome' in ('urgent', 'clinician_today') order by 1)\n  into hold_route, hold_severe, hold_codes\n  from jsonb_array_elements(states_full) h\n  where h ->> 'state' = 'held' and h ->> 'hold_outcome' in ('urgent', 'clinician_today');\n  if hold_route is not null and (report_route is null\n      or private.safety_route_rank(hold_route) > private.safety_route_rank(report_route)) then\n    report_route := hold_route;\n  end if;\n  report_severe := coalesce(report_severe, false) or coalesce(hold_severe, false);\n  report_codes := report_codes || coalesce(hold_codes, '{}'::text[]);\n  if report_route is not null then\n    if safety is null\n       or private.safety_route_rank(report_route) > private.safety_route_rank(safety) then\n      safety := report_route;\n    end if;\n    triggers := array(select distinct t from unnest(\n      case when assessment ->> 'safety_route' is not null then array['pain_severe']\n        else '{}'::text[] end\n      || report_codes\n      || case when report_severe then array['pain_severe'] else '{}'::text[] end) t order by t);\n    band := 'red';\n  end if;\n",
     ],
     [
       "  kind := case when unavailable is not null or safety is not null then 'none'\n    else assessment ->> 'kind' end;\n",
-      "  kind := case when unavailable is not null or safety is not null then 'none'\n    else assessment ->> 'kind' end;\n  -- A joint state changes the session even on a day the readiness rules ask for nothing, unless the\n  -- athlete said they cannot train.\n  if kind = 'none' and unavailable is null and safety is null\n     and coalesce(check_in.available_to_train, true)\n     and jsonb_array_length(joint_c -> 'changes') > 0 then\n    kind := 'joint_adjust';\n  end if;\n",
+      "  kind := case when unavailable is not null or safety is not null then 'none'\n    else assessment ->> 'kind' end;\n  -- A joint state changes the session even on a day the readiness rules ask for nothing, unless the\n  -- athlete said they cannot train.\n  if kind = 'none' and (unavailable is null or joint_only) and safety is null\n     and coalesce(check_in.available_to_train, true)\n     and jsonb_array_length(joint_c -> 'changes') > 0 then\n    kind := 'joint_adjust';\n  end if;\n",
     ],
     [
       "    when 'swap_to_easy_cardio' then swap_c else\n",
       "    when 'swap_to_easy_cardio' then swap_c when 'joint_adjust' then joint_c else\n",
+    ],
+    [
+      "  if unavailable is null and safety is null and coalesce(check_in.available_to_train, true)\n     and workout_id is not null then\n    if can_hold then\n",
+      "  if (unavailable is null or joint_only) and safety is null\n     and coalesce(check_in.available_to_train, true) and workout_id is not null then\n    if can_hold and not joint_only then\n",
+    ],
+    [
+      "    if can_reduce then\n",
+      "    if can_reduce and not joint_only then\n",
+    ],
+    [
+      "    if (swap_c ->> 'sets_from')::integer > 0 then\n",
+      "    if (swap_c ->> 'sets_from')::integer > 0 and not joint_only then\n",
+    ],
+    [
+      "      'available', unavailable is null,\n      'unavailable_reason', unavailable,\n",
+      "      'available', unavailable is null or kind = 'joint_adjust',\n      'unavailable_reason', case when kind = 'joint_adjust' then null else unavailable end,\n",
     ],
     [
       "        'sets_total_to', 0, 'changes', swap_c -> 'changes', 'cardio', cardio);\n    end if;\n",
@@ -442,11 +462,31 @@ Deno.test("day_adjustment_compute is B4's function plus the joint and red-flag h
     ],
     [
       "        chosen_c -> 'changes', true, unavailable),\n",
-      "        chosen_c -> 'changes', true, unavailable)\n        || case when safety is null then private.persistent_sentence(states) else '' end,\n",
+      "        chosen_c -> 'changes', true, unavailable)\n        || case when safety is null then private.persistent_sentence(states)\n          || private.hold_reminder(states, chosen_c -> 'changes') else '' end,\n",
     ],
     [
       "'recovery_low', (assessment ->> 'recovery_low')::boolean, 'sleep_minutes', sleep_minutes)));",
       "'recovery_low', (assessment ->> 'recovery_low')::boolean, 'sleep_minutes', sleep_minutes),\n      'joint_states', states,\n      'exercise_joint_options', exercise_options));",
+    ],
+  ];
+  assertEquals(undo(redefined, hunks), earlier.trim());
+});
+
+Deno.test("progression_decision is B4's definition plus the left-out-exercise hunk only", async () => {
+  const earlier = between(
+    await readMigration("20261023140024_day_adjustments.sql"),
+    "create or replace function private.progression_decision(",
+    "end $$;",
+  );
+  const redefined = between(
+    migration,
+    "create or replace function private.progression_decision(",
+    "end $$;",
+  );
+  const hunks: Hunks = [
+    [
+      "  elsif v_sets < coalesce((s1 ->> 'sets_planned')::integer, p_set_count) then\n",
+      "  elsif v_sets < coalesce((s1 ->> 'sets_planned')::integer, p_set_count)\n        or coalesce((s1 ->> 'sets_planned')::integer, 1) = 0 then\n",
     ],
   ];
   assertEquals(undo(redefined, hunks), earlier.trim());
@@ -485,8 +525,12 @@ Deno.test("start_workout is the stale-close definition plus the left-out-exercis
   );
   const hunks: Hunks = [
     [
-      "    set_total := exercise.set_count;\n    if adjusted and adjustment.kind='reduce_sets' then\n      select (c ->> 'sets_to')::integer into set_total\n      from jsonb_array_elements(adjustment.changes) c\n      where c ->> 'planned_exercise_id' = exercise.id::text;\n      set_total := coalesce(set_total, exercise.set_count);\n    end if;",
-      "    set_total := exercise.set_count;\n    if adjusted then\n      -- A left-out exercise (a joint drop) gets no sets whatever the kind: its performance stays\n      -- 'unknown', never inferred as skipped. reduce_sets builds the adjusted set counts. Everything\n      -- else, an easy-cardio answer included, keeps the plan's sets.\n      select case when c ->> 'joint_action' = 'drop' then 0\n        when adjustment.kind='reduce_sets' then (c ->> 'sets_to')::integer end into set_total\n      from jsonb_array_elements(adjustment.changes) c\n      where c ->> 'planned_exercise_id' = exercise.id::text;\n      set_total := coalesce(set_total, exercise.set_count);\n    end if;",
+      "  adjustment public.day_adjustments%rowtype; adjusted boolean := false; set_total integer;\n",
+      "  adjustment public.day_adjustments%rowtype; adjusted boolean := false; set_total integer;\n  entry jsonb;\n",
+    ],
+    [
+      "    insert into public.exercise_performances(\n      user_id,workout_session_id,planned_exercise_id,exercise_order,status,\n      performance_kind,performed_name,rest_seconds\n    ) values(\n      auth.uid(),result_id,exercise.id,exercise.exercise_order,'unknown',\n      'prescribed',exercise.display_name_snapshot,exercise.rest_seconds\n    ) returning id into performance_id;\n    set_total := exercise.set_count;\n    if adjusted and adjustment.kind='reduce_sets' then\n      select (c ->> 'sets_to')::integer into set_total\n      from jsonb_array_elements(adjustment.changes) c\n      where c ->> 'planned_exercise_id' = exercise.id::text;\n      set_total := coalesce(set_total, exercise.set_count);\n    end if;",
+      "    -- What the accepted answer says about this exercise, if anything.\n    entry := null;\n    if adjusted then\n      select c into entry from jsonb_array_elements(adjustment.changes) c\n      where c ->> 'planned_exercise_id' = exercise.id::text limit 1;\n    end if;\n    -- An exercise the answer swaps for a gentler one is created as that exercise, a substitution made\n    -- for pain (the load is not written: the athlete picks it); every other exercise is as planned.\n    insert into public.exercise_performances(\n      user_id,workout_session_id,planned_exercise_id,exercise_order,status,\n      performance_kind,performed_name,rest_seconds,substitution_reason\n    ) values(\n      auth.uid(),result_id,exercise.id,exercise.exercise_order,'unknown',\n      case when entry ->> 'joint_action' = 'swap' then 'substituted' else 'prescribed' end,\n      case when entry ->> 'joint_action' = 'swap' then entry ->> 'swap_to_name'\n        else exercise.display_name_snapshot end,\n      exercise.rest_seconds,\n      case when entry ->> 'joint_action' = 'swap' then 'pain' end\n    ) returning id into performance_id;\n    -- A left-out exercise (a joint drop) gets no sets whatever the kind: its performance stays\n    -- 'unknown', never inferred as skipped. reduce_sets builds the adjusted set counts. Everything\n    -- else, an easy-cardio answer included, keeps the plan's sets.\n    set_total := exercise.set_count;\n    if entry is not null then\n      set_total := coalesce(case when entry ->> 'joint_action' = 'drop' then 0\n        when adjustment.kind='reduce_sets' then (entry ->> 'sets_to')::integer end, exercise.set_count);\n    end if;",
     ],
   ];
   assertEquals(undo(redefined, hunks), earlier.trim());
@@ -510,15 +554,15 @@ Deno.test("save_daily_check_in is the phase 3 definition plus the pain check onl
     ],
     [
       "declare result_id uuid; next_revision integer;\n",
-      "declare result_id uuid; next_revision integer;\n  new_build boolean; pain integer; main_area text; main_flags text[]; main_pattern text;\n  main_cleared boolean := false; follow jsonb; follow_areas text[] := '{}'; follow_area text;\n  follow_severity integer; follow_cleared boolean;\n",
+      "declare result_id uuid; next_revision integer;\n  new_build boolean; pain integer; main_area text; main_flags text[]; main_pattern text;\n  main_cleared boolean := false; follow jsonb; follow_areas text[] := '{}'; follow_area text;\n  follow_severity integer; follow_cleared boolean; report_date date; server_today date;\n",
     ],
     [
       "",
-      "\n  new_build := payload ?| array['pain_area','pain_pattern','pain_red_flags','pain_cleared_by_clinician','pain_followups'];\n  if new_build then\n    pain := coalesce((payload->>'pain_severity')::integer, 0);\n    if jsonb_typeof(payload->'pain_area') = 'string' then\n      main_area := payload->>'pain_area';\n    elsif payload->'pain_area' is not null and jsonb_typeof(payload->'pain_area') <> 'null' then\n      raise exception 'pain_area must be text' using errcode='22023';\n    end if;\n    if main_area is null then\n      if pain > 0 then raise exception 'pain needs an area' using errcode='22023'; end if;\n      if (payload->'pain_red_flags' is not null and jsonb_typeof(payload->'pain_red_flags') <> 'null'\n            and payload->'pain_red_flags' <> '[]'::jsonb)\n         or (payload->'pain_pattern' is not null and jsonb_typeof(payload->'pain_pattern') <> 'null')\n         or (payload->'pain_cleared_by_clinician' is not null\n            and payload->'pain_cleared_by_clinician' not in ('null'::jsonb, 'false'::jsonb)) then\n        raise exception 'pain answers need an area' using errcode='22023';\n      end if;\n    else\n      if pain < 1 then raise exception 'a pain area needs a pain above 0' using errcode='22023'; end if;\n      if jsonb_typeof(payload->'pain_red_flags') is distinct from 'array' then\n        raise exception 'pain_red_flags must be a list' using errcode='22023';\n      end if;\n      if exists (select 1 from jsonb_array_elements(payload->'pain_red_flags') f\n          where jsonb_typeof(f) is distinct from 'string') then\n        raise exception 'pain_red_flags must be a list of codes' using errcode='22023';\n      end if;\n      main_flags := array(select jsonb_array_elements_text(payload->'pain_red_flags'));\n      if payload->'pain_pattern' is not null and jsonb_typeof(payload->'pain_pattern') = 'string' then\n        main_pattern := payload->>'pain_pattern';\n      elsif payload->'pain_pattern' is not null and jsonb_typeof(payload->'pain_pattern') <> 'null' then\n        raise exception 'pain_pattern must be text' using errcode='22023';\n      end if;\n      if payload->'pain_cleared_by_clinician' is not null\n         and jsonb_typeof(payload->'pain_cleared_by_clinician') <> 'null' then\n        if jsonb_typeof(payload->'pain_cleared_by_clinician') is distinct from 'boolean' then\n          raise exception 'pain_cleared_by_clinician must be true or false' using errcode='22023';\n        end if;\n        main_cleared := (payload->>'pain_cleared_by_clinician')::boolean;\n      end if;\n    end if;\n    if payload->'pain_followups' is not null and jsonb_typeof(payload->'pain_followups') <> 'null' then\n      if jsonb_typeof(payload->'pain_followups') is distinct from 'array' then\n        raise exception 'pain_followups must be a list' using errcode='22023';\n      end if;\n      follow_areas := case when main_area is null then '{}'::text[] else array[main_area] end;\n      for follow in select value from jsonb_array_elements(payload->'pain_followups') loop\n        if jsonb_typeof(follow) is distinct from 'object'\n           or jsonb_typeof(follow->'area') is distinct from 'string'\n           or jsonb_typeof(follow->'severity') is distinct from 'number'\n           or (follow->>'severity')::numeric <> trunc((follow->>'severity')::numeric)\n           or (follow->'cleared_by_clinician' is not null\n              and jsonb_typeof(follow->'cleared_by_clinician') not in ('boolean', 'null')) then\n          raise exception 'a pain follow-up needs an area and a whole severity' using errcode='22023';\n        end if;\n        follow_area := follow->>'area';\n        if follow_area = any(follow_areas) then\n          raise exception 'one pain report per area in a check-in' using errcode='22023';\n        end if;\n        follow_areas := follow_areas || follow_area;\n      end loop;\n    end if;\n  end if;\n\n",
+      "\n  new_build := payload ?| array['pain_area','pain_pattern','pain_red_flags','pain_cleared_by_clinician','pain_followups'];\n  if new_build then\n    pain := coalesce((payload->>'pain_severity')::integer, 0);\n    if jsonb_typeof(payload->'pain_area') = 'string' then\n      main_area := payload->>'pain_area';\n    elsif payload->'pain_area' is not null and jsonb_typeof(payload->'pain_area') <> 'null' then\n      raise exception 'pain_area must be text' using errcode='22023';\n    end if;\n    if main_area is null then\n      if pain > 0 then raise exception 'pain needs an area' using errcode='22023'; end if;\n      if (payload->'pain_red_flags' is not null and jsonb_typeof(payload->'pain_red_flags') <> 'null'\n            and payload->'pain_red_flags' <> '[]'::jsonb)\n         or (payload->'pain_pattern' is not null and jsonb_typeof(payload->'pain_pattern') <> 'null')\n         or (payload->'pain_cleared_by_clinician' is not null\n            and payload->'pain_cleared_by_clinician' not in ('null'::jsonb, 'false'::jsonb)) then\n        raise exception 'pain answers need an area' using errcode='22023';\n      end if;\n    else\n      if pain < 1 then raise exception 'a pain area needs a pain above 0' using errcode='22023'; end if;\n      if jsonb_typeof(payload->'pain_red_flags') is distinct from 'array' then\n        raise exception 'pain_red_flags must be a list' using errcode='22023';\n      end if;\n      if exists (select 1 from jsonb_array_elements(payload->'pain_red_flags') f\n          where jsonb_typeof(f) is distinct from 'string') then\n        raise exception 'pain_red_flags must be a list of codes' using errcode='22023';\n      end if;\n      main_flags := array(select jsonb_array_elements_text(payload->'pain_red_flags'));\n      if payload->'pain_pattern' is not null and jsonb_typeof(payload->'pain_pattern') = 'string' then\n        main_pattern := payload->>'pain_pattern';\n      elsif payload->'pain_pattern' is not null and jsonb_typeof(payload->'pain_pattern') <> 'null' then\n        raise exception 'pain_pattern must be text' using errcode='22023';\n      end if;\n      if payload->'pain_cleared_by_clinician' is not null\n         and jsonb_typeof(payload->'pain_cleared_by_clinician') <> 'null' then\n        if jsonb_typeof(payload->'pain_cleared_by_clinician') is distinct from 'boolean' then\n          raise exception 'pain_cleared_by_clinician must be true or false' using errcode='22023';\n        end if;\n        main_cleared := (payload->>'pain_cleared_by_clinician')::boolean;\n      end if;\n    end if;\n    if payload->'pain_followups' is not null and jsonb_typeof(payload->'pain_followups') <> 'null' then\n      if jsonb_typeof(payload->'pain_followups') is distinct from 'array' then\n        raise exception 'pain_followups must be a list' using errcode='22023';\n      end if;\n      follow_areas := case when main_area is null then '{}'::text[] else array[main_area] end;\n      for follow in select value from jsonb_array_elements(payload->'pain_followups') loop\n        if jsonb_typeof(follow) is distinct from 'object'\n           or jsonb_typeof(follow->'area') is distinct from 'string'\n           or jsonb_typeof(follow->'severity') is distinct from 'number'\n           or (follow->>'severity')::numeric <> trunc((follow->>'severity')::numeric)\n           or (follow->'cleared_by_clinician' is not null\n              and jsonb_typeof(follow->'cleared_by_clinician') not in ('boolean', 'null')) then\n          raise exception 'a pain follow-up needs an area and a whole severity' using errcode='22023';\n        end if;\n        follow_area := follow->>'area';\n        if follow_area = any(follow_areas) then\n          raise exception 'one pain report per area in a check-in' using errcode='22023';\n        end if;\n        follow_areas := follow_areas || follow_area;\n      end loop;\n    end if;\n    -- A pain check is for the athlete's today or yesterday by the server's clock. A phone a day ahead\n    -- (its date is the server's tomorrow) is stored under the server's today, so a red flag is never lost\n    -- and never dated in the future; anything else is refused.\n    if main_area is not null or (jsonb_typeof(payload->'pain_followups') = 'array'\n        and jsonb_array_length(payload->'pain_followups') > 0) then\n      server_today := private.local_date_for(auth.uid());\n      if save_daily_check_in.local_date is null or save_daily_check_in.local_date < server_today - 1\n         or save_daily_check_in.local_date > server_today + 1 then\n        raise exception 'a pain check is for today or yesterday' using errcode='22023';\n      end if;\n      report_date := least(save_daily_check_in.local_date, server_today);\n    end if;\n  end if;\n\n",
     ],
     [
       "",
-      "\n  if main_area is not null then\n    perform private.insert_pain_report(auth.uid(), save_daily_check_in.local_date, 'check_in',\n      result_id, null, main_area, pain, main_pattern, main_flags, main_cleared, null);\n  end if;\n  if new_build and payload->'pain_followups' is not null\n     and jsonb_typeof(payload->'pain_followups') = 'array' then\n    for follow in select value from jsonb_array_elements(payload->'pain_followups') loop\n      follow_severity := ((follow->>'severity')::numeric)::integer;\n      follow_cleared := coalesce((follow->>'cleared_by_clinician')::boolean, false);\n      perform private.insert_pain_report(auth.uid(), save_daily_check_in.local_date, 'check_in',\n        result_id, null, follow->>'area', follow_severity, null, null, follow_cleared, null);\n    end loop;\n  end if;\n",
+      "\n  if main_area is not null then\n    perform private.insert_pain_report(auth.uid(), report_date, 'check_in',\n      result_id, null, main_area, pain, main_pattern, main_flags, main_cleared, null);\n  end if;\n  if new_build and payload->'pain_followups' is not null\n     and jsonb_typeof(payload->'pain_followups') = 'array' then\n    for follow in select value from jsonb_array_elements(payload->'pain_followups') loop\n      follow_severity := ((follow->>'severity')::numeric)::integer;\n      follow_cleared := coalesce((follow->>'cleared_by_clinician')::boolean, false);\n      perform private.insert_pain_report(auth.uid(), report_date, 'check_in',\n        result_id, null, follow->>'area', follow_severity, null, null, follow_cleared, null);\n    end loop;\n  end if;\n",
     ],
   ];
   assertEquals(undo(redefined, hunks), earlier.trim());
@@ -537,6 +581,7 @@ Deno.test("no migration after this one's predecessors defines these functions ag
         "day_adjustment_stands",
         "day_adjustment_present",
         "readiness_rank",
+        "progression_decision",
         "next_session_targets",
         "save_daily_check_in",
       ]
@@ -565,9 +610,17 @@ Deno.test("the contract fixtures parse and say what they say", () => {
     swapToSlug: null,
     swapToName: null,
     rangeNoteCode: "shoulder_press_depth",
+    rangeNoteCodes: ["shoulder_press_depth"],
   });
   assertEquals(joint.jointStates, [
-    { area: "shoulder", state: "watch", since: "2026-10-24", severity: 2, persistent: false },
+    {
+      area: "shoulder",
+      state: "watch",
+      since: "2026-10-24",
+      severity: 2,
+      persistent: false,
+      holdOutcome: null,
+    },
   ]);
   assertEquals(joint.exerciseJointOptions.length, 5);
   assertEquals(joint.exerciseJointOptions[0].shoulder, {
@@ -590,6 +643,7 @@ Deno.test("the contract fixtures parse and say what they say", () => {
   ]);
   assertEquals(red.triggers, ["red_flag:rapid_swelling"]);
   assertEquals(red.jointStates[0].state, "held");
+  assertEquals(red.jointStates[0].holdOutcome, "clinician_today");
   const older = parseDayAdjustment(ninetyReduce);
   assert(older);
   assertEquals([older.schemaVersion, older.jointStates, older.exerciseJointOptions], [
@@ -636,6 +690,22 @@ Deno.test("a payload that contradicts itself about a joint yields nothing", () =
   assertEquals(mutate((p) => delete p.exercise_joint_options), null, "and the swap options");
   assertEquals(mutate((p) => p.exercise_joint_options = [{ exercise_order: 1 }]), null);
   assertEquals(mutate((p) => p.schema_version = "1.2"), null, "a version it does not know");
+  assertEquals(
+    mutate((p) => first(p).range_note_codes = ["knee_squat_depth"]),
+    null,
+    "a primary cue missing from the list",
+  );
+  assertEquals(
+    mutate((p) => first(p).range_note_codes = null),
+    null,
+    "a limit with no list of cues",
+  );
+  assertEquals(mutate((p) => first(p).range_note_codes = [1]), null, "a list of something else");
+  assertEquals(
+    mutate((p) => (p.joint_states as Record<string, unknown>[])[0].hold_outcome = "urgent"),
+    null,
+    "a hold outcome on an area that is not held",
+  );
   assertEquals(
     mutate((p) => p.triggers = ["red_flag:made_up"]),
     null,

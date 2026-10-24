@@ -709,9 +709,23 @@ table; Contract 5 1.1 in the program plan the payload.
   with an area and the red-flag answer; a refused check-in (22023) leaves the queue's envelope.
   (d) The Coach contract requests 1 to 3 (context, red-flag screen, reply guard) are open in the
   program plan; until they land Coach does not know a joint is held.
+- **Review round 1 (Opus).** (1) A hold on `urgent` or `clinician_today` keeps the safety route every
+  day until the athlete's clearance (the copy says "until you've been seen"); a `clinician` hold gives
+  a daily reminder line even with no exercise change; held states carry `hold_outcome`. (2) A stored
+  answer stands only while its joint changes (exercise, joint, action, swap target) equal the ones the
+  rules ask for now. (3) The in-workout options meet the same ceilings as the day's swaps
+  (`private.joint_caps`). (4) A Coach-adjusted day offers `joint_adjust` alone. (5) `start_workout`
+  creates a swapped exercise as a `substituted` performance named for the swap (reason `pain`).
+  **For B5-2's logger:** take the exercise name from the performance row (`performed_name`), never from
+  the planned exercise; the catalog slug of the swap is in the answer's change (`swap_to_slug`) because
+  the performance trigger keeps no slug on a substitution; the load starts empty. (6) A pain check's date
+  is the server's today or yesterday (a phone a day ahead is stored under today), and today's route also
+  counts reports stored today. (7) The 40-a-day cap counts only reports that do not route out. Low: an
+  exercise left out but trained earns no `add_load`; every cue of a limited exercise is kept
+  (`range_note_codes`); two calls with one key take turns (an advisory lock) and replay.
 - **Choices where the brief was open (the safer one taken).** `pain_outcome` takes two arguments, not
   three (the clearance does not change an outcome; it lifts a hold in `joint_states`). A held area
-  needs a clearance even when a later report says 0. A report older than 7 days lapses at 8 days.
+  needs a clearance even when a later report says 0. A report older than 7 days lapses at 8 days (a hold never lapses).
   Persistent counts reports of 4 or more in the episode from the first to the day asked about, so two
   reports a week apart flag at 14 days. A swap must not trade one sore joint for another and is never
   harsher on any joint. A limited exercise with no RPE target gets effort 7. An unrated exercise

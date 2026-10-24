@@ -62,6 +62,7 @@ const _jointKeys = [
   'joint_action',
   'joint_state',
   'range_note_code',
+  'range_note_codes',
   'swap_to_name',
   'swap_to_slug',
 ];
@@ -106,6 +107,10 @@ void _checkChange(Map<String, dynamic> change) {
   expect(change['swap_to_slug'] != null, change['joint_action'] == 'swap');
   expect(change['swap_to_name'] != null, change['joint_action'] == 'swap');
   expect(change['range_note_code'] != null, change['joint_action'] == 'limit');
+  expect(change['range_note_codes'] != null, change['joint_action'] == 'limit');
+  if (change['joint_action'] == 'limit') {
+    expect(change['range_note_codes'], contains(change['range_note_code']));
+  }
   if (change['joint_action'] == 'drop') expect(change['sets_to'], 0);
 }
 
@@ -152,6 +157,7 @@ void main() {
           for (final state in _maps(json['joint_states'])) {
             expect(state.keys.toList()..sort(), [
               'area',
+              'hold_outcome',
               'persistent',
               'severity',
               'since',
@@ -159,6 +165,12 @@ void main() {
             ]);
             expect(state['area'], isIn(['knee', 'back', 'shoulder', 'other']));
             expect(state['state'], isIn(['held', 'limited', 'watch']));
+            expect(
+              state['hold_outcome'],
+              state['state'] == 'held'
+                  ? isIn(['urgent', 'clinician_today', 'clinician'])
+                  : isNull,
+            );
             expect(state['severity'] as int, inInclusiveRange(0, 10));
           }
           for (final exercise in _maps(json['exercise_joint_options'])) {

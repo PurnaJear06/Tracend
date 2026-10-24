@@ -217,8 +217,10 @@ question:
   (1 to 3) and `clear`. A flag routes out whatever the severity.
 - A held outcome gives that day a safety route and no training change: no changes, no options, fixed
   referral words (the emergency number named for `urgent`); it applies with no check-in, on a rest
-  day and after the session started, and stands over every stored answer. The plan stays visible
-  and startable: Tracend withholds advice, it does not block (O12).
+  day and after the session started, and stands over every stored answer. An `urgent` or
+  `clinician_today` hold keeps the route on every later day until the athlete's clearance; a
+  `clinician` hold adds a reminder line each day. The plan stays visible and startable: Tracend
+  withholds advice, it does not block (O12).
 - A held area is excluded from training on later days until the athlete says a clinician cleared it
   (self-attested, O9), then it is on watch for seven days; a new symptom always holds it again.
   Pain that has lasted two weeks adds the line to see a physio or doctor.

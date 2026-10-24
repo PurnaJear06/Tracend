@@ -655,7 +655,7 @@ wrong to act on. Sources: Finucane 2020 and NICE NG59 for the back flags, Stiell
 bear weight", the Coach's own symptom screen for chest, pop and swelling, fever and night pain from
 the spinal framework; the bands (4 and 7), the week and the fortnight are in-house (O8).
 
-**Joint states** (`private.joint_states`, per area from its reports up to the day asked about, newest
+**Joint states** (`private.joint_states`, `private.joint_states_detail`, per area from its reports up to the day asked about, newest
 first by day then by time stored):
 
 ```text
@@ -672,14 +672,24 @@ persistent  the area is limited or held and either it has been held for 14 days 
          more reports of severity 4 or more, the first at least 14 days ago
 ```
 
-The area `other` has states too (a flag there routes out) but never changes an exercise. Today's
-reports with a held outcome (any source, any check-in revision, severity 7 or more or a flag) give
-the day a **safety route** `urgent`, `clinician_today` or `clinician`, stricter first; it ranks with a
-check-in pain of 7 or more (`pain_referral`, between clinician_today and clinician) and the strictest
-wins. The day then has band red, kind none, no changes, no options, trigger codes `red_flag:<code>`
-(and `pain_severe` for a severity of 7 or more); it applies with no check-in, on a rest day and after
-the session started, and stands over every stored answer. The plan stays visible and startable:
-Tracend withholds advice, it does not block.
+The area `other` has states too (a flag there routes out) but never changes an exercise. Each held
+state carries `hold_outcome`, the strictest outcome among the reports of the hold in force (those after
+the newest clearance). The day gets a **safety route** `urgent`, `clinician_today` or `clinician`,
+stricter first, from three places: reports with a held outcome dated today, reports with a held
+outcome *stored* today (a phone's date can differ from the server's), and, on every later day, any
+area still held on an `urgent` or `clinician_today` outcome, until the athlete's own clearance (the
+copy says "until you've been seen"). A hold on a `clinician` outcome gives no route on later days;
+instead every day carries the line "Your <area> is on hold until you've had it checked." (or "The
+pain you reported elsewhere ...") even when no exercise changes (not repeated for an area whose
+exercises already carry its sentence). The route ranks with a check-in pain of 7 or more
+(`pain_referral`, between clinician_today and clinician) and the strictest wins. The day then has
+band red, kind none, no changes, no options, trigger codes `red_flag:<code>` of those reports (and
+`pain_severe` for a severity of 7 or more); it applies with no check-in, on a rest day and after the
+session started, and stands over every stored answer. The plan stays visible and startable: Tracend
+withholds advice, it does not block. A pain check is for the athlete's server today or yesterday: a
+phone a day ahead is stored under the server's today (a red flag is never lost), any other date is
+refused (22023). The day's cap of 40 reports counts only reports that do not route out, and a report
+that routes out is always stored.
 
 **What a joint state changes in today's session** (`private.joint_changes`, per exercise; the
 catalog's `knee_stress`, `back_stress`, `shoulder_stress` are the ratings; an exercise with no
@@ -713,17 +723,28 @@ exercises a joint touches (the stricter value per exercise: fewer sets, lower ef
 left-out exercise carries no load or reps), and the new kind `joint_adjust` is offered alone on a day
 the readiness rules ask for nothing (also among `options`). The athlete answers it with the same one
 tap and Undo. It is not offered when the athlete said they cannot train. A stored answer stands only
-while it still covers every joint change the rules now ask for (a new report that asks for more makes
-the card ask again, `previous_answer.reason` `new_data`). `start_workout` leaves out an exercise the
+while the joint changes it carries (one key per exercise, joint, action and swap target) are exactly
+the ones the rules now ask for: a new report that changes any of them, a swap that a second sore joint
+makes unsafe included, makes the card ask again (`previous_answer.reason` `new_data`). `start_workout` leaves out an exercise the
 accepted answer drops (0 sets, the performance stays `unknown`, never inferred as skipped) whatever the
-kind, an easy-cardio answer included; the rest follows the kind. `exercise_joint_options` carries, per
-exercise of today's session, the gentlest low-stress swap on each joint, so the in-workout pain chip
-can offer one offline.
+kind, an easy-cardio answer included; the rest follows the kind. An exercise the answer swaps is
+created as a `substituted` performance named for the swap (`performed_name`, `substitution_reason`
+`pain`; the performance trigger keeps no catalog slug on a substitution, so the swap's slug stays in
+the answer's `swap_to_slug`), with the plan's sets and no load. `exercise_joint_options` carries, per
+exercise of today's session, the gentlest low-stress swap on each joint, meeting the same ceilings on
+the athlete's other sore joints as the day's swaps (`private.joint_caps`), so the in-workout pain chip
+can offer one offline. A limited exercise lists every cue it needs (`range_note_codes`, in joint
+order; `range_note_code` is the joint that decided).
+
+On a day Coach already adjusted (`coach_adjusted`) the readiness kinds are still not offered, but the
+joint changes are: the exercises are the ones `start_workout` will create for that day, `joint_adjust`
+is offered alone (available, no unavailable reason) and applied at the start.
 
 **B3 meets joint accommodations.** An exercise that an accepted answer lists (hold_load, reduce_sets
 or joint_adjust), or that any answer limits for a joint, is adjusted when done under it: a poor
 performance there never lowers its load or counts as a stall. An easy-cardio answer that names no
-joint for the exercise leaves it judged as ever.
+joint for the exercise leaves it judged as ever. An exercise left out for a joint (`sets_planned` 0)
+but trained anyway never earns `add_load` (it holds, reason `incomplete`).
 
 In-house numbers needing a coach's review before an external beta (O8, O9): the pain bands, the 7-day
 lapse, the 14-day line, the clearance ceiling of 3 (clearance is self-attested), the held-joint

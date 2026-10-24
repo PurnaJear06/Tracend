@@ -244,12 +244,12 @@ cross join lateral jsonb_array_elements(private.joint_changes('b5900000-0000-400
 
 -- The swaps offered to the in-workout pain chip are always low stress on the joint.
 select cmp_ok((select count(*) from public.planned_workouts w
-    cross join lateral jsonb_array_elements(private.joint_options('b5900000-0000-4000-8000-000000000001', w.id)) e
+    cross join lateral jsonb_array_elements(private.joint_options('b5900000-0000-4000-8000-000000000001', w.id, '[]'::jsonb)) e
     cross join (values ('knee'), ('back'), ('shoulder')) j(joint)
     where w.user_id = 'b5900000-0000-4000-8000-000000000001' and e -> 'joint_options' -> j.joint <> 'null'::jsonb),
   '>', 20::bigint, 'the chip has swap options to offer across the catalog');
 select is((select count(*) from public.planned_workouts w
-    cross join lateral jsonb_array_elements(private.joint_options('b5900000-0000-4000-8000-000000000001', w.id)) e
+    cross join lateral jsonb_array_elements(private.joint_options('b5900000-0000-4000-8000-000000000001', w.id, '[]'::jsonb)) e
     cross join (values ('knee'), ('back'), ('shoulder')) j(joint)
     join public.planned_exercises pe on pe.id = (e ->> 'planned_exercise_id')::uuid
     join public.exercise_catalog o on o.slug = pe.exercise_slug
@@ -297,6 +297,14 @@ select is((select count(*) from chg x
       x.entry ->> 'range_note_code' is null or (x.entry ->> 'rpe_to')::numeric > 7
       or x.entry ->> 'swap_to_slug' is not null)), 0::bigint,
   'a limit always has its cue, effort of 7 or lower and no swap');
+select is((select count(*) from chg x
+    where (x.entry ->> 'joint_action') = 'limit' and (
+      x.entry -> 'range_note_codes' is null or jsonb_typeof(x.entry -> 'range_note_codes') <> 'array'
+      or not (x.entry -> 'range_note_codes') ? (x.entry ->> 'range_note_code'))), 0::bigint,
+  'a limit lists every cue it needs and the one it names first among them');
+select is((select count(*) from chg x
+    where (x.entry ->> 'joint_action') <> 'limit' and x.entry -> 'range_note_codes' <> 'null'::jsonb), 0::bigint,
+  'and only a limit lists cues');
 select is((select count(*) from chg x
     where (x.entry ->> 'joint_action') = 'swap' and (
       x.entry ->> 'swap_to_slug' is null or x.entry ->> 'swap_to_name' is null

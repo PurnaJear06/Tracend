@@ -62,7 +62,8 @@ select is((select count(*) from pg_proc p join pg_namespace n on n.oid = p.prona
       'pain_outcome', 'insert_pain_report', 'joint_states', 'joint_rules', 'stress_rank', 'level_rank',
       'joint_action_rank', 'safety_route_rank', 'range_note_code', 'joint_swap', 'joint_options',
       'joint_changes', 'merge_day_changes', 'day_changes_merged', 'joint_sentence',
-      'persistent_sentence'])), 18::bigint, 'the eighteen private helpers exist');
+      'persistent_sentence', 'joint_states_detail', 'joint_caps', 'local_day_of', 'joint_change_keys',
+      'hold_reminder'])), 23::bigint, 'the twenty-three private helpers exist');
 select ok(not (select bool_or(has_function_privilege('authenticated', p.oid, 'execute')
         or has_function_privilege('anon', p.oid, 'execute'))
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -70,7 +71,8 @@ select ok(not (select bool_or(has_function_privilege('authenticated', p.oid, 'ex
       'pain_outcome', 'insert_pain_report', 'joint_states', 'joint_rules', 'stress_rank', 'level_rank',
       'joint_action_rank', 'safety_route_rank', 'range_note_code', 'joint_swap', 'joint_options',
       'joint_changes', 'merge_day_changes', 'day_changes_merged', 'joint_sentence',
-      'persistent_sentence'])), 'and none of them is callable by an athlete or a signed-out caller');
+      'persistent_sentence', 'joint_states_detail', 'joint_caps', 'local_day_of', 'joint_change_keys',
+      'hold_reminder'])), 'and none of them is callable by an athlete or a signed-out caller');
 
 -- The outcome table ---------------------------------------------------------------------------------------
 
@@ -220,6 +222,23 @@ select public.save_daily_check_in((select today from t), 'UTC', 'b5200000-0000-4
 select is((select r.cleared_by_clinician from public.pain_reports r
     where r.user_id = 'b5000000-0000-4000-8000-000000000004' and r.area = 'shoulder' and r.severity = 2), true,
   'the clearance the athlete states is stored');
+
+-- A pain check in a check-in is for the server's today or yesterday; a phone a day ahead is stored under today.
+select throws_ok($$select public.save_daily_check_in(private.local_date_for(auth.uid()) - 2, 'UTC',
+    'b5200000-0000-4000-8000-000000000031',
+    '{"sleep_quality": 3, "energy": 3, "soreness": 3, "hunger": 3, "mood": 3, "available_to_train": true,
+      "pain_severity": 4, "pain_area": "knee", "pain_red_flags": []}'::jsonb)$$,
+  '22023', null, 'a pain check in a check-in two days old is refused');
+select throws_ok($$select public.save_daily_check_in(private.local_date_for(auth.uid()) + 2, 'UTC',
+    'b5200000-0000-4000-8000-000000000032',
+    '{"sleep_quality": 3, "energy": 3, "soreness": 3, "hunger": 3, "mood": 3, "available_to_train": true,
+      "pain_severity": 4, "pain_area": "knee", "pain_red_flags": []}'::jsonb)$$,
+  '22023', null, 'and one two days ahead');
+select public.save_daily_check_in((select today from t) + 1, 'UTC', 'b5200000-0000-4000-8000-000000000033',
+  pg_temp.payload('{"pain_severity": 9, "pain_area": "back", "pain_red_flags": ["numb_weak_limb"]}'));
+select is((select r.local_date from public.pain_reports r
+    where r.user_id = 'b5000000-0000-4000-8000-000000000004' and r.severity = 9),
+  (select today from t), 'a check-in from a phone a day ahead keeps its pain report on the server''s today');
 
 -- Refused: nothing is dropped silently, and a refused check-in saves nothing.
 create temporary table before(c bigint, p bigint);
@@ -413,8 +432,17 @@ select throws_ok($$select public.record_pain_check_v1(private.local_date_for(aut
   '22023', null, 'and an exercise belongs only to a workout report');
 
 -- Bad values.
-select throws_ok($$select public.record_pain_check_v1(private.local_date_for(auth.uid()) + 1, 'workout', 'knee', 4,
-    null, null, false, null, 'b5400000-0000-4000-8000-000000000008')$$, '22023', null, 'a future date is refused');
+select throws_ok($$select public.record_pain_check_v1(private.local_date_for(auth.uid()) + 2, 'workout', 'knee', 4,
+    null, null, false, null, 'b5400000-0000-4000-8000-000000000008')$$, '22023', null,
+  'a date two days ahead of the server is refused');
+select throws_ok($$select public.record_pain_check_v1(private.local_date_for(auth.uid()) - 2, 'workout', 'knee', 4,
+    null, null, false, null, 'b5400000-0000-4000-8000-000000000021')$$, '22023', null,
+  'and so is one two days behind: only today and yesterday go in');
+insert into chip select 'ahead', public.record_pain_check_v1((select today from t) + 1, 'workout', 'other', 9,
+  null, array['night_pain'], false, null, 'b5400000-0000-4000-8000-000000000022');
+select is((select r.local_date from public.pain_reports r where r.id = (select (j ->> 'id')::uuid from chip
+    where name = 'ahead')), (select today from t),
+  'a phone a day ahead of the server is stored under the server''s today, and the red flag is kept');
 select throws_ok($$select public.record_pain_check_v1(null, 'workout', 'knee', 4, null, null, false, null,
     'b5400000-0000-4000-8000-000000000009')$$, '22023', null, 'no date is refused');
 select throws_ok($$select public.record_pain_check_v1(private.local_date_for(auth.uid()), 'gym', 'knee', 4,
@@ -446,7 +474,27 @@ select throws_ok($$select public.record_pain_check_v1(private.local_date_for(aut
     null, null, false, null, 'b5400000-0000-4000-8000-000000000018')$$, 'P0001', null,
   'the forty-first report of a day is refused');
 select lives_ok($$select public.record_pain_check_v1(private.local_date_for(auth.uid()) - 1, 'workout', 'knee', 2,
-    null, null, false, null, 'b5400000-0000-4000-8000-000000000019')$$, 'a report for another day still goes in');
+    null, null, false, null, 'b5400000-0000-4000-8000-000000000019')$$,
+  'yesterday has its own forty, and no other day can be used to get round the limit');
+select lives_ok($$select public.record_pain_check_v1(private.local_date_for(auth.uid()), 'workout', 'back', 3,
+    null, array['night_pain'], false, null, 'b5400000-0000-4000-8000-000000000023')$$,
+  'a report that routes out is stored however many came before it');
+select lives_ok($$select public.record_pain_check_v1(private.local_date_for(auth.uid()), 'workout', 'knee', 9,
+    null, null, false, null, 'b5400000-0000-4000-8000-000000000024')$$,
+  'so is a pain of 7 or more');
+select throws_ok($$select public.record_pain_check_v1(private.local_date_for(auth.uid()), 'workout', 'knee', 2,
+    null, null, true, null, 'b5400000-0000-4000-8000-000000000025')$$, 'P0001', null,
+  'and those do not use up the limit: it counts only the reports that do not route out');
+select is((select count(*) from public.pain_reports where user_id = 'b5000000-0000-4000-8000-000000000002'
+    and local_date = (select today from t) and outcome not in ('urgent', 'clinician_today', 'clinician')),
+  40::bigint, 'forty reports that do not route out are on file for the day');
+
+-- Two calls with one key take turns (a second call finds the first's report and replays it).
+select ok((select prosrc like '%pg_advisory_xact_lock(hashtextextended(%pain_check:%'
+    from pg_proc where oid = 'public.record_pain_check_v1(date, text, text, integer, text, text[], boolean, uuid, uuid)'::regprocedure)
+  and (select position('pg_advisory_xact_lock' in prosrc) < position('select * into report' in prosrc)
+    from pg_proc where oid = 'public.record_pain_check_v1(date, text, text, integer, text, text[], boolean, uuid, uuid)'::regprocedure),
+  'the key''s lock is taken before the replay lookup');
 
 select pg_temp.as_user('');
 select throws_ok($$select public.record_pain_check_v1(current_date, 'workout', 'knee', 2, null, null, false, null,

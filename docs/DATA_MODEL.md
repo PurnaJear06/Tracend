@@ -669,7 +669,9 @@ Rows are only added; the newest report per area (by day, then by time stored) se
 | `outcome` | `urgent`, `clinician_today`, `clinician`, `modify`, `watch` or `clear`; a check constraint keeps it equal to `private.pain_outcome(severity, red_flags)` |
 | `idempotency_key`, `created_at` | a retried workout report returns the first (unique per user); time stored |
 
-One report per area per check-in (unique `(check_in_id, area)`); at most 40 reports a day. RLS is
+One report per area per check-in (unique `(check_in_id, area)`); at most 40 reports a day that do not
+route out (a report that routes out is always stored). A report's day is the server's today or
+yesterday; a phone a day ahead is stored under the server's today. RLS is
 enabled and forced; the owner reads their rows, nobody writes them from the client
 (`save_daily_check_in` and `record_pain_check_v1` are the only writers, through
 `private.insert_pain_report`, which also records the audit event `pain_check_recorded` with the
@@ -1259,8 +1261,9 @@ Sleep quality:
 - `get_my_day_adjustment_v1(local_date)` and `respond_to_day_adjustment_v1(local_date, accept,
   chosen_kind)` 1.1 (B4, B5-1): today's readiness adjustment and the athlete's answer; the keys are in
   Contract 5 of the program plan (1.1 adds `joint_states`, `exercise_joint_options`, the
-  `joint_adjust` kind, the joint keys of a change and the safety routes `urgent`, `clinician_today`
-  and `clinician`).
+  `joint_adjust` kind, the joint keys of a change (with `range_note_codes`), `hold_outcome` on a held
+  state, and the safety routes `urgent`, `clinician_today` and `clinician`, which last while the area is
+  held).
 - `record_pain_check_v1(local_date, source, area, severity, pattern, red_flags, cleared_by_clinician,
   exercise_performance_id, idempotency_key)` 1.0 (B5-1, authenticated): a pain check made in the
   workout; returns `{schema_version, id, outcome, area_state}`. `get_readiness_context_v1(p_user_id,

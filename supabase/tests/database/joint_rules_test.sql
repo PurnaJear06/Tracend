@@ -9,7 +9,7 @@ select no_plan();
 
 insert into auth.users(id, role)
 select ('b5000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, 'authenticated'
-from generate_series(1, 30) n;
+from generate_series(1, 42) n;
 
 create function pg_temp.u(n integer) returns uuid language sql as $$
   select ('b5000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid;
@@ -90,13 +90,40 @@ begin
   values (p_uid, d, 'UTC', rev, gen_random_uuid(), p_sleep, p_energy, p_sore, 3, p_mood, p_pain, true);
 end $$;
 
--- A pain report stored in order.
+-- A pain report stored in order, stored on the day it is dated unless p_stored_days_ago says otherwise.
 create function pg_temp.report(p_uid uuid, p_days_ago integer, p_area text, p_sev integer,
-  p_flags text[] default null) returns void language sql as $$
-  insert into public.pain_reports(user_id, local_date, source, area, severity, red_flags, outcome, created_at)
-  values (p_uid, private.local_date_for(p_uid) - p_days_ago, 'workout', p_area, p_sev, p_flags,
-    private.pain_outcome(p_sev, p_flags), clock_timestamp());
+  p_flags text[] default null, p_cleared boolean default false, p_stored_days_ago integer default null)
+returns void language sql as $$
+  insert into public.pain_reports(user_id, local_date, source, area, severity, red_flags,
+    cleared_by_clinician, outcome, created_at)
+  values (p_uid, private.local_date_for(p_uid) - p_days_ago, 'workout', p_area, p_sev, p_flags, p_cleared,
+    private.pain_outcome(p_sev, p_flags), clock_timestamp() - coalesce(p_stored_days_ago, p_days_ago) * interval '1 day');
 $$;
+
+-- An athlete whose only exercise today is one catalog exercise, full gym.
+create function pg_temp.make_single(p_uid uuid, p_slug text, p_name text) returns void language plpgsql as $$
+declare
+  pl uuid := gen_random_uuid(); v uuid := gen_random_uuid(); wo uuid := gen_random_uuid();
+  a uuid := gen_random_uuid();
+  wd integer := extract(isodow from private.local_date_for(p_uid))::integer;
+begin
+  insert into public.user_profiles(user_id, experience_level, equipment)
+  values (p_uid, 'intermediate', array['dumbbells', 'barbell', 'bench', 'cables', 'machines', 'pull_up_bar',
+    'kettlebells', 'bands']);
+  insert into public.training_plans(id, user_id, title, source) values (pl, p_uid, 'One lift', 'imported');
+  insert into public.training_plan_versions(id, user_id, plan_id, version_number, status, block_weeks,
+    sessions_per_week, prescription, rationale, approved_at, effective_date)
+  values (v, p_uid, pl, 1, 'active', 6, 1, '{}', 'Approved', now(), current_date);
+  insert into public.planned_workouts(id, user_id, plan_version_id, workout_order, name, objective,
+    preferred_weekday, estimated_minutes, warm_up_guidance, cool_down_guidance)
+  values (wo, p_uid, v, 1, 'One lift', 'Lift', wd, 50, 'Warm up', 'Cool down');
+  insert into public.planned_exercises(id, user_id, planned_workout_id, exercise_order,
+    display_name_snapshot, set_count, rep_min, rep_max, target_rpe, rest_seconds, exercise_slug)
+  values (a, p_uid, wo, 1, p_name, 4, 5, 8, 8, 120, p_slug);
+  insert into wk values (p_uid, v, wo, a, null, null, null, null);
+  insert into public.daily_computed_metrics(user_id, local_date, recovery_score, data_confidence, scores_jsonb)
+  values (p_uid, private.local_date_for(p_uid), null, 'low', jsonb_build_object('recovery_mode', 'night'));
+end $$;
 
 create function pg_temp.as_user(p_uid text) returns void language plpgsql as $$
 begin
@@ -139,6 +166,8 @@ select pg_temp.make_athlete(pg_temp.u(17));
 select pg_temp.make_athlete(pg_temp.u(18));
 select pg_temp.make_athlete(pg_temp.u(19));
 select pg_temp.make_athlete(pg_temp.u(20));
+select pg_temp.make_athlete(pg_temp.u(34));
+select pg_temp.make_athlete(pg_temp.u(35));
 
 -- A day with no pain on record: schema 1.1 and the swaps the in-workout chip can offer ----------------------
 
@@ -169,14 +198,14 @@ select is((select count(*) from r, jsonb_array_elements(j -> 'exercise_joint_opt
 
 -- A held knee changes the session on a good day -------------------------------------------------------------
 
-select pg_temp.report(pg_temp.u(1), 1, 'knee', 8);
+select pg_temp.report(pg_temp.u(1), 1, 'knee', 3, array['locks_gives_way']);
 insert into r select 'knee_held', public.get_my_day_adjustment_v1((select today from t));
 select is((select array[j ->> 'band', j ->> 'kind', j ->> 'status', j ->> 'safety_route']
     from r where name = 'knee_held'), array['green', 'joint_adjust', 'proposed', null],
-  'yesterday''s 8 holds the knee: today is a good day but the session changes, with no referral card today');
+  'a knee held on a clinician flag: today is a good day but the session changes, with no referral card');
 select is((select j -> 'joint_states' from r where name = 'knee_held'),
   jsonb_build_array(jsonb_build_object('area', 'knee', 'state', 'held', 'since', (select today - 1 from t),
-    'severity', 8, 'persistent', false)), 'the joint state is reported');
+    'severity', 3, 'persistent', false, 'hold_outcome', 'clinician')), 'the joint state is reported');
 select is((select array(select c ->> 'exercise_order' || ':' || (c ->> 'joint_action')
     from jsonb_array_elements(j -> 'changes') c order by (c ->> 'exercise_order')::integer)
     from r where name = 'knee_held'), array['2:drop', '4:drop'],
@@ -311,6 +340,27 @@ select public.start_workout((select workout_id from wk where uid = pg_temp.u(3))
   'UTC', 'b5500000-0000-4000-8000-000000000003');
 select is(pg_temp.sets_of('b5500000-0000-4000-8000-000000000003'), array[3::bigint, 2, 2, 2, 2],
   'the lighter session is built with a set fewer everywhere');
+select is((select array_agg(p.performance_kind || ':' || p.performed_name order by p.exercise_order)
+    from public.exercise_performances p join public.workout_sessions w on w.id = p.workout_session_id
+    where w.idempotency_key = 'b5500000-0000-4000-8000-000000000003'),
+  array['substituted:Machine chest press', 'prescribed:Leg extension', 'prescribed:Standing calf raise',
+    'prescribed:Cable fly', 'prescribed:Dumbbell Romanian deadlift'],
+  'the swapped exercise is created as the exercise it was swapped for; the others are as planned');
+select is((select array[p.substitution_reason, p.status, p.planned_exercise_id::text,
+      (select count(*) from public.exercise_sets s where s.exercise_performance_id = p.id)::text]
+    from public.exercise_performances p join public.workout_sessions w on w.id = p.workout_session_id
+    where w.idempotency_key = 'b5500000-0000-4000-8000-000000000003' and p.exercise_order = 1),
+  array['pain', 'unknown', (select e1::text from wk where uid = pg_temp.u(3)), '3'],
+  'it is a substitution made for pain, still tied to the planned exercise, with its sets and no load');
+select is((select count(*) from public.exercise_performances p
+    join public.workout_sessions w on w.id = p.workout_session_id
+    where w.idempotency_key = 'b5500000-0000-4000-8000-000000000003' and p.exercise_order > 1
+      and p.substitution_reason is not null), 0::bigint, 'and no other exercise carries a reason');
+select is((select count(*) from public.exercise_sets s
+    join public.exercise_performances p on p.id = s.exercise_performance_id
+    join public.workout_sessions w on w.id = p.workout_session_id
+    where w.idempotency_key = 'b5500000-0000-4000-8000-000000000003' and s.load_kg is not null), 0::bigint,
+  'no load is written for any set');
 
 -- Watch: a high-stress lift keeps its load and gets a shorter range ---------------------------------------------
 
@@ -326,7 +376,7 @@ select is((select array[j ->> 'kind', pg_temp.change(j, 1) ->> 'joint_action',
 select is((select j ->> 'explanation' from r where name = 'shoulder_watch'),
   'Your shoulder is on watch. 1 exercise kept in a pain-free range.', 'and the words say so');
 select is((select j from r where name = 'shoulder_watch'),
-  (replace(replace(replace(replace(replace(replace(replace($fx${"schema_version": "1.1", "local_date": "2026-10-24", "band": "green", "triggers": [], "kind": "joint_adjust", "changes": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "sets_from": 4, "sets_to": 4, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": 7, "joint_action": "limit", "joint": "shoulder", "joint_state": "watch", "swap_to_slug": null, "swap_to_name": null, "range_note_code": "shoulder_press_depth"}], "explanation": "Your shoulder is on watch. 1 exercise kept in a pain-free range.", "status": "proposed", "available": true, "unavailable_reason": null, "safety_route": null, "confidence": "low", "missing": ["sleep", "recovery"], "cardio": null, "planned_workout_id": "b4200000-0000-4000-8000-000000000001", "workout_name": "Lower A", "sets_total_from": 16, "sets_total_to": 16, "previous_answer": null, "answered_at": null, "rules_version": "readiness-v1", "origin": null, "options": [{"kind": "reduce_sets", "explanation": "One set fewer on 5 exercises. Your shoulder is on watch. 1 exercise kept in a pain-free range.", "sets_total_to": 11, "changes": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "sets_from": 4, "sets_to": 3, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": 7, "joint_action": "limit", "joint": "shoulder", "joint_state": "watch", "swap_to_slug": null, "swap_to_name": null, "range_note_code": "shoulder_press_depth"}, {"exercise_order": 2, "planned_exercise_id": "b4400000-0000-4000-8000-000000000002", "name": "Leg extension", "sets_from": 3, "sets_to": 2, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": 7}, {"exercise_order": 3, "planned_exercise_id": "b4400000-0000-4000-8000-000000000003", "name": "Standing calf raise", "sets_from": 3, "sets_to": 2, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}, {"exercise_order": 4, "planned_exercise_id": "b4400000-0000-4000-8000-000000000004", "name": "Cable fly", "sets_from": 3, "sets_to": 2, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": 7}, {"exercise_order": 5, "planned_exercise_id": "b4400000-0000-4000-8000-000000000005", "name": "Dumbbell Romanian deadlift", "sets_from": 3, "sets_to": 2, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": 7}], "cardio": null}, {"kind": "swap_to_easy_cardio", "explanation": "Try 20 to 30 minutes of easy walking, cycling or swimming at a pace you can talk through. It keeps you moving without adding strain. Your shoulder is on watch. 1 exercise kept in a pain-free range.", "sets_total_to": 0, "changes": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "sets_from": 4, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": 7, "joint_action": "limit", "joint": "shoulder", "joint_state": "watch", "swap_to_slug": null, "swap_to_name": null, "range_note_code": "shoulder_press_depth"}, {"exercise_order": 2, "planned_exercise_id": "b4400000-0000-4000-8000-000000000002", "name": "Leg extension", "sets_from": 3, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}, {"exercise_order": 3, "planned_exercise_id": "b4400000-0000-4000-8000-000000000003", "name": "Standing calf raise", "sets_from": 3, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}, {"exercise_order": 4, "planned_exercise_id": "b4400000-0000-4000-8000-000000000004", "name": "Cable fly", "sets_from": 3, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}, {"exercise_order": 5, "planned_exercise_id": "b4400000-0000-4000-8000-000000000005", "name": "Dumbbell Romanian deadlift", "sets_from": 3, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}], "cardio": {"minutes_min": 20, "minutes_max": 30, "effort": "easy", "talk_test": true, "vigorous_allowed": false}}, {"kind": "joint_adjust", "explanation": "Your shoulder is on watch. 1 exercise kept in a pain-free range.", "sets_total_to": 16, "changes": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "sets_from": 4, "sets_to": 4, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": 7, "joint_action": "limit", "joint": "shoulder", "joint_state": "watch", "swap_to_slug": null, "swap_to_name": null, "range_note_code": "shoulder_press_depth"}], "cardio": null}], "signals": {"recovery_score": null, "recovery_confidence": "low", "recovery_mode": "night", "recovery_low": false, "sleep_minutes": null}, "joint_states": [{"area": "shoulder", "state": "watch", "since": "2026-10-24", "severity": 2, "persistent": false}], "exercise_joint_options": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "joint_options": {"knee": null, "back": null, "shoulder": {"slug": "machine-chest-press", "name": "Machine chest press"}}}, {"exercise_order": 2, "planned_exercise_id": "b4400000-0000-4000-8000-000000000002", "name": "Leg extension", "joint_options": {"knee": null, "back": null, "shoulder": null}}, {"exercise_order": 3, "planned_exercise_id": "b4400000-0000-4000-8000-000000000003", "name": "Standing calf raise", "joint_options": {"knee": null, "back": null, "shoulder": null}}, {"exercise_order": 4, "planned_exercise_id": "b4400000-0000-4000-8000-000000000004", "name": "Cable fly", "joint_options": {"knee": null, "back": null, "shoulder": null}}, {"exercise_order": 5, "planned_exercise_id": "b4400000-0000-4000-8000-000000000005", "name": "Dumbbell Romanian deadlift", "joint_options": {"knee": null, "back": {"slug": "cable-pull-through", "name": "Cable pull-through"}, "shoulder": null}}]}$fx$, 'b4200000-0000-4000-8000-000000000001', (select workout_id::text from wk where uid = pg_temp.u(4))), 'b4400000-0000-4000-8000-000000000001', (select e1::text from wk where uid = pg_temp.u(4))), 'b4400000-0000-4000-8000-000000000002', (select e2::text from wk where uid = pg_temp.u(4))), 'b4400000-0000-4000-8000-000000000003', (select e3::text from wk where uid = pg_temp.u(4))), 'b4400000-0000-4000-8000-000000000004', (select e4::text from wk where uid = pg_temp.u(4))), 'b4400000-0000-4000-8000-000000000005', (select e5::text from wk where uid = pg_temp.u(4))), '2026-10-24', (select today::text from t)))::jsonb,
+  (replace(replace(replace(replace(replace(replace(replace($fx${"schema_version": "1.1", "local_date": "2026-10-24", "band": "red", "triggers": ["red_flag:rapid_swelling"], "kind": "none", "changes": [], "explanation": "Please see a doctor or physio today, before you train this area again. Tracend leaves training aside for today.", "status": "none", "available": true, "unavailable_reason": null, "safety_route": "clinician_today", "confidence": "low", "missing": ["sleep", "recovery"], "cardio": null, "planned_workout_id": "b4200000-0000-4000-8000-000000000001", "workout_name": "Lower A", "sets_total_from": 16, "sets_total_to": 16, "previous_answer": null, "answered_at": null, "rules_version": "readiness-v1", "origin": null, "options": [], "signals": {"recovery_score": null, "recovery_confidence": "low", "recovery_mode": "night", "recovery_low": false, "sleep_minutes": null}, "joint_states": [{"area": "knee", "state": "held", "since": "2026-10-24", "severity": 5, "persistent": false, "hold_outcome": "clinician_today"}], "exercise_joint_options": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "joint_options": {"knee": null, "back": null, "shoulder": {"slug": "machine-chest-press", "name": "Machine chest press"}}}, {"exercise_order": 2, "planned_exercise_id": "b4400000-0000-4000-8000-000000000002", "name": "Leg extension", "joint_options": {"knee": null, "back": null, "shoulder": null}}, {"exercise_order": 3, "planned_exercise_id": "b4400000-0000-4000-8000-000000000003", "name": "Standing calf raise", "joint_options": {"knee": null, "back": null, "shoulder": null}}, {"exercise_order": 4, "planned_exercise_id": "b4400000-0000-4000-8000-000000000004", "name": "Cable fly", "joint_options": {"knee": null, "back": null, "shoulder": null}}, {"exercise_order": 5, "planned_exercise_id": "b4400000-0000-4000-8000-000000000005", "name": "Dumbbell Romanian deadlift", "joint_options": {"knee": null, "back": {"slug": "cable-pull-through", "name": "Cable pull-through"}, "shoulder": null}}]}$fx$, 'b4200000-0000-4000-8000-000000000001', (select workout_id::text from wk where uid = pg_temp.u(4))), 'b4400000-0000-4000-8000-000000000001', (select e1::text from wk where uid = pg_temp.u(4))), 'b4400000-0000-4000-8000-000000000002', (select e2::text from wk where uid = pg_temp.u(4))), 'b4400000-0000-4000-8000-000000000003', (select e3::text from wk where uid = pg_temp.u(4))), 'b4400000-0000-4000-8000-000000000004', (select e4::text from wk where uid = pg_temp.u(4))), 'b4400000-0000-4000-8000-000000000005', (select e5::text from wk where uid = pg_temp.u(4))), '2026-10-24', (select today::text from t)))::jsonb,
   'the contract fixture day_adjustment_v1_1_joint.json is the real answer, key for key');
 
 -- A joint on watch with only moderate exercises asks for nothing.
@@ -342,18 +392,21 @@ select is((select j -> 'joint_states' -> 0 ->> 'state' from r where name = 'back
 
 -- The athlete says they cannot train: no joint adjustment is offered.
 select pg_temp.as_user(pg_temp.u(6)::text);
-select pg_temp.report(pg_temp.u(6), 1, 'knee', 8);
+select pg_temp.report(pg_temp.u(6), 1, 'knee', 3, array['locks_gives_way']);
 insert into public.daily_check_ins(user_id, local_date, timezone, revision, idempotency_key, sleep_quality,
   energy, soreness, hunger, mood, pain_severity, available_to_train)
 values (pg_temp.u(6), (select today from t), 'UTC', 1, gen_random_uuid(), 3, 3, 3, 3, 3, 0, false);
 insert into r select 'cannot_train', public.get_my_day_adjustment_v1((select today from t));
 select is((select array[j ->> 'kind', jsonb_array_length(j -> 'options')::text] from r where name = 'cannot_train'),
   array['none', '0'], 'a held knee on a day the athlete cannot train proposes nothing');
+select is((select j ->> 'explanation' from r where name = 'cannot_train'),
+  'You said you can''t train today. Nothing in your plan changes. Your knee is on hold until you''ve had it checked.',
+  'but the day still says the knee is on hold until it has been checked');
 
 -- A swapped exercise keeps its sets and carries no load; a held knee with an easy-cardio day --------------------
 
 select pg_temp.as_user(pg_temp.u(7)::text);
-select pg_temp.report(pg_temp.u(7), 3, 'knee', 8);
+select pg_temp.report(pg_temp.u(7), 3, 'knee', 3, array['locks_gives_way']);
 select pg_temp.check_in(pg_temp.u(7), 1, 1, 3, 3, 0);
 insert into r select 'cardio_knee', public.get_my_day_adjustment_v1((select today from t));
 select is((select array[j ->> 'band', j ->> 'kind', j -> 'cardio' ->> 'minutes_max', j ->> 'sets_total_to']
@@ -372,7 +425,7 @@ select is(pg_temp.sets_of('b5500000-0000-4000-8000-000000000007'), array[4::bigi
 -- A lighter day and a held knee together -------------------------------------------------------------------------
 
 select pg_temp.as_user(pg_temp.u(8)::text);
-select pg_temp.report(pg_temp.u(8), 3, 'knee', 8);
+select pg_temp.report(pg_temp.u(8), 3, 'knee', 3, array['locks_gives_way']);
 select pg_temp.check_in(pg_temp.u(8), 2, 2, 3, 3, 0);
 select public.respond_to_day_adjustment_v1((select today from t), true);
 select public.start_workout((select workout_id from wk where uid = pg_temp.u(8)), (select today from t),
@@ -382,7 +435,7 @@ select is(pg_temp.sets_of('b5500000-0000-4000-8000-000000000008'), array[3::bigi
 
 -- A declined answer changes nothing.
 select pg_temp.as_user(pg_temp.u(9)::text);
-select pg_temp.report(pg_temp.u(9), 3, 'knee', 8);
+select pg_temp.report(pg_temp.u(9), 3, 'knee', 3, array['locks_gives_way']);
 select pg_temp.check_in(pg_temp.u(9), 3, 3, 3, 3, 0);
 select public.respond_to_day_adjustment_v1((select today from t), false);
 select public.start_workout((select workout_id from wk where uid = pg_temp.u(9)), (select today from t),
@@ -407,7 +460,7 @@ select is((select j ->> 'explanation' from r where name = 'flag'),
   'Please see a doctor or physio today, before you train this area again. Tracend leaves training aside for today.',
   'in words that send the athlete on');
 select is((select j from r where name = 'flag'),
-  (replace(replace(replace(replace(replace(replace(replace($fx${"schema_version": "1.1", "local_date": "2026-10-24", "band": "red", "triggers": ["red_flag:rapid_swelling"], "kind": "none", "changes": [], "explanation": "Please see a doctor or physio today, before you train this area again. Tracend leaves training aside for today.", "status": "none", "available": true, "unavailable_reason": null, "safety_route": "clinician_today", "confidence": "low", "missing": ["sleep", "recovery"], "cardio": null, "planned_workout_id": "b4200000-0000-4000-8000-000000000001", "workout_name": "Lower A", "sets_total_from": 16, "sets_total_to": 16, "previous_answer": null, "answered_at": null, "rules_version": "readiness-v1", "origin": null, "options": [], "signals": {"recovery_score": null, "recovery_confidence": "low", "recovery_mode": "night", "recovery_low": false, "sleep_minutes": null}, "joint_states": [{"area": "knee", "state": "held", "since": "2026-10-24", "severity": 5, "persistent": false}], "exercise_joint_options": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "joint_options": {"knee": null, "back": null, "shoulder": {"slug": "machine-chest-press", "name": "Machine chest press"}}}, {"exercise_order": 2, "planned_exercise_id": "b4400000-0000-4000-8000-000000000002", "name": "Leg extension", "joint_options": {"knee": null, "back": null, "shoulder": null}}, {"exercise_order": 3, "planned_exercise_id": "b4400000-0000-4000-8000-000000000003", "name": "Standing calf raise", "joint_options": {"knee": null, "back": null, "shoulder": null}}, {"exercise_order": 4, "planned_exercise_id": "b4400000-0000-4000-8000-000000000004", "name": "Cable fly", "joint_options": {"knee": null, "back": null, "shoulder": null}}, {"exercise_order": 5, "planned_exercise_id": "b4400000-0000-4000-8000-000000000005", "name": "Dumbbell Romanian deadlift", "joint_options": {"knee": null, "back": {"slug": "cable-pull-through", "name": "Cable pull-through"}, "shoulder": null}}]}$fx$, 'b4200000-0000-4000-8000-000000000001', (select workout_id::text from wk where uid = pg_temp.u(10))), 'b4400000-0000-4000-8000-000000000001', (select e1::text from wk where uid = pg_temp.u(10))), 'b4400000-0000-4000-8000-000000000002', (select e2::text from wk where uid = pg_temp.u(10))), 'b4400000-0000-4000-8000-000000000003', (select e3::text from wk where uid = pg_temp.u(10))), 'b4400000-0000-4000-8000-000000000004', (select e4::text from wk where uid = pg_temp.u(10))), 'b4400000-0000-4000-8000-000000000005', (select e5::text from wk where uid = pg_temp.u(10))), '2026-10-24', (select today::text from t)))::jsonb,
+  (replace(replace(replace(replace(replace(replace(replace($fx${"schema_version": "1.1", "local_date": "2026-10-24", "band": "green", "triggers": [], "kind": "joint_adjust", "changes": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "sets_from": 4, "sets_to": 4, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": 7, "joint_action": "limit", "joint": "shoulder", "joint_state": "watch", "swap_to_slug": null, "swap_to_name": null, "range_note_code": "shoulder_press_depth", "range_note_codes": ["shoulder_press_depth"]}], "explanation": "Your shoulder is on watch. 1 exercise kept in a pain-free range.", "status": "proposed", "available": true, "unavailable_reason": null, "safety_route": null, "confidence": "low", "missing": ["sleep", "recovery"], "cardio": null, "planned_workout_id": "b4200000-0000-4000-8000-000000000001", "workout_name": "Lower A", "sets_total_from": 16, "sets_total_to": 16, "previous_answer": null, "answered_at": null, "rules_version": "readiness-v1", "origin": null, "options": [{"kind": "reduce_sets", "explanation": "One set fewer on 5 exercises. Your shoulder is on watch. 1 exercise kept in a pain-free range.", "sets_total_to": 11, "changes": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "sets_from": 4, "sets_to": 3, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": 7, "joint_action": "limit", "joint": "shoulder", "joint_state": "watch", "swap_to_slug": null, "swap_to_name": null, "range_note_code": "shoulder_press_depth", "range_note_codes": ["shoulder_press_depth"]}, {"exercise_order": 2, "planned_exercise_id": "b4400000-0000-4000-8000-000000000002", "name": "Leg extension", "sets_from": 3, "sets_to": 2, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": 7}, {"exercise_order": 3, "planned_exercise_id": "b4400000-0000-4000-8000-000000000003", "name": "Standing calf raise", "sets_from": 3, "sets_to": 2, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}, {"exercise_order": 4, "planned_exercise_id": "b4400000-0000-4000-8000-000000000004", "name": "Cable fly", "sets_from": 3, "sets_to": 2, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": 7}, {"exercise_order": 5, "planned_exercise_id": "b4400000-0000-4000-8000-000000000005", "name": "Dumbbell Romanian deadlift", "sets_from": 3, "sets_to": 2, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": 7}], "cardio": null}, {"kind": "swap_to_easy_cardio", "explanation": "Try 20 to 30 minutes of easy walking, cycling or swimming at a pace you can talk through. It keeps you moving without adding strain. Your shoulder is on watch. 1 exercise kept in a pain-free range.", "sets_total_to": 0, "changes": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "sets_from": 4, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": 7, "joint_action": "limit", "joint": "shoulder", "joint_state": "watch", "swap_to_slug": null, "swap_to_name": null, "range_note_code": "shoulder_press_depth", "range_note_codes": ["shoulder_press_depth"]}, {"exercise_order": 2, "planned_exercise_id": "b4400000-0000-4000-8000-000000000002", "name": "Leg extension", "sets_from": 3, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}, {"exercise_order": 3, "planned_exercise_id": "b4400000-0000-4000-8000-000000000003", "name": "Standing calf raise", "sets_from": 3, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}, {"exercise_order": 4, "planned_exercise_id": "b4400000-0000-4000-8000-000000000004", "name": "Cable fly", "sets_from": 3, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}, {"exercise_order": 5, "planned_exercise_id": "b4400000-0000-4000-8000-000000000005", "name": "Dumbbell Romanian deadlift", "sets_from": 3, "sets_to": 0, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": null}], "cardio": {"minutes_min": 20, "minutes_max": 30, "effort": "easy", "talk_test": true, "vigorous_allowed": false}}, {"kind": "joint_adjust", "explanation": "Your shoulder is on watch. 1 exercise kept in a pain-free range.", "sets_total_to": 16, "changes": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "sets_from": 4, "sets_to": 4, "load_note": null, "load_kg_from": null, "load_kg_to": null, "reps_from": null, "reps_to": null, "rpe_to": 7, "joint_action": "limit", "joint": "shoulder", "joint_state": "watch", "swap_to_slug": null, "swap_to_name": null, "range_note_code": "shoulder_press_depth", "range_note_codes": ["shoulder_press_depth"]}], "cardio": null}], "signals": {"recovery_score": null, "recovery_confidence": "low", "recovery_mode": "night", "recovery_low": false, "sleep_minutes": null}, "joint_states": [{"area": "shoulder", "state": "watch", "since": "2026-10-24", "severity": 2, "persistent": false, "hold_outcome": null}], "exercise_joint_options": [{"exercise_order": 1, "planned_exercise_id": "b4400000-0000-4000-8000-000000000001", "name": "Barbell bench press", "joint_options": {"knee": null, "back": null, "shoulder": {"slug": "machine-chest-press", "name": "Machine chest press"}}}, {"exercise_order": 2, "planned_exercise_id": "b4400000-0000-4000-8000-000000000002", "name": "Leg extension", "joint_options": {"knee": null, "back": null, "shoulder": null}}, {"exercise_order": 3, "planned_exercise_id": "b4400000-0000-4000-8000-000000000003", "name": "Standing calf raise", "joint_options": {"knee": null, "back": null, "shoulder": null}}, {"exercise_order": 4, "planned_exercise_id": "b4400000-0000-4000-8000-000000000004", "name": "Cable fly", "joint_options": {"knee": null, "back": null, "shoulder": null}}, {"exercise_order": 5, "planned_exercise_id": "b4400000-0000-4000-8000-000000000005", "name": "Dumbbell Romanian deadlift", "joint_options": {"knee": null, "back": {"slug": "cable-pull-through", "name": "Cable pull-through"}, "shoulder": null}}]}$fx$, 'b4200000-0000-4000-8000-000000000001', (select workout_id::text from wk where uid = pg_temp.u(10))), 'b4400000-0000-4000-8000-000000000001', (select e1::text from wk where uid = pg_temp.u(10))), 'b4400000-0000-4000-8000-000000000002', (select e2::text from wk where uid = pg_temp.u(10))), 'b4400000-0000-4000-8000-000000000003', (select e3::text from wk where uid = pg_temp.u(10))), 'b4400000-0000-4000-8000-000000000004', (select e4::text from wk where uid = pg_temp.u(10))), 'b4400000-0000-4000-8000-000000000005', (select e5::text from wk where uid = pg_temp.u(10))), '2026-10-24', (select today::text from t)))::jsonb,
   'the contract fixture day_adjustment_v1_1_red_flag.json is the real answer, key for key');
 select is((select v ->> 'triggers' from (select public.get_readiness_context_v1(pg_temp.u(10),
       (select today from t)) v) x), '[]', 'the Coach context view never carries the red-flag codes');
@@ -514,9 +567,193 @@ select pg_temp.as_user(pg_temp.u(19)::text);
 select pg_temp.report(pg_temp.u(19), 1, 'other', 4, array['chest_or_breath']);
 select pg_temp.check_in(pg_temp.u(19), 3, 3, 3, 3, 0);
 insert into r select 'yesterday', public.get_my_day_adjustment_v1((select today from t));
-select is((select array[j ->> 'safety_route', j ->> 'kind', j -> 'joint_states' -> 0 ->> 'area',
-      j -> 'joint_states' -> 0 ->> 'state'] from r where name = 'yesterday'),
-  array[null, 'none', 'other', 'held'], 'yesterday''s flag is a held area, but today carries no route');
+select is((select array[j ->> 'safety_route', j ->> 'kind', j ->> 'band', j ->> 'status',
+      jsonb_array_length(j -> 'options')::text, (j -> 'triggers')::text, j -> 'joint_states' -> 0 ->> 'area',
+      j -> 'joint_states' -> 0 ->> 'hold_outcome'] from r where name = 'yesterday'),
+  array['urgent', 'none', 'red', 'none', '0', '["red_flag:chest_or_breath"]', 'other', 'urgent'],
+  'yesterday''s urgent flag still routes today: urgent, red, no change, no choices, until the athlete clears it');
+select is((select j ->> 'explanation' from r where name = 'yesterday'),
+  'What you described needs urgent care. Call your local emergency number or go to an emergency department now. Tracend won''t suggest any training until you''ve been seen.',
+  'in the words that promise it');
+select pg_temp.report(pg_temp.u(19), 0, 'other', 1, '{}', true);
+insert into r select 'yesterday_cleared', public.get_my_day_adjustment_v1((select today from t));
+select is((select array[j ->> 'safety_route', j ->> 'kind', j -> 'joint_states' -> 0 ->> 'state']
+    from r where name = 'yesterday_cleared'), array[null, 'none', 'watch'],
+  'the athlete''s own clearance ends the route, and the area is on watch');
+
+-- A hold lasts until the athlete's clearance: the route, the reminder and the day's reports ---------------------
+
+-- Another athlete: an urgent flag three days ago still routes today.
+select pg_temp.make_athlete(pg_temp.u(26));
+select pg_temp.report(pg_temp.u(26), 3, 'other', 4, array['chest_or_breath']);
+select pg_temp.as_user(pg_temp.u(26)::text);
+insert into r select 'hold_d3', public.get_my_day_adjustment_v1((select today from t));
+select is((select array[j ->> 'safety_route', j ->> 'band', j ->> 'kind'] from r where name = 'hold_d3'),
+  array['urgent', 'red', 'none'], 'an urgent flag from three days ago still routes today');
+
+-- The strictest hold wins; a hold on a pain of 7 or more adds that reason.
+select pg_temp.make_athlete(pg_temp.u(27));
+select pg_temp.report(pg_temp.u(27), 2, 'other', 4, array['chest_or_breath']);
+select pg_temp.report(pg_temp.u(27), 1, 'knee', 8);
+select pg_temp.as_user(pg_temp.u(27)::text);
+insert into r select 'hold_two', public.get_my_day_adjustment_v1((select today from t));
+select is((select array[j ->> 'safety_route', (j -> 'triggers')::text] from r where name = 'hold_two'),
+  array['urgent', '["pain_severe", "red_flag:chest_or_breath"]'],
+  'two holds, urgent and clinician today: urgent, with both reasons');
+select pg_temp.make_athlete(pg_temp.u(28));
+select pg_temp.report(pg_temp.u(28), 2, 'knee', 8);
+select pg_temp.report(pg_temp.u(28), 0, 'shoulder', 2, array['night_pain']);
+select pg_temp.as_user(pg_temp.u(28)::text);
+insert into r select 'hold_and_today', public.get_my_day_adjustment_v1((select today from t));
+select is((select array[j ->> 'safety_route', (j -> 'triggers')::text] from r where name = 'hold_and_today'),
+  array['clinician_today', '["pain_severe", "red_flag:night_pain"]'],
+  'a hold on clinician today beats a clinician flag reported today');
+
+-- A hold on a clinician outcome gives no route on later days, only the reminder, even with nothing to change.
+select pg_temp.make_athlete(pg_temp.u(29));
+select pg_temp.report(pg_temp.u(29), 2, 'other', 2, array['night_pain']);
+select pg_temp.check_in(pg_temp.u(29), 3, 3, 3, 3, 0);
+select pg_temp.as_user(pg_temp.u(29)::text);
+insert into r select 'clinician_hold', public.get_my_day_adjustment_v1((select today from t));
+select is((select array[j ->> 'safety_route', j ->> 'kind', j ->> 'status'] from r where name = 'clinician_hold'),
+  array[null, 'none', 'none'], 'a clinician hold from two days ago routes nothing today');
+select is((select j ->> 'explanation' from r where name = 'clinician_hold'),
+  'Your check-in looks fine. Train as planned. The pain you reported elsewhere is on hold until you''ve had it checked.',
+  'but the day says it is on hold, though no exercise changes');
+select is(private.hold_reminder('[{"area": "knee", "state": "held", "hold_outcome": "clinician"},
+    {"area": "back", "state": "held", "hold_outcome": "clinician_today"},
+    {"area": "shoulder", "state": "limited", "hold_outcome": null},
+    {"area": "other", "state": "held", "hold_outcome": "clinician"}]'::jsonb, '[]'::jsonb),
+  ' Your knee is on hold until you''ve had it checked. The pain you reported elsewhere is on hold until you''ve had it checked.',
+  'the reminder names each area held on a clinician outcome, in order, and no other');
+select is(private.hold_reminder('[{"area": "knee", "state": "held", "hold_outcome": "clinician"}]'::jsonb,
+    '[{"joint": "knee", "joint_action": "drop"}]'::jsonb), '',
+  'and is not said twice for an area whose exercises already carry its sentence');
+
+-- A report stored today counts for today whatever its date; one stored yesterday does not.
+select pg_temp.make_athlete(pg_temp.u(31));
+select pg_temp.report(pg_temp.u(31), 1, 'back', 2, array['night_pain'], false, 0);
+select pg_temp.as_user(pg_temp.u(31)::text);
+insert into r select 'stored_today', public.get_my_day_adjustment_v1((select today from t));
+select is((select array[j ->> 'safety_route', (j -> 'triggers')::text] from r where name = 'stored_today'),
+  array['clinician', '["red_flag:night_pain"]'],
+  'a clinician flag dated yesterday by a phone but stored today routes today');
+select pg_temp.make_athlete(pg_temp.u(32));
+select pg_temp.report(pg_temp.u(32), 1, 'back', 2, array['night_pain'], false, 1);
+select pg_temp.as_user(pg_temp.u(32)::text);
+insert into r select 'stored_yesterday', public.get_my_day_adjustment_v1((select today from t));
+select is((select j ->> 'safety_route' from r where name = 'stored_yesterday'), null,
+  'the same report stored yesterday does not');
+
+-- A stored answer stands only while the joint changes it carries are the ones the rules ask for now --------------
+
+select pg_temp.make_single(pg_temp.u(33), 'barbell-back-squat', 'Barbell back squat');
+select pg_temp.report(pg_temp.u(33), 1, 'knee', 3, array['locks_gives_way']);
+select pg_temp.check_in(pg_temp.u(33), 3, 3, 3, 3, 0);
+select pg_temp.as_user(pg_temp.u(33)::text);
+insert into r select 'squat_knee', public.get_my_day_adjustment_v1((select today from t));
+select is((select array[j ->> 'kind', pg_temp.change(j, 1) ->> 'joint_action',
+      (pg_temp.change(j, 1) ->> 'swap_to_slug' is not null)::text] from r where name = 'squat_knee'),
+  array['joint_adjust', 'swap', 'true'], 'a held knee swaps the back squat for something gentler');
+select public.respond_to_day_adjustment_v1((select today from t), true);
+insert into r select 'squat_stands', public.get_my_day_adjustment_v1((select today from t));
+select is((select j ->> 'status' from r where name = 'squat_stands'), 'accepted', 'the accepted swap stands');
+select pg_temp.report(pg_temp.u(33), 0, 'back', 5);
+insert into r select 'squat_back', public.get_my_day_adjustment_v1((select today from t));
+select is((select array[j ->> 'status', j -> 'previous_answer' ->> 'reason', pg_temp.change(j, 1) ->> 'joint_action',
+      (pg_temp.change(j, 1) ->> 'swap_to_slug' is distinct from (select pg_temp.change(j, 1) ->> 'swap_to_slug'
+        from r where name = 'squat_knee'))::text] from r where name = 'squat_back'),
+  array['proposed', 'new_data', 'swap', 'true'],
+  'a sore back too makes the first swap unsafe: the answer no longer stands and a different swap is offered');
+select is((select (select c.back_stress from public.exercise_catalog c
+      where c.slug = pg_temp.change(j, 1) ->> 'swap_to_slug') from r where name = 'squat_back'), 'low',
+  'one that is low on the back');
+
+-- The in-workout swap options meet the same ceilings as the day's swaps -----------------------------------
+select is(private.joint_caps('[{"area": "knee", "state": "held"}, {"area": "back", "state": "limited"},
+    {"area": "shoulder", "state": "watch"}, {"area": "other", "state": "held"}]'::jsonb, 'knee'),
+  '{"back": "low", "shoulder": "moderate"}'::jsonb, 'ceilings for the other sore joints: limited low, watch moderate');
+select is(private.joint_caps('[{"area": "knee", "state": "held"}, {"area": "back", "state": "limited"}]'::jsonb, 'back'),
+  '{"knee": "low"}'::jsonb, 'a held joint allows low');
+select is(private.joint_caps('[]'::jsonb, 'knee'), '{}'::jsonb, 'with no sore joint, no ceiling');
+select is((select o -> 'joint_options' -> 'knee' from jsonb_array_elements(private.joint_options(pg_temp.u(33),
+      (select workout_id from wk where uid = pg_temp.u(33)), '[{"area": "back", "state": "limited"}]'::jsonb)) o),
+  private.joint_swap('barbell-back-squat', 'knee', 'low', array['dumbbells', 'barbell', 'bench', 'cables',
+    'machines', 'pull_up_bar', 'kettlebells', 'bands'], 'intermediate', null, array['barbell-back-squat'],
+    '{"back": "low"}'::jsonb), 'with a sore back the knee option carries the back''s ceiling');
+select is((select o -> 'joint_options' -> 'knee' from jsonb_array_elements(private.joint_options(pg_temp.u(33),
+      (select workout_id from wk where uid = pg_temp.u(33)), '[]'::jsonb)) o),
+  private.joint_swap('barbell-back-squat', 'knee', 'low', array['dumbbells', 'barbell', 'bench', 'cables',
+    'machines', 'pull_up_bar', 'kettlebells', 'bands'], 'intermediate', null, array['barbell-back-squat'],
+    '{}'::jsonb), 'and with none it has none');
+select is((select (select c.back_stress from public.exercise_catalog c where c.slug = o -> 'joint_options' -> 'knee' ->> 'slug')
+    from jsonb_array_elements(private.joint_options(pg_temp.u(33),
+      (select workout_id from wk where uid = pg_temp.u(33)), '[{"area": "back", "state": "limited"}]'::jsonb)) o),
+  'low', 'so the option offered while the back is sore is low on the back');
+
+-- Two cues for one exercise are both kept ------------------------------------------------------------------------
+select pg_temp.make_single(pg_temp.u(36), 'barbell-overhead-press', 'Barbell overhead press');
+select is((select c -> 'range_note_codes' from jsonb_array_elements(private.joint_changes(pg_temp.u(36),
+      (select workout_id from wk where uid = pg_temp.u(36)),
+      '[{"area": "back", "state": "limited"}, {"area": "shoulder", "state": "watch"}]'::jsonb, '[]'::jsonb)) c),
+  '["back_press_seated", "shoulder_press_height"]'::jsonb, 'a press with a sore back and a watched shoulder keeps both cues');
+select is((select c ->> 'range_note_code' from jsonb_array_elements(private.joint_changes(pg_temp.u(36),
+      (select workout_id from wk where uid = pg_temp.u(36)),
+      '[{"area": "back", "state": "limited"}, {"area": "shoulder", "state": "watch"}]'::jsonb, '[]'::jsonb)) c),
+  'back_press_seated', 'the first is the joint that decides');
+select is((select c -> 'range_note_codes' from jsonb_array_elements(private.joint_changes(pg_temp.u(36),
+      (select workout_id from wk where uid = pg_temp.u(36)),
+      '[{"area": "shoulder", "state": "watch"}]'::jsonb, '[]'::jsonb)) c),
+  '["shoulder_press_height"]'::jsonb, 'one joint, one cue');
+
+-- A day Coach already adjusted still protects the joints ------------------------------------------------------------
+
+select pg_temp.report(pg_temp.u(34), 3, 'knee', 3, array['locks_gives_way']);
+select pg_temp.check_in(pg_temp.u(34), 2, 3, 4, 3, 0);
+update public.training_plan_versions set block_kind = 'next_session', ends_on = (select today from t),
+  restores_version_id = id where user_id = pg_temp.u(34);
+select pg_temp.as_user(pg_temp.u(34)::text);
+insert into r select 'coach_joint', public.get_my_day_adjustment_v1((select today from t));
+select is((select array[j ->> 'kind', j ->> 'status', j ->> 'available',
+      (j -> 'unavailable_reason' = 'null'::jsonb)::text,
+      (select string_agg(o ->> 'kind', ',') from jsonb_array_elements(j -> 'options') o)]
+    from r where name = 'coach_joint'),
+  array['joint_adjust', 'proposed', 'true', 'true', 'joint_adjust'],
+  'on a day Coach adjusted, only the joint adjustment is offered, never a second lighter session');
+select is((select array(select c ->> 'exercise_order' || ':' || (c ->> 'joint_action')
+    from jsonb_array_elements(j -> 'changes') c order by (c ->> 'exercise_order')::integer)
+    from r where name = 'coach_joint'), array['2:drop', '4:drop'], 'with the held knee''s exercises left out');
+select is((select j ->> 'band' from r where name = 'coach_joint'), 'amber', 'and the readiness band still read');
+select is((select j ->> 'status' from (select public.respond_to_day_adjustment_v1((select today from t), true) j) x),
+  'accepted', 'it can be accepted');
+select public.start_workout((select workout_id from wk where uid = pg_temp.u(34)), (select today from t),
+  'UTC', 'b5500000-0000-4000-8000-000000000034');
+select is(pg_temp.sets_of('b5500000-0000-4000-8000-000000000034'), array[4::bigint, 0, 3, 0, 3],
+  'and start_workout leaves those exercises out of the session Coach built');
+select pg_temp.check_in(pg_temp.u(35), 2, 3, 4, 3, 0);
+update public.training_plan_versions set block_kind = 'next_session', ends_on = (select today from t),
+  restores_version_id = id where user_id = pg_temp.u(35);
+select pg_temp.as_user(pg_temp.u(35)::text);
+insert into r select 'coach_plain', public.get_my_day_adjustment_v1((select today from t));
+select is((select array[j ->> 'kind', j ->> 'available', j ->> 'unavailable_reason'] from r where name = 'coach_plain'),
+  array['none', 'false', 'coach_adjusted'], 'with no joint to protect, a Coach-adjusted day is unavailable as before');
+
+-- A session done under an answer that left the exercise out earns no heavier load -------------------------------------
+select is((select private.progression_decision(4, 5, 8, 8, 2.5, 7, false, false, false,
+    '[{"load_kg": 60, "sets": 4, "min_reps": 8, "total_reps": 32, "min_rir": 3, "effort_known": true,
+       "pain": false, "adjusted": true, "sets_planned": 0}]'::jsonb) ->> 'action'), 'hold',
+  'an exercise left out for a joint but trained anyway does not earn add_load');
+select is((select private.progression_decision(4, 5, 8, 8, 2.5, 7, false, false, false,
+    '[{"load_kg": 60, "sets": 4, "min_reps": 8, "total_reps": 32, "min_rir": 3, "effort_known": true,
+       "pain": false, "adjusted": true, "sets_planned": 0}]'::jsonb) ->> 'reason'), 'incomplete',
+  'and the reason is the one B3 already has for work off the plan');
+select is((select private.progression_decision(4, 5, 8, 8, 2.5, 7, false, false, false,
+    '[{"load_kg": 60, "sets": 4, "min_reps": 8, "total_reps": 32, "min_rir": 3, "effort_known": true,
+       "pain": false, "adjusted": true, "sets_planned": 4}]'::jsonb) ->> 'action'), 'add_load',
+  'the same session under an answer that kept the sets still earns it');
+select is((select private.progression_decision(4, 5, 8, 8, 2.5, 7, false, false, false,
+    '[{"load_kg": 60, "sets": 4, "min_reps": 8, "total_reps": 32, "min_rir": 3, "effort_known": true,
+       "pain": false}]'::jsonb) ->> 'action'), 'add_load', 'and so does one with no answer at all');
 
 -- B3 reads the answers: an accommodation is not a bad performance ------------------------------------------------
 

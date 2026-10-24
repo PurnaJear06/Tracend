@@ -8,7 +8,7 @@ select no_plan();
 
 insert into auth.users(id, role)
 select ('b5100000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, 'authenticated'
-from generate_series(1, 40) n;
+from generate_series(1, 46) n;
 
 create temporary table t as
   select private.local_date_for('b5100000-0000-4000-8000-000000000001') as today;
@@ -40,7 +40,8 @@ select pg_temp.rep(2, 0, 'knee', 5);
 select is(pg_temp.js(2, 'knee'), 'limited:false', 'a 5 today limits the knee');
 select is((select s from jsonb_array_elements(private.joint_states(pg_temp.u(2), (select today from t))) s),
   jsonb_build_object('area', 'knee', 'state', 'limited', 'since', (select today from t), 'severity', 5,
-    'persistent', false), 'with its area, state, day, severity and flag');
+    'persistent', false, 'hold_outcome', null),
+  'with its area, state, day, severity, flag and (not held) no hold outcome');
 select pg_temp.rep(3, 6, 'knee', 5);
 select is(pg_temp.js(3, 'knee'), 'limited:false', 'a 5 six days ago still limits');
 select pg_temp.rep(4, 7, 'knee', 5);
@@ -168,6 +169,39 @@ select pg_temp.rep(36, 0, 'knee', 0, '{}', true);
 select is(pg_temp.js(36, 'knee'), 'none', 'a clearance with nothing to clear is no state');
 select pg_temp.rep(37, 5, 'shoulder', 2, '{}', true);
 select is(pg_temp.js(37, 'shoulder'), 'watch:false', 'a mild report that says cleared, with no hold before it, is judged by its severity');
+
+-- The outcome of the hold in force: the strictest of its reports, and only those after the last clearance ----
+create function pg_temp.ho(n integer, p_area text) returns text language sql as $$
+  select coalesce((select s ->> 'hold_outcome' from jsonb_array_elements(
+    private.joint_states(pg_temp.u(n), (select today from t))) s where s ->> 'area' = p_area), 'none');
+$$;
+select pg_temp.rep(41, 3, 'knee', 3, array['chest_or_breath']);
+select pg_temp.rep(41, 1, 'knee', 8);
+select is(pg_temp.ho(41, 'knee'), 'urgent', 'an urgent flag and a later 8: the hold is urgent, the strictest');
+select pg_temp.rep(42, 2, 'back', 3, array['night_pain']);
+select is(pg_temp.ho(42, 'back'), 'clinician', 'a clinician flag alone: a clinician hold');
+select pg_temp.rep(43, 10, 'knee', 3, array['chest_or_breath']);
+select pg_temp.rep(43, 5, 'knee', 2, '{}', true);
+select pg_temp.rep(43, 1, 'knee', 3, array['locks_gives_way']);
+select is(pg_temp.ho(43, 'knee'), 'clinician', 'after a clearance only the new hold counts: the old urgent one is over');
+select pg_temp.rep(44, 0, 'knee', 5);
+select is(pg_temp.ho(44, 'knee'), 'none', 'a limited area has no hold outcome');
+select pg_temp.rep(45, 4, 'other', 4, array['chest_or_breath']);
+select is(pg_temp.ho(45, 'other'), 'urgent', 'the area "other" holds too, and keeps its outcome on later days');
+select is((select array(select k from jsonb_object_keys(s) k order by k collate "C")
+    from jsonb_array_elements(private.joint_states(pg_temp.u(41), (select today from t))) s limit 1),
+  array['area', 'hold_outcome', 'persistent', 'severity', 'since', 'state'],
+  'the joint state carries exactly six keys');
+select is((select array(select k from jsonb_object_keys(s) k order by k collate "C")
+    from jsonb_array_elements(private.joint_states_detail(pg_temp.u(41), (select today from t))) s limit 1),
+  array['area', 'hold_codes', 'hold_outcome', 'hold_severe', 'persistent', 'severity', 'since', 'state'],
+  'and the detail adds the codes and the severe flag for the day''s trigger codes');
+select is((select s -> 'hold_codes' from jsonb_array_elements(private.joint_states_detail(pg_temp.u(41),
+    (select today from t))) s limit 1), '["chest_or_breath"]'::jsonb, 'the codes of the hold''s reports');
+select is((select (s ->> 'hold_severe')::boolean from jsonb_array_elements(private.joint_states_detail(
+    pg_temp.u(41), (select today from t))) s limit 1), true, 'and that one of them was a 7 or more');
+select is((select (s ->> 'hold_severe')::boolean from jsonb_array_elements(private.joint_states_detail(
+    pg_temp.u(45), (select today from t))) s limit 1), false, 'not for a flag on a milder pain');
 
 select * from finish();
 rollback;

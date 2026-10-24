@@ -52,6 +52,7 @@ export type UnavailableReason = typeof unavailableReasons[number];
 export const safetyRoutes = ["pain_referral", "urgent", "clinician_today", "clinician"] as const;
 export type SafetyRoute = typeof safetyRoutes[number];
 
+const safetyOutcomes = ["urgent", "clinician_today", "clinician"] as const;
 export const jointActions = ["swap", "limit", "drop"] as const;
 export const jointNames = ["knee", "back", "shoulder"] as const;
 export const jointStateNames = ["held", "limited", "watch"] as const;
@@ -66,6 +67,8 @@ export type JointChange = Readonly<{
   swapToSlug: string | null;
   swapToName: string | null;
   rangeNoteCode: string | null;
+  /** Every cue a limited exercise needs, in joint order; null unless the action is limit. */
+  rangeNoteCodes: readonly string[] | null;
 }>;
 
 export type AdjustmentChange = Readonly<{
@@ -89,6 +92,8 @@ export type JointState = Readonly<{
   since: string;
   severity: number;
   persistent: boolean;
+  /** held only: the strictest outcome of the hold in force; null otherwise (and in 1.0). */
+  holdOutcome: "urgent" | "clinician_today" | "clinician" | null;
 }>;
 
 /** The gentlest swap per joint for one exercise of today's session, for the in-workout pain chip. */
@@ -197,13 +202,29 @@ function jointOf(row: Json): JointChange | null | undefined {
   const slug = nullable(row.swap_to_slug, text);
   const name = nullable(row.swap_to_name, text);
   const note = nullable(row.range_note_code, text);
+  const notes = row.range_note_codes === undefined || row.range_note_codes === null
+    ? null
+    : Array.isArray(row.range_note_codes) &&
+        row.range_note_codes.every((item) => typeof item === "string")
+    ? row.range_note_codes as string[]
+    : undefined;
   if (
     !kind || !joint || !state || slug === undefined || name === undefined || note === undefined ||
     (kind === "swap") !== (slug !== null && name !== null) ||
     (kind !== "swap" && (slug !== null || name !== null)) ||
-    (kind === "limit") !== (note !== null)
+    (kind === "limit") !== (note !== null) || notes === undefined ||
+    (kind === "limit") !== (notes !== null) ||
+    (notes !== null && note !== null && !notes.includes(note))
   ) return undefined;
-  return { action: kind, joint, state, swapToSlug: slug, swapToName: name, rangeNoteCode: note };
+  return {
+    action: kind,
+    joint,
+    state,
+    swapToSlug: slug,
+    swapToName: name,
+    rangeNoteCode: note,
+    rangeNoteCodes: notes,
+  };
 }
 
 function change(raw: unknown, withJoint: boolean): AdjustmentChange | null {
@@ -295,11 +316,20 @@ function jointStates(raw: unknown): JointState[] | null {
     const area = oneOf(["knee", "back", "shoulder", "other"] as const, row?.area);
     const state = oneOf(jointStateNames, row?.state);
     const severity = whole(row?.severity);
+    const hold = nullable(row?.hold_outcome, (v) => oneOf(safetyOutcomes, v));
     if (
       !row || !area || !state || typeof row.since !== "string" || severity === null ||
-      severity < 0 || severity > 10 || typeof row.persistent !== "boolean"
+      severity < 0 || severity > 10 || typeof row.persistent !== "boolean" || hold === undefined ||
+      (state === "held") !== (hold !== null)
     ) return null;
-    return { area, state, since: row.since, severity, persistent: row.persistent };
+    return {
+      area,
+      state,
+      since: row.since,
+      severity,
+      persistent: row.persistent,
+      holdOutcome: hold,
+    };
   });
   return parsed.includes(null) ? null : parsed as JointState[];
 }

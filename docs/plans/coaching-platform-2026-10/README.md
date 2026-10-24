@@ -349,16 +349,19 @@ nothing, or a safety day; 55000 the day cannot be adjusted; P0001 more than 20 a
 builds never call these functions and see no change.
 
 **Version 1.1 as built (B5-1).** Keys are only added. The payload carries `schema_version: "1.1"` and
-two new keys: `joint_states` (`[{area, state, since, severity, persistent}]` for each joint that is
-held, limited or on watch; `area` is `knee`, `back`, `shoulder` or `other`) and
+two new keys: `joint_states` (`[{area, state, since, severity, persistent, hold_outcome}]` for each joint that is
+held, limited or on watch; `area` is `knee`, `back`, `shoulder` or `other`; `hold_outcome` is the
+strictest outcome of the hold in force when held, else null) and
 `exercise_joint_options` (per exercise of today's session `{exercise_order, planned_exercise_id, name,
 joint_options: {knee, back, shoulder}}`, each joint `{slug, name}` of the gentlest low-stress swap or
 null). `kind` gains `joint_adjust` (the changes a joint state makes, alone, on a day the readiness
 rules ask for nothing; also an entry of `options`; the same one tap and Undo). A change on an exercise
 a joint touches also carries `joint_action` (`swap`, `limit`, `drop`), `joint`, `joint_state`,
-`swap_to_slug`, `swap_to_name` and `range_note_code`, all together (an exercise no joint touches
-carries none of them); a `drop` has `sets_to` 0. `safety_route` gains `urgent`, `clinician_today`
-and `clinician` (from today's pain reports; the strictest of those and `pain_referral` wins), and
+`swap_to_slug`, `swap_to_name`, `range_note_code` and `range_note_codes` (every cue a limited exercise
+needs; null unless `limit`), all together (an exercise no joint touches carries none of them); a
+`drop` has `sets_to` 0. On a day Coach already adjusted, `joint_adjust` is still offered alone. `safety_route` gains `urgent`, `clinician_today`
+and `clinician` (from today's pain reports, and on later days from an area still held on `urgent` or
+`clinician_today`; the strictest of those and `pain_referral` wins), and
 `triggers` may hold `red_flag:<code>`. A client that reads 1.0 keeps working: nothing it read changed.
 `record_pain_check_v1(local_date, source, area, severity, pattern, red_flags, cleared_by_clinician,
 exercise_performance_id, idempotency_key)` returns `{schema_version "1.0", id, outcome, area_state}`;

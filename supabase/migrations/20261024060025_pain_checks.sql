@@ -124,7 +124,7 @@ grant select on public.pain_reports to authenticated;
 -- 3. One writer ---------------------------------------------------------------------------------------
 -- Validates and stores one report and records the audit event (codes only: source, area, outcome).
 -- Errors: 22023 an unknown area, pattern or red-flag code, or a severity outside 0 to 10; P0001 too
--- many reports today.
+-- many reports that do not route out today (a report that routes out is always stored).
 
 create function private.insert_pain_report(
   p_user uuid, p_date date, p_source text, p_check_in uuid, p_performance uuid, p_area text,
@@ -132,6 +132,7 @@ create function private.insert_pain_report(
 ) returns public.pain_reports language plpgsql security definer set search_path = '' as $$
 declare
   flags text[];
+  outcome_now text;
   created public.pain_reports%rowtype;
 begin
   if p_area is null or p_area <> all (array['knee', 'back', 'shoulder', 'other']) then
@@ -152,15 +153,21 @@ begin
     end if;
     flags := array(select distinct f from unnest(p_flags) f order by f);
   end if;
-  if (select count(*) from public.pain_reports r where r.user_id = p_user and r.local_date = p_date)
-     >= (private.pain_rules() ->> 'reports_per_day')::integer then
+  -- The day's limit guards the table against a stuck client; it never stops a report that routes out
+  -- (a red flag or a pain of 7 or more), and those do not count towards it, so a clearance or a
+  -- follow-up can always be stored.
+  outcome_now := private.pain_outcome(p_severity, flags);
+  if outcome_now not in ('urgent', 'clinician_today', 'clinician')
+     and (select count(*) from public.pain_reports r where r.user_id = p_user and r.local_date = p_date
+       and r.outcome not in ('urgent', 'clinician_today', 'clinician'))
+       >= (private.pain_rules() ->> 'reports_per_day')::integer then
     raise exception 'too many pain reports today' using errcode = 'P0001';
   end if;
 
   insert into public.pain_reports(user_id, local_date, source, check_in_id, exercise_performance_id,
     area, severity, pattern, red_flags, cleared_by_clinician, outcome, idempotency_key)
   values (p_user, p_date, p_source, p_check_in, p_performance, p_area, p_severity, p_pattern, flags,
-    p_cleared, private.pain_outcome(p_severity, flags), p_key)
+    p_cleared, outcome_now, p_key)
   returning * into created;
 
   insert into public.audit_events(user_id, action_code, target_type, target_id, outcome, metadata)
@@ -185,7 +192,7 @@ returns uuid language plpgsql security definer set search_path='' as $$
 declare result_id uuid; next_revision integer;
   new_build boolean; pain integer; main_area text; main_flags text[]; main_pattern text;
   main_cleared boolean := false; follow jsonb; follow_areas text[] := '{}'; follow_area text;
-  follow_severity integer; follow_cleared boolean;
+  follow_severity integer; follow_cleared boolean; report_date date; server_today date;
 begin
   if auth.uid() is null then raise exception 'authentication required' using errcode='42501'; end if;
   select id into result_id from public.daily_check_ins c where c.user_id=auth.uid() and c.idempotency_key=save_daily_check_in.idempotency_key;
@@ -253,6 +260,18 @@ begin
         follow_areas := follow_areas || follow_area;
       end loop;
     end if;
+    -- A pain check is for the athlete's today or yesterday by the server's clock. A phone a day ahead
+    -- (its date is the server's tomorrow) is stored under the server's today, so a red flag is never lost
+    -- and never dated in the future; anything else is refused.
+    if main_area is not null or (jsonb_typeof(payload->'pain_followups') = 'array'
+        and jsonb_array_length(payload->'pain_followups') > 0) then
+      server_today := private.local_date_for(auth.uid());
+      if save_daily_check_in.local_date is null or save_daily_check_in.local_date < server_today - 1
+         or save_daily_check_in.local_date > server_today + 1 then
+        raise exception 'a pain check is for today or yesterday' using errcode='22023';
+      end if;
+      report_date := least(save_daily_check_in.local_date, server_today);
+    end if;
   end if;
 
   select coalesce(max(revision),0)+1 into next_revision from public.daily_check_ins c where c.user_id=auth.uid() and c.local_date=save_daily_check_in.local_date;
@@ -261,7 +280,7 @@ begin
   values(auth.uid(),local_date,timezone,next_revision,idempotency_key,(payload->>'sleep_quality')::smallint,(payload->>'energy')::smallint,(payload->>'soreness')::smallint,(payload->>'hunger')::smallint,(payload->>'mood')::smallint,coalesce((payload->>'pain_severity')::smallint,0),(payload->>'available_to_train')::boolean,coalesce(payload->>'note','')) returning id into result_id;
 
   if main_area is not null then
-    perform private.insert_pain_report(auth.uid(), save_daily_check_in.local_date, 'check_in',
+    perform private.insert_pain_report(auth.uid(), report_date, 'check_in',
       result_id, null, main_area, pain, main_pattern, main_flags, main_cleared, null);
   end if;
   if new_build and payload->'pain_followups' is not null
@@ -269,7 +288,7 @@ begin
     for follow in select value from jsonb_array_elements(payload->'pain_followups') loop
       follow_severity := ((follow->>'severity')::numeric)::integer;
       follow_cleared := coalesce((follow->>'cleared_by_clinician')::boolean, false);
-      perform private.insert_pain_report(auth.uid(), save_daily_check_in.local_date, 'check_in',
+      perform private.insert_pain_report(auth.uid(), report_date, 'check_in',
         result_id, null, follow->>'area', follow_severity, null, null, follow_cleared, null);
     end loop;
   end if;
@@ -279,9 +298,11 @@ end $$;
 -- 5. The workout's pain chip --------------------------------------------------------------------------
 -- A pain check made during a workout (the "Pain or discomfort" chip). Idempotent by key. source is
 -- 'workout' (a check made outside a check-in may use 'check_in'); a performance, when given, must be
--- the athlete's own and goes with 'workout' only. The date is the athlete's own day, never a future
--- one. Returns {schema_version, id, outcome, area_state}. Errors: 42501 signed out; 22023 a bad
--- value, a future date or a performance that is not theirs; P0001 too many reports today.
+-- the athlete's own and goes with 'workout' only. The date is the athlete's today or yesterday by the
+-- server's clock; a phone a day ahead is stored under the server's today (a red flag is never lost);
+-- any other date is refused. Returns {schema_version, id, outcome, area_state}. Errors: 42501 signed
+-- out; 22023 a bad value, a date out of range or a performance that is not theirs; P0001 too many
+-- reports that do not route out today.
 
 create function public.record_pain_check_v1(
   local_date date, source text, area text, severity integer, pattern text, red_flags text[],
@@ -291,6 +312,7 @@ declare
   uid constant uuid := auth.uid();
   report public.pain_reports%rowtype;
   state text;
+  server_today date;
 begin
   if uid is null then
     raise exception 'authentication required' using errcode = '42501';
@@ -298,12 +320,17 @@ begin
   if record_pain_check_v1.idempotency_key is null then
     raise exception 'an idempotency key is required' using errcode = '22023';
   end if;
+  -- Two calls with one key take turns, so the second finds the first's report and replays it.
+  perform pg_advisory_xact_lock(hashtextextended(
+    'pain_check:' || uid::text || record_pain_check_v1.idempotency_key::text, 0));
   select * into report from public.pain_reports r
   where r.user_id = uid and r.idempotency_key = record_pain_check_v1.idempotency_key;
   if not found then
+    server_today := private.local_date_for(uid);
     if record_pain_check_v1.local_date is null
-       or record_pain_check_v1.local_date > private.local_date_for(uid) then
-      raise exception 'a pain check is for today or earlier' using errcode = '22023';
+       or record_pain_check_v1.local_date < server_today - 1
+       or record_pain_check_v1.local_date > server_today + 1 then
+      raise exception 'a pain check is for today or yesterday' using errcode = '22023';
     end if;
     if record_pain_check_v1.source is null
        or record_pain_check_v1.source <> all (array['check_in', 'workout']) then
@@ -315,7 +342,7 @@ begin
            where p.id = record_pain_check_v1.exercise_performance_id and p.user_id = uid)) then
       raise exception 'that exercise is not yours to report on' using errcode = '22023';
     end if;
-    report := private.insert_pain_report(uid, record_pain_check_v1.local_date,
+    report := private.insert_pain_report(uid, least(record_pain_check_v1.local_date, server_today),
       record_pain_check_v1.source, null, record_pain_check_v1.exercise_performance_id,
       record_pain_check_v1.area, record_pain_check_v1.severity, record_pain_check_v1.pattern,
       record_pain_check_v1.red_flags, record_pain_check_v1.cleared_by_clinician,
@@ -345,10 +372,14 @@ grant execute on function public.record_pain_check_v1(
 -- persistent: the area is limited or held and either it has been held for 14 days or more, or its
 -- current episode (the reports after the newest report of 0 or the newest clearance) holds at least two
 -- reports of severity 4 or more, the first at least 14 days ago.
--- Returns [{area, state, since, severity, persistent}] for the areas not at none. since is the day the
--- hold began (held) or the day of the newest report (limited, watch); severity is the newest report's.
+-- Returns [{area, state, since, severity, persistent, hold_outcome}] for the areas not at none. since is
+-- the day the hold began (held) or the day of the newest report (limited, watch); severity is the newest
+-- report's; hold_outcome (held only, else null) is the strictest outcome among the reports of the hold in
+-- force, which decides whether the day keeps a safety route (urgent, clinician_today) or only a reminder
+-- (clinician). private.joint_states_detail adds hold_codes (the red-flag codes of those reports) and
+-- hold_severe (one of them had a severity of 7 or more) for the day's trigger codes.
 
-create function private.joint_states(p_user uuid, p_date date)
+create function private.joint_states_detail(p_user uuid, p_date date)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
   r constant jsonb := private.pain_rules();
@@ -364,6 +395,9 @@ declare
   state text;
   since date;
   hold_start date;
+  hold_outcome text;
+  hold_codes text[];
+  hold_severe boolean;
   strong_reports integer;
   first_strong date;
   persistent boolean;
@@ -396,16 +430,32 @@ begin
     state := 'none';
     since := null;
     hold_start := null;
+    hold_outcome := null;
+    hold_codes := '{}';
+    hold_severe := false;
     if has_hold and not (has_clearance
         and (clearance.local_date, clearance.created_at, clearance.id)
           > (latest_hold.local_date, latest_hold.created_at, latest_hold.id)) then
       state := 'held';
-      select min(p.local_date) into hold_start from public.pain_reports p
+      -- The reports of the hold in force: held outcomes after the newest clearance.
+      select min(p.local_date),
+        (array['clinician', 'clinician_today', 'urgent'])[max(
+          case p.outcome when 'urgent' then 3 when 'clinician_today' then 2 else 1 end)],
+        coalesce(bool_or(p.severity >= (r ->> 'clinician_today_from')::integer), false)
+      into hold_start, hold_outcome, hold_severe
+      from public.pain_reports p
       where p.user_id = p_user and p.area = joint_area and p.local_date <= p_date
         and p.outcome = any(held)
         and (not has_clearance
           or (p.local_date, p.created_at, p.id)
             > (clearance.local_date, clearance.created_at, clearance.id));
+      hold_codes := array(select distinct f from public.pain_reports p, unnest(p.red_flags) f
+        where p.user_id = p_user and p.area = joint_area and p.local_date <= p_date
+          and p.outcome = any(held)
+          and (not has_clearance
+            or (p.local_date, p.created_at, p.id)
+              > (clearance.local_date, clearance.created_at, clearance.id))
+        order by f);
       since := hold_start;
     elsif p_date - newest.local_date <= (r ->> 'lapse_days')::integer then
       if has_clearance and newest.id = clearance.id then
@@ -437,10 +487,18 @@ begin
         and p_date - first_strong >= (r ->> 'persistent_days')::integer));
 
     found_states := found_states || jsonb_build_object('area', joint_area, 'state', state,
-      'since', since, 'severity', newest.severity, 'persistent', persistent);
+      'since', since, 'severity', newest.severity, 'persistent', persistent,
+      'hold_outcome', hold_outcome, 'hold_codes', to_jsonb(hold_codes), 'hold_severe', hold_severe);
   end loop;
   return found_states;
 end $$;
+revoke all on function private.joint_states_detail(uuid, date) from public, anon, authenticated;
+
+create function private.joint_states(p_user uuid, p_date date)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select coalesce(jsonb_agg(t.s - 'hold_codes' - 'hold_severe' order by t.n), '[]'::jsonb)
+  from jsonb_array_elements(private.joint_states_detail(p_user, p_date)) with ordinality as t(s, n);
+$$;
 revoke all on function private.joint_states(uuid, date) from public, anon, authenticated;
 
 -- 7. What a joint state changes in today's session ---------------------------------------------------
@@ -560,11 +618,25 @@ $$;
 revoke all on function private.joint_swap(text, text, text, text[], text, text[], text[], jsonb)
   from public, anon, authenticated;
 
--- Per exercise of the workout, the gentlest swap on each joint (low stress, strictly gentler), so the
--- app can offer one the moment a pain check says to stop an exercise, even offline.
+-- The ceilings a swap for p_joint must also meet on the athlete's other sore joints: {joint: highest
+-- stress}, from the states (private.joint_states). Used for a swap chosen for the day and for the
+-- options offered mid-workout, so the two never disagree.
+create function private.joint_caps(p_states jsonb, p_joint text)
+returns jsonb language sql stable set search_path = '' as $$
+  select coalesce(jsonb_object_agg(s ->> 'area',
+      private.joint_rules() -> 'other_joint_cap' ->> (s ->> 'state')), '{}'::jsonb)
+  from jsonb_array_elements(coalesce(p_states, '[]'::jsonb)) s
+  where s ->> 'area' in ('knee', 'back', 'shoulder') and s ->> 'area' <> p_joint
+    and s ->> 'state' in ('held', 'limited', 'watch');
+$$;
+revoke all on function private.joint_caps(jsonb, text) from public, anon, authenticated;
+
+-- Per exercise of the workout, the gentlest swap on each joint (low stress, strictly gentler, and gentle
+-- enough on the athlete's other sore joints), so the app can offer one the moment a pain check says to
+-- stop an exercise, even offline.
 -- [{exercise_order, planned_exercise_id, name, joint_options: {knee, back, shoulder}}], each joint
 -- {slug, name} or null.
-create function private.joint_options(p_user uuid, p_workout uuid)
+create function private.joint_options(p_user uuid, p_workout uuid, p_states jsonb)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
   jr constant jsonb := private.joint_rules();
@@ -583,19 +655,20 @@ begin
       'name', e.display_name_snapshot,
       'joint_options', jsonb_build_object(
         'knee', private.joint_swap(e.exercise_slug, 'knee', jr ->> 'options_max_stress', equipment,
-          lvl, avoid, session_slugs),
+          lvl, avoid, session_slugs, private.joint_caps(p_states, 'knee')),
         'back', private.joint_swap(e.exercise_slug, 'back', jr ->> 'options_max_stress', equipment,
-          lvl, avoid, session_slugs),
+          lvl, avoid, session_slugs, private.joint_caps(p_states, 'back')),
         'shoulder', private.joint_swap(e.exercise_slug, 'shoulder', jr ->> 'options_max_stress',
-          equipment, lvl, avoid, session_slugs))) order by e.exercise_order)
+          equipment, lvl, avoid, session_slugs, private.joint_caps(p_states, 'shoulder')))) order by e.exercise_order)
     from public.planned_exercises e
     where e.planned_workout_id = p_workout and e.user_id = p_user), '[]'::jsonb);
 end $$;
-revoke all on function private.joint_options(uuid, uuid) from public, anon, authenticated;
+revoke all on function private.joint_options(uuid, uuid, jsonb) from public, anon, authenticated;
 
 -- The exercises of the workout a joint state changes, as change entries (the keys of
 -- private.day_adjustment_changes plus joint_action, joint, joint_state, swap_to_slug, swap_to_name
--- and range_note_code). p_states: private.joint_states; p_hold: the hold_load changes, whose load and
+-- and range_note_code, range_note_codes: every cue a limited exercise needs, in joint order).
+-- p_states: private.joint_states; p_hold: the hold_load changes, whose load and
 -- rep fields a limited exercise keeps.
 create function private.joint_changes(p_user uuid, p_workout uuid, p_states jsonb, p_hold jsonb)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
@@ -617,11 +690,10 @@ declare
   best_joint text;
   best_state text;
   best_action text;
-  caps jsonb;
-  other text;
-  other_state text;
   candidate jsonb;
   hold_entry jsonb;
+  note_codes text[];
+  note text;
 begin
   states := coalesce((select jsonb_object_agg(s ->> 'area', s ->> 'state')
     from jsonb_array_elements(coalesce(p_states, '[]'::jsonb)) s
@@ -662,20 +734,29 @@ begin
 
     candidate := null;
     if best_action = 'swap' then
-      caps := '{}'::jsonb;
-      foreach other in array array['knee', 'back', 'shoulder'] loop
-        other_state := states ->> other;
-        if other <> best_joint and other_state is not null then
-          caps := caps || jsonb_build_object(other, jr -> 'other_joint_cap' ->> other_state);
-        end if;
-      end loop;
       candidate := private.joint_swap(e.exercise_slug, best_joint,
-        jr -> 'swap_max_stress' ->> best_state, equipment, lvl, avoid, taken, caps);
+        jr -> 'swap_max_stress' ->> best_state, equipment, lvl, avoid, taken,
+        private.joint_caps(p_states, best_joint));
       if candidate is null then
         best_action := 'drop';
       else
         taken := taken || (candidate ->> 'slug');
       end if;
+    end if;
+
+    -- Every joint that asks for a range limit on this exercise gets its cue, in joint order.
+    note_codes := '{}';
+    if best_action = 'limit' then
+      foreach joint in array array['knee', 'back', 'shoulder'] loop
+        joint_state := states ->> joint;
+        continue when joint_state is null;
+        stress := coalesce(case joint when 'knee' then e.knee_stress when 'back' then e.back_stress
+          else e.shoulder_stress end, jr ->> 'unrated_stress');
+        if jr -> 'actions' -> joint_state ->> stress = 'limit' then
+          note := private.range_note_code(joint, e.movement_pattern);
+          if not (note = any(note_codes)) then note_codes := note_codes || note; end if;
+        end if;
+      end loop;
     end if;
 
     hold_entry := case when best_action = 'limit' then (
@@ -700,7 +781,8 @@ begin
       'swap_to_slug', candidate ->> 'slug',
       'swap_to_name', candidate ->> 'name',
       'range_note_code', case when best_action = 'limit'
-        then private.range_note_code(best_joint, e.movement_pattern) end);
+        then private.range_note_code(best_joint, e.movement_pattern) end,
+      'range_note_codes', case when best_action = 'limit' then to_jsonb(note_codes) end);
   end loop;
   return entries;
 end $$;
@@ -736,7 +818,8 @@ with b as (
           nullif(u.jx ->> 'rpe_to', '')::numeric) end,
       'joint_action', u.jx -> 'joint_action', 'joint', u.jx -> 'joint',
       'joint_state', u.jx -> 'joint_state', 'swap_to_slug', u.jx -> 'swap_to_slug',
-      'swap_to_name', u.jx -> 'swap_to_name', 'range_note_code', u.jx -> 'range_note_code')
+      'swap_to_name', u.jx -> 'swap_to_name', 'range_note_code', u.jx -> 'range_note_code',
+      'range_note_codes', u.jx -> 'range_note_codes')
     end as entry
   from u
 )
@@ -861,6 +944,50 @@ begin
     || ' lasted two weeks. Please see a physio or doctor.';
 end $$;
 revoke all on function private.persistent_sentence(jsonb) from public, anon, authenticated;
+
+-- The reminder for an area held on a clinician outcome (see a doctor or physio, not today): on every day
+-- the area stays held, whether or not any exercise changes. A joint whose own sentence is already in the
+-- changes (an exercise was changed for it) is not repeated. A leading space, or nothing.
+create function private.hold_reminder(p_states jsonb, p_changes jsonb)
+returns text language plpgsql immutable set search_path = '' as $$
+declare
+  s jsonb;
+  said text := '';
+begin
+  for s in select x from jsonb_array_elements(coalesce(p_states, '[]'::jsonb)) x
+    where x ->> 'state' = 'held' and x ->> 'hold_outcome' = 'clinician'
+      and not exists (select 1 from jsonb_array_elements(coalesce(p_changes, '[]'::jsonb)) c
+        where c ->> 'joint' = x ->> 'area') loop
+    said := said || ' ' || case s ->> 'area' when 'knee' then 'Your knee'
+      when 'back' then 'Your lower back' when 'shoulder' then 'Your shoulder'
+      else 'The pain you reported elsewhere' end
+      || ' is on hold until you''ve had it checked.';
+  end loop;
+  return said;
+end $$;
+revoke all on function private.hold_reminder(jsonb, jsonb) from public, anon, authenticated;
+
+-- The athlete's calendar day of a moment (their stored time zone, UTC when unset or unknown), the way
+-- private.local_date_for reads today.
+create function private.local_day_of(p_user uuid, p_at timestamptz)
+returns date language sql stable set search_path = '' as $$
+  select (p_at at time zone coalesce((
+    select a.timezone from public.user_accounts a
+    join pg_catalog.pg_timezone_names z on z.name = a.timezone
+    where a.id = p_user), 'UTC'))::date;
+$$;
+revoke all on function private.local_day_of(uuid, timestamptz) from public, anon, authenticated;
+
+-- What a list of changes does to the athlete's joints, one key per exercise, joint, action and swap target,
+-- sorted. A stored answer stands only while the keys it carries are the keys the rules ask for now.
+create function private.joint_change_keys(p_changes jsonb)
+returns text[] language sql immutable set search_path = '' as $$
+  select array(select distinct (c ->> 'planned_exercise_id') || '|' || (c ->> 'joint') || '|'
+      || (c ->> 'joint_action') || '|' || coalesce(c ->> 'swap_to_slug', '') as k
+    from jsonb_array_elements(coalesce(p_changes, '[]'::jsonb)) c
+    where c ->> 'joint_action' is not null order by k);
+$$;
+revoke all on function private.joint_change_keys(jsonb) from public, anon, authenticated;
 
 
 -- Strictness: a joint accommodation sits between 'nothing' and 'hold the loads'.
@@ -1013,13 +1140,20 @@ declare
   report_route text;
   report_severe boolean;
   report_codes text[];
+  states_full jsonb;
+  joint_only boolean := false;
+  hold_route text;
+  hold_severe boolean;
+  hold_codes text[];
 begin
   select v.id, v.block_kind, v.ends_on into version_id, version_block, version_ends
   from public.training_plan_versions v where v.user_id = p_user and v.status = 'active' limit 1;
   workout := case when version_id is null then null
     else private.planned_workout_for_date(p_user, p_date) end;
   workout_id := (workout ->> 'id')::uuid;
-  states := private.joint_states(p_user, p_date);
+  states_full := private.joint_states_detail(p_user, p_date);
+  states := coalesce((select jsonb_agg(t.s - 'hold_codes' - 'hold_severe' order by t.n)
+    from jsonb_array_elements(states_full) with ordinality as t(s, n)), '[]'::jsonb);
 
   select * into check_in from public.daily_check_ins c
   where c.user_id = p_user and c.local_date = p_date and c.superseded_at is null;
@@ -1039,6 +1173,9 @@ begin
         and s.state = 'completed') then 'session_done'
     when version_block = 'next_session' and version_ends = p_date then 'coach_adjusted'
   end;
+  -- On a day Coach already adjusted, the readiness kinds are not offered twice, but a joint that is held,
+  -- limited or on watch still changes the exercises start_workout will create for that day.
+  joint_only := unavailable = 'coach_adjusted';
 
   if workout_id is not null then
     targets := private.next_session_targets(p_user);
@@ -1047,7 +1184,7 @@ begin
     swap_c := private.day_adjustment_changes(p_user, workout_id, 'swap_to_easy_cardio', targets);
     can_hold := jsonb_array_length(hold_c -> 'changes') > 0;
     can_reduce := (reduce_c ->> 'sets_to')::integer < (reduce_c ->> 'sets_from')::integer;
-    exercise_options := private.joint_options(p_user, workout_id);
+    exercise_options := private.joint_options(p_user, workout_id, states);
     joint_arr := private.joint_changes(p_user, workout_id, states, hold_c -> 'changes');
   end if;
   -- A joint that is held, limited or on watch changes the exercises it touches in every kind (the
@@ -1066,21 +1203,39 @@ begin
   safety := assessment ->> 'safety_route';
   band := assessment ->> 'band';
   triggers := array(select jsonb_array_elements_text(assessment -> 'triggers'));
-  -- Today's pain reports with a red flag, or a severity of 7 or more, route out just as a check-in pain
-  -- of 7 or more does, even with no check-in, on a rest day or after the session started. The
-  -- stricter route wins.
+  -- A pain report that routes out (a red flag, or a severity of 7 or more) gives the day a safety route
+  -- just as a check-in pain of 7 or more does, even with no check-in, on a rest day or after the session
+  -- started: from reports dated today or stored today (a phone's date can differ from the server's), and
+  -- on every later day while the area stays held on an urgent or clinician_today outcome, until the
+  -- athlete's own clearance. A hold on a clinician outcome gives no route on later days, only a reminder
+  -- in the day's words. The strictest route wins.
   select (array['clinician', 'clinician_today', 'urgent'])[max(
       case pr.outcome when 'urgent' then 3 when 'clinician_today' then 2 else 1 end)],
     coalesce(bool_or(pr.severity >= (private.pain_rules() ->> 'clinician_today_from')::integer), false)
   into report_route, report_severe
   from public.pain_reports pr
-  where pr.user_id = p_user and pr.local_date = p_date
-    and pr.outcome in ('urgent', 'clinician_today', 'clinician');
+  where pr.user_id = p_user and pr.outcome in ('urgent', 'clinician_today', 'clinician')
+    and (pr.local_date = p_date or private.local_day_of(p_user, pr.created_at) = p_date);
+  report_codes := array(select distinct 'red_flag:' || f from public.pain_reports pr,
+    unnest(pr.red_flags) f
+    where pr.user_id = p_user and pr.outcome in ('urgent', 'clinician_today', 'clinician')
+      and (pr.local_date = p_date or private.local_day_of(p_user, pr.created_at) = p_date)
+    order by 1);
+  select (array['clinician_today', 'urgent'])[max(case h ->> 'hold_outcome' when 'urgent' then 2 else 1 end)],
+    coalesce(bool_or((h ->> 'hold_severe')::boolean), false),
+    array(select distinct 'red_flag:' || c from jsonb_array_elements(states_full) h2,
+      jsonb_array_elements_text(h2 -> 'hold_codes') c
+      where h2 ->> 'state' = 'held' and h2 ->> 'hold_outcome' in ('urgent', 'clinician_today') order by 1)
+  into hold_route, hold_severe, hold_codes
+  from jsonb_array_elements(states_full) h
+  where h ->> 'state' = 'held' and h ->> 'hold_outcome' in ('urgent', 'clinician_today');
+  if hold_route is not null and (report_route is null
+      or private.safety_route_rank(hold_route) > private.safety_route_rank(report_route)) then
+    report_route := hold_route;
+  end if;
+  report_severe := coalesce(report_severe, false) or coalesce(hold_severe, false);
+  report_codes := report_codes || coalesce(hold_codes, '{}'::text[]);
   if report_route is not null then
-    report_codes := array(select distinct 'red_flag:' || f from public.pain_reports pr,
-      unnest(pr.red_flags) f
-      where pr.user_id = p_user and pr.local_date = p_date
-        and pr.outcome in ('urgent', 'clinician_today', 'clinician') order by 1);
     if safety is null
        or private.safety_route_rank(report_route) > private.safety_route_rank(safety) then
       safety := report_route;
@@ -1096,7 +1251,7 @@ begin
     else assessment ->> 'kind' end;
   -- A joint state changes the session even on a day the readiness rules ask for nothing, unless the
   -- athlete said they cannot train.
-  if kind = 'none' and unavailable is null and safety is null
+  if kind = 'none' and (unavailable is null or joint_only) and safety is null
      and coalesce(check_in.available_to_train, true)
      and jsonb_array_length(joint_c -> 'changes') > 0 then
     kind := 'joint_adjust';
@@ -1113,23 +1268,23 @@ begin
 
   -- What the athlete may choose themselves: every kind that would change today's session, unless
   -- the day is unavailable, carries a safety route or the athlete said they cannot train.
-  if unavailable is null and safety is null and coalesce(check_in.available_to_train, true)
-     and workout_id is not null then
-    if can_hold then
+  if (unavailable is null or joint_only) and safety is null
+     and coalesce(check_in.available_to_train, true) and workout_id is not null then
+    if can_hold and not joint_only then
       options := options || jsonb_build_object('kind', 'hold_load',
         'explanation', private.day_adjustment_explanation(band, 'hold_load', '{}', null,
           hold_c -> 'changes', false, null),
         'sets_total_to', (hold_c ->> 'sets_to')::integer, 'changes', hold_c -> 'changes',
         'cardio', null);
     end if;
-    if can_reduce then
+    if can_reduce and not joint_only then
       options := options || jsonb_build_object('kind', 'reduce_sets',
         'explanation', private.day_adjustment_explanation(band, 'reduce_sets', '{}', null,
           reduce_c -> 'changes', false, null),
         'sets_total_to', (reduce_c ->> 'sets_to')::integer, 'changes', reduce_c -> 'changes',
         'cardio', null);
     end if;
-    if (swap_c ->> 'sets_from')::integer > 0 then
+    if (swap_c ->> 'sets_from')::integer > 0 and not joint_only then
       options := options || jsonb_build_object('kind', 'swap_to_easy_cardio',
         'explanation', private.day_adjustment_explanation(band, 'swap_to_easy_cardio', '{}', null,
           swap_c -> 'changes', false, null),
@@ -1161,10 +1316,11 @@ begin
       'changes', chosen_c -> 'changes',
       'explanation', private.day_adjustment_explanation(band, kind, triggers, safety,
         chosen_c -> 'changes', true, unavailable)
-        || case when safety is null then private.persistent_sentence(states) else '' end,
+        || case when safety is null then private.persistent_sentence(states)
+          || private.hold_reminder(states, chosen_c -> 'changes') else '' end,
       'status', case when kind = 'none' then 'none' else 'proposed' end,
-      'available', unavailable is null,
-      'unavailable_reason', unavailable,
+      'available', unavailable is null or kind = 'joint_adjust',
+      'unavailable_reason', case when kind = 'joint_adjust' then null else unavailable end,
       'safety_route', safety,
       'confidence', assessment -> 'confidence',
       'missing', assessment -> 'missing',
@@ -1194,14 +1350,9 @@ returns boolean language sql immutable set search_path = '' as $$
       or (private.readiness_rank(p_payload ->> 'kind', null)
           <= greatest(private.readiness_rank(p_row.rules_kind, null),
             private.readiness_rank(p_row.kind, null))
-        and not exists (
-          select 1 from jsonb_array_elements(coalesce((
-            select o -> 'changes' from jsonb_array_elements(p_payload -> 'options') o
-            where o ->> 'kind' = 'joint_adjust' limit 1), '[]'::jsonb)) c
-          where private.joint_action_rank(c ->> 'joint_action') > coalesce((
-            select max(private.joint_action_rank(s ->> 'joint_action'))
-            from jsonb_array_elements(p_row.changes) s
-            where s ->> 'planned_exercise_id' = c ->> 'planned_exercise_id'), 0))));
+        and private.joint_change_keys(p_row.changes) = private.joint_change_keys((
+          select o -> 'changes' from jsonb_array_elements(p_payload -> 'options') o
+          where o ->> 'kind' = 'joint_adjust' limit 1))));
 $$;
 
 create or replace function private.day_adjustment_present(
@@ -1216,7 +1367,8 @@ create or replace function private.day_adjustment_present(
         from jsonb_array_elements(p_row.changes) c), 0)::integer,
       'explanation', private.day_adjustment_explanation(p_payload ->> 'band', p_row.kind,
         array(select jsonb_array_elements_text(p_payload -> 'triggers')), null, p_row.changes,
-        p_row.origin = 'proposed', null) || private.persistent_sentence(p_payload -> 'joint_states'),
+        p_row.origin = 'proposed', null) || private.persistent_sentence(p_payload -> 'joint_states')
+        || private.hold_reminder(p_payload -> 'joint_states', p_row.changes),
       'origin', p_row.origin, 'answered_at', p_row.answered_at)
     when p_row.planned_workout_id::text = p_payload ->> 'planned_workout_id'
       then p_payload || jsonb_build_object('previous_answer', jsonb_build_object(
@@ -1239,6 +1391,7 @@ create or replace function public.start_workout(
 returns uuid language plpgsql security definer set search_path='' as $$
 declare result_id uuid; version_id uuid; exercise record; performance_id uuid; n integer;
   adjustment public.day_adjustments%rowtype; adjusted boolean := false; set_total integer;
+  entry jsonb;
 begin
   if auth.uid() is null then raise exception 'authentication required' using errcode='42501'; end if;
   -- The same lock respond_to_day_adjustment_v1 takes: an answer and a start never interleave.
@@ -1289,23 +1442,32 @@ begin
 
   for exercise in select * from public.planned_exercises pe
     where pe.planned_workout_id=p_planned_workout_id order by exercise_order loop
+    -- What the accepted answer says about this exercise, if anything.
+    entry := null;
+    if adjusted then
+      select c into entry from jsonb_array_elements(adjustment.changes) c
+      where c ->> 'planned_exercise_id' = exercise.id::text limit 1;
+    end if;
+    -- An exercise the answer swaps for a gentler one is created as that exercise, a substitution made
+    -- for pain (the load is not written: the athlete picks it); every other exercise is as planned.
     insert into public.exercise_performances(
       user_id,workout_session_id,planned_exercise_id,exercise_order,status,
-      performance_kind,performed_name,rest_seconds
+      performance_kind,performed_name,rest_seconds,substitution_reason
     ) values(
       auth.uid(),result_id,exercise.id,exercise.exercise_order,'unknown',
-      'prescribed',exercise.display_name_snapshot,exercise.rest_seconds
+      case when entry ->> 'joint_action' = 'swap' then 'substituted' else 'prescribed' end,
+      case when entry ->> 'joint_action' = 'swap' then entry ->> 'swap_to_name'
+        else exercise.display_name_snapshot end,
+      exercise.rest_seconds,
+      case when entry ->> 'joint_action' = 'swap' then 'pain' end
     ) returning id into performance_id;
+    -- A left-out exercise (a joint drop) gets no sets whatever the kind: its performance stays
+    -- 'unknown', never inferred as skipped. reduce_sets builds the adjusted set counts. Everything
+    -- else, an easy-cardio answer included, keeps the plan's sets.
     set_total := exercise.set_count;
-    if adjusted then
-      -- A left-out exercise (a joint drop) gets no sets whatever the kind: its performance stays
-      -- 'unknown', never inferred as skipped. reduce_sets builds the adjusted set counts. Everything
-      -- else, an easy-cardio answer included, keeps the plan's sets.
-      select case when c ->> 'joint_action' = 'drop' then 0
-        when adjustment.kind='reduce_sets' then (c ->> 'sets_to')::integer end into set_total
-      from jsonb_array_elements(adjustment.changes) c
-      where c ->> 'planned_exercise_id' = exercise.id::text;
-      set_total := coalesce(set_total, exercise.set_count);
+    if entry is not null then
+      set_total := coalesce(case when entry ->> 'joint_action' = 'drop' then 0
+        when adjustment.kind='reduce_sets' then (entry ->> 'sets_to')::integer end, exercise.set_count);
     end if;
     for n in 1..set_total loop
       insert into public.exercise_sets(user_id,exercise_performance_id,set_number)
@@ -1316,6 +1478,111 @@ begin
 end $$;
 
 -- 10. B3 meets the joint adjustment -----------------------------------------------------------------
+-- A session done under an answer that left the exercise out (sets_planned 0) is not evidence for adding load.
+
+create or replace function private.progression_decision(
+  p_set_count integer,
+  p_rep_min integer,
+  p_rep_max integer,
+  p_target_rpe numeric,
+  p_step_kg numeric,
+  p_gap_days integer,
+  p_skipped_since boolean,
+  p_pain_since boolean,
+  p_assisted boolean,
+  p_sessions jsonb
+) returns jsonb language plpgsql immutable set search_path = '' as $$
+declare
+  rules constant jsonb := private.progression_rules();
+  s1 jsonb := p_sessions -> 0;
+  s2 jsonb := p_sessions -> 1;
+  s3 jsonb := p_sessions -> 2;
+  v_load numeric := nullif(s1 ->> 'load_kg', '')::numeric;
+  v_sets integer := (s1 ->> 'sets')::integer;
+  v_min_reps integer := (s1 ->> 'min_reps')::integer;
+  v_min_rir integer := nullif(s1 ->> 'min_rir', '')::integer;
+  v_step numeric := case when p_step_kg > 0 then p_step_kg end;
+  v_rir_target integer := case when p_target_rpe is null then 2
+    else greatest(0, least(5, round(10 - p_target_rpe)::integer)) end;
+  v_can_lower boolean;
+  v_hold_reps integer;
+  v_action text;
+  v_reason text;
+  v_load_out numeric;
+  v_reps integer;
+  v_lower_load numeric;
+begin
+  if p_sessions is null or jsonb_typeof(p_sessions) <> 'array'
+     or jsonb_array_length(p_sessions) = 0 then
+    return null;
+  end if;
+  -- Assisted: lowering adds help (always possible); otherwise the load must stay above 0.
+  v_can_lower := v_load is not null and v_step is not null
+    and (coalesce(p_assisted, false) or v_load - v_step > 0);
+  v_lower_load := case when coalesce(p_assisted, false) then v_load + v_step else v_load - v_step end;
+  v_hold_reps := least(p_rep_max, greatest(p_rep_min, v_min_reps));
+  v_load_out := v_load;
+  v_reps := v_hold_reps;
+
+  if coalesce((s1 ->> 'pain')::boolean, false) or coalesce(p_pain_since, false) then
+    v_action := 'hold'; v_reason := 'pain';
+  elsif p_gap_days >= (rules ->> 'lower_after_gap_days')::integer and v_can_lower then
+    v_action := 'lower'; v_reason := 'away';
+    v_load_out := v_lower_load; v_reps := p_rep_min;
+  elsif p_gap_days >= (rules ->> 'hold_after_gap_days')::integer then
+    v_action := 'hold'; v_reason := 'away';
+  elsif p_skipped_since then
+    v_action := 'hold'; v_reason := 'skipped';
+  elsif v_min_reps < p_rep_min then
+    if s2 is not null and (s2 ->> 'min_reps')::integer < p_rep_min
+       and nullif(s2 ->> 'load_kg', '')::numeric is not distinct from v_load and v_can_lower
+       and not coalesce((s1 ->> 'adjusted')::boolean, false)
+       and not coalesce((s2 ->> 'adjusted')::boolean, false) then
+      v_action := 'lower'; v_reason := 'below_range';
+      v_load_out := v_lower_load; v_reps := p_rep_min;
+    else
+      v_action := 'hold'; v_reason := 'below_range'; v_reps := p_rep_min;
+    end if;
+  elsif v_sets < coalesce((s1 ->> 'sets_planned')::integer, p_set_count)
+        or coalesce((s1 ->> 'sets_planned')::integer, 1) = 0 then
+    v_action := 'hold'; v_reason := 'incomplete';
+  -- A cut-short session is not a stall (handled above); the comparison is reps per set.
+  elsif s3 is not null and v_min_reps < p_rep_max
+        and not coalesce((s1 ->> 'adjusted')::boolean, false)
+        and not coalesce((s2 ->> 'adjusted')::boolean, false)
+        and not coalesce((s3 ->> 'adjusted')::boolean, false)
+        and nullif(s2 ->> 'load_kg', '')::numeric is not distinct from v_load
+        and nullif(s3 ->> 'load_kg', '')::numeric is not distinct from v_load
+        and (s1 ->> 'total_reps')::integer * (s3 ->> 'sets')::integer
+          <= (s3 ->> 'total_reps')::integer * (s1 ->> 'sets')::integer then
+    if v_can_lower then
+      v_action := 'lower'; v_reason := 'stall';
+      v_load_out := v_lower_load; v_reps := p_rep_min;
+    else
+      v_action := 'hold'; v_reason := 'stall';
+    end if;
+  elsif v_min_rir is not null and v_min_rir < v_rir_target then
+    v_action := 'hold'; v_reason := 'effort';
+  elsif v_min_reps >= p_rep_max then
+    if v_step is not null and v_load is not null and (not coalesce(p_assisted, false) or v_load > 0) then
+      v_action := 'add_load'; v_reason := 'top_of_range';
+      v_load_out := case when coalesce(p_assisted, false) then greatest(0, v_load - v_step)
+        else v_load + v_step end;
+      v_reps := p_rep_min;
+    else
+      v_action := 'hold'; v_reason := 'top_no_step'; v_reps := p_rep_max;
+    end if;
+  else
+    v_action := 'add_reps'; v_reason := 'within_range';
+    v_reps := least(p_rep_max, v_min_reps + (rules ->> 'reps_added_per_session')::integer);
+  end if;
+
+  return jsonb_build_object(
+    'action', v_action, 'reason', v_reason,
+    'load_kg', v_load_out, 'reps', v_reps, 'sets', p_set_count,
+    'confidence', case when coalesce((s1 ->> 'effort_known')::boolean, false)
+      then 'high' else 'low' end);
+end $$;
 
 create or replace function private.next_session_targets(p_user uuid)
 returns jsonb language sql stable security definer set search_path = '' as $$
