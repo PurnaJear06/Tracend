@@ -292,7 +292,10 @@ abstract interface class CoachRawResponses {
 
 abstract interface class CoachRepository {
   Future<CoachDecision?> loadLatest();
-  Future<CoachDecision> generate();
+
+  /// Makes the day's decision. [localDate] (`YYYY-MM-DD`) is the athlete's day
+  /// as the server named it; without it the phone's date is sent.
+  Future<CoachDecision> generate({String? localDate});
   Future<Map<String, dynamic>> loadUsage();
 }
 
@@ -481,9 +484,10 @@ class SupabaseCoachRepository
   });
 
   @override
-  Future<CoachDecision> generate() => _reads.afterWrite(_generate);
+  Future<CoachDecision> generate({String? localDate}) =>
+      _reads.afterWrite(() => _generate(localDate));
 
-  Future<CoachDecision> _generate() async {
+  Future<CoachDecision> _generate(String? localDate) async {
     final now = _now();
     final account = await _client
         .from('user_accounts')
@@ -494,7 +498,7 @@ class SupabaseCoachRepository
       'coach-decide',
       body: {
         'schema_version': '1.0',
-        'local_date': _dateKey(now),
+        'local_date': localDate ?? _dateKey(now),
         'timezone': timezone,
         'idempotency_key': _uuid.v4(),
       },
@@ -554,7 +558,7 @@ class FixtureCoachRepository implements CoachRepository, CoachChatRepository {
   @override
   Future<CoachDecision?> loadLatest() async => null;
   @override
-  Future<CoachDecision> generate() =>
+  Future<CoachDecision> generate({String? localDate}) =>
       throw StateError('Configure Supabase to generate coaching.');
   @override
   Future<Map<String, dynamic>> loadUsage() async => const {

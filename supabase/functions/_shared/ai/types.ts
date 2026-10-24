@@ -100,6 +100,16 @@ export type AiResult =
     model: string;
     stop: "end" | "max_tokens";
   }
-  | { ok: false; reason: AiFailure; usage: AiUsage | null; retryAfterSeconds?: number };
+  | {
+    ok: false;
+    reason: AiFailure;
+    usage: AiUsage | null;
+    retryAfterSeconds?: number;
+    /**
+     * The provider's HTTP status on a "provider_error" that was an error response other than
+     * 429, 503 and 529: the number only, never a body. Absent for every other failure.
+     */
+    httpStatus?: number;
+  };
 
 export type AiCallDeps = { fetch?: typeof fetch; now?: () => number };

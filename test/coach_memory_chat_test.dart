@@ -48,7 +48,8 @@ class _Chat implements CoachRepository, CoachChatRepository {
   Future<CoachDecision?> loadLatest() async => null;
 
   @override
-  Future<CoachDecision> generate() => throw UnimplementedError();
+  Future<CoachDecision> generate({String? localDate}) =>
+      throw UnimplementedError();
 
   @override
   Future<Map<String, dynamic>> loadUsage() async => {};
