@@ -50,11 +50,11 @@ Deno.test("start_workout is the pain-check definition plus the future-day refusa
     ],
     [
       "  where user_id=auth.uid() and planned_workout_id=p_planned_workout_id and state='in_progress'\n",
-      "  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))) and state='in_progress'\n",
+      "  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))::uuid[]) and state='in_progress'\n",
     ],
     [
       "  if exists (\n    select 1 from public.workout_sessions\n    where user_id=auth.uid() and planned_workout_id=p_planned_workout_id\n      and local_date=p_local_date and state='completed'\n  ) then",
-      "  -- The same workout under any plan version: a Coach change, a block or a deload copies the workouts under\n  -- new ids, and a day already logged stays logged.\n  if exists (\n    select 1 from public.workout_sessions\n    where user_id=auth.uid()\n      and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id)))\n      and local_date=p_local_date and state='completed'\n  ) then",
+      "  -- The same workout under any plan version: a Coach change, a block or a deload copies the workouts under\n  -- new ids, and a day already logged stays logged.\n  if exists (\n    select 1 from public.workout_sessions\n    where user_id=auth.uid()\n      and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))::uuid[])\n      and local_date=p_local_date and state='completed'\n  ) then",
     ],
     [
       "      adjusted := false;\n    end if;\n  end if;\n",
@@ -74,7 +74,7 @@ Deno.test("get_my_workout_session is the stale-close definition plus the earlier
   const hunks: Hunks = [
     [
       "  where user_id=auth.uid() and planned_workout_id=p_planned_workout_id\n    and state<>'abandoned'\n    and (state='in_progress' or local_date=p_local_date)\n",
-      "  -- The same workout under any plan version: a session in progress or finished that day under an earlier\n  -- version is the one this workout's day holds.\n  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id)))\n    and state<>'abandoned'\n    and (state='in_progress' or local_date=p_local_date)\n",
+      "  -- The same workout under any plan version: a session in progress or finished that day under an earlier\n  -- version is the one this workout's day holds.\n  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))::uuid[])\n    and state<>'abandoned'\n    and (state='in_progress' or local_date=p_local_date)\n",
     ],
   ];
   await pinned(
@@ -90,7 +90,7 @@ Deno.test("get_healthkit_completion_candidate is the per-date definition plus th
   const hunks: Hunks = [
     [
       "        and s.planned_workout_id = w.id\n",
-      "        and s.planned_workout_id = any((select private.workout_identity_ids(w.user_id, w.id)))\n",
+      "        and s.planned_workout_id = any((select private.workout_identity_ids(w.user_id, w.id))::uuid[])\n",
     ],
   ];
   await pinned(
@@ -106,7 +106,7 @@ Deno.test("healthkit_auto_complete_workout is the train-redesign definition plus
   const hunks: Hunks = [
     [
       "      and planned_workout_id = p_planned_workout_id\n      and local_date = p_local_date\n      and state = 'completed'\n",
-      "      and planned_workout_id = any((select private.workout_identity_ids(v_user_id, p_planned_workout_id)))\n      and local_date = p_local_date\n      and state = 'completed'\n",
+      "      and planned_workout_id = any((select private.workout_identity_ids(v_user_id, p_planned_workout_id))::uuid[])\n      and local_date = p_local_date\n      and state = 'completed'\n",
     ],
   ];
   await pinned(
@@ -126,11 +126,11 @@ Deno.test("day_adjustment_compute is the pain-check definition plus the workout-
     ],
     [
       "        and s.planned_workout_id = workout_id and s.state = 'in_progress') then 'session_started'",
-      "        and s.planned_workout_id = any((select private.workout_identity_ids(p_user, workout_id))) and s.state = 'in_progress') then 'session_started'",
+      "        and s.planned_workout_id = any((select private.workout_identity_ids(p_user, workout_id))::uuid[]) and s.state = 'in_progress') then 'session_started'",
     ],
     [
       "        and s.planned_workout_id = workout_id and s.local_date = p_date\n        and s.state = 'completed') then 'session_done'",
-      "        and s.planned_workout_id = any((select private.workout_identity_ids(p_user, workout_id)))\n        and s.local_date = p_date and s.state = 'completed') then 'session_done'",
+      "        and s.planned_workout_id = any((select private.workout_identity_ids(p_user, workout_id))::uuid[])\n        and s.local_date = p_date and s.state = 'completed') then 'session_done'",
     ],
   ];
   await pinned(
@@ -170,7 +170,7 @@ Deno.test("unfinished_workouts is the unfinished-workouts definition plus the wo
     ],
     [
       "        and c.planned_workout_id = s.planned_workout_id and c.local_date = s.local_date);",
-      "        and c.planned_workout_id = any((select private.workout_identity_ids(s.user_id, s.planned_workout_id)))\n        and c.local_date = s.local_date);",
+      "        and c.planned_workout_id = any((select private.workout_identity_ids(s.user_id, s.planned_workout_id))::uuid[])\n        and c.local_date = s.local_date);",
     ],
   ];
   await pinned(

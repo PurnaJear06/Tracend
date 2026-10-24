@@ -151,7 +151,7 @@ begin
   -- A session left open from an earlier day is closed first, so it is never found as today's.
   perform private.abandon_stale_workouts(auth.uid());
   select id into result_id from public.workout_sessions
-  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))) and state='in_progress'
+  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))::uuid[]) and state='in_progress'
   order by started_at desc limit 1;
   if result_id is not null then return result_id; end if;
 
@@ -160,7 +160,7 @@ begin
   if exists (
     select 1 from public.workout_sessions
     where user_id=auth.uid()
-      and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id)))
+      and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))::uuid[])
       and local_date=p_local_date and state='completed'
   ) then
     raise exception 'workout already completed for this coaching day' using errcode='55000';
@@ -258,7 +258,7 @@ begin
   select * into target from public.workout_sessions
   -- The same workout under any plan version: a session in progress or finished that day under an earlier
   -- version is the one this workout's day holds.
-  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id)))
+  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))::uuid[])
     and state<>'abandoned'
     and (state='in_progress' or local_date=p_local_date)
   order by case state when 'in_progress' then 0 else 1 end, started_at desc
@@ -331,7 +331,7 @@ as $$
     and not exists (
       select 1 from public.workout_sessions s
       where s.user_id = w.user_id
-        and s.planned_workout_id = any((select private.workout_identity_ids(w.user_id, w.id)))
+        and s.planned_workout_id = any((select private.workout_identity_ids(w.user_id, w.id))::uuid[])
         and s.local_date = p_local_date
         and s.state = 'completed'
     )
@@ -376,7 +376,7 @@ begin
   if exists (
     select 1 from public.workout_sessions
     where user_id = v_user_id
-      and planned_workout_id = any((select private.workout_identity_ids(v_user_id, p_planned_workout_id)))
+      and planned_workout_id = any((select private.workout_identity_ids(v_user_id, p_planned_workout_id))::uuid[])
       and local_date = p_local_date
       and state = 'completed'
   ) then
@@ -508,9 +508,9 @@ begin
     when version_id is null then 'no_plan'
     when workout_id is null then 'rest_day'
     when exists (select 1 from public.workout_sessions s where s.user_id = p_user
-        and s.planned_workout_id = any((select private.workout_identity_ids(p_user, workout_id))) and s.state = 'in_progress') then 'session_started'
+        and s.planned_workout_id = any((select private.workout_identity_ids(p_user, workout_id))::uuid[]) and s.state = 'in_progress') then 'session_started'
     when exists (select 1 from public.workout_sessions s where s.user_id = p_user
-        and s.planned_workout_id = any((select private.workout_identity_ids(p_user, workout_id)))
+        and s.planned_workout_id = any((select private.workout_identity_ids(p_user, workout_id))::uuid[])
         and s.local_date = p_date and s.state = 'completed') then 'session_done'
     when version_block = 'next_session' and version_ends = p_date then 'coach_adjusted'
   end;
@@ -727,7 +727,7 @@ returns table (
     and not exists (
       select 1 from public.workout_sessions c
       where c.user_id = s.user_id and c.state = 'completed'
-        and c.planned_workout_id = any((select private.workout_identity_ids(s.user_id, s.planned_workout_id)))
+        and c.planned_workout_id = any((select private.workout_identity_ids(s.user_id, s.planned_workout_id))::uuid[])
         and c.local_date = s.local_date);
 $$;
 
