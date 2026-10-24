@@ -2,11 +2,13 @@
 // proposal. It reads the athlete's state through three service-role RPCs, builds the proposal with
 // rules (build.ts), and stores it with persist_coach_proposal_v1. It makes no model call and takes
 // no budget. The model's reply may mention the proposal only when this returns `ok: true`.
+import type { DeloadReason } from "../training/guidance/payload.ts";
 import { buildCoachProposal } from "./build.ts";
 import { parseCoachProposalIntent } from "./intent.ts";
 import { refusals } from "./refusals.ts";
 import { parseAthleteState } from "./state.ts";
-import type { CoachProposal, CoachProposalIntent, RefusalCode } from "./types.ts";
+import { buildSuggestedDeload } from "./training.ts";
+import type { AthleteState, CoachProposal, CoachProposalIntent, RefusalCode } from "./types.ts";
 
 /** A Supabase-style `rpc`, typed structurally so any service-role client fits. */
 export type ProposalRpc = (
@@ -67,20 +69,19 @@ function storeRefusal(message: string): ProposeResult {
   return refusals.planChanged();
 }
 
-const unavailable: ProposeResult = {
+const unavailable: Extract<ProposeResult, { ok: false }> = {
   ok: false,
   code: "unavailable",
   reason: "I couldn't prepare that change just now. Try again in a moment.",
 };
 
-export async function proposeCoachChange(
+/** The athlete's state for the rules, read through the service-role RPCs; null when it is unreadable. */
+async function readState(
   rpc: ProposalRpc,
-  request: ProposeRequest,
-): Promise<ProposeResult> {
-  const parsed = parseCoachProposalIntent(request.intent);
-  if (!parsed.ok) return refusals.invalidIntent();
-
-  const user = { p_user_id: request.userId };
+  userId: string,
+  athleteMessage: string,
+): Promise<AthleteState | ProposeResult> {
+  const user = { p_user_id: userId };
   const [inputs, goalPhase, progression] = await Promise.all([
     rpc("get_coach_proposal_inputs_v1", user),
     rpc("get_goal_phase_inputs_v1", user),
@@ -92,16 +93,20 @@ export async function proposeCoachChange(
     inputs: inputs.data,
     goalPhase: goalPhase.data,
     progression: progression.error ? null : progression.data,
-    athleteMessage: request.athleteMessage,
+    athleteMessage,
   });
-  if (!state) return refusals.profileIncomplete();
+  return state ?? refusals.profileIncomplete();
+}
 
-  const built = buildCoachProposal(keepAthletesNote(parsed.intent, request.athleteMessage), state);
-  if (!built.ok) return built;
-  const proposal = built.proposal;
-
+/** Stores a built proposal as pending; the athlete's answer is the only thing that applies it. */
+async function storeProposal(
+  rpc: ProposalRpc,
+  userId: string,
+  proposal: CoachProposal,
+  sourceMessageId: string | null,
+): Promise<ProposeResult> {
   const stored = await rpc("persist_coach_proposal_v1", {
-    p_user_id: request.userId,
+    p_user_id: userId,
     p_kind: proposal.kind,
     p_title: proposal.title,
     p_rationale: proposal.rationale,
@@ -115,7 +120,7 @@ export async function proposeCoachChange(
     p_basis: proposal.basis,
     p_ends_on: proposal.endsOn,
     p_expires_in_hours: proposal.expiresInHours,
-    p_source_message_id: request.sourceMessageId ?? null,
+    p_source_message_id: sourceMessageId,
   });
   if (stored.error) {
     return stored.error.code === "55000" ? storeRefusal(stored.error.message ?? "") : unavailable;
@@ -132,4 +137,38 @@ export async function proposeCoachChange(
     title: proposal.title,
     endsOn: proposal.endsOn,
   };
+}
+
+const isState = (value: AthleteState | ProposeResult): value is AthleteState => !("ok" in value);
+
+export async function proposeCoachChange(
+  rpc: ProposalRpc,
+  request: ProposeRequest,
+): Promise<ProposeResult> {
+  const parsed = parseCoachProposalIntent(request.intent);
+  if (!parsed.ok) return refusals.invalidIntent();
+
+  const state = await readState(rpc, request.userId, request.athleteMessage);
+  if (!isState(state)) return state;
+
+  const built = buildCoachProposal(keepAthletesNote(parsed.intent, request.athleteMessage), state);
+  if (!built.ok) return built;
+  return await storeProposal(rpc, request.userId, built.proposal, request.sourceMessageId ?? null);
+}
+
+/**
+ * Stores the pending deload the rules suggest (training-proposals). The week is built by the same
+ * deterministic builder as a deload Coach proposes; only the reasons come from the rules. It stores
+ * a proposal for the athlete to answer and changes nothing else.
+ */
+export async function proposeSuggestedDeload(
+  rpc: ProposalRpc,
+  request: Readonly<{ userId: string; reasons: readonly DeloadReason[] }>,
+): Promise<ProposeResult> {
+  if (request.reasons.length === 0) return refusals.noChange("Nothing suggests a lighter week.");
+  const state = await readState(rpc, request.userId, "");
+  if (!isState(state)) return state;
+  const built = buildSuggestedDeload(request.reasons, state);
+  if (!built.ok) return built;
+  return await storeProposal(rpc, request.userId, built.proposal, null);
 }

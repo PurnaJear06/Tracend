@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { proposalRpcPayloads, stateFixture, today } from "./fixtures.ts";
-import { type ProposalRpc, proposeCoachChange } from "./service.ts";
+import { type ProposalRpc, proposeCoachChange, proposeSuggestedDeload } from "./service.ts";
 import { parseAthleteState } from "./state.ts";
 
 const user = "00000000-0000-4000-8000-0000000000aa";
@@ -211,4 +211,19 @@ Deno.test("a refused store is told by what the database said", async () => {
   );
   assertEquals(await stored("not enough logged data for this change"), "evidence_changed");
   assertEquals(await stored("the plan changed while the proposal was built"), "plan_changed");
+});
+
+Deno.test("the deload the rules suggest needs a reason and is stored without a message", async () => {
+  const none = fakeRpc();
+  const empty = await proposeSuggestedDeload(none.rpc, { userId: user, reasons: [] });
+  assert(!empty.ok);
+  assertEquals(none.calls.length, 0);
+
+  const { rpc, calls } = fakeRpc();
+  const result = await proposeSuggestedDeload(rpc, { userId: user, reasons: ["run_down"] });
+  assert(result.ok);
+  assertEquals(result.kind, "intensity_or_phase");
+  const persist = calls.find((call) => call.name === "persist_coach_proposal_v1")!;
+  assertEquals(persist.params.p_source_message_id, null);
+  assertStringIncludes(String(persist.params.p_rationale), "readiness has read low");
 });

@@ -17,6 +17,7 @@ import {
   deloadSets,
   deloadWeeks,
 } from "../training/standard/deload.ts";
+import { type DeloadReason, deloadReasons } from "../training/guidance/payload.ts";
 import { jointStressLevels } from "../training/standard/joint_stress.ts";
 import {
   addDays,
@@ -491,9 +492,16 @@ function deloadWeek(
 const sumSets = (workouts: readonly { exercises: readonly { sets: number }[] }[]) =>
   workouts.reduce((total, workout) => total + workout.exercises.reduce((n, e) => n + e.sets, 0), 0);
 
+/**
+ * What the rules, not the athlete's words, give as the reason for a proposal they started: the
+ * lead sentence of the rationale and the evidence behind it.
+ */
+export type RulesSuggestion = Readonly<{ lead: string; evidence: readonly ProposalEvidence[] }>;
+
 export function buildIntensityOrPhase(
   intent: Extract<CoachProposalIntent, { kind: "intensity_or_phase" }>,
   state: AthleteState,
+  suggestion?: RulesSuggestion,
 ): BuildResult {
   const plan = state.plan;
   const endsBlockNow = intent.level === "normal";
@@ -538,7 +546,10 @@ export function buildIntensityOrPhase(
     return build(state, {
       kind: "intensity_or_phase",
       title,
-      rationale: `${reasonText(intent.reason, intent.note)} For ${plural(weeks, "week")} your ` +
+      rationale:
+        `${suggestion?.lead ?? reasonText(intent.reason, intent.note)} For ${
+          plural(weeks, "week")
+        } your ` +
         (deload
           ? `sets are halved, ${
             loadsClause(result)
@@ -550,6 +561,7 @@ export function buildIntensityOrPhase(
         : "Steadier training while you recover.",
       downside: "Less training stress for a short while, so progress pauses.",
       endsOn,
+      evidence: suggestion ? [...suggestion.evidence] : undefined,
       beforeRows: [
         { label: "Effort", value: "Your regular effort" },
         { label: "Weekly sets", value: String(sumSets(planAsPayload(current))) },
@@ -627,6 +639,37 @@ export function buildIntensityOrPhase(
       weekly_structure: rules.workouts,
     },
   });
+}
+
+/** The sentence for each reason the rules found, in the athlete's terms and from their own data. */
+const deloadLeads: Readonly<Record<DeloadReason, string>> = {
+  performance_drop: "Two or more of your lifts have been heading down.",
+  run_down:
+    "Your readiness has read low on four or more of the days you checked in this past week.",
+  block_done: "You've trained most of a full block of training.",
+};
+
+/**
+ * The deload the rules suggest (training-proposals): the same one-week builder Coach uses, with the
+ * rules' own reasons in place of an athlete's. Nothing is applied; the athlete approves the card.
+ */
+export function buildSuggestedDeload(
+  reasons: readonly DeloadReason[],
+  state: AthleteState,
+): BuildResult {
+  return buildIntensityOrPhase(
+    { kind: "intensity_or_phase", reason: "fatigue", level: "deload", weeks: deloadWeeks.value },
+    state,
+    {
+      lead: deloadReasons.filter((reason) => reasons.includes(reason))
+        .map((reason) => deloadLeads[reason]).join(" "),
+      evidence: [{
+        code: "DELOAD_SIGNALS",
+        label: "Your logged lifts, check-ins and training weeks",
+        source: "training_guidance",
+      }],
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
