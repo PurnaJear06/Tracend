@@ -1346,7 +1346,10 @@ target is `planTopicText`'s wording for volume and for effort.
 not be checked"), not "none"; "none" needs every search to succeed with nothing close enough (the
 onboarding `PlanLibrary` and the Coach plan turn). The eval now searches at the production counts
 (`libraryMatchCount` 8 for Coach plan questions, `planLibraryMatchCount` 6 for the onboarding cases);
-the numbers above were measured at 8 for both.
+the numbers above were measured at 8 for both. At production counts: plan questions 0.750 (unchanged,
+count 8), onboarding plan searches **0.600** (count 6; 0.733 at 8): the strength athlete found none of
+its three sources, the others as before. The gate (0.4) still leaves 0.2 of headroom, so it is not
+changed; the strength case is the next tuning target for `onboardingLibraryQueries`.
 
 ### Decisions and limits
 
