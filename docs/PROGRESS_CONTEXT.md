@@ -73,7 +73,8 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
 
 **Coach opens a fresh chat (2026-10-24, branch `claude/coach-chat-fresh`, PR open):** Coach reopens the last
 conversation only if its last message is under 6 hours old, otherwise a new conversation with a **Continue last
-chat** row; opening any conversation now lands on its newest message even when content lays out late. App only, no
+chat** row (checked again when the Coach tab is re-activated or the app resumes, never mid-send or with a typed
+draft); opening any conversation now lands on its newest message even when content lays out late. App only, no
 migration. Details: "Coach opens a fresh chat after 6 hours" in [`ai-gateway.md`](./handoff/ai-gateway.md).
 
 **Stale open workouts (2026-10-23, branch `claude/stale-workout-resume`, PR open):** the owner's Legs B resumed a

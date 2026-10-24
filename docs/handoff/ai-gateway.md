@@ -1697,7 +1697,15 @@ sets `_pinnedToEnd`; a `ScrollMetricsNotification` listener re-jumps to the end 
 changes while pinned. A pointer down on the conversation, a send, or New/open ends the pin, so
 tapping to expand a card never jumps. Sending keeps its animated scroll. Tests:
 `test/coach_chat_history_test.dart` ("opening Coach", "landing on the newest message") and the late
-card test in `test/coach_proposal_thread_test.dart`. No migration, no server change.
+card test in `test/coach_proposal_thread_test.dart`.
+
+Coming back: AppShell keeps opened tabs alive in an IndexedStack, so `initState` runs once. `CoachScreen.active`
+(AppShell passes `_selectedIndex == 2`) and `AppLifecycleState.resumed` (only while `active`) call
+`_startFreshIfStale`: if the open conversation's last activity (later of its thread `updatedAt`, its newest
+message and `_openedAt`, the moment the athlete opened it on purpose) is at least `coachReopenWindow` old, it
+switches to a new conversation with the Continue row. It never switches while a send is in flight, the chat is
+loading, or the composer holds text; the next return checks again. Tests: "coming back to Coach" in
+`test/coach_chat_history_test.dart`. No migration, no server change.
 
 ## Next agent starts here
 

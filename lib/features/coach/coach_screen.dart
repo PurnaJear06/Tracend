@@ -64,9 +64,15 @@ class CoachScreen extends StatefulWidget {
     this.planChanges,
     this.memory,
     this.now = DateTime.now,
+    this.active = true,
     super.key,
   });
   final CoachRepository repository;
+
+  /// Whether this is the visible tab. The shell keeps the screen alive while
+  /// another tab shows, so becoming active again (like the app resuming)
+  /// re-checks [coachReopenWindow] against the open conversation.
+  final bool active;
 
   /// The clock behind [coachReopenWindow]; tests set it.
   final DateTime Function() now;
@@ -91,7 +97,7 @@ class CoachScreen extends StatefulWidget {
   State<CoachScreen> createState() => _CoachScreenState();
 }
 
-class _CoachScreenState extends State<CoachScreen> {
+class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
   static const _uuid = Uuid();
   final _composer = TextEditingController();
   final _scroll = ScrollController();
@@ -124,6 +130,11 @@ class _CoachScreenState extends State<CoachScreen> {
   /// moved on, its new thread is not selected and its reply is not shown
   /// there. The server still keeps both, so the thread appears in the list.
   int _view = 0;
+
+  /// When the athlete explicitly opened the current conversation (Continue
+  /// last chat, Saved conversations). An old chat opened on purpose stays open
+  /// for the visit: it counts as touched then, not at its last message.
+  DateTime? _openedAt;
 
   /// Only the newest thread-list request may replace the list.
   int _threadsRequest = 0;
@@ -182,6 +193,7 @@ class _CoachScreenState extends State<CoachScreen> {
       _contextStatus = (widget.repository as CoachContextRepository)
           .loadContextStatus();
     }
+    WidgetsBinding.instance.addObserver(this);
     _restoreChat();
   }
 
@@ -192,10 +204,19 @@ class _CoachScreenState extends State<CoachScreen> {
       oldWidget.aiConsent?.removeListener(_consentChanged);
       widget.aiConsent?.addListener(_consentChanged);
     }
+    if (widget.active && !oldWidget.active) _startFreshIfStale();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && widget.active) {
+      _startFreshIfStale();
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.aiConsent?.removeListener(_consentChanged);
     _composer.dispose();
     _scroll.dispose();
@@ -267,11 +288,39 @@ class _CoachScreenState extends State<CoachScreen> {
     }
   }
 
+  /// The open conversation's last activity: the later of its thread's
+  /// updatedAt, its newest message and the moment the athlete opened it.
+  DateTime? _lastActivity() {
+    final id = _threadId;
+    if (id == null) return null;
+    final times = [
+      ?_openedAt,
+      for (final thread in _threads)
+        if (thread.id == id) thread.updatedAt,
+      for (final message in _messages) message.createdAt,
+    ];
+    return times.isEmpty ? null : times.reduce((a, b) => a.isAfter(b) ? a : b);
+  }
+
+  /// The screen outlives a visit (tab switch, app in the background), so the
+  /// [coachReopenWindow] is checked again when the athlete returns. Never
+  /// while a turn is in flight or something is typed: the chat stays, and the
+  /// next return checks again.
+  void _startFreshIfStale() {
+    if (_loadingChat || _sending || _composer.text.trim().isNotEmpty) return;
+    final last = _lastActivity();
+    if (last == null || widget.now().difference(last) < coachReopenWindow) {
+      return;
+    }
+    _newThread();
+  }
+
   Future<void> _openThread(String id) async {
     final chat = _chat;
     if (chat == null) return;
     setState(() {
       _view++;
+      _openedAt = widget.now();
       _pinnedToEnd = false;
       _loadingChat = true;
       _threadId = id;
@@ -306,6 +355,7 @@ class _CoachScreenState extends State<CoachScreen> {
 
   void _newThread() => setState(() {
     _view++;
+    _openedAt = null;
     _pinnedToEnd = false;
     _threadId = null;
     _rememberChat = true;
@@ -339,7 +389,7 @@ class _CoachScreenState extends State<CoachScreen> {
           CoachThread(
             id: id,
             title: question,
-            updatedAt: DateTime.now(),
+            updatedAt: widget.now(),
             remember: remember,
           ),
           ..._threads,
@@ -405,7 +455,7 @@ class _CoachScreenState extends State<CoachScreen> {
             id: 'pending-${DateTime.now().microsecondsSinceEpoch}',
             role: 'user',
             content: question,
-            createdAt: DateTime.now(),
+            createdAt: widget.now(),
           );
     setState(() {
       if (!_messages.contains(local)) _messages = [..._messages, local];
