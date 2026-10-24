@@ -1,4 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
+import * as cardio from "./cardio.ts";
+import * as deload from "./deload.ts";
 import * as jointStress from "./joint_stress.ts";
 import * as joints from "../joints/rules.ts";
 import * as prescription from "./prescription.ts";
@@ -7,7 +9,16 @@ import * as progression from "./progression.ts";
 import { type Sourced, sources } from "./sources.ts";
 import * as volume from "./volume.ts";
 
-const ruleModules = { jointStress, joints, prescription, progression, readiness, volume };
+const ruleModules = {
+  cardio,
+  deload,
+  jointStress,
+  joints,
+  prescription,
+  progression,
+  readiness,
+  volume,
+};
 
 const isSourced = (value: unknown): value is Sourced<unknown> =>
   typeof value === "object" && value !== null && "value" in value && "sources" in value &&

@@ -1289,6 +1289,16 @@ Sleep quality:
     (its adjusted set count, else null)). An exercise without logged sets has no entry.
   - `get_progression_summary_v1(p_user_id)` (service role only) returns `{schema_version: '1.0',
     targets}` with the same entries, for Coach context.
+- `get_my_training_guidance_v1(local_date)` and `get_training_guidance_for_v1(p_user_id, p_local_date)`
+  1.1 (B5-3, B5-4; the first for the athlete's own today, the second service role only; both refuse
+  any other date with 22023): `{schema_version, local_date, safety_route, deload {status, reasons,
+  last_ended_on, weeks_since, proposal_id, suppressed_by}, cardio_withheld, cardio_week {target_min,
+  stretch_max, done_min, intensity_known, vigorous_allowed, vigorous_sessions_max, vigorous_counts_as,
+  lift_separation_hours, easy_hr_reserve_max, window_from, window_to}}`. 1.0 (the deload part) is
+  never served alone: the two migrations deploy together. Read-only; no new table. Rules in
+  ALGORITHMS §4 ("Deloads", "Cardio Dosing"). A deload block is an `intensity` plan version whose
+  proposal payload carries `training.intensity_level: "deload"` (older blocks: the title
+  "Deload until <date>"); a moderate-effort block carries `"moderate"`.
 - `get_my_day_adjustment_v1(local_date)` and `respond_to_day_adjustment_v1(local_date, accept,
   chosen_kind)` 1.1 (B4, B5-1): today's readiness adjustment and the athlete's answer; the keys are in
   Contract 5 of the program plan (1.1 adds `joint_states`, `exercise_joint_options`, the

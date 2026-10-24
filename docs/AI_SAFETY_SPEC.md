@@ -39,6 +39,8 @@ The active training plan and nutrition targets always remain the last user-appro
 - confirmed calorie and macro totals;
 - workout adherence, volume, progression, and performance deltas;
 - the same-day readiness adjustment: its band, triggers, kind and every number in it (B4);
+- when a deload could help and the week it would be (B5-3), and the weekly cardio dose, what counts
+  towards it and what intensity is open today (B5-4);
 - HealthKit baselines and deviations;
 - data freshness, sufficiency, and conflicts;
 - persistent-change eligibility;
@@ -330,6 +332,30 @@ is reported as ended so Coach suggests the next step as a new proposal).
 A diet break ends on its date but nutrition does not revert by itself: resuming a deficit is a new
 proposal the athlete approves, so no calorie change happens without a tap.
 
+### Deloads and cardio dosing (B5-3, B5-4)
+
+- **A deload is a persistent change, so it follows the proposal invariant.** Rules work out when one
+  could help (`private.deload_signals`, rules `deload-v1`; ALGORITHMS section 4, "Deloads") and the week
+  itself (exactly one week: half the sets, loads held, effort 7 or lower, the same exercises). Nothing
+  applies it: the athlete taps a card (or asks Coach in chat), a new plan version is written with an
+  audit event, the athlete can undo it for seven days, and the regular plan returns by itself.
+- **Reasons are the athlete's own data, never a heart signal.** Two lifts heading down, four amber or red
+  days of the last seven, or a finished block that was trained; no suggestion within 28 days of the last
+  deload, with too little training, while another block runs, under `see_professional`, or on a day with a
+  safety route. A deload is described as a widely used coaching practice with expert consensus on its
+  purpose, not a proven requirement (Bell 2023; Coleman 2024).
+- **A deload never overrides a stricter rule.** It is an ordinary plan version, and the day's overlay
+  (a safety route, a held or limited joint, a poor night) is computed on top of it exactly as on any plan;
+  the strictest rule per exercise wins. Coach may not use a deload to schedule training for a held joint.
+- **The cardio dose is a guideline figure, not a prescription from heart rate.** 150 minutes of moderate
+  cardio a week (up to 300 for fat loss and recomposition), counted from Apple Health workouts (all as
+  moderate, because the record has no intensity; none shown when Apple Health data is missing, never 0).
+  Hard cardio is open only to an athlete the health check has cleared, on a green readiness day with no
+  held or limited joint; under `moderate_until_cleared` it is never offered. No cardio dose is given on a
+  day with a safety route or under `see_professional`. Heart rate may set the easy ceiling and the
+  wording (a share of heart-rate reserve, the talk test); it never sets a lifting load and never
+  applies or pre-selects anything (D9, owner decision O1): the athlete decides.
+
 ### Initial plan
 
 Onboarding output identifies assumptions, missing information, confidence, and constraint
@@ -405,7 +431,9 @@ settings are in §10.4.
     settles (at most 45 s in the app), so the two calls never spend the budget at once. Questions
     never block onboarding.
 - **No deload promise:** the app repeats one weekly template, so the prompt forbids promising a
-  deload or a different week, and the proposal no longer stores `deload_week`.
+  deload or a different week, and the proposal no longer stores `deload_week`. A deload exists
+  afterwards only as a one-week block the athlete approves (see "Deloads and cardio dosing" under
+  Coach proposals).
 - **When the model is not used:**
   - A plan that fails validation gets one targeted repair.
   - Anything else becomes the **rules plan**, built by the same policy without a model. That also
@@ -1648,6 +1676,9 @@ Maintain anonymized fixtures covering:
   is proposed), pain of 7 or more (a safety route, no change), an accepted adjustment not lowering a
   load (pgTAP sweeps in `readiness_sweep_test.sql`; Coach eval cases arrive with the Coach
   contributor);
+- a deload suggestion: each reason alone and at its boundary, each suppression, no suggestion on a day with a
+  safety route, and the weekly cardio dose with missing Apple Health data, an easy-only day and a withheld
+  day (pgTAP `deloads_test.sql`, `cardio_dosing_test.sql`; Coach eval cases arrive with the Coach contributor);
 - missing and contradictory data;
 - mixed meals, uncertain portions, and hidden ingredients;
 - inconsistent progress photos;

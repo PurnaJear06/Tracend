@@ -788,7 +788,25 @@ Open, from B4/B5 (none of these files are built in B4-1):
 6. **research-library (E):** update `bell_2023_deloading` from its CC BY full text; add
    summary-only entries for Finucane 2020, Stiell 1997 and NICE NG59 (B5).
 7. **lead:** if B5-3 uses a `training-proposals` Edge Function, `supabase/config.toml` and the
-   deploy list.
+   deploy list. B5-3 did not build it (it needs those files): the rules-originated card therefore
+   still has no creator. Until it lands, an athlete gets a deload by asking Coach (the A8 path, now
+   limited to one week with loads held), and `get_my_training_guidance_v1` reports `deload.status`
+   `suggested` with its reasons for the app to show.
+8. **ai-gateway, Coach context:** add `deload` (status, reasons, weeks since) and `cardio_week` to the
+   `readiness` contributor from the service-role reader `get_training_guidance_for_v1(p_user_id,
+   p_local_date)` (built in B5-3 and B5-4, version 1.1: `{schema_version, local_date, safety_route,
+   deload {status, reasons, last_ended_on, weeks_since, proposal_id, suppressed_by}, cardio_withheld,
+   cardio_week {...}}`; only the athlete's own today). Parser: `_shared/training/guidance/payload.ts`.
+   Coach may describe a deload as a widely used practice with expert consensus on its purpose, not a
+   requirement; it must not offer a deload or a cardio dose on a day with a safety route
+   (`safety_route` set), and must say the cardio minutes are counted as moderate (`intensity_known`
+   false) and are missing when `done_min` is null. The `intensity_or_phase` tool text in
+   `coach_chat_provider.ts` still says "weeks (1 to 8)": for `level: deload` the builder uses exactly
+   one week, so say so there.
+9. **app (B5-3, B5-4, not built):** a Train card "A lighter week could help" shown when
+   `deload.status` is `suggested` (reasons in words; "Suggested by Tracend"), a "Cardio this week" row
+   from `cardio_week` with its sheet (a missing `done_min` reads "Connect Apple Health to count your
+   cardio"; the easy-cardio heart-rate line comes from the C3 profile using `easy_hr_reserve_max`).
 
 A8's earlier request (wire Coach chat to the proposal engine after A10) was resolved in the same
 pull request as part 1 (#148): coach-chat calls `proposeCoachChange` after every reply guard has

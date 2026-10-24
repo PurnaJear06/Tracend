@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.1",
+  "local_date": "2026-10-24",
+  "safety_route": "clinician_today",
+  "deload": {
+    "status": "not_due",
+    "reasons": [],
+    "last_ended_on": "2026-09-20",
+    "weeks_since": 5,
+    "proposal_id": null,
+    "suppressed_by": "safety_route"
+  },
+  "cardio_withheld": "safety_route",
+  "cardio_week": null
+}

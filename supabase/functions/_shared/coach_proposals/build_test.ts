@@ -1,7 +1,9 @@
 import { assert, assertEquals, assertNotEquals, assertStringIncludes } from "jsr:@std/assert@1";
+import { goals } from "../onboarding/answers.ts";
 import { catalogBySlug } from "../onboarding/catalog.ts";
 import { loadStepKgFor } from "../onboarding/catalog_v2.ts";
 import { calorieFloorKcal } from "../onboarding/policy.ts";
+import { equipmentSets, weekdaysFor } from "../onboarding/test_helpers.ts";
 import { summarizeGoalPhase } from "../training/goal_phase/summary.ts";
 import { noGoalTarget } from "../training/goal_phase/types.ts";
 import type { ProgressionTarget } from "../training/progression/targets.ts";
@@ -892,6 +894,227 @@ Deno.test("a deload halves the sets at effort 7 or lower and ends on its own", (
       assert(exercise.target_rpe! <= 7);
     });
   });
+});
+
+Deno.test("a deload is exactly one week whatever length was asked for", () => {
+  for (const weeks of [1, 2, 3, 8]) {
+    const proposal = proposalOf(buildCoachProposal(
+      { kind: "intensity_or_phase", reason: "fatigue", level: "deload", weeks },
+      stateFixture(),
+    ));
+    const change = trainingOf(proposal) as Extract<TrainingChange, { mode: "block" }>;
+    assertEquals([change.block_weeks, change.ends_on], [1, addDays(today, 6)], `weeks ${weeks}`);
+    assertEquals(proposal.endsOn, addDays(today, 6));
+    assertStringIncludes(proposal.rationale, "For 1 week");
+  }
+  // A longer easing is the moderate block, which keeps the length asked for.
+  const moderate = proposalOf(buildCoachProposal(
+    { kind: "intensity_or_phase", reason: "fatigue", level: "moderate", weeks: 3 },
+    stateFixture(),
+  ));
+  const block = trainingOf(moderate) as Extract<TrainingChange, { mode: "block" }>;
+  assertEquals([block.block_weeks, block.ends_on], [3, addDays(today, 20)]);
+});
+
+Deno.test("an effort block says which effort it is, so the rules can tell a deload from moderate", () => {
+  const level = (value: "deload" | "moderate") =>
+    (trainingOf(proposalOf(buildCoachProposal(
+      { kind: "intensity_or_phase", reason: "fatigue", level: value, weeks: 1 },
+      stateFixture(),
+    ))) as Extract<TrainingChange, { mode: "block" }>).intensity_level;
+  assertEquals([level("deload"), level("moderate")], ["deload", "moderate"]);
+  const focus = trainingOf(proposalOf(buildCoachProposal(
+    { kind: "intensity_or_phase", reason: "plateau", focus: "size", weeks: 4 },
+    stateFixture(),
+  ))) as Extract<TrainingChange, { mode: "block" }>;
+  assertEquals(focus.intensity_level, undefined);
+});
+
+Deno.test("a deload gives an exercise with no effort target the cap", () => {
+  const plan = stateFixture().plan!;
+  const open = planFor([1, 3, 5], {
+    workouts: plan.workouts.map((workout) => ({
+      ...workout,
+      exercises: workout.exercises.map((exercise) => ({ ...exercise, targetRpe: null })),
+    })),
+  });
+  const change = trainingOf(proposalOf(buildCoachProposal(
+    { kind: "intensity_or_phase", reason: "fatigue", level: "deload", weeks: 1 },
+    stateFixture({ plan: open }),
+  ))) as Extract<TrainingChange, { mode: "block" }>;
+  for (const workout of change.weekly_structure) {
+    for (const exercise of workout.exercises) assertEquals(exercise.target_rpe, 7);
+  }
+});
+
+Deno.test("a deload holds the last working load, never the target's step up", () => {
+  const plan = stateFixture().plan!;
+  const [up, down, assistedUp, plain, none] = plan.workouts[0].exercises;
+  const withLast = (
+    exercise: StatePlanExercise,
+    action: ProgressionTarget["action"],
+    targetKg: number | null,
+    lastKg: number | null,
+  ): ProgressionTarget => ({
+    ...progression(exercise, 60, action),
+    loadKg: targetKg,
+    recent: [{ localDate: "2026-10-16", loadKg: lastKg, sets: 3, minReps: 8, minRir: 2 }],
+  });
+  const assisted: StatePlanExercise = { ...assistedUp, slug: "assisted-pull-up" };
+  const workouts = plan.workouts.map((workout, index) =>
+    index === 0
+      ? {
+        ...workout,
+        exercises: workout.exercises.map((exercise) =>
+          exercise === assistedUp ? assisted : { ...exercise, targetLoadKg: 100 }
+        ),
+      }
+      : workout
+  );
+  const state = stateFixture({
+    plan: planFor([1, 3, 5], { workouts }),
+    progression: [
+      withLast(up, "add_load", 62.5, 60),
+      withLast(down, "lower", 57.5, 60),
+      withLast(assisted, "add_load", 25, 30),
+      withLast(plain, "hold", 60, 60),
+      withLast(none, "hold", null, 45),
+    ],
+  });
+  const change = trainingOf(proposalOf(buildCoachProposal(
+    { kind: "intensity_or_phase", reason: "fatigue", level: "deload", weeks: 1 },
+    state,
+  ))) as Extract<TrainingChange, { mode: "block" }>;
+  const loads = change.weekly_structure[0].exercises.slice(0, 5).map((e) => e.start_load_kg);
+  // add_load holds the last 60, a lower target is followed, an assisted exercise keeps the help
+  // (30, not the 25 an add_load step would leave), a hold stays, a target with no load keeps the
+  // last working one.
+  assertEquals(loads, [60, 57.5, 30, 60, 45]);
+  // Exercises with no logged sets keep the plan's own starting load.
+  const rest = change.weekly_structure[0].exercises.slice(5).map((e) => e.start_load_kg);
+  assertEquals(rest, workouts[0].exercises.slice(5).map((e) => e.targetLoadKg ?? undefined));
+  assertStringIncludes(
+    proposalOf(buildCoachProposal(
+      { kind: "intensity_or_phase", reason: "fatigue", level: "deload", weeks: 1 },
+      state,
+    )).rationale,
+    "that step down is kept",
+  );
+});
+
+Deno.test("the deload rationale says what happens to loads in each case", () => {
+  const plan = stateFixture().plan!;
+  const [up, down] = plan.workouts[0].exercises;
+  const target = (
+    exercise: StatePlanExercise,
+    action: ProgressionTarget["action"],
+    targetKg: number,
+    lastKg: number,
+  ): ProgressionTarget => ({
+    ...progression(exercise, 60, action),
+    loadKg: targetKg,
+    recent: [{ localDate: "2026-10-16", loadKg: lastKg, sets: 3, minReps: 8, minRir: 2 }],
+  });
+  const rationale = (progressionTargets: ProgressionTarget[]) =>
+    proposalOf(buildCoachProposal(
+      { kind: "intensity_or_phase", reason: "fatigue", level: "deload", weeks: 1 },
+      stateFixture({ plan, progression: progressionTargets }),
+    )).rationale;
+  // Loads held, none stepped down: the step up is dropped, the loads stay.
+  const held = rationale([target(up, "add_load", 62.5, 60)]);
+  assertStringIncludes(held, "loads stay at your current working weights");
+  assert(!held.includes("step down"), "no step down is mentioned when none happened");
+  // A target that stepped down: the copy says so and never claims the loads stay where they were.
+  const lowered = rationale([target(up, "add_load", 62.5, 60), target(down, "lower", 57.5, 60)]);
+  assertStringIncludes(lowered, "loads don't go up");
+  assertStringIncludes(lowered, "that step down is kept");
+  assert(!lowered.includes("stay at your current working weights"));
+  // A target whose load equals the last one (a hold) is not a step down.
+  assert(!rationale([target(down, "hold", 60, 60)]).includes("step down"));
+  // No logged load to hold: nothing is said about loads.
+  const none = rationale([]);
+  assert(!none.includes("loads"), "no loads clause without a logged load");
+});
+
+Deno.test("the deload week keeps every exercise, day and range, and every number is inside its bounds", () => {
+  const equipment = [equipmentSets.gym, equipmentSets.home, equipmentSets.bodyweight];
+  let checked = 0;
+  for (const goal of goals) {
+    for (const days of [1, 2, 3, 4, 5, 6]) {
+      for (const experience of ["beginner", "intermediate"] as const) {
+        for (const sessionMinutes of [30, 45, 60, 90, 120]) {
+          for (const kit of equipment) {
+            const plan = planFor(weekdaysFor[days], {}, {
+              goal,
+              experience,
+              path: experience === "beginner" ? "beginner" : "experienced",
+              sessionMinutes,
+              equipment: kit,
+            });
+            const targets = (action: ProgressionTarget["action"], step: number) =>
+              plan.workouts.flatMap((workout) =>
+                workout.exercises.filter((e) => e.slug !== null).map((
+                  exercise,
+                ): ProgressionTarget => ({
+                  ...progression(exercise, 60 + step, action),
+                  recent: [{ localDate: "2026-10-16", loadKg: 60, sets: 3, minReps: 8, minRir: 2 }],
+                }))
+              );
+            const variants: [string, ProgressionTarget[], AthleteState["screening"]][] = [
+              ["none", [], "cleared"],
+              ["add_load", targets("add_load", 2.5), "cleared"],
+              ["add_reps", targets("add_reps", 0), "cleared"],
+              ["hold", targets("hold", 0), "cleared"],
+              ["lower", targets("lower", -2.5), "cleared"],
+              ["moderate", targets("add_load", 2.5), "moderate_until_cleared"],
+            ];
+            for (const [name, progressionTargets, screening] of variants) {
+              const state = stateFixture({ plan, progression: progressionTargets, screening });
+              const result = buildCoachProposal(
+                { kind: "intensity_or_phase", reason: "fatigue", level: "deload", weeks: 1 },
+                state,
+              );
+              const proposal = proposalOf(result);
+              assertStoredShape(proposal);
+              const change = trainingOf(proposal) as Extract<TrainingChange, { mode: "block" }>;
+              const label = `${goal} ${days}d ${experience} ${sessionMinutes}min ${name}`;
+              assertEquals(change.weekly_structure.length, plan.workouts.length, label);
+              change.weekly_structure.forEach((workout, w) => {
+                const before = plan.workouts[w];
+                assertEquals(workout.preferred_weekday, before.weekday, label);
+                assertEquals(workout.name, before.name, label);
+                assertEquals(workout.exercises.length, before.exercises.length, label);
+                workout.exercises.forEach((exercise, e) => {
+                  const was = before.exercises[e];
+                  assertEquals(
+                    [exercise.slug, exercise.name, exercise.rep_min, exercise.rep_max],
+                    [was.slug, was.name, was.repMin, was.repMax],
+                    label,
+                  );
+                  assert(exercise.sets >= 1 && exercise.sets <= was.sets, label);
+                  assertEquals(exercise.sets, Math.max(1, Math.ceil(was.sets / 2)), label);
+                  assert(exercise.target_rpe !== null && exercise.target_rpe <= 7, label);
+                  if (was.targetRpe !== null) assert(exercise.target_rpe <= was.targetRpe, label);
+                  const target = progressionTargets.find((t) =>
+                    t.plannedExerciseId === was.plannedExerciseId
+                  );
+                  if (target) {
+                    // Never above the last working load, nor the target's.
+                    assert(exercise.start_load_kg! <= 60, label);
+                    assert(exercise.start_load_kg! <= target.loadKg!, label);
+                  } else {
+                    assertEquals(exercise.start_load_kg, was.targetLoadKg ?? undefined, label);
+                  }
+                });
+              });
+              checked++;
+            }
+          }
+        }
+      }
+    }
+  }
+  assertEquals(checked, 5 * 6 * 2 * 5 * 3 * 6);
 });
 
 Deno.test("moderate effort caps effort and changes nothing under an existing cap", () => {
