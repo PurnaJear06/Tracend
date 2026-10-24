@@ -977,6 +977,28 @@ and cardio dosing") the boundaries. No app change, no new table, no Edge Functio
   message, so it is not offered here). Approve/Not now/Undo are the existing `respond_to_coach_proposal_v1` /
   `undo_coach_proposal_v1`; approve and undo announce `PlanChanges`, which reloads the hub and the guidance. The
   sheet closing reloads the guidance.
+- **Review of PR #178 (guidance 1.2, migration `20261024060425_deload_origin_and_undo_cooldown.sql`).**
+  (H1) The card no longer calls a Coach-made week "Suggested by Tracend": guidance 1.2 adds `deload.proposal_origin`
+  (`tracend` when the proposal's evidence has `DELOAD_SIGNALS`, which only `buildSuggestedDeload` adds; else
+  `coach`; null with no proposal) and `deload.ends_on` (a running week's last day). A pending or running Coach week
+  shows "Proposed by Coach", no rule reasons and no "No AI" line; a missing or unknown origin reads as Coach's. The
+  proposal sheet takes its origin from the proposal's own evidence (`CoachProposal.suggestedByRules`), so the two
+  always agree. The running card says "until <day>". (M1) `training-proposals` reads `get_my_coach_proposals_v1` and
+  returns 409 `other_proposal_pending` when another plan-changing proposal (any training kind except a deload) is
+  open, because storing one expires every open training proposal; the card says "You have a change waiting in Coach.
+  Answer it first." (M2) An undone deload holds new suggestions back 14 days from the day it was undone
+  (`declined_recently`); it is still not the last deload. (L1) The handler answers an unexpected throw with 503 and
+  reports only the fixed name `training_proposals_unexpected` to Sentry. (L2) `persist_coach_proposal_v1` takes
+  `pg_advisory_xact_lock(hashtext(p_user_id::text))` before it replaces an open proposal; the redefinition is the
+  original plus that hunk, pinned by `deload_origin_test.ts`. (L3) The function returns refusal codes only and the
+  app words them (`deloadRefusalLine`); `proposal_notices.dart` words stale and refused answers for a card the rules
+  made (no "Coach", no first person, "Pull down on Train"), and a deload approved on a route day says a lighter week
+  can't start on a day with a referral. (L4) "stalled or slipped"; "Today's readiness reads green, which needs
+  today's check-in." (L5) `prepareDeload` asks `_today()` so a day that rolled over is refreshed first. (L6)
+  `hadUnreadReasons` is gone. (L7) The cardio row is hidden while a past week is on screen. The TS parser
+  (`guidance/payload.ts`) reads 1.2 and refuses an origin on a status with no proposal or an end date off a running
+  week. pgTAP: `deload_origin_test.sql`; `deloads_test.sql` and `cardio_dosing_test.sql` carry the new keys and the
+  undone-deload cool-down.
 - **Decisions.** (a) A `running` status shows a quiet card "A lighter week is on" with **Details and undo**: the
   brief listed only suggested and pending, but a rules-originated week has no chat message to carry its Undo.
   (b) The Cardio row sits in "This week" after Training load. It shows "85 of 150 min" or "Not enough Apple Health

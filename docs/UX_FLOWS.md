@@ -844,14 +844,18 @@ confirmation actions. The tab reads top to bottom:
   workout uses those sets and held weights; an easy-cardio answer leaves the strength sets as planned.
 - **A lighter week (B5-3).** Under the readiness card, when the rules suggest one (`suggested`) or an open
   proposal waits (`pending`): a card "A lighter week could help" with the chip "Suggested by Tracend", the
-  reasons in words (two or more lifts heading down; readiness low on four or more of the days checked in this
+  reasons in words (two or more lifts stalled or slipped; readiness low on four or more of the days checked in this
   past week; most of a block trained), what a lighter week is (the same sessions on the same days, half the
   sets, weights held, effort 7 or lower, the regular plan back after the week), "Calculated by Tracend from your
   logged sessions and check-ins. No AI." and "Nothing changes until you approve it." One button, **See what
   changes**, prepares the proposal (nothing is applied) and opens it in a sheet as the Coach proposal card of
   §10.1 with **Approve** (confirm sheet, "You can undo it for 7 days"), **Not now** and, after approval,
-  **Undo**; there is no **Change it** here. A running lighter week stays as a quiet card, "A lighter week is on",
-  with **Details and undo**. No card on a day with a safety route, under a health check that says to see a
+  **Undo**; there is no **Change it** here. A running lighter week stays as a quiet card, "A lighter week is on
+  until Sat 31 Oct", with **Details and undo**. Only the rules' own suggestion says "Suggested by Tracend" and
+  gives reasons; a lighter week the athlete asked Coach for shows "Proposed by Coach" with no rule reasons, on
+  the card and in its sheet. While another change waits in Coach, the button answers "You have a change waiting
+  in Coach. Answer it first." and stores nothing. After **Undo** the week is gone and no new one is suggested for
+  14 days. No card on a day with a safety route, under a health check that says to see a
   professional, within 28 days of the last deload, for 14 days after a declined one, or for a status this
   version cannot read. Heart rate decides nothing; the words name no condition.
 - **Cardio this week (B5-4).** A row in "This week" after Training load: "85 of 150 min", or "Not enough Apple
