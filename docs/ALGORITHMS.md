@@ -817,7 +817,7 @@ status     running    a deload block is the active plan version (proposal_id)
 ```
 
 Notes. The athlete can always ask for a deload; the asking is not gated (§10). An undone deload never ran
-and is not counted as the last one; a block ended early counts as ended today; a block past its last day
+and is not counted as the last one; a block ended early ends on the day it was ended (the block-ended event's day) and stays ended that day; a block past its last day
 that the hourly job has not ended yet is not "running" and holds the plan (`block_running`). A deload
 block is recognised by `intensity_level: "deload"` in its stored proposal payload, or, for a block approved
 before that key existed, by the title "Deload until <date>". "Opt-in" for the block-end offer (owner

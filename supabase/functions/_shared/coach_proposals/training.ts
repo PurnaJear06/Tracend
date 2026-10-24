@@ -402,7 +402,12 @@ export function buildExerciseSwap(
 function capEffort(
   workouts: readonly TrainingPayloadWorkout[],
   cap: number,
-): { workouts: TrainingPayloadWorkout[]; changed: boolean; loadsHeld: boolean } {
+): {
+  workouts: TrainingPayloadWorkout[];
+  changed: boolean;
+  loadsHeld: boolean;
+  loadsSteppedDown: boolean;
+} {
   let changed = false;
   const out = workouts.map((workout) => {
     const exercises = workout.exercises.map((exercise) => {
@@ -412,7 +417,7 @@ function capEffort(
     });
     return { ...workout, exercises, estimated_minutes: minutesFor(exercises) };
   });
-  return { workouts: out, changed, loadsHeld: false };
+  return { workouts: out, changed, loadsHeld: false, loadsSteppedDown: false };
 }
 
 /**
@@ -420,32 +425,55 @@ function capEffort(
  * target's load when that is gentler (lower; for an assisted exercise, more help). It never takes
  * the target's step up. Null when there is no logged load to hold, which leaves the plan's own.
  */
-function heldLoadKg(entry: StatePlanExercise, state: AthleteState): number | null {
+function heldLoadKg(
+  entry: StatePlanExercise,
+  state: AthleteState,
+): { loadKg: number; steppedDown: boolean } | null {
   const target = entry.plannedExerciseId === null
     ? undefined
     : state.progression.find((item) => item.plannedExerciseId === entry.plannedExerciseId);
   const last = target?.recent[0]?.loadKg ?? null;
   if (target === undefined || last === null) return null;
-  if (target.loadKg === null) return last;
+  if (target.loadKg === null) return { loadKg: last, steppedDown: false };
   const assisted = entry.slug?.startsWith("assisted-") === true || /^assisted\b/i.test(entry.name);
-  return assisted ? Math.max(last, target.loadKg) : Math.min(last, target.loadKg);
+  const loadKg = assisted ? Math.max(last, target.loadKg) : Math.min(last, target.loadKg);
+  return { loadKg, steppedDown: loadKg !== last };
+}
+
+/**
+ * What the rationale says about loads. A load never rises in a deload week; where a progression
+ * target had stepped down, that step down is kept, and the copy says so.
+ */
+function loadsClause(result: { loadsHeld: boolean; loadsSteppedDown: boolean }): string {
+  if (!result.loadsHeld) return "";
+  return result.loadsSteppedDown
+    ? "loads don't go up (where your recent sets called for a small step down, that step down is kept), "
+    : "loads stay at your current working weights, ";
 }
 
 /** The deload week: half the sets, loads held, effort capped; exercises, days and ranges as planned. */
 function deloadWeek(
   state: AthleteState,
-): { workouts: TrainingPayloadWorkout[]; changed: boolean; loadsHeld: boolean } {
+): {
+  workouts: TrainingPayloadWorkout[];
+  changed: boolean;
+  loadsHeld: boolean;
+  loadsSteppedDown: boolean;
+} {
   const plan = state.plan!;
   let changed = false;
   let loadsHeld = false;
+  let loadsSteppedDown = false;
   const out = planAsPayload(plan).map((workout, w) => {
     const exercises = workout.exercises.map((exercise, e) => {
-      const load = deloadHoldsLoad.value ? heldLoadKg(plan.workouts[w].exercises[e], state) : null;
+      const held = deloadHoldsLoad.value ? heldLoadKg(plan.workouts[w].exercises[e], state) : null;
+      const load = held?.loadKg ?? null;
       const sets = deloadSets(exercise.sets);
       const rpe = deloadRpe(exercise.target_rpe);
       if (sets !== exercise.sets || rpe !== exercise.target_rpe) changed = true;
       if (load !== null) {
         loadsHeld = true;
+        if (held!.steppedDown) loadsSteppedDown = true;
         if (load !== exercise.start_load_kg) changed = true;
       }
       return {
@@ -457,7 +485,7 @@ function deloadWeek(
     });
     return { ...workout, exercises, estimated_minutes: minutesFor(exercises) };
   });
-  return { workouts: out, changed, loadsHeld };
+  return { workouts: out, changed, loadsHeld, loadsSteppedDown };
 }
 
 const sumSets = (workouts: readonly { exercises: readonly { sets: number }[] }[]) =>
@@ -513,7 +541,7 @@ export function buildIntensityOrPhase(
       rationale: `${reasonText(intent.reason, intent.note)} For ${plural(weeks, "week")} your ` +
         (deload
           ? `sets are halved, ${
-            result.loadsHeld ? "loads stay at your current working weights, " : ""
+            loadsClause(result)
           }and effort stays at ${deloadRpeCap.value} or below.`
           : `effort stays at ${moderateEffortRpe} or below (about three reps left in the tank).`) +
         ` Your regular plan returns after ${shortDate(endsOn)}.`,

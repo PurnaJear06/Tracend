@@ -17,6 +17,10 @@
 --                              holds new suggestions back for declined_cooldown_days (14) from that day:
 --                              suppressed_by declined_recently. A proposal the athlete asked for through
 --                              Coach and declined counts the same way (nothing tells the two apart).
+--                              Only a decline or a timeout counts: a card a newer one replaced, or one
+--                              expired for another reason (an audit reason other than expired), does not.
+--      deload_signals         last_ended_on is the day the block-ended event was written, so a deload ended
+--                              early keeps one end date (it used to move forward every day).
 --   L1  cardio_week            vigorous_allowed is false when today's check-in says not available to train.
 --   L2  cardio_week            vigorous_allowed needs a screening row: no row is not cleared for hard cardio.
 --                              current_screening_outcome itself is unchanged (no row reads cleared elsewhere).
@@ -52,6 +56,8 @@ declare
   running uuid;
   pending uuid;
   declined_on date;
+  tz constant text := coalesce((select a.timezone from public.user_accounts a
+    join pg_catalog.pg_timezone_names z on z.name = a.timezone where a.id = p_user), 'UTC');
   dropped integer;
   run_down integer;
   completed integer;
@@ -76,18 +82,22 @@ begin
     and private.is_deload_proposal(cp.proposal_kind, cp.proposal_payload)
   order by cp.created_at desc, cp.id desc limit 1;
 
-  select max(least(v.ends_on, p_date)) into last_ended
+  -- The day a deload really ended: the day the block-ended event was written (a block ended early
+  -- ends that day and stays ended that day), never later than its own last day.
+  select max(least(v.ends_on, coalesce((select (a.created_at at time zone tz)::date
+      from public.audit_events a where a.user_id = p_user
+        and a.action_code = 'coach_proposal_block_ended'
+        and a.metadata ->> 'ended_version_id' = v.id::text
+      order by a.created_at desc limit 1), p_date))) into last_ended
   from public.training_plan_versions v
   join public.change_proposals cp on cp.id = v.source_proposal_id and cp.user_id = v.user_id
   where v.user_id = p_user and v.block_kind = 'intensity' and v.status = 'superseded'
     and cp.undone_at is null and private.is_deload_proposal(cp.proposal_kind, cp.proposal_payload);
 
   -- A deload proposal the athlete declined, or that ran out unanswered, holds new suggestions back
-  -- for declined_cooldown_days from that day. A proposal a newer one replaced did not run out: its
-  -- expiry is still ahead.
-  select max((e.happened at time zone coalesce((select a.timezone from public.user_accounts a
-      join pg_catalog.pg_timezone_names z on z.name = a.timezone where a.id = p_user), 'UTC'))::date)
-  into declined_on
+  -- for declined_cooldown_days from that day. Only a decline or a timeout counts: a card a newer one
+  -- replaced, or that expired for another reason (the plan or profile moved), did not run out.
+  select max((e.happened at time zone tz)::date) into declined_on
   from (
     select cr.created_at as happened
     from public.change_proposals cp
@@ -100,6 +110,14 @@ begin
     where cp.user_id = p_user and cp.schema_version = '3.0' and cp.status in ('pending', 'expired')
       and cp.expires_at <= statement_timestamp()
       and private.is_deload_proposal(cp.proposal_kind, cp.proposal_payload)
+      and not exists (select 1 from public.change_proposals n
+        where n.user_id = cp.user_id and n.schema_version = '3.0'
+          and n.created_at > cp.created_at and n.created_at < cp.expires_at
+          and (n.proposal_kind = cp.proposal_kind or n.proposal_payload ? 'training'))
+      and not exists (select 1 from public.audit_events a
+        where a.user_id = cp.user_id and a.target_type = 'change_proposal' and a.target_id = cp.id
+          and a.action_code = 'coach_proposal_expired'
+          and a.metadata ->> 'reason' is distinct from 'expired')
   ) e;
 
   -- The plan's own first day: a block is a plan of its own, so only a regular version has one.

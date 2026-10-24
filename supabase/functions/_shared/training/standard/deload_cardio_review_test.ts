@@ -59,7 +59,11 @@ Deno.test("deload_signals is B5-3's function plus the cool-down and stale-propos
     orReplace,
     [
       "  pending uuid;\n  dropped integer;\n",
-      "  pending uuid;\n  declined_on date;\n  dropped integer;\n",
+      "  pending uuid;\n  declined_on date;\n  tz constant text := coalesce((select a.timezone from public.user_accounts a\n    join pg_catalog.pg_timezone_names z on z.name = a.timezone where a.id = p_user), 'UTC');\n  dropped integer;\n",
+    ],
+    [
+      "  select max(least(v.ends_on, p_date)) into last_ended\n",
+      "  -- The day a deload really ended: the day the block-ended event was written (a block ended early\n  -- ends that day and stays ended that day), never later than its own last day.\n  select max(least(v.ends_on, coalesce((select (a.created_at at time zone tz)::date\n      from public.audit_events a where a.user_id = p_user\n        and a.action_code = 'coach_proposal_block_ended'\n        and a.metadata ->> 'ended_version_id' = v.id::text\n      order by a.created_at desc limit 1), p_date))) into last_ended\n",
     ],
     [
       "    and cp.expires_at > statement_timestamp()\n    and private.is_deload_proposal(cp.proposal_kind, cp.proposal_payload)\n  order by cp.created_at desc, cp.id desc limit 1;\n",
@@ -67,7 +71,7 @@ Deno.test("deload_signals is B5-3's function plus the cool-down and stale-propos
     ],
     [
       "\n  -- The plan's own first day:",
-      "\n  -- A deload proposal the athlete declined, or that ran out unanswered, holds new suggestions back\n  -- for declined_cooldown_days from that day. A proposal a newer one replaced did not run out: its\n  -- expiry is still ahead.\n  select max((e.happened at time zone coalesce((select a.timezone from public.user_accounts a\n      join pg_catalog.pg_timezone_names z on z.name = a.timezone where a.id = p_user), 'UTC'))::date)\n  into declined_on\n  from (\n    select cr.created_at as happened\n    from public.change_proposals cp\n    join public.change_responses cr on cr.proposal_id = cp.id and cr.user_id = cp.user_id\n    where cp.user_id = p_user and cp.schema_version = '3.0' and cp.status = 'rejected'\n      and cr.action = 'reject' and private.is_deload_proposal(cp.proposal_kind, cp.proposal_payload)\n    union all\n    select cp.expires_at\n    from public.change_proposals cp\n    where cp.user_id = p_user and cp.schema_version = '3.0' and cp.status in ('pending', 'expired')\n      and cp.expires_at <= statement_timestamp()\n      and private.is_deload_proposal(cp.proposal_kind, cp.proposal_payload)\n  ) e;\n\n  -- The plan's own first day:",
+      "\n  -- A deload proposal the athlete declined, or that ran out unanswered, holds new suggestions back\n  -- for declined_cooldown_days from that day. Only a decline or a timeout counts: a card a newer one\n  -- replaced, or that expired for another reason (the plan or profile moved), did not run out.\n  select max((e.happened at time zone tz)::date) into declined_on\n  from (\n    select cr.created_at as happened\n    from public.change_proposals cp\n    join public.change_responses cr on cr.proposal_id = cp.id and cr.user_id = cp.user_id\n    where cp.user_id = p_user and cp.schema_version = '3.0' and cp.status = 'rejected'\n      and cr.action = 'reject' and private.is_deload_proposal(cp.proposal_kind, cp.proposal_payload)\n    union all\n    select cp.expires_at\n    from public.change_proposals cp\n    where cp.user_id = p_user and cp.schema_version = '3.0' and cp.status in ('pending', 'expired')\n      and cp.expires_at <= statement_timestamp()\n      and private.is_deload_proposal(cp.proposal_kind, cp.proposal_payload)\n      and not exists (select 1 from public.change_proposals n\n        where n.user_id = cp.user_id and n.schema_version = '3.0'\n          and n.created_at > cp.created_at and n.created_at < cp.expires_at\n          and (n.proposal_kind = cp.proposal_kind or n.proposal_payload ? 'training'))\n      and not exists (select 1 from public.audit_events a\n        where a.user_id = cp.user_id and a.target_type = 'change_proposal' and a.target_id = cp.id\n          and a.action_code = 'coach_proposal_expired'\n          and a.metadata ->> 'reason' is distinct from 'expired')\n  ) e;\n\n  -- The plan's own first day:",
     ],
     [
       "      then 'recent_deload'\n",

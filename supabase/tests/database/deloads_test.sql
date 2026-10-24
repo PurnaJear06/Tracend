@@ -9,7 +9,7 @@ select no_plan();
 
 insert into auth.users(id, role)
 select ('b5300000-0000-4000-8000-0000000000' || lpad(n::text, 2, '0'))::uuid, 'authenticated'
-from generate_series(1, 56) n;
+from generate_series(1, 60) n;
 
 create function pg_temp.u(p_n integer) returns uuid language sql as $$
   select ('b5300000-0000-4000-8000-0000000000' || lpad(p_n::text, 2, '0'))::uuid
@@ -844,6 +844,62 @@ set basis = jsonb_set(basis, '{training_version_id}', to_jsonb(gen_random_uuid()
 where id = (select id from p where name = 'moved');
 select is(pg_temp.d(54) ->> 'status', 'not_due', 'built on another plan version it is not offered');
 select is(pg_temp.d(54) -> 'proposal_id', 'null'::jsonb, 'and not named');
+
+-- Review round 2 -------------------------------------------------------------------------------------------------------------------
+
+-- A card a newer one replaced: its own expiry later passes, which is not the athlete letting it run out.
+update public.change_proposals set created_at = now() - interval '16 days', expires_at = now() - interval '13 days'
+where id = (select id from p where name = 'old_card');
+update public.change_proposals set created_at = now() - interval '15 days'
+where id = (select id from p where name = 'new_card');
+select is(pg_temp.d(55) ->> 'suppressed_by', null,
+  'a card replaced by a newer one starts no cool-down, even after its own expiry has passed');
+select is(pg_temp.d(55) ->> 'status', 'pending', 'and the newer card is still the pending one');
+
+-- A card that expired because the plan moved on (the approval is answered "expired", with the reason on record).
+select pg_temp.make_athlete(56);
+select pg_temp.stall_both(56);
+insert into p select 'stale_plan', pg_temp.bench_deload(56);
+update public.change_proposals
+set basis = jsonb_set(basis, '{training_version_id}', to_jsonb(gen_random_uuid()::text))
+where id = (select id from p where name = 'stale_plan');
+select pg_temp.approve(56, (select id from p where name = 'stale_plan'));
+select is((select status::text from public.change_proposals where id = (select id from p where name = 'stale_plan')),
+  'expired', 'approving a card built on another plan version expires it');
+select is((select metadata ->> 'reason' from public.audit_events
+    where target_id = (select id from p where name = 'stale_plan') and action_code = 'coach_proposal_expired'),
+  'plan_changed', 'with the reason on record');
+update public.change_proposals set expires_at = now() - interval '13 days'
+where id = (select id from p where name = 'stale_plan');
+select is(pg_temp.d(56) ->> 'suppressed_by', null, 'its old expiry, now past, starts no cool-down');
+select is(pg_temp.d(56) ->> 'status', 'suggested', 'so the signals suggest again');
+
+-- A card that ran out and was found out by an approval attempt is still a timeout: the cool-down applies.
+select pg_temp.make_athlete(57);
+select pg_temp.stall_both(57);
+insert into p select 'late', pg_temp.bench_deload(57);
+update public.change_proposals set expires_at = now() - interval '13 days' where id = (select id from p where name = 'late');
+select pg_temp.approve(57, (select id from p where name = 'late'));
+select is((select metadata ->> 'reason' from public.audit_events
+    where target_id = (select id from p where name = 'late') and action_code = 'coach_proposal_expired'),
+  'expired', 'an approval after the card ran out records the reason expired');
+select is(pg_temp.d(57) ->> 'suppressed_by', 'declined_recently', 'and that timeout holds suggestions back');
+
+-- A deload ended early keeps one end date; the 28 days count from it.
+create function pg_temp.dat(p_n integer, p_ahead integer) returns jsonb language sql as $$
+  select private.deload_signals(pg_temp.u(p_n), (select today from t) + p_ahead)
+$$;
+select pg_temp.make_athlete(58);
+select pg_temp.stall_both(58);
+insert into p select 'early', pg_temp.bench_deload(58);
+select pg_temp.approve(58, (select id from p where name = 'early'));
+select private.end_plan_block((select id from public.training_plan_versions
+  where user_id = pg_temp.u(58) and status = 'active'));
+select is(pg_temp.dat(58, 2) ->> 'last_ended_on', (select today::text from t), 'ended early on a day: that day is its end');
+select is(pg_temp.dat(58, 17) ->> 'last_ended_on', (select today::text from t),
+  'and it is the same day later on, not the day of the question');
+select is(pg_temp.dat(58, 27) ->> 'suppressed_by', 'recent_deload', '27 days after the early end it still holds suggestions back');
+select isnt(pg_temp.dat(58, 28) ->> 'suppressed_by', 'recent_deload', 'and 28 days after it no longer does');
 
 select * from finish();
 rollback;

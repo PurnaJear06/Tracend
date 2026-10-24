@@ -927,14 +927,18 @@ and cardio dosing") the boundaries. No app change, no new table, no Edge Functio
   safety-route day (no `proposal_id`, `not_due`, `suppressed_by` `safety_route`) and approving one on such
   a day is refused with 55000. (M2) A declined deload proposal, or one that ran out unanswered, suppresses
   new suggestions for 14 days (`suppressed_by` `declined_recently`; a proposal replaced by a newer one does
-  not count; a proposal asked for through Coach and declined counts the same). (L1) `vigorous_allowed` is
+  not count, nor does one that expired for another reason such as the plan moving on: the audit reason
+  decides, and a timeout found by an approval attempt, reason `expired`, still counts; a proposal asked for
+  through Coach and declined counts the same). `last_ended_on` is now the day the block-ended audit event was
+  written (never later than the block's own last day), so a deload ended early keeps one end date and the
+  28 days count from it (before, it moved forward every day). (L1) `vigorous_allowed` is
   false when today's check-in says not available to train. (L2) It also needs a screening row: no row is not
   cleared for hard cardio (`current_screening_outcome` itself is unchanged, no row still reads cleared
   elsewhere). (L3) Five more cardio names (wheelchair walk and run paces, cross-country skiing, paddle
   sports, social dance); a denied Apple Health workout permission reads as 0 minutes, not as missing.
   (L4) A pending proposal built on a plan version that is no longer current is stale, not pending. (L6) The
-  Coach tool text now says a deload is always one week; the rationale reads "loads stay at your current
-  working weights", true when the B3 target stepped down. (M3, not done) `training_guidance` still computes
+  Coach tool text now says a deload is always one week; the rationale says loads stay at the current working
+  weights, or, when a B3 target had stepped down, that loads don't go up and the small step down is kept. (M3, not done) `training_guidance` still computes
   `next_session_targets` twice (through the day adjustment and the deload signals) and the screening
   outcome three times; passing them in would change several signatures. Run EXPLAIN ANALYZE on
   `get_training_guidance_for_v1` before the Coach reads it every turn.

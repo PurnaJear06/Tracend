@@ -998,8 +998,42 @@ Deno.test("a deload holds the last working load, never the target's step up", ()
       { kind: "intensity_or_phase", reason: "fatigue", level: "deload", weeks: 1 },
       state,
     )).rationale,
-    "loads stay at your current working weights",
+    "that step down is kept",
   );
+});
+
+Deno.test("the deload rationale says what happens to loads in each case", () => {
+  const plan = stateFixture().plan!;
+  const [up, down] = plan.workouts[0].exercises;
+  const target = (
+    exercise: StatePlanExercise,
+    action: ProgressionTarget["action"],
+    targetKg: number,
+    lastKg: number,
+  ): ProgressionTarget => ({
+    ...progression(exercise, 60, action),
+    loadKg: targetKg,
+    recent: [{ localDate: "2026-10-16", loadKg: lastKg, sets: 3, minReps: 8, minRir: 2 }],
+  });
+  const rationale = (progressionTargets: ProgressionTarget[]) =>
+    proposalOf(buildCoachProposal(
+      { kind: "intensity_or_phase", reason: "fatigue", level: "deload", weeks: 1 },
+      stateFixture({ plan, progression: progressionTargets }),
+    )).rationale;
+  // Loads held, none stepped down: the step up is dropped, the loads stay.
+  const held = rationale([target(up, "add_load", 62.5, 60)]);
+  assertStringIncludes(held, "loads stay at your current working weights");
+  assert(!held.includes("step down"), "no step down is mentioned when none happened");
+  // A target that stepped down: the copy says so and never claims the loads stay where they were.
+  const lowered = rationale([target(up, "add_load", 62.5, 60), target(down, "lower", 57.5, 60)]);
+  assertStringIncludes(lowered, "loads don't go up");
+  assertStringIncludes(lowered, "that step down is kept");
+  assert(!lowered.includes("stay at your current working weights"));
+  // A target whose load equals the last one (a hold) is not a step down.
+  assert(!rationale([target(down, "hold", 60, 60)]).includes("step down"));
+  // No logged load to hold: nothing is said about loads.
+  const none = rationale([]);
+  assert(!none.includes("loads"), "no loads clause without a logged load");
 });
 
 Deno.test("the deload week keeps every exercise, day and range, and every number is inside its bounds", () => {
