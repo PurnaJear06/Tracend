@@ -216,3 +216,15 @@ Deno.test("a figure's unit is read within its own line, and a range's unit acros
   assertEquals(ungroundedNumbers("Your BMI is 74.8", ground), ["74.8"]);
   assertEquals(ungroundedNumbers("1.4 to 2.0 kcal per kg\nmore", ground), ["1.4", "2.0"]);
 });
+
+// Round 2 (hostile review of #177): the next line never lends a figure its unit, and a figure alone
+// on its line keeps the measurement label that ends the line before.
+Deno.test("a range takes no unit from the next line; a lone figure keeps the label above it", () => {
+  const ground = numberGroundOf(["Protein 35 g at lunch."]);
+  assertEquals(ungroundedNumbers("Body fat estimate: 25-28\nReps: 8-10 per set", ground), [
+    "25",
+    "28",
+  ]);
+  assertEquals(ungroundedNumbers("Your BMI:\n35", ground), ["35"]);
+  assertEquals(ungroundedNumbers("Protein:\n35 g", ground), []);
+});
