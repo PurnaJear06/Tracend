@@ -118,6 +118,58 @@ export const linkedColumns: Readonly<Record<string, string>> = {
     "The invite the account claimed: exported as signup_invites through export_linked_account_rows_v1.",
 };
 
+// For a table with omitted columns, the columns that are selected: its migration columns minus the
+// omitted ones. The omitted columns are never downloaded (`select *` would fetch a snapshot's whole
+// context body only to drop it). coverage_test.ts fails when a list drifts from the migrations.
+export const selectedColumns: Readonly<Record<string, readonly string[]>> = {
+  coach_context_snapshots: [
+    "id",
+    "user_id",
+    "thread_id",
+    "schema_version",
+    "trigger_kind",
+    "coaching_date",
+    "context_checksum",
+    "created_at",
+  ],
+  coach_messages: [
+    "id",
+    "user_id",
+    "thread_id",
+    "role",
+    "content",
+    "evidence",
+    "missing_data",
+    "safety_state",
+    "idempotency_key",
+    "created_at",
+    "answer_source",
+    "proposal_id",
+  ],
+  data_exports: [
+    "id",
+    "user_id",
+    "status",
+    "scope",
+    "byte_size",
+    "created_at",
+    "started_at",
+    "completed_at",
+    "expires_at",
+    "download_count",
+    "sanitized_error_code",
+  ],
+  deletion_requests: [
+    "id",
+    "user_id",
+    "status",
+    "requested_at",
+    "started_at",
+    "completed_at",
+    "sanitized_error_code",
+  ],
+};
+
 // The column pages are ordered and continued by. It is unique among one owner's rows: the primary
 // key, or the primary key without user_id. Most tables use `id`.
 export const keyColumns: Readonly<Record<string, string>> = {
@@ -234,32 +286,26 @@ export async function collectRows(
 ) {
   const output: Record<string, ReadonlyArray<Record<string, unknown>>> = {};
   let bytes = 0;
-  const add = (table: string, rows: ReadonlyArray<Record<string, unknown>>) => {
+  // Counted as each page arrives, so an account over the limit stops mid-table instead of after
+  // everything is already in memory.
+  const spend = (rows: ReadonlyArray<unknown>) => {
     bytes += JSON.stringify(rows).length;
     if (bytes > limit) throw new Error("export_too_large");
-    output[table] = rows;
   };
   for (const table of dataTables) {
     const ownerColumn = table === "user_accounts" ? "id" : "user_id";
     const key = keyColumns[table] ?? "id";
-    const omitted = Object.keys(omittedColumns[table] ?? {});
-    const rows = await fetchAllByKey<Record<string, unknown>>(
+    const columns = selectedColumns[table]?.join(",") ?? "*";
+    output[table] = await fetchAllByKey<Record<string, unknown>>(
       (after, size) => {
-        let query = client.from(table).select("*").eq(ownerColumn, userId);
+        let query = client.from(table).select(columns).eq(ownerColumn, userId);
         if (after !== null) query = query.gt(key, after);
         return query.order(key, { ascending: true }).limit(size);
       },
       (row) => row[key],
       `table_${table}`,
       pageSizes[table],
-    );
-    add(
-      table,
-      omitted.length === 0 ? rows : rows.map((row) => {
-        const kept = { ...row };
-        for (const column of omitted) delete kept[column];
-        return kept;
-      }),
+      spend,
     );
   }
   const linked = await client.rpc("export_linked_account_rows_v1", {
@@ -269,8 +315,9 @@ export async function collectRows(
   const body = linked.data as Record<string, unknown> | null;
   if (linked.error || body == null || typeof body !== "object") throw new Error("table_linked");
   for (const name of linkedExports) {
-    const rows = body[name];
-    add(name, Array.isArray(rows) ? rows as Record<string, unknown>[] : []);
+    const rows = Array.isArray(body[name]) ? body[name] as Record<string, unknown>[] : [];
+    spend(rows);
+    output[name] = rows;
   }
   return output;
 }
@@ -358,6 +405,14 @@ async function buildExport(
     files[`data/csv/${name}.csv`] = strToU8(csv(values));
   }
   return zipSync(files, { level: 6 });
+}
+
+// An account over the size limit gets its own answer (retrying cannot help); anything else is the
+// general failure.
+export function exportFailureReply(code: string): Response {
+  return code === "export_too_large"
+    ? reply(413, { error: "export_too_large" })
+    : reply(503, { error: "export_failed" });
 }
 
 export async function handlePrivacyExport(request: Request): Promise<Response> {
@@ -453,7 +508,7 @@ export async function handlePrivacyExport(request: Request): Promise<Response> {
       target_export_id: exportId,
       failure_code: code,
     });
-    return reply(503, { error: "export_failed" });
+    return exportFailureReply(code);
   }
 }
 

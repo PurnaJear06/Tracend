@@ -1,5 +1,5 @@
 begin;
-select plan(32);
+select plan(39);
 
 insert into auth.users(id, role) values
   ('a1111111-eeee-4111-8111-111111111111', 'authenticated'),
@@ -220,9 +220,25 @@ select is((select schedule from cron.job where jobname = 'meal-media-retention-d
   '15 2 * * *', 'at 02:15 UTC');
 select is((select command from cron.job where jobname = 'meal-media-retention-daily'),
   'select private.meal_media_retention_kick()', 'through the trigger function');
+-- net.http_request_queue is pg_net's queue: a post made inside this transaction is visible here and
+-- rolled back with it.
+create temporary table retention_queue_before(n bigint);
+insert into retention_queue_before select count(*) from net.http_request_queue;
+select lives_ok($$select private.meal_media_retention_kick()$$, 'the trigger runs without Vault secrets');
+select is((select count(*) from net.http_request_queue), (select n from retention_queue_before),
+  'and posts nothing');
 select throws_ok(
   $$select private.meal_media_retention_set_url('https://example.com/functions/v1/meal-media-retention')$$,
   '22023', null, 'the worker URL must be a project function URL'
+);
+select throws_ok(
+  $$select private.meal_media_retention_set_url('https://abcdefghijklmnopqrst.supabase.co/functions/v1/meal-media-retention')$$,
+  'P0002', 'the Vault secret retention_worker_secret is missing',
+  'the deploy fails loudly when the worker secret is not in Vault'
+);
+select lives_ok(
+  $$select vault.create_secret('test-only-value', 'retention_worker_secret')$$,
+  'the worker secret is put in Vault (a test value)'
 );
 select lives_ok(
   $$select private.meal_media_retention_set_url('https://abcdefghijklmnopqrst.supabase.co/functions/v1/meal-media-retention')$$,
@@ -237,8 +253,15 @@ select is(
   'https://tsrqponmlkjihgfedcba.supabase.co/functions/v1/meal-media-retention',
   'kept once in Vault'
 );
-select lives_ok($$select private.meal_media_retention_kick()$$,
-  'the trigger does nothing without the worker secret in Vault');
+update retention_queue_before set n = (select count(*) from net.http_request_queue);
+select lives_ok($$select private.meal_media_retention_kick()$$, 'the trigger runs once both Vault secrets exist');
+select is((select count(*) from net.http_request_queue), (select n + 1 from retention_queue_before),
+  'and posts once');
+select is((select url from net.http_request_queue order by id desc limit 1),
+  'https://tsrqponmlkjihgfedcba.supabase.co/functions/v1/meal-media-retention',
+  'to the stored URL');
+select is((select headers ->> 'Authorization' from net.http_request_queue order by id desc limit 1),
+  'Bearer test-only-value', 'with the worker secret from Vault as the bearer token');
 select ok(
   not has_function_privilege('service_role', 'private.meal_media_retention_kick()', 'execute')
   and not has_function_privilege('authenticated', 'private.meal_media_retention_kick()', 'execute'),

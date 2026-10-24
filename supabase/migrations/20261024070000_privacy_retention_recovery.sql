@@ -138,7 +138,8 @@ grant execute on function public.claim_expired_meal_media(integer) to service_ro
 -- Rows linked to the account by something other than user_id --------------------------------
 
 -- Service role only. The invite list's private note about the invitee is not the athlete's data and
--- stays out; so do the waitlist's token hashes and referral link.
+-- stays out; so do the waitlist's token hashes, its row id and `referred_by` (the link to another
+-- person's signup). The account's own referral code is its data and stays in.
 create function public.export_linked_account_rows_v1(target_user_id uuid, target_email text)
 returns jsonb
 language plpgsql
@@ -184,7 +185,9 @@ grant execute on function public.export_linked_account_rows_v1(uuid, text) to se
 
 -- Stores the project's meal-media-retention URL in Vault, creating or updating the secret. The deploy
 -- workflow sets it after the migrations. Refuses anything but
--- https://<20 lowercase letters>.supabase.co/functions/v1/meal-media-retention.
+-- https://<20 lowercase letters>.supabase.co/functions/v1/meal-media-retention, and refuses when
+-- the Vault secret retention_worker_secret is missing, so a deploy fails instead of leaving a job
+-- that does nothing.
 create function private.meal_media_retention_set_url(url text)
 returns void
 language plpgsql
@@ -197,6 +200,12 @@ begin
   if url is null or url !~ '^https://[a-z]{20}\.supabase\.co/functions/v1/meal-media-retention$' then
     raise exception 'url must be https://<project ref>.supabase.co/functions/v1/meal-media-retention'
       using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from vault.decrypted_secrets s
+    where s.name = 'retention_worker_secret' and btrim(coalesce(s.decrypted_secret, '')) <> ''
+  ) then
+    raise exception 'the Vault secret retention_worker_secret is missing' using errcode = 'P0002';
   end if;
   select s.id into secret_id from vault.secrets s where s.name = 'meal_media_retention_url';
   if secret_id is null then
@@ -245,7 +254,9 @@ revoke all on function private.meal_media_retention_kick() from public, anon, au
 -- Production already has a hand-made job of this name; it is replaced, not duplicated.
 do $$
 begin
-  if exists (select 1 from cron.job where jobname = 'meal-media-retention-daily') then
+  if exists (
+    select 1 from cron.job where jobname = 'meal-media-retention-daily' and username = current_user
+  ) then
     perform cron.unschedule('meal-media-retention-daily');
   end if;
 end

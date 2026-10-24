@@ -124,7 +124,7 @@ Deno.test("each redefined function keeps security definer, an empty search_path 
   }
 });
 
-Deno.test("the migration only adds: one nullable column, one index, three function bodies", () => {
+Deno.test("the migration drops and renames nothing: one nullable column, a backfill, an index, functions and one job", () => {
   const sql = recovery.split("\n").filter((line) => !line.startsWith("--")).join("\n");
   assert(!/\bdrop\s+(table|column|function)/i.test(sql));
   assert(!/\brename\b/i.test(sql));
@@ -143,7 +143,7 @@ Deno.test("photos already pending deletion are backfilled as claimed at migratio
   assert(column >= 0 && backfill > column, "the backfill follows the new column");
 });
 
-Deno.test("the linked-rows export leaves out the invitee note, token hashes and referral link", () => {
+Deno.test("the linked-rows export leaves out the invitee note, token hashes, row id and referred_by", () => {
   const body = between(recovery, "create function public.export_linked_account_rows_v1(", "$$;");
   for (const left of ["note", "token_hash", "referred_by", "claimed_by,"]) {
     assert(
@@ -168,4 +168,19 @@ Deno.test("the retention cron job replaces the hand-made one, posts only through
   assert(kick.includes("'Bearer ' || worker_secret"));
   assert(!/[0-9a-f]{32}/i.test(recovery), "no secret-looking value in the migration");
   assert(!/Bearer\s+[A-Za-z0-9]/.test(recovery.replaceAll("'Bearer '", "")));
+});
+
+Deno.test("the cron guard touches only a job of the migrating role, and the URL step needs the worker secret", () => {
+  assert(
+    recovery.includes(
+      "select 1 from cron.job where jobname = 'meal-media-retention-daily' and username = current_user",
+    ),
+  );
+  const setter = between(recovery, "create function private.meal_media_retention_set_url(", "$$;");
+  assert(setter.includes("s.name = 'retention_worker_secret'"));
+  assert(setter.includes("raise exception 'the Vault secret retention_worker_secret is missing'"));
+  assert(
+    setter.indexOf("retention_worker_secret") < setter.indexOf("vault.create_secret"),
+    "the check comes before anything is stored",
+  );
 });

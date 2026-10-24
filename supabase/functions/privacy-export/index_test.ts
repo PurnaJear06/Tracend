@@ -8,6 +8,7 @@ import {
   dataTables,
   encrypt,
   exportExclusions,
+  exportFailureReply,
   omittedColumns,
   type RowsClient,
 } from "./index.ts";
@@ -112,22 +113,29 @@ function fakeDatabase(
     failTable?: string;
   } = {},
 ) {
-  const requests: Array<{ table: string; owner: string; after: string | null; order: string[] }> =
-    [];
+  const requests: Array<
+    { table: string; owner: string; after: string | null; order: string[]; columns: string }
+  > = [];
   let count = 0;
   const client: RowsClient = {
     from: (table) => ({
-      select: () => ({
+      select: (columns) => ({
         eq: (owner, value) => {
           const entry = {
             table,
+            columns,
             owner: `${owner}=${value}`,
             after: null as string | null,
             order: [] as string[],
           };
           requests.push(entry);
           const query = new FakeQuery(
-            () => (tables[table] ?? []).filter((row) => row[owner] === value),
+            () =>
+              (tables[table] ?? []).filter((row) => row[owner] === value).map((row) =>
+                columns === "*" ? row : Object.fromEntries(
+                  columns.split(",").map((column) => [column, row[column]]),
+                )
+              ),
             options.maxRows ?? 1000,
             () => options.onRequest?.(table, count++),
             options.failTable === table,
@@ -222,8 +230,8 @@ Deno.test("the export pages in key order and filters on the owner", async () => 
   assertEquals(first("user_profiles").order, ["user_id"]);
 });
 
-Deno.test("the export leaves out the columns it lists as omitted", async () => {
-  const { client } = fakeDatabase({
+Deno.test("the export never downloads the columns it lists as omitted", async () => {
+  const { client, requests } = fakeDatabase({
     coach_messages: ids(1, {
       content: "hello",
       search_vector: "'x':1",
@@ -237,17 +245,58 @@ Deno.test("the export leaves out the columns it lists as omitted", async () => {
     deletion_requests: ids(1, { status: "queued", queue_message_id: 5 }),
   });
   const rows = await collectRows(client, "user-1");
-  assertEquals(rows.coach_messages, [{ id: "000000", user_id: "user-1", content: "hello" }]);
-  assertEquals(rows.coach_context_snapshots, [
-    { id: "000000", user_id: "user-1", trigger_kind: "chat" },
-  ]);
-  assertEquals(rows.data_exports, [{ id: "000000", user_id: "user-1", status: "ready" }]);
-  assertEquals(rows.deletion_requests, [{ id: "000000", user_id: "user-1", status: "queued" }]);
+  assertEquals(rows.coach_messages, [{
+    id: "000000",
+    user_id: "user-1",
+    content: "hello",
+    // the columns of the select list that the row did not have
+    thread_id: undefined,
+    role: undefined,
+    evidence: undefined,
+    missing_data: undefined,
+    safety_state: undefined,
+    idempotency_key: undefined,
+    created_at: undefined,
+    answer_source: undefined,
+    proposal_id: undefined,
+  }]);
   for (const [table, columns] of Object.entries(omittedColumns)) {
-    for (const [column, reason] of Object.entries(columns)) {
-      assert(reason.length >= 20, `${table}.${column} needs a reason`);
+    const asked = requests.filter((r) => r.table === table).map((r) => r.columns);
+    assert(asked.length > 0, table);
+    for (const column of Object.keys(columns)) {
+      for (const list of asked) {
+        assert(list !== "*" && !list.split(",").includes(column), `${table} asks for ${column}`);
+      }
+      assert(reasonOk(columns[column]), `${table}.${column} needs a reason`);
     }
   }
+  assert(!JSON.stringify(rows).includes("xxxxxxxx"), "no snapshot body in the package");
+  assertEquals(Object.keys(rows.coach_context_snapshots[0]).includes("context"), false);
+  assertEquals(Object.keys(rows.data_exports[0]).includes("storage_path"), false);
+});
+
+const reasonOk = (reason: string) => reason.length >= 20;
+
+Deno.test("the byte budget trips mid-table, before the rest of the table is fetched", async () => {
+  const { client, requests } = fakeDatabase({ meals: ids(5000, { note: "x".repeat(400) }) });
+  const error = await assertRejects(() => collectRows(client, "user-1", null, 500_000), Error);
+  assertEquals(error.message, "export_too_large");
+  const mealRequests = requests.filter((r) => r.table === "meals").length;
+  assert(mealRequests >= 1 && mealRequests < 6, `${mealRequests} meal requests, not all 6`);
+  assertEquals(
+    requests.some((r) => r.table === "coach_threads"),
+    false,
+    "later tables are never read",
+  );
+});
+
+Deno.test("too large is answered 413 with its own code, anything else 503", async () => {
+  const large = exportFailureReply("export_too_large");
+  assertEquals(large.status, 413);
+  assertEquals(await large.json(), { error: "export_too_large" });
+  const other = exportFailureReply("table_meals");
+  assertEquals(other.status, 503);
+  assertEquals(await other.json(), { error: "export_failed" });
 });
 
 Deno.test("the AI budget ledger is excluded with a reason, not exported", () => {

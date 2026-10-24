@@ -393,7 +393,8 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
   again (photos pending at the migration count as claimed then). Failures reach Sentry as codes and
   counts only, never a key, path, URL or user id. The daily job `meal-media-retention-daily` (02:15
   UTC) is created by migration and calls `private.meal_media_retention_kick()`, which posts only when
-  Vault holds both `meal_media_retention_url` (set by the deploy workflow after the migrations) and
+  Vault holds both `meal_media_retention_url` (set by the deploy and hotfix workflows after the migrations; the step fails when
+  `retention_worker_secret` is missing from Vault, so a deploy cannot leave the job doing nothing) and
   `retention_worker_secret` (set by the owner, the same value as the Edge secret); a local, CI or
   restored database sends nothing.
 - `library-embed` (research library embeddings) validates a bearer secret that the database
@@ -659,7 +660,11 @@ history.
   athlete content). A JSON value over 2000 characters appears once, in `data/all-data.json`, and the
   CSV points to it. The package is built in memory, so an account whose rows pass 16 MiB of JSON or
   whose media passes 32 MiB fails with the code `export_too_large` (recorded on the request) instead
-  of running the function out of memory. Meal photos that retention is deleting, or that are already
+  of running the function out of memory: the budget is counted page by page while the tables are
+  read, the function answers 413 `export_too_large`, and the app says the data is too large to
+  prepare in the app (the app has no support address; it points to whoever invited the athlete).
+  A table with omitted columns selects an explicit column list, so an omitted column such as a
+  snapshot's `context` is never downloaded; a test fails when the list drifts from the migrations. Meal photos that retention is deleting, or that are already
   gone from Storage, are listed under `skipped_media`. A Deno test reads the migrations and fails
   when a table with a `user_id` is in neither the export list nor the exclusion list, when a table
   has no unique key to page by, or when a column that points at the account (or is named `*_by`)

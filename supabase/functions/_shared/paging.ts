@@ -17,6 +17,7 @@ export async function fetchAllByKey<T>(
   keyOf: (row: T) => unknown,
   failureCode: string,
   size = pageSize,
+  onPage?: (page: readonly T[]) => void,
 ): Promise<T[]> {
   const rows: T[] = [];
   let after: string | null = null;
@@ -30,6 +31,8 @@ export async function fetchAllByKey<T>(
     if (typeof last !== "string" || last.length === 0 || last === after) {
       throw new Error(failureCode);
     }
+    // Lets the caller stop a read that has grown too large before the next page is fetched.
+    onPage?.(page);
     rows.push(...page);
     after = last;
   }

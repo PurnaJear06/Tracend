@@ -260,3 +260,8 @@ again), and run a physique check (its notice is unchanged).
   behind Vault: the deploy workflow stores `meal_media_retention_url`, `retention_worker_secret`
   stays the owner's. Production snapshot size (read-only): 4 snapshots, 1 account, 33,759 bytes of
   `context` in total, 10,967 bytes at most per row.
+- Review round 2: omitted columns are never selected (`selectedColumns`, checked against the
+  migrations), the byte budget is counted per page, `export_too_large` answers 413 and the app shows
+  its own message (`PrivacyExportTooLarge`), the cron guard checks `username = current_user`, the
+  hotfix workflow sets the library and retention URLs like the deploy workflow, and
+  `meal_media_retention_set_url` fails when `retention_worker_secret` is not in Vault.

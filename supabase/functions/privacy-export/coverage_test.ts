@@ -5,6 +5,7 @@ import {
   keyColumns,
   linkedColumns,
   omittedColumns,
+  selectedColumns,
 } from "./index.ts";
 
 // Every table that holds an athlete's data (a user_id column) must be in the export or in the
@@ -219,5 +220,29 @@ Deno.test("every column that points at the account or is named *_by is accounted
   );
   for (const [column, how] of Object.entries(linkedColumns)) {
     assert(how.trim().length >= 20, `${column} needs an explanation`);
+  }
+});
+
+// A table with omitted columns selects an explicit list, so the omitted ones are never downloaded.
+// The list must be exactly the migrations' columns minus the omitted ones: a column added later
+// fails here until it is added to the list (or to the omitted ones, with a reason).
+Deno.test("the select list of a table with omitted columns is its columns minus the omitted ones", () => {
+  assertEquals(
+    Object.keys(selectedColumns).sort(),
+    Object.keys(omittedColumns).sort(),
+    "every table with omitted columns has a select list, and only those",
+  );
+  for (const [table, selected] of Object.entries(selectedColumns)) {
+    const omitted = Object.keys(omittedColumns[table]);
+    const expected = [...colsOf(table).columns.keys()].filter((column) =>
+      !omitted.includes(column)
+    );
+    assertEquals(
+      [...selected].sort(),
+      expected.sort(),
+      `${table}: select list drifted from the migrations`,
+    );
+    assertEquals(new Set(selected).size, selected.length, `${table}: a column is listed twice`);
+    for (const column of omitted) assert(!selected.includes(column), `${table} selects ${column}`);
   }
 });
