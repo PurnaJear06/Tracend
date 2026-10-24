@@ -344,6 +344,29 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   plus the intended hunks. Flutter: `day_adjustment_contract_test.dart` pins the fixtures' complete
   key lists. Each rule is proved by a test that fails without it (the PR lists them).
 
+- **Deloads and cardio dosing (B5-3, B5-4).** pgTAP `deloads_test.sql` runs real athletes through the
+  proposal path: each reason alone and at its boundary (one stalled lift against two; three amber
+  days against four, with days that have no check-in not counted, a replaced check-in and an eighth day
+  ignored; short sleep, the invalid sleep values and a low recovery score with a clean check-in; a
+  finished block at its length, one week short, two sessions short, the 4-week floor, the 8-week cap
+  and one session a week), each suppression (a deload that ended 27 against 28 days ago, an undone
+  deload, a moderate block, an older untagged deload, a running deload, another block, an overdue
+  block, a pending and an expired proposal, `see_professional`, `moderate_until_cleared`, too little
+  training, no plan), a day with a pain of 8 or an urgent red flag (suggested by the signals, withheld
+  by the guidance), a running deload meeting a limited knee and a poor night, the readers' own-today
+  rule and cross-athlete reads. `cardio_dosing_test.sql`: the week's every figure, Apple Health missing
+  against connected with no cardio, the window's edges, what counts, the 180-minute cap, overlapping
+  workouts, the target by goal, the easy-only days (amber, red, no check-in, a limited joint, a low
+  recovery score alone not closing it), `moderate_until_cleared`, the days that withhold the dose, the
+  easy-cardio card quoting the same dose, the guidance's complete key lists and grants. Deno:
+  `deload_cardio_test.ts` keeps both rule sets equal to their migrations, reads no heart signal outside
+  cardio, pins `private.training_guidance` 1.1 to B5-3's text plus the cardio hunks, checks every
+  function's owner, search path and grants, parses the three contract fixtures strictly; the proposal
+  builder's tests in `coach_proposals/build_test.ts` hold the deload week (one week whatever length is
+  asked, half the sets rounded up, effort 7 or lower, loads held, exercises, days and ranges unchanged)
+  over 5,400 plans (every goal x days x experience x length x equipment x progression target x health
+  check). Each rule is proved by a test that fails without it (the PR lists them).
+
 - **Pain check, red flags and joint rules (B5-1).** pgTAP `pain_checks_test.sql`: the outcome table
   (severity alone at 0, 1, 3, 4, 6, 7 and 10; each of the ten red flags at every one of those
   severities; two flags together; a rule with the bands moved up fails it), the table's constraints (an

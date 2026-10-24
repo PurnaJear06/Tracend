@@ -32,7 +32,7 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   `20261023140024`): `day_adjustments`, `get_my_day_adjustment_v1` / `respond_to_day_adjustment_v1`
   (hold loads, one set fewer or easy cardio for today only; one tap and Undo; the recovery score never
   adjusts a session alone, the athlete may choose), `start_workout` building the adjusted sets and B3
-  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). Next: B5. Handoff:
+  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). B5-1 (pain check and joint rules) merged as #172; B5-3 and B5-4 (deloads and cardio dosing, server) in review. Handoff:
   [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping
@@ -110,6 +110,21 @@ gives a referral and no training change (even on a rest day or with no check-in)
 held until the athlete says a clinician cleared it. No app change yet (B5-2); the app must not offer
 the new pain keys until then, and the installed B4-2 build must tolerate the new kind and routes
 (see the handoff). Details: "B5-1" in [`training-engine.md`](./handoff/training-engine.md).
+
+**B5-3 deloads and B5-4 cardio dosing, server side (2026-10-24, branch `claude/b5-3-4-deloads-cardio`, PR open):**
+migrations `20261024060125` and `20261024060225` add `get_my_training_guidance_v1` and
+`get_training_guidance_for_v1` (1.1): when a lighter week could help (two lifts heading down, four amber
+or red days of the last seven, a finished block that was trained), what suppresses it (a running block,
+28 days since the last deload, too little training, `see_professional`, a safety route), and the weekly
+cardio dose (150 minutes, 300 for fat loss and recomposition) from Apple Health workouts with what
+intensity is open today. A deload stays a proposal the athlete approves: the A8 builder now makes exactly
+one week, half the sets, loads held, effort 7 or lower. Nothing is applied by rules and heart rate picks
+nothing. Review round 1 (migration `20261024060325`): B3 holds instead of stepping up during a deload week
+and ignores deload sessions as stall evidence, a pending deload is withheld and unapprovable on a safety-route
+day, 14 days of quiet after a declined or expired proposal, and the cardio gates (unavailable today, a cleared
+screening row). Not built yet: the `training-proposals` Edge Function (lead: config and deploy list), the Train
+card and Cardio row (app), the Coach contributor. Details: "B5-3 and B5-4" in
+[`training-engine.md`](./handoff/training-engine.md).
 
 **Unfinished workouts (2026-10-24, branch `claude/unfinished-workout`, PR open):** the owner's Legs B (23 sets logged,
 never finished) was closed by the stale rule and Coach then called it "not done". A stale-closed session with logged sets

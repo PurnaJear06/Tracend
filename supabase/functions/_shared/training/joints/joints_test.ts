@@ -670,6 +670,11 @@ Deno.test("no migration after this one's predecessors defines these functions ag
   for (const name of all) {
     if (name === "20261024060025_pain_checks.sql") continue;
     const text = await readMigration(name);
+    // The B5-3/B5-4 review fixes replace next_session_targets once (deload_cardio_review_test.ts pins
+    // that definition against this one's); every other function stays untouched.
+    const allowed = name === "20261024060325_deload_cardio_review_fixes.sql"
+      ? ["next_session_targets"]
+      : [];
     for (
       const fn of [
         "day_adjustment_compute",
@@ -682,7 +687,7 @@ Deno.test("no migration after this one's predecessors defines these functions ag
         "save_daily_check_in",
         "get_my_day_adjustment_v1",
         "respond_to_day_adjustment_v1",
-      ]
+      ].filter((fn) => !allowed.includes(fn))
     ) {
       assert(
         !text.includes(`function private.${fn}(`) && !text.includes(`function public.${fn}(`),

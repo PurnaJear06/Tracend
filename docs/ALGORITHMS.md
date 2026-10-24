@@ -770,6 +770,115 @@ ceilings and every stress rating. Sources are in `rules.ts`: Finucane 2020, Stie
 (persistent pain goes to a professional), Schoenfeld 2020 (a shorter pain-free range), Haugen 2023 and
 Lopez 2021 (a gentler exercise keeps the stimulus).
 
+### Deloads (B5-3, rules `deload-v1`, 2026-10)
+
+A deload is one lighter week, proposed through the Coach proposal path (§10): a card, the athlete's
+approval, a new plan version, an audit event, an undo for seven days. Rules never apply one. The week is
+built by `_shared/coach_proposals/training.ts` from the sourced values in `_shared/training/standard/
+deload.ts`; when one could help is worked out in SQL (migration `20261024060125`:
+`private.deload_rules`, `private.deload_signals`, read through `get_my_training_guidance_v1` and, for the
+service role, `get_training_guidance_for_v1`) and a test keeps the TypeScript numbers equal to the
+migration. Heart rate is not an input (D9).
+
+```text
+the week   length                  exactly 1 week (a longer easing is the moderate-effort block)
+           sets                    max(1, ceil(sets x 0.5)) on every exercise
+           load                    held: start_load_kg is the load of the last working sets, or the
+                                   progression target's load when that is gentler (lower; for an
+                                   assisted exercise, more help). Never the target's step up.
+                                   Exercises with no logged load keep the plan's own.
+           effort                  min(target RPE, 7); no target becomes 7
+           exercises, days, rep ranges, rest   unchanged
+           after                   the regular plan returns the day after (A8 block end)
+
+reasons    performance_drop   at least 2 different exercises whose current B3 target is "lower" because
+                              of a stall or two sessions under the range (each needs 2 or 3 comparable
+                              sessions)
+           run_down           readiness band amber or red on at least 4 of the last 7 local days that
+                              have a check-in (the band each day had, from that day's check-in, sleep
+                              and stored recovery score; a past day is not rescored)
+           block_done         whole weeks since the later of the plan's first activation and the last
+                              deload's end >= clamp(plan block weeks, 4, 8), and completed sessions in
+                              the last 28 days >= 75% of sessions per week x 4
+
+suppressed no suggestion while a temporary block or deload runs (block_running); under
+           see_professional (screening); within 28 days of the end of the last deload
+           (recent_deload); within 14 days of a deload proposal the athlete declined or let run out
+           (declined_recently); when fewer than 3 of the last 4 weeks had a completed session
+           (not_enough_training); no plan (no_plan); and on a day with a safety route
+           (safety_route), which the guidance reads from the day adjustment. A pending proposal is
+           withheld on a safety-route day too (no proposal_id), and cannot be approved on it (55000)
+status     running    a deload block is the active plan version (proposal_id)
+           pending    an open, unexpired deload proposal built on the current plan version
+                      (proposal_id), unless screening, a safety route or another running block makes
+                      it unapprovable
+           suggested  at least one reason and nothing suppresses it
+           not_due    otherwise
+```
+
+Notes. The athlete can always ask for a deload; the asking is not gated (§10). An undone deload never ran
+and is not counted as the last one; a block ended early ends on the day it was ended (the block-ended event's day) and stays ended that day; a block past its last day
+that the hourly job has not ended yet is not "running" and holds the plan (`block_running`). A deload
+block is recognised by `intensity_level: "deload"` in its stored proposal payload, or, for a block approved
+before that key existed, by the title "Deload until <date>". "Opt-in" for the block-end offer (owner
+decision O13) means the offer is only ever a suggestion the athlete accepts; no preference is stored.
+
+**B3 during and after a deload.** The week's sessions are marked `adjusted` (the B4 mechanism): they are
+never evidence for a stall or for lowering a load, in the week or after it. While the active plan version is
+a deload week, a B3 target never steps up: `add_load` becomes `hold` with reason `deload` at the last
+working load (the app prefills from the target before the plan's own load). The first session after the
+week reads as incomplete against the restored plan's full set count, so B3 holds the load for it.
+
+**A deload never overrides a stricter rule.** The week is an ordinary active plan version. The day's
+overlay (B4 and B5-1) is computed against it exactly as against any plan: a safety route still gives the
+day no training advice, a held or limited joint still swaps or drops its exercise, a poor night still takes
+a set off the deload week's sets, and no overlay ever raises a deload set or effort. The day adjustment
+takes the strictest rule per exercise.
+
+Sources (`deload.ts`): Bell 2023 (full text; a deload cuts volume by fewer sets, load may stay, it can be
+data-driven and fits fatigue regardless of the week and the end of a block), Coleman 2024 (a one-week
+deload), Saw 2016 (self-reported wellness tracks the training response). The numbers are in-house: the
+half, the cap of 7, the thresholds and the 28 days. Each carries its basis in the file. They need a coach's
+review before an external beta.
+
+### Cardio Dosing (B5-4, rules `cardio-v1`, 2026-10)
+
+A weekly cardio dose from the public health guidelines, the minutes the athlete has done, and what
+intensity is open today. Worked out in SQL (migrations `20261024060225` and the review fixes `20261024060325`:
+`private.cardio_rules`, `private.cardio_week`), carried by the training guidance 1.1 (`cardio_week`, `cardio_withheld`), with the
+sourced values in `_shared/training/standard/cardio.ts`. Heart rate may inform cardio dosing (D9): the
+easy ceiling is a share of heart-rate reserve that the app turns into beats per minute from the athlete's
+own profile, with the talk test as the plain-words rule. It never sets a lifting load and never picks an
+intensity by itself.
+
+```text
+target     150 minutes of moderate cardio a week (WHO 2020; ACSM 2011), every goal; fat_loss and
+           recomposition also show the upper figure 300 (stretch_max). A vigorous minute counts as 2.
+observed   Apple Health workouts of the last 7 days (today and the 6 before): cardio types only
+           (walking, running, cycling, hiking, elliptical, rowing, swimming, stairs, interval and mixed
+           cardio, jump rope, cardio dance, wheelchair walk and run paces, cross-country skiing,
+           paddle sports, social dance); strength, sports and other are not counted, steps never
+           are. A denied Apple Health workout permission reads as 0 minutes (the plugin returns no
+           workouts), not as missing: only missing summaries give a null figure. One workout counts for at most 180 minutes; overlapping workouts count once (their
+           union). Every counted minute is read as moderate (intensity_known false).
+missing    fewer than 5 of the 7 days with an Apple Health summary: done_min is null (the app asks the
+           athlete to connect Apple Health); a connected week with no cardio is 0, never "missing"
+today      vigorous_allowed only when the athlete has a cleared health-check row (no row is not
+           cleared for hard cardio), today's readiness band is green (no check-in, amber and red are
+           easy-only days), today's check-in does not say they cannot train, and no joint is held or
+           limited;
+           vigorous_sessions_max is 2 (0 under moderate_until_cleared). The easy ceiling is 60% of
+           heart-rate reserve (the top of the Easy zone); easy cardio on a swap day is 20 to 30
+           minutes, the same dose the readiness card quotes.
+withheld   no dose on a day with a safety route, and none under see_professional
+           (cardio_withheld: safety_route or screening)
+```
+
+Sources (`cardio.ts`): WHO 2020 and ACSM 2011 for the dose and the intensity classes, Schumann 2022 for the
+three-hour gap between hard cardio and lifting when explosive strength matters, Riebe 2015 for moderate
+effort as the default under a screening flag. The goal mapping, the cap of two hard sessions, the 180-minute
+cap, the 5-of-7-days rule and the workout list are in-house (O11).
+
 ### Literature
 
 - Gabbett, T.J. (2016). The training-injury prevention paradox. *Br J Sports Med* 50(5), 273–280.
@@ -1196,10 +1305,9 @@ TDEE = BMR × daily-activity factor + training energy
     cleared).
   - Rest 60–180 s, or up to 240 s for strength.
   - Sets per exercise 1–5.
-- **Blocks:** 4–8 weeks before a review. The app repeats one weekly template, so the plan never
-  promises a deload or a different week; progression is adding reps or load within the ranges.
-  (Deloads in practice come about every 5–6 weeks, Sports Med Open 2024, and need a week-by-week
-  plan the app does not have yet.)
+- **Blocks:** 4–8 weeks before a review. The app repeats one weekly template, so the plan itself never
+  promises a deload or a different week; progression is adding reps or load within the ranges. A deload
+  is a separate, one-week block the athlete approves when the rules suggest one (§4 Deloads).
 - **Rules plan:** see "Templates and fractional volume" below. In short: the same limits, a
   template chosen by split, goal, experience and session length, prescriptions from the coaching
   standard, and weekly sets spread toward the standard's volume. It is validated before use;
@@ -1333,7 +1441,7 @@ and says so.
 | Reps in reserve | 1–3 (compound mid-range, isolation 2) | 1–3 | Robinson 2024, ACSM 2026, Helms 2016; Refalo 2023 finds no gain from failure, so the range is not narrowed |
 | Rest | by goal and session length, as before | same | ACSM 2009, Singer 2024 |
 | Progression | double progression; one equipment step | same | ACSM 2009 (2–10%); no source sets a slower advanced rate, so none is invented |
-| Deload cadence | none | none | no cited cadence; Bell 2023 gives only the purpose of a deload and Coleman 2024 tested one week off in week 5 of 9 without a cadence. The block model has no deload week; B5 owns deloads |
+| Deload cadence | none | none | no cited cadence; Bell 2023 gives only the purpose of a deload and Coleman 2024 tested one week off in week 5 of 9 without a cadence. The plan has no deload week; a deload is suggested from the athlete's own data and approved as a one-week block (§4 Deloads) |
 
 **Heavy and light days (periodisation inside the block model).** The block stays six weeks and the app
 repeats one week, so the variation is inside the week. Every muscle meets a heavy and a light day:
@@ -1556,9 +1664,12 @@ the approval flow are in AI_SAFETY_SPEC §6 ("Coach proposals").
 - **Swap:** only a B1 catalog substitute of the exercise, owned equipment, an allowed movement, and
   no harsher than the original on the knee, back or shoulder; same sets, reps and effort; no
   starting load; weekly sets for the new target muscle stay inside the policy maximum.
-- **Deload:** half the sets of every exercise (rounded up, at least 1) at effort 7 or lower, for 1 to
-  8 weeks (an in-house choice in the range coaches use; B5 replaces it with the full deload rule).
-  **Moderate** caps effort at 7. A **strength** or **size** phase rebuilds the week for that goal
+- **Deload:** exactly one week (a longer length asked for is cut to one): half the sets of every
+  exercise (rounded up, at least 1), loads held where the last sets left them (never the target's
+  step up), effort 7 or lower (no target becomes 7), the same exercises, days and ranges; the stored
+  proposal marks the block `intensity_level: "deload"`. The rule values are in
+  `_shared/training/standard/deload.ts` (§4 Deloads), and the athlete may ask for a deload at any time.
+  **Moderate** caps effort at 7 for the length asked (1 to 8 weeks). A **strength** or **size** phase rebuilds the week for that goal
   for 1 to 8 weeks.
 - **Next session:** the next planned session (or today's, until it is done). Lighter: one set fewer
   on exercises with 3 or more sets, effort one point lower (not below 6), and the load one step

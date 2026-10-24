@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "local_date": "2026-10-24",
+  "safety_route": null,
+  "deload": {
+    "status": "running",
+    "reasons": [],
+    "last_ended_on": null,
+    "weeks_since": null,
+    "proposal_id": "00000000-0000-4000-8000-000000000001",
+    "suppressed_by": null
+  }
+}
