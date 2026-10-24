@@ -803,12 +803,15 @@ reasons    performance_drop   at least 2 different exercises whose current B3 ta
 
 suppressed no suggestion while a temporary block or deload runs (block_running); under
            see_professional (screening); within 28 days of the end of the last deload
-           (recent_deload); when fewer than 3 of the last 4 weeks had a completed session
+           (recent_deload); within 14 days of a deload proposal the athlete declined or let run out
+           (declined_recently); when fewer than 3 of the last 4 weeks had a completed session
            (not_enough_training); no plan (no_plan); and on a day with a safety route
-           (safety_route), which the guidance reads from the day adjustment
+           (safety_route), which the guidance reads from the day adjustment. A pending proposal is
+           withheld on a safety-route day too (no proposal_id), and cannot be approved on it (55000)
 status     running    a deload block is the active plan version (proposal_id)
-           pending    an open, unexpired deload proposal (proposal_id), unless screening or another
-                      running block makes it unapprovable
+           pending    an open, unexpired deload proposal built on the current plan version
+                      (proposal_id), unless screening, a safety route or another running block makes
+                      it unapprovable
            suggested  at least one reason and nothing suppresses it
            not_due    otherwise
 ```
@@ -819,6 +822,12 @@ that the hourly job has not ended yet is not "running" and holds the plan (`bloc
 block is recognised by `intensity_level: "deload"` in its stored proposal payload, or, for a block approved
 before that key existed, by the title "Deload until <date>". "Opt-in" for the block-end offer (owner
 decision O13) means the offer is only ever a suggestion the athlete accepts; no preference is stored.
+
+**B3 during and after a deload.** The week's sessions are marked `adjusted` (the B4 mechanism): they are
+never evidence for a stall or for lowering a load, in the week or after it. While the active plan version is
+a deload week, a B3 target never steps up: `add_load` becomes `hold` with reason `deload` at the last
+working load (the app prefills from the target before the plan's own load). The first session after the
+week reads as incomplete against the restored plan's full set count, so B3 holds the load for it.
 
 **A deload never overrides a stricter rule.** The week is an ordinary active plan version. The day's
 overlay (B4 and B5-1) is computed against it exactly as against any plan: a safety route still gives the
@@ -835,8 +844,8 @@ review before an external beta.
 ### Cardio Dosing (B5-4, rules `cardio-v1`, 2026-10)
 
 A weekly cardio dose from the public health guidelines, the minutes the athlete has done, and what
-intensity is open today. Worked out in SQL (migration `20261024060225`: `private.cardio_rules`,
-`private.cardio_week`), carried by the training guidance 1.1 (`cardio_week`, `cardio_withheld`), with the
+intensity is open today. Worked out in SQL (migrations `20261024060225` and the review fixes `20261024060325`:
+`private.cardio_rules`, `private.cardio_week`), carried by the training guidance 1.1 (`cardio_week`, `cardio_withheld`), with the
 sourced values in `_shared/training/standard/cardio.ts`. Heart rate may inform cardio dosing (D9): the
 easy ceiling is a share of heart-rate reserve that the app turns into beats per minute from the athlete's
 own profile, with the talk test as the plain-words rule. It never sets a lifting load and never picks an
@@ -847,13 +856,17 @@ target     150 minutes of moderate cardio a week (WHO 2020; ACSM 2011), every go
            recomposition also show the upper figure 300 (stretch_max). A vigorous minute counts as 2.
 observed   Apple Health workouts of the last 7 days (today and the 6 before): cardio types only
            (walking, running, cycling, hiking, elliptical, rowing, swimming, stairs, interval and mixed
-           cardio, jump rope, cardio dance); strength, sports and other are not counted, steps never
-           are. One workout counts for at most 180 minutes; overlapping workouts count once (their
+           cardio, jump rope, cardio dance, wheelchair walk and run paces, cross-country skiing,
+           paddle sports, social dance); strength, sports and other are not counted, steps never
+           are. A denied Apple Health workout permission reads as 0 minutes (the plugin returns no
+           workouts), not as missing: only missing summaries give a null figure. One workout counts for at most 180 minutes; overlapping workouts count once (their
            union). Every counted minute is read as moderate (intensity_known false).
 missing    fewer than 5 of the 7 days with an Apple Health summary: done_min is null (the app asks the
            athlete to connect Apple Health); a connected week with no cardio is 0, never "missing"
-today      vigorous_allowed only when the health check is cleared, today's readiness band is green
-           (no check-in, amber and red are easy-only days) and no joint is held or limited;
+today      vigorous_allowed only when the athlete has a cleared health-check row (no row is not
+           cleared for hard cardio), today's readiness band is green (no check-in, amber and red are
+           easy-only days), today's check-in does not say they cannot train, and no joint is held or
+           limited;
            vigorous_sessions_max is 2 (0 under moderate_until_cleared). The easy ceiling is 60% of
            heart-rate reserve (the top of the Easy zone); easy cardio on a swap day is 20 to 30
            minutes, the same dose the readiness card quotes.

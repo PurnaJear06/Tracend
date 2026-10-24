@@ -119,7 +119,10 @@ or red days of the last seven, a finished block that was trained), what suppress
 cardio dose (150 minutes, 300 for fat loss and recomposition) from Apple Health workouts with what
 intensity is open today. A deload stays a proposal the athlete approves: the A8 builder now makes exactly
 one week, half the sets, loads held, effort 7 or lower. Nothing is applied by rules and heart rate picks
-nothing. Not built yet: the `training-proposals` Edge Function (lead: config and deploy list), the Train
+nothing. Review round 1 (migration `20261024060325`): B3 holds instead of stepping up during a deload week
+and ignores deload sessions as stall evidence, a pending deload is withheld and unapprovable on a safety-route
+day, 14 days of quiet after a declined or expired proposal, and the cardio gates (unavailable today, a cleared
+screening row). Not built yet: the `training-proposals` Edge Function (lead: config and deploy list), the Train
 card and Cardio row (app), the Coach contributor. Details: "B5-3 and B5-4" in
 [`training-engine.md`](./handoff/training-engine.md).
 
