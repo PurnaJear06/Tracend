@@ -234,8 +234,11 @@ again), and run a physique check (its notice is unchanged).
 - `privacy-export`: `dataTables` now lists every public table with a `user_id` (Coach threads and
   messages, narrative, summaries, context snapshots, preferences, baselines, computed metrics,
   nutrition schedules, workout references and reconciliations, AI budget reservations, the athlete's
-  own export and deletion request rows). `collectRows` pages with `.range()` (1000, ordered by `id`
-  or the table's key) and drops `coach_messages.search_vector`. `coverage_test.ts` parses the
+  own export and deletion request rows; not `ai_budget_reservations`, excluded with a reason).
+  `collectRows` reads keyset pages (`_shared/paging.ts`: after the last key, stop on an empty page)
+  and drops the columns in `omittedColumns` (snapshot `context`, message diagnostics, internal paths).
+  `export_linked_account_rows_v1` adds the account's invite and waitlist rows. Rows over 16 MiB of
+  JSON or media over 32 MiB fail with `export_too_large`. `coverage_test.ts` parses the
   migrations; a table with a `user_id` must be exported or listed in `exportExclusions` with a reason
   (today only `private.day_adjustment_metric_attempts`, a rate-limit counter). A retry after a crash
   uploads with `upsert`.
@@ -253,4 +256,7 @@ again), and run a physique check (its notice is unchanged).
 - No app change: a stuck export now simply succeeds on the athlete's next attempt.
 - Production check (read-only, 2026-10-24): no row is stuck today (0 `pending_deletion` photos, 0
   `processing` exports, 0 dead `ready` exports). Cron `meal-media-retention-daily` (`15 2 * * *`) is
-  active but is not created by any migration, so a rebuilt database would not have it.
+  active but was made by hand; the migration now creates it (replacing the hand-made job by name)
+  behind Vault: the deploy workflow stores `meal_media_retention_url`, `retention_worker_secret`
+  stays the owner's. Production snapshot size (read-only): 4 snapshots, 1 account, 33,759 bytes of
+  `context` in total, 10,967 bytes at most per row.

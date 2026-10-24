@@ -1,5 +1,5 @@
 begin;
-select plan(17);
+select plan(32);
 
 insert into auth.users(id, role) values
   ('a1111111-eeee-4111-8111-111111111111', 'authenticated'),
@@ -175,6 +175,74 @@ select ok(
   not has_function_privilege('authenticated', 'public.claim_expired_meal_media(integer)', 'execute')
   and has_function_privilege('service_role', 'public.claim_expired_meal_media(integer)', 'execute'),
   'only the service role claims retention work'
+);
+
+-- Rows linked to the account without a user_id ---------------------------------------------
+
+insert into private.signup_invites(email, note, claimed_by) values
+  ('linked@example.com', 'private note about the invitee', 'a1111111-eeee-4111-8111-111111111111');
+insert into private.waitlist_signups(email, unsub_token_hash, referral_code, consent_version)
+values ('linked@example.com', repeat('a', 64), 'ABCDEFGH', 'v1');
+
+select ok(
+  has_function_privilege('service_role', 'public.export_linked_account_rows_v1(uuid,text)', 'execute')
+  and not has_function_privilege('authenticated', 'public.export_linked_account_rows_v1(uuid,text)', 'execute')
+  and not has_function_privilege('anon', 'public.export_linked_account_rows_v1(uuid,text)', 'execute'),
+  'only the service role reads the linked rows'
+);
+create temporary table linked as
+select public.export_linked_account_rows_v1(
+  'a1111111-eeee-4111-8111-111111111111', ' Linked@Example.com ') as body;
+select is((select body #>> '{signup_invites,0,email}' from linked), 'linked@example.com',
+  'the invite the account claimed is exported');
+select ok(
+  (select not (body #> '{signup_invites,0}') ?| array['note', 'claimed_by'] from linked),
+  'the owner''s private note about the invitee is not'
+);
+select is((select body #>> '{waitlist_signups,0,status}' from linked), 'pending',
+  'the waitlist signup under the account email is exported');
+select ok(
+  (select not (body #> '{waitlist_signups,0}')
+    ?| array['id', 'confirm_token_hash', 'unsub_token_hash', 'referred_by'] from linked),
+  'without its token hashes, id or referral link'
+);
+select is(
+  (select public.export_linked_account_rows_v1('a2222222-eeee-4222-8222-222222222222', null)
+    -> 'waitlist_signups'),
+  '[]'::jsonb, 'another account gets none of them'
+);
+
+-- The retention cron job ----------------------------------------------------------------------
+
+select is((select count(*) from cron.job where jobname = 'meal-media-retention-daily'), 1::bigint,
+  'one cron job runs the retention worker');
+select is((select schedule from cron.job where jobname = 'meal-media-retention-daily'),
+  '15 2 * * *', 'at 02:15 UTC');
+select is((select command from cron.job where jobname = 'meal-media-retention-daily'),
+  'select private.meal_media_retention_kick()', 'through the trigger function');
+select throws_ok(
+  $$select private.meal_media_retention_set_url('https://example.com/functions/v1/meal-media-retention')$$,
+  '22023', null, 'the worker URL must be a project function URL'
+);
+select lives_ok(
+  $$select private.meal_media_retention_set_url('https://abcdefghijklmnopqrst.supabase.co/functions/v1/meal-media-retention')$$,
+  'a project function URL is stored'
+);
+select lives_ok(
+  $$select private.meal_media_retention_set_url('https://tsrqponmlkjihgfedcba.supabase.co/functions/v1/meal-media-retention')$$,
+  'and can be replaced'
+);
+select is(
+  (select decrypted_secret from vault.decrypted_secrets where name = 'meal_media_retention_url'),
+  'https://tsrqponmlkjihgfedcba.supabase.co/functions/v1/meal-media-retention',
+  'kept once in Vault'
+);
+select lives_ok($$select private.meal_media_retention_kick()$$,
+  'the trigger does nothing without the worker secret in Vault');
+select ok(
+  not has_function_privilege('service_role', 'private.meal_media_retention_kick()', 'execute')
+  and not has_function_privilege('authenticated', 'private.meal_media_retention_kick()', 'execute'),
+  'no API role calls the trigger function'
 );
 
 select * from finish();

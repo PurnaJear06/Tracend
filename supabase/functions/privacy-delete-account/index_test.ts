@@ -148,7 +148,7 @@ Deno.test("a failed listing stops the deletion with a code instead of skipping f
   }
 });
 
-Deno.test("the unsafe-key report to Sentry carries no user id", async () => {
+Deno.test("the unsafe-key report to Sentry carries no user id", () => {
   const sent: string[] = [];
   const realFetch = globalThis.fetch;
   Deno.env.set("SENTRY_DSN", "https://publickey@sentry.example.com/12345");

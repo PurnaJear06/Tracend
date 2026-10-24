@@ -239,8 +239,10 @@ test that fails on a table that is neither exported nor excluded; account deleti
 lists; an export stuck in `processing` is claimed again after 15 minutes and a dead `ready` export is
 replaced on the next request; the retention worker survives a failing row or stage, reclaims photo
 claims older than 30 minutes, reports codes to Sentry and compares its secret in constant time.
-Migration `20261024070000_privacy_retention_recovery.sql`. Open: the `meal-media-retention-daily`
-cron job (02:15 UTC) is active in production but defined in no migration.
+Migration `20261024070000_privacy_retention_recovery.sql`, which also creates the
+`meal-media-retention-daily` cron job (02:15 UTC; it was made by hand in production) behind Vault.
+Review round 1: keyset paging, no Coach snapshot bodies, linked invite and waitlist rows, a memory
+guard (`export_too_large`).
 
 **Current priority (2026-10-03):** the app-wide graphite + lime redesign. The owner chose palette
 A and the round 3 signature picks (focus logging, muscle map on, big new-best moment, day boxes,

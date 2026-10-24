@@ -134,3 +134,38 @@ Deno.test("the migration only adds: one nullable column, one index, three functi
     1,
   );
 });
+
+Deno.test("photos already pending deletion are backfilled as claimed at migration time", () => {
+  const column = recovery.indexOf("add column retention_claimed_at timestamptz;");
+  const backfill = recovery.indexOf(
+    "update public.media_objects set retention_claimed_at = now()\nwhere lifecycle_status = 'pending_deletion';",
+  );
+  assert(column >= 0 && backfill > column, "the backfill follows the new column");
+});
+
+Deno.test("the linked-rows export leaves out the invitee note, token hashes and referral link", () => {
+  const body = between(recovery, "create function public.export_linked_account_rows_v1(", "$$;");
+  for (const left of ["note", "token_hash", "referred_by", "claimed_by,"]) {
+    assert(
+      !body.includes(`'${left}'`) && !body.includes(`s.${left}`) && !body.includes(`i.${left}`),
+      left,
+    );
+  }
+  assert(body.includes("i.claimed_by = target_user_id"));
+  assert(/set search_path = ''/.test(body) && /security definer/.test(body));
+});
+
+Deno.test("the retention cron job replaces the hand-made one, posts only through Vault and holds no secret", () => {
+  assert(recovery.includes("perform cron.unschedule('meal-media-retention-daily')"));
+  assert(
+    recovery.includes(
+      "select cron.schedule(\n  'meal-media-retention-daily',\n  '15 2 * * *',\n  'select private.meal_media_retention_kick()'\n);",
+    ),
+  );
+  const kick = between(recovery, "create function private.meal_media_retention_kick()", "$$;");
+  assert(kick.includes("name = 'meal_media_retention_url'"));
+  assert(kick.includes("name = 'retention_worker_secret'"));
+  assert(kick.includes("'Bearer ' || worker_secret"));
+  assert(!/[0-9a-f]{32}/i.test(recovery), "no secret-looking value in the migration");
+  assert(!/Bearer\s+[A-Za-z0-9]/.test(recovery.replaceAll("'Bearer '", "")));
+});

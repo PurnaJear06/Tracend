@@ -390,7 +390,12 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
   exports, orphan sweep, deletion receipts) one by one, so a failing stage does not stop the next;
   one row whose result cannot be written back does not strand the rest of its batch; and a photo
   claimed by a worker that stopped before finishing (`pending_deletion` for 30 minutes) is handed out
-  again. Failures reach Sentry as codes and counts only, never a key, path or URL.
+  again (photos pending at the migration count as claimed then). Failures reach Sentry as codes and
+  counts only, never a key, path, URL or user id. The daily job `meal-media-retention-daily` (02:15
+  UTC) is created by migration and calls `private.meal_media_retention_kick()`, which posts only when
+  Vault holds both `meal_media_retention_url` (set by the deploy workflow after the migrations) and
+  `retention_worker_secret` (set by the owner, the same value as the Edge secret); a local, CI or
+  restored database sends nothing.
 - `library-embed` (research library embeddings) validates a bearer secret that the database
   generates itself in Vault (`library_worker_secret`, created by `private.library_worker_secret()`);
   there is no Edge Function secret. The cron job is inert until the deploy workflow stores the
@@ -636,12 +641,29 @@ history.
   including threads the athlete asked Coach not to remember: they are the athlete's own words),
   `coach_narrative_entries`, `coach_session_summaries`, `coach_context_snapshots`, `user_preferences`,
   the nutrition schedules, HealthKit workout references and reconciliations, the feature-engine
-  tables (`daily_computed_metrics`, `metric_baseline_history`, `user_baselines`), AI budget
-  reservations, and the athlete's own export and deletion request rows. A table is read in pages of
-  1000 in a stable order, because the Data API caps one response at 1000 rows. The one table with a
-  `user_id` that is left out is `private.day_adjustment_metric_attempts`, a rate-limit counter with no
-  athlete content. A Deno test reads the migrations and fails when a table with a `user_id` is in
-  neither the export list nor that documented exclusion list, so a new table cannot be forgotten.
+  tables (`daily_computed_metrics`, `metric_baseline_history`, `user_baselines`), and the athlete's own
+  export and deletion request rows. Rows tied to the account without a `user_id` are included too:
+  the sign-up invite the account claimed (`signup_invites`: address and dates only; the owner's
+  private note about the invitee is not the athlete's data) and the waitlist signup under the
+  account email (`waitlist_signups`, without its token hashes and referral link), read through
+  `export_linked_account_rows_v1`. A table is read in keyset pages of 1000 (rows after the last key,
+  in key order), so rows that appear or go while the export runs neither repeat nor skip a row, and
+  a server cap below the page size does not end a table early.
+- Left out of the package, each with a reason in `omittedColumns` / `exportExclusions` in
+  `privacy-export`: the `context` body of Coach context snapshots (a derived copy of exported
+  tables, up to about 40 KB per Coach turn; the snapshot's id, thread, trigger, date and checksum
+  stay), Coach message diagnostics (`search_vector`, `guard_faults`, `lookups`, `lookup_rounds`,
+  `library_version`), internal Storage paths and queue numbers on export and deletion requests,
+  `ai_budget_reservations` (internal spend ledger; the settled cost of each call is in
+  `ai_usage_events`) and `private.day_adjustment_metric_attempts` (a rate-limit counter with no
+  athlete content). A JSON value over 2000 characters appears once, in `data/all-data.json`, and the
+  CSV points to it. The package is built in memory, so an account whose rows pass 16 MiB of JSON or
+  whose media passes 32 MiB fails with the code `export_too_large` (recorded on the request) instead
+  of running the function out of memory. Meal photos that retention is deleting, or that are already
+  gone from Storage, are listed under `skipped_media`. A Deno test reads the migrations and fails
+  when a table with a `user_id` is in neither the export list nor the exclusion list, when a table
+  has no unique key to page by, or when a column that points at the account (or is named `*_by`)
+  has no line saying how its rows reach the export.
 - An export stuck in `processing` is claimed again after 15 minutes, so it never blocks the next
   request. A `ready` export that has expired or used its three downloads is marked expired when the
   athlete asks for a new one, and a fresh export is queued in its place.
@@ -661,7 +683,7 @@ history.
 - Meal images, progress photos, and export packages are removed before the Auth user: every object
   recorded for the account plus every object in the account's folders
   (`list_account_storage_objects`), so an upload that never got a database row goes too. Every list
-  is read in pages of 1000, so an account with more files than the Data API returns at once leaves
+  is read in keyset pages of 1000 (after the last id, or name within a bucket), so an account with more files than the Data API returns at once leaves
   none behind. Auth
   deletion cascades through user-owned PostgreSQL records and removes the invite and waitlist rows
   (section 7); a content-free completion receipt remains for 180 days.

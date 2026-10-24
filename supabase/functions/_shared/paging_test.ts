@@ -71,7 +71,7 @@ Deno.test("rows inserted and deleted between pages never repeat or skip a row th
   }
 });
 
-Deno.test("control: offset pages lose a row under the same churn", async () => {
+Deno.test("control: offset pages lose a row under the same churn", () => {
   const rows = table(3000);
   const stays = new Set(rows.map((row) => row.id as string));
   const seen: string[] = [];
