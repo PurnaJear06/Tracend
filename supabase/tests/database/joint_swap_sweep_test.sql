@@ -258,6 +258,27 @@ select is((select count(*) from public.planned_workouts w
       and not (pg_temp.rank_at(r, j.joint) = 1 and pg_temp.rank_at(r, j.joint) < pg_temp.rank_at(o, j.joint))),
   0::bigint, 'and every one is low stress on its joint and gentler than the exercise');
 
+-- With every joint limited, the chip's options never offer an exercise the day's own swaps send another
+-- exercise to: no exercise appears twice in a session.
+select cmp_ok((select count(*) from public.planned_workouts w
+    cross join lateral (select '[{"area": "knee", "state": "limited"}, {"area": "back", "state": "limited"},
+      {"area": "shoulder", "state": "limited"}]'::jsonb as st) s
+    cross join lateral jsonb_array_elements(private.joint_changes('b5900000-0000-4000-8000-000000000001', w.id,
+      s.st, '[]'::jsonb)) c
+    where w.user_id = 'b5900000-0000-4000-8000-000000000001' and c ->> 'swap_to_slug' is not null),
+  '>', 10::bigint, 'the day has swaps to collide with');
+select is((select count(*) from public.planned_workouts w
+    cross join lateral (select '[{"area": "knee", "state": "limited"}, {"area": "back", "state": "limited"},
+      {"area": "shoulder", "state": "limited"}]'::jsonb as st) s
+    cross join lateral jsonb_array_elements(private.joint_options('b5900000-0000-4000-8000-000000000001', w.id,
+      s.st)) o
+    cross join (values ('knee'), ('back'), ('shoulder')) j(joint)
+    join lateral jsonb_array_elements(private.joint_changes('b5900000-0000-4000-8000-000000000001', w.id,
+      s.st, '[]'::jsonb)) c on c ->> 'swap_to_slug' = o -> 'joint_options' -> j.joint ->> 'slug'
+      and c ->> 'planned_exercise_id' <> o ->> 'planned_exercise_id'
+    where w.user_id = 'b5900000-0000-4000-8000-000000000001'), 0::bigint,
+  'and none of its options is another exercise''s swap');
+
 -- What the rule table asks of each exercise, written out independently of the function.
 create function pg_temp.asked(p_state text, p_stress text) returns integer language sql as $$
   select case p_state

@@ -656,7 +656,8 @@ bear weight", the Coach's own symptom screen for chest, pop and swelling, fever 
 the spinal framework; the bands (4 and 7), the week and the fortnight are in-house (O8).
 
 **Joint states** (`private.joint_states`, `private.joint_states_detail`, per area from its reports up to the day asked about, newest
-first by day then by time stored):
+first by when each was stored; a report's date only decides whether it has happened by then, so a flag
+entered late for an earlier day, after a clearance, is the newer fact and holds the area):
 
 ```text
 held     the newest held-outcome report is not followed by a clearance: a report with
@@ -676,7 +677,9 @@ The area `other` has states too (a flag there routes out) but never changes an e
 state carries `hold_outcome`, the strictest outcome among the reports of the hold in force (those after
 the newest clearance). The day gets a **safety route** `urgent`, `clinician_today` or `clinician`,
 stricter first, from three places: reports with a held outcome dated today, reports with a held
-outcome *stored* today (a phone's date can differ from the server's), and, on every later day, any
+outcome *stored* today (a phone's date can differ from the server's; only reports of an area still
+held count, so the athlete's own clearance recorded later the same day ends the route for that area,
+and a mere new check-in never withdraws a flag), and, on every later day, any
 area still held on an `urgent` or `clinician_today` outcome, until the athlete's own clearance (the
 copy says "until you've been seen"). A hold on a `clinician` outcome gives no route on later days;
 instead every day carries the line "Your <area> is on hold until you've had it checked." (or "The
@@ -735,6 +738,21 @@ exercise of today's session, the gentlest low-stress swap on each joint, meeting
 the athlete's other sore joints as the day's swaps (`private.joint_caps`), so the in-workout pain chip
 can offer one offline. A limited exercise lists every cue it needs (`range_note_codes`, in joint
 order; `range_note_code` is the joint that decided).
+
+**Who is shown and given joint changes.** `get_my_day_adjustment_v1(local_date, supports_joint_changes
+default false)` and `respond_to_day_adjustment_v1(local_date, accept, chosen_kind default null,
+supports_joint_changes default false)` take a capability. A client that does not pass it (every
+build before the pain-check app) is shown the readiness kinds (`hold_load`, `reduce_sets`,
+`swap_to_easy_cardio`) without the merged joint changes, so it never previews a left-out or swapped
+exercise its accept would not give it; it still sees `joint_adjust` (the joint changes alone, as a note),
+`joint_states`, `exercise_joint_options` and the safety routes. What is accepted is what was shown: the
+answer stores `joint_capable`, and an answer from a client without the capability carries no joint
+change. `start_workout` (signature unchanged) applies the accepted answer as given, except that an
+answer that carries joint changes (a capable client's, or a `joint_adjust`) is applied only while
+those changes are exactly the ones the rules ask for now (`private.joint_change_keys`); otherwise the
+plan is built as written and the session is not linked to the answer. Joint states can only come from
+pain reports with an area, which only the new check-in keys and `record_pain_check_v1` write, so an
+athlete on an old build has none unless a newer build wrote them.
 
 On a day Coach already adjusted (`coach_adjusted`) the readiness kinds are still not offered, but the
 joint changes are: the exercises are the ones `start_workout` will create for that day, `joint_adjust`

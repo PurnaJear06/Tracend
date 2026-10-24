@@ -209,16 +209,16 @@ select ok(has_table_privilege('authenticated', 'public.day_adjustments', 'select
   and not has_table_privilege('authenticated', 'public.day_adjustments', 'delete')
   and not has_table_privilege('anon', 'public.day_adjustments', 'select'),
   'athletes read their answers and cannot write them; signed-out callers read nothing');
-select ok(has_function_privilege('authenticated', 'public.get_my_day_adjustment_v1(date)', 'execute')
+select ok(has_function_privilege('authenticated', 'public.get_my_day_adjustment_v1(date, boolean)', 'execute')
   and has_function_privilege('authenticated',
-    'public.respond_to_day_adjustment_v1(date, boolean, text)', 'execute')
-  and not has_function_privilege('anon', 'public.get_my_day_adjustment_v1(date)', 'execute')
+    'public.respond_to_day_adjustment_v1(date, boolean, text, boolean)', 'execute')
+  and not has_function_privilege('anon', 'public.get_my_day_adjustment_v1(date, boolean)', 'execute')
   and not has_function_privilege('anon',
-    'public.respond_to_day_adjustment_v1(date, boolean, text)', 'execute'),
+    'public.respond_to_day_adjustment_v1(date, boolean, text, boolean)', 'execute'),
   'athletes call the two functions; signed-out callers cannot');
 select ok((select bool_and(prosecdef and proconfig = array['search_path=""']) from pg_proc
-    where oid in ('public.get_my_day_adjustment_v1(date)'::regprocedure,
-      'public.respond_to_day_adjustment_v1(date, boolean, text)'::regprocedure)),
+    where oid in ('public.get_my_day_adjustment_v1(date, boolean)'::regprocedure,
+      'public.respond_to_day_adjustment_v1(date, boolean, text, boolean)'::regprocedure)),
   'both are security definer with an empty search path');
 select ok(not has_function_privilege('authenticated', 'private.readiness_rules()', 'execute')
   and not has_function_privilege('authenticated', 'private.readiness_rank(text, text)', 'execute')
@@ -230,7 +230,7 @@ select ok(not has_function_privilege('authenticated', 'private.readiness_rules()
   and not has_function_privilege('authenticated',
     'private.day_adjustment_explanation(text, text, text[], text, jsonb, boolean, text)', 'execute')
   and not has_function_privilege('authenticated',
-    'private.day_adjustment_compute(uuid, date)', 'execute')
+    'private.day_adjustment_compute(uuid, date, boolean)', 'execute')
   and not has_function_privilege('authenticated',
     'private.day_adjustment_stands(public.day_adjustments, jsonb)', 'execute')
   and not has_function_privilege('authenticated',
@@ -847,7 +847,7 @@ select is((select j ->> 'explanation' from r where name = 'read13'),
 select ok((select prosrc like '%pg_advisory_xact_lock(hashtextextended(%day_adjustment:%auth.uid()%'
     from pg_proc where oid = 'public.start_workout(uuid, date, text, uuid)'::regprocedure)
   and (select prosrc like '%pg_advisory_xact_lock(hashtextextended(''day_adjustment:'' || uid::text || today::text, 0))%'
-    from pg_proc where oid = 'public.respond_to_day_adjustment_v1(date, boolean, text)'::regprocedure),
+    from pg_proc where oid = 'public.respond_to_day_adjustment_v1(date, boolean, text, boolean)'::regprocedure),
   'both functions take the user-and-day advisory lock');
 select pg_temp.as_user('b4000000-0000-4000-8000-000000000014');
 select ok(not exists (select 1 from pg_locks where locktype = 'advisory' and pid = pg_backend_pid()

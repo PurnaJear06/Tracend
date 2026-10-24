@@ -158,7 +158,7 @@ Deno.test("the words the athlete reads never diagnose or name a condition", () =
 Deno.test("urgent copy names the emergency number, and every route has words", () => {
   const explanation = migration.slice(
     migration.indexOf("create or replace function private.day_adjustment_explanation("),
-    migration.indexOf("create or replace function private.day_adjustment_compute("),
+    migration.indexOf("create function private.day_adjustment_compute("),
   );
   for (const route of ["pain_referral", "urgent", "clinician_today"]) {
     assert(explanation.includes(`when '${route}' then`), `${route} has a sentence`);
@@ -179,10 +179,19 @@ Deno.test("no rule or word of the pain SQL reads a heart-rate signal (D9)", () =
 
 Deno.test("the migration is additive: new objects, widened checks, and replaced functions only", () => {
   const sql = code(migration);
-  assert(!/\bdrop (table|column|function|schema|index|trigger)\b/i.test(sql));
-  // The only update is the check-in's own supersede, copied from its first definition.
+  assert(!/\bdrop (table|column|schema|index|trigger)\b/i.test(sql));
+  // The only functions dropped are the ones replaced by a signature with an optional argument.
+  assertEquals(
+    [...sql.matchAll(/drop function ([a-z0-9_.]+)\(([^)]*)\);/g)].map((m) => `${m[1]}(${m[2]})`),
+    [
+      "private.day_adjustment_compute(uuid, date)",
+      "public.get_my_day_adjustment_v1(date)",
+      "public.respond_to_day_adjustment_v1(date, boolean, text)",
+    ],
+  );
+  // The only updates are the supersedes of the check-in and of the day's answer, copied from their definitions.
   assert(
-    !/\btruncate\b|\bdelete from\b|\brename\b|\bupdate public\.(?!daily_check_ins c set superseded_at)/i
+    !/\btruncate\b|\bdelete from\b|\brename\b|\bupdate public\.(?!daily_check_ins c set superseded_at|day_adjustments a set superseded_at)/i
       .test(sql),
   );
   const drops = [...sql.matchAll(/drop constraint ([a-z_]+)/g)].map((m) => m[1]);
@@ -358,7 +367,7 @@ Deno.test("day_adjustment_stands is B4's function plus the joint-coverage hunk o
     ],
     [
       "      or private.readiness_rank(p_payload ->> 'kind', null)\n        <= greatest(private.readiness_rank(p_row.rules_kind, null),\n          private.readiness_rank(p_row.kind, null)));",
-      "      or (private.readiness_rank(p_payload ->> 'kind', null)\n          <= greatest(private.readiness_rank(p_row.rules_kind, null),\n            private.readiness_rank(p_row.kind, null))\n        and private.joint_change_keys(p_row.changes) = private.joint_change_keys((\n          select o -> 'changes' from jsonb_array_elements(p_payload -> 'options') o\n          where o ->> 'kind' = 'joint_adjust' limit 1))));",
+      "      or (private.readiness_rank(p_payload ->> 'kind', null)\n          <= greatest(private.readiness_rank(p_row.rules_kind, null),\n            private.readiness_rank(p_row.kind, null))\n        and (not (p_row.joint_capable or p_row.kind = 'joint_adjust')\n          or private.joint_change_keys(p_row.changes) = private.joint_change_keys((\n            select o -> 'changes' from jsonb_array_elements(p_payload -> 'options') o\n            where o ->> 'kind' = 'joint_adjust' limit 1)))));",
     ],
   ];
   assertEquals(undo(redefined, hunks), earlier.trim());
@@ -396,17 +405,17 @@ Deno.test("day_adjustment_compute is B4's function plus the joint and red-flag h
   );
   const redefined = between(
     migration,
-    "create or replace function private.day_adjustment_compute(",
+    "create function private.day_adjustment_compute(",
     "end $$;",
   );
   const hunks: Hunks = [
     [
-      "create function private.day_adjustment_compute(",
-      "create or replace function private.day_adjustment_compute(",
+      "create function private.day_adjustment_compute(p_user uuid, p_date date)",
+      "create function private.day_adjustment_compute(p_user uuid, p_date date, p_joint boolean default true)",
     ],
     [
       "  inputs jsonb;\nbegin\n",
-      "  inputs jsonb;\n  states jsonb;\n  joint_arr jsonb := '[]'::jsonb;\n  joint_c jsonb;\n  exercise_options jsonb := '[]'::jsonb;\n  report_route text;\n  report_severe boolean;\n  report_codes text[];\n  states_full jsonb;\n  joint_only boolean := false;\n  hold_route text;\n  hold_severe boolean;\n  hold_codes text[];\nbegin\n",
+      "  inputs jsonb;\n  states jsonb;\n  joint_arr jsonb := '[]'::jsonb;\n  joint_c jsonb;\n  exercise_options jsonb := '[]'::jsonb;\n  report_route text;\n  report_severe boolean;\n  report_codes text[];\n  states_full jsonb;\n  merge_arr jsonb := '[]'::jsonb;\n  joint_only boolean := false;\n  hold_route text;\n  hold_severe boolean;\n  hold_codes text[];\nbegin\n",
     ],
     [
       "  workout_id := (workout ->> 'id')::uuid;\n",
@@ -418,11 +427,11 @@ Deno.test("day_adjustment_compute is B4's function plus the joint and red-flag h
     ],
     [
       "    can_reduce := (reduce_c ->> 'sets_to')::integer < (reduce_c ->> 'sets_from')::integer;\n  end if;\n",
-      "    can_reduce := (reduce_c ->> 'sets_to')::integer < (reduce_c ->> 'sets_from')::integer;\n    exercise_options := private.joint_options(p_user, workout_id, states);\n    joint_arr := private.joint_changes(p_user, workout_id, states, hold_c -> 'changes');\n  end if;\n  -- A joint that is held, limited or on watch changes the exercises it touches in every kind (the\n  -- stricter value per exercise wins), and alone as the joint_adjust kind.\n  hold_c := private.day_changes_merged(hold_c, joint_arr);\n  reduce_c := private.day_changes_merged(reduce_c, joint_arr);\n  swap_c := private.day_changes_merged(swap_c, joint_arr);\n  joint_c := private.day_changes_merged(jsonb_build_object('changes', '[]'::jsonb,\n    'sets_from', (swap_c ->> 'sets_from')::integer, 'sets_to', (swap_c ->> 'sets_from')::integer),\n    joint_arr);\n",
+      "    can_reduce := (reduce_c ->> 'sets_to')::integer < (reduce_c ->> 'sets_from')::integer;\n    exercise_options := private.joint_options(p_user, workout_id, states);\n    joint_arr := private.joint_changes(p_user, workout_id, states, hold_c -> 'changes');\n  end if;\n  -- A joint that is held, limited or on watch changes the exercises it touches in every kind (the\n  -- stricter value per exercise wins), and alone as the joint_adjust kind.\n  -- A client that does not declare support for joint changes (p_joint false) is offered the readiness kinds\n  -- as they were, without them: it could not show a left-out or swapped exercise, and what it accepts is\n  -- what it was shown. joint_adjust, below, is the same for every client.\n  if p_joint then merge_arr := joint_arr; end if;\n  hold_c := private.day_changes_merged(hold_c, merge_arr);\n  reduce_c := private.day_changes_merged(reduce_c, merge_arr);\n  swap_c := private.day_changes_merged(swap_c, merge_arr);\n  joint_c := private.day_changes_merged(jsonb_build_object('changes', '[]'::jsonb,\n    'sets_from', (swap_c ->> 'sets_from')::integer, 'sets_to', (swap_c ->> 'sets_from')::integer),\n    joint_arr);\n",
     ],
     [
       "  triggers := array(select jsonb_array_elements_text(assessment -> 'triggers'));\n",
-      "  triggers := array(select jsonb_array_elements_text(assessment -> 'triggers'));\n  -- A pain report that routes out (a red flag, or a severity of 7 or more) gives the day a safety route\n  -- just as a check-in pain of 7 or more does, even with no check-in, on a rest day or after the session\n  -- started: from reports dated today or stored today (a phone's date can differ from the server's), and\n  -- on every later day while the area stays held on an urgent or clinician_today outcome, until the\n  -- athlete's own clearance. A hold on a clinician outcome gives no route on later days, only a reminder\n  -- in the day's words. The strictest route wins.\n  select (array['clinician', 'clinician_today', 'urgent'])[max(\n      case pr.outcome when 'urgent' then 3 when 'clinician_today' then 2 else 1 end)],\n    coalesce(bool_or(pr.severity >= (private.pain_rules() ->> 'clinician_today_from')::integer), false)\n  into report_route, report_severe\n  from public.pain_reports pr\n  where pr.user_id = p_user and pr.outcome in ('urgent', 'clinician_today', 'clinician')\n    and (pr.local_date = p_date or private.local_day_of(p_user, pr.created_at) = p_date);\n  report_codes := array(select distinct 'red_flag:' || f from public.pain_reports pr,\n    unnest(pr.red_flags) f\n    where pr.user_id = p_user and pr.outcome in ('urgent', 'clinician_today', 'clinician')\n      and (pr.local_date = p_date or private.local_day_of(p_user, pr.created_at) = p_date)\n    order by 1);\n  select (array['clinician_today', 'urgent'])[max(case h ->> 'hold_outcome' when 'urgent' then 2 else 1 end)],\n    coalesce(bool_or((h ->> 'hold_severe')::boolean), false),\n    array(select distinct 'red_flag:' || c from jsonb_array_elements(states_full) h2,\n      jsonb_array_elements_text(h2 -> 'hold_codes') c\n      where h2 ->> 'state' = 'held' and h2 ->> 'hold_outcome' in ('urgent', 'clinician_today') order by 1)\n  into hold_route, hold_severe, hold_codes\n  from jsonb_array_elements(states_full) h\n  where h ->> 'state' = 'held' and h ->> 'hold_outcome' in ('urgent', 'clinician_today');\n  if hold_route is not null and (report_route is null\n      or private.safety_route_rank(hold_route) > private.safety_route_rank(report_route)) then\n    report_route := hold_route;\n  end if;\n  report_severe := coalesce(report_severe, false) or coalesce(hold_severe, false);\n  report_codes := report_codes || coalesce(hold_codes, '{}'::text[]);\n  if report_route is not null then\n    if safety is null\n       or private.safety_route_rank(report_route) > private.safety_route_rank(safety) then\n      safety := report_route;\n    end if;\n    triggers := array(select distinct t from unnest(\n      case when assessment ->> 'safety_route' is not null then array['pain_severe']\n        else '{}'::text[] end\n      || report_codes\n      || case when report_severe then array['pain_severe'] else '{}'::text[] end) t order by t);\n    band := 'red';\n  end if;\n",
+      "  triggers := array(select jsonb_array_elements_text(assessment -> 'triggers'));\n  -- A pain report that routes out (a red flag, or a severity of 7 or more) gives the day a safety route\n  -- just as a check-in pain of 7 or more does, even with no check-in, on a rest day or after the session\n  -- started: from reports dated today or stored today (a phone's date can differ from the server's), and\n  -- on every later day while the area stays held on an urgent or clinician_today outcome, until the\n  -- athlete's own clearance; a clearance recorded later the same day ends today's route for that area too\n  -- (only reports of an area still held count). A hold on a clinician outcome gives no route on later\n  -- days, only a reminder in the day's words. The strictest route wins.\n  select (array['clinician', 'clinician_today', 'urgent'])[max(\n      case pr.outcome when 'urgent' then 3 when 'clinician_today' then 2 else 1 end)],\n    coalesce(bool_or(pr.severity >= (private.pain_rules() ->> 'clinician_today_from')::integer), false)\n  into report_route, report_severe\n  from public.pain_reports pr\n  where pr.user_id = p_user and pr.outcome in ('urgent', 'clinician_today', 'clinician')\n    and (pr.local_date = p_date or private.local_day_of(p_user, pr.created_at) = p_date)\n    and exists (select 1 from jsonb_array_elements(states_full) hs\n      where hs ->> 'area' = pr.area and hs ->> 'state' = 'held');\n  report_codes := array(select distinct 'red_flag:' || f from public.pain_reports pr,\n    unnest(pr.red_flags) f\n    where pr.user_id = p_user and pr.outcome in ('urgent', 'clinician_today', 'clinician')\n      and (pr.local_date = p_date or private.local_day_of(p_user, pr.created_at) = p_date)\n      and exists (select 1 from jsonb_array_elements(states_full) hs\n        where hs ->> 'area' = pr.area and hs ->> 'state' = 'held')\n    order by 1);\n  select (array['clinician_today', 'urgent'])[max(case h ->> 'hold_outcome' when 'urgent' then 2 else 1 end)],\n    coalesce(bool_or((h ->> 'hold_severe')::boolean), false),\n    array(select distinct 'red_flag:' || c from jsonb_array_elements(states_full) h2,\n      jsonb_array_elements_text(h2 -> 'hold_codes') c\n      where h2 ->> 'state' = 'held' and h2 ->> 'hold_outcome' in ('urgent', 'clinician_today') order by 1)\n  into hold_route, hold_severe, hold_codes\n  from jsonb_array_elements(states_full) h\n  where h ->> 'state' = 'held' and h ->> 'hold_outcome' in ('urgent', 'clinician_today');\n  if hold_route is not null and (report_route is null\n      or private.safety_route_rank(hold_route) > private.safety_route_rank(report_route)) then\n    report_route := hold_route;\n  end if;\n  report_severe := coalesce(report_severe, false) or coalesce(hold_severe, false);\n  report_codes := report_codes || coalesce(hold_codes, '{}'::text[]);\n  if report_route is not null then\n    if safety is null\n       or private.safety_route_rank(report_route) > private.safety_route_rank(safety) then\n      safety := report_route;\n    end if;\n    triggers := array(select distinct t from unnest(\n      case when assessment ->> 'safety_route' is not null then array['pain_severe']\n        else '{}'::text[] end\n      || report_codes\n      || case when report_severe then array['pain_severe'] else '{}'::text[] end) t order by t);\n    band := 'red';\n  end if;\n",
     ],
     [
       "  kind := case when unavailable is not null or safety is not null then 'none'\n    else assessment ->> 'kind' end;\n",
@@ -470,6 +479,89 @@ Deno.test("day_adjustment_compute is B4's function plus the joint and red-flag h
     ],
   ];
   assertEquals(undo(redefined, hunks), earlier.trim());
+});
+
+Deno.test("get_my_day_adjustment_v1 is B4's function plus the capability argument only", async () => {
+  const earlier = between(
+    await readMigration("20261023140024_day_adjustments.sql"),
+    "create function public.get_my_day_adjustment_v1(",
+    "end $$;",
+  );
+  const redefined = between(
+    migration,
+    "create function public.get_my_day_adjustment_v1(",
+    "end $$;",
+  );
+  const hunks: Hunks = [
+    [
+      "create function public.get_my_day_adjustment_v1(local_date date)",
+      "create function public.get_my_day_adjustment_v1(local_date date, supports_joint_changes boolean default false)",
+    ],
+    [
+      "  computed := private.day_adjustment_compute(uid, today);",
+      "  computed := private.day_adjustment_compute(uid, today, coalesce(get_my_day_adjustment_v1.supports_joint_changes, false));",
+    ],
+  ];
+  assertEquals(undo(redefined, hunks), earlier.trim());
+});
+
+Deno.test("respond_to_day_adjustment_v1 is B4's function plus the capability argument and its column only", async () => {
+  const earlier = between(
+    await readMigration("20261023140024_day_adjustments.sql"),
+    "create function public.respond_to_day_adjustment_v1(",
+    "end $$;",
+  );
+  const redefined = between(
+    migration,
+    "create function public.respond_to_day_adjustment_v1(",
+    "end $$;",
+  );
+  const hunks: Hunks = [
+    [
+      "  local_date date, accept boolean, chosen_kind text default null\n) returns jsonb",
+      "  local_date date, accept boolean, chosen_kind text default null,\n  supports_joint_changes boolean default false\n) returns jsonb",
+    ],
+    [
+      "  computed := private.day_adjustment_compute(uid, today);",
+      "  computed := private.day_adjustment_compute(uid, today, coalesce(respond_to_day_adjustment_v1.supports_joint_changes, false));",
+    ],
+    [
+      "    rules_version, band, kind, origin, rules_kind, triggers, changes, cardio, inputs, inputs_hash,\n    status)\n  values (uid, today,",
+      "    rules_version, band, kind, origin, rules_kind, triggers, changes, cardio, inputs, inputs_hash,\n    status, joint_capable)\n  values (uid, today,",
+    ],
+    [
+      "    target_status)\n  returning * into new_row;",
+      "    target_status, coalesce(respond_to_day_adjustment_v1.supports_joint_changes, false))\n  returning * into new_row;",
+    ],
+  ];
+  assertEquals(undo(redefined, hunks), earlier.trim());
+});
+
+Deno.test("the two RPCs keep every old call working: the new argument has a default, the old signatures are replaced", () => {
+  assert(/drop function public\.get_my_day_adjustment_v1\(date\);/.test(migration));
+  assert(
+    /drop function public\.respond_to_day_adjustment_v1\(date, boolean, text\);/.test(migration),
+  );
+  assert(/supports_joint_changes boolean default false\)/.test(migration));
+  assert(
+    /chosen_kind text default null,\s+supports_joint_changes boolean default false\s+\) returns jsonb/
+      .test(migration),
+  );
+  assert(/p_joint boolean default true/.test(migration));
+  // The compute reads the capability from the argument, and every public caller passes it.
+  assert(
+    /day_adjustment_compute\(uid, today, coalesce\(get_my_day_adjustment_v1\.supports_joint_changes, false\)\)/
+      .test(migration),
+  );
+  assert(
+    /day_adjustment_compute\(uid, today, coalesce\(respond_to_day_adjustment_v1\.supports_joint_changes, false\)\)/
+      .test(migration),
+  );
+  assert(/day_adjustment_compute\(p_user_id, p_local_date, true\)/.test(migration));
+  assert(
+    !/(?<!function private\.)day_adjustment_compute\([a-z_]+, [a-z_]+\)/.test(code(migration)),
+    "no call leaves the capability out",
+  );
 });
 
 Deno.test("progression_decision is B4's definition plus the left-out-exercise hunk only", async () => {
@@ -524,6 +616,10 @@ Deno.test("start_workout is the stale-close definition plus the left-out-exercis
     "end $$;",
   );
   const hunks: Hunks = [
+    [
+      "    adjusted := found;\n  end if;\n",
+      "    adjusted := found;\n    -- An answer that carries joint changes is applied only while they are the ones the rules ask for now;\n    -- otherwise the plan is built as written (the day's safety route is the card's business, not a rewrite\n    -- of the session). An answer without joint changes is applied as given, as before.\n    if adjusted and private.joint_change_keys(adjustment.changes) <> '{}'::text[]\n       and private.joint_change_keys(adjustment.changes) is distinct from private.joint_change_keys(\n         private.joint_changes(auth.uid(), p_planned_workout_id,\n           private.joint_states(auth.uid(), p_local_date), '[]'::jsonb)) then\n      adjusted := false;\n    end if;\n  end if;\n",
+    ],
     [
       "  adjustment public.day_adjustments%rowtype; adjusted boolean := false; set_total integer;\n",
       "  adjustment public.day_adjustments%rowtype; adjusted boolean := false; set_total integer;\n  entry jsonb;\n",
@@ -584,6 +680,8 @@ Deno.test("no migration after this one's predecessors defines these functions ag
         "progression_decision",
         "next_session_targets",
         "save_daily_check_in",
+        "get_my_day_adjustment_v1",
+        "respond_to_day_adjustment_v1",
       ]
     ) {
       assert(

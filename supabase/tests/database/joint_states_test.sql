@@ -8,7 +8,7 @@ select no_plan();
 
 insert into auth.users(id, role)
 select ('b5100000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, 'authenticated'
-from generate_series(1, 46) n;
+from generate_series(1, 49) n;
 
 create temporary table t as
   select private.local_date_for('b5100000-0000-4000-8000-000000000001') as today;
@@ -24,6 +24,15 @@ create function pg_temp.rep(n integer, p_days_ago integer, p_area text, p_sev in
     cleared_by_clinician, outcome, created_at)
   values (pg_temp.u(n), (select today from t) - p_days_ago, 'workout', p_area, p_sev, p_flags,
     p_cleared, private.pain_outcome(p_sev, p_flags), clock_timestamp());
+$$;
+
+-- A report stored p_hours_ago hours ago (a smaller number is later), dated p_days_ago days ago.
+create function pg_temp.rep_at(n integer, p_days_ago integer, p_area text, p_sev integer,
+  p_flags text[], p_cleared boolean, p_hours_ago numeric) returns void language sql as $$
+  insert into public.pain_reports(user_id, local_date, source, area, severity, red_flags,
+    cleared_by_clinician, outcome, created_at)
+  values (pg_temp.u(n), (select today from t) - p_days_ago, 'workout', p_area, p_sev, p_flags,
+    p_cleared, private.pain_outcome(p_sev, p_flags), now() - p_hours_ago * interval '1 hour');
 $$;
 
 -- "state:persistent" for one area as of p_back days before today, or none.
@@ -202,6 +211,20 @@ select is((select (s ->> 'hold_severe')::boolean from jsonb_array_elements(priva
     pg_temp.u(41), (select today from t))) s limit 1), true, 'and that one of them was a 7 or more');
 select is((select (s ->> 'hold_severe')::boolean from jsonb_array_elements(private.joint_states_detail(
     pg_temp.u(45), (select today from t))) s limit 1), false, 'not for a flag on a milder pain');
+
+-- Reports are ordered by when they were stored; the date only says whether they have happened -------------
+select pg_temp.rep_at(47, 0, 'knee', 1, '{}', true, 5);
+select pg_temp.rep_at(47, 1, 'knee', 2, array['pop_or_sudden'], false, 4);
+select is(pg_temp.js(47, 'knee'), 'held:false', 'a clearance at 08:00 and a red flag entered at 09:00 for yesterday: held');
+select is(pg_temp.js(47, 'knee', -1), 'held:false', 'and held the day after');
+select is((select s ->> 'hold_outcome' from jsonb_array_elements(private.joint_states(pg_temp.u(47),
+    (select today from t) + 1)) s), 'clinician_today', 'on its outcome');
+select pg_temp.rep_at(48, 0, 'knee', 2, '{}', false, 5);
+select pg_temp.rep_at(48, 1, 'knee', 6, null, false, 4);
+select is(pg_temp.js(48, 'knee'), 'limited:false', 'a severity 6 entered later for yesterday is the newer fact, after a 2 dated today');
+select pg_temp.rep_at(49, 1, 'knee', 8, null, false, 6);
+select pg_temp.rep_at(49, 0, 'knee', 1, '{}', true, 5);
+select is(pg_temp.js(49, 'knee'), 'watch:false', 'and a clearance stored after the hold, dated the same or later, still lifts it');
 
 select * from finish();
 rollback;

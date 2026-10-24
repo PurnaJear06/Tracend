@@ -362,7 +362,11 @@ needs; null unless `limit`), all together (an exercise no joint touches carries 
 `drop` has `sets_to` 0. On a day Coach already adjusted, `joint_adjust` is still offered alone. `safety_route` gains `urgent`, `clinician_today`
 and `clinician` (from today's pain reports, and on later days from an area still held on `urgent` or
 `clinician_today`; the strictest of those and `pain_referral` wins), and
-`triggers` may hold `red_flag:<code>`. A client that reads 1.0 keeps working: nothing it read changed.
+`triggers` may hold `red_flag:<code>`. A client that reads 1.0 keeps working: nothing it read changed. `get_my_day_adjustment_v1` and
+`respond_to_day_adjustment_v1` take an optional `supports_joint_changes` (default false): without it
+the readiness kinds carry no joint changes (the app is shown, and accepts, the plain session);
+`joint_adjust`, `joint_states` and the safety routes are the same for every client. B5-2 passes true on
+both calls.
 `record_pain_check_v1(local_date, source, area, severity, pattern, red_flags, cleared_by_clinician,
 exercise_performance_id, idempotency_key)` returns `{schema_version "1.0", id, outcome, area_state}`;
 `save_daily_check_in` takes the optional pain keys described in DATA_MODEL (`pain_reports`).

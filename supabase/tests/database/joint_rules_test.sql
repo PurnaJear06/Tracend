@@ -9,7 +9,7 @@ select no_plan();
 
 insert into auth.users(id, role)
 select ('b5000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, 'authenticated'
-from generate_series(1, 42) n;
+from generate_series(1, 48) n;
 
 create function pg_temp.u(n integer) returns uuid language sql as $$
   select ('b5000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid;
@@ -100,6 +100,15 @@ returns void language sql as $$
     private.pain_outcome(p_sev, p_flags), clock_timestamp() - coalesce(p_stored_days_ago, p_days_ago) * interval '1 day');
 $$;
 
+-- A pain report stored p_hours_ago hours ago (later calls are later).
+create function pg_temp.report_at(p_uid uuid, p_days_ago integer, p_area text, p_sev integer,
+  p_flags text[], p_cleared boolean, p_hours_ago numeric) returns void language sql as $$
+  insert into public.pain_reports(user_id, local_date, source, area, severity, red_flags,
+    cleared_by_clinician, outcome, created_at)
+  values (p_uid, private.local_date_for(p_uid) - p_days_ago, 'workout', p_area, p_sev, p_flags, p_cleared,
+    private.pain_outcome(p_sev, p_flags), now() - p_hours_ago * interval '1 hour');
+$$;
+
 -- An athlete whose only exercise today is one catalog exercise, full gym.
 create function pg_temp.make_single(p_uid uuid, p_slug text, p_name text) returns void language plpgsql as $$
 declare
@@ -168,12 +177,13 @@ select pg_temp.make_athlete(pg_temp.u(19));
 select pg_temp.make_athlete(pg_temp.u(20));
 select pg_temp.make_athlete(pg_temp.u(34));
 select pg_temp.make_athlete(pg_temp.u(35));
+select pg_temp.make_athlete(pg_temp.u(38));
 
 -- A day with no pain on record: schema 1.1 and the swaps the in-workout chip can offer ----------------------
 
 select pg_temp.as_user(pg_temp.u(1)::text);
 select pg_temp.check_in(pg_temp.u(1), 3, 3, 3, 3, 0);
-insert into r select 'green', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'green', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select j ->> 'schema_version' from r where name = 'green'), '1.1', 'the payload is schema 1.1');
 select is((select array[j ->> 'band', j ->> 'kind', j ->> 'status'] from r where name = 'green'),
   array['green', 'none', 'none'], 'a good day with no pain asks for nothing');
@@ -199,7 +209,7 @@ select is((select count(*) from r, jsonb_array_elements(j -> 'exercise_joint_opt
 -- A held knee changes the session on a good day -------------------------------------------------------------
 
 select pg_temp.report(pg_temp.u(1), 1, 'knee', 3, array['locks_gives_way']);
-insert into r select 'knee_held', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'knee_held', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'band', j ->> 'kind', j ->> 'status', j ->> 'safety_route']
     from r where name = 'knee_held'), array['green', 'joint_adjust', 'proposed', null],
   'a knee held on a clinician flag: today is a good day but the session changes, with no referral card');
@@ -235,7 +245,7 @@ select is((select (o -> 'changes') @> jsonb_build_array(jsonb_build_object('exer
 
 -- Accepting it, and the answer standing until something stricter arrives --------------------------------------
 
-insert into r select 'knee_accepted', public.respond_to_day_adjustment_v1((select today from t), true);
+insert into r select 'knee_accepted', public.respond_to_day_adjustment_v1((select today from t), true, null, true);
 select is((select array[j ->> 'status', j ->> 'kind', j ->> 'origin'] from r where name = 'knee_accepted'),
   array['accepted', 'joint_adjust', 'proposed'], 'one tap applies the joint adjustment');
 select is((select array[kind, status, origin, rules_kind, band, jsonb_array_length(changes)::text]
@@ -247,13 +257,13 @@ select is((select metadata from public.audit_events where user_id = pg_temp.u(1)
     and action_code = 'day_adjustment_answered'),
   '{"kind": "joint_adjust", "accepted": true, "band": "green", "origin": "proposed",
     "rules_version": "readiness-v1"}'::jsonb, 'with an audit event of codes only');
-insert into r select 'knee_again', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'knee_again', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'status', j ->> 'sets_total_to', (j -> 'previous_answer' = 'null'::jsonb)::text]
     from r where name = 'knee_again'), array['accepted', '10', 'true'], 'the accepted answer stands');
 
 -- A new pain report that asks for more: the answer no longer stands.
 select pg_temp.report(pg_temp.u(1), 0, 'back', 5);
-insert into r select 'back_new', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'back_new', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'status', j ->> 'kind', j -> 'previous_answer' ->> 'reason',
       j -> 'previous_answer' ->> 'status'] from r where name = 'back_new'),
   array['proposed', 'joint_adjust', 'new_data', 'accepted'],
@@ -266,12 +276,12 @@ select is((select pg_temp.change(j, 5) ->> 'range_note_code' from r where name =
   'with the cue for a hinge and the back');
 select is((select (pg_temp.change(j, 5) ->> 'rpe_to')::numeric from r where name = 'back_new'), 7::numeric,
   'effort at 7 or lower');
-insert into r select 'back_accepted', public.respond_to_day_adjustment_v1((select today from t), true);
+insert into r select 'back_accepted', public.respond_to_day_adjustment_v1((select today from t), true, null, true);
 select is((select count(*) from public.day_adjustments where user_id = pg_temp.u(1)), 2::bigint,
   'the new answer is a new row');
 select is((select count(*) from public.day_adjustments where user_id = pg_temp.u(1) and superseded_at is null),
   1::bigint, 'and the old one is superseded');
-insert into r select 'back_stands', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'back_stands', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select j ->> 'status' from r where name = 'back_stands'), 'accepted', 'and now it stands');
 
 -- Starting the workout leaves the held knee's exercises out of the session.
@@ -313,7 +323,7 @@ select throws_ok($$select public.get_readiness_context_v1(null, (select today fr
 select pg_temp.as_user(pg_temp.u(3)::text);
 select pg_temp.report(pg_temp.u(3), 1, 'shoulder', 5);
 select pg_temp.check_in(pg_temp.u(3), 2, 3, 4, 3, 0);
-insert into r select 'shoulder_reduce', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'shoulder_reduce', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'band', j ->> 'kind', j ->> 'status', (j -> 'triggers')::text]
     from r where name = 'shoulder_reduce'), array['amber', 'reduce_sets', 'proposed', '["sleep_poor", "sore"]'],
   'poor sleep and soreness: a set fewer');
@@ -338,7 +348,7 @@ select is((select j ->> 'sets_total_to' from r where name = 'shoulder_reduce'), 
 select is((select j ->> 'explanation' from r where name = 'shoulder_reduce'),
   'You slept poorly and you''re sore. One set fewer on 5 exercises. Your shoulder needs a lighter touch this week. 1 exercise swapped and 1 exercise kept in a pain-free range.',
   'in one reading');
-select public.respond_to_day_adjustment_v1((select today from t), true);
+select public.respond_to_day_adjustment_v1((select today from t), true, null, true);
 select public.start_workout((select workout_id from wk where uid = pg_temp.u(3)), (select today from t),
   'UTC', 'b5500000-0000-4000-8000-000000000003');
 select is(pg_temp.sets_of('b5500000-0000-4000-8000-000000000003'), array[3::bigint, 2, 2, 2, 2],
@@ -370,7 +380,7 @@ select is((select count(*) from public.exercise_sets s
 select pg_temp.as_user(pg_temp.u(4)::text);
 select pg_temp.report(pg_temp.u(4), 0, 'shoulder', 2);
 select pg_temp.check_in(pg_temp.u(4), 3, 3, 3, 3, 0);
-insert into r select 'shoulder_watch', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'shoulder_watch', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'kind', pg_temp.change(j, 1) ->> 'joint_action',
       pg_temp.change(j, 1) ->> 'range_note_code', pg_temp.change(j, 1) ->> 'rpe_to',
       jsonb_array_length(j -> 'changes')::text] from r where name = 'shoulder_watch'),
@@ -386,7 +396,7 @@ select is((select j from r where name = 'shoulder_watch'),
 select pg_temp.as_user(pg_temp.u(5)::text);
 select pg_temp.report(pg_temp.u(5), 0, 'back', 2);
 select pg_temp.check_in(pg_temp.u(5), 3, 3, 3, 3, 0);
-insert into r select 'back_watch', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'back_watch', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'kind', j ->> 'status', jsonb_array_length(j -> 'changes')::text]
     from r where name = 'back_watch'), array['none', 'none', '0'],
   'a watched back with no high-stress back exercise changes nothing');
@@ -399,7 +409,7 @@ select pg_temp.report(pg_temp.u(6), 1, 'knee', 3, array['locks_gives_way']);
 insert into public.daily_check_ins(user_id, local_date, timezone, revision, idempotency_key, sleep_quality,
   energy, soreness, hunger, mood, pain_severity, available_to_train)
 values (pg_temp.u(6), (select today from t), 'UTC', 1, gen_random_uuid(), 3, 3, 3, 3, 3, 0, false);
-insert into r select 'cannot_train', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'cannot_train', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'kind', jsonb_array_length(j -> 'options')::text] from r where name = 'cannot_train'),
   array['none', '0'], 'a held knee on a day the athlete cannot train proposes nothing');
 select is((select j ->> 'explanation' from r where name = 'cannot_train'),
@@ -411,7 +421,7 @@ select is((select j ->> 'explanation' from r where name = 'cannot_train'),
 select pg_temp.as_user(pg_temp.u(7)::text);
 select pg_temp.report(pg_temp.u(7), 3, 'knee', 3, array['locks_gives_way']);
 select pg_temp.check_in(pg_temp.u(7), 1, 1, 3, 3, 0);
-insert into r select 'cardio_knee', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'cardio_knee', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'band', j ->> 'kind', j -> 'cardio' ->> 'minutes_max', j ->> 'sets_total_to']
     from r where name = 'cardio_knee'), array['red', 'swap_to_easy_cardio', '30', '0'],
   'a very poor night and no energy: easy cardio instead');
@@ -419,7 +429,7 @@ select is((select array(select c ->> 'exercise_order' || ':' || coalesce(c ->> '
     from jsonb_array_elements(j -> 'changes') c order by (c ->> 'exercise_order')::integer)
     from r where name = 'cardio_knee'), array['1:-', '2:drop', '3:-', '4:drop', '5:-'],
   'the swap lists every exercise at 0 sets, and the held knee''s two as left out');
-select public.respond_to_day_adjustment_v1((select today from t), true);
+select public.respond_to_day_adjustment_v1((select today from t), true, null, true);
 select public.start_workout((select workout_id from wk where uid = pg_temp.u(7)), (select today from t),
   'UTC', 'b5500000-0000-4000-8000-000000000007');
 select is(pg_temp.sets_of('b5500000-0000-4000-8000-000000000007'), array[4::bigint, 0, 3, 0, 3],
@@ -430,7 +440,7 @@ select is(pg_temp.sets_of('b5500000-0000-4000-8000-000000000007'), array[4::bigi
 select pg_temp.as_user(pg_temp.u(8)::text);
 select pg_temp.report(pg_temp.u(8), 3, 'knee', 3, array['locks_gives_way']);
 select pg_temp.check_in(pg_temp.u(8), 2, 2, 3, 3, 0);
-select public.respond_to_day_adjustment_v1((select today from t), true);
+select public.respond_to_day_adjustment_v1((select today from t), true, null, true);
 select public.start_workout((select workout_id from wk where uid = pg_temp.u(8)), (select today from t),
   'UTC', 'b5500000-0000-4000-8000-000000000008');
 select is(pg_temp.sets_of('b5500000-0000-4000-8000-000000000008'), array[3::bigint, 0, 2, 0, 2],
@@ -440,7 +450,7 @@ select is(pg_temp.sets_of('b5500000-0000-4000-8000-000000000008'), array[3::bigi
 select pg_temp.as_user(pg_temp.u(9)::text);
 select pg_temp.report(pg_temp.u(9), 3, 'knee', 3, array['locks_gives_way']);
 select pg_temp.check_in(pg_temp.u(9), 3, 3, 3, 3, 0);
-select public.respond_to_day_adjustment_v1((select today from t), false);
+select public.respond_to_day_adjustment_v1((select today from t), false, null, true);
 select public.start_workout((select workout_id from wk where uid = pg_temp.u(9)), (select today from t),
   'UTC', 'b5500000-0000-4000-8000-000000000009');
 select is(pg_temp.sets_of('b5500000-0000-4000-8000-000000000009'), array[4::bigint, 3, 3, 3, 3],
@@ -453,7 +463,7 @@ select pg_temp.as_user(pg_temp.u(10)::text);
 select pg_temp.check_in(pg_temp.u(10), 3, 3, 3, 3, 0);
 select public.record_pain_check_v1((select today from t), 'workout', 'knee', 5, 'movement',
   array['rapid_swelling'], false, null, 'b5600000-0000-4000-8000-000000000010');
-insert into r select 'flag', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'flag', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'band', j ->> 'kind', j ->> 'status', j ->> 'safety_route', (j -> 'triggers')::text,
       jsonb_array_length(j -> 'options')::text, jsonb_array_length(j -> 'changes')::text]
     from r where name = 'flag'),
@@ -475,7 +485,7 @@ select pg_temp.as_user(pg_temp.u(11)::text);
 select public.save_daily_check_in((select today from t), 'UTC', 'b5700000-0000-4000-8000-000000000011',
   '{"sleep_quality": 3, "energy": 3, "soreness": 3, "hunger": 3, "mood": 3, "available_to_train": true,
     "pain_severity": 8, "pain_area": "back", "pain_red_flags": ["bladder_bowel_saddle"]}'::jsonb);
-insert into r select 'urgent', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'urgent', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'band', j ->> 'safety_route', (j -> 'triggers')::text, j ->> 'kind']
     from r where name = 'urgent'),
   array['red', 'urgent', '["pain_severe", "red_flag:bladder_bowel_saddle"]', 'none'],
@@ -489,14 +499,14 @@ select pg_temp.as_user(pg_temp.u(13)::text);
 select public.save_daily_check_in((select today from t), 'UTC', 'b5700000-0000-4000-8000-000000000013',
   '{"sleep_quality": 3, "energy": 3, "soreness": 3, "hunger": 3, "mood": 3, "available_to_train": true,
     "pain_severity": 8, "pain_area": "knee", "pain_red_flags": []}'::jsonb);
-insert into r select 'eight_report', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'eight_report', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'safety_route', (j -> 'triggers')::text] from r where name = 'eight_report'),
   array['clinician_today', '["pain_severe"]'], 'a pain of 8 in a new build is clinician today');
 
 -- An older build sends the check-in pain only: B4's referral, unchanged.
 select pg_temp.as_user(pg_temp.u(14)::text);
 select pg_temp.check_in(pg_temp.u(14), 3, 3, 3, 3, 8);
-insert into r select 'eight_old', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'eight_old', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'safety_route', (j -> 'triggers')::text, j ->> 'band'] from r where name = 'eight_old'),
   array['pain_referral', '["pain_severe"]', 'red'], 'an older build''s pain of 8 still routes as pain_referral');
 
@@ -505,7 +515,7 @@ select pg_temp.as_user(pg_temp.u(15)::text);
 select public.save_daily_check_in((select today from t), 'UTC', 'b5700000-0000-4000-8000-000000000015',
   '{"sleep_quality": 3, "energy": 3, "soreness": 3, "hunger": 3, "mood": 3, "available_to_train": true,
     "pain_severity": 3, "pain_area": "other", "pain_red_flags": ["fever_unwell"]}'::jsonb);
-insert into r select 'fever', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'fever', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'safety_route', (j -> 'triggers')::text, j ->> 'band'] from r where name = 'fever'),
   array['clinician', '["red_flag:fever_unwell"]', 'red'], 'a fever with pain: see a doctor or physio');
 select is((select j ->> 'explanation' from r where name = 'fever'),
@@ -513,7 +523,7 @@ select is((select j ->> 'explanation' from r where name = 'fever'),
   'with the words for a booked visit');
 select pg_temp.report(pg_temp.u(15), 0, 'back', 2, array['night_pain']);
 select pg_temp.check_in(pg_temp.u(15), 3, 3, 3, 3, 8);
-insert into r select 'fever_and_eight', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'fever_and_eight', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'safety_route', (j -> 'triggers')::text] from r where name = 'fever_and_eight'),
   array['pain_referral', '["pain_severe", "red_flag:fever_unwell", "red_flag:night_pain"]'],
   'a check-in pain of 8 outranks a clinician flag, and every reason is listed');
@@ -522,7 +532,7 @@ select is((select array[j ->> 'safety_route', (j -> 'triggers')::text] from r wh
 select pg_temp.as_user(pg_temp.u(16)::text);
 select public.record_pain_check_v1((select today from t), 'workout', 'back', 2, null, array['night_pain'], false,
   null, 'b5600000-0000-4000-8000-000000000016');
-insert into r select 'no_check_in', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'no_check_in', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'band', j ->> 'safety_route', (j -> 'triggers')::text, j ->> 'confidence']
     from r where name = 'no_check_in'), array['red', 'clinician', '["red_flag:night_pain"]', null],
   'with no check-in a red flag still wins over "check in"');
@@ -531,7 +541,7 @@ select is((select array[j ->> 'band', j ->> 'safety_route', (j -> 'triggers')::t
 select pg_temp.as_user(pg_temp.u(12)::text);
 select public.record_pain_check_v1((select today from t), 'workout', 'shoulder', 4, null,
   array['chest_or_breath'], false, null, 'b5600000-0000-4000-8000-000000000012');
-insert into r select 'rest_day', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'rest_day', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'safety_route', j ->> 'unavailable_reason', j ->> 'kind'] from r where name = 'rest_day'),
   array['urgent', 'rest_day', 'none'], 'a red flag routes out on a rest day too');
 select pg_temp.as_user(pg_temp.u(17)::text);
@@ -540,7 +550,7 @@ select public.start_workout((select workout_id from wk where uid = pg_temp.u(17)
   'UTC', 'b5500000-0000-4000-8000-000000000017');
 select public.record_pain_check_v1((select today from t), 'workout', 'knee', 4, 'movement',
   array['pop_or_sudden'], false, null, 'b5600000-0000-4000-8000-000000000017');
-insert into r select 'started', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'started', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'safety_route', j ->> 'unavailable_reason', j ->> 'band', j ->> 'status']
     from r where name = 'started'), array['clinician_today', 'session_started', 'red', 'none'],
   'and after the session started');
@@ -548,11 +558,11 @@ select is((select array[j ->> 'safety_route', j ->> 'unavailable_reason', j ->> 
 -- A red flag overrides an answer the athlete had already given.
 select pg_temp.as_user(pg_temp.u(18)::text);
 select pg_temp.check_in(pg_temp.u(18), 2, 3, 4, 3, 0);
-insert into r select 'before_flag', public.respond_to_day_adjustment_v1((select today from t), true);
+insert into r select 'before_flag', public.respond_to_day_adjustment_v1((select today from t), true, null, true);
 select is((select j ->> 'status' from r where name = 'before_flag'), 'accepted', 'a lighter session was accepted');
 select public.record_pain_check_v1((select today from t), 'workout', 'knee', 5, 'movement',
   array['pop_or_sudden'], false, null, 'b5600000-0000-4000-8000-000000000018');
-insert into r select 'after_flag', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'after_flag', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'safety_route', j ->> 'kind', j ->> 'status', jsonb_array_length(j -> 'changes')::text,
       j ->> 'answered_at', (j -> 'previous_answer' = 'null'::jsonb)::text] from r where name = 'after_flag'),
   array['clinician_today', 'none', 'none', '0', null, 'true'],
@@ -569,7 +579,7 @@ select is((select array[status, kind] from public.day_adjustments
 select pg_temp.as_user(pg_temp.u(19)::text);
 select pg_temp.report(pg_temp.u(19), 1, 'other', 4, array['chest_or_breath']);
 select pg_temp.check_in(pg_temp.u(19), 3, 3, 3, 3, 0);
-insert into r select 'yesterday', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'yesterday', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'safety_route', j ->> 'kind', j ->> 'band', j ->> 'status',
       jsonb_array_length(j -> 'options')::text, (j -> 'triggers')::text, j -> 'joint_states' -> 0 ->> 'area',
       j -> 'joint_states' -> 0 ->> 'hold_outcome'] from r where name = 'yesterday'),
@@ -579,7 +589,7 @@ select is((select j ->> 'explanation' from r where name = 'yesterday'),
   'What you described needs urgent care. Call your local emergency number or go to an emergency department now. Tracend won''t suggest any training until you''ve been seen.',
   'in the words that promise it');
 select pg_temp.report(pg_temp.u(19), 0, 'other', 1, '{}', true);
-insert into r select 'yesterday_cleared', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'yesterday_cleared', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'safety_route', j ->> 'kind', j -> 'joint_states' -> 0 ->> 'state']
     from r where name = 'yesterday_cleared'), array[null, 'none', 'watch'],
   'the athlete''s own clearance ends the route, and the area is on watch');
@@ -590,7 +600,7 @@ select is((select array[j ->> 'safety_route', j ->> 'kind', j -> 'joint_states' 
 select pg_temp.make_athlete(pg_temp.u(26));
 select pg_temp.report(pg_temp.u(26), 3, 'other', 4, array['chest_or_breath']);
 select pg_temp.as_user(pg_temp.u(26)::text);
-insert into r select 'hold_d3', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'hold_d3', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'safety_route', j ->> 'band', j ->> 'kind'] from r where name = 'hold_d3'),
   array['urgent', 'red', 'none'], 'an urgent flag from three days ago still routes today');
 
@@ -599,7 +609,7 @@ select pg_temp.make_athlete(pg_temp.u(27));
 select pg_temp.report(pg_temp.u(27), 2, 'other', 4, array['chest_or_breath']);
 select pg_temp.report(pg_temp.u(27), 1, 'knee', 8);
 select pg_temp.as_user(pg_temp.u(27)::text);
-insert into r select 'hold_two', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'hold_two', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'safety_route', (j -> 'triggers')::text] from r where name = 'hold_two'),
   array['urgent', '["pain_severe", "red_flag:chest_or_breath"]'],
   'two holds, urgent and clinician today: urgent, with both reasons');
@@ -607,7 +617,7 @@ select pg_temp.make_athlete(pg_temp.u(28));
 select pg_temp.report(pg_temp.u(28), 2, 'knee', 8);
 select pg_temp.report(pg_temp.u(28), 0, 'shoulder', 2, array['night_pain']);
 select pg_temp.as_user(pg_temp.u(28)::text);
-insert into r select 'hold_and_today', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'hold_and_today', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'safety_route', (j -> 'triggers')::text] from r where name = 'hold_and_today'),
   array['clinician_today', '["pain_severe", "red_flag:night_pain"]'],
   'a hold on clinician today beats a clinician flag reported today');
@@ -617,7 +627,7 @@ select pg_temp.make_athlete(pg_temp.u(29));
 select pg_temp.report(pg_temp.u(29), 2, 'other', 2, array['night_pain']);
 select pg_temp.check_in(pg_temp.u(29), 3, 3, 3, 3, 0);
 select pg_temp.as_user(pg_temp.u(29)::text);
-insert into r select 'clinician_hold', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'clinician_hold', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'safety_route', j ->> 'kind', j ->> 'status'] from r where name = 'clinician_hold'),
   array[null, 'none', 'none'], 'a clinician hold from two days ago routes nothing today');
 select is((select j ->> 'explanation' from r where name = 'clinician_hold'),
@@ -628,23 +638,23 @@ select is(private.hold_reminder('[{"area": "knee", "state": "held", "hold_outcom
     {"area": "shoulder", "state": "limited", "hold_outcome": null},
     {"area": "other", "state": "held", "hold_outcome": "clinician"}]'::jsonb, '[]'::jsonb),
   ' Your knee is on hold until you''ve had it checked. The pain you reported elsewhere is on hold until you''ve had it checked.',
-  'the reminder names each area held on a clinician outcome, in order, and no other');
+  'the pure function names each area held on a clinician outcome, in order, and no other');
 select is(private.hold_reminder('[{"area": "knee", "state": "held", "hold_outcome": "clinician"}]'::jsonb,
     '[{"joint": "knee", "joint_action": "drop"}]'::jsonb), '',
-  'and is not said twice for an area whose exercises already carry its sentence');
+  'and, as a pure function, does not say it twice for an area whose exercises already carry its sentence');
 
 -- A report stored today counts for today whatever its date; one stored yesterday does not.
 select pg_temp.make_athlete(pg_temp.u(31));
 select pg_temp.report(pg_temp.u(31), 1, 'back', 2, array['night_pain'], false, 0);
 select pg_temp.as_user(pg_temp.u(31)::text);
-insert into r select 'stored_today', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'stored_today', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'safety_route', (j -> 'triggers')::text] from r where name = 'stored_today'),
   array['clinician', '["red_flag:night_pain"]'],
   'a clinician flag dated yesterday by a phone but stored today routes today');
 select pg_temp.make_athlete(pg_temp.u(32));
 select pg_temp.report(pg_temp.u(32), 1, 'back', 2, array['night_pain'], false, 1);
 select pg_temp.as_user(pg_temp.u(32)::text);
-insert into r select 'stored_yesterday', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'stored_yesterday', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select j ->> 'safety_route' from r where name = 'stored_yesterday'), null,
   'the same report stored yesterday does not');
 
@@ -654,15 +664,15 @@ select pg_temp.make_single(pg_temp.u(33), 'barbell-back-squat', 'Barbell back sq
 select pg_temp.report(pg_temp.u(33), 1, 'knee', 3, array['locks_gives_way']);
 select pg_temp.check_in(pg_temp.u(33), 3, 3, 3, 3, 0);
 select pg_temp.as_user(pg_temp.u(33)::text);
-insert into r select 'squat_knee', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'squat_knee', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'kind', pg_temp.change(j, 1) ->> 'joint_action',
       (pg_temp.change(j, 1) ->> 'swap_to_slug' is not null)::text] from r where name = 'squat_knee'),
   array['joint_adjust', 'swap', 'true'], 'a held knee swaps the back squat for something gentler');
-select public.respond_to_day_adjustment_v1((select today from t), true);
-insert into r select 'squat_stands', public.get_my_day_adjustment_v1((select today from t));
+select public.respond_to_day_adjustment_v1((select today from t), true, null, true);
+insert into r select 'squat_stands', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select j ->> 'status' from r where name = 'squat_stands'), 'accepted', 'the accepted swap stands');
 select pg_temp.report(pg_temp.u(33), 0, 'back', 5);
-insert into r select 'squat_back', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'squat_back', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'status', j -> 'previous_answer' ->> 'reason', pg_temp.change(j, 1) ->> 'joint_action',
       (pg_temp.change(j, 1) ->> 'swap_to_slug' is distinct from (select pg_temp.change(j, 1) ->> 'swap_to_slug'
         from r where name = 'squat_knee'))::text] from r where name = 'squat_back'),
@@ -716,7 +726,7 @@ select pg_temp.check_in(pg_temp.u(34), 2, 3, 4, 3, 0);
 update public.training_plan_versions set block_kind = 'next_session', ends_on = (select today from t),
   restores_version_id = id where user_id = pg_temp.u(34);
 select pg_temp.as_user(pg_temp.u(34)::text);
-insert into r select 'coach_joint', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'coach_joint', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'kind', j ->> 'status', j ->> 'available',
       (j -> 'unavailable_reason' = 'null'::jsonb)::text,
       (select string_agg(o ->> 'kind', ',') from jsonb_array_elements(j -> 'options') o)]
@@ -727,7 +737,7 @@ select is((select array(select c ->> 'exercise_order' || ':' || (c ->> 'joint_ac
     from jsonb_array_elements(j -> 'changes') c order by (c ->> 'exercise_order')::integer)
     from r where name = 'coach_joint'), array['2:drop', '4:drop'], 'with the held knee''s exercises left out');
 select is((select j ->> 'band' from r where name = 'coach_joint'), 'amber', 'and the readiness band still read');
-select is((select j ->> 'status' from (select public.respond_to_day_adjustment_v1((select today from t), true) j) x),
+select is((select j ->> 'status' from (select public.respond_to_day_adjustment_v1((select today from t), true, null, true) j) x),
   'accepted', 'it can be accepted');
 select public.start_workout((select workout_id from wk where uid = pg_temp.u(34)), (select today from t),
   'UTC', 'b5500000-0000-4000-8000-000000000034');
@@ -737,7 +747,7 @@ select pg_temp.check_in(pg_temp.u(35), 2, 3, 4, 3, 0);
 update public.training_plan_versions set block_kind = 'next_session', ends_on = (select today from t),
   restores_version_id = id where user_id = pg_temp.u(35);
 select pg_temp.as_user(pg_temp.u(35)::text);
-insert into r select 'coach_plain', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'coach_plain', public.get_my_day_adjustment_v1((select today from t), true);
 select is((select array[j ->> 'kind', j ->> 'available', j ->> 'unavailable_reason'] from r where name = 'coach_plain'),
   array['none', 'false', 'coach_adjusted'], 'with no joint to protect, a Coach-adjusted day is unavailable as before');
 
@@ -745,18 +755,107 @@ select is((select array[j ->> 'kind', j ->> 'available', j ->> 'unavailable_reas
 select is((select private.progression_decision(4, 5, 8, 8, 2.5, 7, false, false, false,
     '[{"load_kg": 60, "sets": 4, "min_reps": 8, "total_reps": 32, "min_rir": 3, "effort_known": true,
        "pain": false, "adjusted": true, "sets_planned": 0}]'::jsonb) ->> 'action'), 'hold',
-  'an exercise left out for a joint but trained anyway does not earn add_load');
+  'the pure decision: an exercise left out for a joint but trained anyway does not earn add_load');
 select is((select private.progression_decision(4, 5, 8, 8, 2.5, 7, false, false, false,
     '[{"load_kg": 60, "sets": 4, "min_reps": 8, "total_reps": 32, "min_rir": 3, "effort_known": true,
        "pain": false, "adjusted": true, "sets_planned": 0}]'::jsonb) ->> 'reason'), 'incomplete',
-  'and the reason is the one B3 already has for work off the plan');
+  'with the reason B3 already has for work off the plan (pure function)');
 select is((select private.progression_decision(4, 5, 8, 8, 2.5, 7, false, false, false,
     '[{"load_kg": 60, "sets": 4, "min_reps": 8, "total_reps": 32, "min_rir": 3, "effort_known": true,
        "pain": false, "adjusted": true, "sets_planned": 4}]'::jsonb) ->> 'action'), 'add_load',
-  'the same session under an answer that kept the sets still earns it');
+  'the pure decision: the same session under an answer that kept the sets still earns it');
 select is((select private.progression_decision(4, 5, 8, 8, 2.5, 7, false, false, false,
     '[{"load_kg": 60, "sets": 4, "min_reps": 8, "total_reps": 32, "min_rir": 3, "effort_known": true,
-       "pain": false}]'::jsonb) ->> 'action'), 'add_load', 'and so does one with no answer at all');
+       "pain": false}]'::jsonb) ->> 'action'), 'add_load', 'and so does one with no answer at all (pure function)');
+
+-- A client that does not declare support for joint changes sees and gets the readiness kinds without them ------------
+
+select pg_temp.report(pg_temp.u(38), 3, 'knee', 3, array['locks_gives_way']);
+select pg_temp.check_in(pg_temp.u(38), 2, 2, 3, 3, 0);
+select pg_temp.as_user(pg_temp.u(38)::text);
+insert into r select 'old_get', public.get_my_day_adjustment_v1((select today from t));
+insert into r select 'old_get_false', public.get_my_day_adjustment_v1((select today from t), false);
+insert into r select 'new_get', public.get_my_day_adjustment_v1((select today from t), true);
+select is((select array[j ->> 'kind', j ->> 'sets_total_to',
+      (select count(*) from jsonb_array_elements(j -> 'changes') c where c ? 'joint_action')::text,
+      (select string_agg(o ->> 'kind', ',') from jsonb_array_elements(j -> 'options') o)]
+    from r where name = 'old_get'),
+  array['reduce_sets', '11', '0', 'reduce_sets,swap_to_easy_cardio,joint_adjust'],
+  'an old client sees one set fewer on every exercise: no left-out exercise, no swap, no joint key');
+select is((select j from r where name = 'old_get_false'), (select j from r where name = 'old_get'),
+  'and not declaring it is the same as declining it');
+select is((select count(*) from r, jsonb_array_elements(j -> 'options') o,
+      jsonb_array_elements(o -> 'changes') c
+    where name = 'old_get' and o ->> 'kind' in ('reduce_sets', 'swap_to_easy_cardio') and c ? 'joint_action'),
+  0::bigint, 'none of its readiness options carries a joint change');
+select is((select count(*) from r, jsonb_array_elements(j -> 'options') o,
+      jsonb_array_elements(o -> 'changes') c
+    where name = 'old_get' and o ->> 'kind' = 'joint_adjust' and c ? 'joint_action'), 2::bigint,
+  'while the joint adjustment still lists its two left-out exercises, for an app that shows it as a note');
+select is((select array[j -> 'joint_states' -> 0 ->> 'state', jsonb_array_length(j -> 'exercise_joint_options')::text]
+    from r where name = 'old_get'), array['held', '5'], 'and the joint states and swap options are the same for every client');
+select is((select array[j ->> 'kind', j ->> 'sets_total_to',
+      (select count(*) from jsonb_array_elements(j -> 'changes') c where c ->> 'joint_action' = 'drop')::text]
+    from r where name = 'new_get'), array['reduce_sets', '7', '2'],
+  'a client that declares support sees the same day with the held knee''s two exercises left out');
+-- Accepting as an old client gives the plain lighter session.
+insert into r select 'old_accept', public.respond_to_day_adjustment_v1((select today from t), true);
+select is((select array[j ->> 'status', j ->> 'kind', (select count(*) from jsonb_array_elements(j -> 'changes') c
+      where c ? 'joint_action')::text] from r where name = 'old_accept'), array['accepted', 'reduce_sets', '0'],
+  'accepting as an old client stores the plain kind');
+select is((select joint_capable from public.day_adjustments where user_id = pg_temp.u(38) and superseded_at is null),
+  false, 'marked as an answer from a client without the capability');
+select is((select j ->> 'status' from (select public.get_my_day_adjustment_v1((select today from t)) j) x),
+  'accepted', 'which stands for that client');
+select public.start_workout((select workout_id from wk where uid = pg_temp.u(38)), (select today from t),
+  'UTC', 'b5500000-0000-4000-8000-000000000038');
+select is(pg_temp.sets_of('b5500000-0000-4000-8000-000000000038'), array[3::bigint, 2, 2, 2, 2],
+  'and starting gives the plain reduce_sets rows: no exercise with 0 sets');
+select is((select count(*) from public.exercise_performances p join public.workout_sessions w on w.id = p.workout_session_id
+    where w.idempotency_key = 'b5500000-0000-4000-8000-000000000038'
+      and (p.performance_kind <> 'prescribed' or p.substitution_reason is not null)), 0::bigint,
+  'and no substitution');
+
+-- An old client that accepts the joint adjustment itself gets what it was shown.
+select pg_temp.make_athlete(pg_temp.u(40));
+select pg_temp.report(pg_temp.u(40), 2, 'knee', 3, array['locks_gives_way']);
+select pg_temp.check_in(pg_temp.u(40), 3, 3, 3, 3, 0);
+select pg_temp.as_user(pg_temp.u(40)::text);
+select is((select public.respond_to_day_adjustment_v1((select today from t), true) ->> 'kind'), 'joint_adjust',
+  'an old client can accept the joint adjustment');
+select public.start_workout((select workout_id from wk where uid = pg_temp.u(40)), (select today from t),
+  'UTC', 'b5500000-0000-4000-8000-000000000040');
+select is(pg_temp.sets_of('b5500000-0000-4000-8000-000000000040'), array[4::bigint, 0, 3, 0, 3],
+  'and the left-out exercises are left out');
+
+-- An answer whose joint changes are no longer the ones the rules ask for is not applied -------------------------
+select pg_temp.make_athlete(pg_temp.u(41));
+select pg_temp.report(pg_temp.u(41), 1, 'knee', 3, array['locks_gives_way']);
+select pg_temp.check_in(pg_temp.u(41), 3, 3, 3, 3, 0);
+select pg_temp.as_user(pg_temp.u(41)::text);
+select public.respond_to_day_adjustment_v1((select today from t), true, null, true);
+select pg_temp.report(pg_temp.u(41), 0, 'back', 5);
+select public.start_workout((select workout_id from wk where uid = pg_temp.u(41)), (select today from t),
+  'UTC', 'b5500000-0000-4000-8000-000000000041');
+select is(pg_temp.sets_of('b5500000-0000-4000-8000-000000000041'), array[4::bigint, 3, 3, 3, 3],
+  'a sore back that arrived after the knee answer: the stale answer is not applied, the plan is built as written');
+select ok((select day_adjustment_id is null from public.workout_sessions
+    where idempotency_key = 'b5500000-0000-4000-8000-000000000041'), 'and the session is not linked to it');
+
+-- A lasting hold, a clearance the same day, and a late entry --------------------------------------------------------
+select pg_temp.make_athlete(pg_temp.u(42));
+select pg_temp.report_at(pg_temp.u(42), 0, 'other', 4, array['chest_or_breath'], false, 4);
+select pg_temp.as_user(pg_temp.u(42)::text);
+insert into r select 'same_day_urgent', public.get_my_day_adjustment_v1((select today from t), true);
+select is((select j ->> 'safety_route' from r where name = 'same_day_urgent'), 'urgent', 'an urgent flag at 10:00 routes the day');
+select pg_temp.check_in(pg_temp.u(42), 3, 3, 3, 3, 0);
+insert into r select 'after_revision', public.get_my_day_adjustment_v1((select today from t), true);
+select is((select j ->> 'safety_route' from r where name = 'after_revision'), 'urgent',
+  'a new check-in does not withdraw it');
+select pg_temp.report_at(pg_temp.u(42), 0, 'other', 1, '{}', true, 0);
+insert into r select 'same_day_cleared', public.get_my_day_adjustment_v1((select today from t), true);
+select is((select array[j ->> 'safety_route', j -> 'joint_states' -> 0 ->> 'state'] from r where name = 'same_day_cleared'),
+  array[null, 'watch'], 'the athlete''s clearance at 14:00 ends the route that day, and the area goes to watch');
 
 -- B3 reads the answers: an accommodation is not a bad performance ------------------------------------------------
 

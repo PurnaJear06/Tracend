@@ -360,8 +360,9 @@ grant execute on function public.record_pain_check_v1(
   date, text, text, integer, text, text[], boolean, uuid, uuid) to authenticated;
 
 -- 6. Joint states -------------------------------------------------------------------------------------
--- Per area (knee, back, shoulder, other), from its reports up to p_date, newest first (by day, then by
--- when the report was stored):
+-- Per area (knee, back, shoulder, other), from its reports up to p_date (the day a report is dated only
+-- decides whether it has happened by then), newest first by when it was stored, so a report entered
+-- late for an earlier day (a red flag typed in after a clearance) is the newer fact:
 --   held        the newest report with a held outcome (urgent, clinician_today, clinician) is not
 --               followed by a clearance: a report with cleared_by_clinician, a severity of 3 or less
 --               and no red flag. A held area ends only by clearance.
@@ -406,13 +407,13 @@ begin
   foreach joint_area in array array['knee', 'back', 'shoulder', 'other'] loop
     select * into newest from public.pain_reports p
     where p.user_id = p_user and p.area = joint_area and p.local_date <= p_date
-    order by p.local_date desc, p.created_at desc, p.id desc limit 1;
+    order by p.created_at desc, p.id desc limit 1;
     if not found then continue; end if;
 
     select * into latest_hold from public.pain_reports p
     where p.user_id = p_user and p.area = joint_area and p.local_date <= p_date
       and p.outcome = any(held)
-    order by p.local_date desc, p.created_at desc, p.id desc limit 1;
+    order by p.created_at desc, p.id desc limit 1;
     has_hold := found;
 
     select * into clearance from public.pain_reports p
@@ -423,8 +424,8 @@ begin
       and exists (select 1 from public.pain_reports h
         where h.user_id = p_user and h.area = joint_area and h.local_date <= p_date
           and h.outcome = any(held)
-          and (h.local_date, h.created_at, h.id) < (p.local_date, p.created_at, p.id))
-    order by p.local_date desc, p.created_at desc, p.id desc limit 1;
+          and (h.created_at, h.id) < (p.created_at, p.id))
+    order by p.created_at desc, p.id desc limit 1;
     has_clearance := found;
 
     state := 'none';
@@ -434,8 +435,8 @@ begin
     hold_codes := '{}';
     hold_severe := false;
     if has_hold and not (has_clearance
-        and (clearance.local_date, clearance.created_at, clearance.id)
-          > (latest_hold.local_date, latest_hold.created_at, latest_hold.id)) then
+        and (clearance.created_at, clearance.id)
+          > (latest_hold.created_at, latest_hold.id)) then
       state := 'held';
       -- The reports of the hold in force: held outcomes after the newest clearance.
       select min(p.local_date),
@@ -447,14 +448,14 @@ begin
       where p.user_id = p_user and p.area = joint_area and p.local_date <= p_date
         and p.outcome = any(held)
         and (not has_clearance
-          or (p.local_date, p.created_at, p.id)
-            > (clearance.local_date, clearance.created_at, clearance.id));
+          or (p.created_at, p.id)
+            > (clearance.created_at, clearance.id));
       hold_codes := array(select distinct f from public.pain_reports p, unnest(p.red_flags) f
         where p.user_id = p_user and p.area = joint_area and p.local_date <= p_date
           and p.outcome = any(held)
           and (not has_clearance
-            or (p.local_date, p.created_at, p.id)
-              > (clearance.local_date, clearance.created_at, clearance.id))
+            or (p.created_at, p.id)
+              > (clearance.created_at, clearance.id))
         order by f);
       since := hold_start;
     elsif p_date - newest.local_date <= (r ->> 'lapse_days')::integer then
@@ -472,15 +473,15 @@ begin
     select * into boundary from public.pain_reports p
     where p.user_id = p_user and p.area = joint_area and p.local_date <= p_date
       and (p.outcome = 'clear' or (has_clearance and p.id = clearance.id))
-    order by p.local_date desc, p.created_at desc, p.id desc limit 1;
+    order by p.created_at desc, p.id desc limit 1;
     has_boundary := found;
     select count(*), min(p.local_date) into strong_reports, first_strong
     from public.pain_reports p
     where p.user_id = p_user and p.area = joint_area and p.local_date <= p_date
       and p.severity >= (r ->> 'persistent_min_severity')::integer
       and (not has_boundary
-        or (p.local_date, p.created_at, p.id)
-          > (boundary.local_date, boundary.created_at, boundary.id));
+        or (p.created_at, p.id)
+          > (boundary.created_at, boundary.id));
     persistent := state in ('limited', 'held') and (
       (state = 'held' and p_date - hold_start >= (r ->> 'persistent_days')::integer)
       or (strong_reports >= 2
@@ -644,23 +645,28 @@ declare
   lvl text;
   avoid text[];
   session_slugs text[];
+  day_swaps jsonb;
 begin
   select p.equipment, p.experience_level::text, p.avoid_patterns into equipment, lvl, avoid
   from public.user_profiles p where p.user_id = p_user;
   session_slugs := array(select e.exercise_slug from public.planned_exercises e
     where e.planned_workout_id = p_workout and e.user_id = p_user and e.exercise_slug is not null);
+  -- The exercises the day's own swaps go to are taken too, so no exercise appears twice in a session.
+  day_swaps := private.joint_changes(p_user, p_workout, p_states, '[]'::jsonb);
   return coalesce((
     select jsonb_agg(jsonb_build_object(
       'exercise_order', e.exercise_order, 'planned_exercise_id', e.id,
       'name', e.display_name_snapshot,
       'joint_options', jsonb_build_object(
         'knee', private.joint_swap(e.exercise_slug, 'knee', jr ->> 'options_max_stress', equipment,
-          lvl, avoid, session_slugs, private.joint_caps(p_states, 'knee')),
+          lvl, avoid, session_slugs || taken.slugs, private.joint_caps(p_states, 'knee')),
         'back', private.joint_swap(e.exercise_slug, 'back', jr ->> 'options_max_stress', equipment,
-          lvl, avoid, session_slugs, private.joint_caps(p_states, 'back')),
+          lvl, avoid, session_slugs || taken.slugs, private.joint_caps(p_states, 'back')),
         'shoulder', private.joint_swap(e.exercise_slug, 'shoulder', jr ->> 'options_max_stress',
-          equipment, lvl, avoid, session_slugs, private.joint_caps(p_states, 'shoulder')))) order by e.exercise_order)
+          equipment, lvl, avoid, session_slugs || taken.slugs, private.joint_caps(p_states, 'shoulder')))) order by e.exercise_order)
     from public.planned_exercises e
+    cross join lateral (select array(select c ->> 'swap_to_slug' from jsonb_array_elements(day_swaps) c
+      where c ->> 'swap_to_slug' is not null and c ->> 'planned_exercise_id' <> e.id::text) as slugs) taken
     where e.planned_workout_id = p_workout and e.user_id = p_user), '[]'::jsonb);
 end $$;
 revoke all on function private.joint_options(uuid, uuid, jsonb) from public, anon, authenticated;
@@ -865,6 +871,12 @@ alter table public.day_adjustments
     kind in ('hold_load', 'reduce_sets', 'swap_to_easy_cardio', 'joint_adjust')),
   add constraint day_adjustments_rules_kind_check check (
     rules_kind in ('none', 'hold_load', 'reduce_sets', 'swap_to_easy_cardio', 'joint_adjust'));
+
+-- Whether the app that stored an answer declared support for joint changes (its readiness kinds then carry
+-- them). A stored answer of a client that did not is never checked against the joint changes of today.
+alter table public.day_adjustments add column joint_capable boolean not null default false;
+comment on column public.day_adjustments.joint_capable is
+  'The app that stored this answer declared support for joint changes: its changes may carry left-out or swapped exercises. False for an app that did not (its readiness kinds are stored without them).';
 
 -- The words for what the joints change: which joints are in which state, then how many exercises were
 -- swapped, kept in a pain-free range or left out. Fixed sentences; no condition is named.
@@ -1102,7 +1114,9 @@ begin
       || '. Nothing in today''s session needs to change.' end || note;
 end $$;
 
-create or replace function private.day_adjustment_compute(p_user uuid, p_date date)
+drop function private.day_adjustment_compute(uuid, date);
+
+create function private.day_adjustment_compute(p_user uuid, p_date date, p_joint boolean default true)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
   r constant jsonb := private.readiness_rules();
@@ -1141,6 +1155,7 @@ declare
   report_severe boolean;
   report_codes text[];
   states_full jsonb;
+  merge_arr jsonb := '[]'::jsonb;
   joint_only boolean := false;
   hold_route text;
   hold_severe boolean;
@@ -1189,9 +1204,13 @@ begin
   end if;
   -- A joint that is held, limited or on watch changes the exercises it touches in every kind (the
   -- stricter value per exercise wins), and alone as the joint_adjust kind.
-  hold_c := private.day_changes_merged(hold_c, joint_arr);
-  reduce_c := private.day_changes_merged(reduce_c, joint_arr);
-  swap_c := private.day_changes_merged(swap_c, joint_arr);
+  -- A client that does not declare support for joint changes (p_joint false) is offered the readiness kinds
+  -- as they were, without them: it could not show a left-out or swapped exercise, and what it accepts is
+  -- what it was shown. joint_adjust, below, is the same for every client.
+  if p_joint then merge_arr := joint_arr; end if;
+  hold_c := private.day_changes_merged(hold_c, merge_arr);
+  reduce_c := private.day_changes_merged(reduce_c, merge_arr);
+  swap_c := private.day_changes_merged(swap_c, merge_arr);
   joint_c := private.day_changes_merged(jsonb_build_object('changes', '[]'::jsonb,
     'sets_from', (swap_c ->> 'sets_from')::integer, 'sets_to', (swap_c ->> 'sets_from')::integer),
     joint_arr);
@@ -1207,19 +1226,24 @@ begin
   -- just as a check-in pain of 7 or more does, even with no check-in, on a rest day or after the session
   -- started: from reports dated today or stored today (a phone's date can differ from the server's), and
   -- on every later day while the area stays held on an urgent or clinician_today outcome, until the
-  -- athlete's own clearance. A hold on a clinician outcome gives no route on later days, only a reminder
-  -- in the day's words. The strictest route wins.
+  -- athlete's own clearance; a clearance recorded later the same day ends today's route for that area too
+  -- (only reports of an area still held count). A hold on a clinician outcome gives no route on later
+  -- days, only a reminder in the day's words. The strictest route wins.
   select (array['clinician', 'clinician_today', 'urgent'])[max(
       case pr.outcome when 'urgent' then 3 when 'clinician_today' then 2 else 1 end)],
     coalesce(bool_or(pr.severity >= (private.pain_rules() ->> 'clinician_today_from')::integer), false)
   into report_route, report_severe
   from public.pain_reports pr
   where pr.user_id = p_user and pr.outcome in ('urgent', 'clinician_today', 'clinician')
-    and (pr.local_date = p_date or private.local_day_of(p_user, pr.created_at) = p_date);
+    and (pr.local_date = p_date or private.local_day_of(p_user, pr.created_at) = p_date)
+    and exists (select 1 from jsonb_array_elements(states_full) hs
+      where hs ->> 'area' = pr.area and hs ->> 'state' = 'held');
   report_codes := array(select distinct 'red_flag:' || f from public.pain_reports pr,
     unnest(pr.red_flags) f
     where pr.user_id = p_user and pr.outcome in ('urgent', 'clinician_today', 'clinician')
       and (pr.local_date = p_date or private.local_day_of(p_user, pr.created_at) = p_date)
+      and exists (select 1 from jsonb_array_elements(states_full) hs
+        where hs ->> 'area' = pr.area and hs ->> 'state' = 'held')
     order by 1);
   select (array['clinician_today', 'urgent'])[max(case h ->> 'hold_outcome' when 'urgent' then 2 else 1 end)],
     coalesce(bool_or((h ->> 'hold_severe')::boolean), false),
@@ -1350,9 +1374,10 @@ returns boolean language sql immutable set search_path = '' as $$
       or (private.readiness_rank(p_payload ->> 'kind', null)
           <= greatest(private.readiness_rank(p_row.rules_kind, null),
             private.readiness_rank(p_row.kind, null))
-        and private.joint_change_keys(p_row.changes) = private.joint_change_keys((
-          select o -> 'changes' from jsonb_array_elements(p_payload -> 'options') o
-          where o ->> 'kind' = 'joint_adjust' limit 1))));
+        and (not (p_row.joint_capable or p_row.kind = 'joint_adjust')
+          or private.joint_change_keys(p_row.changes) = private.joint_change_keys((
+            select o -> 'changes' from jsonb_array_elements(p_payload -> 'options') o
+            where o ->> 'kind' = 'joint_adjust' limit 1)))));
 $$;
 
 create or replace function private.day_adjustment_present(
@@ -1377,6 +1402,151 @@ create or replace function private.day_adjustment_present(
           then 'check_in' else 'new_data' end))
     else p_payload end;
 $$;
+
+-- The two RPCs gain an optional argument: whether the app can show and apply joint changes (a left-out or
+-- swapped exercise in the readiness kinds). Calls without it work as before and see the kinds without them.
+-- An old signature stays callable through the defaults, so the old function is replaced, not joined.
+drop function public.get_my_day_adjustment_v1(date);
+drop function public.respond_to_day_adjustment_v1(date, boolean, text);
+
+create function public.get_my_day_adjustment_v1(local_date date, supports_joint_changes boolean default false)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  uid constant uuid := auth.uid();
+  today date;
+  computed jsonb;
+  payload jsonb;
+  cur public.day_adjustments%rowtype;
+begin
+  if uid is null then
+    raise exception 'authentication required' using errcode = '42501';
+  end if;
+  today := private.local_date_for(uid);
+  if get_my_day_adjustment_v1.local_date is distinct from today then
+    raise exception 'only today can be read' using errcode = '22023';
+  end if;
+  perform private.day_adjustment_refresh_metrics(uid, today);
+  computed := private.day_adjustment_compute(uid, today, coalesce(get_my_day_adjustment_v1.supports_joint_changes, false));
+  payload := computed -> 'payload';
+  select * into cur from public.day_adjustments a
+  where a.user_id = uid and a.local_date = today and a.superseded_at is null;
+  return private.day_adjustment_present(cur, payload, private.day_adjustment_stands(cur, payload),
+    computed -> 'inputs');
+end $$;
+revoke all on function public.get_my_day_adjustment_v1(date, boolean) from public, anon, authenticated;
+grant execute on function public.get_my_day_adjustment_v1(date, boolean) to authenticated;
+
+create function public.respond_to_day_adjustment_v1(
+  local_date date, accept boolean, chosen_kind text default null,
+  supports_joint_changes boolean default false
+) returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  uid constant uuid := auth.uid();
+  today date;
+  computed jsonb;
+  payload jsonb;
+  cur public.day_adjustments%rowtype;
+  stands boolean;
+  target_kind text;
+  target_origin text;
+  target_status text;
+  chosen_option jsonb;
+  target_changes jsonb;
+  target_cardio jsonb;
+  target_band text;
+  target_triggers text[];
+  new_row public.day_adjustments%rowtype;
+begin
+  if uid is null then
+    raise exception 'authentication required' using errcode = '42501';
+  end if;
+  if accept is null then
+    raise exception 'accept must be true or false' using errcode = '22023';
+  end if;
+  today := private.local_date_for(uid);
+  if respond_to_day_adjustment_v1.local_date is distinct from today then
+    raise exception 'only today can be answered' using errcode = '22023';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('day_adjustment:' || uid::text || today::text, 0));
+  perform private.day_adjustment_refresh_metrics(uid, today);
+  computed := private.day_adjustment_compute(uid, today, coalesce(respond_to_day_adjustment_v1.supports_joint_changes, false));
+  payload := computed -> 'payload';
+  select * into cur from public.day_adjustments a
+  where a.user_id = uid and a.local_date = today and a.superseded_at is null;
+  stands := private.day_adjustment_stands(cur, payload);
+
+  if payload ->> 'safety_route' is not null then
+    raise exception 'no adjustment is offered on a day with a safety route' using errcode = '22023';
+  end if;
+  if not (payload ->> 'available')::boolean then
+    raise exception 'today cannot be adjusted: %', payload ->> 'unavailable_reason'
+      using errcode = '55000';
+  end if;
+
+  if accept then
+    target_kind := coalesce(respond_to_day_adjustment_v1.chosen_kind, payload ->> 'kind');
+    if target_kind is null or target_kind = 'none' then
+      raise exception 'there is nothing to accept today' using errcode = '22023';
+    end if;
+    select o into chosen_option from jsonb_array_elements(payload -> 'options') o
+    where o ->> 'kind' = target_kind;
+    if chosen_option is null then
+      raise exception 'that adjustment would not change today''s session' using errcode = '22023';
+    end if;
+    target_origin := case when target_kind = payload ->> 'kind' then 'proposed' else 'chosen' end;
+    target_changes := chosen_option -> 'changes';
+    target_cardio := nullif(chosen_option -> 'cardio', 'null'::jsonb);
+    target_band := payload ->> 'band';
+    target_triggers := array(select jsonb_array_elements_text(payload -> 'triggers'));
+  elsif stands then
+    target_kind := cur.kind; target_origin := cur.origin; target_changes := cur.changes;
+    target_cardio := cur.cardio; target_band := cur.band; target_triggers := cur.triggers;
+  elsif payload ->> 'kind' <> 'none' then
+    target_kind := payload ->> 'kind'; target_origin := 'proposed';
+    target_changes := payload -> 'changes'; target_cardio := nullif(payload -> 'cardio', 'null'::jsonb);
+    target_band := payload ->> 'band';
+    target_triggers := array(select jsonb_array_elements_text(payload -> 'triggers'));
+  else
+    raise exception 'there is nothing to decline today' using errcode = '22023';
+  end if;
+
+  -- The same answer again is not a new answer.
+  target_status := case when accept then 'accepted' else 'declined' end;
+  if stands and cur.kind = target_kind and cur.status = target_status then
+    return private.day_adjustment_present(cur, payload, true, computed -> 'inputs');
+  end if;
+
+  -- Undoing a standing accepted answer is never refused: the athlete can always get back to the plan.
+  if not (not accept and stands and cur.status = 'accepted')
+     and (select count(*) from public.day_adjustments a
+      where a.user_id = uid and a.local_date = today)
+     >= (private.readiness_rules() ->> 'answers_per_day')::integer then
+    raise exception 'too many answers today' using errcode = 'P0001';
+  end if;
+
+  update public.day_adjustments a set superseded_at = now()
+  where a.user_id = uid and a.local_date = today and a.superseded_at is null;
+  insert into public.day_adjustments(user_id, local_date, planned_workout_id, plan_version_id,
+    rules_version, band, kind, origin, rules_kind, triggers, changes, cardio, inputs, inputs_hash,
+    status, joint_capable)
+  values (uid, today, (payload ->> 'planned_workout_id')::uuid,
+    (computed ->> 'plan_version_id')::uuid, payload ->> 'rules_version', target_band, target_kind,
+    target_origin, payload ->> 'kind', target_triggers, target_changes, target_cardio, computed -> 'inputs',
+    encode(sha256(convert_to((computed -> 'inputs')::text, 'UTF8')), 'hex'),
+    target_status, coalesce(respond_to_day_adjustment_v1.supports_joint_changes, false))
+  returning * into new_row;
+
+  insert into public.audit_events(user_id, action_code, target_type, target_id, outcome, metadata)
+  values (uid, 'day_adjustment_answered', 'day_adjustment', new_row.id, 'succeeded',
+    jsonb_build_object('kind', target_kind, 'accepted', accept, 'band', target_band,
+      'origin', target_origin, 'rules_version', payload ->> 'rules_version'));
+
+  return private.day_adjustment_present(new_row, payload, true, computed -> 'inputs');
+end $$;
+revoke all on function public.respond_to_day_adjustment_v1(date, boolean, text, boolean)
+  from public, anon, authenticated;
+grant execute on function public.respond_to_day_adjustment_v1(date, boolean, text, boolean)
+  to authenticated;
 
 -- 9. Starting the workout ---------------------------------------------------------------------------
 -- The definition of 20261023150021_close_stale_workouts.sql plus: an exercise the accepted answer leaves
@@ -1430,6 +1600,15 @@ begin
       and a.planned_workout_id=p_planned_workout_id and a.superseded_at is null
       and a.status='accepted';
     adjusted := found;
+    -- An answer that carries joint changes is applied only while they are the ones the rules ask for now;
+    -- otherwise the plan is built as written (the day's safety route is the card's business, not a rewrite
+    -- of the session). An answer without joint changes is applied as given, as before.
+    if adjusted and private.joint_change_keys(adjustment.changes) <> '{}'::text[]
+       and private.joint_change_keys(adjustment.changes) is distinct from private.joint_change_keys(
+         private.joint_changes(auth.uid(), p_planned_workout_id,
+           private.joint_states(auth.uid(), p_local_date), '[]'::jsonb)) then
+      adjusted := false;
+    end if;
   end if;
 
   insert into public.workout_sessions(
@@ -1745,7 +1924,7 @@ begin
   if p_user_id is null or p_local_date is distinct from private.local_date_for(p_user_id) then
     raise exception 'only the athlete''s own today can be read' using errcode = '22023';
   end if;
-  computed := private.day_adjustment_compute(p_user_id, p_local_date);
+  computed := private.day_adjustment_compute(p_user_id, p_local_date, true);
   payload := computed -> 'payload';
   select * into cur from public.day_adjustments a
   where a.user_id = p_user_id and a.local_date = p_local_date and a.superseded_at is null;

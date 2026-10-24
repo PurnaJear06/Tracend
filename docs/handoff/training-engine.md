@@ -785,6 +785,17 @@ table; Contract 5 1.1 in the program plan the payload.
   counts reports stored today. (7) The 40-a-day cap counts only reports that do not route out. Low: an
   exercise left out but trained earns no `add_load`; every cue of a limited exercise is kept
   (`range_note_codes`); two calls with one key take turns (an advisory lock) and replay.
+- **Review round 2 (Opus).** Capability and gates: the two day-adjustment RPCs gained an optional
+  `supports_joint_changes boolean default false` (the old signatures are dropped and recreated with the
+  default, so every old call works and gets the old behaviour); `private.day_adjustment_compute` gained
+  `p_joint`. **Contract for B5-2: pass `supports_joint_changes: true` on every read
+  (`get_my_day_adjustment_v1`) and every answer (`respond_to_day_adjustment_v1`); a client that passes
+  it on one and not the other would preview one session and store another.** Old clients keep seeing and
+  getting plain readiness kinds and may accept `joint_adjust` (shown as a note). `start_workout` keeps
+  its signature: it applies what was stored, and an answer that carries joint changes only while they
+  equal today's. Reports are ordered by when stored (a backdated red flag after a clearance holds the
+  area). The chip's options also avoid the exercises the day's own swaps go to. A clearance recorded
+  later the same day ends that area's route for the day (a new check-in never does).
 - **Choices where the brief was open (the safer one taken).** `pain_outcome` takes two arguments, not
   three (the clearance does not change an outcome; it lifts a hold in `joint_states`). A held area
   needs a clearance even when a later report says 0. A report older than 7 days lapses at 8 days (a hold never lapses).
@@ -792,10 +803,9 @@ table; Contract 5 1.1 in the program plan the payload.
   reports a week apart flag at 14 days. A swap must not trade one sore joint for another and is never
   harsher on any joint. A limited exercise with no RPE target gets effort 7. An unrated exercise
   counts as moderate everywhere. A joint change with no readiness kind needs the new kind
-  `joint_adjust`. Today's red-flag reports from every check-in revision count and keep the day's route
-  to the end of the day even if a clearance is recorded the same day (a superseded revision's report
-  does not lapse); a red flag typed by mistake holds its joint until the athlete's clearance, and the
-  next day carries no route.
+  `joint_adjust`. Today's red-flag reports from every check-in revision count (a superseded revision's report does
+  not lapse) until the athlete's own clearance for that area, which also ends the route the same day;
+  a red flag typed by mistake holds its joint until that clearance.
 - **Tests that fail without each rule.** pgTAP `pain_checks_test.sql`, `joint_states_test.sql`,
   `joint_rules_test.sql`, `joint_swap_sweep_test.sql` (and the changed keys in
   `day_adjustments_test.sql`); Deno `joints_test.ts`; Flutter `pain_check_contract_test.dart`.
