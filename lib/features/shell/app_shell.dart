@@ -30,6 +30,8 @@ import 'package:tracend/features/today/check_in_gate.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/train/active_workout_screen.dart';
+import 'package:tracend/features/train/guidance/training_guidance_controller.dart';
+import 'package:tracend/features/train/guidance/training_guidance_repository.dart';
 import 'package:tracend/features/train/train_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
@@ -99,6 +101,7 @@ class AppShellRepositories {
     this.proposals,
     this.memory,
     this.dayAdjustment,
+    this.guidance,
   });
 
   final WorkoutRepository? workouts;
@@ -121,6 +124,10 @@ class AppShellRepositories {
   /// Today's same-day readiness adjustment; built from the environment (and
   /// absent without a backend) when not given.
   final DayAdjustmentRepository? dayAdjustment;
+
+  /// Today's training guidance (the lighter-week card, the cardio row); built
+  /// from the environment (and absent without a backend) when not given.
+  final TrainingGuidanceRepository? guidance;
 }
 
 class _AppShellState extends State<AppShell> {
@@ -144,6 +151,9 @@ class _AppShellState extends State<AppShell> {
   /// Today's same-day readiness adjustment, shared by Today and Train. Null
   /// without a backend, where there is no readiness to read.
   late final DayAdjustmentController? _dayAdjustment;
+
+  /// Today's training guidance for Train. Null without a backend.
+  late final TrainingGuidanceController? _guidance;
 
   /// Questions left for the Coach composer by other screens.
   final _coachDrafts = CoachDraftRequests();
@@ -180,6 +190,7 @@ class _AppShellState extends State<AppShell> {
     _checkInGate.dispose();
     _planChanges.dispose();
     _dayAdjustment?.dispose();
+    _guidance?.dispose();
     _coachDrafts.dispose();
     super.dispose();
   }
@@ -267,6 +278,17 @@ class _AppShellState extends State<AppShell> {
         ? null
         : DayAdjustmentController(
             repository: dayAdjustments,
+            serverToday: _serverToday,
+          );
+    final guidance =
+        injected?.guidance ??
+        (live
+            ? SupabaseTrainingGuidanceRepository(Supabase.instance.client)
+            : null);
+    _guidance = guidance == null
+        ? null
+        : TrainingGuidanceController(
+            repository: guidance,
             serverToday: _serverToday,
           );
     _brief = SharedDailyBriefRepository(
@@ -371,6 +393,8 @@ class _AppShellState extends State<AppShell> {
         planChanges: _planChanges,
         workoutRequests: _workoutRequests,
         dayAdjustment: _dayAdjustment,
+        guidance: _guidance,
+        proposals: _proposals,
         onTalkToCoach: _talkToCoach,
         onCheckIn: _openCheckIn,
       ),
