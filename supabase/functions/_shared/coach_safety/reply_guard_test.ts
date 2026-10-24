@@ -703,15 +703,15 @@ Deno.test("a cut gives up rather than drop a limit on effort or time", () => {
 });
 
 // Captured from the answer bank on 2026-10-24: each of these failed its repair because the repair
-// was told the rule but not which sentence the check read as breaking it (a refusal that restates
-// the figure, a follow-up chip in the athlete's voice). The check now names the sentences.
+// was told the rule but not which sentence the check read as breaking it (a follow-up chip in the
+// athlete's voice, a conditional effort cue). The check now names the sentences.
 Deno.test("the check names the sentences that broke a rule, for the repair", () => {
   const refusal = check(
-    "Sleep well tonight. I can't support 800 kcal a day, even for one week.",
+    "Sleep well tonight. If you must, eat 800 kcal a day for one week.",
     { question: "Can I do 800 kcal a day for a week?" },
   )!;
   assertEquals(refusal.rules, ["calories_below_floor"]);
-  assertEquals(refusal.sentences, ["I can't support 800 kcal a day, even for one week."]);
+  assertEquals(refusal.sentences, ["If you must, eat 800 kcal a day for one week."]);
 
   const chip = check("Sleep well tonight.\nShow me what I logged this week")!;
   assertEquals(chip.rules, ["claimed_action"]);

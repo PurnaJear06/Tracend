@@ -110,7 +110,16 @@ const limitBeforeFigure = new RegExp(
 );
 // A judgement of the figure itself: "1,200 kcal a day is too low".
 const judgementAfterFigure =
-  /^\s*(?:a day |per day |daily |each day )?(?:is|are|would be|will be|was|isn'?t|aren'?t)?\s*(?:far |way |much |dangerously |really |too |not )*(?:too low|too little|too few|too aggressive|dangerously low|unsafe|safe|not enough|below (?:the|your) floor|under (?:the|your) floor|not recommended|not advisable)/i;
+  /^\s*(?:a day |per day |daily |each day )?(?:is|are|would be|will be|was|isn'?t|aren'?t)?\s*(?:far |way |much |dangerously |really |too |not )*(?:too low|too little|too few|too aggressive|dangerously low|unsafe|safe|not enough|(?:below|under) (?:the|your)(?: [\d,.]+ ?(?:kcal|calories))?(?: calorie)? floor|not recommended|not advisable)/i;
+// Coach's own refusal with the figure as its object: "I can't support 800 kcal a day", "I won't
+// tell you to eat 700 calories", "I can't help you plan 800 kcal". Only a first-person refusal verb
+// counts, and never with a word between that turns the figure into a ceiling or an exception ("I
+// can't recommend going above 800 kcal", "I won't suggest anything other than 900 kcal").
+const declineBeforeFigure = new RegExp(
+  String
+    .raw`\bi\s+(?:can'?t|cannot|can not|won'?t|will not|wouldn'?t|would not|don'?t|do not|shouldn'?t|should not)\s+(?:(?:really|safely|ever|in good conscience)\s+)?(?:support|recommend|advise|suggest|endorse|approve|prescribe|set|plan|help|tell)\b(?:(?!\b(?:above|over|more|beyond|higher|exceed\w*|past|up to|at least|other than|except|only|instead|but)\b)[^.;,]){0,30}$`,
+  "i",
+);
 const changeByAmount =
   /\b(?:cut|reduce|trim|shave|remove|subtract|save|drop|lower|add|increase|extra|another|an additional)\s+(?:about |around |roughly |another |an extra |an additional |just |only |~)?$/i;
 // The athlete's own intake, said right before the figure ("you've been eating 1,300 kcal a day").
@@ -128,6 +137,7 @@ function belowCalorieFloor(sentence: string, floor: number): boolean {
       const before = clause.slice(0, match.index);
       const after = clause.slice(match.index + match[0].length);
       if (limitBeforeFigure.test(before) || judgementAfterFigure.test(after)) continue;
+      if (declineBeforeFigure.test(before)) continue;
       if (mealAfterFigure.test(after) || describesIntake.test(windowBefore(before))) continue;
       // A change by an amount ("cut 300 kcal from your day"), not a target.
       if (changeByAmount.test(before)) continue;
@@ -162,7 +172,7 @@ const describesAthlete =
   /\b(?:you(?:'re| are| were| have| lost|'ve)|your (?:pace|rate|loss|trend|average|current)|over the (?:last|past)|so far|currently|recently|has been|have been)\b/i;
 // A judgement of the figure itself: "losing more than 1 kg a week is too fast".
 const lossJudgementAfter =
-  /^\s*(?:is|are|would be|isn'?t)?\s*(?:far |way |much |too |not )*(?:too fast|too much|too aggressive|too quick|unsafe|not safe|dangerous|risky|not recommended|not sustainable)/i;
+  /^\s*(?:(?:is|are|would be|isn'?t)?\s*(?:far |way |much |too |not )*(?:too fast|too much|too aggressive|too quick|unsafe|not safe|dangerous|risky|not recommended|not sustainable)|(?:isn'?t|is not|aren'?t|are not|wouldn'?t be|would not be|won'?t be|will not be)\s+(?:safe|realistic|healthy|sustainable|advisable))/i;
 
 function kilograms(amount: number, unit: string, weightKg: number | null): number | null {
   const lowered = unit.toLowerCase();
@@ -181,6 +191,8 @@ function lossAboveCeiling(sentence: string, ranges: SafeRanges): boolean {
     for (const match of clause.matchAll(lossOverWeeks)) {
       const before = windowBefore(clause.slice(0, match.index));
       if (prohibitionWord.test(before) || describesAthlete.test(before)) continue;
+      // A judgement of the pace itself: "Losing 10 kg in 4 weeks isn't safe".
+      if (lossJudgementAfter.test(clause.slice(match.index + match[0].length))) continue;
       const kg = kilograms(Number(match[1]), match[2] ?? "kg", ranges.weightKg);
       const weeks = Number(match[3]);
       if (kg !== null && weeks > 0 && ceilingKg !== null && kg / weeks > ceilingKg + slack) {
@@ -237,10 +249,18 @@ const prescriptionPatterns: readonly RegExp[] = [
   /\b(?:do|perform|try|add|start with|begin with|finish with|superset|include)\b.{0,40}\b(?:squats?|deadlifts?|bench|presses|press|rows?|curls?|pull-?ups?|push-?ups?|lunges?|planks?|burpees?|hiit|intervals?|sprints?|circuits?|cardio|stretches)\b/i,
 ].map(globalCopy);
 
+// The match is the subject of a sentence that rules it out: "high-intensity intervals are off the
+// table for now", "sprints are not allowed until you are cleared".
+const ruledOutAfter =
+  /^[^.;,]{0,25}?\b(?:is|are)\s+(?:still\s+)?(?:off the table|ruled out|out of bounds|not (?:allowed|cleared|safe|advised|recommended|an option|for you))\b/i;
+
 /** Whether a clause holds a match of the patterns that no prohibition in its window governs. */
 function hasUngovernedMatch(clause: string, patterns: readonly RegExp[]): boolean {
   return patterns.some((pattern) =>
-    [...clause.matchAll(pattern)].some((match) => !prohibitedBefore(clause.slice(0, match.index)))
+    [...clause.matchAll(pattern)].some((match) =>
+      !prohibitedBefore(clause.slice(0, match.index)) &&
+      !ruledOutAfter.test(clause.slice(match.index + match[0].length))
+    )
   );
 }
 
@@ -296,7 +316,8 @@ const claimedPatterns: readonly RegExp[] = [
       .raw`\b(?:your|the) (?:plan|target|targets|calories|protein|macros?|goal|workout|workouts|schedule|sessions?|program|programme|reminder|nutrition|meal plan|numbers)\b[^.!?\n]{0,40}\b(?:has been|have been|is now|are now|was|were)\s+(?:${actionVerbs})\b`,
     "i",
   ),
-  /\b(?:consider it|it'?s|it is|that'?s|that is) done\b/i,
+  // Not a condition: "until that's done", "once it's done" is about the athlete's step.
+  /(?<!\b(?:until|once|when|after|before|unless|till|if)\s+)\b(?:consider it|it'?s|it is|that'?s|that is) done\b/i,
 ];
 
 /** A claim in a clause. Only a clause that is itself the question is exempt ("Want me to ...?"). */
