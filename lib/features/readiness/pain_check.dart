@@ -220,7 +220,9 @@ class PainCheckResult {
     return PainCheckResult(
       id: id,
       outcome: outcome,
-      areaState: raw['area_state'] as String? ?? 'none',
+      areaState: raw['area_state'] is String
+          ? raw['area_state'] as String
+          : 'none',
     );
   }
 }

@@ -1224,10 +1224,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (!submission.outcome.routesOut &&
         adjustment?.safetyRoute == null &&
         !held) {
-      final delivery = await submission.delivery.timeout(
-        _areaStateWait,
-        onTimeout: () => PainDelivery(outcome: submission.outcome, sent: false),
-      );
+      // Whatever happens to the send, the answer is shown.
+      final delivery = await submission.delivery
+          .timeout(
+            _areaStateWait,
+            onTimeout: () =>
+                PainDelivery(outcome: submission.outcome, sent: false),
+          )
+          .onError<Object>(
+            (_, _) => PainDelivery(outcome: submission.outcome, sent: false),
+          );
       held = delivery.areaState == 'held';
       if (!mounted) return;
       adjustment = reporting.readiness?.current;

@@ -271,7 +271,7 @@ class PainReportQueue {
               tooOld: error.tooOld,
             );
           }
-        } on Exception catch (error) {
+        } on Object catch (error) {
           debugPrint('Non-critical error: pain report waits: $error');
         }
       }

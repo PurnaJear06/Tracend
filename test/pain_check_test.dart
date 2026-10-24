@@ -64,6 +64,13 @@ class _GatedRepository implements PainCheckRepository {
   }
 }
 
+/// A server whose answer breaks this build with an error, not an exception.
+class _ThrowsError implements PainCheckRepository {
+  @override
+  Future<PainCheckResult> record(PainReport report) async =>
+      throw StateError('broken');
+}
+
 /// Refuses the report when its gate opens.
 class _RefusingRepository implements PainCheckRepository {
   _RefusingRepository(this.gate);
@@ -660,6 +667,18 @@ void main() {
       expect(delivery.areaState, isNull);
       expect((await reporting.state()).isEmpty, isTrue);
     });
+
+    test(
+      'an error that is not an exception keeps the report and the answer',
+      () async {
+        final broken = PainReporting(repository: _ThrowsError(), userId: 'a');
+        final submission = broken.submit(_report(severity: 8));
+        final delivery = await submission.delivery;
+        expect(delivery.sent, isFalse);
+        expect(delivery.outcome, PainOutcome.clinicianToday);
+        expect((await broken.state()).waiting, hasLength(1));
+      },
+    );
 
     test(
       'a refusal that is not about the date is not called too old',

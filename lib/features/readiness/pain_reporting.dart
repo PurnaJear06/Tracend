@@ -128,7 +128,8 @@ class PainReporting {
         refused: refused,
         tooOld: error.tooOld,
       );
-    } on Exception catch (error) {
+    } on Object catch (error) {
+      // Whatever went wrong, the report is kept and the answer stands.
       debugPrint('Non-critical error: pain report waits: $error');
       await _keep(report);
       return PainDelivery(outcome: local, sent: false);

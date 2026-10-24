@@ -164,8 +164,25 @@ Map<String, dynamic> _day({
   ],
 };
 
+/// Reporting whose delivery ends in an error.
+class _BrokenDelivery extends PainReporting {
+  _BrokenDelivery({required super.repository, super.readiness, super.userId});
+
+  @override
+  PainSubmission submit(PainReport report) {
+    // Awaited only later, by the screen; not reported as unhandled before.
+    final delivery = Future<PainDelivery>.error(StateError('broken'))..ignore();
+    return PainSubmission(
+      report: report,
+      outcome: report.outcome,
+      delivery: delivery,
+    );
+  }
+}
+
 class _Harness {
   _Harness({
+    bool brokenDelivery = false,
     bool withSwap = true,
     List<Map<String, dynamic>> jointStates = const [],
     String? safetyRoute,
@@ -180,11 +197,17 @@ class _Harness {
            ),
          ),
        ) {
-    reporting = PainReporting(
-      repository: pain,
-      readiness: readiness,
-      userId: 'athlete-1',
-    );
+    reporting = brokenDelivery
+        ? _BrokenDelivery(
+            repository: pain,
+            readiness: readiness,
+            userId: 'athlete-1',
+          )
+        : PainReporting(
+            repository: pain,
+            readiness: readiness,
+            userId: 'athlete-1',
+          );
   }
 
   final _Server server;
@@ -481,6 +504,17 @@ void main() {
       await tester.pump(const Duration(seconds: 9));
       handle.dispose();
     });
+  });
+
+  testWidgets('a send that breaks still opens the result sheet', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    final h = _Harness(brokenDelivery: true);
+    await _open(tester, h);
+    await _check(tester, where: 'Shoulder', strength: 5);
+    expect(find.text('Use Machine chest press'), findsOneWidget);
+    handle.dispose();
   });
 
   group('no advice on a held area or on a day with a safety route', () {
