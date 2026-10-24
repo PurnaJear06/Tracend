@@ -6,7 +6,9 @@
 // Impellizzeri 2020 and WHO 2020 were added with the readiness rules (B4) and
 // their ids, DOIs and open-access status checked against Europe PMC on 2026-10-23. Finucane 2020,
 // Stiell 1997, Keogh 2017, Schoenfeld 2020, Haugen 2023 and Lopez 2021 were added with the pain
-// check and joint rules (B5-1) and checked against Europe PMC on 2026-10-24.
+// check and joint rules (B5-1) and checked against Europe PMC on 2026-10-24. Coleman 2024,
+// Schumann 2022 and Riebe 2015 were added with the deload and cardio rules (B5-3, B5-4) and
+// checked against Europe PMC on 2026-10-24.
 // `access` says what anyone can read for free: "full_text" is open in PubMed Central,
 // "abstract" is the abstract only.
 // Paid course material (NASM, ACE, K11) is never a source.
@@ -313,6 +315,41 @@ export const sources = Object.freeze({
     pmid: "33433148",
     pmcid: "PMC8126497",
     access: "full_text",
+  }),
+  coleman_2024: source({
+    id: "coleman_2024",
+    label: "Coleman 2024",
+    citation: "Coleman M, Burke R, Augustin F, Piñero A, Maldonado J, Fisher JP, Israetel M, " +
+      "Androulakis Korakakis P, Swinton P, Oberlin D, Schoenfeld BJ. Gaining more from doing " +
+      "less? The effects of a one-week deload period during supervised resistance training on " +
+      "muscular adaptations. PeerJ. 2024;12:e16777.",
+    doi: "10.7717/peerj.16777",
+    pmid: "38274324",
+    pmcid: "PMC10809978",
+    access: "full_text",
+  }),
+  schumann_2022: source({
+    id: "schumann_2022",
+    label: "Schumann 2022",
+    citation: "Schumann M, Feuerbacher JF, Sünkeler M, Freitag N, Rønnestad BR, Doma K, " +
+      "Lundberg TR. Compatibility of concurrent aerobic and strength training for skeletal " +
+      "muscle size and function: an updated systematic review and meta-analysis. Sports Med. " +
+      "2022;52(3):601-612.",
+    doi: "10.1007/s40279-021-01587-7",
+    pmid: "34757594",
+    pmcid: "PMC8891239",
+    access: "full_text",
+  }),
+  riebe_2015: source({
+    id: "riebe_2015",
+    label: "Riebe 2015",
+    citation: "Riebe D, Franklin BA, Thompson PD, Garber CE, Whitfield GP, Magal M, Pescatello " +
+      "LS. Updating ACSM's recommendations for exercise preparticipation health screening. " +
+      "Med Sci Sports Exerc. 2015;47(11):2473-2479.",
+    doi: "10.1249/MSS.0000000000000664",
+    pmid: "26473759",
+    pmcid: null,
+    access: "abstract",
   }),
   tracend_in_house: source({
     id: "tracend_in_house",

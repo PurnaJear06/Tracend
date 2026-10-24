@@ -1750,9 +1750,9 @@ athlete's own server day) or is not exactly the expected shape renders a short b
 the card shows or that nothing is wrong with a joint; anything the athlete tells you about pain still counts"),
 never silence. Budget 2,400 characters; see CONTEXT_BUDGET.
 
-**Seam for B5-3/B5-4 (not built: PR #174 was not merged when this was written).** `get_training_guidance_for_v1`
+**Seam for B5-3/B5-4 (not wired: `get_training_guidance_for_v1` is on main since #174, but it needs a cost measurement before Coach reads it).** `get_training_guidance_for_v1`
 (deload signal, cardio week, cardio withheld) joins in `readinessLines`: read it in parallel with the card under
-the same deadline through `parseTrainingGuidance` (`training/guidance/payload.ts` in #174), add its lines (a
+the same deadline through `parseTrainingGuidance` (`training/guidance/payload.ts`), add its lines (a
 suggested or running deload is offered only through the A8 proposal path; the cardio target and what was done,
 nothing when `cardio_withheld` names a reason, no deload line on a safety-route day), a second trace key
 `guidance`, and a case in `readiness_test.ts` per state.
