@@ -338,6 +338,10 @@ export function parseCoachChatAnswer(
       invalid("evidence_source_invalid", `${path}.source`);
     }
   }
+  // A reasoning step may point at a library source the evidence cites (checked above against the
+  // sources shown this turn): it is the step's evidence, and the app does not show the id.
+  const citedLibraryCodes = (answer.evidence as Record<string, unknown>[])
+    .filter((item) => item.source === "library").map((item) => item.code as string);
   if (answer.reasoning_chain !== undefined) {
     if (!Array.isArray(answer.reasoning_chain)) {
       invalid("reasoning_not_array", "reasoning_chain");
@@ -380,7 +384,10 @@ export function parseCoachChatAnswer(
       if (step.evidence_id !== null && typeof step.evidence_id !== "string") {
         invalid("reasoning_evidence_invalid", `${path}.evidence_id`);
       }
-      if (typeof step.evidence_id === "string" && !permittedEvidence.includes(step.evidence_id)) {
+      if (
+        typeof step.evidence_id === "string" && !permittedEvidence.includes(step.evidence_id) &&
+        !citedLibraryCodes.includes(step.evidence_id)
+      ) {
         invalid("reasoning_evidence_not_permitted", `${path}.evidence_id`);
       }
     }
