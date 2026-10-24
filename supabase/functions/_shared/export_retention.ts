@@ -12,6 +12,7 @@ export async function cleanExpiredExports(dependencies: ExportRetentionDependenc
   const candidates = await dependencies.claim();
   let deleted = 0;
   let failed = 0;
+  let unfinalized = 0;
   for (const candidate of candidates) {
     let succeeded = false;
     if (isSafeStorageKey(candidate.storage_path)) {
@@ -21,9 +22,14 @@ export async function cleanExpiredExports(dependencies: ExportRetentionDependenc
         succeeded = false;
       }
     }
-    await dependencies.complete(candidate.storage_path, succeeded);
+    // One export's failed write-back must not strand the rest of the batch.
+    try {
+      await dependencies.complete(candidate.storage_path, succeeded);
+    } catch {
+      unfinalized += 1;
+    }
     if (succeeded) deleted += 1;
     else failed += 1;
   }
-  return { claimed: candidates.length, deleted, failed };
+  return { claimed: candidates.length, deleted, failed, unfinalized };
 }

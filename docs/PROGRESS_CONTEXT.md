@@ -209,7 +209,6 @@ Decided by the owner on 2026-10-16:
   leave the phone.
 
 Known gaps found:
-- `privacy-export` leaves out several tables (SECURITY_PRIVACY §15).
 - The app's terms and privacy checkboxes don't link to the site pages.
 
 **Website and waitlist (2026-10-13):** the public website (`site/`, Astro, Cloudflare Pages at
@@ -242,6 +241,17 @@ failed-call cost, list-price defaults) and PR 4b (meal-photo AI notice enforced 
 AI notice v5; needs the new build) and PR 5 (Keychain session storage, SHA-pinned actions,
 read-only workflow tokens) are in review. Workstream state:
 [`docs/handoff/security-hardening.md`](./handoff/security-hardening.md).
+
+**Privacy export, deletion and retention fixes (2026-10-24, QA audit group D):** the export now
+carries every table with a `user_id` (Coach threads and messages included) in pages of 1000, with a
+test that fails on a table that is neither exported nor excluded; account deletion pages its file
+lists; an export stuck in `processing` is claimed again after 15 minutes and a dead `ready` export is
+replaced on the next request; the retention worker survives a failing row or stage, reclaims photo
+claims older than 30 minutes, reports codes to Sentry and compares its secret in constant time.
+Migration `20261024070000_privacy_retention_recovery.sql`, which also creates the
+`meal-media-retention-daily` cron job (02:15 UTC; it was made by hand in production) behind Vault.
+Review round 1: keyset paging, no Coach snapshot bodies, linked invite and waitlist rows, a memory
+guard (`export_too_large`).
 
 **Current priority (2026-10-03):** the app-wide graphite + lime redesign. The owner chose palette
 A and the round 3 signature picks (focus logging, muscle map on, big new-best moment, day boxes,
