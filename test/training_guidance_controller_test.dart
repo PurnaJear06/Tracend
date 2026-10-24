@@ -232,4 +232,45 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(repository.loads.length, 1);
   });
+
+  test('a failure that is not an Exception still ends the request', () async {
+    final repository = FakeGuidanceRepository(suggestedJson());
+    var phone = DateTime(2026, 10, 2, 22);
+    var broken = true;
+    final controller = TrainingGuidanceController(
+      repository: repository,
+      clock: () => phone,
+      serverToday: () async {
+        if (broken) throw StateError('the day could not be read');
+        return DateTime(2026, 10, 3);
+      },
+    );
+    addTearDown(controller.dispose);
+    await controller.load(localToday: DateTime(2026, 10, 2));
+    // Midnight passed, so the day is asked for again, and that throws.
+    phone = DateTime(2026, 10, 3, 0, 5);
+    expect(await controller.prepareDeload(), isNull);
+    expect(controller.preparing, isFalse);
+    expect(controller.prepareFailure, TrainingGuidanceFailure.network);
+    expect(repository.prepares, isEmpty);
+    // Nothing is stuck: the next tap works.
+    broken = false;
+    expect(await controller.prepareDeload(), deloadProposalId);
+    expect(controller.preparing, isFalse);
+    expect(controller.prepareFailure, isNull);
+    expect(repository.prepares.single, DateTime(2026, 10, 3));
+  });
+
+  test('a read that throws an Error ends loading too', () async {
+    final repository = FakeGuidanceRepository(suggestedJson())
+      ..loadThrows = StateError('boom');
+    final controller = TrainingGuidanceController(
+      repository: repository,
+      clock: _phoneNow,
+    );
+    addTearDown(controller.dispose);
+    await controller.load(localToday: DateTime(2026, 10, 2));
+    expect(controller.loading, isFalse);
+    expect(controller.loadFailure, TrainingGuidanceFailure.network);
+  });
 }

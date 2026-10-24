@@ -82,7 +82,7 @@ class TrainingGuidanceController extends ChangeNotifier {
       guidance = await _read();
     } on TrainingGuidanceException catch (error) {
       failure = error.failure;
-    } on Exception catch (error) {
+    } on Object catch (error) {
       debugPrint('Non-critical error: training guidance not read: $error');
       failure = TrainingGuidanceFailure.network;
     }
@@ -160,14 +160,17 @@ class TrainingGuidanceController extends ChangeNotifier {
     } on TrainingGuidanceException catch (error) {
       failure = error.failure;
       code = error.code;
-    } on Exception catch (error) {
+    } on Object catch (error) {
+      // Anything else, an Error included, still ends the request: the card
+      // must never be left waiting on a tap that cannot finish.
       debugPrint('Non-critical error: lighter week not prepared: $error');
       failure = TrainingGuidanceFailure.network;
+    } finally {
+      _preparing = false;
+      _prepareFailure = failure;
+      _prepareCode = code;
+      notifyListeners();
     }
-    _preparing = false;
-    _prepareFailure = failure;
-    _prepareCode = code;
-    notifyListeners();
     if (id == null &&
         failure != TrainingGuidanceFailure.network &&
         failure != TrainingGuidanceFailure.otherProposalPending) {

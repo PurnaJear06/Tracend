@@ -104,6 +104,9 @@ class FakeGuidanceRepository implements TrainingGuidanceRepository {
   final prepares = <DateTime>[];
   String prepareId = deloadProposalId;
   TrainingGuidanceException? loadError;
+
+  /// Thrown by a read in place of an answer: not a [TrainingGuidanceException].
+  Object? loadThrows;
   TrainingGuidanceException? prepareError;
 
   /// Runs when a lighter week is prepared, before it answers: the server
@@ -118,6 +121,7 @@ class FakeGuidanceRepository implements TrainingGuidanceRepository {
   Future<TrainingGuidance> load(DateTime localToday) async {
     loads.add(localToday);
     if (loadError != null) throw loadError!;
+    if (loadThrows != null) throw loadThrows!;
     return TrainingGuidance.tryParse(json)!;
   }
 

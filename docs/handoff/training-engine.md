@@ -983,14 +983,18 @@ and cardio dosing") the boundaries. No app change, no new table, no Edge Functio
   `coach`; null with no proposal) and `deload.ends_on` (a running week's last day). A pending or running Coach week
   shows "Proposed by Coach", no rule reasons and no "No AI" line; a missing or unknown origin reads as Coach's. The
   proposal sheet takes its origin from the proposal's own evidence (`CoachProposal.suggestedByRules`), so the two
-  always agree. The running card says "until <day>". (M1) `training-proposals` reads `get_my_coach_proposals_v1` and
-  returns 409 `other_proposal_pending` when another plan-changing proposal (any training kind except a deload) is
-  open, because storing one expires every open training proposal; the card says "You have a change waiting in Coach.
-  Answer it first." (M2) An undone deload holds new suggestions back 14 days from the day it was undone
+  always agree. The running card says "until <day>". (M1) The rules' deload is stored through `public.persist_suggested_deload_v1` (service role only,
+  same arguments as `persist_coach_proposal_v1`). Under the store lock it refuses with SQLSTATE `TP001` when a
+  pending, unexpired 3.0 proposal with a `training` payload that is not a deload is built on the active plan
+  version, because storing a training proposal expires every open one; one built on an older plan, one that ran
+  out, and an unanswered deload do not block. `training-proposals` maps `TP001` to 409 `other_proposal_pending`
+  and keeps no read of its own, so a Coach proposal stored between a check and the store cannot be expired
+  unseen. The card says "You have a change waiting in Coach. Answer it first." (M2) An undone deload holds new suggestions back 14 days from the day it was undone
   (`declined_recently`); it is still not the last deload. (L1) The handler answers an unexpected throw with 503 and
   reports only the fixed name `training_proposals_unexpected` to Sentry. (L2) `persist_coach_proposal_v1` takes
-  `pg_advisory_xact_lock(hashtext(p_user_id::text))` before it replaces an open proposal; the redefinition is the
-  original plus that hunk, pinned by `deload_origin_test.ts`. (L3) The function returns refusal codes only and the
+  `pg_advisory_xact_lock(hashtextextended('tracend.coach_proposal_store:' || p_user_id::text, 0))` (the repo's
+  lock naming) before it replaces an open proposal; the redefinition is the latest earlier definition plus that
+  hunk, found by scanning earlier migrations and pinned by `deload_origin_test.ts`. (L3) The function returns refusal codes only and the
   app words them (`deloadRefusalLine`); `proposal_notices.dart` words stale and refused answers for a card the rules
   made (no "Coach", no first person, "Pull down on Train"), and a deload approved on a route day says a lighter week
   can't start on a day with a referral. (L4) "stalled or slipped"; "Today's readiness reads green, which needs
