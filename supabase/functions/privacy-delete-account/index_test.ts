@@ -52,7 +52,7 @@ function fakeListing(totals: { media: number; exports: number; objects: number }
     return query;
   };
   const client = {
-    from: (table: string) => ({
+    from: () => ({
       select: () => ({
         eq: () => ({
           neq: () =>
