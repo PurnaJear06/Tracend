@@ -1053,7 +1053,8 @@ class _ScriptedRepository
   @override
   Future<CoachDecision?> loadLatest() async => null;
   @override
-  Future<CoachDecision> generate() => throw StateError('not needed');
+  Future<CoachDecision> generate({String? localDate}) =>
+      throw StateError('not needed');
   @override
   Future<Map<String, dynamic>> loadUsage() async => const {};
 }

@@ -149,7 +149,12 @@ export async function call(request: AiRequest, deps: AiCallDeps = {}): Promise<A
       if (response.status === 529 || response.status === 503) {
         return finish(failure("overloaded", null, retryAfter));
       }
-      return finish(failure("provider_error", null));
+      return finish({
+        ok: false,
+        reason: "provider_error",
+        usage: null,
+        httpStatus: response.status,
+      });
     }
     let payload: unknown;
     try {
