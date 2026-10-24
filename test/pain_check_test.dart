@@ -246,6 +246,34 @@ void main() {
       expect(result.areaState, 'limited');
     });
 
+    test('a report that did not ask about red flags sends none, not an empty '
+        'list', () async {
+      await repository().record(
+        PainReport(
+          localDate: '2026-10-24',
+          area: PainArea.back,
+          severity: 3,
+          redFlags: null,
+          idempotencyKey: 'k-2',
+        ),
+      );
+      expect(calls.single.$2['red_flags'], isNull);
+      final back = PainReport.tryParse(
+        jsonDecode(
+          jsonEncode(
+            PainReport(
+              localDate: '2026-10-24',
+              area: PainArea.back,
+              severity: 3,
+              redFlags: null,
+              idempotencyKey: 'k-2',
+            ).toJson(),
+          ),
+        ),
+      )!;
+      expect(back.redFlags, isNull, reason: 'kept as "not asked" in the queue');
+    });
+
     test('names a refusal (22023) apart from a failure to reach it', () async {
       answer = () =>
           throw const PostgrestException(message: 'old', code: '22023');

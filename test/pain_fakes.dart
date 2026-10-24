@@ -20,6 +20,9 @@ class FakePainCheckRepository implements PainCheckRepository {
   /// this build cannot read).
   Object? unreadable;
 
+  /// When set, the server says the area is in this state, whatever the report.
+  String? areaState;
+
   @override
   Future<PainCheckResult> record(PainReport report) async {
     reports.add(report);
@@ -41,14 +44,16 @@ class FakePainCheckRepository implements PainCheckRepository {
     return PainCheckResult(
       id: 'report-${reports.length}',
       outcome: outcome,
-      areaState: switch (outcome) {
-        PainOutcome.urgent ||
-        PainOutcome.clinicianToday ||
-        PainOutcome.clinician => 'held',
-        PainOutcome.modify => 'limited',
-        PainOutcome.watch => 'watch',
-        PainOutcome.clear => 'none',
-      },
+      areaState:
+          areaState ??
+          switch (outcome) {
+            PainOutcome.urgent ||
+            PainOutcome.clinicianToday ||
+            PainOutcome.clinician => 'held',
+            PainOutcome.modify => 'limited',
+            PainOutcome.watch => 'watch',
+            PainOutcome.clear => 'none',
+          },
     );
   }
 }

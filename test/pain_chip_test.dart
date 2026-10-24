@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -86,20 +87,68 @@ class _Server extends FixtureWorkoutRepository {
   ) async => syncs.add(draft);
 }
 
+/// A server that keeps the session it started, with every exercise still as
+/// the plan prescribed it (a swap made on the phone has not reached it).
+class _SessionServer extends _Server {
+  var started = false;
+
+  @override
+  Future<String> start(
+    PlannedWorkout workout,
+    String idempotencyKey, {
+    DateTime? localDate,
+  }) async {
+    started = true;
+    return 'srv-1';
+  }
+
+  @override
+  Future<Map<String, dynamic>?> loadSession(
+    PlannedWorkout workout, {
+    DateTime? localDate,
+  }) async => !started
+      ? null
+      : {
+          'session_id': 'srv-1',
+          'state': 'in_progress',
+          'revision': 0,
+          'idempotency_key': 'k',
+          'actual_started_at': '2026-10-02T09:00:00Z',
+          'exercises': [
+            for (final exercise in _plan.exercises)
+              {
+                'performance_id': 'perf-${exercise.order}',
+                'order': exercise.order,
+                'status': 'unknown',
+                'performance_kind': 'prescribed',
+                'sets': [
+                  for (var n = 1; n <= 3; n++)
+                    {'number': n, 'completed': false},
+                ],
+              },
+          ],
+        };
+}
+
 /// Today as the server describes it, with a gentler shoulder exercise for the
 /// bench press.
-Map<String, dynamic> _day({bool withSwap = true}) => {
+Map<String, dynamic> _day({
+  bool withSwap = true,
+  List<Map<String, dynamic>> jointStates = const [],
+  String? safetyRoute,
+}) => {
   ...adjustmentJson(
     kind: 'none',
     status: 'none',
-    band: 'green',
+    band: safetyRoute == null ? 'green' : 'red',
     triggers: const [],
     confidence: 'high',
     missing: const [],
     exercises: const [bench, row],
+    safetyRoute: safetyRoute,
   ),
   'schema_version': '1.1',
-  'joint_states': <Object>[],
+  'joint_states': jointStates,
   'exercise_joint_options': [
     {
       'exercise_order': 1,
@@ -116,10 +165,21 @@ Map<String, dynamic> _day({bool withSwap = true}) => {
 };
 
 class _Harness {
-  _Harness({bool withSwap = true})
-    : readiness = DayAdjustmentController(
-        repository: FakeDayAdjustmentRepository(_day(withSwap: withSwap)),
-      ) {
+  _Harness({
+    bool withSwap = true,
+    List<Map<String, dynamic>> jointStates = const [],
+    String? safetyRoute,
+    _Server? server,
+  }) : server = server ?? _Server(),
+       readiness = DayAdjustmentController(
+         repository: FakeDayAdjustmentRepository(
+           _day(
+             withSwap: withSwap,
+             jointStates: jointStates,
+             safetyRoute: safetyRoute,
+           ),
+         ),
+       ) {
     reporting = PainReporting(
       repository: pain,
       readiness: readiness,
@@ -127,7 +187,7 @@ class _Harness {
     );
   }
 
-  final server = _Server();
+  final _Server server;
   final pain = FakePainCheckRepository();
   final DayAdjustmentController readiness;
   late final PainReporting reporting;
@@ -139,6 +199,11 @@ Future<void> _open(WidgetTester tester, _Harness h) async {
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await h.readiness.load(localToday: DateTime(2026, 10, 2));
+  await _mount(tester, h);
+}
+
+/// Shows the logger over the harness; a draft it kept is read back.
+Future<void> _mount(WidgetTester tester, _Harness h) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: TracendTheme.dark,
@@ -369,7 +434,175 @@ void main() {
     handle.dispose();
   });
 
+  group('the answer never waits on the network', () {
+    testWidgets('a server that never answers still shows the referral at '
+        'once, and the report waits on the phone', (tester) async {
+      final handle = tester.ensureSemantics();
+      final gate = Completer<void>();
+      final h = _Harness()..pain.hold = gate.future;
+      await _open(tester, h);
+      await _check(tester, where: 'Shoulder', strength: 2, numb: true);
+      expect(h.pain.reports, hasLength(1), reason: 'the send is under way');
+      expect(find.text('Stop this exercise'), findsOneWidget);
+      expect(find.text('Get this checked today'), findsOneWidget);
+      expect(find.textContaining('Saved on this phone'), findsNothing);
+
+      // After the wait it is kept, and the sheet says so.
+      await tester.pump(const Duration(seconds: 9));
+      expect(find.textContaining('Saved on this phone'), findsOneWidget);
+      expect((await h.reporting.state()).waiting, hasLength(1));
+
+      // It lands after all: nothing is left waiting.
+      gate.complete();
+      await tester.pump();
+      await tester.pump();
+      expect((await h.reporting.state()).isEmpty, isTrue);
+      handle.dispose();
+    });
+
+    testWidgets('the chip still marks the exercise and remembers the '
+        'referral while the server is silent', (tester) async {
+      final handle = tester.ensureSemantics();
+      final gate = Completer<void>();
+      final h = _Harness()..pain.hold = gate.future;
+      await _open(tester, h);
+      await _check(tester, where: 'Shoulder', strength: 8);
+      await tester.tap(find.text('Skip this exercise'));
+      await tester.pumpAndSettle();
+      expect(find.text('Pain noted'), findsOneWidget);
+      final preferences = await SharedPreferences.getInstance();
+      expect(
+        SafetyAcknowledgements(preferences, userId: 'athlete-1').isAcknowledged(
+          SafetyAcknowledgements.keyOf('2026-10-02', 'clinician_today'),
+        ),
+        isTrue,
+      );
+      gate.complete();
+      await tester.pump(const Duration(seconds: 9));
+      handle.dispose();
+    });
+  });
+
+  group('no advice on a held area or on a day with a safety route', () {
+    const heldShoulder = {
+      'area': 'shoulder',
+      'state': 'held',
+      'severity': 8,
+      'persistent': false,
+      'hold_outcome': 'clinician',
+    };
+
+    testWidgets('a held area stops the exercise: the hold, no swap, no '
+        'keep going', (tester) async {
+      final handle = tester.ensureSemantics();
+      final h = _Harness(jointStates: [heldShoulder]);
+      await _open(tester, h);
+      await _check(tester, where: 'Shoulder', strength: 5);
+      expect(find.text('Stop this exercise'), findsOneWidget);
+      expect(
+        find.text("Your shoulder is on hold until you've had it checked."),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Use '), findsNothing);
+      expect(find.text('Continue'), findsNothing);
+      expect(find.text('Skip this exercise'), findsOneWidget);
+      expect(find.text('End workout'), findsOneWidget);
+      handle.dispose();
+    });
+
+    testWidgets('a held area with a light pain does not say keep going', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final h = _Harness(jointStates: [heldShoulder]);
+      await _open(tester, h);
+      await _check(tester, where: 'Shoulder', strength: 2);
+      expect(find.text('Keep it light'), findsNothing);
+      expect(find.text('Continue'), findsNothing);
+      expect(find.text('Stop this exercise'), findsOneWidget);
+      handle.dispose();
+    });
+
+    testWidgets('another area that is not held is answered as before', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final h = _Harness(
+        jointStates: [
+          {...heldShoulder, 'area': 'knee'},
+        ],
+      );
+      await _open(tester, h);
+      await _check(tester, where: 'Shoulder', strength: 5);
+      expect(find.text('Use Machine chest press'), findsOneWidget);
+      handle.dispose();
+    });
+
+    testWidgets('an area the server says is held stops the exercise too', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final h = _Harness();
+      h.pain.areaState = 'held';
+      await _open(tester, h);
+      await _check(tester, where: 'Shoulder', strength: 5);
+      expect(find.text('Stop this exercise'), findsOneWidget);
+      expect(find.textContaining('Use '), findsNothing);
+      expect(find.text('Continue'), findsNothing);
+      handle.dispose();
+    });
+
+    testWidgets('a day with a safety route shows the referral and no swap, '
+        'though the options are there', (tester) async {
+      final handle = tester.ensureSemantics();
+      final h = _Harness(safetyRoute: 'clinician_today');
+      await _open(tester, h);
+      await _check(tester, where: 'Shoulder', strength: 5);
+      expect(find.text('Stop this exercise'), findsOneWidget);
+      expect(find.text('Get this checked today'), findsOneWidget);
+      expect(find.textContaining('Use '), findsNothing);
+      expect(find.text('Continue'), findsNothing);
+      // It cannot be closed without choosing.
+      await tester.tapAt(const Offset(195, 20));
+      await tester.pumpAndSettle();
+      expect(find.text('Stop this exercise'), findsOneWidget);
+      handle.dispose();
+    });
+
+    test('the options of a day with a safety route are not read', () {
+      final day = DayAdjustment.tryParse(_day(safetyRoute: 'clinician'))!;
+      expect(day.jointOptionsFor(1), isNull);
+      expect(day.likelyJoint(1), isNull);
+      final quiet = DayAdjustment.tryParse(_day())!;
+      expect(quiet.jointOptionsFor(1), isNotNull);
+      expect(quiet.likelyJoint(1), PainArea.shoulder);
+    });
+  });
+
   group('swapping an exercise during the workout', () {
+    testWidgets('a swap made on the phone survives a restart before the '
+        'server has it', (tester) async {
+      final handle = tester.ensureSemantics();
+      final h = _Harness(server: _SessionServer());
+      await _open(tester, h);
+      await _check(tester, where: 'Shoulder', strength: 5);
+      await tester.tap(find.text('Use Machine chest press'));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.text('Machine chest press'), findsWidgets);
+
+      // The app is closed and opened again; the server still has "prescribed".
+      await tester.pumpWidget(const SizedBox.shrink());
+      await _mount(tester, h);
+      expect(find.text('Machine chest press'), findsWidgets);
+      expect(find.text('Bench press'), findsNothing);
+      await tester.pump(const Duration(seconds: 1));
+      final sent = (h.server.syncs.last['exercises'] as List).first as Map;
+      expect(sent['performance_kind'], 'substituted');
+      expect(sent['performed_name'], 'Machine chest press');
+      handle.dispose();
+    });
+
     test('logs as a substituted performance for pain, with no load', () {
       final draft = ExerciseDraft(_plan.exercises.first);
       expect(draft.swapFields, isEmpty);

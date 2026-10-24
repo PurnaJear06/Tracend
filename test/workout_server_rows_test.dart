@@ -173,6 +173,11 @@ Future<void> _open(WidgetTester tester, _Server server) async {
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
+  await _mount(tester, server);
+}
+
+/// Shows the logger over [server]; the draft it kept is read back.
+Future<void> _mount(WidgetTester tester, _Server server) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: TracendTheme.dark,
@@ -329,6 +334,51 @@ void main() {
       expect(sent['performed_name'], 'Machine chest press');
       expect(sent['substitution_reason'], 'pain');
       expect(sent['order'], 1, reason: "the server's own row");
+      handle.dispose();
+    });
+
+    testWidgets('logged sets and a substitution the server made meanwhile '
+        'need attention: no rename, nothing synced', (tester) async {
+      final handle = tester.ensureSemantics();
+      final server = _Server({1: 3, 2: 3});
+      await _open(tester, server);
+      await _doneSet(tester, 1);
+      server.swaps[1] = (
+        name: 'Machine chest press',
+        slug: 'machine-chest-press',
+      );
+      server.refuseNext = true;
+      server.syncs.clear();
+      await _tapLabel(tester, 'More weight');
+
+      expect(server.syncs, isEmpty, reason: 'nothing under another name');
+      expect(find.text('Needs attention'), findsWidgets);
+      expect(find.text('Bench press'), findsWidgets, reason: 'not renamed');
+      expect(find.text('Machine chest press'), findsNothing);
+      handle.dispose();
+    });
+
+    testWidgets('a restart with logged sets and a substitution on the server '
+        'opens the draft as it was and needs attention', (tester) async {
+      final handle = tester.ensureSemantics();
+      final server = _Server({1: 3, 2: 3});
+      await _open(tester, server);
+      await _doneSet(tester, 1);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpWidget(const SizedBox.shrink());
+
+      server.swaps[1] = (
+        name: 'Machine chest press',
+        slug: 'machine-chest-press',
+      );
+      server.syncs.clear();
+      await _mount(tester, server);
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.text('Bench press'), findsWidgets);
+      expect(find.text('Machine chest press'), findsNothing);
+      expect(find.text('Needs attention'), findsWidgets);
+      expect(server.syncs, isEmpty, reason: 'the draft was kept, not sent');
       handle.dispose();
     });
 
