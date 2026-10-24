@@ -669,9 +669,43 @@ table; Contract 5 in the program plan the payload (1.0 as built).
   (reasons plus action); the app may use it or compose its own copy from `triggers`. (c) The changes
   sweep runs a synthetic matrix of plans, not the B2 plan sweep.
 
+**B4-2 (review; same-day readiness adjustment, app side).** `lib/features/readiness/` holds the
+parser (`day_adjustment.dart`), repository, one shared controller (`DayAdjustmentController`, owned by
+the shell and given to Today and Train), the card (`day_adjustment_card.dart`) and all its words
+(`readiness_copy.dart`). No server change.
+- **Date.** The date sent is always the server's: Train passes the hub's `local_today` after each
+  hub load; otherwise the shell asks the hub (`get_my_training_hub(7)`) once and again only when the
+  phone's day changes or the server refuses the date. The phone's date is never sent. An adjustment
+  whose `local_date` is not the server's today is neither shown nor applied; an answer is sent for the
+  day on screen.
+- **States** (`dayCardState`): safety, proposed, accepted, begun (started or done, read only),
+  declined, check-in, low recovery, cannot-train, coach-adjusted, note (mild pain or an earlier answer
+  that no longer stands). A safety route is tested first and stands over any stored answer.
+- **Heart-derived signals.** `recovery_low` with no proposal shows "What Tracend sees" and offers
+  Check in, Talk to Coach and the three choices; nothing is applied or pre-selected. A choice is one
+  tap and sends `chosen_kind`.
+- **Reasons.** `previous_answer.reason` is `check_in` ("Your check-in changed") or `new_data` ("New
+  sleep or recovery data came in"); any other value reads "Things changed since you answered". An
+  accepted earlier answer is said to stay until the athlete chooses again, because `start_workout`
+  applies the accepted unsuperseded row; the app then applies the set counts of today's option of that
+  kind so the logger matches the server's rows.
+- **Applied state.** `DayAdjustment.applyTo(workout)` lowers set counts (reduce_sets) and sets a held
+  target (`hold`, last load and reps) on Train, the overview, the logger and Today's strip; the plan
+  is never edited. Easy cardio leaves the sets. `nextTargetWhy` explains a `day_adjustment` target.
+- **Talk to Coach.** `CoachDraftRequests` (shell-owned) puts a question in the Coach composer; it is
+  never sent for the athlete.
+- **Not done.** The easy-cardio heart-rate line ("under N bpm, the top of your Easy zone") is not
+  shown: it needs the C3 profile loaded on Today and Train. The Home Screen widget snapshot still
+  counts the plan's sets. `PlanChanges` is not announced: the overlay changes no plan, and Today and
+  Train share the controller.
+- **Tests.** `day_adjustment_card_test.dart` (every state, accept, keep plan, Undo, safety, stale
+  data, wrong date, reasons, copy lint), `day_adjustment_controller_test.dart`,
+  `today_day_adjustment_test.dart`, `train_day_adjustment_test.dart`,
+  `contract/day_adjustment_rpc_contract_test.dart` (parses every B4-1 fixture, pins the parameters).
+
 ## Next agent starts here
 
-B4-2 (the app side of the readiness adjustment) builds on B4-1's RPCs (see the B4-1 section); B5
+B4-2 (the app side) is in review; B5
 (deloads, cardio dosing, joint rules, pain check) builds on B3's targets (`private.next_session_targets`,
 hub 1.7), the templates and B4-1's `day_adjustments`. B6's server wiring is done (see the B6
 section). The briefs are in the program doc.

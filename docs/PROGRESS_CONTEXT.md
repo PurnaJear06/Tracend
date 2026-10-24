@@ -32,7 +32,7 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   `20261023140024`): `day_adjustments`, `get_my_day_adjustment_v1` / `respond_to_day_adjustment_v1`
   (hold loads, one set fewer or easy cardio for today only; one tap and Undo; the recovery score never
   adjusts a session alone, the athlete may choose), `start_workout` building the adjusted sets and B3
-  ignoring adjusted sessions as evidence for lowering a load. Next: B4-2 (app), then B5. Handoff:
+  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). Next: B5. Handoff:
   [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping

@@ -19,6 +19,7 @@ import 'package:tracend/features/coach/widgets/coach_thinking_indicator.dart';
 import 'package:tracend/features/coach/widgets/fact_suggestion_chip.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/shared/formatting.dart';
+import 'package:tracend/shared/coach_draft_requests.dart';
 import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
@@ -57,6 +58,7 @@ class CoachScreen extends StatefulWidget {
     this.proposals,
     this.planChanges,
     this.memory,
+    this.draftRequests,
     super.key,
   });
   final CoachRepository repository;
@@ -69,6 +71,10 @@ class CoachScreen extends StatefulWidget {
   /// Saves what the athlete confirms when Coach suggests a fact. Null without a
   /// backend, where Coach suggests none.
   final CoachMemoryRepository? memory;
+
+  /// Questions other screens leave for the composer ("Talk to Coach" on
+  /// today's readiness card). The text is put in the box, never sent.
+  final CoachDraftRequests? draftRequests;
 
   /// Announced when an approved or undone proposal changed the plan, the
   /// targets or the goal, so the screens that show them reload.
@@ -162,6 +168,8 @@ class _CoachScreenState extends State<CoachScreen> {
   void initState() {
     super.initState();
     widget.aiConsent?.addListener(_consentChanged);
+    widget.draftRequests?.addListener(_takeDraft);
+    _takeDraft();
     if (widget.repository is CoachContextRepository) {
       _contextStatus = (widget.repository as CoachContextRepository)
           .loadContextStatus();
@@ -169,9 +177,25 @@ class _CoachScreenState extends State<CoachScreen> {
     _restoreChat();
   }
 
+  /// Puts a question another screen left into the composer: in an empty box,
+  /// or under what the athlete had already typed.
+  void _takeDraft() {
+    final text = widget.draftRequests?.take();
+    if (text == null) return;
+    final typed = _composer.text;
+    _composer.text = typed.trim().isEmpty ? text : '$typed\n\n$text';
+    _composer.selection = TextSelection.collapsed(
+      offset: _composer.text.length,
+    );
+  }
+
   @override
   void didUpdateWidget(CoachScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.draftRequests != widget.draftRequests) {
+      oldWidget.draftRequests?.removeListener(_takeDraft);
+      widget.draftRequests?.addListener(_takeDraft);
+    }
     if (oldWidget.aiConsent != widget.aiConsent) {
       oldWidget.aiConsent?.removeListener(_consentChanged);
       widget.aiConsent?.addListener(_consentChanged);
@@ -181,6 +205,7 @@ class _CoachScreenState extends State<CoachScreen> {
   @override
   void dispose() {
     widget.aiConsent?.removeListener(_consentChanged);
+    widget.draftRequests?.removeListener(_takeDraft);
     _composer.dispose();
     _scroll.dispose();
     _threadList.dispose();

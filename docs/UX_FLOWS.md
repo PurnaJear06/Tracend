@@ -426,14 +426,25 @@ Reading order:
    set grouped by exercise, filling lime as sets are logged in Train ("4 of 15 sets logged",
    "Done · 15 sets logged"). The coach's note sits under it: today's first training adjustment,
    else today's training summary, as advice in its own words, labelled "Coach · ‹confidence›"; it
-   never changes the prescribed sets. A decision from another day is not shown. **Planned (B4-2):** a
-   readiness card sits between the strip and the note when the server proposes an adjustment
-   (`get_my_day_adjustment_v1`): the reasons in plain words, **Hold weights**, **Use lighter
-   session** or **Swap to easy cardio**, and **Train as planned**. One tap applies it with the toast
-   "Today's session is lighter. Undo". The strip then shows the adjusted set total, and the
-   training note is hidden while a card is showing so it cannot contradict it. A low recovery score
-   with no check-in asks for the check-in and offers the same choices; pain of 7 or more shows a
-   fixed referral sheet and no training button. With AI coaching
+   never changes the prescribed sets. A decision from another day is not shown. **Readiness card
+   (B4-2):** a card sits between the strip and the note whenever `get_my_day_adjustment_v1` has
+   something to say, read for the hub's `local_today` (never the phone's date). Proposed: the title
+   for the kind, the server's sentence (reasons plus action), **What Tracend sees** (recovery score
+   with its confidence, HRV and resting heart rate against the athlete's usual, last night's sleep;
+   whatever is missing is said to be missing), then **Hold weights**, **Use lighter session** or
+   **Swap to easy cardio**, **Train as planned**, **Other options** and **Talk to Coach**. One tap
+   applies the choice (haptic, toast, no confirm sheet). The card then reads "Lighter session set for
+   today." with **Undo** (back to the plan) and **Change** until the workout starts; the strip shows
+   the adjusted set total ("4 of 12 sets"). After the start the applied answer is shown read only.
+   While the card proposes or has an answer, the training note is hidden so it cannot contradict it.
+   A low recovery score alone, or with no check-in, never applies or pre-selects anything: the card
+   says what it sees, offers **Check in**, **Talk to Coach** and **Or choose for yourself** (the same
+   three choices, each one tap). **Talk to Coach** opens Coach with a question in the box that the
+   athlete sends, or not. An earlier accepted answer that the rules no longer back is named ("Your
+   check-in changed." or "New sleep or recovery data came in.") and stays in force until the athlete
+   answers again, as `start_workout` applies it. A safety route (pain of 7 or more today) shows the
+   referral card and, once after the check-in is saved, a sheet with **Got it**; no training button,
+   and it stands over any stored answer, also after the session started. With AI coaching
    off the note says no daily decision is generated and where to turn it on; with no decision it
    says to tap Sync. **Open in Train** (and the header) goes to Train. With no workout it reads
    **Rest day** and names the next planned session.
@@ -812,10 +823,12 @@ confirmation actions. The tab reads top to bottom:
   swipe pages back up to three weeks, never past this week (VoiceOver: "Previous week" and "Next
   week" actions); "Week of 21 September" with a **This week** button shows while another week is
   open.
-- **Readiness adjustment (planned, B4-2).** Directly under the readiness line, the same card as on
-  Today; the exercise lines show the adjusted value ("3 × 6 to 8 · hold 60 kg × 8", the old set
-  count struck through and read as "3 sets, down from 4"), and the workout detail header says
-  "Lighter today: 12 of 15 sets" once accepted.
+- **Readiness adjustment (B4-2).** Directly under the readiness line, on today's date only, the same
+  card as on Today (answers on either tab show on both). Once accepted, the exercise lines show the
+  adjusted value ("2 × 6 to 8 · hold 57.5 kg × 6", the plan's set count struck through beside the row
+  and read as "2 sets of 6 to 8 reps, down from 3 sets"), the hero and list count the lighter total,
+  and the workout overview says "Lighter today: 12 of 16 sets" (or "Weights held today"). Starting the
+  workout uses those sets and held weights; an easy-cardio answer leaves the strength sets as planned.
 - **Readiness line.** One sentence about state, never advice: "Recovery is excellent." (80+),
   "Recovery is good." (65+), "Recovery is moderate." (50+), "Recovery is low today." (35+),
   "Recovery is poor today.", "Building your baseline." with no score, and "Connect Apple Health to
@@ -1126,7 +1139,7 @@ preference?** prompt, which saves a durable preference only on **Save** (**Dismi
 The **same-day readiness adjustment** (coaching platform, chunk B4) is not a persistent change, so
 it does not use this flow: it is a one-tap, same-day, reversible choice shown on Today (§5) and
 Train (§7), with Undo until the workout starts and no confirm sheet. Its server side is built
-(B4-1); the app side is planned (B4-2).
+(B4-1) and so is the app side (B4-2).
 
 ### 10.1 Coach proposal card (A8)
 

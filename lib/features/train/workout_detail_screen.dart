@@ -78,6 +78,10 @@ class WorkoutOverviewBody extends StatelessWidget {
           const SizedBox(height: TracendSpacing.xs),
           Text(objective, style: textTheme.bodyLarge),
         ],
+        if (dayAdjustmentNote(workout) case final note?) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          TrainNote(icon: CupertinoIcons.heart_circle, text: note),
+        ],
         if (warmUp.isNotEmpty) ...[
           const _Heading('Warm-up'),
           TrainNote(icon: CupertinoIcons.flame, text: warmUp),
