@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -200,7 +202,11 @@ void main() {
     final report = h.pain.reports.single;
     expect(report.area, PainArea.shoulder);
     expect(report.severity, 2);
-    expect(report.redFlags, isEmpty);
+    expect(
+      report.redFlags,
+      isNull,
+      reason: 'only two of the ten questions were asked, so none is claimed',
+    );
     expect(report.localDate, '2026-10-02', reason: "the server's day");
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
@@ -339,7 +345,13 @@ void main() {
     final state = await h.reporting.state();
     expect(state.refused, hasLength(1));
     expect(state.waiting, isEmpty);
-    expect(PainReportQueue.storageKeyFor('athlete-1'), isNotEmpty);
+    // Kept on the phone as refused, with the report's own answers.
+    final preferences = await SharedPreferences.getInstance();
+    final stored = jsonDecode(
+      preferences.getString(PainReportQueue.storageKeyFor('athlete-1'))!,
+    );
+    expect((stored as List).single, containsPair('refused', true));
+    expect(stored.single, containsPair('severity', 6));
     handle.dispose();
   });
 

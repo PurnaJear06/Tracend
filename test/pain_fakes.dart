@@ -9,12 +9,35 @@ class FakePainCheckRepository implements PainCheckRepository {
   /// When set, every report is refused with this failure.
   PainCheckFailure? failure;
 
+  /// For a refusal: the report is older than the server records (else it is a
+  /// value the server does not take).
+  bool tooOld = true;
+
+  /// When set, the server does not answer until this completes.
+  Future<void>? hold;
+
+  /// When set, the server takes the report and answers with this (a payload
+  /// this build cannot read).
+  Object? unreadable;
+
   @override
   Future<PainCheckResult> record(PainReport report) async {
     reports.add(report);
+    final hold = this.hold;
+    if (hold != null) await hold;
     final failure = this.failure;
-    if (failure != null) throw PainCheckException(failure);
+    if (failure != null) {
+      throw PainCheckException(failure, tooOld: tooOld);
+    }
     final outcome = report.outcome;
+    if (unreadable != null) {
+      return PainCheckResult(
+        id: '',
+        outcome: outcome,
+        areaState: 'none',
+        understood: false,
+      );
+    }
     return PainCheckResult(
       id: 'report-${reports.length}',
       outcome: outcome,

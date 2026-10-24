@@ -15,6 +15,7 @@ class PainNoticeCard extends StatelessWidget {
     required this.onTryAgain,
     required this.onReportAgain,
     required this.onAcknowledge,
+    this.refusedTooOld = true,
     this.busy = false,
     super.key,
   });
@@ -22,8 +23,12 @@ class PainNoticeCard extends StatelessWidget {
   /// A pain report waits on this phone.
   final bool waiting;
 
-  /// Tracend refused a pain report as too old; it was not recorded.
+  /// Tracend refused a pain report; it was not recorded.
   final bool refused;
+
+  /// Every refusal was for the report's age. False when one was for a value
+  /// the server does not take, which is said in words that do not blame age.
+  final bool refusedTooOld;
   final VoidCallback onTryAgain;
   final VoidCallback onReportAgain;
   final VoidCallback onAcknowledge;
@@ -70,7 +75,7 @@ class PainNoticeCard extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                painNotSentBody,
+                refusedTooOld ? painNotSentBody : painNotRecordedBody,
                 style: textTheme.bodyMedium?.copyWith(
                   color: colors.textSecondary,
                 ),

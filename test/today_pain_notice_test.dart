@@ -181,7 +181,7 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       final h = _Harness(_quiet());
       h.pain.failure = PainCheckFailure.retry;
-      await h.reporting.submit(_report());
+      await h.reporting.submit(_report()).delivery;
       await _pump(tester, h);
       expect(find.text('Your pain report is waiting to be sent'), findsOne);
 
@@ -201,7 +201,7 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       final h = _Harness(_quiet());
       h.pain.failure = PainCheckFailure.refused;
-      await h.reporting.submit(_report(severity: 8));
+      await h.reporting.submit(_report(severity: 8)).delivery;
       await _pump(tester, h);
       expect(find.text('A pain report could not be recorded'), findsOne);
       // Leaving and coming back does not lose it.

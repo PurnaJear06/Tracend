@@ -196,31 +196,34 @@ void main() {
     );
   });
 
-  test('clear removes the pending envelope after an inline save', () async {
-    SharedPreferences.setMockInitialValues({});
-    final queue = await buildQueue();
-    await queue.enqueue(
-      payload: const {
-        'sleep_quality': 3,
-        'energy': 3,
-        'soreness': 3,
-        'hunger': 3,
-        'mood': 3,
-        'pain_severity': 0,
-        'available_to_train': true,
-        'note': '',
-      },
-      localDate: '2026-09-06',
-      timezone: 'Asia/Kolkata',
-    );
-    await queue.clear();
-    expect(
-      (await SharedPreferences.getInstance()).getString(
-        'daily_check_in_pending',
-      ),
-      isNull,
-    );
-  });
+  test(
+    'clearDelivered removes the pending envelope after an inline save',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final queue = await buildQueue();
+      final key = await queue.enqueue(
+        payload: const {
+          'sleep_quality': 3,
+          'energy': 3,
+          'soreness': 3,
+          'hunger': 3,
+          'mood': 3,
+          'pain_severity': 0,
+          'available_to_train': true,
+          'note': '',
+        },
+        localDate: '2026-09-06',
+        timezone: 'Asia/Kolkata',
+      );
+      await queue.clearDelivered(key);
+      expect(
+        (await SharedPreferences.getInstance()).getString(
+          'daily_check_in_pending',
+        ),
+        isNull,
+      );
+    },
+  );
 
   group('per athlete', () {
     const athleteA = '11111111-1111-4111-8111-111111111111';

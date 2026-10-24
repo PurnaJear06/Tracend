@@ -9,6 +9,7 @@ import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/notification_repository.dart';
+import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/readiness/pain_check_sheet.dart';
 import 'package:tracend/features/readiness/pain_reporting.dart';
 import 'package:tracend/features/readiness/safety_copy.dart';
@@ -186,6 +187,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   bool _timingRefused = false;
   bool _ready = false;
   _Sync _sync = _Sync.saving;
+
+  /// The server's rows name an exercise differently from what is logged on
+  /// it here (or lack a set that has something on it). Nothing is relabelled
+  /// or dropped and nothing is sent until the rows fit again: the draft stays
+  /// on this phone and the sync needs attention.
+  bool _rowsConflict = false;
 
   /// The workout is finished or discarded: nothing is saved any more.
   bool _closed = false;
@@ -556,6 +563,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       }
       if (draft.sets.length != sets.length) fits = false;
     }
+    _rowsConflict = !fits;
     return (fits: fits, changed: changed);
   }
 
@@ -737,7 +745,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   /// The draft. With [notBefore] (for the server), set times before it are
   /// left out; without [timing], every set's timing keys are.
-  Map<String, dynamic> _draft({DateTime? notBefore, bool timing = true}) => {
+  Map<String, dynamic> _draft({
+    DateTime? notBefore,
+    bool timing = true,
+    bool local = false,
+  }) => {
     'workout_id': widget.workout.id,
     'session_id': _sessionId,
     'idempotency_key': _idempotencyKey,
@@ -750,6 +762,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           'pain_flag': draft.pain,
           'rest_seconds': draft.exercise.restSeconds,
           ...draft.swapFields,
+          // Only this phone needs to know that a swap waits to be confirmed
+          // (and which catalog exercise it is), so a restart keeps it.
+          if (local && draft.swapPending) 'swap_pending': true,
+          if (local && draft.exercise.swappedFrom != null)
+            'exercise_slug': ?draft.exercise.exerciseSlug,
           'sets': [
             for (var j = 0; j < draft.sets.length; j++)
               {
@@ -765,7 +782,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// the running rest and the end of the last rest, which only the device
   /// needs.
   Map<String, dynamic> _localDraft() => {
-    ..._draft(),
+    ..._draft(local: true),
     'actual_started_at': _startedAt.toUtc().toIso8601String(),
     _serverStartedKey: ?_serverStartedAt?.toUtc().toIso8601String(),
     if (_timingRefused) _timingRefusedKey: true,
@@ -816,12 +833,21 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         return _Sync.offline;
       }
     }
-    if (!_rowsAligned && await _readRows(id) == null) {
-      // The server's rows are not known yet: sending sets now could name a
-      // set it does not have. The draft is on the phone; the next save tries
-      // again.
-      if (mounted) setState(() => _sync = _Sync.offline);
-      return _Sync.offline;
+    if (!_rowsAligned || _rowsConflict) {
+      final rows = await _readRows(id);
+      if (rows == null) {
+        // The server's rows are not known yet: sending sets now could name a
+        // set it does not have. The draft is on the phone; the next save
+        // tries again.
+        if (mounted) setState(() => _sync = _Sync.offline);
+        return _Sync.offline;
+      }
+      if (!rows.fits) {
+        // The rows and what is logged disagree: keep the draft, send none of
+        // it under another exercise's name, and say so.
+        if (mounted) setState(() => _sync = _Sync.attention);
+        return _Sync.attention;
+      }
     }
     if (mounted) setState(() => _sync = _Sync.saving);
     var first = await _send(id);
@@ -1176,30 +1202,53 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (reporting == null || _closed || _viewingCompleted) return;
     final draft = _exercises[exercise];
     final order = draft.exercise.order;
-    final adjustment = reporting.readiness?.current;
+    final before = reporting.readiness?.current;
     final submission = await showPainCheckSheet(
       context,
       reporting: reporting,
       exerciseName: draft.exercise.name,
       localDate: reporting.readiness?.serverDay ?? _dayText(widget.clock()),
-      preselected: adjustment?.likelyJoint(order),
+      preselected: before?.likelyJoint(order),
       exercisePerformanceId: draft.performanceId,
     );
     if (submission == null || !mounted) return;
     draft.pain = true;
     _changed();
+    final area = submission.report.area;
+    var adjustment = reporting.readiness?.current;
+    // The answer is shown at once, from what the phone knows: today's safety
+    // route, an area that is already held, and the report's own outcome. The
+    // server's word on the area is waited for only briefly, and only when
+    // nothing here already stops the exercise.
+    var held = _areaHeld(adjustment, area);
+    if (!submission.outcome.routesOut &&
+        adjustment?.safetyRoute == null &&
+        !held) {
+      final delivery = await submission.delivery.timeout(
+        _areaStateWait,
+        onTimeout: () => PainDelivery(outcome: submission.outcome, sent: false),
+      );
+      held = delivery.areaState == 'held';
+      if (!mounted) return;
+      adjustment = reporting.readiness?.current;
+    }
+    final dayRoute = adjustment?.safetyRoute;
+    final stops = held || dayRoute != null || submission.outcome.routesOut;
     // A swap only before anything is logged on the exercise, and never for one
-    // already swapped: its options are for the plan's exercise.
-    final swap = draft.hasEntries || draft.exercise.swappedFrom != null
+    // already swapped: its options are for the plan's exercise. None when the
+    // exercise stops, and none on a day with a safety route.
+    final swap = stops || draft.hasEntries || draft.exercise.swappedFrom != null
         ? null
-        : adjustment?.jointOptionsFor(order)?.options[submission.report.area];
+        : adjustment?.jointOptionsFor(order)?.options[area];
     final action = await showPainResultSheet(
       context,
       submission: submission,
       swap: swap,
+      dayRoute: dayRoute,
+      heldArea: held,
     );
     // The referral was read here: Today does not open it again for the day.
-    final route = submission.outcome.route;
+    final route = stricterRoute(submission.outcome.route, dayRoute);
     if (route != null) {
       unawaited(
         reporting.acknowledge(
@@ -1231,6 +1280,19 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         break;
     }
   }
+
+  /// How long the server's word on whether the area is held is waited for
+  /// before the answer is shown from what the phone knows.
+  static const _areaStateWait = Duration(milliseconds: 1500);
+
+  /// Whether [area] is held today: a hold that stays until the athlete has
+  /// been seen. Judged from today's readiness; the server's answer to the
+  /// report adds to it.
+  static bool _areaHeld(DayAdjustment? adjustment, PainArea area) =>
+      adjustment?.jointStates.any(
+        (state) => state.area == area && state.state == JointStateKind.held,
+      ) ??
+      false;
 
   static String _dayText(DateTime day) =>
       '${day.year.toString().padLeft(4, '0')}-'

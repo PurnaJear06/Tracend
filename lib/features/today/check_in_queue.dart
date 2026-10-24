@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:tracend/features/readiness/pain_check.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 
 /// Performs the `save_daily_check_in` RPC for a replayed envelope.
@@ -76,16 +76,30 @@ enum CheckInPainState {
 /// The envelope is kept per athlete, so a check-in waiting for one account is
 /// never sent under another signed in on the same phone, and survives its own
 /// athlete's sign-out until they return.
+///
+/// A new check-in replaces the envelope that waits, with one exception: an
+/// envelope that carries a pain check is never replaced and lost. It moves to
+/// a list of earlier envelopes that are sent first, in the order they were
+/// made (the server counts the last one sent as the day's check-in), so a red
+/// flag in a check-in that never got through is not overwritten by a second
+/// one.
 class CheckInQueue {
   CheckInQueue(this._preferences, {String? userId})
-    : _key = userId == null ? legacyStorageKey : storageKeyFor(userId);
+    : _key = userId == null ? legacyStorageKey : storageKeyFor(userId),
+      _earlierKey = userId == null ? earlierKeyFor('') : earlierKeyFor(userId);
   final SharedPreferences _preferences;
   final String _key;
+  final String _earlierKey;
 
   /// Builds before per-athlete envelopes kept one for the device.
   static const legacyStorageKey = 'daily_check_in_pending';
 
   static String storageKeyFor(String userId) => '$legacyStorageKey.$userId';
+
+  /// The earlier envelopes with a pain check that a newer check-in did not
+  /// replace.
+  static String earlierKeyFor(String userId) =>
+      '$legacyStorageKey.earlier.$userId';
 
   /// Persist a check-in envelope for possible replay, returning the generated
   /// idempotency key. The same key serves both the immediate save attempt and
@@ -95,6 +109,7 @@ class CheckInQueue {
     required String localDate,
     required String timezone,
   }) async {
+    await _keepEarlier();
     final key = newIdempotencyKey();
     await _preferences.setString(
       _key,
@@ -108,132 +123,254 @@ class CheckInQueue {
     return key;
   }
 
-  /// Remove the pending envelope after an immediately-successful inline save.
-  Future<void> clear() => _preferences.remove(_key);
+  /// Moves the waiting envelope to the earlier ones when it carries a pain
+  /// check, so the one about to be written does not overwrite it.
+  Future<void> _keepEarlier() async {
+    final waiting = _readEnvelope(_preferences.getString(_key));
+    if (waiting == null || !_hasPainCheck(waiting['payload'] as Map)) return;
+    final earlier = _readEarlier();
+    if (earlier.any(
+      (e) => e['idempotency_key'] == waiting['idempotency_key'],
+    )) {
+      return;
+    }
+    await _writeEarlier([...earlier, waiting]);
+  }
 
-  /// Replay the pending envelope, if any.
+  /// A stored envelope that has all it needs, else null.
+  static Map<String, dynamic>? _readEnvelope(Object? stored) {
+    try {
+      final decoded = stored is String ? jsonDecode(stored) : stored;
+      if (decoded is! Map) return null;
+      final envelope = Map<String, dynamic>.from(decoded);
+      if (envelope['idempotency_key'] is! String ||
+          envelope['local_date'] is! String ||
+          envelope['timezone'] is! String ||
+          envelope['payload'] is! Map) {
+        return null;
+      }
+      return envelope;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  List<Map<String, dynamic>> _readEarlier() {
+    final stored = _preferences.getString(_earlierKey);
+    if (stored == null) return const [];
+    try {
+      final list = jsonDecode(stored);
+      if (list is! List) return const [];
+      return [for (final item in list) ?_readEnvelope(item)];
+    } on FormatException {
+      return const [];
+    }
+  }
+
+  Future<void> _writeEarlier(List<Map<String, dynamic>> envelopes) async {
+    if (envelopes.isEmpty) {
+      await _preferences.remove(_earlierKey);
+      return;
+    }
+    await _preferences.setString(_earlierKey, jsonEncode(envelopes));
+  }
+
+  /// Remove the pending envelope with [idempotencyKey], wherever it is kept,
+  /// once the server has it.
+  Future<void> clearDelivered(String idempotencyKey) async {
+    final current = _readEnvelope(_preferences.getString(_key));
+    if (current != null && current['idempotency_key'] == idempotencyKey) {
+      await _preferences.remove(_key);
+    }
+    final earlier = _readEarlier();
+    if (earlier.any((e) => e['idempotency_key'] == idempotencyKey)) {
+      await _writeEarlier([
+        for (final e in earlier)
+          if (e['idempotency_key'] != idempotencyKey) e,
+      ]);
+    }
+  }
+
+  /// The server refused the pain answers of the envelope with
+  /// [idempotencyKey] (22023): it stays, marked, so the athlete is told and
+  /// the rest of the check-in is not lost. [tooOld] says the refusal was for
+  /// the date.
+  Future<void> markPainRefused(
+    String idempotencyKey, {
+    required bool tooOld,
+  }) async {
+    Map<String, dynamic> marked(Map<String, dynamic> envelope) => {
+      ...envelope,
+      'pain_refused': true,
+      'pain_refused_too_old': tooOld,
+    };
+    final current = _readEnvelope(_preferences.getString(_key));
+    if (current != null && current['idempotency_key'] == idempotencyKey) {
+      await _preferences.setString(_key, jsonEncode(marked(current)));
+    }
+    final earlier = _readEarlier();
+    if (earlier.any((e) => e['idempotency_key'] == idempotencyKey)) {
+      await _writeEarlier([
+        for (final e in earlier)
+          if (e['idempotency_key'] == idempotencyKey) marked(e) else e,
+      ]);
+    }
+  }
+
+  /// Replay the pending envelopes, if any: the earlier ones with a pain check
+  /// first, in order, then the latest.
   ///
   /// [send] performs the actual `save_daily_check_in` RPC and returns whether
   /// the server accepted the check-in. Any throw from [send] keeps the
-  /// envelope stored for the next launch. A stored envelope that predates
-  /// this format is discarded as stale.
+  /// envelope stored for the next launch, and the ones after it wait for it.
+  /// A stored envelope that predates this format is discarded as stale.
   Future<CheckInReplayOutcome> replay(CheckInSend send) async {
     await _adoptLegacy();
-    final stored = _preferences.getString(_key);
-    if (stored == null) return CheckInReplayOutcome.none;
-    final Map<String, dynamic> envelope;
-    try {
-      envelope = Map<String, dynamic>.from(jsonDecode(stored) as Map);
-    } on FormatException {
-      await _preferences.remove(_key);
-      return CheckInReplayOutcome.none;
+    var earlierDelivered = false;
+    var earlier = _readEarlier();
+    for (final envelope in List.of(earlier)) {
+      if (envelope['pain_refused'] == true) continue;
+      final result = await _attempt(envelope, send);
+      switch (result.outcome) {
+        case CheckInReplayOutcome.delivered:
+          earlierDelivered = true;
+          earlier = [
+            for (final e in earlier)
+              if (e['idempotency_key'] != envelope['idempotency_key']) e,
+          ];
+        case CheckInReplayOutcome.painRefused:
+          earlier = [
+            for (final e in earlier)
+              if (e['idempotency_key'] == envelope['idempotency_key'])
+                result.envelope
+              else
+                e,
+          ];
+        default:
+          await _writeEarlier(earlier);
+          return CheckInReplayOutcome.retained;
+      }
     }
-    final key = envelope['idempotency_key'];
-    final localDate = envelope['local_date'];
-    final timezone = envelope['timezone'];
-    final payload = envelope['payload'];
-    if (key is! String ||
-        localDate is! String ||
-        timezone is! String ||
-        payload is! Map) {
+    await _writeEarlier(earlier);
+    final stored = _preferences.getString(_key);
+    if (stored == null) {
+      return earlierDelivered
+          ? CheckInReplayOutcome.delivered
+          : CheckInReplayOutcome.none;
+    }
+    final envelope = _readEnvelope(stored);
+    if (envelope == null) {
       await _preferences.remove(_key);
-      return CheckInReplayOutcome.none;
+      return earlierDelivered
+          ? CheckInReplayOutcome.delivered
+          : CheckInReplayOutcome.none;
     }
     if (envelope['pain_refused'] == true) {
       return CheckInReplayOutcome.painRefused;
     }
+    final result = await _attempt(envelope, send);
+    switch (result.outcome) {
+      case CheckInReplayOutcome.delivered:
+        await _preferences.remove(_key);
+      case CheckInReplayOutcome.painRefused:
+        await _preferences.setString(_key, jsonEncode(result.envelope));
+      default:
+        break;
+    }
+    return result.outcome;
+  }
+
+  /// One send of [envelope]: delivered, retained, or (when the server refused
+  /// its pain answers) the envelope marked as refused.
+  Future<({CheckInReplayOutcome outcome, Map<String, dynamic> envelope})>
+  _attempt(Map<String, dynamic> envelope, CheckInSend send) async {
+    final payload = envelope['payload'] as Map;
     try {
       final delivered = await send(
-        localDate,
-        timezone,
-        key,
+        envelope['local_date'] as String,
+        envelope['timezone'] as String,
+        envelope['idempotency_key'] as String,
         Map<String, dynamic>.from(payload),
       );
-      if (delivered) {
-        await _preferences.remove(_key);
-        return CheckInReplayOutcome.delivered;
-      }
-      return CheckInReplayOutcome.retained;
+      return (
+        outcome: delivered
+            ? CheckInReplayOutcome.delivered
+            : CheckInReplayOutcome.retained,
+        envelope: envelope,
+      );
     } on PostgrestException catch (error) {
       if (error.code == '22023' && _hasPainCheck(payload)) {
-        await _preferences.setString(
-          _key,
-          jsonEncode({...envelope, 'pain_refused': true}),
+        return (
+          outcome: CheckInReplayOutcome.painRefused,
+          envelope: {
+            ...envelope,
+            'pain_refused': true,
+            'pain_refused_too_old': isPainDateRefusal(error),
+          },
         );
-        return CheckInReplayOutcome.painRefused;
       }
-      return CheckInReplayOutcome.retained;
+      return (outcome: CheckInReplayOutcome.retained, envelope: envelope);
     } on Exception {
-      return CheckInReplayOutcome.retained;
+      return (outcome: CheckInReplayOutcome.retained, envelope: envelope);
     }
   }
 
   /// Whether a stored envelope carries a pain check, and what became of it.
   CheckInPainState get painState {
-    final stored = _preferences.getString(_key);
-    if (stored == null) return CheckInPainState.none;
-    try {
-      final envelope = jsonDecode(stored);
-      if (envelope is! Map) return CheckInPainState.none;
-      final payload = envelope['payload'];
-      if (payload is! Map || !_hasPainCheck(payload)) {
-        return CheckInPainState.none;
-      }
-      return envelope['pain_refused'] == true
-          ? CheckInPainState.refused
-          : CheckInPainState.waiting;
-    } on FormatException {
-      return CheckInPainState.none;
+    var waiting = false;
+    for (final envelope in _envelopes()) {
+      if (!_hasPainCheck(envelope['payload'] as Map)) continue;
+      if (envelope['pain_refused'] == true) return CheckInPainState.refused;
+      waiting = true;
     }
+    return waiting ? CheckInPainState.waiting : CheckInPainState.none;
   }
+
+  /// Every pain check the server refused was refused only for its date.
+  bool get painRefusedTooOld => _envelopes().every(
+    (envelope) =>
+        envelope['pain_refused'] != true ||
+        envelope['pain_refused_too_old'] != false,
+  );
+
+  /// The stored envelopes, the earlier ones first.
+  List<Map<String, dynamic>> _envelopes() => [
+    ..._readEarlier(),
+    ?_readEnvelope(_preferences.getString(_key)),
+  ];
 
   /// The athlete has read that the server did not record the pain check.
   /// The rest of the check-in is still theirs: it is sent without the pain
   /// answers (which the server would refuse again), or kept for the next try
   /// when that send fails.
   Future<void> acknowledgeRefusedPain(CheckInSend send) async {
-    final stored = _preferences.getString(_key);
-    if (stored == null) return;
-    final Map<String, dynamic> envelope;
-    try {
-      envelope = Map<String, dynamic>.from(jsonDecode(stored) as Map);
-    } on FormatException {
-      await _preferences.remove(_key);
-      return;
-    }
-    final payload = envelope['payload'];
-    final key = envelope['idempotency_key'];
-    final localDate = envelope['local_date'];
-    final timezone = envelope['timezone'];
-    if (payload is! Map ||
-        key is! String ||
-        localDate is! String ||
-        timezone is! String) {
-      await _preferences.remove(_key);
-      return;
-    }
-    final stripped = {
-      for (final entry in payload.entries)
-        if (!checkInPainKeys.contains(entry.key)) entry.key: entry.value,
-    };
-    final kept = {
+    await _adoptLegacy();
+    Map<String, dynamic> withoutPain(Map<String, dynamic> envelope) => {
       for (final entry in envelope.entries)
-        if (entry.key != 'pain_refused') entry.key: entry.value,
-      'payload': stripped,
+        if (entry.key != 'pain_refused' && entry.key != 'pain_refused_too_old')
+          entry.key: entry.key == 'payload'
+              ? {
+                  for (final item in (entry.value as Map).entries)
+                    if (!checkInPainKeys.contains(item.key))
+                      item.key: item.value,
+                }
+              : entry.value,
     };
-    await _preferences.setString(_key, jsonEncode(kept));
-    try {
-      if (await send(
-        localDate,
-        timezone,
-        key,
-        Map<String, dynamic>.from(stripped),
-      )) {
-        await _preferences.remove(_key);
-      }
-    } on Exception catch (error) {
-      debugPrint('Non-critical error: check-in kept without pain: $error');
+    final earlier = [
+      for (final e in _readEarlier())
+        if (e['pain_refused'] == true) withoutPain(e) else e,
+    ];
+    await _writeEarlier(earlier);
+    final stored = _preferences.getString(_key);
+    if (stored != null && _readEnvelope(stored) == null) {
+      await _preferences.remove(_key);
     }
+    final current = _readEnvelope(stored);
+    if (current != null && current['pain_refused'] == true) {
+      await _preferences.setString(_key, jsonEncode(withoutPain(current)));
+    }
+    // What was kept without its pain answers goes in order.
+    await replay(send);
   }
 
   /// An envelope from an older build belongs to whoever was signed in then;

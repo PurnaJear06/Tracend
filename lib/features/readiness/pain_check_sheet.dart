@@ -25,9 +25,10 @@ enum PainChipAction {
 
 /// Asks the pain check for one exercise during a workout (UX_FLOWS.md §6):
 /// where, how strong, and the two red-flag questions a person can answer
-/// mid-set. The report goes to Tracend through [reporting] (or waits on the
-/// phone). Resolves with what was sent or kept, or null when the sheet was
-/// closed without answering.
+/// mid-set. The report is handed to [reporting] and the sheet closes at once:
+/// it resolves with the submission (the phone's own outcome now, the sending
+/// settling in the background), or null when the sheet was closed without
+/// answering.
 ///
 /// [preselected] is the joint the exercise is known to load; the athlete can
 /// change it. [localDate] is the server's today, `YYYY-MM-DD`.
@@ -73,29 +74,30 @@ class _PainCheckFormState extends State<_PainCheckForm> {
   bool? _sharp;
   bool? _numb;
   bool _incomplete = false;
-  bool _sending = false;
 
   bool get _complete =>
       _area != null && _severity != null && _sharp != null && _numb != null;
 
-  Future<void> _submit() async {
+  void _submit() {
     if (!_complete) {
       setState(() => _incomplete = true);
       return;
     }
-    setState(() => _sending = true);
     final report = PainReport(
       localDate: widget.localDate,
       area: _area!,
       severity: _severity!,
-      // The two questions are the red flags a person can answer mid-set.
-      redFlags: [if (_sharp!) 'pop_or_sudden', if (_numb!) 'numb_weak_limb'],
+      // Only two of the ten questions are asked mid-set: "no" to both is not
+      // "none of these", so nothing is claimed about the rest (null).
+      redFlags: _sharp! || _numb!
+          ? [if (_sharp!) 'pop_or_sudden', if (_numb!) 'numb_weak_limb']
+          : null,
       idempotencyKey: newIdempotencyKey(),
       exercisePerformanceId: widget.exercisePerformanceId,
     );
-    final submission = await widget.reporting.submit(report);
-    if (!mounted) return;
-    Navigator.of(context).pop(submission);
+    // The answer never waits on the network: the sheet closes with what the
+    // phone works out, and the report goes on its way meanwhile.
+    Navigator.of(context).pop(widget.reporting.submit(report));
   }
 
   @override
@@ -179,10 +181,7 @@ class _PainCheckFormState extends State<_PainCheckForm> {
           ),
         ],
         const SizedBox(height: TracendSpacing.lg),
-        FilledButton(
-          onPressed: _sending ? null : _submit,
-          child: Text(_sending ? 'Saving…' : chipSave),
-        ),
+        FilledButton(onPressed: _submit, child: const Text(chipSave)),
         const SizedBox(height: TracendSpacing.sm),
       ],
     );
@@ -191,28 +190,39 @@ class _PainCheckFormState extends State<_PainCheckForm> {
 
 /// What the check says to do, and the choices that follow. Pain of 4 to 6
 /// offers [swap] (when the exercise has not been started and a gentler one is
-/// known); pain of 7 or more, a red flag or any other route out stops the
-/// exercise and shows the referral, and cannot be closed without choosing.
+/// known). Pain of 7 or more, a red flag, any other route out, an area that is
+/// held, or a day that already has a safety route stops the exercise and shows
+/// the referral or the hold: no swap and no keep going, and the sheet cannot
+/// be closed without choosing.
+///
+/// [dayRoute] is the safety route today already has, if any; [heldArea] the
+/// area the report is about when it is held.
 Future<PainChipAction?> showPainResultSheet(
   BuildContext context, {
   required PainSubmission submission,
   JointSwap? swap,
+  String? dayRoute,
+  bool heldArea = false,
 }) {
   final outcome = submission.outcome;
-  final stops = outcome.routesOut;
+  final route = stricterRoute(outcome.route, dayRoute);
+  final stops = route != null || heldArea;
   return showTracendSheet<PainChipAction>(
     context,
-    title: switch (outcome) {
-      PainOutcome.modify => chipSwapTitle,
-      PainOutcome.watch || PainOutcome.clear => chipLightTitle,
-      _ => chipStopTitle,
-    },
+    title: stops
+        ? chipStopTitle
+        : switch (outcome) {
+            PainOutcome.modify => chipSwapTitle,
+            _ => chipLightTitle,
+          },
     isDismissible: !stops,
     enableDrag: !stops,
     showCloseButton: !stops,
     builder: (sheetContext) => _PainResult(
       submission: submission,
-      swap: swap,
+      swap: stops ? null : swap,
+      route: route,
+      heldArea: heldArea,
       onPick: (action) => Navigator.of(sheetContext).pop(action),
     ),
   );
@@ -222,25 +232,30 @@ class _PainResult extends StatelessWidget {
   const _PainResult({
     required this.submission,
     required this.swap,
+    required this.route,
+    required this.heldArea,
     required this.onPick,
   });
 
   final PainSubmission submission;
   final JointSwap? swap;
+  final String? route;
+  final bool heldArea;
   final ValueChanged<PainChipAction> onPick;
+
+  bool get _stops => route != null || heldArea;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
     final textTheme = Theme.of(context).textTheme;
-    final outcome = submission.outcome;
-    final route = outcome.route;
-    final words = route == null ? null : safetyWords(route);
-    final String body = switch (outcome) {
-      PainOutcome.modify => chipSwapBody(swap?.name),
-      PainOutcome.watch || PainOutcome.clear => chipLightBody,
-      _ => chipStopBody,
-    };
+    final words = route == null ? null : safetyWords(route!);
+    final String body = _stops
+        ? chipStopBody
+        : switch (submission.outcome) {
+            PainOutcome.modify => chipSwapBody(swap?.name),
+            _ => chipLightBody,
+          };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -250,14 +265,31 @@ class _PainResult extends StatelessWidget {
           Text(words.title, style: textTheme.titleMedium),
           const SizedBox(height: TracendSpacing.xxs),
           Text(words.body, style: textTheme.bodyMedium),
-        ],
-        if (!submission.sent) ...[
-          const SizedBox(height: TracendSpacing.sm),
+        ] else if (heldArea) ...[
+          const SizedBox(height: TracendSpacing.md),
           Text(
-            submission.refused ? chipNotRecorded : chipQueued,
-            style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+            heldAreaLine(submission.report.area),
+            style: textTheme.bodyMedium,
           ),
         ],
+        FutureBuilder<PainDelivery>(
+          future: submission.delivery,
+          builder: (context, snapshot) {
+            final delivery = snapshot.data;
+            if (delivery == null || delivery.sent) {
+              return const SizedBox.shrink();
+            }
+            return Padding(
+              padding: const EdgeInsets.only(top: TracendSpacing.sm),
+              child: Text(
+                delivery.refused ? chipNotRecorded : chipQueued,
+                style: textTheme.bodySmall?.copyWith(
+                  color: colors.textSecondary,
+                ),
+              ),
+            );
+          },
+        ),
         const SizedBox(height: TracendSpacing.lg),
         ..._actions(),
         const SizedBox(height: TracendSpacing.sm),
@@ -271,10 +303,14 @@ class _PainResult extends StatelessWidget {
     Widget outlined(String label, PainChipAction action) =>
         OutlinedButton(onPressed: () => onPick(action), child: Text(label));
     const gap = SizedBox(height: TracendSpacing.xs);
+    if (_stops) {
+      return [
+        filled(chipSkipExercise, PainChipAction.skipExercise),
+        gap,
+        outlined(chipEndWorkout, PainChipAction.endWorkout),
+      ];
+    }
     return switch (submission.outcome) {
-      PainOutcome.watch || PainOutcome.clear => [
-        filled(chipContinue, PainChipAction.continueExercise),
-      ],
       PainOutcome.modify => [
         if (swap != null) ...[
           filled(chipUseSwap(swap!.name), PainChipAction.useSwap),
@@ -283,11 +319,7 @@ class _PainResult extends StatelessWidget {
         ] else
           filled(chipSkipExercise, PainChipAction.skipExercise),
       ],
-      _ => [
-        filled(chipSkipExercise, PainChipAction.skipExercise),
-        gap,
-        outlined(chipEndWorkout, PainChipAction.endWorkout),
-      ],
+      _ => [filled(chipContinue, PainChipAction.continueExercise)],
     };
   }
 }

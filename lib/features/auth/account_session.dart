@@ -85,12 +85,24 @@ class LocalAccountData {
       SharedPreferencesCoachThreadMemory.storageKey,
       // An older build's envelope belonged to the last athlete signed in.
       CheckInQueue.legacyStorageKey,
-      if (userId != null) CheckInQueue.storageKeyFor(userId),
       if (userId != null) ...{
-        PainReportQueue.storageKeyFor(userId),
+        CheckInQueue.storageKeyFor(userId),
+        CheckInQueue.earlierKeyFor(userId),
         SafetyAcknowledgements.storageKeyFor(userId),
       },
     });
+    if (userId != null) await _clearPainReports(userId);
+  }
+
+  /// Empties the pain reports kept for [userId], behind the same lock as every
+  /// other change to them, so a send that is still waiting on the network
+  /// cannot write them back.
+  Future<void> _clearPainReports(String userId) async {
+    try {
+      await PainReportQueue.clearFor(await _legacyPreferences(), userId);
+    } catch (e) {
+      debugPrint('Non-critical error: pain reports not cleared: $e');
+    }
   }
 
   /// Forgets what belongs to the session rather than the athlete: the open

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,11 +6,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/readiness/day_adjustment.dart';
+import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/readiness/pain_check.dart';
 import 'package:tracend/features/readiness/pain_report_queue.dart';
 import 'package:tracend/features/readiness/pain_reporting.dart';
 import 'package:tracend/features/readiness/safety_copy.dart';
 
+import 'day_adjustment_fixtures.dart';
 import 'pain_fakes.dart';
 
 PainReport _report({
@@ -36,6 +39,44 @@ Map<String, dynamic> _sqlRules() {
   ).firstMatch(sql)!;
   return jsonDecode(match.group(1)!) as Map<String, dynamic>;
 }
+
+/// A server that answers each report when its gate opens, so a test can do
+/// something else while one is on its way.
+class _GatedRepository implements PainCheckRepository {
+  final sent = <String>[];
+  final gates = <String, Completer<void>>{};
+  final failing = <String>{};
+
+  Completer<void> gate(String key) => gates.putIfAbsent(key, Completer.new);
+
+  @override
+  Future<PainCheckResult> record(PainReport report) async {
+    sent.add(report.idempotencyKey);
+    await gates[report.idempotencyKey]?.future;
+    if (failing.contains(report.idempotencyKey)) {
+      throw const PainCheckException(PainCheckFailure.retry);
+    }
+    return PainCheckResult(
+      id: 'id',
+      outcome: report.outcome,
+      areaState: 'watch',
+    );
+  }
+}
+
+/// Refuses the report when its gate opens.
+class _RefusingRepository implements PainCheckRepository {
+  _RefusingRepository(this.gate);
+  final Completer<void> gate;
+
+  @override
+  Future<PainCheckResult> record(PainReport report) async {
+    await gate.future;
+    throw const PainCheckException(PainCheckFailure.refused, tooOld: true);
+  }
+}
+
+Future<void> _tick() => Future<void>.delayed(Duration.zero);
 
 void main() {
   group('the outcome of a pain report', () {
@@ -230,15 +271,43 @@ void main() {
           ),
         ),
       );
-      answer = () => {'schema_version': '9.0'};
+    });
+
+    test(
+      'an answer this build cannot read still means it was recorded',
+      () async {
+        answer = () => {'schema_version': '9.0'};
+        final result = await repository().record(_report(severity: 8));
+        expect(result.understood, isFalse);
+        expect(
+          result.outcome,
+          PainOutcome.clinicianToday,
+          reason: 'the phone\'s own outcome stands',
+        );
+      },
+    );
+
+    test('only the date window is "too old"; any other 22023 is not', () async {
+      answer = () => throw const PostgrestException(
+        message: 'a pain check is for today or yesterday',
+        code: '22023',
+      );
       await expectLater(
         repository().record(_report()),
         throwsA(
-          isA<PainCheckException>().having(
-            (e) => e.failure,
-            'failure',
-            PainCheckFailure.retry,
-          ),
+          isA<PainCheckException>().having((e) => e.tooOld, 'tooOld', true),
+        ),
+      );
+      answer = () => throw const PostgrestException(
+        message: 'that exercise is not yours to report on',
+        code: '22023',
+      );
+      await expectLater(
+        repository().record(_report()),
+        throwsA(
+          isA<PainCheckException>()
+              .having((e) => e.failure, 'failure', PainCheckFailure.refused)
+              .having((e) => e.tooOld, 'tooOld', false),
         ),
       );
     });
@@ -291,6 +360,119 @@ void main() {
       expect(queue.state.isEmpty, isTrue);
     });
 
+    group('while a drain waits on the network', () {
+      late _GatedRepository gated;
+      late PainReportQueue queue;
+
+      setUp(() {
+        gated = _GatedRepository();
+        queue = PainReportQueue(preferences, userId: 'a');
+      });
+
+      test('a report added meanwhile is not lost', () async {
+        await queue.add(_report(key: 'r1'));
+        gated.gate('r1');
+        gated.failing.add('r2');
+        final draining = queue.drain(gated);
+        await _tick();
+
+        await PainReportQueue(preferences, userId: 'a').add(_report(key: 'r2'));
+        gated.gates['r1']!.complete();
+        final left = await draining;
+
+        expect(left.waiting.map((r) => r.idempotencyKey), ['r2']);
+        expect(gated.sent, ['r1', 'r2'], reason: 'sent in the same drain');
+        expect(
+          PainReportQueue(preferences, userId: 'a').state.waiting,
+          hasLength(1),
+        );
+      });
+
+      test('a refusal dismissed meanwhile stays dismissed', () async {
+        await queue.add(_report(key: 'old'), refused: true);
+        await queue.add(_report(key: 'r1'));
+        gated.gate('r1');
+        gated.failing.add('r1');
+        final draining = queue.drain(gated);
+        await _tick();
+
+        await PainReportQueue(preferences, userId: 'a').dismissRefused();
+        gated.gates['r1']!.complete();
+        final left = await draining;
+
+        expect(left.refused, isEmpty);
+        expect(
+          PainReportQueue(preferences, userId: 'a').state.refused,
+          isEmpty,
+        );
+        expect(left.waiting.single.idempotencyKey, 'r1');
+      });
+
+      test('a queue cleared for a deleted account stays empty', () async {
+        await queue.add(_report(key: 'r1'));
+        gated.gate('r1');
+        gated.failing.add('r1');
+        final draining = queue.drain(gated);
+        await _tick();
+
+        await PainReportQueue.clearFor(preferences, 'a');
+        gated.gates['r1']!.complete();
+        final left = await draining;
+
+        expect(left.isEmpty, isTrue);
+        expect(
+          preferences.getString(PainReportQueue.storageKeyFor('a')),
+          isNull,
+          reason: 'the drain did not write the report back',
+        );
+      });
+
+      test('a refusal that comes back is marked on the report that is '
+          'still there, not on one that has gone', () async {
+        await queue.add(_report(key: 'r1'));
+        gated.gate('r1');
+        final refusing = _RefusingRepository(gated.gates['r1']!);
+        final draining = queue.drain(refusing);
+        await _tick();
+        await queue.remove('r1');
+        gated.gates['r1']!.complete();
+        final left = await draining;
+        expect(left.isEmpty, isTrue, reason: 'it was not brought back');
+      });
+
+      test('an athlete who is no longer signed in gets nothing sent', () async {
+        var signedIn = 'a';
+        final guarded = PainReportQueue(
+          preferences,
+          userId: 'a',
+          signedInUser: () => signedIn,
+        );
+        await guarded.add(_report(key: 'r1'));
+        await guarded.add(_report(key: 'r2'));
+        gated.gate('r1');
+        final draining = guarded.drain(gated);
+        await _tick();
+
+        signedIn = 'b';
+        gated.gates['r1']!.complete();
+        final left = await draining;
+
+        expect(gated.sent, ['r1'], reason: 'r2 was not sent for the old user');
+        expect(left.waiting.map((r) => r.idempotencyKey), ['r2']);
+      });
+
+      test('two drains at once send each report once', () async {
+        await queue.add(_report(key: 'r1'));
+        gated.gate('r1');
+        final first = queue.drain(gated);
+        final second = PainReportQueue(preferences, userId: 'a').drain(gated);
+        await _tick();
+        gated.gates['r1']!.complete();
+        await Future.wait([first, second]);
+        expect(gated.sent, ['r1']);
+      });
+    });
+
     test('is kept per athlete', () async {
       await PainReportQueue(preferences, userId: 'a').add(_report());
       expect(PainReportQueue(preferences, userId: 'b').state.isEmpty, isTrue);
@@ -329,9 +511,11 @@ void main() {
     });
 
     test('sends at once and says the server\'s outcome', () async {
-      final submission = await reporting.submit(_report(severity: 5));
-      expect(submission.sent, isTrue);
+      final submission = reporting.submit(_report(severity: 5));
+      final delivery = await submission.delivery;
+      expect(delivery.sent, isTrue);
       expect(submission.outcome, PainOutcome.modify);
+      expect(delivery.areaState, 'limited');
       expect((await reporting.state()).isEmpty, isTrue);
     });
 
@@ -339,15 +523,16 @@ void main() {
       'without a connection keeps the report and still says what to do',
       () async {
         server.failure = PainCheckFailure.retry;
-        final submission = await reporting.submit(
+        final submission = reporting.submit(
           _report(
             severity: 2,
             flags: const ['bladder_bowel_saddle'],
             area: PainArea.back,
           ),
         );
-        expect(submission.sent, isFalse);
-        expect(submission.refused, isFalse);
+        final delivery = await submission.delivery;
+        expect(delivery.sent, isFalse);
+        expect(delivery.refused, isFalse);
         expect(
           submission.outcome,
           PainOutcome.urgent,
@@ -364,21 +549,102 @@ void main() {
 
     test('a refusal is kept, not forgotten', () async {
       server.failure = PainCheckFailure.refused;
-      final submission = await reporting.submit(_report(severity: 8));
-      expect(submission.refused, isTrue);
+      final submission = reporting.submit(_report(severity: 8));
+      final delivery = await submission.delivery;
+      expect(delivery.refused, isTrue);
       expect(submission.outcome, PainOutcome.clinicianToday);
       expect((await reporting.state()).refused, hasLength(1));
       await reporting.dismissRefused();
       expect((await reporting.state()).isEmpty, isTrue);
     });
 
-    test('a referral that was read is not shown again for the day', () async {
-      await reporting.acknowledge('2026-10-24', 'clinician_today');
-      final preferences = await SharedPreferences.getInstance();
-      expect(preferences.getStringList('safety_acknowledged.a'), [
-        '2026-10-24:clinician_today',
-      ]);
+    test('reads today again only when a drain sent something', () async {
+      final readiness = FakeDayAdjustmentRepository(
+        adjustmentJson(kind: 'none', status: 'none', triggers: const []),
+      );
+      final controller = DayAdjustmentController(
+        repository: readiness,
+        serverToday: () async => DateTime(2026, 10, 2),
+      );
+      addTearDown(controller.dispose);
+      final withReadiness = PainReporting(
+        repository: server,
+        readiness: controller,
+        userId: 'a',
+      );
+
+      await withReadiness.drain();
+      await _tick();
+      expect(readiness.loads, isEmpty, reason: 'nothing waited, nothing sent');
+
+      server.failure = PainCheckFailure.retry;
+      await withReadiness.submit(_report()).delivery;
+      await withReadiness.drain();
+      await _tick();
+      expect(readiness.loads, isEmpty, reason: 'it could not be sent');
+
+      server.failure = null;
+      await withReadiness.drain();
+      await _tick();
+      expect(readiness.loads, hasLength(1), reason: 'sent: read it again');
     });
+
+    test('a send that hangs is kept after the wait, and forgotten when it '
+        'lands', () async {
+      final gate = Completer<void>();
+      server.hold = gate.future;
+      final waiting = PainReporting(
+        repository: server,
+        userId: 'a',
+        sendTimeout: const Duration(milliseconds: 40),
+      );
+      final submission = waiting.submit(_report(severity: 8));
+      expect(
+        submission.outcome,
+        PainOutcome.clinicianToday,
+        reason: 'the outcome is there before anything is sent',
+      );
+      final delivery = await submission.delivery;
+      expect(delivery.sent, isFalse);
+      expect(
+        (await waiting.state()).waiting,
+        hasLength(1),
+        reason: 'kept, not lost',
+      );
+
+      gate.complete();
+      await _tick();
+      await _tick();
+      expect(
+        (await waiting.state()).isEmpty,
+        isTrue,
+        reason: 'the attempt landed after all',
+      );
+    });
+
+    test('a report the server took but this build cannot read is recorded, '
+        'not kept waiting', () async {
+      server.unreadable = true;
+      final submission = reporting.submit(_report(severity: 8));
+      final delivery = await submission.delivery;
+      expect(delivery.sent, isTrue);
+      expect(delivery.outcome, PainOutcome.clinicianToday, reason: 'its own');
+      expect(delivery.areaState, isNull);
+      expect((await reporting.state()).isEmpty, isTrue);
+    });
+
+    test(
+      'a refusal that is not about the date is not called too old',
+      () async {
+        server
+          ..failure = PainCheckFailure.refused
+          ..tooOld = false;
+        final delivery = await reporting.submit(_report(severity: 8)).delivery;
+        expect(delivery.refused, isTrue);
+        expect(delivery.tooOld, isFalse);
+        expect((await reporting.state()).refusedTooOld, isFalse);
+      },
+    );
   });
 
   test('the closest route wins, and an unknown one is the strictest', () {

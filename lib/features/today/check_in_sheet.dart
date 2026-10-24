@@ -18,15 +18,25 @@ import 'package:tracend/shared/widgets/tracend_toast.dart';
 /// What a saved check-in left to say.
 @immutable
 class CheckInSaved {
-  const CheckInSaved({required this.delivered, this.referralRoute});
+  const CheckInSaved({
+    required this.delivered,
+    this.referralRoute,
+    this.pending,
+  });
 
-  /// Tracend has the check-in. False when it waits on this phone.
+  /// Tracend has the check-in. False when it waits on this phone, or when the
+  /// sheet closed before the send settled ([pending]).
   final bool delivered;
 
   /// The safety route the pain answers give (`urgent`, `clinician_today` or
   /// `clinician`), worked out on the phone by the same rules as the server's
   /// so that a red flag is answered at once even when nothing was sent.
   final String? referralRoute;
+
+  /// Set when the sheet closed at once, for a referral, while the check-in was
+  /// still on its way: completes with whether Tracend has it. The referral
+  /// never waits for the network.
+  final Future<bool>? pending;
 }
 
 /// Opens the daily check-in sheet. [sender] replaces the
@@ -127,6 +137,9 @@ const checkInScales = [
   ),
 ];
 
+/// How the send of a saved check-in ended.
+enum _Sent { delivered, waiting, painRefused }
+
 class _CheckInSheet extends StatefulWidget {
   const _CheckInSheet({
     required this.environment,
@@ -173,8 +186,6 @@ class _CheckInSheetState extends State<_CheckInSheet> {
   final Map<PainArea, _FollowUp> _followUps = {};
   final Set<PainArea> _followMissing = {};
 
-  /// The server refused the check-in's pain answers (22023).
-  bool _refused = false;
   final _note = TextEditingController();
   bool _available = true;
   bool _saving = false;
@@ -233,6 +244,10 @@ class _CheckInSheetState extends State<_CheckInSheet> {
         'pain_area': _area!.name,
         'pain_pattern': ?_pattern,
         'pain_red_flags': (_flags.toList()..sort()),
+        // An area a doctor or physio cleared, reported again as today's pain,
+        // is one report: it carries the clearance with it.
+        if (_followUps[_area]?.cleared ?? false)
+          'pain_cleared_by_clinician': true,
       },
       if (follow.isNotEmpty)
         'pain_followups': [
@@ -265,12 +280,13 @@ class _CheckInSheetState extends State<_CheckInSheet> {
     return strictest?.route;
   }
 
+  /// How long the sheet waits for the server before it keeps the check-in on
+  /// the phone and closes.
+  static const _sendWait = Duration(seconds: 8);
+
   Future<void> _save() async {
     if (!_painAnswersComplete()) return;
-    setState(() {
-      _saving = true;
-      _refused = false;
-    });
+    setState(() => _saving = true);
     final now = DateTime.now();
     final localDate =
         widget.localDate ?? now.toIso8601String().substring(0, 10);
@@ -282,8 +298,55 @@ class _CheckInSheetState extends State<_CheckInSheet> {
       'available_to_train': _available,
       'note': _note.text.trim(),
     };
+    final withPain = payload.keys.any(_isPainKey);
+    final route = _localRoute();
     // The envelope is queued before the RPC so the check-in survives a lost
     // connection; Today retries it on the next launch via CheckInQueue.
+    final sending = _persistAndSend(payload, localDate, timezone);
+    if (route != null) {
+      // A referral is shown at once, from the phone's own rules: it never
+      // waits for the network, and closing the sheet cannot lose it.
+      Navigator.pop(
+        context,
+        CheckInSaved(
+          delivered: false,
+          referralRoute: route,
+          pending: sending.then((result) => result == _Sent.delivered),
+        ),
+      );
+      return;
+    }
+    var result = _Sent.waiting;
+    try {
+      result = await sending.timeout(_sendWait);
+    } on TimeoutException {
+      // The send goes on; the envelope waits on the phone meanwhile.
+    }
+    if (!mounted) return;
+    if (result == _Sent.delivered) {
+      unawaited(TracendHaptics.success());
+      TracendToast.show(context, 'Check-in saved');
+    } else {
+      TracendToast.show(context, switch (result) {
+        _Sent.painRefused => chipNotRecorded,
+        _ when withPain => painQueuedToast,
+        _ =>
+          'Check-in saved on this device. It will sync when you are '
+              'online.',
+      }, icon: CupertinoIcons.cloud_upload);
+    }
+    Navigator.pop(context, CheckInSaved(delivered: result == _Sent.delivered));
+  }
+
+  /// Keeps the envelope on the phone, then sends it. A delivered check-in
+  /// leaves the queue; one whose pain answers the server refuses (22023) stays,
+  /// marked, so the athlete is told and the rest of it is not lost; anything
+  /// else waits to be replayed. Does not need the sheet to be open.
+  Future<_Sent> _persistAndSend(
+    Map<String, dynamic> payload,
+    String localDate,
+    String timezone,
+  ) async {
     final preferences = await SharedPreferences.getInstance();
     final queue = CheckInQueue(
       preferences,
@@ -317,42 +380,22 @@ class _CheckInSheetState extends State<_CheckInSheet> {
       }
     } on PostgrestException catch (e) {
       debugPrint('Non-critical error: check-in not sent: ${e.code}');
-      // The server will not take these pain answers as they are (the date is
-      // more than a day from its own): waiting would never help, so say so
-      // now instead of promising a sync.
       if (e.code == '22023' && payload.keys.any(_isPainKey)) {
-        await queue.clear();
-        if (!mounted) return;
-        setState(() {
-          _saving = false;
-          _refused = true;
-        });
-        return;
+        await queue.markPainRefused(
+          idempotencyKey,
+          tooOld: isPainDateRefusal(e),
+        );
+        return _Sent.painRefused;
       }
     } catch (e) {
       debugPrint('Non-critical error: $e');
     }
     // An undelivered envelope stays queued; Today replays it next launch.
-    if (delivered) await queue.clear();
-    if (!mounted) return;
-    final withPain = payload.keys.any(_isPainKey);
     if (delivered) {
-      unawaited(TracendHaptics.success());
-      TracendToast.show(context, 'Check-in saved');
-    } else {
-      TracendToast.show(
-        context,
-        withPain
-            ? painQueuedToast
-            : 'Check-in saved on this device. It will sync when you are '
-                  'online.',
-        icon: CupertinoIcons.cloud_upload,
-      );
+      await queue.clearDelivered(idempotencyKey);
+      return _Sent.delivered;
     }
-    Navigator.pop(
-      context,
-      CheckInSaved(delivered: delivered, referralRoute: _localRoute()),
-    );
+    return _Sent.waiting;
   }
 
   static bool _isPainKey(String key) =>
@@ -448,18 +491,6 @@ class _CheckInSheetState extends State<_CheckInSheet> {
                     _flagsMissing = false;
                   }),
                 ),
-                if (_refused) ...[
-                  const SizedBox(height: TracendSpacing.sm),
-                  Semantics(
-                    liveRegion: true,
-                    child: Text(
-                      "Tracend could not record these pain answers. Check that your phone's date is right, then save again.",
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colors.stateDanger,
-                      ),
-                    ),
-                  ),
-                ],
                 const SizedBox(height: TracendSpacing.lg),
                 DecoratedBox(
                   decoration: BoxDecoration(

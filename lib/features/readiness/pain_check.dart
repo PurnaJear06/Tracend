@@ -127,7 +127,11 @@ class PainReport {
   final String localDate;
   final PainArea area;
   final int severity;
-  final List<String> redFlags;
+
+  /// The red flags that apply, or null when the red-flag questions were not
+  /// asked (a workout check that asks two of the ten: the server then judges
+  /// by the strength alone, and an empty list would claim "none of these").
+  final List<String>? redFlags;
   final String idempotencyKey;
   final String? pattern;
   final String? exercisePerformanceId;
@@ -158,7 +162,7 @@ class PainReport {
     final date = raw['local_date'];
     if (area == null ||
         severity is! int ||
-        flags is! List ||
+        (flags != null && flags is! List) ||
         key is! String ||
         date is! String) {
       return null;
@@ -167,10 +171,12 @@ class PainReport {
       localDate: date,
       area: area,
       severity: severity,
-      redFlags: [
-        for (final flag in flags)
-          if (flag is String) flag,
-      ],
+      redFlags: flags == null
+          ? null
+          : [
+              for (final flag in flags as List)
+                if (flag is String) flag,
+            ],
       idempotencyKey: key,
       pattern: raw['pattern'] as String?,
       exercisePerformanceId: raw['exercise_performance_id'] as String?,
@@ -187,7 +193,12 @@ class PainCheckResult {
     required this.id,
     required this.outcome,
     required this.areaState,
+    this.understood = true,
   });
+
+  /// False when the server took the report but this build could not read its
+  /// answer: [outcome] is then the phone's own and [areaState] says nothing.
+  final bool understood;
 
   final String id;
   final PainOutcome outcome;
@@ -217,16 +228,27 @@ class PainCheckResult {
 /// Why a report was not taken.
 enum PainCheckFailure {
   /// The server refused it (22023): the date is older than yesterday, or an
-  /// answer is not one it knows. It will never be accepted as it is.
+  /// answer is not one it knows. It will never be accepted as it is
+  /// ([PainCheckException.tooOld] says which).
   refused,
 
   /// No connection, the session ended, or a limit that lifts: try again.
   retry,
 }
 
+/// Whether [error] is the refusal for a date more than a day from the
+/// server's own (`a pain check is for today or yesterday`): the one 22023 that
+/// means the report is too old. Any other 22023 is a value the server does
+/// not take.
+bool isPainDateRefusal(PostgrestException error) =>
+    error.code == '22023' && error.message.contains('today or yesterday');
+
 class PainCheckException implements Exception {
-  const PainCheckException(this.failure);
+  const PainCheckException(this.failure, {this.tooOld = false});
   final PainCheckFailure failure;
+
+  /// For a refusal: the report is older than the server records.
+  final bool tooOld;
   @override
   String toString() => 'PainCheckException: ${failure.name}';
 }
@@ -270,13 +292,19 @@ class SupabasePainCheckRepository implements PainCheckRepository {
         error.code == '22023'
             ? PainCheckFailure.refused
             : PainCheckFailure.retry,
+        tooOld: isPainDateRefusal(error),
       );
     }
-    final result = PainCheckResult.tryParse(value);
-    if (result == null) {
-      throw const PainCheckException(PainCheckFailure.retry);
-    }
-    return result;
+    // The call went through: the report is recorded even when this build
+    // cannot read the answer, so it is never kept to be sent again; the
+    // phone's own outcome stands.
+    return PainCheckResult.tryParse(value) ??
+        PainCheckResult(
+          id: '',
+          outcome: report.outcome,
+          areaState: 'none',
+          understood: false,
+        );
   }
 }
 

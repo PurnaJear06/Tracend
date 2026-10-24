@@ -272,12 +272,16 @@ class ExerciseDraft {
     return true;
   }
 
-  /// Takes the exercise's identity from a server row or a saved draft:
-  /// `performance_kind` and `performed_name`. A substituted row shows and logs
-  /// the swap's name; a prescribed one shows the plan's. Returns true when
-  /// the name moved while sets with entries were already logged against the
-  /// other one (they are never relabelled or dropped; the sync needs
-  /// attention instead).
+  /// Takes the exercise's identity from a server row: `performance_kind` and
+  /// `performed_name`. A substituted row shows and logs the swap's name; a
+  /// prescribed one shows the plan's. A swap the athlete made that the server
+  /// has not confirmed yet ([swapPending]) is kept over a row that does not
+  /// say it.
+  ///
+  /// Returns true for a conflict: the row names the exercise differently
+  /// while sets with entries are already logged against this name. Nothing is
+  /// renamed then (entries are never relabelled or dropped); the sync needs
+  /// attention instead.
   bool takeIdentity(Map<dynamic, dynamic> row) {
     final id = row['performance_id'];
     if (id is String) performanceId = id;
@@ -288,19 +292,18 @@ class ExerciseDraft {
         swapPending = false;
         return false;
       }
-      final moved = hasEntries;
+      if (swapPending) return false;
+      if (hasEntries) return true;
       final slug = row['exercise_slug'];
       exercise = exercise.asPlanned.swappedTo(
         name: name,
         slug: slug is String ? slug : null,
       );
-      swapPending = false;
-      return moved;
+      return false;
     }
     if (kind == 'prescribed' && exercise.swappedFrom != null && !swapPending) {
-      final moved = hasEntries;
+      if (hasEntries) return true;
       exercise = exercise.asPlanned;
-      return moved;
     }
     return false;
   }
@@ -347,7 +350,11 @@ class ExerciseDraft {
   void restore(Map<String, dynamic> map) {
     status = map['status'] as String? ?? 'unknown';
     pain = map['pain_flag'] == true;
+    swapPending = false;
     takeIdentity(map);
+    // A swap that was made on this phone and not confirmed yet stays pending
+    // until a server row says it.
+    swapPending = map['swap_pending'] == true && exercise.swappedFrom != null;
     // A list of no rows is an exercise left out today: it has no sets.
     final rows = map['sets'];
     if (rows is! List) return;

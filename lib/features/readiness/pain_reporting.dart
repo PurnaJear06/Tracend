@@ -7,17 +7,16 @@ import 'package:tracend/features/readiness/pain_check.dart';
 import 'package:tracend/features/readiness/pain_report_queue.dart';
 import 'package:tracend/features/readiness/safety_acknowledgements.dart';
 
-/// What happened to a report the athlete just made.
+/// How a report the athlete just made fared on its way to Tracend.
 @immutable
-class PainSubmission {
-  const PainSubmission({
-    required this.report,
+class PainDelivery {
+  const PainDelivery({
     required this.outcome,
     required this.sent,
     this.refused = false,
+    this.tooOld = false,
+    this.areaState,
   });
-
-  final PainReport report;
 
   /// The server's outcome when it took the report, else the one the phone
   /// worked out from the same rules.
@@ -26,9 +25,32 @@ class PainSubmission {
   /// Tracend has the report.
   final bool sent;
 
-  /// The server will not take it as it is (22023); it waits as a refused
-  /// report and the athlete is told.
+  /// The server will not take it as it is (22023, the date); it waits as a
+  /// refused report and the athlete is told.
   final bool refused;
+
+  /// For a refusal: the report is older than the server records.
+  final bool tooOld;
+
+  /// `held`, `limited`, `watch` or `none`, when the server said.
+  final String? areaState;
+}
+
+/// A report the athlete just made. [outcome] is worked out on the phone at
+/// once, by the same rules as the server's, so the answer to it (a referral
+/// for a red flag) never waits on the network; [delivery] settles when the
+/// report reached Tracend or was kept on the phone.
+@immutable
+class PainSubmission {
+  const PainSubmission({
+    required this.report,
+    required this.outcome,
+    required this.delivery,
+  });
+
+  final PainReport report;
+  final PainOutcome outcome;
+  final Future<PainDelivery> delivery;
 }
 
 /// Sends pain reports from a workout and keeps the ones that cannot go yet.
@@ -38,9 +60,17 @@ class PainSubmission {
 /// only for today or yesterday, so it has to get there within a day, and the
 /// athlete is told so. The outcome shown at once is worked out on the phone
 /// by the same rules as the server's, so a red flag is answered with a
-/// referral even when nothing can be sent.
+/// referral even when nothing can be sent, and a connection that hangs
+/// delays nothing: after [sendTimeout] the report is kept and the attempt
+/// goes on in the background.
 class PainReporting {
-  PainReporting({required this.repository, this.readiness, this.userId});
+  PainReporting({
+    required this.repository,
+    this.readiness,
+    this.userId,
+    this.signedInUser,
+    this.sendTimeout = const Duration(seconds: 8),
+  });
 
   final PainCheckRepository repository;
 
@@ -49,50 +79,97 @@ class PainReporting {
   final DayAdjustmentController? readiness;
   final String? userId;
 
-  Future<PainReportQueue> _queue() async =>
-      PainReportQueue(await SharedPreferences.getInstance(), userId: userId);
+  /// The athlete signed in now: queued reports are sent only while it is
+  /// [userId].
+  final String? Function()? signedInUser;
 
-  /// Records [report]: sent at once when it can be, else kept for later.
-  Future<PainSubmission> submit(PainReport report) async {
+  /// How long a send is waited for before the report is kept for later.
+  final Duration sendTimeout;
+
+  Future<PainReportQueue> _queue() async => PainReportQueue(
+    await SharedPreferences.getInstance(),
+    userId: userId,
+    signedInUser: signedInUser,
+  );
+
+  /// Records [report]: sent at once when it can be, else kept for later. Returns
+  /// at once with the outcome the phone works out; the sending is
+  /// [PainSubmission.delivery].
+  PainSubmission submit(PainReport report) => PainSubmission(
+    report: report,
+    outcome: report.outcome,
+    delivery: _deliver(report),
+  );
+
+  Future<PainDelivery> _deliver(PainReport report) async {
     final local = report.outcome;
+    final attempt = Future.sync(() => repository.record(report));
     try {
-      final result = await repository.record(report);
+      final result = await attempt.timeout(sendTimeout);
       unawaited(readiness?.load());
       unawaited(drain());
-      return PainSubmission(
-        report: report,
+      return PainDelivery(
         outcome: result.outcome,
         sent: true,
+        areaState: result.understood ? result.areaState : null,
       );
+    } on TimeoutException {
+      // The attempt goes on; the report is kept meanwhile, and forgotten
+      // again if the attempt lands.
+      await _keep(report);
+      unawaited(_forgetWhenSent(report, attempt));
+      return PainDelivery(outcome: local, sent: false);
     } on PainCheckException catch (error) {
       final refused = error.failure == PainCheckFailure.refused;
-      await _keep(report, refused: refused);
-      return PainSubmission(
-        report: report,
+      await _keep(report, refused: refused, tooOld: error.tooOld);
+      return PainDelivery(
         outcome: local,
         sent: false,
         refused: refused,
+        tooOld: error.tooOld,
       );
     } on Exception catch (error) {
       debugPrint('Non-critical error: pain report waits: $error');
       await _keep(report);
-      return PainSubmission(report: report, outcome: local, sent: false);
+      return PainDelivery(outcome: local, sent: false);
     }
   }
 
-  Future<void> _keep(PainReport report, {bool refused = false}) async {
+  Future<void> _forgetWhenSent(
+    PainReport report,
+    Future<PainCheckResult> attempt,
+  ) async {
     try {
-      await (await _queue()).add(report, refused: refused);
+      await attempt;
+    } on Object {
+      return;
+    }
+    try {
+      await (await _queue()).remove(report.idempotencyKey);
+      unawaited(readiness?.load());
+    } on Exception catch (error) {
+      debugPrint('Non-critical error: sent pain report kept: $error');
+    }
+  }
+
+  Future<void> _keep(
+    PainReport report, {
+    bool refused = false,
+    bool tooOld = false,
+  }) async {
+    try {
+      await (await _queue()).add(report, refused: refused, tooOld: tooOld);
     } on Exception catch (error) {
       debugPrint('Non-critical error: pain report not kept: $error');
     }
   }
 
-  /// Sends the reports that wait, and returns what is left.
+  /// Sends the reports that wait, and returns what is left. Today's
+  /// readiness is read again only when something was sent.
   Future<PainQueueState> drain() async {
     try {
       final state = await (await _queue()).drain(repository);
-      if (state.waiting.isEmpty) unawaited(readiness?.load());
+      if (state.sent > 0) unawaited(readiness?.load());
       return state;
     } on Exception catch (error) {
       debugPrint('Non-critical error: pain reports not drained: $error');

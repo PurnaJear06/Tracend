@@ -104,8 +104,11 @@ String jointStateLine(JointState state) {
 
 /// The reminder for an area held on a "see a doctor or physio" outcome: said
 /// on every day the area stays held, whether or not an exercise changes.
-String holdReminderLine(JointState state) =>
-    "${areaYour(state.area)} is on hold until you've had it checked.";
+String holdReminderLine(JointState state) => heldAreaLine(state.area);
+
+/// The hold on [area], in a sentence.
+String heldAreaLine(PainArea area) =>
+    "${areaYour(area)} is on hold until you've had it checked.";
 
 String persistentLine(JointState state) => switch (state.area) {
   PainArea.other =>
@@ -245,6 +248,10 @@ const painNotSentBody =
     'It was more than a day old, so Tracend did not record it. If the pain '
     'is still there, report it again in a check-in. If you answered yes to '
     'any of the questions about it, please see a doctor or physio.';
+const painNotRecordedBody =
+    'Tracend could not record it as it stands. If the pain is still there, '
+    'report it again in a check-in. If you answered yes to any of the '
+    'questions about it, please see a doctor or physio.';
 const painReportAgain = 'Report it again';
 const painTryAgain = 'Try again';
 const painDismissNotSent = 'I understand';
@@ -301,7 +308,8 @@ const _redFlagQuestions = {
   'chest_or_breath':
       'The pain came with chest pain, pressure or shortness of breath',
   'numb_weak_limb': 'Numbness, tingling or weakness in an arm or leg',
-  'pop_or_sudden': 'It started with a pop, a tear or a sudden sharp pain',
+  'pop_or_sudden':
+      'It started with a pop, a ripping feeling or a sudden sharp pain',
   'cannot_bear_or_move': "You can't put weight on it or can't move it normally",
   'rapid_swelling': 'It swelled up quickly',
   'dislocated_or_cannot_lift':

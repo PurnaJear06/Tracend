@@ -183,6 +183,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   /// report waiting on this phone, or one the server refused as too old.
   bool _painWaiting = false;
   bool _painRefused = false;
+  bool _painRefusedTooOld = true;
   bool _painBusy = false;
   DailyBrief? _lastBrief;
   static const _checkedInKey = 'today_check_in_saved_on';
@@ -454,23 +455,32 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   Future<void> _refreshPainNotice() async {
     var waiting = false;
     var refused = false;
+    var tooOld = true;
     try {
-      final state = await _resolveQueue().then((q) => q?.painState);
+      final queue = await _resolveQueue();
+      final state = queue?.painState;
       waiting = state == CheckInPainState.waiting;
       refused = state == CheckInPainState.refused;
+      if (refused) tooOld = queue?.painRefusedTooOld ?? true;
       final reports = await widget.pain?.state();
       if (reports != null) {
         waiting = waiting || reports.waiting.isNotEmpty;
-        refused = refused || reports.refused.isNotEmpty;
+        if (reports.refused.isNotEmpty) {
+          refused = true;
+          tooOld = tooOld && reports.refusedTooOld;
+        }
       }
     } on Exception catch (error) {
       debugPrint('Non-critical error: pain notice not read: $error');
     }
     if (!mounted) return;
-    if (waiting != _painWaiting || refused != _painRefused) {
+    if (waiting != _painWaiting ||
+        refused != _painRefused ||
+        tooOld != _painRefusedTooOld) {
       setState(() {
         _painWaiting = waiting;
         _painRefused = refused;
+        _painRefusedTooOld = tooOld;
       });
     }
   }
@@ -862,11 +872,49 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       // the answers.
       if (saved != null) {
         if (saved.delivered) await widget.dayAdjustment?.load();
-        if (mounted) await _showSafetyOnce(fallbackRoute: saved.referralRoute);
+        // A referral for the report just made is always shown, whether or
+        // not the same route was read earlier today.
+        if (mounted) {
+          final pending = saved.pending;
+          if (pending != null) unawaited(_afterPendingCheckIn(pending));
+          await _showSafetyOnce(
+            fallbackRoute: saved.referralRoute,
+            fresh: saved.referralRoute != null,
+          );
+        }
       }
       if (mounted) unawaited(_refreshPainNotice());
       if (mounted) await _refreshDecisionAfterEvidence();
     }
+  }
+
+  /// The check-in left the sheet before the server answered (a referral does
+  /// not wait for it): when it lands, today is read again, and when it does
+  /// not, the athlete is told it waits on the phone.
+  Future<void> _afterPendingCheckIn(Future<bool> pending) async {
+    bool delivered;
+    try {
+      delivered = await pending;
+    } on Exception catch (error) {
+      debugPrint('Non-critical error: check-in send ended badly: $error');
+      delivered = false;
+    }
+    if (!mounted) return;
+    if (delivered) {
+      await widget.dayAdjustment?.load();
+      if (mounted) {
+        setState(() {
+          _brief = _loadBrief();
+        });
+      }
+    } else {
+      TracendToast.show(
+        context,
+        painQueuedToast,
+        icon: CupertinoIcons.cloud_upload,
+      );
+    }
+    if (mounted) await _refreshPainNotice();
   }
 
   Future<SafetyAcknowledgements?> _acknowledgements() async {
@@ -883,8 +931,13 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   /// acknowledged, and then once for that day and route. [fallbackRoute] is
   /// the route the phone worked out from the pain answers, for when the
   /// server's day cannot be read. `urgent` and `clinician_today` cannot be
-  /// closed without choosing "Got it".
-  Future<void> _showSafetyOnce({String? fallbackRoute}) async {
+  /// closed without choosing "Got it". With [fresh] (a report the athlete
+  /// just made) it is shown even when the same route was read earlier today:
+  /// once a day applies only to what Today opens on its own.
+  Future<void> _showSafetyOnce({
+    String? fallbackRoute,
+    bool fresh = false,
+  }) async {
     if (_safetyShowing || !mounted) return;
     _safetyShowing = true;
     try {
@@ -897,7 +950,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         route,
       );
       if (acknowledgements == null ||
-          acknowledgements.isAcknowledged(key) ||
+          (!fresh && acknowledgements.isAcknowledged(key)) ||
           !mounted) {
         return;
       }
@@ -999,6 +1052,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
           PainNoticeCard(
             waiting: _painWaiting,
             refused: _painRefused,
+            refusedTooOld: _painRefusedTooOld,
             busy: _painBusy,
             onTryAgain: _retryPain,
             onReportAgain: _openCheckIn,

@@ -639,8 +639,10 @@ class DayAdjustment {
     return options != null && options.length == 1 ? options.keys.first : null;
   }
 
-  /// The gentler exercises on offer for the exercise at [order].
+  /// The gentler exercises on offer for the exercise at [order]. None on a
+  /// day with a safety route: no exercise is swapped or offered then.
   ExerciseJointOptions? jointOptionsFor(int order) {
+    if (safetyRoute != null) return null;
     for (final item in exerciseJointOptions) {
       if (item.exerciseOrder == order) return item;
     }
