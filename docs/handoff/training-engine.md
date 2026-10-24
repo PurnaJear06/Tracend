@@ -963,15 +963,18 @@ and cardio dosing") the boundaries. No app change, no new table, no Edge Functio
   (`get_my_workout_session`) use `private.workout_identity_ids`: same name and `workout_order`, any
   version. No lineage column and no unique index (see `DATA_MODEL.md`; production holds one repeat).
 - **No start on a day that has not begun.** `start_workout` raises `22023` for a date after the
-  athlete's local today. The app shows **Preview workout** for those days (the overview sheet has no
-  Start); `lib/features/train/widgets/workout_hero.dart` (`HeroDayState.upcoming`).
+  athlete's local today (after the idempotent replay). The app shows **Preview workout** for those days
+  and **Do it today** (starts that workout with today's date; the server applies the joint rules to a
+  workout that is not the day's scheduled one); `lib/features/train/widgets/workout_hero.dart`
+  (`HeroDayState.upcoming`). The logger treats 22023 and 55000 from `start_workout` as final: 22023 closes
+  with a message and keeps the draft, 55000 opens the finished session (named as logged), neither reads as
+  offline. Today opens its workout on the server's day.
 - **One date for the hub.** Every `current_date` in the hub is the athlete's local date.
-- **A plan with no weekdays** (a Coach proposal may omit them) shows its workouts in plan order on
-  spread days (`TrainingHubData.unscheduledWeekdays`: 2 Monday, Thursday; 3 Monday, Wednesday,
-  Friday; 4 Monday, Tuesday, Thursday, Friday; more from Monday on), not the first workout every day.
-  A lone workout with no weekday stays available on every day (the fixture plan and its tests).
-  Today's brief, readiness adjustment and Apple Health completion still read the weekday on the server
-  and call such a day a rest day; a plan the server builds always has weekdays.
+- **A plan with no weekdays** (a Coach proposal may omit them) got rest days from every server reader
+  (no readiness card, no joint adjustment). One rule now lives on the server: `fill_workout_weekdays` (see
+  `DATA_MODEL.md`), called by `coach_insert_workouts` and run over existing versions by the migration
+  (none in production). The app shows what the server says; only the no-backend fixture plan has a lone
+  weekday-less workout, shown on every day.
 - **Tests.** pgTAP `training_day_integrity_test.sql` (logged under v1, copied to v2: hub, start,
   session read, Apple Health candidate and auto-complete, future day, an athlete whose local date differs
   from UTC); Deno `training_day_integrity_test.ts` pins the seven redefinitions to their latest earlier
