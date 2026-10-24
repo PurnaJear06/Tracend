@@ -265,6 +265,8 @@ export type TrainingChange =
   | Readonly<{
     mode: "block";
     block_kind: BlockKind;
+    /** On an effort block: which one. The deload rules read it to tell a deload from moderate effort. */
+    intensity_level?: Exclude<IntensityLevel, "normal">;
     title: string;
     block_weeks: number;
     ends_on: string;

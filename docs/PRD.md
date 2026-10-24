@@ -173,6 +173,18 @@ joint changes today's session (a gentler exercise for the same movement, a short
 the load held, or leaving the exercise out) through the same one-tap adjustment. Tracend never names a
 condition, never prescribes rehab, and never blocks the workout: it withholds advice.
 
+**Deloads and cardio dosing (Phase 4, B5; server built in B5-3 and B5-4):** when two lifts are heading
+down, the athlete has felt run down on four of the last seven days, or a block of training is done and
+was trained, Tracend can suggest a lighter week: the same sessions on the same days with half the sets,
+loads held and effort at 7 or lower, then the regular plan returns by itself. It is a suggestion, never
+applied: the athlete approves it (or asks Coach for one at any time) and can undo it for seven days.
+Nothing is suggested on a day with a safety route, under a health check that says to see a professional,
+within 28 days of the last deload or with too little training behind it. Separately, the week's cardio is
+shown against the health guideline (150 minutes of moderate cardio, up to 300 for fat loss and
+recomposition) from Apple Health workouts, with the honest note when the intensity is unknown or Apple
+Health data is missing; hard cardio is offered only to a cleared athlete on a good day with no painful
+joint. Heart rate informs the easy ceiling and the wording; it never applies or picks anything.
+
 Direct Coach questions use the active approved plan plus bounded longitudinal context: the active
 goal and profile, recent check-ins, normalized HealthKit summaries, completed workouts, confirmed
 nutrition totals, measurements, the latest weekly and daily decisions, and the current thread.
@@ -331,7 +343,8 @@ engine (confidence and rest), which Coach shows as fixed sentences in the plan c
 - A single poor workout must not trigger structural reprogramming.
 
 **Planned (Phases 2–4, B1–B6):** coach-grade rule data, templates by goal, days and experience,
-progression from the sets actually logged, deloads, cardio dosing, and a screening gate.
+progression from the sets actually logged, deloads, cardio dosing, and a screening gate. Deloads
+and cardio dosing are built on the server (B5-3, B5-4); their screens follow.
 
 ### 5.4 Coaching decisions
 

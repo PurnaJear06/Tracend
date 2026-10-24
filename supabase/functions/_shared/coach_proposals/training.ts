@@ -10,6 +10,13 @@ import {
 } from "../onboarding/catalog.ts";
 import { catalogV2BySlug, loadStepKgFor } from "../onboarding/catalog_v2.ts";
 import { moderateEffortRpe } from "../onboarding/policy.ts";
+import {
+  deloadHoldsLoad,
+  deloadRpe,
+  deloadRpeCap,
+  deloadSets,
+  deloadWeeks,
+} from "../training/standard/deload.ts";
 import { jointStressLevels } from "../training/standard/joint_stress.ts";
 import {
   addDays,
@@ -35,6 +42,7 @@ import type {
   DisplayRow,
   ProposalBasis,
   ProposalEvidence,
+  StatePlanExercise,
   TrainingChange,
   TrainingPayloadExercise,
   TrainingPayloadWorkout,
@@ -46,13 +54,6 @@ type Refused = Extract<BuildResult, { ok: false }>;
 export const maxBlockDays = 42;
 /** A block starts when approved, so a start date may be at most this many days ahead. */
 export const maxBlockStartLeadDays = 2;
-
-/**
- * The deload: half the sets of every exercise (rounded up, at least one) at an effort of 7 or
- * lower. The reduction is in the range coaches use (about 40 to 60% of the volume) and is an
- * in-house choice; B5 (deloads) replaces it with the full rule when it ships.
- */
-export const deloadRules = Object.freeze({ setFraction: 0.5, rpeCap: 7 });
 
 /** Equipment that travels or fits a small space. */
 export const minimalEquipment: readonly EquipmentItem[] = [
@@ -401,21 +402,62 @@ export function buildExerciseSwap(
 function capEffort(
   workouts: readonly TrainingPayloadWorkout[],
   cap: number,
-  setFraction: number,
-): { workouts: TrainingPayloadWorkout[]; changed: boolean } {
+): { workouts: TrainingPayloadWorkout[]; changed: boolean; loadsHeld: boolean } {
   let changed = false;
   const out = workouts.map((workout) => {
     const exercises = workout.exercises.map((exercise) => {
-      const sets = setFraction === 1
-        ? exercise.sets
-        : Math.max(1, Math.ceil(exercise.sets * setFraction));
       const rpe = exercise.target_rpe === null ? null : Math.min(exercise.target_rpe, cap);
-      if (sets !== exercise.sets || rpe !== exercise.target_rpe) changed = true;
-      return { ...exercise, sets, target_rpe: rpe };
+      if (rpe !== exercise.target_rpe) changed = true;
+      return { ...exercise, target_rpe: rpe };
     });
     return { ...workout, exercises, estimated_minutes: minutesFor(exercises) };
   });
-  return { workouts: out, changed };
+  return { workouts: out, changed, loadsHeld: false };
+}
+
+/**
+ * The load a deload week starts from: the load of the last working sets, or the progression
+ * target's load when that is gentler (lower; for an assisted exercise, more help). It never takes
+ * the target's step up. Null when there is no logged load to hold, which leaves the plan's own.
+ */
+function heldLoadKg(entry: StatePlanExercise, state: AthleteState): number | null {
+  const target = entry.plannedExerciseId === null
+    ? undefined
+    : state.progression.find((item) => item.plannedExerciseId === entry.plannedExerciseId);
+  const last = target?.recent[0]?.loadKg ?? null;
+  if (target === undefined || last === null) return null;
+  if (target.loadKg === null) return last;
+  const assisted = entry.slug?.startsWith("assisted-") === true || /^assisted\b/i.test(entry.name);
+  return assisted ? Math.max(last, target.loadKg) : Math.min(last, target.loadKg);
+}
+
+/** The deload week: half the sets, loads held, effort capped; exercises, days and ranges as planned. */
+function deloadWeek(
+  state: AthleteState,
+): { workouts: TrainingPayloadWorkout[]; changed: boolean; loadsHeld: boolean } {
+  const plan = state.plan!;
+  let changed = false;
+  let loadsHeld = false;
+  const out = planAsPayload(plan).map((workout, w) => {
+    const exercises = workout.exercises.map((exercise, e) => {
+      const load = deloadHoldsLoad.value ? heldLoadKg(plan.workouts[w].exercises[e], state) : null;
+      const sets = deloadSets(exercise.sets);
+      const rpe = deloadRpe(exercise.target_rpe);
+      if (sets !== exercise.sets || rpe !== exercise.target_rpe) changed = true;
+      if (load !== null) {
+        loadsHeld = true;
+        if (load !== exercise.start_load_kg) changed = true;
+      }
+      return {
+        ...exercise,
+        sets,
+        target_rpe: rpe,
+        ...(load === null ? {} : { start_load_kg: load }),
+      };
+    });
+    return { ...workout, exercises, estimated_minutes: minutesFor(exercises) };
+  });
+  return { workouts: out, changed, loadsHeld };
 }
 
 const sumSets = (workouts: readonly { exercises: readonly { sets: number }[] }[]) =>
@@ -430,7 +472,9 @@ export function buildIntensityOrPhase(
   const blocked = planChangeRefusal(state, endsBlockNow);
   if (blocked) return blocked;
   const current = plan!;
-  const endsOn = addDays(state.today, intent.weeks * 7 - 1);
+  // A deload is exactly its own length; a longer easing is the moderate-effort block.
+  const weeks = intent.level === "deload" ? deloadWeeks.value : intent.weeks;
+  const endsOn = addDays(state.today, weeks * 7 - 1);
 
   if (intent.level === "normal") {
     if (current.blockKind !== "intensity" && current.blockKind !== "focus") {
@@ -457,22 +501,23 @@ export function buildIntensityOrPhase(
         "Your plan is already held to moderate effort by your health check.",
       );
     }
-    const cap = intent.level === "deload" ? deloadRules.rpeCap : moderateEffortRpe;
-    const fraction = intent.level === "deload" ? deloadRules.setFraction : 1;
-    const result = capEffort(planAsPayload(current), cap, fraction);
+    const deload = intent.level === "deload";
+    const cap = deload ? deloadRpeCap.value : moderateEffortRpe;
+    const result = deload ? deloadWeek(state) : capEffort(planAsPayload(current), cap);
     if (!result.changed) return refusals.noChange("Your plan is already at that effort.");
-    const label = intent.level === "deload" ? "Deload" : "Moderate effort";
+    const label = deload ? "Deload" : "Moderate effort";
     const title = `${label} until ${shortDate(endsOn)}`;
     return build(state, {
       kind: "intensity_or_phase",
       title,
-      rationale:
-        `${reasonText(intent.reason, intent.note)} For ${plural(intent.weeks, "week")} your ` +
-        (intent.level === "deload"
-          ? `sets are halved and effort stays at ${deloadRules.rpeCap} or below.`
+      rationale: `${reasonText(intent.reason, intent.note)} For ${plural(weeks, "week")} your ` +
+        (deload
+          ? `sets are halved, ${
+            result.loadsHeld ? "loads stay where your last sets left them, " : ""
+          }and effort stays at ${deloadRpeCap.value} or below.`
           : `effort stays at ${moderateEffortRpe} or below (about three reps left in the tank).`) +
         ` Your regular plan returns after ${shortDate(endsOn)}.`,
-      benefit: intent.level === "deload"
+      benefit: deload
         ? "Recovery while you keep the habit and the movement patterns."
         : "Steadier training while you recover.",
       downside: "Less training stress for a short while, so progress pauses.",
@@ -491,8 +536,9 @@ export function buildIntensityOrPhase(
       change: {
         mode: "block",
         block_kind: "intensity",
+        intensity_level: intent.level,
         title,
-        block_weeks: intent.weeks,
+        block_weeks: weeks,
         ends_on: endsOn,
         weekly_structure: result.workouts,
       },
