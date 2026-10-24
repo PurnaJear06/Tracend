@@ -730,7 +730,7 @@ notice when new data goes to the AI provider, AI_SAFETY_SPEC), and non-judgement
 ## Review loop (every chunk)
 
 1. Builder implements in its worktree and runs the stream's tests plus `./scripts/pre-deploy.sh`
-   (or `--skip-colima --skip-reset` with CI pgTAP).
+   (or `--deno-only` and `--flutter-only` with CI pgTAP when no local database can start).
 2. A separate reviewer agent checks: contract match, frozen files untouched, old-build safety,
    RLS and export/deletion, tests that exercise the change, docs updated.
 3. Builder fixes findings, pushes, and opens the PR. All required checks must be green.
