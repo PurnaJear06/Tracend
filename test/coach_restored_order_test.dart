@@ -157,11 +157,11 @@ void main() {
       now: () => _now,
     ).loadMessages(_threadId);
 
-    expect(loaded, hasLength(coachMessageWindow));
+    // The cut left the oldest pair's answer without its question: dropped.
+    expect(loaded, hasLength(coachMessageWindow - 1));
     expect(
       [for (final message in loaded) message.id],
       [
-        'a000',
         for (var i = 1; i < 100; i++) ...[
           'u${i.toString().padLeft(3, '0')}',
           'a${i.toString().padLeft(3, '0')}',

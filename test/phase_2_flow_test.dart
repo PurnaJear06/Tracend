@@ -797,7 +797,7 @@ void main() {
         'rebuild is offered', (tester) async {
       final repository = await atProposal(tester);
       repository
-        ..respondFailure = const OnboardingProposalStale()
+        ..respondFailure = Exception('offline')
         ..generationReadsFail = true;
 
       await tapApprove(tester);
@@ -813,6 +813,65 @@ void main() {
         ..generationReadsFail = false;
       await tapApprove(tester);
       expect(find.text("You're set."), findsOneWidget);
+    });
+
+    testWidgets('a stale answer is final even when the status cannot be read: '
+        'the expired screen, not a stuck message', (tester) async {
+      final repository = await atProposal(tester);
+      repository
+        ..respondFailure = const OnboardingProposalStale()
+        ..generationReadsFail = true;
+
+      await tapApprove(tester);
+
+      expect(find.text('This plan proposal expired.'), findsOneWidget);
+      expect(find.textContaining('could not confirm'), findsNothing);
+    });
+
+    testWidgets('a stale answer with another proposal\'s status is the '
+        'expired screen', (tester) async {
+      final repository = await atProposal(tester);
+      repository
+        ..respondFailure = const OnboardingProposalStale()
+        ..lostReplyStatus = 'accepted'
+        ..lostReplyProposalId = 'someone-elses';
+
+      await tapApprove(tester);
+
+      expect(find.text('This plan proposal expired.'), findsOneWidget);
+      expect(find.text("You're set."), findsNothing);
+    });
+
+    testWidgets('a plain network error on an approval of a plan the server '
+        'holds as rejected is the expired screen, not "nothing has '
+        'changed"', (tester) async {
+      final repository = await atProposal(tester);
+      repository
+        ..respondFailure = Exception('offline')
+        ..lostReplyStatus = 'rejected';
+
+      await tapApprove(tester);
+
+      expect(find.text('This plan proposal expired.'), findsOneWidget);
+      expect(find.textContaining('Nothing has changed'), findsNothing);
+    });
+
+    testWidgets('an accepted plan is You are set whatever answer failed', (
+      tester,
+    ) async {
+      final repository = await atProposal(tester);
+      repository
+        ..respondFailure = Exception('offline')
+        ..lostReplyStatus = 'accepted';
+      final reject = find.widgetWithText(TextButton, 'Reject proposal');
+      await tester.ensureVisible(reject);
+      await tester.tap(reject);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Reject plan'));
+      await tester.pumpAndSettle();
+
+      expect(find.text("You're set."), findsOneWidget);
+      expect(find.text('This plan proposal expired.'), findsNothing);
     });
 
     testWidgets('a proposal the server holds as expired still offers a '
@@ -2084,6 +2143,9 @@ class _FakeOnboardingRepository implements OnboardingRepository {
   Object? respondFailure;
   String? lostReplyStatus;
 
+  /// The proposal the server's status belongs to; the answered one by default.
+  String? lostReplyProposalId;
+
   /// Saving the draft fails (the connection dropped after the answer).
   bool failSaveDraft = false;
 
@@ -2315,7 +2377,7 @@ class _FakeOnboardingRepository implements OnboardingRepository {
             OnboardingGeneration(
               id: 'gen-1',
               status: 'succeeded',
-              proposalId: proposalId,
+              proposalId: lostReplyProposalId ?? proposalId,
               proposalStatus: lostReplyStatus,
             ),
           );

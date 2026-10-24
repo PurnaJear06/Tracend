@@ -14,9 +14,19 @@ const _userId = '11111111-1111-4111-8111-111111111111';
 const _mealId = '22222222-2222-4222-8222-222222222222';
 
 class _Repository implements NutritionRepository {
-  _Repository({this.draft = false});
+  _Repository({this.draft = false, this.draftAge = const Duration(hours: 1)});
 
   final bool draft;
+
+  /// How long ago the draft was created.
+  final Duration draftAge;
+
+  /// A failing save was written by the server before its reply was lost.
+  bool writtenBeforeFailing = false;
+  final writtenKeys = <String>{};
+
+  /// Asking whether a meal was saved fails (offline).
+  bool lookupFails = false;
 
   /// How many saves fail before one succeeds.
   int failingSaves = 0;
@@ -43,11 +53,12 @@ class _Repository implements NutritionRepository {
   @override
   Future<List<MealEntry>> loadMeals(DateTime date) async => [
     if (draft)
-      const MealEntry(
+      MealEntry(
         id: 'draft-1',
         type: 'lunch',
         status: 'draft',
         source: 'photo_analysis',
+        loggedAt: DateTime.now().subtract(draftAge),
       ),
   ];
 
@@ -61,8 +72,16 @@ class _Repository implements NutritionRepository {
     saves.add((key: idempotencyKey, name: food.name));
     if (failingSaves > 0) {
       failingSaves--;
+      if (writtenBeforeFailing) writtenKeys.add(idempotencyKey);
       throw Exception('offline');
     }
+    writtenKeys.add(idempotencyKey);
+  }
+
+  @override
+  Future<bool> isMealSaved(String idempotencyKey) async {
+    if (lookupFails) throw Exception('offline');
+    return writtenKeys.contains(idempotencyKey);
   }
 
   @override
@@ -151,6 +170,37 @@ void main() {
       expect(find.text('380'), findsOneWidget);
       expect(find.text('Confirm meal'), findsOneWidget);
       expect(find.text('Meal logged'), findsNothing);
+    });
+
+    testWidgets('closes as saved when the server did write the meal', (
+      tester,
+    ) async {
+      final repository = _Repository()
+        ..failingSaves = 1
+        ..writtenBeforeFailing = true;
+      await _show(tester, repository);
+      await _openManual(tester);
+      await _fill(tester);
+      await _confirm(tester);
+
+      expect(find.text('Meal logged'), findsOneWidget);
+      expect(find.text('Confirm meal'), findsNothing);
+      expect(repository.saves, hasLength(1));
+    });
+
+    testWidgets('says it may not have been saved when that cannot be found '
+        'out', (tester) async {
+      final repository = _Repository()
+        ..failingSaves = 1
+        ..lookupFails = true;
+      await _show(tester, repository);
+      await _openManual(tester);
+      await _fill(tester);
+      await _confirm(tester);
+
+      expect(find.textContaining('may not have been saved'), findsOneWidget);
+      expect(find.textContaining('The meal was not saved'), findsNothing);
+      expect(find.text('Oats'), findsOneWidget);
     });
 
     testWidgets('reloads the day, since the save may have been written', (
@@ -244,6 +294,20 @@ void main() {
       expect(find.text('Draft deleted'), findsOneWidget);
     });
 
+    testWidgets('a draft that may still be analyzing is not offered for '
+        'deletion', (tester) async {
+      final repository = _Repository(
+        draft: true,
+        draftAge: const Duration(minutes: 1),
+      );
+      await _show(tester, repository);
+      await openDraft(tester);
+
+      expect(find.textContaining('Nothing to review yet'), findsOneWidget);
+      expect(find.text('Delete draft'), findsNothing);
+      expect(repository.deleted, isEmpty);
+    });
+
     testWidgets('a failed delete says so and can be repeated', (tester) async {
       final repository = _Repository(draft: true)..failDelete = true;
       await _show(tester, repository);
@@ -263,12 +327,21 @@ void main() {
   group('a meal photo that fails', () {
     late List<String> calls;
 
+    /// The request key the draft was created with, and what the server was
+    /// asked to delete.
+    String? requestKey;
+    late List<String> deleteTargets;
+    late List<Map<String, String>> mealQueries;
+
     Future<SupabaseNutritionRepository> signedIn({
       required int analysisStatus,
       bool draftReplyLost = false,
       bool deleteFails = false,
     }) async {
       calls = [];
+      requestKey = null;
+      deleteTargets = [];
+      mealQueries = [];
       final client = SupabaseClient(
         'https://tracend-test.supabase.co',
         'publishable-test',
@@ -298,16 +371,32 @@ void main() {
                 request: request,
               );
             case '/rest/v1/rpc/create_meal_photo_draft':
+              requestKey =
+                  (jsonDecode(request.body)
+                          as Map<String, dynamic>)['request_idempotency_key']
+                      as String;
               if (draftReplyLost) throw http.ClientException('offline');
               return json(200, {'meal_id': _mealId});
             case '/functions/v1/meal-analyze':
               return json(analysisStatus, {'error': 'meal_analysis_failed'});
             case '/rest/v1/meals':
+              // Honours the filters the way PostgREST does: a row carrying
+              // the request's key, and a draft when a status is asked for.
+              mealQueries.add(request.url.queryParameters);
+              final query = request.url.queryParameters;
+              final found =
+                  query['idempotency_key'] == 'eq.$requestKey' &&
+                  (query['status'] == null || query['status'] == 'eq.draft');
               return json(200, [
-                {'id': _mealId},
+                if (found) {'id': _mealId},
               ]);
             case '/rest/v1/rpc/delete_my_meal':
               if (deleteFails) throw http.ClientException('offline');
+              deleteTargets.add(
+                (jsonDecode(request.body)
+                        as Map<String, dynamic>)['target_meal_id']
+                    as String,
+              );
               return json(200, true);
           }
           return json(404, {'message': 'unexpected $path'});
@@ -329,7 +418,8 @@ void main() {
           ),
           throwsA(isA<MealPhotoFailure>()),
         );
-        expect(calls, contains('POST /rest/v1/rpc/delete_my_meal'));
+        expect(deleteTargets, [_mealId]);
+        expect(mealQueries, isEmpty, reason: 'the draft id was known');
       });
     }
 
@@ -347,8 +437,23 @@ void main() {
         ),
         throwsA(isA<MealPhotoFailure>()),
       );
-      expect(calls, contains('GET /rest/v1/meals'));
-      expect(calls, contains('POST /rest/v1/rpc/delete_my_meal'));
+      expect(mealQueries.single, containsPair('status', 'eq.draft'));
+      expect(
+        mealQueries.single,
+        containsPair('idempotency_key', 'eq.$requestKey'),
+      );
+      expect(deleteTargets, [_mealId]);
+    });
+
+    test('asking whether a meal was saved filters by its key', () async {
+      final repository = await signedIn(analysisStatus: 503);
+      requestKey = 'key-1';
+      expect(await repository.isMealSaved('key-1'), isTrue);
+      expect(await repository.isMealSaved('key-2'), isFalse);
+      expect(mealQueries.map((query) => query['idempotency_key']), [
+        'eq.key-1',
+        'eq.key-2',
+      ]);
     });
 
     test('a delete that fails does not hide why the photo failed', () async {

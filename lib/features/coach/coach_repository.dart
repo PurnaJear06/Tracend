@@ -377,6 +377,13 @@ class SupabaseCoachRepository
         .order('id', ascending: false)
         .limit(coachMessageWindow);
     final rows = newestFirst.reversed.toList();
+    // A full window may have cut a question from its answer: the window
+    // starts at a question, never at an answer without one.
+    if (newestFirst.length >= coachMessageWindow) {
+      while (rows.isNotEmpty && rows.first['role'] == 'assistant') {
+        rows.removeAt(0);
+      }
+    }
     // A question the server marked superseded (`safety_state` unavailable on
     // a user row: a failed, lost or summarised attempt that its retry
     // replaced) is not part of the conversation, and neither is the data

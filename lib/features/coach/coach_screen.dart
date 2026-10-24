@@ -328,12 +328,19 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
         _cooldownRemaining != null) {
       return;
     }
+    if (!_aiAllowed) {
+      // Nothing is sent without permission, and the consent sheet is the
+      // athlete's to open: the text waits in the composer.
+      _queuedToComposer();
+      return;
+    }
     setState(() => _queuedFollowUp = null);
     unawaited(_send(text));
   }
 
-  /// A turn that did not complete leaves the waiting follow-up in the
-  /// composer, to send or change, rather than answering a failed turn.
+  /// A follow-up that is not going out (Cancel, a failed reply, a switch of
+  /// conversation, a newer follow-up, AI coaching off) goes to the composer,
+  /// to send or change; it is never lost.
   void _queuedToComposer() {
     final text = _queuedFollowUp;
     if (text == null) return;
@@ -427,6 +434,16 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
   Future<void> _openThread(String id) async {
     final chat = _chat;
     if (chat == null) return;
+    if (_sending) {
+      // The reply on its way belongs to this conversation, and a failed open
+      // would put it back without its answer. Switching waits for it.
+      TracendToast.show(
+        context,
+        'Coach is still answering. Open another conversation when it’s done.',
+        icon: CupertinoIcons.clock,
+      );
+      return;
+    }
     // Only the first open of a run keeps what to go back to: a second tap
     // while the first still loads must not take the empty loading state for
     // the conversation the athlete was reading.
@@ -458,8 +475,8 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
       _turnFailure = null;
       _factSuggestions = const [];
       _budgetWarning = false;
-      _queuedFollowUp = null;
     });
+    _queuedToComposer();
     try {
       final messages = await chat.loadMessages(id);
       if (!mounted || _view != view) return;
@@ -490,23 +507,25 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _newThread({String? previous}) => setState(() {
-    _beginView();
-    _openedFrom = null;
-    _openedAt = null;
-    _previousThreadId = previous;
-    _pinnedToEnd = false;
-    _threadId = null;
-    _rememberChat = true;
-    _threadRemembered = true;
-    _messages = const [];
-    _loadingChat = false;
-    _error = null;
-    _turnFailure = null;
-    _factSuggestions = const [];
-    _budgetWarning = false;
-    _queuedFollowUp = null;
-  });
+  void _newThread({String? previous}) {
+    setState(() {
+      _beginView();
+      _openedFrom = null;
+      _openedAt = null;
+      _previousThreadId = previous;
+      _pinnedToEnd = false;
+      _threadId = null;
+      _rememberChat = true;
+      _threadRemembered = true;
+      _messages = const [];
+      _loadingChat = false;
+      _error = null;
+      _turnFailure = null;
+      _factSuggestions = const [];
+      _budgetWarning = false;
+    });
+    _queuedToComposer();
+  }
 
   /// Creates the server thread for a new conversation's first send. It is
   /// selected and listed (under its first question, the title the server
@@ -566,7 +585,11 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
     if (_sending || _cooldownRemaining != null) {
       // A chip or "Change it" is never dropped: it waits, shown, and goes out
       // when Coach is free. Typing and Retry are off while busy.
-      if (suggestion != null) setState(() => _queuedFollowUp = question);
+      if (suggestion != null) {
+        final replaced = _queuedFollowUp;
+        setState(() => _queuedFollowUp = question);
+        if (replaced != null && replaced != question) _addToComposer(replaced);
+      }
       return;
     }
     if (!_aiAllowed) {
@@ -1202,10 +1225,7 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
       ],
       if (_queuedFollowUp case final queued?) ...[
         const SizedBox(height: TracendSpacing.md),
-        _QueuedFollowUp(
-          text: queued,
-          onCancel: () => setState(() => _queuedFollowUp = null),
-        ),
+        _QueuedFollowUp(text: queued, onCancel: _queuedToComposer),
       ],
       if (widget.memory != null)
         for (final suggestion in _factSuggestions) ...[

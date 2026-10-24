@@ -226,6 +226,9 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
   bool _saving = false;
   bool _failed = false;
 
+  /// The save failed and the app could not tell whether it was written.
+  bool _unknown = false;
+
   /// The last save that failed. The server may have written it before the
   /// reply was lost, so an unchanged retry repeats its key and adds nothing;
   /// a changed meal is a different save and gets a new key.
@@ -272,6 +275,7 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
     setState(() {
       _saving = true;
       _failed = false;
+      _unknown = false;
     });
     try {
       await widget.onSave(result);
@@ -282,6 +286,7 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
       setState(() {
         _failedSave = result;
         _failed = true;
+        _unknown = e is MealSaveOutcomeUnknown;
         _saving = false;
       });
     }
@@ -357,8 +362,12 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
             Semantics(
               liveRegion: true,
               child: Text(
-                'The meal was not saved. What you entered is kept; check the '
-                'connection and confirm it again.',
+                _unknown
+                    ? 'The meal may not have been saved. What you entered is '
+                          'kept; check the connection and confirm it again. '
+                          'If it was saved, it is not added twice.'
+                    : 'The meal was not saved. What you entered is kept; '
+                          'check the connection and confirm it again.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: context.tracendColors.stateDanger,
                 ),
@@ -380,9 +389,14 @@ class CandidateSheet extends StatefulWidget {
   const CandidateSheet({
     required this.candidates,
     required this.onDiscard,
+    this.canDiscard = true,
     super.key,
   });
   final List<MealCandidate> candidates;
+
+  /// Whether the draft's analysis is over. A draft younger than the analysis
+  /// can take may still get estimates, so it is not offered for deletion.
+  final bool canDiscard;
 
   /// Deletes the draft meal. Shown as the way out when the draft has no
   /// estimates to review (its photo analysis failed).
@@ -447,9 +461,14 @@ class _CandidateSheetState extends State<CandidateSheet> {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       Text(
-        'Nothing to review. The photo could not be analyzed, so this draft has '
-        'no foods to confirm. Delete it, then log the meal again or enter it '
-        'manually. Nothing was added to your totals.',
+        widget.canDiscard
+            ? 'Nothing to review. The photo could not be analyzed, so this '
+                  'draft has no foods to confirm. Delete it, then log the '
+                  'meal again or enter it manually. Nothing was added to '
+                  'your totals.'
+            : 'Nothing to review yet. This photo is still being analyzed, or '
+                  'the analysis failed. Check again in a few minutes. '
+                  'Nothing was added to your totals.',
         style: Theme.of(context).textTheme.bodyMedium,
       ),
       if (_discardFailed) ...[
@@ -464,11 +483,13 @@ class _CandidateSheetState extends State<CandidateSheet> {
           ),
         ),
       ],
-      const SizedBox(height: TracendSpacing.md),
-      FilledButton(
-        onPressed: _discarding ? null : _discard,
-        child: Text(_discarding ? 'Deleting…' : 'Delete draft'),
-      ),
+      if (widget.canDiscard) ...[
+        const SizedBox(height: TracendSpacing.md),
+        FilledButton(
+          onPressed: _discarding ? null : _discard,
+          child: Text(_discarding ? 'Deleting…' : 'Delete draft'),
+        ),
+      ],
     ],
   );
 

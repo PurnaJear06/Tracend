@@ -1735,19 +1735,26 @@ now settles against the server instead of guessing; switching Coach conversation
   screen. `New conversation` uses `_threadId ?? _previousThreadId`. `loadMessages` asks for the newest 200
   (`coachMessageWindow`) in the exact reverse of the shown order (`created_at desc, role asc, id desc`, explicit
   directions plus `limit`) and reverses them, so the tie-break `created_at asc, role desc, id asc` is unchanged.
-  A suggested next action or "Change it" tapped while a reply is in flight, or during the retry countdown, is
-  queued and shown ("Sends when Coach is ready") instead of dropped; a failed reply puts it in the composer.
+  A saved conversation cannot be opened while a send is in flight (a failed open would restore it without its
+  reply); New conversation stays allowed. A window that starts with an assistant row drops it. A suggested next
+  action or "Change it" tapped while a reply is in flight, or during the retry countdown, is queued and shown
+  ("Sends when Coach is ready") instead of dropped; Cancel, a failed reply, a newer follow-up, a switch or AI
+  coaching being off put it in the composer.
 - **Coach proposals.** Every exception (socket, timeout, client) is a connection message. After any error the card
   re-reads the proposal and shows what the server holds (applied, declined, change requested, undone), calling
   `onPlanChanged` when the plan changed, including a retry refused with 55000 on an accepted proposal.
 - **Onboarding.** After a failed answer the flow reads `loadGeneration()`'s proposal status: `accepted` goes to
-  "You're set", `expired` offers the rebuild, anything unreadable keeps the proposal on screen with a "could not
-  confirm" message. A recorded reject or revision goes to Review even if the follow-up `saveDraft` fails.
+  "You're set" whatever the action; a stale refusal (55000), or a status that is expired, rejected or
+  revision-requested, offers the rebuild; a plain network error with an unreadable status keeps the proposal on
+  screen with a "could not confirm" message, and "Nothing has changed" is said only when the status is known to
+  be pending. A recorded reject or revision goes to Review even if the follow-up `saveDraft` fails.
 - **Nutrition.** `saveManualMeal` and `saveScheduledMeal` take an `idempotencyKey`; the manual sheet makes one per
   entered meal, keeps its inputs and shows an error when the save fails, repeats the key on an unchanged retry and
-  makes a new one when the meal changed, and the day reloads after a failure. A failed meal photo analysis now
-  deletes its draft (`delete_my_meal`; a draft whose creation reply was lost is found by its request key). A draft
-  with no candidates opens a sheet with **Delete draft** instead of a Confirm that never enables.
+  makes a new one when the meal changed, asks the server (`isMealSaved`, `meals.idempotency_key`) whether a failed
+  save was written, and the day reloads after a failure. A failed meal photo analysis now
+  deletes its draft (`delete_my_meal`; a draft whose creation reply was lost is found by its request key). The draft
+  lookup is limited to `status = draft`. A draft with no candidates opens a sheet with **Delete draft** instead of
+  a Confirm that never enables, offered only once the draft is older than `mealAnalysisWindow` (10 minutes).
 - **Apple Health.** One idempotency key per sync, reused by its retries.
 - Not in this change: workout finish (M-E3), owned by the open workout PRs.
 

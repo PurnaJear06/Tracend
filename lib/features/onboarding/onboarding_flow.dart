@@ -1236,15 +1236,22 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _error = null;
     });
     try {
+      var accepted = false;
       try {
         await widget.repository.respond(proposal.id, action, note: note);
+        accepted = action == 'accept';
       } catch (e) {
         debugPrint('Non-critical error: $e');
         final status = await _serverProposalStatus(proposal);
         if (!mounted) return;
-        final recorded = status == _recordedStatus[action];
-        if (!recorded) {
-          if (e is OnboardingProposalStale && status != null) {
+        if (status == 'accepted') {
+          // Approved, whatever was asked and however the reply was lost.
+          accepted = true;
+        } else if (status != _recordedStatus[action]) {
+          // 55000 is the server's own answer that this proposal can no
+          // longer be answered; a status that is not pending says the same.
+          if (e is OnboardingProposalStale ||
+              (status != null && status != 'pending')) {
             _showProposalExpired();
           } else {
             setState(() {
@@ -1259,7 +1266,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         }
       }
       if (!mounted) return;
-      if (action == 'accept') {
+      if (accepted) {
         setState(() {
           _approved = proposal;
           _proposal = null;

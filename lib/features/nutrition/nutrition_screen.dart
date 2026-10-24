@@ -273,8 +273,11 @@ class _NutritionScreenState extends State<NutritionScreen> {
       );
 
   /// Saves a meal from the manual sheet, which stays open with what was typed
-  /// if this throws. The day is reloaded either way: a save whose reply was
-  /// lost may still have been written, and the retry (same key) adds nothing.
+  /// if this throws. When the save fails the server is asked whether it wrote
+  /// the meal anyway (a lost reply): if it did, the meal counts as saved; if
+  /// the answer is no, the failure stands; if it cannot be told,
+  /// [MealSaveOutcomeUnknown] says so. The day is reloaded after any failure,
+  /// and a retry carries the same key, so it adds nothing twice.
   Future<void> _saveManualMeal(
     ScheduledMeal? scheduled,
     ManualMealResult input,
@@ -299,8 +302,18 @@ class _NutritionScreenState extends State<NutritionScreen> {
       }
     } catch (e) {
       debugPrint('Non-critical error: $e');
-      if (mounted) unawaited(_refresh());
-      rethrow;
+      final bool written;
+      try {
+        written = await repository.isMealSaved(input.idempotencyKey);
+      } catch (lookup) {
+        debugPrint('Non-critical error: $lookup');
+        if (mounted) unawaited(_refresh());
+        throw const MealSaveOutcomeUnknown();
+      }
+      if (!written) {
+        if (mounted) unawaited(_refresh());
+        rethrow;
+      }
     }
     unawaited(TracendHaptics.success());
     if (!mounted) return;
@@ -423,9 +436,21 @@ class _NutritionScreenState extends State<NutritionScreen> {
     }
   }
 
+  /// A draft the app did not just analyze is known to have no estimates for
+  /// good only after the analysis could have finished: a draft younger than
+  /// [mealAnalysisWindow] may still be running.
+  bool _analysisSettled(MealEntry meal) {
+    final created = meal.loggedAt;
+    return created != null &&
+        DateTime.now().difference(created) >= mealAnalysisWindow;
+  }
+
+  /// [analysisSettled] says the draft's analysis is over: true for the one
+  /// just run here, and for an older draft ([_analysisSettled]).
   Future<void> _openCandidateReview(
     String mealId, {
     bool fromPhoto = false,
+    bool analysisSettled = true,
   }) async {
     setState(() {
       _working = true;
@@ -441,6 +466,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
         scrollable: false,
         builder: (_) => CandidateSheet(
           candidates: candidates,
+          canDiscard: analysisSettled,
           onDiscard: () => _discardDraft(mealId),
         ),
       );
@@ -610,7 +636,10 @@ class _NutritionScreenState extends State<NutritionScreen> {
           NutritionTimeline(
             entries: timeline,
             enabled: !_working,
-            onReview: (meal) => _openCandidateReview(meal.id),
+            onReview: (meal) => _openCandidateReview(
+              meal.id,
+              analysisSettled: _analysisSettled(meal),
+            ),
             onDelete: _deleteMeal,
             onLog: (slot) => _openManualMeal(scheduled: slot),
           ),

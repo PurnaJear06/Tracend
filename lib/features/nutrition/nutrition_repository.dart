@@ -193,6 +193,19 @@ class MealPhotoFailure implements Exception {
   String toString() => 'MealPhotoFailure($step: $code)';
 }
 
+/// How long a draft meal's photo analysis can take at most; an older draft
+/// without estimates is a failed analysis.
+const mealAnalysisWindow = Duration(minutes: 10);
+
+/// A manual meal save failed and the app could not find out whether the
+/// server wrote it: the meal may or may not exist.
+class MealSaveOutcomeUnknown implements Exception {
+  const MealSaveOutcomeUnknown();
+
+  @override
+  String toString() => 'MealSaveOutcomeUnknown';
+}
+
 class MealCandidate {
   const MealCandidate({
     required this.id,
@@ -281,6 +294,10 @@ abstract interface class NutritionRepository {
     required ManualFoodInput food,
     required String idempotencyKey,
   });
+
+  /// Whether a meal saved with [idempotencyKey] exists: how the app learns
+  /// the outcome of a save whose reply was lost. Throws when it cannot ask.
+  Future<bool> isMealSaved(String idempotencyKey);
   Future<String> createFixtureMeal({
     required DateTime date,
     required String mealType,
@@ -427,6 +444,7 @@ class SupabaseNutritionRepository
             .from('meals')
             .select('id')
             .eq('idempotency_key', requestId)
+            .eq('status', 'draft')
             .limit(1);
         id = rows.isEmpty ? null : rows.first['id'] as String;
       }
@@ -586,6 +604,16 @@ class SupabaseNutritionRepository
   });
 
   @override
+  Future<bool> isMealSaved(String idempotencyKey) async {
+    final rows = await _client
+        .from('meals')
+        .select('id')
+        .eq('idempotency_key', idempotencyKey)
+        .limit(1);
+    return rows.isNotEmpty;
+  }
+
+  @override
   Future<String> createFixtureMeal({
     required DateTime date,
     required String mealType,
@@ -730,6 +758,8 @@ class FixtureNutritionRepository
     required ManualFoodInput food,
     required String idempotencyKey,
   }) => throw StateError('Configure Supabase to save meals.');
+  @override
+  Future<bool> isMealSaved(String idempotencyKey) async => false;
   @override
   Future<String> createFixtureMeal({
     required DateTime date,

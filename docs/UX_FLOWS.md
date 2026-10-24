@@ -331,10 +331,13 @@ saved and are edited from Review.
 
 If an answer to the proposal fails (a lost reply, a retry refused as stale), the app asks the
 server what it holds before saying anything. A plan that was accepted shows **You're set.**; a
-proposal the server holds as expired offers the rebuild; one still waiting says "Your response was
-not saved. Nothing has changed; try again."; and when the server cannot be read, the app says it
-could not confirm the response and keeps the plan on screen, so it never claims a change that
-happened is missing and never offers a rebuild that would spend another generation. A rejection or
+proposal the server holds as expired, rejected or revision-requested, or a refusal as stale (the
+server's own final answer, even when its status cannot be read), offers the rebuild; one still
+waiting says "Your response was not saved. Nothing has changed; try again."; and when the server
+cannot be read after a plain network error, the app says it could not confirm the response and
+keeps the plan on screen. An accepted plan is **You're set.** whichever answer failed, so the app
+never claims a change that happened is missing and never offers a rebuild that would spend another
+generation. A rejection or
 change request that is recorded goes back to Review even when saving the draft's place fails.
 
 Approval activates exactly those workouts, then shows **You're set.** once: "Your plan is active.
@@ -570,11 +573,15 @@ three separate autonomous chatbots.
   and tapping B then **New conversation** shows an empty new chat, whichever load finishes last. If
   the conversation cannot be opened, the chat that was open comes back with its messages and its
   thread, with "Conversation could not be opened." **New conversation** on a chat that is already
-  new keeps offering the same **Continue last chat**. A conversation loads its newest 200 messages.
+  new keeps offering the same **Continue last chat**. A saved conversation cannot be opened while a
+  reply is on its way ("Coach is still answering. Open another conversation when it’s done."), so a
+  failed open can never lose that reply. A conversation loads its newest 200 messages, starting at
+  a question (an answer whose question was cut is dropped).
 - **A follow-up while Coach is busy.** A suggested next action or **Change it** tapped while a
   reply is on its way, or during a retry countdown, is not dropped: it shows as "Sends when Coach is
-  ready: ‹text›" with **Cancel**, and goes out when Coach is free. If the reply it waited for
-  failed, the text is put in the composer instead.
+  ready: ‹text›" with **Cancel**, and goes out when Coach is free. In every other case (Cancel, a
+  failed reply, a newer follow-up, a switch of conversation, AI coaching turned off) the text is put
+  in the composer instead, never lost, and no consent sheet opens by itself.
 - **AI label.** A reply a model wrote carries the small label **AI answer · checked by Tracend**,
   with no provider name (D11). A reply no model wrote (the deterministic safety boundary, stored
   with provider `mock`) reads **Tracend safety answer · not AI** and never carries the AI badge. A
@@ -986,7 +993,8 @@ and a state word, so color is never the only signal:
 - A draft shows **Needs review** and a **Review foods** action that restores its candidates; users
   never need to create a second analysis to resume unfinished review. A draft with no estimates (its
   photo analysis failed earlier) opens a sheet that says there is nothing to review and offers
-  **Delete draft**, instead of a Confirm button that never enables.
+  **Delete draft**, instead of a Confirm button that never enables. A draft under 10 minutes old
+  may still be analyzing, so its sheet says to check again and offers no delete.
 - Unlogged slots show **Due now**, **Planned**, **Optional**, or **Not logged** with their planned
   foods and a **Log** action.
 - With nothing logged or planned the timeline reads "Nothing logged yet".
@@ -1000,8 +1008,9 @@ sentence-case **Coach** label, with its confidence in words.
 
 **Enter manually** keeps its sheet open until the meal is saved. If the save fails, the sheet says
 so and keeps what was typed; **Confirm meal** again repeats the same request key, so a save whose
-reply was lost adds nothing twice, while a changed meal is a new save. The day reloads after a
-failure too.
+reply was lost adds nothing twice, while a changed meal is a new save. After a failure the app asks
+the server whether it wrote the meal: if it did, the sheet closes as saved; if it cannot find out,
+the sheet says the meal "may not have been saved". The day reloads after a failure too.
 
 Feedback: confirming a meal (manual entry or reviewed candidates) plays the `success` haptic and
 shows a **Meal logged** toast; a deleted meal shows **Meal deleted**. Failures stay on the page in

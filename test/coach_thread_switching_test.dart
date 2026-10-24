@@ -5,8 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/coach/widgets/coach_message_bubble.dart';
 import 'package:tracend/features/coach/coach_screen.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
+import 'package:tracend/features/consent/ai_coaching_consent.dart';
 
 final _when = DateTime(2026, 10, 24, 9);
 
@@ -56,6 +58,7 @@ class _Repository implements CoachRepository, CoachChatRepository {
   final Map<String, List<CoachMessage>> messages;
   final List<Object> replies;
   final sent = <(String, String)>[];
+  int created = 0;
 
   /// A thread's load waits for its gate.
   final gates = <String, Completer<List<CoachMessage>>>{};
@@ -64,7 +67,8 @@ class _Repository implements CoachRepository, CoachChatRepository {
   Future<List<CoachThread>> loadThreads() async => List.of(threads);
 
   @override
-  Future<String> createThread({bool remember = true}) async => 'created';
+  Future<String> createThread({bool remember = true}) async =>
+      'created-${++created}';
 
   @override
   Future<List<CoachMessage>> loadMessages(String threadId) =>
@@ -102,6 +106,7 @@ Future<void> _show(
   _Repository repository,
   _Memory memory, {
   Duration age = const Duration(hours: 1),
+  AiCoachingConsentController? consent,
 }) async {
   tester.view.physicalSize = const Size(800, 2400);
   tester.view.devicePixelRatio = 1;
@@ -119,6 +124,7 @@ Future<void> _show(
           repository: repository,
           threadMemory: memory,
           now: () => _when.add(age),
+          aiConsent: consent,
         ),
       ),
     ),
@@ -221,7 +227,7 @@ void main() {
       expect(tester.widget<TextField>(find.byType(TextField)).enabled, isTrue);
       await _send(tester, 'Fresh question');
       await tester.pumpAndSettle();
-      expect(repository.sent, [('created', 'Fresh question')]);
+      expect(repository.sent, [('created-1', 'Fresh question')]);
     });
 
     testWidgets('opening a chat that cannot load puts the open chat back, '
@@ -292,25 +298,64 @@ void main() {
       expect(find.text('Answer in A'), findsOneWidget);
     });
 
-    testWidgets('a reply on its way still lands in the open chat after a '
-        'failed open', (tester) async {
+    testWidgets('a saved chat cannot be opened while a reply is on its way, '
+        'and the reply lands in the new chat that sent it', (tester) async {
+      final late = Completer<CoachMessage>();
+      final repository = _threeChats();
+      repository.replies
+        ..clear()
+        ..addAll([late, _answer('r2', 'Second answer')]);
+      repository.gates['b'] = Completer()
+        ..future.ignore()
+        ..completeError(Exception('offline'));
+      await _show(
+        tester,
+        repository,
+        _Memory('a'),
+        age: const Duration(hours: 7),
+      );
+
+      await _send(tester, 'A slow one');
+      await _pick(tester, 'Chat B');
+      await tester.pump();
+
+      expect(
+        find.textContaining('Coach is still answering'),
+        findsOneWidget,
+        reason: 'the switch is held with a note',
+      );
+      expect(repository.gates, contains('b'), reason: 'B was never loaded');
+      late.complete(_answer('late', 'The slow answer'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('The slow answer'), findsOneWidget);
+      await _send(tester, 'And another');
+      await tester.pumpAndSettle();
+      expect(repository.created, 1, reason: 'one thread, not a second one');
+      expect(repository.sent, [
+        ('created-1', 'A slow one'),
+        ('created-1', 'And another'),
+      ]);
+    });
+
+    testWidgets('a failed reply is not lost to a switch that was held', (
+      tester,
+    ) async {
       final late = Completer<CoachMessage>();
       final repository = _threeChats();
       repository.replies
         ..clear()
         ..add(late);
-      repository.gates['b'] = Completer()
-        ..future.ignore()
-        ..completeError(Exception('offline'));
       await _show(tester, repository, _Memory('a'));
 
       await _send(tester, 'A slow one');
       await _pick(tester, 'Chat B');
-      await tester.pumpAndSettle();
-      late.complete(_answer('late', 'The slow answer'));
+      late.completeError(Exception('boom'));
       await tester.pumpAndSettle();
 
-      expect(find.text('The slow answer'), findsOneWidget);
+      expect(find.byType(CoachTurnError), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
+      expect(find.text('Answer in A'), findsOneWidget);
     });
   });
 
@@ -410,6 +455,141 @@ void main() {
 
       expect(repository.sent, [('a', 'How is my week?')]);
       expect(find.textContaining('Sends when Coach is ready'), findsNothing);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Plan my meals',
+      );
+    });
+
+    testWidgets('Cancel puts the text in the composer', (tester) async {
+      final slow = Completer<CoachMessage>();
+      final repository = chatWithChip([slow]);
+      await _show(tester, repository, _Memory('a'));
+
+      await _send(tester, 'How is my week?');
+      await tester.tap(find.text('Plan my meals'));
+      await tester.pump();
+      await tester.tap(find.text('Cancel'));
+      await tester.pump();
+
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Plan my meals',
+      );
+      slow.complete(_answer('r1', 'A steady week.'));
+      await tester.pumpAndSettle();
+      expect(repository.sent, [('a', 'How is my week?')]);
+    });
+
+    testWidgets('a newer follow-up moves the one it replaces to the '
+        'composer', (tester) async {
+      final slow = Completer<CoachMessage>();
+      final repository = _Repository(
+        threads: [_thread('a', 'Chat A')],
+        messages: {
+          'a': [
+            _user('a1', 'Question in A'),
+            _answer(
+              'a2',
+              'Answer in A',
+              followUps: ['Plan my meals', 'Review my sleep'],
+            ),
+          ],
+        },
+        replies: [slow],
+      );
+      await _show(tester, repository, _Memory('a'));
+
+      await _send(tester, 'How is my week?');
+      await tester.tap(find.text('Plan my meals'));
+      await tester.pump();
+      await tester.tap(find.text('Review my sleep'));
+      await tester.pump();
+
+      expect(
+        find.text('Sends when Coach is ready: Review my sleep'),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Plan my meals',
+      );
+    });
+
+    testWidgets('New conversation moves the waiting text to the composer', (
+      tester,
+    ) async {
+      final slow = Completer<CoachMessage>();
+      final repository = chatWithChip([slow]);
+      await _show(tester, repository, _Memory('a'));
+
+      await _send(tester, 'How is my week?');
+      await tester.tap(find.text('Plan my meals'));
+      await tester.pump();
+      await _openSheet(tester);
+      await tester.tap(find.text('New conversation'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Sends when Coach is ready'), findsNothing);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Plan my meals',
+      );
+      slow.complete(_answer('r1', 'A steady week.'));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('opening another chat during the cooldown moves the waiting '
+        'text to the composer', (tester) async {
+      final repository = _Repository(
+        threads: [_thread('a', 'Chat A'), _thread('b', 'Chat B')],
+        messages: {
+          'a': [
+            _user('a1', 'Question in A'),
+            _answer('a2', 'Answer in A', followUps: ['Plan my meals']),
+          ],
+          'b': [_user('b1', 'Question in B')],
+        },
+        replies: [
+          const CoachUnavailableException('Slow down.', retryAfterSeconds: 5),
+        ],
+      );
+      await _show(tester, repository, _Memory('a'));
+
+      await _send(tester, 'How is my week?');
+      await tester.pump(const Duration(seconds: 2));
+      await tester.tap(find.text('Plan my meals'));
+      await tester.pump();
+      await _pick(tester, 'Chat B');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Question in B'), findsOneWidget);
+      expect(find.textContaining('Sends when Coach is ready'), findsNothing);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Plan my meals',
+      );
+    });
+
+    testWidgets('with AI coaching off by then, the text stays in the composer '
+        'and no consent sheet opens', (tester) async {
+      final slow = Completer<CoachMessage>();
+      final repository = chatWithChip([slow]);
+      final consent = AiCoachingConsentController(
+        FixtureAiCoachingConsentRepository(AiCoachingChoice.granted),
+        initial: AiCoachingChoice.granted,
+      );
+      await _show(tester, repository, _Memory('a'), consent: consent);
+
+      await _send(tester, 'How is my week?');
+      await tester.tap(find.text('Plan my meals'));
+      await tester.pump();
+      await consent.record(granted: false);
+      slow.complete(_answer('r1', 'A steady week.'));
+      await tester.pumpAndSettle();
+
+      expect(repository.sent, [('a', 'How is my week?')]);
+      expect(find.text('Allow AI coaching'), findsNothing);
       expect(
         tester.widget<TextField>(find.byType(TextField)).controller!.text,
         'Plan my meals',

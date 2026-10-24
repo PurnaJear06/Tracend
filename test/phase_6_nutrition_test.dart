@@ -399,6 +399,8 @@ class _NutritionRepository implements NutritionRepository {
     required String idempotencyKey,
   }) async {}
   @override
+  Future<bool> isMealSaved(String idempotencyKey) async => false;
+  @override
   Future<String> createFixtureMeal({
     required DateTime date,
     required String mealType,
