@@ -228,6 +228,7 @@ class DayAdjustment {
     required this.band,
     required this.triggers,
     required this.kind,
+    required this.unsupportedKind,
     required this.changes,
     required this.explanation,
     required this.status,
@@ -253,8 +254,14 @@ class DayAdjustment {
   final DayBand band;
   final List<String> triggers;
 
-  /// What the answer or the proposal is; null when the rules ask for nothing.
+  /// What the answer or the proposal is; null when the rules ask for nothing
+  /// or ask for a kind this build does not know ([unsupportedKind]).
   final DayAdjustmentKind? kind;
+
+  /// The server named a kind this build cannot apply (a later 1.x payload).
+  /// Nothing is proposed or applied for it; the band, the explanation and any
+  /// safety route are still shown.
+  final bool unsupportedKind;
   final List<DayAdjustmentChange> changes;
   final String explanation;
   final DayAdjustmentStatus status;
@@ -284,7 +291,10 @@ class DayAdjustment {
   final DaySignals signals;
 
   /// Null when [raw] is not an object this build can read: another major
-  /// version, or a missing key. Nothing is shown or applied from it.
+  /// version, or a missing key. Nothing is shown or applied from it. A later
+  /// 1.x payload still reads: unknown keys are ignored, an option of an
+  /// unknown kind is skipped, and an unknown top-level kind is kept as
+  /// [unsupportedKind] so that a safety route is never lost with it.
   static DayAdjustment? tryParse(Object? raw) {
     if (raw is! Map) return null;
     final version = raw['schema_version'];
@@ -305,7 +315,7 @@ class DayAdjustment {
         from is! num ||
         to is! num ||
         raw['available'] is! bool ||
-        (kindWire != 'none' && kind == null)) {
+        kindWire is! String) {
       return null;
     }
     List<String> strings(Object? list) => [
@@ -317,7 +327,8 @@ class DayAdjustment {
       band: band,
       triggers: strings(raw['triggers']),
       kind: kind,
-      changes: _changes(raw['changes']),
+      unsupportedKind: kindWire != 'none' && kind == null,
+      changes: kind == null ? const [] : _changes(raw['changes']),
       explanation: explanation,
       status: status,
       available: raw['available'] as bool,

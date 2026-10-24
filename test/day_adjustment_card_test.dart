@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -777,6 +778,55 @@ void main() {
     });
   });
 
+  group('a later 1.x payload (joint rules, red flags) stays safe', () {
+    Map<String, dynamic> fixture(String name) => Map<String, dynamic>.from(
+      jsonDecode(File('test/contract/fixtures/$name.json').readAsStringSync())
+          as Map,
+    );
+
+    // The fixtures carry another workout's ids and day; the server day below
+    // matches their local_date.
+    Future<_Harness> pumpFixture(WidgetTester tester, String name) =>
+        _pump(tester, fixture(name), serverToday: DateTime(2026, 10, 24));
+
+    testWidgets('a joint adjustment shows its words and offers no accept', (
+      tester,
+    ) async {
+      final harness = await pumpFixture(tester, 'day_adjustment_v1_1_joint');
+      expect(
+        _text(
+          'Your shoulder is on watch. 1 exercise kept in a pain-free range.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(FilledButton), findsNothing);
+      expect(find.byType(OutlinedButton), findsNothing);
+      expect(_text(otherOptionsLabel), findsNothing);
+      expect(harness.controller.current!.unsupportedKind, isTrue);
+      expect(harness.controller.current!.kind, isNull);
+      expect(harness.controller.current!.appliedChanges, isEmpty);
+      expect(harness.repository.responses, isEmpty);
+    });
+
+    testWidgets('a red-flag day shows its referral', (tester) async {
+      await pumpFixture(tester, 'day_adjustment_v1_1_red_flag');
+      expect(_text('Get this checked today'), findsOneWidget);
+      expect(find.byType(FilledButton), findsNothing);
+      expect(_text('Train as planned'), findsNothing);
+    });
+
+    testWidgets('an unknown kind on a safety day keeps the referral', (
+      tester,
+    ) async {
+      final json = fixture('day_adjustment_v1_1_red_flag')
+        ..['kind'] = 'a_kind_from_the_future'
+        ..['safety_route'] = 'a_route_from_the_future';
+      await _pump(tester, json, serverToday: DateTime(2026, 10, 24));
+      expect(_text('Get medical help now'), findsOneWidget);
+      expect(find.byType(FilledButton), findsNothing);
+    });
+  });
+
   group('copy', () {
     test('names no condition, model or company', () {
       final text = File(
@@ -816,6 +866,11 @@ void main() {
         expect(words.body, isNotEmpty);
       }
       expect(safetyWords('urgent').body, contains('emergency number'));
+      expect(
+        safetyWords('red_flag:something_new'),
+        safetyWords('urgent'),
+        reason: 'a route this build does not know reads as the strictest',
+      );
     });
 
     test('every failure has a line', () {

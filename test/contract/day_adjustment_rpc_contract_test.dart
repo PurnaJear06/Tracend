@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/readiness/day_adjustment.dart';
+import 'package:tracend/features/readiness/day_adjustment_card.dart';
 import 'package:tracend/features/readiness/day_adjustment_repository.dart';
 
 Object? _fixture(String name) =>
@@ -67,6 +68,48 @@ void main() {
         _fixture('day_adjustment_v1_0_reduce')! as Map,
       )..['schema_version'] = '2.0';
       expect(DayAdjustment.tryParse(json), isNull);
+    });
+
+    test('the 1.1 joint payload reads; its kind is one this build cannot '
+        'apply', () {
+      final adjustment = DayAdjustment.tryParse(
+        _fixture('day_adjustment_v1_1_joint'),
+      )!;
+      expect(adjustment.unsupportedKind, isTrue);
+      expect(adjustment.kind, isNull);
+      expect(adjustment.band, DayBand.green);
+      expect(adjustment.explanation, contains('shoulder'));
+      expect(adjustment.changes, isEmpty);
+      expect(adjustment.appliedChanges, isEmpty);
+      // The option of an unknown kind is skipped; the known ones stay.
+      expect(adjustment.options.map((o) => o.kind), [
+        DayAdjustmentKind.reduceSets,
+        DayAdjustmentKind.swapToEasyCardio,
+      ]);
+      expect(dayCardState(adjustment), DayCardState.note);
+    });
+
+    test('the 1.1 red-flag payload keeps its safety route', () {
+      final adjustment = DayAdjustment.tryParse(
+        _fixture('day_adjustment_v1_1_red_flag'),
+      )!;
+      expect(adjustment.safetyRoute, 'clinician_today');
+      expect(adjustment.triggers, ['red_flag:rapid_swelling']);
+      expect(adjustment.kind, isNull);
+      expect(adjustment.unsupportedKind, isFalse);
+      expect(dayCardState(adjustment), DayCardState.safety);
+    });
+
+    test('an unknown kind or route never drops a safety route', () {
+      final json =
+          Map<String, dynamic>.from(
+              _fixture('day_adjustment_v1_1_red_flag')! as Map,
+            )
+            ..['kind'] = 'a_kind_from_the_future'
+            ..['safety_route'] = 'a_route_from_the_future';
+      final adjustment = DayAdjustment.tryParse(json)!;
+      expect(adjustment.safetyRoute, 'a_route_from_the_future');
+      expect(dayCardState(adjustment), DayCardState.safety);
     });
 
     test('a later 1.x payload with extra keys still reads', () {

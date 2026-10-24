@@ -694,6 +694,10 @@ the shell and given to Today and Train), the card (`day_adjustment_card.dart`) a
   choice (fewer sets) still applies until you choose again"): `previous_answer` carries no stored
   changes, so nothing is derived from today's options. The logger is not built from the preview: it
   gets the plan's set counts plus the held weights (`applyTo(..., sets: false)`).
+- **Later 1.x payloads.** The parser ignores unknown keys, skips an option of an unknown kind, and keeps
+  an unknown top-level kind as `unsupportedKind`: the card says the explanation and offers nothing to
+  apply, and a safety route (known or not) is always shown, an unknown one with the strictest (urgent)
+  copy. Fixtures `day_adjustment_v1_1_{joint,red_flag}.json` come from B5-1 (#172).
 - **Logger rows.** `start_workout` is the only authority for the set shape. After `start` the logger
   reads the session back (`get_my_workout_session`) and `ExerciseDraft.alignTo` makes each exercise
   have exactly the rows the server made. Until a started session's rows were read once

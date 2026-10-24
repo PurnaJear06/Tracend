@@ -135,6 +135,16 @@ String previousAnswerLine(PreviousDayAnswer previous) {
 /// The sheet shown for a day with a safety route: no training choice.
 typedef SafetyWords = ({String title, String body});
 
+const SafetyWords _urgentWords = (
+  title: 'Get medical help now',
+  body:
+      'What you described needs urgent care. Call your local emergency '
+      'number or go to an emergency department now. Tracend will not '
+      "suggest any training until you've been seen.",
+);
+
+/// A route this build does not know (a later server version) is read as the
+/// strictest one, so a referral is never softened by an old build.
 SafetyWords safetyWords(String route) => switch (route) {
   'pain_referral' => (
     title: "Don't train through this pain",
@@ -143,25 +153,20 @@ SafetyWords safetyWords(String route) => switch (route) {
         'see a doctor or physio before you train it again. Get seen today if '
         "it's sharp, getting worse, or you can't move it.",
   ),
-  'urgent' => (
-    title: 'Get medical help now',
-    body:
-        'What you described needs urgent care. Call your local emergency '
-        'number or go to an emergency department now. Tracend will not '
-        "suggest any training until you've been seen.",
-  ),
+  'urgent' => _urgentWords,
   'clinician_today' => (
     title: 'Get this checked today',
     body:
         'Please see a doctor or physio today, before you train this area '
         'again. Tracend leaves training aside for today.',
   ),
-  _ => (
+  'clinician' => (
     title: 'See a doctor or physio',
     body:
         'Please book a doctor or physio before you train this area again. '
         'Tracend leaves training aside for today.',
   ),
+  _ => _urgentWords,
 };
 
 /// Why an answer or a read did not go through, in words for the card.

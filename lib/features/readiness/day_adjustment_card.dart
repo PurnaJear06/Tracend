@@ -46,7 +46,8 @@ enum DayCardState {
   /// Coach already adjusted today's session.
   coachAdjusted,
 
-  /// Only a note is due (mild pain) or an earlier answer no longer stands.
+  /// Only words are due: mild pain, an earlier answer that no longer stands,
+  /// or a kind this build cannot apply.
   note,
 }
 
@@ -63,6 +64,9 @@ DayCardState dayCardState(DayAdjustment adjustment) {
         ? DayCardState.coachAdjusted
         : DayCardState.hidden;
   }
+  // A kind this build cannot apply: its explanation and band are said, and no
+  // proposal or choice is offered for it.
+  if (adjustment.unsupportedKind) return DayCardState.note;
   if (adjustment.status == DayAdjustmentStatus.declined) {
     return DayCardState.declined;
   }
@@ -219,7 +223,8 @@ class _DayAdjustmentCardState extends State<DayAdjustmentCard> {
       DayCardState.accepted => appliedBody(adjustment),
       DayCardState.begun => begunBody(adjustment),
       DayCardState.declined => declinedBody,
-      DayCardState.note when adjustment.kind == null =>
+      DayCardState.note
+          when adjustment.kind == null && !adjustment.unsupportedKind =>
         painNote(adjustment) ?? adjustment.explanation,
       _ => adjustment.explanation,
     };
