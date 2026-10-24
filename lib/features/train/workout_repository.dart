@@ -1053,7 +1053,7 @@ class SupabaseWorkoutRepository
         )
         .eq('training_plan_versions.status', 'active')
         .eq('preferred_weekday', weekday)
-        .order('workout_order')
+        .order('workout_order', ascending: true)
         .limit(1);
     if (rows.isEmpty) {
       throw const FormatException('No approved workout is assigned today.');

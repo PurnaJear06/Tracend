@@ -80,6 +80,14 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 
+**Query order fix (2026-10-24, branch `claude/explicit-query-order`, PR open):** saved Coach conversations loaded
+newest-first (postgrest-dart's `order()` defaults to descending, and `loadMessages` left the direction out), so a
+reply sat above its question and the screen opened on the oldest message. Fixed with an explicit ascending order;
+every other `.order(` in the app now states its direction (active goal by priority, measurements, meals, meal
+candidates and today's workout were also descending by accident) and a source-scan test keeps it that way. App
+only, no migration; needs `./scripts/install-device.sh` from the merged commit. Details: "Coach conversations load
+oldest-first" in [`ai-gateway.md`](./handoff/ai-gateway.md).
+
 **Coach opens a fresh chat (2026-10-24, branch `claude/coach-chat-fresh`, PR open):** Coach reopens the last
 conversation only if its last message is under 6 hours old, otherwise a new conversation with a **Continue last
 chat** row (checked again when the Coach tab is re-activated or the app resumes, never mid-send or with a typed

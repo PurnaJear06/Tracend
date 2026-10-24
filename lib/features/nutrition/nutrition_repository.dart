@@ -521,7 +521,7 @@ class SupabaseNutritionRepository
           'meal_items(name_snapshot,calories,protein_g,carbohydrate_g,fat_g)',
         )
         .eq('local_date', _dateKey(date))
-        .order('created_at');
+        .order('created_at', ascending: true);
     return rows.map(MealEntry.fromRow).toList();
   }
 
@@ -577,7 +577,7 @@ class SupabaseNutritionRepository
           'id,food_label,serving_label,calories,protein_g,carbohydrate_g,fat_g,confidence',
         )
         .eq('meal_id', mealId)
-        .order('candidate_order');
+        .order('candidate_order', ascending: true);
     return rows
         .map(
           (row) => MealCandidate(

@@ -258,6 +258,9 @@ class _Server {
   List<Map<String, dynamic>> messages;
   final chatBodies = <Map<String, dynamic>>[];
 
+  /// The `order` query parameter of each coach_messages read.
+  final messageOrders = <String?>[];
+
   late final client = SupabaseClient(
     'https://tracend-test.supabase.co',
     'publishable-test',
@@ -276,6 +279,9 @@ class _Server {
           }
           return json({'timezone': 'Asia/Kolkata'});
         case '/rest/v1/coach_messages':
+          messageOrders.add(
+            request.url.queryParameters['order']?.replaceAll('.nullslast', ''),
+          );
           return json(messages);
         case '/functions/v1/coach-chat':
           if (offline) throw http.ClientException('offline');
@@ -478,6 +484,18 @@ void main() {
         );
       },
     );
+
+    test('a thread is read oldest-first, ties broken by id', () async {
+      final server = _Server();
+      final repository = SupabaseCoachRepository(
+        server.client,
+        now: () => _now,
+      );
+      await repository.loadMessages(_threadId);
+      // postgrest-dart sorts descending unless told otherwise; a descending
+      // read puts every answer above its question.
+      expect(server.messageOrders, ['created_at.asc,role.desc,id.asc']);
+    });
 
     test('a thread hides the questions the server marked superseded', () async {
       Map<String, dynamic> row(String id, String role, String? state) => {

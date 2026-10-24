@@ -361,7 +361,14 @@ class SupabaseCoachRepository
         .from('coach_messages')
         .select()
         .eq('thread_id', threadId)
-        .order('created_at');
+        // PostgREST's `order` defaults to descending here: ask for the
+        // conversation oldest-first. A question and its answer stored in one
+        // transaction share `created_at`, so the question goes first ('user'
+        // sorts after 'assistant'), as the server's turn order has it; the id
+        // only settles what is left.
+        .order('created_at', ascending: true)
+        .order('role', ascending: false)
+        .order('id', ascending: true);
     // A question the server marked superseded (`safety_state` unavailable on
     // a user row: a failed, lost or summarised attempt that its retry
     // replaced) is not part of the conversation, and neither is the data
