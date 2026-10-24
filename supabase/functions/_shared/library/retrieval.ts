@@ -466,26 +466,27 @@ export function createLibraryContributor(deps: LibraryContributorDeps): CoachCon
         ...(query.planText === undefined ? [] : [search(input.userId, query.planText, undefined)]),
       ]);
       const runs = settled.flatMap((entry) => entry.status === "fulfilled" ? [entry.value] : []);
+      const unavailable = (): RenderedBlock => ({
+        text: libraryPlanUnavailableText,
+        shown: {},
+        trace: {
+          embed_ms: Math.max(0, ...runs.map((run) => run.embedMs)),
+          degraded: "search_unavailable" satisfies LibraryDegradedReason,
+          prefetched: early !== undefined,
+          follow_up: false,
+          plan_explanation: true,
+          plan_facts: facts !== null,
+          candidates: runs.reduce((sum, run) => sum + run.rows.length, 0),
+          shown: [],
+          top_distance: null,
+          library_version: null,
+        },
+      });
       if (runs.length === 0) {
         // Any other turn is answered without the library (the host leaves the block out); a plan
         // question is told it, so Coach says it could not check the research behind the plan.
         if (!asksAboutPlan) throw (settled[0] as PromiseRejectedResult).reason;
-        return {
-          text: libraryPlanUnavailableText,
-          shown: {},
-          trace: {
-            embed_ms: 0,
-            degraded: "search_unavailable" satisfies LibraryDegradedReason,
-            prefetched: early !== undefined,
-            follow_up: false,
-            plan_explanation: true,
-            plan_facts: facts !== null,
-            candidates: 0,
-            shown: [],
-            top_distance: null,
-            library_version: null,
-          },
-        };
+        return unavailable();
       }
       const block = renderLibraryChunks(
         runs.length === 1 ? runs[0].shown : interleave(runs.map((run) => run.shown)),
@@ -493,6 +494,10 @@ export function createLibraryContributor(deps: LibraryContributorDeps): CoachCon
         runs.every((run) => run.wordsOnly),
         query.planExplanation === true,
       );
+      // A search that failed may have held the excerpts: with none shown, that is not "no match".
+      if (
+        asksAboutPlan && Object.keys(block.shown).length === 0 && runs.length < settled.length
+      ) return unavailable();
       const rows = runs.flatMap((run) => run.rows);
       const distances = rows.flatMap((row) =>
         typeof row.vectorDistance === "number" ? [row.vectorDistance] : []

@@ -820,6 +820,26 @@ Deno.test("one of a plan question's two searches failing leaves the other's exce
   assertEquals(result.traces?.library.candidates, 1);
 });
 
+Deno.test("a plan turn with a failed search and no excerpts is 'could not be checked', not 'no match'", async () => {
+  const far = { ...near("schoenfeld_2017_weekly_volume"), vectorDistance: 0.9 };
+  const make = (failing: boolean) =>
+    createLibraryContributor({
+      embed: () => () => Promise.resolve([1]),
+      search: (request) =>
+        failing && request.text === planInput.question
+          ? Promise.reject(new Error("library_search_unavailable"))
+          : Promise.resolve([far]),
+      planFacts: () => Promise.resolve(planFacts),
+    });
+  const partial = await renderCoachContext([make(true)], planInput);
+  assertEquals(partial.texts.library, libraryPlanUnavailableText);
+  assertEquals(partial.traces?.library.degraded, "search_unavailable");
+  assertEquals(partial.shown, {});
+  // Every search succeeded and found nothing close enough: that is "no match".
+  const every = await renderCoachContext([make(false)], planInput);
+  assertEquals(every.texts.library, libraryPlanNoMatchText);
+});
+
 Deno.test("a chunk both searches find is shown once, and a list never crowds out the other", () => {
   const a = near("schoenfeld_2017_weekly_volume");
   const b = near("singer_2024_rest_intervals");

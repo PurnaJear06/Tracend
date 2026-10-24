@@ -36,7 +36,7 @@ import {
   maxReservableCeilingUsd,
   tokenBound,
 } from "../_shared/providers/onboarding_plan_provider.ts";
-import { unshownStudies } from "../_shared/library/mentions.ts";
+import { namedShownSources, unshownStudies } from "../_shared/library/mentions.ts";
 import { type PlanLibrary, planLibraryRule } from "../_shared/library/plan_library.ts";
 import { unshownKeysIn } from "../_shared/library/retrieval.ts";
 
@@ -340,6 +340,25 @@ export function citesUnshownSource(text: string, policies: PlanPolicies): boolea
     unshownStudies(text, shown).length > 0;
 }
 
+/**
+ * The plan's text names a source the prompt showed (its id, or a study or document by name) that
+ * its `sources` list leaves out: the athlete would read a source the app does not list. Refused
+ * and repaired like any rule; the sources are never added from the prose.
+ */
+export function namesUnlistedSource(
+  text: string,
+  sources: readonly string[],
+  policies: PlanPolicies,
+): boolean {
+  const labels = policies.library?.labels ?? {};
+  const shown = Object.fromEntries(Object.entries(labels).map(([id, label]) => [id, { label }]));
+  const named = new Set([
+    ...namedShownSources(text, shown),
+    ...Object.keys(labels).filter((id) => text.includes(`[${id}]`)),
+  ]);
+  return [...named].some((id) => !sources.includes(id));
+}
+
 /** The repair turn: the broken rule, and the rejected candidate as untrusted data. */
 function repairInstruction(rule: string, path: string, candidate: string): string {
   // Escaping can multiply a character's length, so shorten until the escaped block fits.
@@ -482,6 +501,8 @@ export async function generatePlanViaGateway(
         fault = { rule: "names_model_or_company", path: "$" };
       } else if (citesUnshownSource(planText(plan), policies)) {
         fault = { rule: "source_not_retrieved", path: "$" };
+      } else if (namesUnlistedSource(planText(plan), plan.sources, policies)) {
+        fault = { rule: "source_not_listed", path: "$" };
       }
     } catch (error) {
       if (!(error instanceof OnboardingPlanValidationError)) throw error;

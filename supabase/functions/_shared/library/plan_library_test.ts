@@ -124,6 +124,34 @@ Deno.test("one search failing leaves the other's excerpts; both failing is 'unav
   assertEquals(both.shown, {});
 });
 
+Deno.test("a failed search with no excerpts shown is 'unavailable'; 'none' needs every search to succeed", async () => {
+  const far = (request: LibrarySearchRequest) =>
+    request.text === queries[0]
+      ? Promise.reject(new Error("library_search_unavailable"))
+      : Promise.resolve([row("schoenfeld_2017_weekly_volume", 0.9)]);
+  const partial = await retrievePlanLibrary(
+    {
+      embed: () => () => Promise.resolve([0.5]),
+      search: far,
+    },
+    "athlete-1",
+    queries,
+  );
+  assertEquals(partial.status, "unavailable");
+  assertEquals(partial.text, "");
+  assertEquals(partial.shown, {});
+  assertEquals(partial.trace.failed, 1);
+  const every = await retrievePlanLibrary(
+    {
+      embed: () => () => Promise.resolve([0.5]),
+      search: () => Promise.resolve([row("schoenfeld_2017_weekly_volume", 0.9)]),
+    },
+    "athlete-1",
+    queries,
+  );
+  assertEquals(every.status, "none");
+});
+
 Deno.test("a search that outlasts the deadline gives 'unavailable' and never throws", async () => {
   const started = performance.now();
   const library = await retrievePlanLibrary(

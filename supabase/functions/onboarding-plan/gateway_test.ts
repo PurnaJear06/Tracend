@@ -1002,6 +1002,56 @@ Deno.test("a plan that prints an id or names a study that was not shown is refus
   }
 });
 
+Deno.test("prose that names a shown source its sources list leaves out is repaired by name, then accepted", async () => {
+  for (
+    const prose of [
+      "Schoenfeld 2017 supports this weekly volume.",
+      "This volume follows [schoenfeld_2017_weekly_volume] closely.",
+    ]
+  ) {
+    const h = harness();
+    const unlisted = planWith((plan) => {
+      plan.rationale = prose;
+    });
+    const answers = [unlisted, JSON.stringify(validPlan())];
+    const { fetch, sent } = fakeFetch(() => claude(answers.shift()!));
+    await run("plan", h, { plan: planRoute() }, fetch, withLibrary(foundLibrary()));
+    assertEquals(sent.length, 2, prose);
+    const repair = (sent[1].body as { messages: { content: { text: string }[] }[] })
+      .messages[0].content[1].text;
+    assert(repair.includes('broke the rule "source_not_listed" at $'), prose);
+    assertEquals(training(h).origin, "ai", prose);
+    // The prose never adds a source: the repaired plan cites none.
+    assertEquals(h.persisted[0].proposal.evidence.some((item) => item.source === "library"), false);
+  }
+});
+
+Deno.test("prose that names a shown source is accepted when the plan lists it", async () => {
+  const h = harness();
+  const listed = planWith((plan) => {
+    plan.rationale = "Schoenfeld 2017 supports this weekly volume.";
+    plan.sources = ["schoenfeld_2017_weekly_volume"];
+  });
+  const { fetch, sent } = fakeFetch(() => claude(listed));
+  await run("plan", h, { plan: planRoute() }, fetch, withLibrary(foundLibrary()));
+  assertEquals(sent.length, 1);
+  assertEquals(training(h).origin, "ai");
+  assertEquals(h.persisted[0].proposal.evidence.at(-1)?.code, "schoenfeld_2017_weekly_volume");
+});
+
+Deno.test("prose that still names an unlisted source after the repair becomes the rules plan", async () => {
+  const h = harness();
+  const unlisted = planWith((plan) => {
+    plan.rationale = "Schoenfeld 2017 supports this weekly volume.";
+  });
+  const { fetch, sent } = fakeFetch(() => claude(unlisted));
+  await run("plan", h, { plan: planRoute() }, fetch, withLibrary(foundLibrary()));
+  assertEquals(sent.length, 2);
+  assertEquals(training(h).origin, "rules");
+  assertEquals(training(h).fallback_reason, "source_not_listed");
+  assertEquals(h.persisted[0].proposal.evidence.some((item) => item.source === "library"), false);
+});
+
 Deno.test("no excerpt found: the prompt says to cite nothing and the plan is low confidence with a note", async () => {
   const h = harness();
   const { fetch, sent } = fakeFetch(() => claude(JSON.stringify(validPlan())));

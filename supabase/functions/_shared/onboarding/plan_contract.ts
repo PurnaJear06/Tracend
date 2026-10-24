@@ -82,6 +82,7 @@ export const onboardingPlanValidationRules = [
   "carbohydrate_out_of_range",
   "macro_sum_mismatch",
   "source_not_retrieved",
+  "source_not_listed",
 ] as const;
 export type OnboardingPlanValidationRule = typeof onboardingPlanValidationRules[number];
 

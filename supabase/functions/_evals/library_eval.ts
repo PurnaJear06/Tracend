@@ -45,7 +45,12 @@ import {
   type PlanFacts,
 } from "../_shared/library/plan_explanation.ts";
 import { libraryRetrievalQuery } from "../_shared/library/query.ts";
-import { libraryKeywordFloor, libraryRelevanceFloor } from "../_shared/library/retrieval.ts";
+import { planLibraryMatchCount } from "../_shared/library/plan_library.ts";
+import {
+  libraryKeywordFloor,
+  libraryMatchCount,
+  libraryRelevanceFloor,
+} from "../_shared/library/retrieval.ts";
 import holdoutFile from "./library_questions_holdout.json" with { type: "json" };
 import planFile from "./library_questions_plan.json" with { type: "json" };
 import questionFile from "./library_questions.json" with { type: "json" };
@@ -129,13 +134,14 @@ async function search(
   text: string | null,
   embedding: number[] | null,
   region: readonly string[],
+  matchCount = 8,
 ): Promise<ScoredHit[]> {
   const rows = libraryRowsOf(
     await post("/rest/v1/rpc/search_library_v3", serviceKey, {
       query_text: text,
       query_embedding: embedding,
       query_embedding_model: embedding === null ? null : embeddingModel,
-      match_count: 8,
+      match_count: matchCount,
       filters: { region },
     }),
   );
@@ -335,12 +341,15 @@ type PlanQuestion = LibraryQuestion & { plan: PlanFacts };
 type OnboardingCase = { id: string; facts: OnboardingLibraryFacts; expected: string[] };
 const planQuestions = planFile.questions as unknown as PlanQuestion[];
 const onboardingCases = planFile.onboarding as unknown as OnboardingCase[];
-const mergedKeys = async (texts: readonly string[]): Promise<string[]> => {
+const mergedKeys = async (texts: readonly string[], matchCount: number): Promise<string[]> => {
   const vectors = await embed([...texts]);
   const lists: string[][] = [];
   for (const [index, text] of texts.entries()) {
     lists.push(
-      keysPassing(await search(text, vectors[index], defaultRegion), libraryRelevanceFloor),
+      keysPassing(
+        await search(text, vectors[index], defaultRegion, matchCount),
+        libraryRelevanceFloor,
+      ),
     );
   }
   return interleaveKeys(lists);
@@ -348,7 +357,7 @@ const mergedKeys = async (texts: readonly string[]): Promise<string[]> => {
 const planScores = async (searches: (question: PlanQuestion) => readonly string[]) => {
   const scores: QuestionScore[] = [];
   for (const question of planQuestions) {
-    scores.push(scoreQuestion(question, await mergedKeys(searches(question))));
+    scores.push(scoreQuestion(question, await mergedKeys(searches(question), libraryMatchCount)));
   }
   return scores;
 };
@@ -364,7 +373,7 @@ if (!holdout) {
     onboardingScores.push(
       scoreQuestion(
         { id: entry.id, text: "", expected: entry.expected },
-        await mergedKeys(onboardingLibraryQueries(entry.facts)),
+        await mergedKeys(onboardingLibraryQueries(entry.facts), planLibraryMatchCount),
       ),
     );
   }
