@@ -1175,7 +1175,7 @@ begin
   end;
   -- On a day Coach already adjusted, the readiness kinds are not offered twice, but a joint that is held,
   -- limited or on watch still changes the exercises start_workout will create for that day.
-  joint_only := unavailable = 'coach_adjusted';
+  joint_only := coalesce(unavailable = 'coach_adjusted', false);
 
   if workout_id is not null then
     targets := private.next_session_targets(p_user);

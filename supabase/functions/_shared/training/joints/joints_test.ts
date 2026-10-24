@@ -414,7 +414,7 @@ Deno.test("day_adjustment_compute is B4's function plus the joint and red-flag h
     ],
     [
       "    when version_block = 'next_session' and version_ends = p_date then 'coach_adjusted'\n  end;\n",
-      "    when version_block = 'next_session' and version_ends = p_date then 'coach_adjusted'\n  end;\n  -- On a day Coach already adjusted, the readiness kinds are not offered twice, but a joint that is held,\n  -- limited or on watch still changes the exercises start_workout will create for that day.\n  joint_only := unavailable = 'coach_adjusted';\n",
+      "    when version_block = 'next_session' and version_ends = p_date then 'coach_adjusted'\n  end;\n  -- On a day Coach already adjusted, the readiness kinds are not offered twice, but a joint that is held,\n  -- limited or on watch still changes the exercises start_workout will create for that day.\n  joint_only := coalesce(unavailable = 'coach_adjusted', false);\n",
     ],
     [
       "    can_reduce := (reduce_c ->> 'sets_to')::integer < (reduce_c ->> 'sets_from')::integer;\n  end if;\n",
