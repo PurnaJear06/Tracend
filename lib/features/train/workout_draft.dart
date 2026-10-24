@@ -163,6 +163,10 @@ class WorkoutSetDraft {
     return effort == null ? null : (10 - effort).round().clamp(0, maxRir);
   }
 
+  /// Nothing was entered or done on this set.
+  bool get isUntouched =>
+      !completed && load.isEmpty && reps.isEmpty && rpe.isEmpty && !loadEdited;
+
   /// The athlete changed the load on this screen. An emptied load then stays
   /// empty (no added weight) instead of showing a suggestion again.
   bool loadEdited = false;
@@ -253,11 +257,26 @@ class ExerciseDraft {
   Set<int> newBests(ExerciseHistory? history) =>
       newBestSetIndexes(history: history, sets: logged);
 
+  /// Gives the exercise [count] sets, the number of set rows the server holds
+  /// for it. The server's `start_workout` decides that number (it applies the
+  /// athlete's accepted same-day answer), so the phone follows it: untouched
+  /// sets at the end go, missing ones are added. A set that already has
+  /// something on it is never dropped.
+  void alignTo(int count) {
+    while (sets.length > count && sets.last.isUntouched) {
+      sets.removeLast();
+    }
+    while (sets.length < count) {
+      sets.add(WorkoutSetDraft());
+    }
+  }
+
   /// Reads the exercise from a saved draft or a server session.
   void restore(Map<String, dynamic> map) {
     status = map['status'] as String? ?? 'unknown';
     pain = map['pain_flag'] == true;
     final rows = map['sets'] as List? ?? const [];
+    if (rows.isNotEmpty) alignTo(rows.length);
     for (var i = 0; i < rows.length && i < sets.length; i++) {
       final row = rows[i];
       if (row is Map) {

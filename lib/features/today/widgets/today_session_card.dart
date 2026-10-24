@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/readiness/day_adjustment.dart';
+import 'package:tracend/features/readiness/day_adjustment_card.dart';
+import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_session_progress.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
@@ -30,6 +33,9 @@ class TodaySessionCard extends StatelessWidget {
     required this.decision,
     required this.aiAllowed,
     required this.onOpen,
+    this.dayAdjustment,
+    this.onTalkToCoach,
+    this.onCheckIn,
     super.key,
   });
 
@@ -40,13 +46,50 @@ class TodaySessionCard extends StatelessWidget {
   final bool aiAllowed;
   final VoidCallback onOpen;
 
+  /// Today's same-day readiness adjustment, shared with Train. Null without a
+  /// backend, where there is none.
+  final DayAdjustmentController? dayAdjustment;
+
+  /// Opens Coach with the readiness card's question in the box.
+  final ValueChanged<String>? onTalkToCoach;
+
+  /// Opens today's check-in from the readiness card.
+  final VoidCallback? onCheckIn;
+
   @override
   Widget build(BuildContext context) {
-    final workout = brief.workout;
-    final note = _CoachNote(
-      decision: decision?.localDate == brief.localDate ? decision : null,
-      aiAllowed: aiAllowed,
+    final controller = dayAdjustment;
+    if (controller == null) return _build(context, null);
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) => _build(context, controller.current),
     );
+  }
+
+  Widget _build(BuildContext context, DayAdjustment? adjustment) {
+    final workout = brief.workout;
+    // The training note gives way to the readiness card when it has something
+    // to say, so the two never disagree; the nutrition note is elsewhere.
+    final cardSpeaks =
+        adjustment != null &&
+        adjustment.localDate == brief.localDate &&
+        (adjustment.kind != null || adjustment.hasSafetyRoute);
+    final note = cardSpeaks
+        ? const SizedBox.shrink()
+        : _CoachNote(
+            decision: decision?.localDate == brief.localDate ? decision : null,
+            aiAllowed: aiAllowed,
+          );
+    final readiness = dayAdjustment == null
+        ? const SizedBox.shrink()
+        : DayAdjustmentCard(
+            controller: dayAdjustment!,
+            embedded: true,
+            forDate: brief.localDate,
+            computed: brief.computed,
+            onCheckIn: onCheckIn,
+            onTalkToCoach: onTalkToCoach ?? (_) {},
+          );
     if (workout == null) {
       return _Frame(
         kicker: "Today's session",
@@ -61,18 +104,28 @@ class TodaySessionCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: TracendSpacing.sm),
+          readiness,
           note,
         ],
       );
     }
 
-    final progress = TodaySessionProgress.of(brief);
+    final progress = TodaySessionProgress.of(brief, adjustment: adjustment);
     final session = brief.todaySession;
     final total = progress.total;
     final logged = progress.logged;
     final name = workout['name'] as String? ?? 'Workout';
     final status = session == null
-        ? workoutSummary(workout)
+        ? workoutSummary(
+            workout,
+            setsOverride:
+                adjustment != null &&
+                    adjustment.easesSession &&
+                    adjustment.localDate == brief.localDate &&
+                    adjustment.plannedWorkoutId == workout['id']
+                ? progress.total
+                : null,
+          )
         : session.completed
         ? 'Done · $logged ${logged == 1 ? 'set' : 'sets'} logged'
         : '$logged of $total sets logged';
@@ -103,6 +156,7 @@ class TodaySessionCard extends StatelessWidget {
           ),
         ],
         const SizedBox(height: TracendSpacing.sm),
+        readiness,
         note,
         Align(
           alignment: AlignmentDirectional.centerStart,
@@ -366,13 +420,16 @@ class _CoachNote extends StatelessWidget {
 
 /// "2 exercises · 7 sets · about 60 min" from the real workout map; any
 /// part the plan does not carry is left out rather than guessed.
-String workoutSummary(Map<String, dynamic> workout) {
+String workoutSummary(Map<String, dynamic> workout, {int? setsOverride}) {
   final exercises = workout['exercises'] as List? ?? const [];
-  final sets = exercises.fold<int>(
-    0,
-    (sum, item) =>
-        sum + ((item is Map ? item['set_count'] as num? : null)?.toInt() ?? 0),
-  );
+  final sets =
+      setsOverride ??
+      exercises.fold<int>(
+        0,
+        (sum, item) =>
+            sum +
+            ((item is Map ? item['set_count'] as num? : null)?.toInt() ?? 0),
+      );
   final minutes = (workout['estimated_minutes'] as num?)?.toInt();
   return [
     if (exercises.isNotEmpty)

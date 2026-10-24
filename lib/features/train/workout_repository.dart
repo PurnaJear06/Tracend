@@ -94,6 +94,8 @@ class PlannedExercise {
     this.exerciseSlug,
     this.primaryMuscles = const [],
     this.nextTarget,
+    this.plannedSetCount,
+    this.loadHeld = false,
   });
   final int order;
   final String name;
@@ -119,6 +121,48 @@ class PlannedExercise {
   /// The next-session target from the sets logged (hub 1.7); null without
   /// logged sets and in every payload older than 1.7.
   final NextTarget? nextTarget;
+
+  /// The plan's set count when today's accepted adjustment made the session
+  /// lighter ([setCount] is then the lighter one); null otherwise.
+  final int? plannedSetCount;
+
+  /// Today's accepted adjustment holds last time's load and reps here, and
+  /// [nextTarget] is that held target.
+  final bool loadHeld;
+
+  /// This exercise as an accepted same-day adjustment leaves it: [setCount]
+  /// sets, a lower effort when [targetRpe] is given, and, with [hold], last
+  /// time's load and reps as the target. The plan itself is not changed.
+  PlannedExercise eased({
+    required int setCount,
+    num? targetRpe,
+    num? heldLoadKg,
+    int? heldReps,
+    bool hold = false,
+  }) => PlannedExercise(
+    order: order,
+    name: name,
+    setCount: setCount,
+    repMin: repMin,
+    repMax: repMax,
+    targetRpe: targetRpe ?? this.targetRpe,
+    restSeconds: restSeconds,
+    notes: notes,
+    targetLoadKg: targetLoadKg,
+    exerciseSlug: exerciseSlug,
+    primaryMuscles: primaryMuscles,
+    nextTarget: hold
+        ? NextTarget(
+            action: NextTargetAction.hold,
+            reason: 'day_adjustment',
+            loadKg: heldLoadKg ?? nextTarget?.loadKg,
+            reps: heldReps ?? nextTarget?.reps ?? repMin,
+            sets: setCount,
+          )
+        : nextTarget,
+    plannedSetCount: setCount < this.setCount ? this.setCount : plannedSetCount,
+    loadHeld: hold || loadHeld,
+  );
 
   /// The key `get_my_exercise_history` knows this exercise by: its catalog
   /// slug, or its name when it has none.
@@ -147,6 +191,19 @@ class PlannedWorkout {
   final int? weekday;
   final String warmUp;
   final String cooldownCardio;
+
+  /// This workout with [exercises] in place of its own.
+  PlannedWorkout withExercises(List<PlannedExercise> exercises) =>
+      PlannedWorkout(
+        id: id,
+        name: name,
+        objective: objective,
+        estimatedMinutes: estimatedMinutes,
+        exercises: exercises,
+        weekday: weekday,
+        warmUp: warmUp,
+        cooldownCardio: cooldownCardio,
+      );
 
   /// Parses a workout from `get_my_training_hub` or the daily brief's
   /// `today_workout`, which share one shape. [nextTargets] holds the hub's
