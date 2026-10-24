@@ -386,6 +386,11 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
 - `meal-media-retention` validates a dedicated `RETENTION_WORKER_SECRET` (not JWT). Store the same
   generated value in Edge Function secrets and Supabase Vault; Cron reads Vault. Never place it in
   Flutter, shell history, logs, or committed files.
+  The worker compares the bearer value in constant time. It runs its stages (meal photos, expired
+  exports, orphan sweep, deletion receipts) one by one, so a failing stage does not stop the next;
+  one row whose result cannot be written back does not strand the rest of its batch; and a photo
+  claimed by a worker that stopped before finishing (`pending_deletion` for 30 minutes) is handed out
+  again. Failures reach Sentry as codes and counts only, never a key, path or URL.
 - `library-embed` (research library embeddings) validates a bearer secret that the database
   generates itself in Vault (`library_worker_secret`, created by `private.library_worker_secret()`);
   there is no Edge Function secret. The cron job is inert until the deploy workflow stores the
@@ -627,9 +632,19 @@ history.
   `pain_reports` (the athlete's pain checks),
   `ai_usage_events`, physique analyses and every
   set-timing column. `coach_facts` (what the athlete confirmed for Coach) and `coach_notes` (Coach's own
-  notes) are included. Known gap: the table list in `privacy-export` does not yet include Coach
-  threads and messages, `user_preferences`, nutrition schedules, HealthKit
-  workout references and reconciliations, or the feature-engine tables.
+  notes) are included, and so are the Coach conversation (`coach_threads` and `coach_messages`,
+  including threads the athlete asked Coach not to remember: they are the athlete's own words),
+  `coach_narrative_entries`, `coach_session_summaries`, `coach_context_snapshots`, `user_preferences`,
+  the nutrition schedules, HealthKit workout references and reconciliations, the feature-engine
+  tables (`daily_computed_metrics`, `metric_baseline_history`, `user_baselines`), AI budget
+  reservations, and the athlete's own export and deletion request rows. A table is read in pages of
+  1000 in a stable order, because the Data API caps one response at 1000 rows. The one table with a
+  `user_id` that is left out is `private.day_adjustment_metric_attempts`, a rate-limit counter with no
+  athlete content. A Deno test reads the migrations and fails when a table with a `user_id` is in
+  neither the export list nor that documented exclusion list, so a new table cannot be forgotten.
+- An export stuck in `processing` is claimed again after 15 minutes, so it never blocks the next
+  request. A `ready` export that has expired or used its three downloads is marked expired when the
+  athlete asks for a new one, and a fresh export is queued in its place.
 - It is encrypted, delivered through a short-lived authorization, and deleted within seven days.
 - Export jobs and downloads are audited without logging content.
 - The owner supplies an export-only password of at least 12 characters after reauthentication.
@@ -645,7 +660,9 @@ history.
 - Account deletion requires explicit confirmation and revokes active sessions promptly.
 - Meal images, progress photos, and export packages are removed before the Auth user: every object
   recorded for the account plus every object in the account's folders
-  (`list_account_storage_objects`), so an upload that never got a database row goes too. Auth
+  (`list_account_storage_objects`), so an upload that never got a database row goes too. Every list
+  is read in pages of 1000, so an account with more files than the Data API returns at once leaves
+  none behind. Auth
   deletion cascades through user-owned PostgreSQL records and removes the invite and waitlist rows
   (section 7); a content-free completion receipt remains for 180 days.
 - Deleting from the app removes that athlete's local data (Apple Health sync state, an unsent
