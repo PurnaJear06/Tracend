@@ -1563,7 +1563,8 @@ const proposalContract = "\n# Proposing a change\n" +
   blockSettings.join(" | ") + "), start_date, end_date. For a range of days use the longer end.\n" +
   "- training_schedule: a new week for some weeks. weeks (1 to 12; 8 when the athlete gives no length), and any of days_per_week (1 to 6), weekdays (ISO, 1 is Monday), session_minutes (30 to 120).\n" +
   "- exercise_swap: from_exercise (an exercise name from the plan) and, only if the athlete named one, to_exercise.\n" +
-  "- intensity_or_phase: weeks (1 to 8) and exactly one of level (" + intensityLevels.join(" | ") +
+  "- intensity_or_phase: weeks (1 to 8; a deload is always one week, so send 1 for it) and exactly one of level (" +
+  intensityLevels.join(" | ") +
   ") or focus (" + trainingFocuses.join(" | ") + ").\n" +
   "- goal_or_phase: phase (" + goalPhases.join(" | ") +
   "), and target_weight_kg and target_date only if the athlete gave them.\n" +
