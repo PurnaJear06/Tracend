@@ -172,7 +172,7 @@ class _AccountDeletionSheetState extends State<AccountDeletionSheet> {
 /// Shown when the export is over the size one request can build. The app has no support address
 /// of its own, so it points to whoever invited the athlete.
 const tooLargeExportMessage =
-    'Your data is too large to prepare in the app, and trying again will not help. Contact whoever invited you to Tracend and they will export it for you.';
+    'Your data is too large to prepare in the app, and trying again will not help. Email tracend.train@gmail.com from your account email and we will send your export.';
 
 /// Encrypted export, the body of a Tracend sheet: the account password and a
 /// separate export password of 12 or more characters; the download unlocks
