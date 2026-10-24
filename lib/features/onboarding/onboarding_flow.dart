@@ -1213,6 +1213,21 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     };
   }
 
+  /// What the server holds for [proposal] after a failed answer: its status
+  /// (`pending`, `accepted`, `rejected`, `revision_requested`, `expired`), or
+  /// null when it cannot be read. The failure may only have lost the reply.
+  Future<String?> _serverProposalStatus(OnboardingProposal proposal) async {
+    try {
+      final generation = await widget.repository.loadGeneration();
+      return generation?.proposalId == proposal.id
+          ? generation?.proposalStatus
+          : null;
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      return null;
+    }
+  }
+
   Future<void> _respond(String action, {String? note}) async {
     final proposal = _proposal;
     if (proposal == null || _saving) return;
@@ -1221,7 +1236,28 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _error = null;
     });
     try {
-      await widget.repository.respond(proposal.id, action, note: note);
+      try {
+        await widget.repository.respond(proposal.id, action, note: note);
+      } catch (e) {
+        debugPrint('Non-critical error: $e');
+        final status = await _serverProposalStatus(proposal);
+        if (!mounted) return;
+        final recorded = status == _recordedStatus[action];
+        if (!recorded) {
+          if (e is OnboardingProposalStale && status != null) {
+            _showProposalExpired();
+          } else {
+            setState(() {
+              _error = status == null
+                  ? 'Tracend could not confirm your response. Check the '
+                        'connection and try again.'
+                  : 'Your response was not saved. Nothing has changed; try '
+                        'again.';
+            });
+          }
+          return;
+        }
+      }
       if (!mounted) return;
       if (action == 'accept') {
         setState(() {
@@ -1231,11 +1267,18 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         return;
       }
       _revisionNote.text = action == 'request_revision' ? (note ?? '') : '';
-      await widget.repository.saveDraft(
-        path: _path,
-        currentSection: _sectionKeys[_reviewStep],
-        payload: _payload,
-      );
+      try {
+        await widget.repository.saveDraft(
+          path: _path,
+          currentSection: _sectionKeys[_reviewStep],
+          payload: _payload,
+        );
+      } catch (e) {
+        // The answer is recorded and the draft already holds the answers;
+        // only the place to reopen at was not saved.
+        debugPrint('Non-critical error: $e');
+      }
+      if (!mounted) return;
       setState(() {
         _proposal = null;
         _step = _reviewStep;
@@ -1243,18 +1286,17 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             ? 'Proposal rejected. Your answers are unchanged.'
             : 'Change your answers if needed, then build the plan again.';
       });
-    } on OnboardingProposalStale {
-      if (mounted) _showProposalExpired();
-    } catch (e) {
-      debugPrint('Non-critical error: $e');
-      if (!mounted) return;
-      setState(() {
-        _error = 'Your response was not saved. Nothing has changed; try again.';
-      });
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
+
+  /// The proposal status each answer leaves on the server.
+  static const _recordedStatus = {
+    'accept': 'accepted',
+    'reject': 'rejected',
+    'request_revision': 'revision_requested',
+  };
 
   bool _sheetOpen = false;
 

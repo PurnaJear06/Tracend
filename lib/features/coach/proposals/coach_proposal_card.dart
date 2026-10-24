@@ -168,8 +168,9 @@ class _CoachProposalCardState extends State<CoachProposalCard> {
       case CoachProposalStatus.declined:
         return true;
       case CoachProposalStatus.changed:
-        if (action == CoachProposalAction.change)
+        if (action == CoachProposalAction.change) {
           widget.onChangeIt?.call(fresh);
+        }
         return true;
       case CoachProposalStatus.pending || CoachProposalStatus.expired:
         return false;
