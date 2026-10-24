@@ -92,6 +92,16 @@ const notAnAuthor = new Set([
   "friday",
   "saturday",
   "sunday",
+  "mon",
+  "tue",
+  "tues",
+  "wed",
+  "thu",
+  "thur",
+  "thurs",
+  "fri",
+  "sat",
+  "sun",
   "spring",
   "summer",
   "autumn",
@@ -131,10 +141,11 @@ const notAnInstitution = new Set([
 ]);
 
 const name = String.raw`\p{Lu}[\p{L}'’-]{2,}`;
-// The year must end at a word boundary: "Smith 2019 found" is a year, "BMR 19800" is not.
+// The year must end at a word boundary: "Smith 2019 found" is a year, "BMR 19800" is not. A year
+// that opens a date is not a citation year: "Thu 2026-10-15", "Week 2026/10".
 const authorYear = new RegExp(
   String
-    .raw`\b(${name}(?:(?:,|,? and|,? &)\s+${name})*(?:,? et al\.?)?),?\s*\(?((?:19[5-9]|20[0-2])\d)[a-z]?\)?(?![\p{L}\p{N}])`,
+    .raw`\b(${name}(?:(?:,|,? and|,? &)\s+${name})*(?:,? et al\.?)?),?\s*\(?((?:19[5-9]|20[0-2])\d)[a-z]?\)?(?![\p{L}\p{N}])(?![-/.]\d)`,
   "gu",
 );
 // "Grgic et al. found ..." names a study without its year.
