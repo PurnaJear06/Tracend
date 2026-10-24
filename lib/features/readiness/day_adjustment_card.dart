@@ -7,6 +7,7 @@ import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/readiness/day_adjustment_repository.dart';
 import 'package:tracend/features/readiness/readiness_copy.dart';
+import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
@@ -60,8 +61,12 @@ DayCardState dayCardState(DayAdjustment adjustment) {
     return adjustment.sessionBegun ? DayCardState.begun : DayCardState.accepted;
   }
   if (!adjustment.available) {
-    return adjustment.unavailableReason == 'coach_adjusted'
-        ? DayCardState.coachAdjusted
+    if (adjustment.unavailableReason == 'coach_adjusted') {
+      return DayCardState.coachAdjusted;
+    }
+    // A hold on an area is said on every day it stands, a rest day included.
+    return jointReminderLines(adjustment).isNotEmpty
+        ? DayCardState.note
         : DayCardState.hidden;
   }
   // A kind this build cannot apply: its explanation and band are said, and no
@@ -80,7 +85,11 @@ DayCardState dayCardState(DayAdjustment adjustment) {
     return DayCardState.notAvailable;
   }
   if (adjustment.signals.recoveryLow) return DayCardState.lowRecovery;
-  if (adjustment.previousAnswer != null || painNote(adjustment) != null) {
+  // A sore area is said on every day it stands, even when nothing in the
+  // session changes for it.
+  if (adjustment.previousAnswer != null ||
+      painNote(adjustment) != null ||
+      adjustment.jointStates.isNotEmpty) {
     return DayCardState.note;
   }
   return DayCardState.hidden;
@@ -228,6 +237,40 @@ class _DayAdjustmentCardState extends State<DayAdjustmentCard> {
         painNote(adjustment) ?? adjustment.explanation,
       _ => adjustment.explanation,
     };
+    // The server's sentence carries the joint and hold words; the card adds
+    // only the ones it does not already say.
+    final explanationShown = switch (state) {
+      DayCardState.safety ||
+      DayCardState.declined ||
+      DayCardState.begun => false,
+      DayCardState.note =>
+        adjustment.kind != null ||
+            adjustment.unsupportedKind ||
+            painNote(adjustment) == null,
+      _ => true,
+    };
+    final changeLines = switch (state) {
+      DayCardState.proposed || DayCardState.accepted || DayCardState.begun => [
+        for (final change in adjustment.changes) ?jointChangeLine(change),
+        if (adjustment.changes.any(
+          (change) => change.jointAction == JointAction.swap,
+        ))
+          swapLoadLine,
+      ],
+      _ => const <String>[],
+    };
+    final reminders = jointReminderLines(
+      adjustment,
+      explanationShown: explanationShown,
+    );
+    final stateLines = state == DayCardState.safety
+        ? const <String>[]
+        : [
+            for (final joint in adjustment.jointStates)
+              if (!joint.isReminderHold &&
+                  !(explanationShown && _says(adjustment, joint.area)))
+                jointStateLine(joint),
+          ];
     final showSeen =
         state == DayCardState.proposed ||
         state == DayCardState.lowRecovery ||
@@ -298,6 +341,15 @@ class _DayAdjustmentCardState extends State<DayAdjustmentCard> {
         if (previous != null && state != DayCardState.safety) ...[
           const SizedBox(height: TracendSpacing.xs),
           _Line(previousAnswerLine(previous), color: colors.accentAmber),
+        ],
+        if (changeLines.isNotEmpty) ...[
+          const SizedBox(height: TracendSpacing.xs),
+          for (final line in changeLines)
+            _Line(line, color: colors.textPrimary),
+        ],
+        if (stateLines.isNotEmpty || reminders.isNotEmpty) ...[
+          const SizedBox(height: TracendSpacing.xs),
+          for (final line in [...stateLines, ...reminders]) _Line(line),
         ],
         if (seen.isNotEmpty) ...[
           const SizedBox(height: TracendSpacing.xs),
@@ -441,6 +493,10 @@ class _DayAdjustmentCardState extends State<DayAdjustmentCard> {
     }
   }
 }
+
+/// The server's sentence already names [area]'s joint.
+bool _says(DayAdjustment adjustment, PainArea area) =>
+    adjustment.explanation.toLowerCase().contains(areaYour(area).toLowerCase());
 
 /// What the athlete picked in the options sheet: a kind, or the plan as written.
 class _Choice {
@@ -667,27 +723,5 @@ class _TextAction extends StatelessWidget {
     onPressed: onTap,
     style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
     child: Text(label),
-  );
-}
-
-/// The referral for a day with a safety route, in a sheet that cannot be
-/// missed. It has no training choice: "Got it" only closes it.
-Future<void> showDaySafetySheet(BuildContext context, String route) {
-  final words = safetyWords(route);
-  return showTracendSheet<void>(
-    context,
-    title: words.title,
-    builder: (sheetContext) => Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(words.body, style: Theme.of(sheetContext).textTheme.bodyLarge),
-        const SizedBox(height: TracendSpacing.lg),
-        FilledButton(
-          onPressed: () => Navigator.of(sheetContext).pop(),
-          child: const Text(gotItLabel),
-        ),
-        const SizedBox(height: TracendSpacing.sm),
-      ],
-    ),
   );
 }

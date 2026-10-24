@@ -32,7 +32,7 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   `20261023140024`): `day_adjustments`, `get_my_day_adjustment_v1` / `respond_to_day_adjustment_v1`
   (hold loads, one set fewer or easy cardio for today only; one tap and Undo; the recovery score never
   adjusts a session alone, the athlete may choose), `start_workout` building the adjusted sets and B3
-  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). B5-1 (pain check and joint rules) merged as #172; B5-3 and B5-4 (deloads and cardio dosing, server) in review. Handoff:
+  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). B5-1 (pain check and joint rules) merged as #172; B5-2 (the pain check in the app) in review as #176; B5-3 and B5-4 (deloads and cardio dosing, server) in review. Handoff:
   [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping
@@ -107,9 +107,19 @@ migration `20261024060025` adds `pain_reports`, `record_pain_check_v1`, the opti
 routes `urgent`, `clinician_today` and `clinician`, the `joint_adjust` kind and payload 1.1 of the
 day adjustment, and `get_readiness_context_v1` for Coach context. A red flag or a pain of 7 or more
 gives a referral and no training change (even on a rest day or with no check-in); a held joint stays
-held until the athlete says a clinician cleared it. No app change yet (B5-2); the app must not offer
-the new pain keys until then, and the installed B4-2 build must tolerate the new kind and routes
-(see the handoff). Details: "B5-1" in [`training-engine.md`](./handoff/training-engine.md).
+held until the athlete says a clinician cleared it. The installed B4-2 build reads the new kind and
+routes strictly, so B5-2 must be installed with or before the first build that sends the pain keys.
+Details: "B5-1" in [`training-engine.md`](./handoff/training-engine.md).
+
+**B5-2 pain check in the app (2026-10-24, branch `claude/b5-2-pain-check-app`, PR open):** the check-in
+asks where, when and the red-flag questions (and how an area already noted is today), the workout's
+**Pain or discomfort** chip runs the same check with a swap offered offline, the card handles the
+`joint_adjust` kind, joint states, hold reminders and the referral routes, the logger follows server rows
+(an exercise left out for a joint has no sets and is never logged; a swap logs under its name), every
+day-adjustment call passes `supports_joint_changes: true`, a pain report that cannot be sent is kept,
+sent again within the day and told if refused, referrals need **Got it** (once per day), and the error
+reports carry no pain answer. No server change. Details: "B5-2" in
+[`training-engine.md`](./handoff/training-engine.md). Next: B5-3 (deloads), B5-4 (cardio dosing).
 
 **B5-3 deloads and B5-4 cardio dosing, server side (2026-10-24, branch `claude/b5-3-4-deloads-cardio`, PR open):**
 migrations `20261024060125` and `20261024060225` add `get_my_training_guidance_v1` and
