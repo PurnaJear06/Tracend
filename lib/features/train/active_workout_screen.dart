@@ -425,7 +425,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         revision,
         serverDraftPayload(draft, id),
         readRows: () async {
-          final session = await repository.loadSession(widget.workout);
+          // The session of the day the draft was made on, not today's.
+          final session = await repository.loadSession(
+            widget.workout,
+            localDate: DateTime.tryParse(
+              '${draft['actual_started_at'] ?? ''}',
+            )?.toLocal(),
+          );
           return session != null && session['session_id'] == id
               ? session['exercises']
               : null;
