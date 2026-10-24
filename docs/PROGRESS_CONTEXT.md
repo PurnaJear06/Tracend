@@ -80,6 +80,15 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 
+**Lost replies and thread switching (2026-10-24, branch `claude/lost-replies-thread-switch`, PR open):** QA audit groups E
+and F, app only. Coach: the latest conversation open wins and a failed open restores the previous chat; New conversation
+keeps the Continue row; a conversation loads its newest 200 messages; a follow-up tapped while Coach is busy waits
+visibly instead of being dropped. A Coach proposal, the onboarding plan approval, a manual meal and an Apple Health
+sync no longer treat a lost reply as a failure: they re-read the server, repeat one idempotency key, or keep what was
+typed; a failed meal photo deletes its draft and an empty draft can be deleted. Needs `./scripts/install-device.sh`
+from the merged commit. Workout finish (M-E3) is left to the open workout PRs. Details: "Lost replies, idempotent
+writes and thread switching" in [`ai-gateway.md`](./handoff/ai-gateway.md).
+
 **Query order fix (2026-10-24, branch `claude/explicit-query-order`, PR open):** saved Coach conversations loaded
 newest-first (postgrest-dart's `order()` defaults to descending, and `loadMessages` left the direction out), so a
 reply sat above its question and the screen opened on the oldest message. Fixed with an explicit ascending order;
