@@ -400,4 +400,172 @@ void main() {
       },
     );
   });
+
+  group('a second check-in while the first waits', () {
+    const base = {
+      'sleep_quality': 3,
+      'energy': 3,
+      'soreness': 3,
+      'hunger': 3,
+      'mood': 3,
+      'available_to_train': true,
+      'note': '',
+    };
+
+    test('does not overwrite a red flag: both go, the earlier first', () async {
+      SharedPreferences.setMockInitialValues({});
+      final queue = await buildQueue();
+      await queue.enqueue(
+        payload: {
+          ...base,
+          'pain_severity': 3,
+          'pain_area': 'back',
+          'pain_red_flags': ['bladder_bowel_saddle'],
+        },
+        localDate: '2026-10-23',
+        timezone: 'Asia/Kolkata',
+      );
+      await queue.enqueue(
+        payload: {...base, 'pain_severity': 0},
+        localDate: '2026-10-24',
+        timezone: 'Asia/Kolkata',
+      );
+      expect(queue.painState, CheckInPainState.waiting);
+
+      final sent = <(String, Map<String, dynamic>)>[];
+      final outcome = await queue.replay((date, zone, key, payload) async {
+        sent.add((date, payload));
+        return true;
+      });
+      expect(outcome, CheckInReplayOutcome.delivered);
+      expect(sent.map((e) => e.$1), ['2026-10-23', '2026-10-24']);
+      expect(sent.first.$2['pain_red_flags'], ['bladder_bowel_saddle']);
+      expect(queue.painState, CheckInPainState.none);
+      final preferences = await SharedPreferences.getInstance();
+      expect(
+        preferences.getKeys().where((k) => k.contains('pending')),
+        isEmpty,
+      );
+    });
+
+    test('the later one waits while the earlier cannot be sent', () async {
+      SharedPreferences.setMockInitialValues({});
+      final queue = await buildQueue();
+      await queue.enqueue(
+        payload: {
+          ...base,
+          'pain_severity': 6,
+          'pain_area': 'knee',
+          'pain_red_flags': <String>[],
+        },
+        localDate: '2026-10-24',
+        timezone: 'Asia/Kolkata',
+      );
+      await queue.enqueue(
+        payload: {...base, 'pain_severity': 0},
+        localDate: '2026-10-24',
+        timezone: 'Asia/Kolkata',
+      );
+      final attempts = <Map<String, dynamic>>[];
+      final outcome = await queue.replay((date, zone, key, payload) async {
+        attempts.add(payload);
+        return false;
+      });
+      expect(outcome, CheckInReplayOutcome.retained);
+      expect(
+        attempts,
+        hasLength(1),
+        reason: 'the later one would supersede it',
+      );
+      expect(attempts.single['pain_area'], 'knee');
+      expect(queue.painState, CheckInPainState.waiting);
+    });
+
+    test('a check-in without a pain check is replaced as before', () async {
+      SharedPreferences.setMockInitialValues({});
+      final queue = await buildQueue();
+      await queue.enqueue(
+        payload: {...base, 'pain_severity': 0},
+        localDate: '2026-10-23',
+        timezone: 'Asia/Kolkata',
+      );
+      await queue.enqueue(
+        payload: {...base, 'pain_severity': 0},
+        localDate: '2026-10-24',
+        timezone: 'Asia/Kolkata',
+      );
+      final dates = <String>[];
+      await queue.replay((date, zone, key, payload) async {
+        dates.add(date);
+        return true;
+      });
+      expect(dates, ['2026-10-24']);
+    });
+
+    test('an earlier refusal is told and its check-in still goes', () async {
+      SharedPreferences.setMockInitialValues({});
+      final queue = await buildQueue();
+      await queue.enqueue(
+        payload: {
+          ...base,
+          'energy': 1,
+          'pain_severity': 6,
+          'pain_area': 'knee',
+          'pain_red_flags': <String>[],
+        },
+        localDate: '2026-10-20',
+        timezone: 'Asia/Kolkata',
+      );
+      await queue.enqueue(
+        payload: {...base, 'pain_severity': 0},
+        localDate: '2026-10-24',
+        timezone: 'Asia/Kolkata',
+      );
+      final sent = <(String, Map<String, dynamic>)>[];
+      Future<bool> server(
+        String date,
+        String zone,
+        String key,
+        Map<String, dynamic> payload,
+      ) async {
+        if (payload.containsKey('pain_area')) {
+          throw const PostgrestException(
+            message: 'a pain check is for today or yesterday',
+            code: '22023',
+          );
+        }
+        sent.add((date, payload));
+        return true;
+      }
+
+      expect(await queue.replay(server), CheckInReplayOutcome.delivered);
+      expect(sent.map((e) => e.$1), ['2026-10-24']);
+      expect(queue.painState, CheckInPainState.refused);
+      expect(queue.painRefusedTooOld, isTrue);
+
+      await queue.acknowledgeRefusedPain(server);
+      expect(queue.painState, CheckInPainState.none);
+      expect(sent.map((e) => e.$1), ['2026-10-24', '2026-10-20']);
+      expect(sent.last.$2['energy'], 1, reason: 'the rest of it was sent');
+      expect(sent.last.$2.containsKey('pain_area'), isFalse);
+    });
+
+    test('a refusal that is not about the date is said so', () async {
+      SharedPreferences.setMockInitialValues({});
+      final queue = await buildQueue();
+      final key = await queue.enqueue(
+        payload: {
+          ...base,
+          'pain_severity': 6,
+          'pain_area': 'knee',
+          'pain_red_flags': <String>[],
+        },
+        localDate: '2026-10-24',
+        timezone: 'Asia/Kolkata',
+      );
+      await queue.markPainRefused(key, tooOld: false);
+      expect(queue.painState, CheckInPainState.refused);
+      expect(queue.painRefusedTooOld, isFalse);
+    });
+  });
 }

@@ -91,6 +91,7 @@ Future<void> _pump(
   WidgetTester tester,
   _Harness h, {
   CheckInSend? sender,
+  AppEnvironment environment = _live,
 }) async {
   final preferences = await SharedPreferences.getInstance();
   await tester.pumpWidget(
@@ -100,7 +101,7 @@ Future<void> _pump(
         extensions: const [TracendColors.dark],
       ),
       home: TodayScreen(
-        environment: _live,
+        environment: environment,
         brief: _Brief(),
         queueFactory: () => CheckInQueue(preferences, userId: 'athlete-1'),
         dayAdjustment: h.controller,
@@ -286,6 +287,49 @@ void main() {
       expect(preferences.getStringList('safety_acknowledged.athlete-1'), [
         '2026-10-02:clinician_today',
       ]);
+    });
+
+    testWidgets('a report just made shows its referral even when that route '
+        'was read earlier today', (tester) async {
+      final handle = tester.ensureSemantics();
+      SharedPreferences.setMockInitialValues({
+        'safety_acknowledged.athlete-1': ['2026-10-02:clinician_today'],
+      });
+      final h = _Harness(_route('clinician_today'));
+      await _pump(
+        tester,
+        h,
+        environment: const AppEnvironment(
+          name: 'test',
+          supabaseUrl: '',
+          supabasePublishableKey: '',
+        ),
+      );
+      expect(
+        find.text('Got it'),
+        findsNothing,
+        reason: 'read already: Today does not open it by itself again',
+      );
+
+      await tester.tap(find.text('Check in').first);
+      await tester.pumpAndSettle();
+      Future<void> choose(String label) async {
+        final option = find.bySemanticsLabel(label);
+        await tester.ensureVisible(option);
+        await tester.pumpAndSettle();
+        await tester.tap(option);
+        await tester.pumpAndSettle();
+      }
+
+      await choose('Pain: Some pain');
+      await choose('Pain 8 of 10');
+      await choose('Where is it?: Knee');
+      await choose('Do any of these apply?: None of these');
+      await tester.tap(find.text('Save check-in'));
+      await tester.pumpAndSettle();
+      expect(find.text('Got it'), findsOneWidget, reason: 'a new report');
+      expect(find.text('Get this checked today'), findsWidgets);
+      handle.dispose();
     });
 
     testWidgets('a hold that stands the next day is shown again that day', (
