@@ -18,11 +18,19 @@
 // number from 30 to 300 straight after "you'll be at" or "weigh" ("You'll be at 50 by March"),
 // and a written number with kilos or kg ("fifty kilos").
 import { exerciseCatalogV1 } from "../../onboarding/catalog.ts";
+import { asciiDigits } from "../../ascii_digits.ts";
 
 const kgWord = "(?:kg|kgs|kilos?|kilogram(?:me)?s?)";
 const lbWord = "(?:lbs?|pounds?)";
+// A figure starts at the start of a number: never inside one, so the "26" of "0.26 kg a week" (a
+// rate) or of "1,026 kg" is not read as a weight of its own.
 const weightPattern = new RegExp(
-  `(\\d{2,3}(?:[.,]\\d+)?)(?:\\s*(?:-|–|to)\\s*(\\d{2,3}(?:[.,]\\d+)?))?\\s*(${kgWord}|${lbWord})\\b`,
+  `(?<!\\d)(?<!\\d[.,])(\\d{2,3}(?:[.,]\\d+)?)(?:\\s*(?:-|–|to)\\s*(\\d{2,3}(?:[.,]\\d+)?))?\\s*(${kgWord}|${lbWord})\\b`,
+  "gi",
+);
+
+const insideDecimal = new RegExp(
+  `(?<=(?:^|[^\\d.,])[1-9][.])(\\d{2,3})\\s*(${kgWord}|${lbWord})\\b(?![\\s*_~]*(?:(?:a|per|each|every|/)\\s*(?:week|wk|month|day)\\b|weekly|monthly|daily))`,
   "gi",
 );
 
@@ -289,9 +297,9 @@ const stonePattern =
  * length, so offsets still point into the original.
  */
 function plain(original: string): string {
-  // Full-width digits and a letter O typed for a zero ("5O kg") read as the digits they stand for.
-  const sentence = original
-    .replace(/[０-９]/g, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xfee0))
+  // Digits of any script ("４５", "४५") and a letter O typed for a zero ("5O kg") read as the digits
+  // they stand for.
+  const sentence = asciiDigits(original)
     .replace(/(?<=\d)[Oo](?=\s*(?:kg|kgs|kilo|lbs?)\b)/g, "0");
   return sentence.replace(
     /(?<=^|[\s(])[*_~]+(?=\d)|(?<=\d)[*_~]+(?=$|[\s).,;:!?])/g,
@@ -311,6 +319,19 @@ function hitsIn(sentence: string): Hit[] {
     const kgs = [match[1], match[2]].filter((raw): raw is string => raw !== undefined)
       .map((raw) => toKg(Number(raw.replace(",", ".")), match[3]));
     hits.push({ start: match.index, end: match.index + match[0].length, kgs, bare: false });
+  }
+  // Inside a decimal with a whole part of 1 to 9 ("Week 2.45 kg is where you'll be"), the digits
+  // after the point are also read as a weight of their own: the figure may be a label run into a
+  // weight, and the check fails closed. Not after "0." (a small amount, "0.26 kg a week") and never
+  // for a rate ("1.25 kg a week").
+  for (const match of sentence.matchAll(insideDecimal)) {
+    if (hits.some((hit) => match.index >= hit.start && match.index < hit.end)) continue;
+    hits.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      kgs: [toKg(Number(match[1]), match[2])],
+      bare: false,
+    });
   }
   for (const match of sentence.matchAll(writtenWeight)) {
     const [, hundreds, ten, one, unit] = match.map((part) => part?.toLowerCase());
