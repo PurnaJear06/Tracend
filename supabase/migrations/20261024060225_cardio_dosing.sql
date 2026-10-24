@@ -32,7 +32,7 @@
 
 create function private.cardio_rules()
 returns jsonb language sql immutable set search_path = '' as $$
-  select '{"version":"cardio-v1","weekly_floor_min":150,"weekly_upper_min":300,"vigorous_counts_as":2,"easy_minutes":[20,30],"easy_hr_reserve_max_pct":60,"vigorous_sessions_max":2,"lift_separation_hours":3,"workout_cap_min":180,"window_days":7,"min_summary_days":5,"stretch_goals":["fat_loss","recomposition"],"cardio_types":["WALKING","RUNNING","BIKING","HIKING","ELLIPTICAL","ROWING","SWIMMING","STAIR_CLIMBING","STAIRS","STEP_TRAINING","HAND_CYCLING","JUMP_ROPE","CARDIO_DANCE","MIXED_CARDIO","HIGH_INTENSITY_INTERVAL_TRAINING"]}'::jsonb;
+  select '{"version":"cardio-v1","weekly_floor_min":120,"weekly_upper_min":250,"vigorous_counts_as":2,"easy_minutes":[20,35],"easy_hr_reserve_max_pct":65,"vigorous_sessions_max":3,"lift_separation_hours":3,"workout_cap_min":240,"window_days":8,"min_summary_days":4,"stretch_goals":["fat_loss"],"cardio_types":["WALKING","RUNNING","BIKING","HIKING","ELLIPTICAL","ROWING","SWIMMING","STAIR_CLIMBING","STAIRS","STEP_TRAINING","HAND_CYCLING","JUMP_ROPE","CARDIO_DANCE","MIXED_CARDIO","HIGH_INTENSITY_INTERVAL_TRAINING"]}'::jsonb;
 $$;
 revoke all on function private.cardio_rules() from public, anon, authenticated;
 
