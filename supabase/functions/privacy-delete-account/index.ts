@@ -1,4 +1,5 @@
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
+import { fetchAllPages } from "../_shared/paging.ts";
 import { captureException } from "../_shared/sentry.ts";
 import { isUserStorageKey } from "../_shared/storage_keys.ts";
 
@@ -32,6 +33,51 @@ export function deletableKeys(
   const safe = [...new Set(keys.filter((key): key is string => isUserStorageKey(userId, key)))];
   const unsafe = keys.filter((key) => typeof key === "string" && !isUserStorageKey(userId, key));
   return { keys: safe, unsafe: unsafe.length };
+}
+
+type Page<T> = Readonly<{ data: readonly T[] | null; error: unknown }>;
+type MediaRow = Readonly<{ purpose: string; object_key: string }>;
+type ExportRow = Readonly<{ storage_path: string }>;
+type StorageObject = Readonly<{ bucket_id: string; name: string }>;
+export type StorageListingClient = {
+  from: (table: string) => {
+    select: (columns: string) => {
+      eq: (column: string, value: string) => {
+        neq: (column: string, value: string) => PagedQuery<MediaRow>;
+        not: (column: string, operator: string, value: null) => PagedQuery<ExportRow>;
+      };
+    };
+  };
+  rpc: (name: string, args: { target_user_id: string }) => PagedQuery<StorageObject>;
+};
+type PagedQuery<T> = {
+  order: (column: string, options: { ascending: boolean }) => PagedQuery<T>;
+  range: (from: number, to: number) => PromiseLike<Page<T>>;
+};
+
+// PostgREST returns 1000 rows at most per request, so each list is read page by page. A list cut
+// at 1000 would leave every later file in Storage after the account is gone.
+export async function listAccountStorage(client: StorageListingClient, userId: string) {
+  const media = await fetchAllPages<MediaRow>(
+    (from, to) =>
+      client.from("media_objects").select("purpose,object_key").eq("user_id", userId)
+        .neq("lifecycle_status", "deleted").order("id", { ascending: true }).range(from, to),
+    "media_lookup_failed",
+  );
+  const exports = await fetchAllPages<ExportRow>(
+    (from, to) =>
+      client.from("data_exports").select("storage_path").eq("user_id", userId)
+        .not("storage_path", "is", null).order("id", { ascending: true }).range(from, to),
+    "export_lookup_failed",
+  );
+  // Uploads that never got a database row are in the user's folders too.
+  const objects = await fetchAllPages<StorageObject>(
+    (from, to) =>
+      client.rpc("list_account_storage_objects", { target_user_id: userId })
+        .order("bucket_id", { ascending: true }).order("name", { ascending: true }).range(from, to),
+    "storage_listing_failed",
+  );
+  return { media, exports, objects };
 }
 
 export async function handleAccountDeletion(request: Request): Promise<Response> {
@@ -68,19 +114,10 @@ export async function handleAccountDeletion(request: Request): Promise<Response>
     return reply(409, { error: "deletion_unavailable" });
   }
   try {
-    const media = await auth.serviceClient.from("media_objects").select("purpose,object_key")
-      .eq("user_id", auth.userId).neq("lifecycle_status", "deleted");
-    if (media.error) throw new Error("media_lookup_failed");
-    const rows = media.data ?? [];
-    const exports = await auth.serviceClient.from("data_exports").select("storage_path")
-      .eq("user_id", auth.userId).not("storage_path", "is", null);
-    if (exports.error) throw new Error("export_lookup_failed");
-    // Uploads that never got a database row are in the user's folders too.
-    const listed = await auth.serviceClient.rpc("list_account_storage_objects", {
-      target_user_id: auth.userId,
-    });
-    if (listed.error) throw new Error("storage_listing_failed");
-    const objects = (listed.data ?? []) as { bucket_id: string; name: string }[];
+    const { media: rows, exports, objects } = await listAccountStorage(
+      auth.serviceClient as unknown as StorageListingClient,
+      auth.userId,
+    );
     const inBucket = (bucket: string) =>
       objects.filter((object) => object.bucket_id === bucket).map((object) => object.name);
     const meals = deletableKeys(auth.userId, [
@@ -92,7 +129,7 @@ export async function handleAccountDeletion(request: Request): Promise<Response>
       ...inBucket("progress-photos"),
     ]);
     const exportKeys = deletableKeys(auth.userId, [
-      ...(exports.data ?? []).map((row) => row.storage_path),
+      ...exports.map((row) => row.storage_path),
       ...inBucket("account-exports"),
     ]);
     // An object whose key cannot be passed to Storage safely would outlive the
