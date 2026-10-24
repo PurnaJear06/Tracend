@@ -879,9 +879,14 @@ class SupabaseWorkoutRepository
 
   @override
   Future<UnfinishedWorkout?> loadUnfinishedWorkout() async {
+    // A discard queued offline goes first: the server then records it as the
+    // athlete's answer, and one that is still waiting hides its session.
+    final waiting = await _replayDiscards();
     final value = await _client.rpc('get_my_unfinished_workout_v1');
     if (value is! Map) return null;
-    return UnfinishedWorkout.fromJson(value['workout']);
+    final workout = UnfinishedWorkout.fromJson(value['workout']);
+    if (workout != null && waiting.contains(workout.sessionId)) return null;
+    return workout;
   }
 
   @override
@@ -892,28 +897,53 @@ class SupabaseWorkoutRepository
     RangeError.checkValueInInterval(sessionEffort, 1, 10, 'sessionEffort');
     // Sets and times that never reached the server go first: the draft is
     // removed after the answer, so it must not hold anything the server lacks.
-    // When they cannot be sent nothing is answered and nothing is removed.
-    await _sendDraftOf(workout);
-    await _client.rpc(
-      'resolve_unfinished_workout_v1',
-      params: {
-        'p_session_id': workout.sessionId,
-        'p_action': 'save',
-        'p_session_effort': sessionEffort,
-      },
-    );
+    // When they cannot be sent nothing is answered and nothing is removed. A
+    // session that already refuses them (55000) was settled by an earlier try
+    // whose answer was lost; the answer below then replays or says it is gone.
+    try {
+      await _sendDraftOf(workout);
+    } on PostgrestException catch (e) {
+      if (e.code != '55000') rethrow;
+    }
+    await _answer(workout, {
+      'p_session_id': workout.sessionId,
+      'p_action': 'save',
+      'p_session_effort': sessionEffort,
+    });
     AppBreadcrumbs.workout('Unfinished workout saved');
     await _dropDraftOf(workout);
   }
 
   @override
   Future<void> discardUnfinishedWorkout(UnfinishedWorkout workout) async {
-    await _client.rpc(
-      'resolve_unfinished_workout_v1',
-      params: {'p_session_id': workout.sessionId, 'p_action': 'discard'},
-    );
+    await _answer(workout, {
+      'p_session_id': workout.sessionId,
+      'p_action': 'discard',
+    });
     AppBreadcrumbs.workout('Unfinished workout discarded');
     await _dropDraftOf(workout);
+  }
+
+  /// `resolve_unfinished_workout_v1`. Answers that say the workout can no
+  /// longer be answered become [UnfinishedWorkoutGone]: P0002 (past its seven
+  /// days, or not an unfinished workout any more), 55000 (it was discarded; the
+  /// phone's draft of it goes, since it can never be sent) and, for a discard,
+  /// 22023 (it was finished meanwhile).
+  Future<void> _answer(
+    UnfinishedWorkout workout,
+    Map<String, Object> params,
+  ) async {
+    try {
+      await _client.rpc('resolve_unfinished_workout_v1', params: params);
+    } on PostgrestException catch (e) {
+      final gone =
+          e.code == 'P0002' ||
+          e.code == '55000' ||
+          (params['p_action'] == 'discard' && e.code == '22023');
+      if (!gone) rethrow;
+      if (e.code == '55000') await _dropDraftOf(workout);
+      throw const UnfinishedWorkoutGone();
+    }
   }
 
   /// Sends the phone's draft of [workout] (its sets and times) to its

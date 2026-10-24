@@ -745,6 +745,16 @@ Deno.test("a planned day with logged sets left unfinished is not 'not logged', a
     ),
     [],
   );
+  // A day past the seven days it could be saved is still a day with logged sets.
+  const lapsed = parsePlanState(splitPlanPayload(3, ["w-chest-a"], {
+    unfinished: [{ ...unfinished("2026-10-07"), offerable: false }],
+  }))!;
+  assertEquals(
+    linesOf({ schedule: days, plan: lapsed }).filter((line) =>
+      line.includes("Planned but not logged")
+    ),
+    [],
+  );
   // Another day's rows, or another workout, change nothing.
   assertEquals(
     linesOf({ schedule: days, plan: plan("2026-10-08") }).filter((line) =>

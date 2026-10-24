@@ -1,5 +1,5 @@
 begin;
-select plan(82);
+select plan(90);
 
 -- A trains; B is another athlete. Every id is d1 + kind + n: 40 athlete, 41 plan, 42 version, 43
 -- planned workout, 44 planned exercise, 45 session, 46 performance, 47 idempotency key.
@@ -40,11 +40,13 @@ insert into fx values
   (1, 1, 1, 'Legs B', 1, 3, 5, true),   -- the owner's case: logged, never finished
   (2, 1, 2, 'Upper', 2, 1, 3, false),
   (3, 1, 3, 'Pull', 3, 2, 4, false),
-  (4, 1, 4, 'Push', 9, 1, 2, false),    -- older than the window
+  (4, 1, 4, 'Push', 9, 1, 2, false),    -- past the 7 days it can be saved, inside the 28 days Coach reads
   (5, 1, 5, 'Dup', 4, 1, 2, false),     -- the athlete finished the same workout that day (session 6)
   (7, 1, 6, 'Blank', 5, 0, 2, false),   -- nothing logged
   (8, 3, 1, 'Self', 6, 1, 2, false),    -- the athlete discarded it herself in the app
-  (10, 3, 2, 'Edge', 7, 1, 2, false);   -- the last day inside the window
+  (10, 3, 2, 'Edge', 7, 1, 2, false),   -- the last day it can still be saved
+  (11, 3, 3, 'Ancient', 29, 1, 2, false), -- past the 28 days Coach looks back over
+  (12, 3, 4, 'Offline', 2, 1, 2, false);  -- the athlete discarded it offline: the discard arrives late
 
 insert into public.planned_workouts(id, user_id, plan_version_id, workout_order, name, objective,
   preferred_weekday, estimated_minutes, warm_up_guidance, cool_down_guidance)
@@ -159,11 +161,38 @@ select ok((select p.prosrc like '%''schema_version'', ''1.3''%'
       and p.prosrc like '%to_jsonb(pr.experience_level)%'
       and p.prosrc like '%a.ends_on is not null%'
       and p.prosrc like '%''unfinished'', coalesce(%private.unfinished_workouts(p_user_id, p_local_date)%'
+      and p.prosrc like '%''offerable'', u.save_by >= p_local_date%'
     from pg_proc p where p.oid = 'public.get_coach_plan_state_v1(uuid,date)'::regprocedure),
   'and keeps every earlier source, with the unfinished list added');
 
--- The stale rule closes every open session of both athletes: 7 of A, 1 of B.
-select is(private.abandon_stale_workouts(), 8, 'the stale rule closed the forgotten sessions');
+select ok((select p.prosecdef and p.provolatile = 'v' and p.proconfig = array['search_path=""']
+    from pg_proc p where p.oid = 'public.abandon_workout(uuid)'::regprocedure),
+  'discarding a workout is still security definer with an empty search path');
+select ok((select p.prosrc like '%raise exception ''authentication required''%'
+      and p.prosrc like '%raise exception ''session not found'' using errcode = ''P0002''%'
+      and p.prosrc like '%raise exception ''a completed workout cannot be discarded'' using errcode = ''22023''%'
+      and p.prosrc like '%actual_ended_at = coalesce(actual_ended_at, now())%'
+      and p.prosrc like '%''workout.abandoned'', ''workout_session''%jsonb_build_object(''completed_sets'', logged_sets)%'
+      and p.prosrc like '%''state'', ''abandoned'', ''replayed'', true%'
+      and p.prosrc like '%''state'', ''abandoned'', ''replayed'', false%'
+      and p.prosrc like '%if session.state = ''abandoned'' then%if private.workout_closed_as_stale(session.id) then%''workout.unfinished_resolved''%''resolution'', ''discarded''%'
+    from pg_proc p where p.oid = 'public.abandon_workout(uuid)'::regprocedure),
+  'and still discards as before, with the new hunk: a late discard of a stale-closed session is recorded');
+
+-- The stale rule closes every open session of both athletes: 9 of A, 1 of B.
+select is(private.abandon_stale_workouts(), 10, 'the stale rule closed the forgotten sessions');
+
+-- A discard sent offline that reaches the server after the stale close is the athlete's answer.
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'd1400000-0000-4000-8000-000000000001';
+insert into h select 'late_discard', public.abandon_workout('d1450000-0000-4000-8000-000000000012');
+reset role;
+select is((select j->>'replayed' from h where name = 'late_discard'), 'true',
+  'the late discard finds the session already closed');
+select is((select metadata->>'resolution' from public.audit_events
+    where target_id = pg_temp.u(45, 12) and action_code = 'workout.unfinished_resolved'), 'discarded',
+  'and is recorded as the athlete''s discard');
+select is(private.workout_closed_as_stale(pg_temp.u(45, 12)), false, 'so it is no longer unfinished');
 
 -- The read ------------------------------------------------------------------------------------
 
@@ -180,6 +209,8 @@ select is((select j->'workout'->>'session_id' from h where name = 'first'),
 select is((select j->'workout'->>'planned_workout_id' from h where name = 'first'),
   'd1430000-0000-4000-8000-000000000001', 'with its planned workout');
 select is((select j->'workout'->>'name' from h where name = 'first'), 'Legs B', 'its name');
+select is((select (j->'workout'->>'save_by')::date from h where name = 'first'),
+  (select today + 6 from t), 'and the last day it can be saved: seven days after its own');
 select is((select j->'workout'->>'logged_sets' from h where name = 'first'), '3', 'the sets logged');
 select is((select j->'workout'->>'total_sets' from h where name = 'first'), '5', 'of those planned');
 select is((select (j->'workout'->>'local_date')::date from h where name = 'first'),
@@ -197,8 +228,14 @@ select is((select j->'workout'->>'session_id' from h where name = 'other'),
 select is((select public.get_coach_plan_state_v1(pg_temp.u(40, 1), (select today from t))->>'schema_version'),
   '1.3', 'the Coach plan state is 1.3');
 select is((select jsonb_array_length(public.get_coach_plan_state_v1(pg_temp.u(40, 1),
-    (select today from t))->'unfinished')), 4,
-  'it lists the four offered sessions: not the old one, the finished day, the empty one or the discard');
+    (select today from t))->'unfinished')), 5,
+  'it lists five: the four offered and Push (9 days ago), not the 29 day old one, the finished day, the empty one or the discards');
+select is((select count(*) from jsonb_array_elements(public.get_coach_plan_state_v1(pg_temp.u(40, 1),
+    (select today from t))->'unfinished') e where (e->>'offerable')::boolean), 4::bigint,
+  'four of them can still be saved');
+select is((select e->>'name' from jsonb_array_elements(public.get_coach_plan_state_v1(pg_temp.u(40, 1),
+    (select today from t))->'unfinished') e where not (e->>'offerable')::boolean), 'Push',
+  'and the one past its seven days is listed as not offerable');
 select is((select e->>'logged_sets' from jsonb_array_elements(public.get_coach_plan_state_v1(
       pg_temp.u(40, 1), (select today from t))->'unfinished') e where e->>'name' = 'Legs B'),
   '3', 'Legs B with the sets it logged');
@@ -224,7 +261,7 @@ select throws_ok($$select public.resolve_unfinished_workout_v1(
   'another athlete''s session is not found');
 select throws_ok($$select public.resolve_unfinished_workout_v1(
     'd1450000-0000-4000-8000-000000000004', 'discard')$$, 'P0002', null,
-  'a session older than seven days is not offered');
+  'a session past its seven days is not offered');
 select throws_ok($$select public.resolve_unfinished_workout_v1(
     'd1450000-0000-4000-8000-000000000005', 'save', 6)$$, 'P0002', null,
   'nor one finished again the same day');
@@ -353,7 +390,7 @@ select is((select actual_ended_at from public.workout_sessions where id = pg_tem
 select is((select state::text from public.workout_sessions where id = pg_temp.u(45, 3)), 'completed',
   'it is completed');
 select is((select j->'workout'->>'session_id' from h where name = 'fourth'),
-  'd1450000-0000-4000-8000-000000000010', 'the last day of the window is still offered');
+  'd1450000-0000-4000-8000-000000000010', 'the last day it can be saved is still offered');
 
 -- The end ----------------------------------------------------------------------------------------
 
@@ -370,7 +407,7 @@ select is(private.abandon_stale_workouts(), 0, 'the stale rule revives nothing')
 select is((select count(*) from public.workout_sessions
     where user_id = pg_temp.u(40, 1) and state = 'in_progress'), 0::bigint, 'no session is open');
 select is((select jsonb_array_length(public.get_coach_plan_state_v1(pg_temp.u(40, 1),
-    (select today from t))->'unfinished')), 0, 'Coach is told of none');
+    (select today from t))->'unfinished')), 1, 'Coach is told only of the one no longer offered');
 select is((select count(*) from public.workout_sessions
     where user_id = pg_temp.u(40, 1) and state = 'completed'), 3::bigint,
   'the finished one and the two the athlete saved');

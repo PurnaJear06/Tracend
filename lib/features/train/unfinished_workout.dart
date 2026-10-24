@@ -14,6 +14,7 @@ class UnfinishedWorkout {
     required this.localDate,
     required this.loggedSets,
     required this.totalSets,
+    required this.saveBy,
   });
 
   /// Reads the payload's `workout`; null when it is not one this build
@@ -26,16 +27,19 @@ class UnfinishedWorkout {
     final localDate = raw['local_date'];
     final logged = raw['logged_sets'];
     final total = raw['total_sets'];
+    final saveBy = raw['save_by'];
     if (sessionId is! String ||
         plannedWorkoutId is! String ||
         name is! String ||
         localDate is! String ||
         logged is! num ||
-        total is! num) {
+        total is! num ||
+        saveBy is! String) {
       return null;
     }
     final date = DateTime.tryParse(localDate);
-    if (date == null) return null;
+    final lastDay = DateTime.tryParse(saveBy);
+    if (date == null || lastDay == null) return null;
     return UnfinishedWorkout(
       sessionId: sessionId,
       plannedWorkoutId: plannedWorkoutId,
@@ -43,6 +47,7 @@ class UnfinishedWorkout {
       localDate: DateTime(date.year, date.month, date.day),
       loggedSets: logged.toInt(),
       totalSets: total.toInt(),
+      saveBy: DateTime(lastDay.year, lastDay.month, lastDay.day),
     );
   }
 
@@ -55,8 +60,21 @@ class UnfinishedWorkout {
   final int loggedSets;
   final int totalSets;
 
+  /// The last day it can be saved or discarded; after it the server no
+  /// longer offers it.
+  final DateTime saveBy;
+
   /// Sets the plan had that were never logged.
   int get unloggedSets => totalSets > loggedSets ? totalSets - loggedSets : 0;
+}
+
+/// The server no longer takes an answer for the workout: it was past its
+/// seven days, already discarded, or not an unfinished workout any more.
+class UnfinishedWorkoutGone implements Exception {
+  const UnfinishedWorkoutGone();
+
+  @override
+  String toString() => 'The workout can no longer be answered.';
 }
 
 abstract interface class UnfinishedWorkoutRepository {
@@ -64,14 +82,16 @@ abstract interface class UnfinishedWorkoutRepository {
   Future<UnfinishedWorkout?> loadUnfinishedWorkout();
 
   /// Completes [workout] on its own day with the athlete's own
-  /// [sessionEffort], a whole number from 1 to 10. A phone's copy of its
-  /// unsent draft goes with it.
+  /// [sessionEffort], a whole number from 1 to 10. The phone's draft of it is
+  /// sent first and goes with it; when that send fails nothing is answered.
+  /// Throws [UnfinishedWorkoutGone] when the server no longer takes the answer.
   Future<void> saveUnfinishedWorkout(
     UnfinishedWorkout workout, {
     required int sessionEffort,
   });
 
-  /// Keeps [workout] out of the athlete's history for good. A phone's copy of
-  /// its unsent draft goes with it.
+  /// Keeps [workout] out of the athlete's history for good. The phone's draft
+  /// of it goes with it. Throws [UnfinishedWorkoutGone] when the server no
+  /// longer takes the answer.
   Future<void> discardUnfinishedWorkout(UnfinishedWorkout workout);
 }

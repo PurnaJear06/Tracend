@@ -21,6 +21,7 @@ void main() {
         'planned_workout_id',
         'name',
         'local_date',
+        'save_by',
         'started_at',
         'logged_sets',
         'total_sets',
@@ -37,6 +38,7 @@ void main() {
       expect(workout.plannedWorkoutId, 'd1430000-0000-4000-8000-000000000001');
       expect(workout.name, 'Legs B');
       expect(workout.localDate, DateTime(2026, 10, 23));
+      expect(workout.saveBy, DateTime(2026, 10, 30));
       expect(workout.loggedSets, 23);
       expect(workout.totalSets, 25);
       expect(workout.unloggedSets, 2);

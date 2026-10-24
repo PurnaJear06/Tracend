@@ -387,6 +387,7 @@ void main() {
       localDate: DateTime(2026, 10, 23),
       loggedSets: 23,
       totalSets: 25,
+      saveBy: DateTime(2026, 10, 30),
     );
 
     Map<String, Object?> payload() => {
@@ -396,6 +397,7 @@ void main() {
         'planned_workout_id': _workoutId,
         'name': 'Legs B',
         'local_date': '2026-10-23',
+        'save_by': '2026-10-30',
         'started_at': '2026-10-23T16:45:00+00:00',
         'logged_sets': 23,
         'total_sets': 25,
@@ -415,6 +417,40 @@ void main() {
       expect(workout.localDate, DateTime(2026, 10, 23));
       expect(workout.loggedSets, 23);
       expect(workout.unloggedSets, 2);
+      expect(workout.saveBy, DateTime(2026, 10, 30));
+    });
+
+    test('a discard queued offline is sent before the offer is read', () async {
+      server.refuse('abandon_workout', '57014');
+      await repository.abandon(_sessionId, workoutId: _workoutId);
+      server.calls.clear();
+      server.answer('abandon_workout', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'state': 'abandoned',
+        'replayed': true,
+      });
+      server.answer('get_my_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'workout': null,
+      });
+
+      await repository.loadUnfinishedWorkout();
+
+      expect(server.names, ['abandon_workout', 'get_my_unfinished_workout_v1']);
+    });
+
+    test('a discard still waiting hides its workout from the offer', () async {
+      server.refuse('abandon_workout', '57014');
+      await repository.abandon(_sessionId, workoutId: _workoutId);
+      server.answer('get_my_unfinished_workout_v1', payload());
+
+      expect(await repository.loadUnfinishedWorkout(), isNull);
+      expect(server.names, [
+        'abandon_workout',
+        'abandon_workout',
+        'get_my_unfinished_workout_v1',
+      ]);
     });
 
     test('reads nothing when nothing is offered', () async {
@@ -568,16 +604,79 @@ void main() {
       });
     });
 
-    test('a refused send keeps the draft and answers nothing', () async {
+    test(
+      'a send the server refuses for another reason answers nothing',
+      () async {
+        server.refuse('sync_workout_draft', '22P02');
+
+        await expectLater(
+          repository.saveUnfinishedWorkout(offered, sessionEffort: 7),
+          throwsA(isA<PostgrestException>()),
+        );
+
+        expect(server.names, ['sync_workout_draft']);
+        expect(await repository.loadDraft(_workoutId), isNotNull);
+      },
+    );
+
+    test(
+      'a retry after a lost answer saves again and removes the draft',
+      () async {
+        // The first try reached the server, which saved the workout; the
+        // answer was lost. The session now refuses the draft (55000).
+        server.refuse('sync_workout_draft', '55000');
+        server.answer('resolve_unfinished_workout_v1', {
+          'schema_version': '1.0',
+          'session_id': _sessionId,
+          'resolution': 'saved',
+          'state': 'completed',
+          'replayed': true,
+        });
+
+        await repository.saveUnfinishedWorkout(offered, sessionEffort: 7);
+
+        expect(server.names, [
+          'sync_workout_draft',
+          'resolve_unfinished_workout_v1',
+        ]);
+        expect(await repository.loadDraft(_workoutId), isNull);
+      },
+    );
+
+    test('a workout discarded meanwhile is gone and its draft goes', () async {
       server.refuse('sync_workout_draft', '55000');
+      server.refuse('resolve_unfinished_workout_v1', '55000');
 
       await expectLater(
         repository.saveUnfinishedWorkout(offered, sessionEffort: 7),
-        throwsA(isA<PostgrestException>()),
+        throwsA(isA<UnfinishedWorkoutGone>()),
       );
 
-      expect(server.names, ['sync_workout_draft']);
+      expect(await repository.loadDraft(_workoutId), isNull);
+    });
+
+    test('a workout past its seven days is gone and nothing is lost', () async {
+      server.answer('sync_workout_draft', {
+        'session_id': _sessionId,
+        'replayed': true,
+      });
+      server.refuse('resolve_unfinished_workout_v1', 'P0002');
+
+      await expectLater(
+        repository.saveUnfinishedWorkout(offered, sessionEffort: 7),
+        throwsA(isA<UnfinishedWorkoutGone>()),
+      );
+
       expect(await repository.loadDraft(_workoutId), isNotNull);
+    });
+
+    test('a discard of a workout finished meanwhile is gone', () async {
+      server.refuse('resolve_unfinished_workout_v1', '22023');
+
+      await expectLater(
+        repository.discardUnfinishedWorkout(offered),
+        throwsA(isA<UnfinishedWorkoutGone>()),
+      );
     });
 
     test('a draft of another session is not sent with this one', () async {
@@ -665,7 +764,7 @@ void main() {
     });
 
     test('a refused answer keeps the draft and says so', () async {
-      server.refuse('resolve_unfinished_workout_v1', '55000');
+      server.refuse('resolve_unfinished_workout_v1', '57014');
 
       await expectLater(
         repository.discardUnfinishedWorkout(offered),

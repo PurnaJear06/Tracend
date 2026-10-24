@@ -290,6 +290,13 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         '${workout.name} saved to ${dayAndDate(workout.localDate)}.',
         icon: CupertinoIcons.checkmark_alt,
       );
+    } on UnfinishedWorkoutGone {
+      if (!mounted) return;
+      TracendToast.show(
+        context,
+        'This workout can no longer be saved.',
+        icon: CupertinoIcons.exclamationmark_triangle,
+      );
     } catch (error) {
       debugPrint('Non-critical error: unfinished workout not saved: $error');
       if (!mounted) return;
@@ -325,6 +332,13 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       if (!mounted) return;
       _unfinishedLoads++;
       setState(() => _unfinished = null);
+    } on UnfinishedWorkoutGone {
+      if (!mounted) return;
+      TracendToast.show(
+        context,
+        'This workout is no longer offered.',
+        icon: CupertinoIcons.exclamationmark_triangle,
+      );
     } catch (error) {
       debugPrint(
         'Non-critical error: unfinished workout not discarded: $error',

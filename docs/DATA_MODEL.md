@@ -492,10 +492,12 @@ session is only ever found for its own day.
 **Unfinished workouts (migration `20261024050011_unfinished_workouts.sql`).** A session the rule
 closed that holds at least one completed set is offered back to the athlete, never finished for
 them: `private.unfinished_workouts(user, today)` lists the sessions that are `abandoned`, closed by
-the rule (`private.workout_closed_as_stale`), dated within the 7 days before the athlete's local
-today, hold a completed set, and have no completed session of the same planned workout on the same
-day. `get_my_unfinished_workout_v1` (1.0) returns the newest as `{workout: {session_id,
-planned_workout_id, name, local_date, started_at, logged_sets, total_sets, first_set_at,
+the rule (`private.workout_closed_as_stale`), dated within the 28 days before the athlete's local
+today (what Coach looks back over), hold a completed set, and have no completed session of the same
+planned workout on the same day. Each carries `save_by`, 7 days after its own day: the athlete is
+offered it (Save or Discard) until then, and after that it stays listed for Coach only.
+`get_my_unfinished_workout_v1` (1.0) returns the newest still offered as `{workout: {session_id,
+planned_workout_id, name, local_date, save_by, started_at, logged_sets, total_sets, first_set_at,
 last_set_at}}` or `{workout: null}`; the times are the sets' own and null when the sets carry none.
 `resolve_unfinished_workout_v1(session, 'save' | 'discard', effort)` (1.0) is the only way an
 offered session is answered, both audited as `workout.unfinished_resolved` (`resolution`
@@ -506,12 +508,14 @@ same 10800 seconds) and, with no set times, stays null with no `actual_ended_at`
 **Discard** keeps it `abandoned`: `private.workout_closed_as_stale` is then false, so the athlete's
 late send is refused as for any discarded session (55000), and it is never offered again. A repeat
 of the same answer replays; the opposite answer is refused (55000 after a discard, 22023 to discard
-a completed one). Another athlete's session, one older than 7 days, one with no set logged, one
+a completed one). Another athlete's session, one past its `save_by`, one with no set logged, one
 finished again the same day and one the athlete discarded in the app answer P0002. No table is
-written by the client.
-`get_coach_plan_state_v1` is 1.3 and adds `unfinished` (planned workout id, `local_date`, name and
-`logged_sets` of each offered session), so Coach says a session "logged N sets but was not
-finished" and not "not done". `completion_source` (`manual`, `healthkit`, or null when no audit evidence
+written by the client. `abandon_workout` (the athlete's own discard) also records
+`workout.unfinished_resolved` `discarded` when it replays on a session the rule already closed: a
+discard queued on the phone while offline reaches the server after the close.
+`get_coach_plan_state_v1` is 1.3 and adds `unfinished` (planned workout id, `local_date`, name,
+`logged_sets` and `offerable`, whether `save_by` has not passed, of each listed session), so Coach
+says a session "logged N sets but was not finished" and not "not done". `completion_source` (`manual`, `healthkit`, or null when no audit evidence
 exists) and `session_effort_source` (`athlete`, `legacy_default`, `healthkit_default`) record
 provenance; see ALGORITHMS §4 "Effort Provenance". `complete_workout_v2` is the only writer of
 `athlete` effort.

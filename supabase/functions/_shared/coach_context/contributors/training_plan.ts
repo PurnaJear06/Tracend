@@ -123,9 +123,9 @@ export type PlanState = Readonly<{
     exercises: readonly DayExercise[];
   }>[];
   /**
-   * Workouts the athlete logged sets in and left unfinished that they have not yet saved or
-   * discarded (get_coach_plan_state_v1 1.3), newest seven days. Empty from an older payload. They
-   * trained: they are neither done nor missed.
+   * Workouts the athlete logged sets in and left unfinished that they have not saved or discarded
+   * (get_coach_plan_state_v1 1.3), the last 28 days. Empty from an older payload. They trained:
+   * they are neither done nor missed.
    */
   unfinished: readonly UnfinishedWorkout[];
   targets: readonly ProgressionTarget[];
@@ -136,6 +136,8 @@ export type UnfinishedWorkout = Readonly<{
   localDate: string;
   name: string;
   loggedSets: number;
+  /** The athlete can still save or discard it on Today (7 days after its own day). */
+  offerable: boolean;
 }>;
 
 /** The sessions in a plan state's `sessions` or `after_block.sessions` list. */
@@ -211,6 +213,7 @@ export function parsePlanState(payload: unknown): PlanState | null {
       localDate: str(row.local_date),
       name: str(row.name),
       loggedSets: num(row.logged_sets) ?? 0,
+      offerable: row.offerable !== false,
     })).filter((row) => row.localDate !== "" && row.loggedSets > 0),
     targets: parseProgressionSummary(body.progression),
   };
@@ -704,12 +707,21 @@ function trainingPlanMarked(
       ? `Finished this week (Monday to today): ${done.join(", ")}.`
       : "Finished this week (Monday to today): no session logged.",
   );
-  if (state.unfinished.length > 0) {
+  const offerable = state.unfinished.filter((row) => row.offerable);
+  const lapsed = state.unfinished.filter((row) => !row.offerable);
+  if (offerable.length > 0) {
     lines.push(
       "Logged but not finished (the athlete has not saved or discarded them yet): " +
-        `${state.unfinished.map(unfinishedText).join(", ")}. Each was trained: say its sets were ` +
+        `${offerable.map(unfinishedText).join(", ")}. Each was trained: say its sets were ` +
         "logged but the workout was not finished, never that it was not done, skipped or " +
         "missed; the athlete can save or discard it on Today.",
+    );
+  }
+  if (lapsed.length > 0) {
+    lines.push(
+      "Logged but never finished, and no longer offered to the athlete to save: " +
+        `${lapsed.map(unfinishedText).join(", ")}. Each was trained: say its sets were logged ` +
+        "but the workout was not finished, never that it was not done, skipped or missed.",
     );
   }
   if (focus.doneToday) {

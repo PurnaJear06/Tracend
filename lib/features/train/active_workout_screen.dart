@@ -374,7 +374,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// on this phone that the server lacks, so the draft may go: no set was
   /// done and no finish waits, or everything reached the server. False
   /// keeps the draft (offline, or a draft whose session was never created
-  /// and has no finish to send).
+  /// and has no finish to send). A session that no longer takes sets or a
+  /// finish (55000: it was saved or discarded already, say by an earlier try
+  /// whose answer was lost) is settled: nothing of the draft can reach it, so
+  /// it goes and never opens as a workout.
   Future<bool> _sendLeftOver(Map<String, dynamic> draft) async {
     final repository = widget.repository;
     try {
@@ -410,6 +413,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         data: {'finished': finish != null},
       );
       return true;
+    } on PostgrestException catch (e) {
+      if (e.code == '55000') {
+        debugPrint('Non-critical error: earlier workout already settled: $e');
+        return true;
+      }
+      debugPrint('Non-critical error: earlier workout kept on the phone: $e');
+      return false;
     } catch (e) {
       debugPrint('Non-critical error: earlier workout kept on the phone: $e');
       return false;

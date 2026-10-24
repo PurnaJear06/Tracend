@@ -69,8 +69,8 @@ class UnfinishedWorkoutCard extends StatelessWidget {
           Text(message, style: text.titleMedium),
           const SizedBox(height: TracendSpacing.xxs),
           Text(
-            'Save it to your history, or discard it. Until you answer, '
-            'it does not count as a workout.',
+            'Save it by ${dayAndDate(workout.saveBy, now: now)}, or discard '
+            'it. Until you answer, it does not count as a workout.',
             style: text.bodyMedium?.copyWith(color: colors.textSecondary),
           ),
           const SizedBox(height: TracendSpacing.sm),

@@ -16,13 +16,17 @@
 --                                           unknown instead of becoming the three hour cap
 --   6. get_coach_plan_state_v1              1.3: `unfinished`, so Coach reads "logged N sets, not
 --                                           finished" and not "not done"
+--   7. public.abandon_workout               a discard queued on the phone that reaches the server
+--                                           after the stale close is the athlete's answer
 --
--- Offered means: closed by the stale rule (audit reason 'stale', see private.workout_closed_as_stale),
--- local day within the last seven days and before today, at least one completed set, and no finished
--- session of the same planned workout on the same day (the athlete already logged it again). An
--- answered session leaves the offer by itself: Save completes it, and Discard ends the stale-closed
+-- Unfinished means: closed by the stale rule (audit reason 'stale', see private.workout_closed_as_stale),
+-- local day within the last 28 days (the span Coach looks back over) and before today, at least one
+-- completed set, and no finished session of the same planned workout on the same day (the athlete
+-- already logged it again). It is offered to the athlete (Save or Discard) until `save_by`, seven
+-- days after its own day; after that it stays unfinished, for Coach, and is no longer offered. An
+-- answered session leaves the list by itself: Save completes it, and Discard ends the stale-closed
 -- state. Sessions the athlete discarded in the app (abandon_workout) carry no reason and are never
--- offered.
+-- listed.
 
 -- 1. The rule -----------------------------------------------------------------------------------
 
@@ -37,11 +41,12 @@ returns table (
   logged_sets integer,
   total_sets integer,
   first_set_at timestamptz,
-  last_set_at timestamptz
+  last_set_at timestamptz,
+  save_by date
 ) language sql stable set search_path = '' as $$
   select s.id, s.planned_workout_id, w.name, s.local_date,
     coalesce(s.actual_started_at, s.started_at), s.client_revision,
-    t.logged, t.total, t.first_at, t.last_at
+    t.logged, t.total, t.first_at, t.last_at, s.local_date + 7
   from public.workout_sessions s
   join public.planned_workouts w on w.id = s.planned_workout_id and w.user_id = s.user_id
   cross join lateral (
@@ -55,7 +60,7 @@ returns table (
   ) t
   where s.user_id = p_user
     and s.state = 'abandoned'
-    and s.local_date between p_today - 7 and p_today - 1
+    and s.local_date between p_today - 28 and p_today - 1
     and t.logged > 0
     and private.workout_closed_as_stale(s.id)
     and not exists (
@@ -67,16 +72,18 @@ revoke all on function private.unfinished_workouts(uuid, date) from public, anon
 
 -- 2. The read -----------------------------------------------------------------------------------
 
--- The newest offered session, or `workout: null`. A session left open since an earlier day is
+-- The newest session still offered, or `workout: null`. A session left open since an earlier day is
 -- closed first, so the answer does not wait for the hourly job.
 create function public.get_my_unfinished_workout_v1()
 returns jsonb language plpgsql security definer set search_path = '' as $$
-declare found_row record;
+declare found_row record; local_today date;
 begin
   if auth.uid() is null then raise exception 'authentication required' using errcode = '42501'; end if;
   perform private.abandon_stale_workouts(auth.uid());
+  local_today := private.local_date_for(auth.uid());
   select * into found_row
-  from private.unfinished_workouts(auth.uid(), private.local_date_for(auth.uid())) u
+  from private.unfinished_workouts(auth.uid(), local_today) u
+  where u.save_by >= local_today
   order by u.local_date desc, u.started_at desc
   limit 1;
   if not found then
@@ -87,6 +94,7 @@ begin
     'planned_workout_id', found_row.planned_workout_id,
     'name', found_row.workout_name,
     'local_date', found_row.local_date,
+    'save_by', found_row.save_by,
     'started_at', found_row.started_at,
     'logged_sets', found_row.logged_sets,
     'total_sets', found_row.total_sets,
@@ -113,6 +121,7 @@ returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
   session public.workout_sessions%rowtype;
   offered record;
+  local_today date;
   earlier text;
   duration integer;
   result jsonb;
@@ -144,9 +153,10 @@ begin
       'state', 'completed', 'resolution', 'saved', 'replayed', true);
   end if;
 
+  local_today := private.local_date_for(auth.uid());
   select * into offered
-  from private.unfinished_workouts(auth.uid(), private.local_date_for(auth.uid())) u
-  where u.session_id = session.id;
+  from private.unfinished_workouts(auth.uid(), local_today) u
+  where u.session_id = session.id and u.save_by >= local_today;
   if not found then
     raise exception 'workout is not an unfinished workout' using errcode = 'P0002';
   end if;
@@ -265,8 +275,8 @@ end $$;
 -- 6. Coach plan state 1.3 -----------------------------------------------------------------------
 
 -- The definition of 20261023100050_advanced_level_catalog.sql (1.2) plus `unfinished`: the sessions
--- offered back above, each with the planned workout's name so Coach can tell which planned session
--- it stands for. A key is only added; a reader of 1.2 ignores it.
+-- listed above (28 days), each with the planned workout's name so Coach can tell which planned
+-- session it stands for. A key is only added; a reader of 1.2 ignores it.
 create or replace function public.get_coach_plan_state_v1(p_user_id uuid, p_local_date date)
 returns jsonb language sql stable security definer set search_path = '' as $$
   with active as (
@@ -322,12 +332,53 @@ returns jsonb language sql stable security definer set search_path = '' as $$
       join public.planned_workouts cw on cw.id = s.planned_workout_id and cw.user_id = s.user_id
       where s.user_id = p_user_id and s.state = 'completed'
         and s.local_date between p_local_date - 1 and p_local_date), '[]'::jsonb),
-    -- Workouts logged but not finished that the athlete has not answered yet: not done, and not
-    -- missed either.
+    -- Workouts logged but not finished that the athlete has not answered: not done, and not missed
+    -- either. `offerable` is whether the athlete can still save or discard it (7 days).
     'unfinished', coalesce((select jsonb_agg(jsonb_build_object(
         'planned_workout_id', u.planned_workout_id, 'local_date', u.local_date,
-        'name', u.workout_name, 'logged_sets', u.logged_sets)
+        'name', u.workout_name, 'logged_sets', u.logged_sets,
+        'offerable', u.save_by >= p_local_date)
         order by u.local_date)
       from private.unfinished_workouts(p_user_id, p_local_date) u), '[]'::jsonb),
     'progression', public.get_progression_summary_v1(p_user_id));
 $$;
+
+-- 7. A discard that was waiting on the phone ---------------------------------------------------
+
+-- The definition of 20261003100000_train_redesign_data.sql plus one hunk: a discard that reaches the
+-- server after the stale rule closed the session (it was sent offline) is the athlete's answer, so it
+-- is recorded as workout.unfinished_resolved 'discarded' and the session is not offered or listed
+-- again. Without it the replay found the session already abandoned and changed nothing.
+create or replace function public.abandon_workout(p_session_id uuid)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare session public.workout_sessions%rowtype; logged_sets integer;
+begin
+  if auth.uid() is null then raise exception 'authentication required' using errcode = '42501'; end if;
+  select * into session from public.workout_sessions
+    where id = p_session_id and user_id = auth.uid() for update;
+  if not found then raise exception 'session not found' using errcode = 'P0002'; end if;
+  if session.state = 'abandoned' then
+    if private.workout_closed_as_stale(session.id) then
+      insert into public.audit_events(user_id, action_code, target_type, target_id, outcome, metadata)
+      values (auth.uid(), 'workout.unfinished_resolved', 'workout_session', session.id, 'succeeded',
+        jsonb_build_object('resolution', 'discarded', 'local_date', session.local_date));
+    end if;
+    return jsonb_build_object('schema_version', '1.0', 'session_id', session.id,
+      'state', 'abandoned', 'replayed', true);
+  end if;
+  if session.state = 'completed' then
+    raise exception 'a completed workout cannot be discarded' using errcode = '22023';
+  end if;
+  select count(*) filter (where s.completed) into logged_sets
+  from public.exercise_sets s
+  join public.exercise_performances p on p.id = s.exercise_performance_id
+  where p.workout_session_id = session.id;
+  update public.workout_sessions
+    set state = 'abandoned', actual_ended_at = coalesce(actual_ended_at, now()), updated_at = now()
+    where id = session.id;
+  insert into public.audit_events(user_id, action_code, target_type, target_id, outcome, metadata)
+  values (auth.uid(), 'workout.abandoned', 'workout_session', session.id, 'succeeded',
+    jsonb_build_object('completed_sets', logged_sets));
+  return jsonb_build_object('schema_version', '1.0', 'session_id', session.id,
+    'state', 'abandoned', 'replayed', false);
+end $$;

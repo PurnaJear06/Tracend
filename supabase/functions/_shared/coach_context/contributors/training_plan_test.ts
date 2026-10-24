@@ -377,6 +377,39 @@ Deno.test("a workout left unfinished under an earlier plan version is matched by
   assertEquals(pickFocusSession(other).undone.map((session) => session.name), ["Legs B"]);
 });
 
+Deno.test("day 8: a workout no longer offered to the athlete still reads as logged, never as not done", () => {
+  const state = parsePlanState(
+    sundayWithLegsBLogged([
+      legsBUnfinished({ local_date: "2026-10-09", offerable: false }),
+      legsBUnfinished({
+        planned_workout_id: "w-shoulders",
+        name: "Shoulder width",
+        local_date: splitWeekDate(6),
+        offerable: true,
+        logged_sets: 8,
+      }),
+    ]),
+  )!;
+  const text = renderTrainingPlan(state)!;
+  assertStringIncludes(
+    text,
+    "Logged but not finished (the athlete has not saved or discarded them yet): Shoulder width on 2026-10-17 (8 sets logged).",
+  );
+  assertStringIncludes(
+    text,
+    "Logged but never finished, and no longer offered to the athlete to save: Legs B on 2026-10-09 (23 sets logged). Each was trained: say its sets were logged but the workout was not finished, never that it was not done, skipped or missed.",
+  );
+  // Only the offered one can be saved or discarded on Today.
+  assertEquals(text.split("save or discard it on Today").length, 2);
+  // Last week's Legs B does not stand for this week's session.
+  assertStringIncludes(text, "A session from earlier this week is still undone: Legs B");
+  // A payload without the key reads as offered.
+  assertEquals(
+    parsePlanState(sundayWithLegsBLogged([legsBUnfinished()]))!.unfinished[0].offerable,
+    true,
+  );
+});
+
 Deno.test("a row without sets or a day is not an unfinished workout", () => {
   const state = parsePlanState(
     sundayWithLegsBLogged([

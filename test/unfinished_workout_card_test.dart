@@ -28,6 +28,7 @@ final _legsB = UnfinishedWorkout(
   localDate: DateTime(2026, 10, 23),
   loggedSets: 23,
   totalSets: 25,
+  saveBy: DateTime(2026, 10, 30),
 );
 
 /// Offers one workout until it is answered, then the next one (or none).
@@ -42,6 +43,10 @@ class _Offers extends FixtureWorkoutRepository
   Completer<UnfinishedWorkout?>? hold;
   final discarded = <String>[];
   Object? failWith;
+
+  /// When true, a failed answer also takes the workout off the offer, as a
+  /// server that no longer offers it would.
+  bool failRemoves = false;
 
   @override
   Future<UnfinishedWorkout?> loadUnfinishedWorkout() async {
@@ -59,7 +64,10 @@ class _Offers extends FixtureWorkoutRepository
     required int sessionEffort,
   }) async {
     final error = failWith;
-    if (error != null) throw error;
+    if (error != null) {
+      if (failRemoves) queue.remove(workout);
+      throw error;
+    }
     saved.add((workout.sessionId, sessionEffort));
     queue.remove(workout);
   }
@@ -161,6 +169,10 @@ void main() {
       await tester.pumpWidget(card());
 
       expect(_message, findsOneWidget);
+      expect(
+        find.textContaining('Save it by Fri 30 Oct, or discard it.'),
+        findsOneWidget,
+      );
       expect(find.text('Workout not finished'), findsOneWidget);
       expect(_saveButton, findsOneWidget);
       expect(_discardButton, findsOneWidget);
@@ -179,6 +191,7 @@ void main() {
                 localDate: DateTime(2026, 10, 22),
                 loggedSets: 1,
                 totalSets: 12,
+                saveBy: DateTime(2026, 10, 29),
               ),
               busy: false,
               onSave: () {},
@@ -277,6 +290,27 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
     });
 
+    testWidgets('a workout past its days says so plainly and is reloaded', (
+      tester,
+    ) async {
+      final repository = _Offers([_legsB])
+        ..failWith = const UnfinishedWorkoutGone()
+        ..failRemoves = true;
+      await _open(tester, repository);
+
+      await tester.tap(_saveButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('6, Moderate'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save workout').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('This workout can no longer be saved.'), findsOneWidget);
+      expect(find.text('Could not save the workout. Try again.'), findsNothing);
+      expect(_message, findsNothing);
+      await tester.pump(const Duration(seconds: 3));
+    });
+
     testWidgets('discard asks first, then keeps the workout out', (
       tester,
     ) async {
@@ -312,6 +346,7 @@ void main() {
         localDate: DateTime(2026, 10, 22),
         loggedSets: 9,
         totalSets: 12,
+        saveBy: DateTime(2026, 10, 29),
       );
       final repository = _Offers([_legsB, earlier]);
       await _open(tester, repository);
