@@ -22,7 +22,9 @@ name: Coach Eval
 #     athlete outside its region. It needs the database and the embedding model, so it cannot run
 #     in the Deno job. It also runs by itself on every pull request that changes the library
 #     content, the shared library code or a library migration (not a required check). Run it
-#     alone with `retrieval_only`. It reads the calibration questions (library_questions.json),
+#     alone with `retrieval_only`. It also scores the plan-explanation questions
+#     (library_questions_plan.json, E5) as asked and as Coach chat searches them, and the onboarding
+#     plan's two searches, and fails under EVAL_MIN_PLAN_RECALL or EVAL_MIN_ONBOARDING_RECALL. It reads the calibration questions (library_questions.json),
 #     which choose the relevance floor; `question_set: holdout` runs the hold-out questions
 #     (library_questions_holdout.json) once to confirm it, without the tuning output.
 #

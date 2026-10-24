@@ -21,6 +21,8 @@ import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_screen.dart';
 import 'package:tracend/features/goals/goal_target_repository.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
+import 'package:tracend/features/readiness/day_adjustment_controller.dart';
+import 'package:tracend/features/readiness/day_adjustment_repository.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/features/progress/progress_screen.dart';
 import 'package:tracend/features/shell/floating_tab_bar.dart';
@@ -33,6 +35,7 @@ import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
 import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
+import 'package:tracend/shared/coach_draft_requests.dart';
 import 'package:tracend/shared/plan_changes.dart';
 
 class AppShell extends StatefulWidget {
@@ -95,6 +98,7 @@ class AppShellRepositories {
     this.brief,
     this.proposals,
     this.memory,
+    this.dayAdjustment,
   });
 
   final WorkoutRepository? workouts;
@@ -113,6 +117,10 @@ class AppShellRepositories {
 
   /// What Coach remembers; built from the environment when not given.
   final CoachMemoryRepository? memory;
+
+  /// Today's same-day readiness adjustment; built from the environment (and
+  /// absent without a backend) when not given.
+  final DayAdjustmentRepository? dayAdjustment;
 }
 
 class _AppShellState extends State<AppShell> {
@@ -132,6 +140,13 @@ class _AppShellState extends State<AppShell> {
   late final DailyBriefRepository _brief;
   late final CoachProposalRepository? _proposals;
   late final CoachMemoryRepository _memory;
+
+  /// Today's same-day readiness adjustment, shared by Today and Train. Null
+  /// without a backend, where there is no readiness to read.
+  late final DayAdjustmentController? _dayAdjustment;
+
+  /// Questions left for the Coach composer by other screens.
+  final _coachDrafts = CoachDraftRequests();
 
   /// Today's morning check-in gate: while it is required, the tab bar gives
   /// way to "Check in to start your day".
@@ -164,6 +179,8 @@ class _AppShellState extends State<AppShell> {
     unawaited(_widgetPublisher.dispose());
     _checkInGate.dispose();
     _planChanges.dispose();
+    _dayAdjustment?.dispose();
+    _coachDrafts.dispose();
     super.dispose();
   }
 
@@ -241,12 +258,48 @@ class _AppShellState extends State<AppShell> {
         (live
             ? SupabaseGoalTargetRepository(Supabase.instance.client)
             : const FixtureGoalTargetRepository());
+    final dayAdjustments =
+        injected?.dayAdjustment ??
+        (live
+            ? SupabaseDayAdjustmentRepository(Supabase.instance.client)
+            : null);
+    _dayAdjustment = dayAdjustments == null
+        ? null
+        : DayAdjustmentController(
+            repository: dayAdjustments,
+            serverToday: _serverToday,
+          );
     _brief = SharedDailyBriefRepository(
       injected?.brief ??
           (live
               ? SupabaseDailyBriefRepository(Supabase.instance.client)
               : const FixtureDailyBriefRepository()),
     );
+  }
+
+  /// The athlete's own today as the server counts it (the training hub's
+  /// `local_today`): the only day the readiness adjustment can be read or
+  /// answered for. Null when the hub cannot say.
+  Future<DateTime?> _serverToday() async {
+    final source = _workouts;
+    if (source is! TrainingHubRepository) return null;
+    final hub = await (source as TrainingHubRepository).loadTrainingHub(
+      periodDays: 7,
+    );
+    return hub.localToday;
+  }
+
+  /// "Talk to Coach" on the readiness card: opens Coach with [question] in the
+  /// box. The athlete sends it.
+  void _talkToCoach(String question) {
+    _coachDrafts.request(question);
+    _selectTab(2);
+  }
+
+  /// "Check in" from a screen other than Today: Today owns the sheet.
+  void _openCheckIn() {
+    _selectTab(0);
+    _checkInGate.checkIn();
   }
 
   /// Account opened from a screen without its own route to it (Train's
@@ -305,6 +358,8 @@ class _AppShellState extends State<AppShell> {
         planChanges: _planChanges,
         widgetPublisher: _widgetPublisher,
         widgetTaps: _widgetTaps,
+        dayAdjustment: _dayAdjustment,
+        onTalkToCoach: _talkToCoach,
       ),
       () => TrainScreen(
         key: const ValueKey('tab_train'),
@@ -315,6 +370,9 @@ class _AppShellState extends State<AppShell> {
         onOpenAccount: _openAccount,
         planChanges: _planChanges,
         workoutRequests: _workoutRequests,
+        dayAdjustment: _dayAdjustment,
+        onTalkToCoach: _talkToCoach,
+        onCheckIn: _openCheckIn,
       ),
       () => CoachScreen(
         key: const ValueKey('tab_coach'),
@@ -324,6 +382,7 @@ class _AppShellState extends State<AppShell> {
         proposals: _proposals,
         planChanges: _planChanges,
         memory: _memory,
+        draftRequests: _coachDrafts,
       ),
       () => NutritionScreen(
         key: const ValueKey('tab_nutrition'),

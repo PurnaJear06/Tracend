@@ -113,7 +113,7 @@ class _AccountScreenState extends State<AccountScreen> {
           .from('user_goals')
           .select('goal_type')
           .eq('status', 'active')
-          .order('priority')
+          .order('priority', ascending: true)
           .limit(1)
           .maybeSingle();
       return {'name': name, 'goal': goal};
@@ -347,7 +347,7 @@ class _AccountScreenState extends State<AccountScreen> {
           .from('user_goals')
           .select('goal_type,priority,status,details,activated_at')
           .eq('status', 'active')
-          .order('priority')
+          .order('priority', ascending: true)
           .limit(1)
           .maybeSingle(),
       client

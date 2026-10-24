@@ -1,7 +1,14 @@
 import { assert, assertAlmostEquals, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { librarySources } from "../../library/index.ts";
 import { isFollowUp, libraryRetrievalQuery } from "../_shared/library/query.ts";
+import {
+  isPlanExplanationQuestion,
+  type OnboardingLibraryFacts,
+  onboardingLibraryQueries,
+  type PlanFacts,
+} from "../_shared/library/plan_explanation.ts";
 import holdoutFile from "./library_questions_holdout.json" with { type: "json" };
+import planFile from "./library_questions_plan.json" with { type: "json" };
 import questionFile from "./library_questions.json" with { type: "json" };
 import {
   floorGrid,
@@ -264,4 +271,52 @@ Deno.test("the word-search sweep scores each keyword floor on the same hits and 
     ["a", "z"],
   );
   assertStringIncludes(renderKeywordSweep(points), "top rank  top coverage  row rank");
+});
+
+Deno.test("the plan-explanation questions are plan questions with plan facts and known sources", () => {
+  const planQuestions = planFile.questions as unknown as (LibraryQuestion & { plan: PlanFacts })[];
+  const keys = new Set(librarySources.map((source) => source.slug));
+  const others = new Set(questions.map((question) => question.text));
+  assert(planQuestions.length >= 10, `${planQuestions.length} plan questions`);
+  assertEquals(new Set(planQuestions.map((question) => question.id)).size, planQuestions.length);
+  for (const question of planQuestions) {
+    assert(question.text.trim().endsWith("?"), `${question.id} is not a question`);
+    assert(isPlanExplanationQuestion(question.text), `${question.id} is not a plan question`);
+    assert(!others.has(question.text), `${question.id} repeats a calibration question`);
+    assert(question.expected.length >= 1 && question.expected.length <= 3, question.id);
+    for (const key of question.expected) assert(keys.has(key), `${question.id}: unknown ${key}`);
+    // The first search is the question as asked, the second adds the plan topics, and nothing is
+    // borrowed from an earlier question.
+    const query = libraryRetrievalQuery(question.text, ["How much protein?"], question.plan);
+    assertEquals(query.planExplanation, true, question.id);
+    assertEquals(query.text, question.text, question.id);
+    assert(query.planText!.startsWith(question.text), question.id);
+    assert(query.planText!.length > question.text.length, question.id);
+    assert(!query.planText!.includes("protein?"), question.id);
+  }
+  // The facts cover each goal the plan can have, so each nutrition topic is searched.
+  const goals = new Set(planQuestions.map((question) => question.plan.goal));
+  for (const goal of ["fat_loss", "muscle_gain", "recomposition", "strength"]) {
+    assert(goals.has(goal), goal);
+  }
+});
+
+Deno.test("the onboarding cases name known sources and build two searches from enumerated facts", () => {
+  const keys = new Set(librarySources.map((source) => source.slug));
+  const cases = planFile.onboarding as unknown as {
+    id: string;
+    facts: OnboardingLibraryFacts;
+    expected: string[];
+  }[];
+  assert(cases.length >= 4, `${cases.length} onboarding cases`);
+  assertEquals(new Set(cases.map((entry) => entry.id)).size, cases.length);
+  for (const entry of cases) {
+    assert(entry.expected.length >= 2 && entry.expected.length <= 3, entry.id);
+    for (const key of entry.expected) assert(keys.has(key), `${entry.id}: unknown ${key}`);
+    assertEquals(onboardingLibraryQueries(entry.facts).length, 2, entry.id);
+  }
+  const goals = new Set(cases.map((entry) => entry.facts.goal));
+  for (const goal of ["fat_loss", "muscle_gain", "recomposition", "strength", "aesthetic"]) {
+    assert(goals.has(goal), goal);
+  }
 });

@@ -317,6 +317,7 @@ class OnboardingProposal {
     required this.benefit,
     required this.downside,
     required this.confidence,
+    this.librarySources = const [],
   });
 
   final String id;
@@ -343,6 +344,10 @@ class OnboardingProposal {
   final String benefit;
   final String downside;
   final String confidence;
+
+  /// The research sources the plan cites: the label of each `library` item in
+  /// the proposal's evidence (the retrieved title and year, set by the server).
+  final List<String> librarySources;
 
   static List<String> _strings(Object? value) =>
       value is List ? value.whereType<String>().toList() : const [];
@@ -428,6 +433,13 @@ class OnboardingProposal {
       benefit: row['expected_benefit'] as String,
       downside: row['downside'] as String,
       confidence: row['confidence'] as String,
+      librarySources: [
+        for (final item in row['evidence'] as List? ?? const [])
+          if (item is Map &&
+              item['source'] == 'library' &&
+              item['label'] is String)
+            item['label'] as String,
+      ],
     );
   }
 }
@@ -675,7 +687,7 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
     final row = await _client
         .from('change_proposals')
         .select(
-          'id,proposed_training,proposed_nutrition,rationale,expected_benefit,downside,confidence',
+          'id,proposed_training,proposed_nutrition,evidence,rationale,expected_benefit,downside,confidence',
         )
         .eq('id', proposalId)
         .single();

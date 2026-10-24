@@ -373,8 +373,12 @@ class TrainBriefRepository implements DailyBriefRepository {
   final bool health;
   final Object? error;
 
+  /// The days it was asked for.
+  final loads = <DateTime>[];
+
   @override
   Future<DailyBrief> load(DateTime date) async {
+    loads.add(date);
     if (error != null) throw error!;
     return DailyBrief(
       localDate: '2026-10-02',

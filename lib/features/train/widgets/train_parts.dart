@@ -132,6 +132,9 @@ String? nextTargetWhy(NextTarget target, {bool assisted = false}) {
     'pain' =>
       'Pain was flagged last time. Repeat your last result and keep it '
           'comfortable.',
+    'day_adjustment' =>
+      "You chose to keep last time's weight today. Tomorrow's target comes "
+          'from how you train.',
     _ => null,
   };
   if (text == null || !target.lowConfidence) return text;
@@ -145,7 +148,9 @@ String exerciseLine(PlannedExercise exercise) {
   final next = exercise.nextTarget;
   if (next != null) {
     final assisted = isAssistedPlanned(exercise);
-    return '$base · next ${nextTargetText(next, assisted: assisted)}';
+    // A held target is today's choice, not the next progression step.
+    final word = exercise.loadHeld ? 'hold' : 'next';
+    return '$base · $word ${nextTargetText(next, assisted: assisted)}';
   }
   final load = exercise.targetLoadKg;
   return load == null ? base : '$base at ${formatKg(load)} kg';
@@ -153,6 +158,20 @@ String exerciseLine(PlannedExercise exercise) {
 
 int totalSets(PlannedWorkout workout) =>
     workout.exercises.fold<int>(0, (sum, item) => sum + item.setCount);
+
+/// What today's accepted same-day adjustment did to [workout]: "Lighter
+/// today: 12 of 15 sets" or "Weights held today". Null when it did nothing.
+String? dayAdjustmentNote(PlannedWorkout workout) {
+  final planned = workout.exercises.fold<int>(
+    0,
+    (sum, item) => sum + (item.plannedSetCount ?? item.setCount),
+  );
+  final now = totalSets(workout);
+  if (now < planned) return 'Lighter today: $now of $planned sets';
+  return workout.exercises.any((item) => item.loadHeld)
+      ? 'Weights held today'
+      : null;
+}
 
 /// "6 exercises, about 48 min".
 String workoutMeta(PlannedWorkout workout) {

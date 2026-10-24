@@ -32,7 +32,7 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   `20261023140024`): `day_adjustments`, `get_my_day_adjustment_v1` / `respond_to_day_adjustment_v1`
   (hold loads, one set fewer or easy cardio for today only; one tap and Undo; the recovery score never
   adjusts a session alone, the athlete may choose), `start_workout` building the adjusted sets and B3
-  ignoring adjusted sessions as evidence for lowering a load. Next: B4-2 (app), then B5. Handoff:
+  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). Next: B5. Handoff:
   [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping
@@ -64,12 +64,29 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   (`user_accounts.country_code`, `get_my_country_v1` and `set_my_country_v1`) that picks the regional
   sources instead of the locale and time-zone guess; no plan number reads it, nothing changes with it
   empty; needs the migration first, then an app reinstall for the row. NICE is not included (its text
-  could not be read). Handoff: [`research-library.md`](./handoff/research-library.md).
+  could not be read). E5 in review (branch `claude/e5-plan-explanations`, no migration): plan
+  explanations cite sources. Coach chat searches a "why is my plan like this?" question with what
+  the plan is made of added (counts and enumerated values) and tells Coach to explain from the plan's
+  own numbers first; the onboarding plan (`onboarding-plan`, gateway route) shows the model library
+  excerpts for the athlete's region, accepts the ids it lists in a new `sources` field only if they
+  were shown, and stores each as a `library` evidence item that the app lists under "Why this plan"
+  ("Research behind this plan"; needs a reinstall). A plan with no source to cite says so in "Not
+  known yet", and one whose search found nothing or failed is low confidence; the rules plan and the
+  settings path use no library. `onboarding-propose-plan` is the old mock and is unchanged. The CI
+  retrieval gate also scores 12 plan questions. Handoff: [`research-library.md`](./handoff/research-library.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
+
+**Query order fix (2026-10-24, branch `claude/explicit-query-order`, PR open):** saved Coach conversations loaded
+newest-first (postgrest-dart's `order()` defaults to descending, and `loadMessages` left the direction out), so a
+reply sat above its question and the screen opened on the oldest message. Fixed with an explicit ascending order;
+every other `.order(` in the app now states its direction (active goal by priority, measurements, meals, meal
+candidates and today's workout were also descending by accident) and a source-scan test keeps it that way. App
+only, no migration; needs `./scripts/install-device.sh` from the merged commit. Details: "Coach conversations load
+oldest-first" in [`ai-gateway.md`](./handoff/ai-gateway.md).
 
 **Coach opens a fresh chat (2026-10-24, branch `claude/coach-chat-fresh`, PR open):** Coach reopens the last
 conversation only if its last message is under 6 hours old, otherwise a new conversation with a **Continue last

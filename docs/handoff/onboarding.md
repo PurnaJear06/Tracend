@@ -104,7 +104,14 @@ v1 approval now refuses 2.0 proposals.
 
 - `onboarding-plan` (`handler.ts` plus `index.ts`) answers 202 and generates in
   `EdgeRuntime.waitUntil`.
-- `_shared/onboarding/`: answers, catalog, policy, contract (29 rules), rules plan, generator.
+- `_shared/onboarding/`: answers, catalog, policy, contract (32 rules, the last two are `source_not_retrieved` and `source_not_listed`), rules plan, generator.
+- Research library (E5): on the gateway route the handler searches the library for the athlete before
+  it builds the prompt (`_shared/library/plan_library.ts`); the model may list the ids it relied on in
+  `sources`, the contract refuses an id that was not shown, and cited sources become `library`
+  evidence on the proposal and a "Research behind this plan" disclosure in the app. A plan that cites
+  nothing says so in "Not known yet", and one whose search found nothing or failed is low
+  confidence. The rules plan and the settings path use no library. See
+  [`research-library.md`](./research-library.md) (E5).
 - `_shared/providers/onboarding_plan_provider.ts`: any OpenAI-compatible provider by settings.
 
 **Tests**

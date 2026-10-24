@@ -140,7 +140,7 @@ class SupabaseProgressRepository
         .from('user_goals')
         .select('goal_type')
         .eq('status', 'active')
-        .order('priority')
+        .order('priority', ascending: true)
         .limit(1)
         .maybeSingle();
     return row?['goal_type'] as String?;
@@ -154,8 +154,8 @@ class SupabaseProgressRepository
           'measured_on,weight_kg,waist_cm,chest_cm,hip_cm,arm_cm,thigh_cm,source,created_at',
         )
         .isFilter('superseded_at', null)
-        .order('measured_on')
-        .order('created_at');
+        .order('measured_on', ascending: true)
+        .order('created_at', ascending: true);
     final byDate = <String, Map<String, dynamic>>{};
     for (final row in rows) {
       final date = row['measured_on'] as String;
@@ -218,7 +218,7 @@ class SupabaseProgressRepository
         .order('captured_on', ascending: false)
         // Several sets can share a day: the newest is the one taken last.
         .order('created_at', ascending: false)
-        .order('id');
+        .order('id', ascending: true);
     final photos = await _client
         .from('progress_photos')
         .select('photo_set_id,media_objects(object_key)');

@@ -56,7 +56,10 @@ class WorkoutHero extends StatelessWidget {
   final BodySide side;
   final ValueChanged<BodySide> onSideChanged;
   final VoidCallback onOpenOverview;
-  final VoidCallback onStart;
+
+  /// Null while Start must wait (an answer to today's readiness card is on its
+  /// way): the button is dimmed.
+  final VoidCallback? onStart;
   final VoidCallback onViewSummary;
   final VoidCallback onOpenMuscles;
 

@@ -17,6 +17,8 @@ import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
+import 'package:tracend/features/readiness/day_adjustment_controller.dart';
+import 'package:tracend/features/readiness/day_adjustment_card.dart';
 import 'package:tracend/features/train/unfinished_workout.dart';
 import 'package:tracend/features/train/widgets/workout_finish_sheet.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
@@ -63,6 +65,8 @@ class TodayScreen extends StatefulWidget {
     this.planChanges,
     this.widgetPublisher,
     this.widgetTaps,
+    this.dayAdjustment,
+    this.onTalkToCoach,
     this.clock = DateTime.now,
     super.key,
   });
@@ -112,6 +116,14 @@ class TodayScreen extends StatefulWidget {
   /// are fresh by the time the athlete looks.
   final Listenable? widgetTaps;
 
+  /// Today's same-day readiness adjustment, shared with Train. Null without a
+  /// backend, where there is none.
+  final DayAdjustmentController? dayAdjustment;
+
+  /// Shell wiring: open Coach with a question in the box ("Talk to Coach" on
+  /// the readiness card).
+  final ValueChanged<String>? onTalkToCoach;
+
   /// The time Today measures the age of its brief by.
   final DateTime Function() clock;
 
@@ -142,6 +154,15 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   /// offline) or put off with "Not today". Each holds the day it was set.
   String? _checkedInOn;
   String? _skippedOn;
+
+  /// The server's today (`YYYY-MM-DD`), once the readiness controller learned
+  /// it, whatever the phone's date says. The brief is loaded for it, and a
+  /// check-in is saved under it, so the card, the numbers, the session and the
+  /// check-in all describe one day. Until it is known the phone's date is used.
+  String? _serverDay;
+
+  /// The day and route of the safety sheet already shown, so it opens once.
+  String? _safetyShown;
   DailyBrief? _lastBrief;
   static const _checkedInKey = 'today_check_in_saved_on';
   static const _skippedKey = 'today_check_in_skipped_on';
@@ -189,6 +210,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   /// what the widgets get: an old one is never written again.
   void _reloadIfStale() {
     if (!mounted) return;
+    unawaited(widget.dayAdjustment?.refreshIfStale());
     final loadedAt = _briefLoadedAt;
     final brief = _lastBrief;
     final now = widget.clock();
@@ -196,7 +218,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         loadedAt == null ||
         brief == null ||
         now.difference(loadedAt) > _staleBriefAfter ||
-        brief.localDate != _dateKey(now);
+        brief.localDate != _dateKey(_briefDay());
     if (!stale) return;
     setState(() {
       _targets = widget.nutrition.loadTargets();
@@ -212,11 +234,13 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     widget.widgetTaps?.removeListener(_reloadIfStale);
     widget.aiConsent?.removeListener(_consentChanged);
     widget.planChanges?.removeListener(_planChanged);
+    widget.dayAdjustment?.removeListener(_dayAdjustmentChanged);
     super.dispose();
   }
 
   void _planChanged() {
     if (!mounted) return;
+    unawaited(widget.dayAdjustment?.load());
     setState(() {
       _targets = widget.nutrition.loadTargets();
       _brief = _loadBrief();
@@ -230,7 +254,9 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     widget.widgetTaps?.addListener(_reloadIfStale);
     widget.aiConsent?.addListener(_consentChanged);
     widget.planChanges?.addListener(_planChanged);
+    widget.dayAdjustment?.addListener(_dayAdjustmentChanged);
     _reloadHealth();
+    unawaited(widget.dayAdjustment?.load());
     _targets = widget.nutrition.loadTargets();
     _meals = _loadMeals();
     _brief = _loadBrief();
@@ -309,6 +335,9 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       if (mounted) setState(() => _answeringUnfinished = false);
     }
     unawaited(_loadUnfinished());
+    // Saving or discarding a session changes whether today's can still be
+    // adjusted.
+    unawaited(widget.dayAdjustment?.load());
   }
 
   /// "Discard": after a confirmation, keeps the workout out of the history
@@ -353,6 +382,9 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       if (mounted) setState(() => _answeringUnfinished = false);
     }
     unawaited(_loadUnfinished());
+    // Saving or discarding a session changes whether today's can still be
+    // adjusted.
+    unawaited(widget.dayAdjustment?.load());
   }
 
   /// Deliver any check-in queued while offline: the sheet persists the
@@ -372,6 +404,14 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         setState(() {
           _brief = _loadBrief();
         });
+        // The replayed check-in is what today's call rests on, and it may send
+        // the athlete to a professional: read it and say so, as after an
+        // online save.
+        final readiness = widget.dayAdjustment;
+        if (readiness != null) {
+          await readiness.load();
+          if (mounted) await _showSafetyOnce(readiness);
+        }
         // The replayed check-in is new evidence: today's decision may have
         // been generated without it and must be refreshed.
         await _refreshDecisionAfterEvidence();
@@ -438,11 +478,42 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   /// never overwrites the newer day's brief, gate or widgets.
   int _briefLoads = 0;
 
+  /// The day the brief is loaded for: the server's once it is known, else the
+  /// phone's.
+  DateTime _briefDay() {
+    final day = _serverDay == null ? null : DateTime.tryParse(_serverDay!);
+    return day ?? widget.clock();
+  }
+
+  /// The day of the newest brief request, `YYYY-MM-DD`.
+  String? _briefRequestedFor;
+
+  /// The athlete's day for the check-in gate and its saved marks: the
+  /// server's when known, else the brief's, else the phone's.
+  String _dayKey() =>
+      _serverDay ?? _lastBrief?.localDate ?? _dateKey(widget.clock());
+
+  /// Follows the server's day. It is recorded as soon as the controller learns
+  /// it, whether or not the brief has arrived, and the brief is loaded again
+  /// when the newest request was for another day, whichever of the two
+  /// finishes first.
+  void _dayAdjustmentChanged() {
+    final day = widget.dayAdjustment?.serverDay;
+    if (!mounted || day == null) return;
+    _serverDay = day;
+    if (_briefRequestedFor == day) return;
+    setState(() {
+      _brief = _loadBrief();
+    });
+  }
+
   /// Loads the brief and, once it arrives, sets the check-in gate from it and
   /// hands it to the widgets.
   Future<DailyBrief> _loadBrief() {
     final load = ++_briefLoads;
-    final future = widget.brief.load(widget.clock());
+    final day = _briefDay();
+    _briefRequestedFor = _dateKey(day);
+    final future = widget.brief.load(day);
     future.then((brief) {
       if (!mounted || load != _briefLoads) return;
       _lastBrief = brief;
@@ -519,7 +590,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
 
   /// "Not today": the tab bar comes back until tomorrow.
   void _skipCheckIn() {
-    final day = _lastBrief?.localDate ?? _dateKey(DateTime.now());
+    final day = _dayKey();
     setState(() => _skippedOn = day);
     _updateGate();
     _rememberDay(_skippedKey, day);
@@ -531,6 +602,8 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
 
   void _reloadBriefAndHealth() {
     _reloadHealth();
+    // Sleep and recovery that just arrived can change today's call.
+    unawaited(widget.dayAdjustment?.load());
     setState(() {
       _brief = _loadBrief();
       _targets = widget.nutrition.loadTargets();
@@ -678,9 +751,10 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       context,
       widget.environment,
       sender: widget.checkInSender,
+      localDate: _serverDay,
     );
     if (saved && mounted) {
-      final day = _lastBrief?.localDate ?? _dateKey(DateTime.now());
+      final day = _dayKey();
       setState(() => _checkedInOn = day);
       _updateGate();
       // The widgets say the check-in is done at once: the brief reloaded
@@ -693,8 +767,28 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       setState(() {
         _brief = _loadBrief();
       });
-      await _refreshDecisionAfterEvidence();
+      // The check-in is what today's call rests on: read it again, and when
+      // it sends the athlete to a professional, say so where it cannot be
+      // missed.
+      final readiness = widget.dayAdjustment;
+      if (saved && readiness != null) {
+        await readiness.load();
+        if (mounted) await _showSafetyOnce(readiness);
+      }
+      if (mounted) await _refreshDecisionAfterEvidence();
     }
+  }
+
+  /// The referral sheet for a day with a safety route, shown once for that
+  /// day and route.
+  Future<void> _showSafetyOnce(DayAdjustmentController readiness) async {
+    final adjustment = readiness.current;
+    final route = adjustment?.safetyRoute;
+    if (adjustment == null || route == null) return;
+    final key = '${adjustment.localDate}:$route';
+    if (_safetyShown == key) return;
+    _safetyShown = key;
+    await showDaySafetySheet(context, route);
   }
 
   /// Opens the brief's workout: the one planned for the date the brief was
@@ -717,11 +811,15 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       CupertinoPageRoute(
         builder: (_) => WorkoutDetailScreen(
           repository: widget.workouts,
+          dayAdjustment: widget.dayAdjustment,
           workout: workout,
           sessionDate: DateTime.tryParse(brief.localDate) ?? DateTime.now(),
         ),
       ),
     );
+    // Whatever happened in the workout screen (saved, paused, finished), the
+    // readiness card must say whether the session has started.
+    unawaited(widget.dayAdjustment?.load());
     if (completed == true && mounted) {
       setState(() => _brief = _loadBrief());
     }
@@ -798,6 +896,8 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
                       widget.onOpenTrain ?? () => _openWorkout(brief),
                   onCheckIn: _openCheckIn,
                   checkedIn: _checkedIn(brief),
+                  dayAdjustment: widget.dayAdjustment,
+                  onTalkToCoach: widget.onTalkToCoach,
                   offerCheckIn:
                       widget.checkInGate == null ||
                       _skippedOn == brief.localDate,
@@ -955,6 +1055,8 @@ class _BriefContent extends StatelessWidget {
     required this.onCheckIn,
     required this.checkedIn,
     required this.offerCheckIn,
+    required this.dayAdjustment,
+    required this.onTalkToCoach,
     required this.unfinished,
     required this.answeringUnfinished,
     required this.onSaveUnfinished,
@@ -975,6 +1077,8 @@ class _BriefContent extends StatelessWidget {
   final VoidCallback onCheckIn;
   final bool checkedIn;
   final bool offerCheckIn;
+  final DayAdjustmentController? dayAdjustment;
+  final ValueChanged<String>? onTalkToCoach;
 
   /// A workout logged and left unfinished, asked about right under the hero.
   final UnfinishedWorkout? unfinished;
@@ -1065,6 +1169,9 @@ class _BriefContent extends StatelessWidget {
               decision: snapshot.data,
               aiAllowed: aiAllowed,
               onOpen: onOpenWorkout,
+              dayAdjustment: dayAdjustment,
+              onTalkToCoach: onTalkToCoach,
+              onCheckIn: onCheckIn,
             ),
           ),
         ),

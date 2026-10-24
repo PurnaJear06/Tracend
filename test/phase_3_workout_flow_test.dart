@@ -159,7 +159,35 @@ class _Repository implements WorkoutRepository {
   Future<Map<String, dynamic>?> loadSession(
     PlannedWorkout workout, {
     DateTime? localDate,
-  }) async => serverSession;
+  }) async => serverSession ?? (started ? _startedSession(workout) : null);
+
+  /// Set once the server created the session, and when (the tests' clock).
+  bool started = false;
+  DateTime? startedAt;
+
+  /// The tests' clock: the server begins a session at this time.
+  DateTime Function()? serverNow;
+
+  /// What the server holds right after `start_workout`: a row for every set.
+  Map<String, dynamic> _startedSession(PlannedWorkout workout) => {
+    'session_id': 'server-session',
+    'state': 'in_progress',
+    'revision': 0,
+    'idempotency_key': 'k',
+    'local_date': '2026-10-03',
+    'actual_started_at': startedAt?.toUtc().toIso8601String(),
+    'exercises': [
+      for (final exercise in workout.exercises)
+        {
+          'order': exercise.order,
+          'status': 'unknown',
+          'sets': [
+            for (var n = 1; n <= exercise.setCount; n++)
+              {'number': n, 'completed': false},
+          ],
+        },
+    ],
+  };
 
   @override
   Future<PlannedWorkout> loadTodayWorkout() async => _workout;
@@ -175,6 +203,8 @@ class _Repository implements WorkoutRepository {
   }) async {
     if (failStart) throw Exception('offline');
     onStart?.call();
+    started = true;
+    startedAt = serverNow?.call();
     return 'server-session';
   }
 
@@ -295,7 +325,9 @@ class _Harness {
   }) : notifications = _Notifications(restAlerts: restAlerts),
        repository = repository ?? _Repository(),
        clock = clock ?? _Clock(),
-       _native = native;
+       _native = native {
+    this.repository.serverNow = this.clock.call;
+  }
 
   final _Repository repository;
   final FakeWorkoutActivityBridge? _native;
@@ -2031,6 +2063,8 @@ void main() {
               'rpe': 8.0,
               'completed': true,
             },
+            // The server holds a row for every set the session has.
+            {'number': 2, 'completed': false},
           ],
         },
       ],

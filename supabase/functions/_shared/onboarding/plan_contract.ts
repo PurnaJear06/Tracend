@@ -81,6 +81,8 @@ export const onboardingPlanValidationRules = [
   "fat_out_of_range",
   "carbohydrate_out_of_range",
   "macro_sum_mismatch",
+  "source_not_retrieved",
+  "source_not_listed",
 ] as const;
 export type OnboardingPlanValidationRule = typeof onboardingPlanValidationRules[number];
 
@@ -136,6 +138,12 @@ export type OnboardingPlan = Readonly<{
   expected_benefit: string;
   downside: string;
   confidence: "low" | "medium" | "high";
+  /**
+   * Research library sources the plan's reasons rest on (chunk E5): ids from the excerpts the
+   * prompt showed, at most `onboardingPlanLimits.listMaxItems`. Empty when none is cited, and
+   * always empty on the rules plan and on the settings path.
+   */
+  sources: readonly string[];
   workouts: readonly PlanWorkout[];
   nutrition: PlanNutrition;
 }>;
@@ -211,13 +219,20 @@ function fail(rule: OnboardingPlanValidationRule, path: string): never {
   throw new OnboardingPlanValidationError(rule, path);
 }
 
-function record(value: unknown, keys: readonly string[], path: string): Record<string, unknown> {
+function record(
+  value: unknown,
+  keys: readonly string[],
+  path: string,
+  optionalKeys: readonly string[] = [],
+): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     fail(path === "$" ? "invalid_root" : "invalid_type", path);
   }
   const object = value as Record<string, unknown>;
   for (const key of Object.keys(object)) {
-    if (!keys.includes(key)) fail("unexpected_keys", `${path}.${key}`);
+    if (!keys.includes(key) && !optionalKeys.includes(key)) {
+      fail("unexpected_keys", `${path}.${key}`);
+    }
   }
   for (const key of keys) {
     if (!(key in object)) fail("missing_field", `${path}.${key}`);
@@ -241,6 +256,12 @@ function list(value: unknown, path: string): string[] {
   );
 }
 
+/** The library source ids a plan cites: absent is none, each id once, at most four. */
+function sourceIds(value: unknown): string[] {
+  if (value === undefined) return [];
+  return [...new Set(list(value, "$.sources"))];
+}
+
 function int(value: unknown, path: string): number {
   if (typeof value !== "number" || !Number.isInteger(value)) fail("invalid_type", path);
   return value;
@@ -259,7 +280,8 @@ export function parseOnboardingPlan(content: string): OnboardingPlan {
   } catch {
     fail("json_syntax", "$");
   }
-  const root = record(value, rootKeys, "$");
+  // `sources` (E5) is absent on the settings path, whose prompt does not ask for it.
+  const root = record(value, rootKeys, "$", ["sources"]);
   const limits = onboardingPlanLimits;
   const confidence = root.confidence;
   if (confidence !== "low" && confidence !== "medium" && confidence !== "high") {
@@ -310,6 +332,7 @@ export function parseOnboardingPlan(content: string): OnboardingPlan {
     expected_benefit: text(root.expected_benefit, limits.benefitMaxLength, "$.expected_benefit"),
     downside: text(root.downside, limits.downsideMaxLength, "$.downside"),
     confidence,
+    sources: sourceIds(root.sources),
     workouts,
     nutrition: {
       calories: int(nutrition.calories, "$.nutrition.calories"),
@@ -342,6 +365,23 @@ export type PlanPolicies = Readonly<{
    * (trainingPolicy); `see_professional` builds no plan (PlanBlockedByScreeningError).
    */
   screening?: ScreeningOutcome;
+  /**
+   * What the library search for this plan found (chunk E5): the sources the prompt showed, with
+   * the label the app shows for each (the retrieved title and year), and how the search went.
+   * Absent when the library was not searched (the rules plan, the settings path).
+   */
+  library?: PlanLibraryContext;
+}>;
+
+/** The library as the plan contract needs it: which ids may be cited, and how to label them. */
+export type PlanLibraryContext = Readonly<{
+  status: "found" | "none" | "unavailable";
+  labels: Readonly<Record<string, string>>;
+  /**
+   * The excerpts shown for each source, with the author text in them: a plan that names a source
+   * the way its own excerpt does ("Currier et al.") is found naming it.
+   */
+  texts?: Readonly<Record<string, string>>;
 }>;
 
 /** The screening outcome says to see a professional first, so no plan is built (Contract 8). */
@@ -367,6 +407,12 @@ export function validateOnboardingPlan(plan: OnboardingPlan, policies: PlanPolic
   if (!between(plan.block_weeks, training.blockWeeks)) {
     fail("block_weeks_out_of_range", "$.block_weeks");
   }
+  // A cited source must be one the prompt showed: a citation of nothing is refused.
+  plan.sources.forEach((source, index) => {
+    if (!Object.hasOwn(policies.library?.labels ?? {}, source)) {
+      fail("source_not_retrieved", `$.sources[${index}]`);
+    }
+  });
   if (plan.workouts.length !== answers.trainingWeekdays.length) {
     fail("workout_count_mismatch", "$.workouts");
   }
@@ -486,6 +532,12 @@ export type OnboardingProposalPayload = Readonly<{
 
 const confidenceRank = { low: 0, medium: 1, high: 2 } as const;
 
+/** What the plan says when it cites no library source (chunk E5), in the "Not known yet" list. */
+const uncitedNote = (status: PlanLibraryContext["status"]): string =>
+  status === "unavailable"
+    ? "The research library could not be searched for this plan, so it cites no source; its numbers come from Tracend's safe ranges and your answers."
+    : "No research source is cited for this plan; its numbers come from Tracend's safe ranges and your answers.";
+
 const activityRank: Record<DailyActivity, number> = {
   mostly_sitting: 0,
   some_standing: 1,
@@ -599,10 +651,21 @@ export function buildOnboardingProposal(
 ): OnboardingProposalPayload {
   const bySlug = new Map(policies.catalog.map((exercise) => [exercise.slug, exercise]));
   const workouts = [...plan.workouts].sort((a, b) => a.weekday - b.weekday);
-  const cap = confidenceCap(policies.answers, policies.nutrition);
+  const uncited = origin.origin === "ai" && policies.library !== undefined &&
+    plan.sources.length === 0;
+  // A search that found nothing, or failed, lowers confidence to low (Architecture 8: missing data
+  // lowers confidence; the cap was medium, so this is a step down): the plan stands on Tracend's
+  // rules alone. Excerpts that were shown and simply not cited leave confidence as it was, with the
+  // note below.
+  const searchedEmpty = origin.origin === "ai" && policies.library !== undefined &&
+    policies.library.status !== "found";
+  const cap = searchedEmpty ? "low" : confidenceCap(policies.answers, policies.nutrition);
   const confidence = confidenceRank[plan.confidence] > confidenceRank[cap] ? cap : plan.confidence;
   const notes = requiredNotes(plan, policies);
-  const missing = requiredMissingInformation(policies.health);
+  const missing = [
+    ...requiredMissingInformation(policies.health),
+    ...(uncited ? [uncitedNote(policies.library!.status)] : []),
+  ];
   const estimates = new Map(policies.lifts.map((lift) => [lift.slug as string, lift.e1rm_kg]));
   return {
     training: {
@@ -720,6 +783,12 @@ export function buildOnboardingProposal(
           source: "feature_snapshot",
         }]
         : []),
+      // Sources the plan cites (chunk E5), labelled from the retrieved title, never the model's words.
+      ...plan.sources.map((source) => ({
+        code: source,
+        label: policies.library!.labels[source],
+        source: "library",
+      })),
     ],
     rationale: plan.rationale,
     benefit: plan.expected_benefit,

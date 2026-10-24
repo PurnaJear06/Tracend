@@ -8,6 +8,7 @@ import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/coach_screen.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/coach/widgets/coach_message_bubble.dart';
+import 'package:tracend/shared/coach_draft_requests.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_toast.dart';
 
@@ -16,6 +17,7 @@ Widget _app(
   CoachThreadMemory memory, {
   Duration age = const Duration(hours: 1),
   bool active = true,
+  CoachDraftRequests? drafts,
 }) => MaterialApp(
   theme: TracendTheme.dark,
   home: Scaffold(
@@ -25,6 +27,7 @@ Widget _app(
       // Threads are last updated at [_when]; this is how long ago that was.
       now: () => _when.add(age),
       active: active,
+      draftRequests: drafts,
     ),
   ),
 );
@@ -382,6 +385,61 @@ void main() {
 
       expect(find.text('I am thinking of taking a break'), findsNothing);
       expect(find.text('Continue last chat'), findsOneWidget);
+    });
+
+    testWidgets('a question left by another screen opens a fresh chat when '
+        'the old one is over 6 hours old', (tester) async {
+      await _tall(tester);
+      final repository = _HistoryRepository(
+        threads: [thread],
+        messages: messages,
+        replies: [Completer<CoachMessage>()],
+      );
+      final memory = _Memory('t-old');
+      final drafts = CoachDraftRequests();
+      await tester.pumpWidget(
+        _app(repository, memory, age: const Duration(hours: 1), drafts: drafts),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('I am thinking of taking a break'), findsOneWidget);
+
+      await tester.pumpWidget(
+        _app(repository, memory, age: const Duration(hours: 7), drafts: drafts),
+      );
+      drafts.request('Can we talk it through?');
+      await tester.pumpAndSettle();
+
+      expect(find.text('I am thinking of taking a break'), findsNothing);
+      expect(find.text('Continue last chat'), findsOneWidget);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Can we talk it through?',
+      );
+      expect(repository.sent, isEmpty, reason: 'the question is not sent');
+    });
+
+    testWidgets('a question left by another screen stays in a fresh chat', (
+      tester,
+    ) async {
+      await _tall(tester);
+      final repository = _HistoryRepository(
+        threads: [thread],
+        messages: messages,
+        replies: [Completer<CoachMessage>()],
+      );
+      final memory = _Memory('t-old');
+      final drafts = CoachDraftRequests();
+      await tester.pumpWidget(
+        _app(repository, memory, age: const Duration(hours: 1), drafts: drafts),
+      );
+      await tester.pumpAndSettle();
+      drafts.request('Can we talk it through?');
+      await tester.pumpAndSettle();
+      expect(find.text('I am thinking of taking a break'), findsOneWidget);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Can we talk it through?',
+      );
     });
 
     testWidgets('a send in flight keeps the chat', (tester) async {

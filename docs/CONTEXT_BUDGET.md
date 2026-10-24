@@ -105,6 +105,20 @@ the same retrieval and inside the same 9,000-character `library` budget, and the
 only changes which sources the search may show. The cached prefix, the digest (still 5,661
 characters as shown; there is no regional digest) and the answer schema are unchanged.
 
+Plan explanations (E5) add no contributor and no prompt reserve to Coach chat. On a turn that asks why
+the plan is the way it is, the `library` block gains a fixed note of about 560 characters (counted
+inside the same 9,000, so one chunk fewer fits at worst) and it makes a second search, in parallel
+with the first, for the question plus about 400 characters of plan topics (one more embedding and one
+more `search_library_v3` call; the merged chunks still share the same 9,000 characters). The plan facts
+are a read the plan section already makes (shared for the turn) and the goal inputs the goal phase
+section already reads. The onboarding plan prompt (gateway route) gains, when the library is
+searched: about 1,100 characters in the cached system prompt (one of three variants of the rules
+about excerpts; the same for every athlete with the same outcome) and up to 6,000 characters of
+excerpts, about 1,700 tokens, in the user message (the heading and the whole chunks that fit,
+chosen from two searches of six chunks each). The cost ceiling is computed from the real prompt, so
+the reservation grows with the excerpts (`gateway_test.ts` checks it); the plan schema gains one
+required list of strings, `sources`. The settings path's prompt is unchanged.
+
 The coaching principles digest (E2) stays in the cached prefix as before. The whole library was
 measured against retrieval in E3 (then 85,000 characters, about 21,000 to 24,000 tokens) and is not
 in the prefix: see the head-to-head in `docs/handoff/research-library.md`. It has since grown to

@@ -1503,6 +1503,75 @@ void main() {
     });
   });
 
+  group('Research behind the plan', () {
+    testWidgets('a plan that cites sources lists them under why', (
+      tester,
+    ) async {
+      final repository = _FakeOnboardingRepository(
+        draft: _draft('proposal'),
+        generations: [_succeeded],
+      )..citedSources = true;
+      await _pump(tester, repository);
+      await tester.pumpAndSettle();
+      final title = find.text(OnboardingProposalView.researchTitle);
+      await tester.ensureVisible(title);
+      expect(title, findsOneWidget);
+      expect(find.text('Weekly sets and muscle growth (2017)'), findsNothing);
+      await tester.tap(title);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('• Weekly sets and muscle growth (2017)'),
+        findsOneWidget,
+      );
+      // Only a library item counts: the athlete's own answers are not research.
+      expect(
+        find.textContaining('Your reviewed onboarding answers'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a plan that cites nothing shows no research section', (
+      tester,
+    ) async {
+      final repository = _FakeOnboardingRepository(
+        draft: _draft('proposal'),
+        generations: [_succeeded],
+      );
+      await _pump(tester, repository);
+      await tester.pumpAndSettle();
+      expect(find.text(OnboardingProposalView.researchTitle), findsNothing);
+      expect(find.text('Why this plan'), findsOneWidget);
+    });
+
+    test('the proposal reads only library evidence, by its label', () {
+      final proposal = OnboardingProposal.fromRow({
+        'id': 'p',
+        'proposed_training': {
+          'title': 't',
+          'block_weeks': 6,
+          'weekly_structure': const [],
+        },
+        'proposed_nutrition': {
+          'calories': 2000,
+          'protein_g': 100,
+          'carbohydrate_g': 200,
+          'fat_g': 60,
+        },
+        'evidence': [
+          {'code': 'a', 'label': 'Mine', 'source': 'feature_snapshot'},
+          {'code': 'b', 'label': 'Cited (2018)', 'source': 'library'},
+          {'code': 'c', 'source': 'library'},
+          'not a map',
+        ],
+        'rationale': 'r',
+        'expected_benefit': 'b',
+        'downside': 'd',
+        'confidence': 'low',
+      });
+      expect(proposal.librarySources, ['Cited (2018)']);
+    });
+  });
+
   group('Apple Health step', () {
     final today = DateTime.now();
     HealthDay day(int back, {int? steps, double? weightKg}) => HealthDay(
@@ -1985,6 +2054,10 @@ class _FakeOnboardingRepository implements OnboardingRepository {
   /// the usual months.
   bool intakeProposal = false;
 
+  /// The proposal cites research library sources (and one other kind of
+  /// evidence, which the plan screen does not list as research).
+  bool citedSources = false;
+
   @override
   Future<OnboardingGeneration?> loadGeneration() async => _next();
 
@@ -2059,6 +2132,19 @@ class _FakeOnboardingRepository implements OnboardingRepository {
           'fat_g': 65,
           'rationale': 'Middle of the range.',
         },
+        if (citedSources)
+          'evidence': [
+            {
+              'code': 'ONBOARDING_ANSWERS_CONFIRMED',
+              'label': 'Your reviewed onboarding answers',
+              'source': 'feature_snapshot',
+            },
+            {
+              'code': 'schoenfeld_2017_weekly_volume',
+              'label': 'Weekly sets and muscle growth (2017)',
+              'source': 'library',
+            },
+          ],
         'rationale': 'Built from your answers.',
         'expected_benefit': 'A measurable start.',
         'downside': 'Estimates need data.',

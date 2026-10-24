@@ -40,6 +40,34 @@ const notAnAuthor = new Set([
   "mid",
   "since",
   "the",
+  // Calorie and plan wording that sits beside a number ("BMR 1980", "Target 1990 kcal").
+  "bmr",
+  "tdee",
+  "target",
+  "targets",
+  "eat",
+  "roughly",
+  "approximately",
+  "approx",
+  "aim",
+  "maintenance",
+  "deficit",
+  "surplus",
+  "calories",
+  "kcal",
+  "goal",
+  "limit",
+  "ceiling",
+  "floor",
+  "range",
+  "estimate",
+  "total",
+  "daily",
+  "weight",
+  "protein",
+  "under",
+  "over",
+  "near",
   "until",
   "week",
   "year",
@@ -103,11 +131,20 @@ const notAnInstitution = new Set([
 ]);
 
 const name = String.raw`\p{Lu}[\p{L}'’-]{2,}`;
+// The year must end at a word boundary: "Smith 2019 found" is a year, "BMR 19800" is not.
 const authorYear = new RegExp(
   String
-    .raw`\b(${name}(?:(?:,|,? and|,? &)\s+${name})*(?:,? et al\.?)?),?\s*\(?((?:19[5-9]|20[0-2])\d)[a-z]?\)?`,
+    .raw`\b(${name}(?:(?:,|,? and|,? &)\s+${name})*(?:,? et al\.?)?),?\s*\(?((?:19[5-9]|20[0-2])\d)[a-z]?\)?(?![\p{L}\p{N}])`,
   "gu",
 );
+// "Grgic et al. found ..." names a study without its year.
+const etAl = new RegExp(
+  String.raw`\b(${name}(?:(?:,|,? and|,? &)\s+${name})*,? et al\.?)`,
+  "gu",
+);
+// A number with its unit is a measurement, never a year: "BMR 1980 kcal", "Eat 2000 kcal".
+const measurement =
+  /\d[\d,.]*\s?(?:kcal|cal|calories|kg|lbs?|g|steps|min|minutes|%)(?![\p{L}\p{N}])/gu;
 const institution = new RegExp(
   String
     .raw`\b([A-Z]{2,6})\b(?=\s+(?:fact ?sheets?|position (?:stands?|statements?)|consensus(?: statements?)?|(?:dietary |physical activity )?guidelines?|recommendations?))`,
@@ -118,22 +155,47 @@ const institution = new RegExp(
 const words = (text: string) =>
   text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 
-/** The studies a text names, by author words and year. */
-export function studyMentions(text: string): StudyMention[] {
-  const found: StudyMention[] = [];
-  for (const match of text.matchAll(authorYear)) {
-    const authors = words(match[1]).filter((word) =>
+type Scanned = Readonly<{ mention: StudyMention; phrase: string }>;
+
+/** The studies a text names, each with the words of the text that name it. */
+function scan(text: string): Scanned[] {
+  const found: Scanned[] = [];
+  const plain = text.replace(measurement, " ");
+  const authorsOf = (raw: string) =>
+    words(raw).filter((word) =>
       word !== "et" && word !== "al" && word !== "and" && !notAnAuthor.has(word)
     );
-    if (authors.length > 0) found.push({ authors, year: Number(match[2]) });
+  const dated: [number, number][] = [];
+  for (const match of plain.matchAll(authorYear)) {
+    dated.push([match.index, match.index + match[0].length]);
+    const authors = authorsOf(match[1]);
+    if (authors.length > 0) {
+      found.push({ mention: { authors, year: Number(match[2]) }, phrase: match[0].trim() });
+    }
   }
-  for (const match of text.matchAll(institution)) {
+  for (const match of plain.matchAll(etAl)) {
+    // "Schoenfeld et al. (2017)" is one study, found above with its year.
+    if (dated.some(([from, to]) => match.index >= from && match.index < to)) continue;
+    const authors = authorsOf(match[1]);
+    if (authors.length > 0) {
+      found.push({ mention: { authors, year: null }, phrase: match[0].trim() });
+    }
+  }
+  for (const match of plain.matchAll(institution)) {
     const initials = match[1].toLowerCase();
     if (!notAnInstitution.has(initials)) {
-      found.push({ authors: [initials], year: null, initials: true });
+      found.push({
+        mention: { authors: [initials], year: null, initials: true },
+        phrase: match[0].trim(),
+      });
     }
   }
   return found;
+}
+
+/** The studies a text names, by author words and year. */
+export function studyMentions(text: string): StudyMention[] {
+  return scan(text).map((entry) => entry.mention);
 }
 
 type Identity = Readonly<{
@@ -203,10 +265,32 @@ export function namedShownSources(text: string, shown: ShownSources): string[] {
   }).map(([id]) => id);
 }
 
+/** The shown sources the text names, each with the words of the text that name it. */
+export function namedShownPhrases(
+  text: string,
+  shown: ShownSources,
+): { id: string; phrase: string }[] {
+  const identities = Object.entries(shown).map(([id, source]) => ({
+    id,
+    identity: identityOf(id, source),
+  }));
+  return scan(text).flatMap((entry) =>
+    identities.filter(({ identity }) => names(entry.mention, identity)).map(({ id }) => ({
+      id,
+      phrase: entry.phrase,
+    }))
+  );
+}
+
 /** The studies the text names that no shown source matches. */
 export function unshownStudies(text: string, shown: ShownSources): StudyMention[] {
+  return unshownStudyPhrases(text, shown).map((entry) => entry.mention);
+}
+
+/** The same, each with the words of the text that name it (for a repair that quotes them). */
+export function unshownStudyPhrases(text: string, shown: ShownSources): Scanned[] {
   const identities = Object.entries(shown).map(([id, source]) => identityOf(id, source));
-  return studyMentions(text).filter((mention) =>
-    !identities.some((identity) => names(mention, identity))
+  return scan(text).filter((entry) =>
+    !identities.some((identity) => names(entry.mention, identity))
   );
 }
