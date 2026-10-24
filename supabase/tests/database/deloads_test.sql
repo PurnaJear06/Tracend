@@ -723,8 +723,8 @@ select is(pg_temp.bench_target(45) -> 'basis' -> 'recent' -> 0 ->> 'adjusted', '
 
 -- H2: deload sessions are not stall evidence. During the week:
 select pg_temp.make_athlete(47);
-select pg_temp.bench(47, 30, 4, 6, 60, 2);
-select pg_temp.bench(47, 25, 4, 6, 60, 2);
+select pg_temp.bench(47, 13, 4, 6, 60, 2);
+select pg_temp.bench(47, 10, 4, 6, 60, 2);
 select is(pg_temp.bench_target(47) ->> 'reason', 'within_range', 'two full sessions at one load are not yet a stall');
 insert into p select 'h2_during', pg_temp.bench_deload(47);
 select pg_temp.approve(47, (select id from p where name = 'h2_during'));
