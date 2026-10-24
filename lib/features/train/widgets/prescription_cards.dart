@@ -48,9 +48,8 @@ class TrainingHistoryList extends StatelessWidget {
   onOpenSession;
 
   TracendListRow _row(TrainingSessionSummary session, TracendColors colors) {
-    final workout = session.workoutId == null
-        ? null
-        : workoutForId(session.workoutId!);
+    final workoutId = session.currentWorkoutId ?? session.workoutId;
+    final workout = workoutId == null ? null : workoutForId(workoutId);
     final minutes = session.durationSeconds == null
         ? null
         : (session.durationSeconds! / 60).round();

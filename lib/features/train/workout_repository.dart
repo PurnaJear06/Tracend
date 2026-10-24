@@ -327,6 +327,7 @@ class TrainingSessionSummary {
     required this.date,
     this.durationSeconds,
     this.workoutId,
+    this.currentWorkoutId,
     this.id,
     this.effort,
     this.completionSource,
@@ -339,6 +340,13 @@ class TrainingSessionSummary {
   /// Planned workout id from the hub (`recent_sessions[].workout_id`).
   /// Null on older payloads; the session row is then display-only.
   final String? workoutId;
+
+  /// The active plan version's copy of that workout, matched by name and
+  /// order (`recent_sessions[].current_workout_id`, hub 1.9); null when the
+  /// active plan has none, and on older payloads. A Coach change, a block or
+  /// a deload copies the workouts under new ids, so [workoutId] may belong to
+  /// an earlier version.
+  final String? currentWorkoutId;
 
   /// The session id (`recent_sessions[].id`).
   final String? id;
@@ -519,6 +527,7 @@ class TrainingHubData {
           date: DateTime.parse(row['local_date'] as String),
           durationSeconds: (row['duration_seconds'] as num?)?.toInt(),
           workoutId: row['workout_id'] as String?,
+          currentWorkoutId: row['current_workout_id'] as String?,
           id: row['id'] as String?,
           effort: row['effort'] as num?,
           completionSource: CompletionSource.fromKey(row['completion_source']),
@@ -616,6 +625,9 @@ class TrainingHubData {
     (d) => d.year == date.year && d.month == date.month && d.day == date.day,
   );
 
+  /// The workout planned for an ISO [weekday] (1 Monday to 7 Sunday). A plan
+  /// whose workouts have no weekday at all follows [unscheduledWeekdays]: its
+  /// workouts, in plan order, on spread training days.
   PlannedWorkout? workoutForWeekday(int weekday) {
     for (final workout in workouts) {
       if (workout.weekday == weekday) return workout;
@@ -623,9 +635,23 @@ class TrainingHubData {
     final hasAssignedWeekdays = workouts.any(
       (workout) => workout.weekday != null,
     );
-    if (!hasAssignedWeekdays) return workouts.isEmpty ? null : workouts.first;
-    return null;
+    if (hasAssignedWeekdays || workouts.isEmpty) return null;
+    final index = unscheduledWeekdays(workouts.length).indexOf(weekday);
+    return index < 0 ? null : workouts[index];
   }
+
+  /// The training days of a week for [count] workouts that carry no weekday,
+  /// spread with rest between them: one, Monday; two, Monday and Thursday;
+  /// three, Monday, Wednesday and Friday; four, Monday, Tuesday, Thursday and
+  /// Friday; five or more, from Monday on.
+  static List<int> unscheduledWeekdays(int count) => switch (count) {
+    <= 0 => const [],
+    1 => const [1],
+    2 => const [1, 4],
+    3 => const [1, 3, 5],
+    4 => const [1, 2, 4, 5],
+    _ => [for (var day = 1; day <= count && day <= 7; day++) day],
+  };
 }
 
 abstract interface class TrainingHubRepository {

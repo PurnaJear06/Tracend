@@ -10,8 +10,11 @@ import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
 
 /// Where the selected day's workout stands.
 enum HeroDayState {
-  /// Today or a coming day: ready to start.
+  /// Today: ready to start.
   planned,
+
+  /// A day that has not begun: its workout can be previewed, never started.
+  upcoming,
 
   /// A past day with nothing logged; it can still be logged.
   notLogged,
@@ -161,6 +164,11 @@ class WorkoutHero extends StatelessWidget {
                   onPressed: onViewSummary,
                   child: const Text('View summary'),
                 )
+              else if (state == HeroDayState.upcoming)
+                OutlinedButton(
+                  onPressed: onOpenOverview,
+                  child: const Text('Preview workout'),
+                )
               else
                 FilledButton.icon(
                   onPressed: onStart,
@@ -206,7 +214,7 @@ class WorkoutHero extends StatelessWidget {
         text: 'Today',
         color: colors.accentSignalInk,
       ),
-      HeroDayState.planned => _Kicker(
+      HeroDayState.planned || HeroDayState.upcoming => _Kicker(
         text: weekdayName(date),
         color: colors.textSecondary,
       ),

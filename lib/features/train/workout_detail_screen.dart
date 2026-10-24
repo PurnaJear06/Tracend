@@ -23,13 +23,15 @@ import 'package:tracend/shared/widgets/tracend_sheet.dart';
 enum WorkoutOverviewAction { start, viewSummary }
 
 /// Opens the workout overview: objective, warm-up, exercises and cooldown,
-/// with Start workout, or View summary once the day is done. Completes with
+/// with Start workout, or View summary once the day is done. A day that has
+/// not begun ([canStart] false) is a preview with no action. Completes with
 /// the chosen action, or null when dismissed.
 Future<WorkoutOverviewAction?> showWorkoutOverviewSheet(
   BuildContext context, {
   required PlannedWorkout workout,
   required bool isCompleted,
   required ValueChanged<PlannedExercise> onExerciseTap,
+  bool canStart = true,
 }) => showTracendSheet<WorkoutOverviewAction>(
   context,
   title: workout.name,
@@ -45,7 +47,7 @@ Future<WorkoutOverviewAction?> showWorkoutOverviewSheet(
               Navigator.of(sheetContext).pop(WorkoutOverviewAction.viewSummary),
           child: const Text('View summary'),
         )
-      else
+      else if (canStart)
         FilledButton.icon(
           onPressed: () =>
               Navigator.of(sheetContext).pop(WorkoutOverviewAction.start),
