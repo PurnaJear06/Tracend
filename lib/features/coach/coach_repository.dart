@@ -361,7 +361,10 @@ class SupabaseCoachRepository
         .from('coach_messages')
         .select()
         .eq('thread_id', threadId)
-        .order('created_at');
+        // PostgREST's `order` defaults to descending here: ask for the
+        // conversation oldest-first, with the id breaking exact ties.
+        .order('created_at', ascending: true)
+        .order('id', ascending: true);
     // A question the server marked superseded (`safety_state` unavailable on
     // a user row: a failed, lost or summarised attempt that its retry
     // replaced) is not part of the conversation, and neither is the data

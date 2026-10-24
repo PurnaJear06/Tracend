@@ -1707,6 +1707,22 @@ switches to a new conversation with the Continue row. It never switches while a 
 loading, or the composer holds text; the next return checks again. Tests: "coming back to Coach" in
 `test/coach_chat_history_test.dart`. No migration, no server change.
 
+## Coach conversations load oldest-first; every query order is explicit (2026-10-24, branch `claude/explicit-query-order`)
+
+Saved conversations showed the reply above its question and opened on the oldest message. postgrest-dart's
+`order(column, {ascending = false})` sorts **descending** when the direction is left out, and
+`SupabaseCoachRepository.loadMessages` called `.order('created_at')`. It now asks for
+`created_at.asc,id.asc` (the id breaks exact ties); the superseded-question filter below it already assumed
+oldest-first, so it is right again. App only, no migration. Every other `.order(` in `lib/` now states its
+direction, and `test/query_order_explicit_test.dart` fails the build if one does not. Changed to ascending
+because the intended order is ascending: the active goal's `priority` (1 is the top goal; Account x2 and
+`loadActiveGoal`), body measurements by `measured_on`, `created_at` (the latest manual weigh-in of a day wins),
+the day's meals by `created_at`, meal candidates by `candidate_order`, today's workout by `workout_order`, and
+the photo-set `id` tie-break. Reads that wanted newest-first already said `ascending: false`. Tests:
+`test/coach_chat_errors_test.dart` (request order), `test/coach_restored_order_test.dart` (a restored
+conversation reads question then answer, newest last), `test/query_order_directions_test.dart` and
+`test/account_goal_order_test.dart` (the other directions).
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in
