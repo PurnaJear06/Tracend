@@ -8,6 +8,7 @@
 // day, the safety route and every suppression decide whether a deload may be offered at all. The
 // call is idempotent: while a deload is pending it returns that proposal and stores nothing.
 import { AuthError, reply, type requireAuth } from "../_shared/auth.ts";
+import { captureException } from "../_shared/sentry.ts";
 import { type ProposalRpc, proposeSuggestedDeload } from "../_shared/coach_proposals/service.ts";
 import { parseTrainingGuidance } from "../_shared/training/guidance/payload.ts";
 
@@ -15,7 +16,43 @@ export type Auth = Awaited<ReturnType<typeof requireAuth>>;
 
 export type TrainingProposalsDeps = Readonly<{
   requireAuth: (request: Request) => Promise<Auth>;
+  /** Reports an unexpected failure by its fixed name; production sends it to Sentry. */
+  capture?: (event: string) => void;
 }>;
+
+/** The one event name an unexpected failure is reported under: nothing of the request or the error. */
+export const unexpectedEvent = "training_proposals_unexpected";
+
+const sentry = (event: string) =>
+  captureException(new Error(event), { functionName: "training-proposals", runtime: "edge" });
+
+/** Proposal kinds that change the plan: storing a new one expires every open one of these. */
+const planChangingKinds = [
+  "temporary_block",
+  "training_schedule",
+  "exercise_swap",
+  "intensity_or_phase",
+  "next_session_adjustment",
+] as const;
+
+/** An open proposal that would be expired by storing a deload, other than a deload itself. */
+function openPlanChange(raw: unknown): boolean | null {
+  const body = typeof raw === "object" && raw !== null ? raw as { proposals?: unknown } : null;
+  if (!body || !Array.isArray(body.proposals)) return null;
+  let open = false;
+  for (const item of body.proposals) {
+    if (typeof item !== "object" || item === null) return null;
+    const { kind, status, title } = item as Record<string, unknown>;
+    if (typeof kind !== "string" || typeof status !== "string") return null;
+    const deload = kind === "intensity_or_phase" && typeof title === "string" &&
+      title.startsWith("Deload until ");
+    if (
+      status === "pending" && !deload &&
+      (planChangingKinds as readonly string[]).includes(kind)
+    ) open = true;
+  }
+  return open;
+}
 
 export const trainingProposalsSchemaVersion = "1.0";
 
@@ -35,64 +72,79 @@ function parseRequest(raw: unknown): { localDate: string } | null {
 }
 
 export function trainingProposalsHandler(deps: TrainingProposalsDeps) {
+  const capture = deps.capture ?? sentry;
   return async (request: Request): Promise<Response> => {
-    if (request.method !== "POST") return reply(405, { error: "method_not_allowed" });
-    let auth: Auth;
     try {
-      auth = await deps.requireAuth(request);
+      return await handle(request, deps);
     } catch (e) {
       if (e instanceof AuthError) return reply(e.status, { error: e.message });
-      throw e;
+      // An unexpected failure answers like an unavailable one and is reported by name only: the
+      // error and the request can hold the athlete's data.
+      capture(unexpectedEvent);
+      return reply(503, { error: "unavailable" });
     }
+  };
+}
 
-    let input: { localDate: string } | null;
-    try {
-      input = parseRequest(await request.json());
-    } catch {
-      input = null;
-    }
-    if (!input) return reply(422, { error: "invalid_request" });
+async function handle(request: Request, deps: TrainingProposalsDeps): Promise<Response> {
+  if (request.method !== "POST") return reply(405, { error: "method_not_allowed" });
+  const auth = await deps.requireAuth(request);
 
-    // The athlete's own reader: it answers for the server's own today only (22023 otherwise).
-    const read = await auth.userClient.rpc("get_my_training_guidance_v1", {
-      local_date: input.localDate,
-    });
-    if (read.error) {
-      return read.error.code === "22023"
-        ? reply(422, { error: "wrong_date" })
-        : reply(503, { error: "guidance_unavailable" });
-    }
-    const guidance = parseTrainingGuidance(read.data);
-    if (!guidance) return reply(503, { error: "guidance_unavailable" });
-    const deload = guidance.deload;
+  let input: { localDate: string } | null;
+  try {
+    input = parseRequest(await request.json());
+  } catch {
+    input = null;
+  }
+  if (!input) return reply(422, { error: "invalid_request" });
 
-    // Asked again while one is open: that same proposal, nothing new stored.
-    if (deload.status === "pending" && deload.proposalId !== null) {
-      return reply(200, {
-        schema_version: trainingProposalsSchemaVersion,
-        proposal_id: deload.proposalId,
-        created: false,
-      });
-    }
-    // Only a suggestion the rules stand behind today becomes a proposal.
-    if (deload.status !== "suggested") {
-      return reply(409, { error: "not_suggested", status: deload.status });
-    }
+  // The athlete's own reader: it answers for the server's own today only (22023 otherwise).
+  const read = await auth.userClient.rpc("get_my_training_guidance_v1", {
+    local_date: input.localDate,
+  });
+  if (read.error) {
+    return read.error.code === "22023"
+      ? reply(422, { error: "wrong_date" })
+      : reply(503, { error: "guidance_unavailable" });
+  }
+  const guidance = parseTrainingGuidance(read.data);
+  if (!guidance) return reply(503, { error: "guidance_unavailable" });
+  const deload = guidance.deload;
 
-    const rpc: ProposalRpc = (name, params) => auth.serviceClient.rpc(name, params);
-    const stored = await proposeSuggestedDeload(rpc, {
-      userId: auth.userId,
-      reasons: deload.reasons,
-    });
-    if (!stored.ok) {
-      return stored.code === "unavailable"
-        ? reply(503, { error: "proposal_unavailable" })
-        : reply(409, { error: stored.code, reason: stored.reason });
-    }
+  // Asked again while one is open: that same proposal, nothing new stored.
+  if (deload.status === "pending" && deload.proposalId !== null) {
     return reply(200, {
       schema_version: trainingProposalsSchemaVersion,
-      proposal_id: stored.proposalId,
-      created: true,
+      proposal_id: deload.proposalId,
+      created: false,
     });
-  };
+  }
+  // Only a suggestion the rules stand behind today becomes a proposal.
+  if (deload.status !== "suggested") {
+    return reply(409, { error: "not_suggested", status: deload.status });
+  }
+
+  // Storing a plan change expires every open one. Another change the athlete has not answered is
+  // theirs to answer first: it is never expired by a tap on a suggestion.
+  const proposals = await auth.userClient.rpc("get_my_coach_proposals_v1", { p_limit: 50 });
+  const open = proposals.error ? null : openPlanChange(proposals.data);
+  if (open === null) return reply(503, { error: "proposals_unavailable" });
+  if (open) return reply(409, { error: "other_proposal_pending" });
+
+  const rpc: ProposalRpc = (name, params) => auth.serviceClient.rpc(name, params);
+  const stored = await proposeSuggestedDeload(rpc, {
+    userId: auth.userId,
+    reasons: deload.reasons,
+  });
+  if (!stored.ok) {
+    // The refusal's code only: its words are Coach's, and the app words it as Tracend's.
+    return stored.code === "unavailable"
+      ? reply(503, { error: "proposal_unavailable" })
+      : reply(409, { error: stored.code });
+  }
+  return reply(200, {
+    schema_version: trainingProposalsSchemaVersion,
+    proposal_id: stored.proposalId,
+    created: true,
+  });
 }

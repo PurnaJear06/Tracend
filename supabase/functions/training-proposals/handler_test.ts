@@ -45,10 +45,20 @@ const guidance = (over: Record<string, unknown> = {}, safetyRoute: string | null
   }),
 });
 
+const noProposals = { schema_version: "1.0", proposals: [] };
+
+const proposal = (kind: string, status: string, title: string) => ({
+  id: "00000000-0000-4000-8000-0000000000c1",
+  kind,
+  status,
+  title,
+});
+
 function setup(
   userAnswer: Answer,
   serviceOverrides: Record<string, Answer> = {},
   inputs: ReturnType<typeof proposalRpcPayloads> = proposalRpcPayloads(),
+  proposals: Answer = { data: noProposals },
 ) {
   const userCalls: Call[] = [];
   const serviceCalls: Call[] = [];
@@ -68,7 +78,8 @@ function setup(
     userClient: {
       rpc: (name: string, params: Record<string, unknown>) => {
         userCalls.push({ name, params });
-        return Promise.resolve({ data: userAnswer.data ?? null, error: userAnswer.error ?? null });
+        const answer = name === "get_my_coach_proposals_v1" ? proposals : userAnswer;
+        return Promise.resolve({ data: answer.data ?? null, error: answer.error ?? null });
       },
     },
     serviceClient: {
@@ -109,7 +120,11 @@ Deno.test("a suggested deload is stored as a pending proposal and nothing is app
     created: true,
   });
   // The athlete's own reader, for the day the app sent.
-  assertEquals(userCalls, [{ name: "get_my_training_guidance_v1", params: { local_date: today } }]);
+  assertEquals(userCalls.map((c) => c.name), [
+    "get_my_training_guidance_v1",
+    "get_my_coach_proposals_v1",
+  ]);
+  assertEquals(userCalls[0].params, { local_date: today });
   const [store] = persisted(serviceCalls);
   assertEquals(persisted(serviceCalls).length, 1);
   assertEquals(store.params.p_user_id, athlete);
@@ -123,7 +138,7 @@ Deno.test("a suggested deload is stored as a pending proposal and nothing is app
   assertEquals(payload.training.block_weeks, 1);
   // The reasons are the rules' own, in the athlete's terms; no model words them.
   const rationale = String(store.params.p_rationale);
-  assertStringIncludes(rationale, "heading down");
+  assertStringIncludes(rationale, "stalled or slipped");
   assertStringIncludes(rationale, "readiness has read low");
   assertEquals(rationale.includes("You've been feeling worn down"), false);
   assertEquals(
@@ -266,7 +281,8 @@ Deno.test("the builder's own refusals come back in plain words and store nothing
   assertEquals(response.status, 409);
   const body = await response.json();
   assertEquals(body.error, "screening_see_professional");
-  assertStringIncludes(body.reason, "health professional");
+  // Only the code: the refusal's words are Coach's, the app words it as Tracend's.
+  assertEquals(Object.keys(body), ["error"]);
   assertEquals(persisted(serviceCalls), []);
 });
 
@@ -287,4 +303,109 @@ Deno.test("a plan that moved on, or a failed store, stores nothing and leaks no 
   assertEquals(JSON.stringify(await failed.json()).includes("secret_table"), false);
   const unreadable = setup({ data: guidance() }, { get_coach_proposal_inputs_v1: { data: null } });
   assertEquals((await unreadable.handler(request())).status, 409);
+});
+
+Deno.test("an open change waiting in Coach is never expired by a tap on a suggestion", async () => {
+  for (
+    const waiting of [
+      proposal("temporary_block", "pending", "Home block until 30 Oct"),
+      proposal("training_schedule", "pending", "Train 3 days a week"),
+      proposal("exercise_swap", "pending", "Swap Bench for Floor press"),
+      proposal("next_session_adjustment", "pending", "A lighter session"),
+      proposal("intensity_or_phase", "pending", "Moderate effort until 8 Oct"),
+    ]
+  ) {
+    const { handler, serviceCalls } = setup({ data: guidance() }, {}, undefined, {
+      data: { schema_version: "1.0", proposals: [waiting] },
+    });
+    const response = await handler(request());
+    assertEquals(response.status, 409, waiting.title);
+    assertEquals(await response.json(), { error: "other_proposal_pending" });
+    assertEquals(serviceCalls, [], "nothing is read or stored");
+  }
+});
+
+Deno.test("only a pending plan change in the way counts", async () => {
+  const stores = async (proposals: unknown[]) => {
+    const { handler, serviceCalls } = setup({ data: guidance() }, {}, undefined, {
+      data: { schema_version: "1.0", proposals },
+    });
+    const response = await handler(request());
+    return [response.status, persisted(serviceCalls).length];
+  };
+  // Answered, expired and undone ones are not waiting.
+  assertEquals(
+    await stores([
+      proposal("temporary_block", "accepted", "Home block until 30 Oct"),
+      proposal("exercise_swap", "declined", "Swap"),
+      proposal("training_schedule", "expired", "Train 3 days a week"),
+      proposal("temporary_block", "undone", "Home block"),
+    ]),
+    [200, 1],
+  );
+  // Nutrition and goal changes are not expired by a training change.
+  assertEquals(
+    await stores([
+      proposal("nutrition_targets", "pending", "Lower your calories"),
+      proposal("goal_or_phase", "pending", "Take a diet break"),
+    ]),
+    [200, 1],
+  );
+  // An older deload proposal is the one a new deload replaces.
+  assertEquals(
+    await stores([proposal("intensity_or_phase", "pending", "Deload until 8 Oct")]),
+    [200, 1],
+  );
+});
+
+Deno.test("proposals that cannot be read store nothing", async () => {
+  for (
+    const answer of [
+      { error: { code: "XX000" } },
+      { data: null },
+      { data: { schema_version: "1.0" } },
+      { data: { proposals: [null] } },
+      { data: { proposals: [{ kind: 1, status: "pending" }] } },
+    ] as Answer[]
+  ) {
+    const { handler, serviceCalls } = setup({ data: guidance() }, {}, undefined, answer);
+    const response = await handler(request());
+    assertEquals(response.status, 503, JSON.stringify(answer));
+    assertEquals((await response.json()).error, "proposals_unavailable");
+    assertEquals(serviceCalls, []);
+  }
+});
+
+Deno.test("an unexpected failure answers 503 and is reported by a fixed name only", async () => {
+  const seen: unknown[][] = [];
+  const secret = "athlete@example.test lifts 142.5 kg";
+  const failing = trainingProposalsHandler({
+    requireAuth: () =>
+      Promise.resolve({
+        userId: athlete,
+        userEmail: secret,
+        userClient: {
+          rpc: () => {
+            throw new Error(secret);
+          },
+        },
+        serviceClient: {},
+      } as unknown as Auth),
+    capture: (...args) => seen.push(args),
+  });
+  const response = await failing(request());
+  assertEquals(response.status, 503);
+  const body = await response.json();
+  assertEquals(body, { error: "unavailable" });
+  assertEquals(seen, [["training_proposals_unexpected"]]);
+  assertEquals(JSON.stringify([body, seen]).includes("142.5"), false);
+  assertEquals(JSON.stringify([body, seen]).includes("example.test"), false);
+
+  // A thrown auth failure still answers as one.
+  const unauthorized = trainingProposalsHandler({
+    requireAuth: () => Promise.reject(new AuthError("invalid_session", 401)),
+    capture: (...args) => seen.push(args),
+  });
+  assertEquals((await unauthorized(request())).status, 401);
+  assertEquals(seen.length, 1, "an auth failure is not an unexpected failure");
 });

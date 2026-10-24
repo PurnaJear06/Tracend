@@ -643,7 +643,7 @@ export function buildIntensityOrPhase(
 
 /** The sentence for each reason the rules found, in the athlete's terms and from their own data. */
 const deloadLeads: Readonly<Record<DeloadReason, string>> = {
-  performance_drop: "Two or more of your lifts have been heading down.",
+  performance_drop: "Two or more of your lifts have stalled or slipped.",
   run_down:
     "Your readiness has read low on four or more of the days you checked in this past week.",
   block_done: "You've trained most of a full block of training.",
