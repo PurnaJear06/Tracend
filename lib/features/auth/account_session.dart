@@ -4,6 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
+import 'package:tracend/features/readiness/pain_report_queue.dart';
+import 'package:tracend/features/readiness/safety_acknowledgements.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
@@ -84,6 +86,10 @@ class LocalAccountData {
       // An older build's envelope belonged to the last athlete signed in.
       CheckInQueue.legacyStorageKey,
       if (userId != null) CheckInQueue.storageKeyFor(userId),
+      if (userId != null) ...{
+        PainReportQueue.storageKeyFor(userId),
+        SafetyAcknowledgements.storageKeyFor(userId),
+      },
     });
   }
 

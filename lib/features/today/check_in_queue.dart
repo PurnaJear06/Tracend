@@ -1,6 +1,8 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 
 /// Performs the `save_daily_check_in` RPC for a replayed envelope.
@@ -24,6 +26,38 @@ enum CheckInReplayOutcome {
   /// A pending envelope exists but delivery failed; it stays stored for the
   /// next launch.
   retained,
+
+  /// The server refused the envelope's pain answers (22023) because they are
+  /// older than the day before today, which it records no pain report for. It
+  /// stays stored, marked, until the athlete has been told and acknowledges
+  /// it ([CheckInQueue.acknowledgeRefusedPain]); a red flag is never dropped
+  /// silently.
+  painRefused,
+}
+
+/// The payload keys that carry the pain check.
+const checkInPainKeys = [
+  'pain_area',
+  'pain_pattern',
+  'pain_red_flags',
+  'pain_cleared_by_clinician',
+  'pain_followups',
+];
+
+bool _hasPainCheck(Map<dynamic, dynamic> payload) =>
+    checkInPainKeys.any(payload.containsKey);
+
+/// What the stored envelope holds that the athlete should know about.
+enum CheckInPainState {
+  /// No stored envelope carries a pain check.
+  none,
+
+  /// A pain check waits to be sent. The server records one only for today or
+  /// yesterday, so it must reach Tracend within a day.
+  waiting,
+
+  /// The server refused the pain check as too old; it was not recorded.
+  refused,
 }
 
 /// Pending-check-in replay queue.
@@ -105,6 +139,9 @@ class CheckInQueue {
       await _preferences.remove(_key);
       return CheckInReplayOutcome.none;
     }
+    if (envelope['pain_refused'] == true) {
+      return CheckInReplayOutcome.painRefused;
+    }
     try {
       final delivered = await send(
         localDate,
@@ -117,8 +154,85 @@ class CheckInQueue {
         return CheckInReplayOutcome.delivered;
       }
       return CheckInReplayOutcome.retained;
+    } on PostgrestException catch (error) {
+      if (error.code == '22023' && _hasPainCheck(payload)) {
+        await _preferences.setString(
+          _key,
+          jsonEncode({...envelope, 'pain_refused': true}),
+        );
+        return CheckInReplayOutcome.painRefused;
+      }
+      return CheckInReplayOutcome.retained;
     } on Exception {
       return CheckInReplayOutcome.retained;
+    }
+  }
+
+  /// Whether a stored envelope carries a pain check, and what became of it.
+  CheckInPainState get painState {
+    final stored = _preferences.getString(_key);
+    if (stored == null) return CheckInPainState.none;
+    try {
+      final envelope = jsonDecode(stored);
+      if (envelope is! Map) return CheckInPainState.none;
+      final payload = envelope['payload'];
+      if (payload is! Map || !_hasPainCheck(payload)) {
+        return CheckInPainState.none;
+      }
+      return envelope['pain_refused'] == true
+          ? CheckInPainState.refused
+          : CheckInPainState.waiting;
+    } on FormatException {
+      return CheckInPainState.none;
+    }
+  }
+
+  /// The athlete has read that the server did not record the pain check.
+  /// The rest of the check-in is still theirs: it is sent without the pain
+  /// answers (which the server would refuse again), or kept for the next try
+  /// when that send fails.
+  Future<void> acknowledgeRefusedPain(CheckInSend send) async {
+    final stored = _preferences.getString(_key);
+    if (stored == null) return;
+    final Map<String, dynamic> envelope;
+    try {
+      envelope = Map<String, dynamic>.from(jsonDecode(stored) as Map);
+    } on FormatException {
+      await _preferences.remove(_key);
+      return;
+    }
+    final payload = envelope['payload'];
+    final key = envelope['idempotency_key'];
+    final localDate = envelope['local_date'];
+    final timezone = envelope['timezone'];
+    if (payload is! Map ||
+        key is! String ||
+        localDate is! String ||
+        timezone is! String) {
+      await _preferences.remove(_key);
+      return;
+    }
+    final stripped = {
+      for (final entry in payload.entries)
+        if (!checkInPainKeys.contains(entry.key)) entry.key: entry.value,
+    };
+    final kept = {
+      for (final entry in envelope.entries)
+        if (entry.key != 'pain_refused') entry.key: entry.value,
+      'payload': stripped,
+    };
+    await _preferences.setString(_key, jsonEncode(kept));
+    try {
+      if (await send(
+        localDate,
+        timezone,
+        key,
+        Map<String, dynamic>.from(stripped),
+      )) {
+        await _preferences.remove(_key);
+      }
+    } on Exception catch (error) {
+      debugPrint('Non-critical error: check-in kept without pain: $error');
     }
   }
 

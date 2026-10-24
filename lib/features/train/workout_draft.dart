@@ -226,12 +226,84 @@ class ExerciseDraft {
   ExerciseDraft(this.exercise)
     : sets = [for (var i = 0; i < exercise.setCount; i++) WorkoutSetDraft()];
 
-  final PlannedExercise exercise;
+  /// The exercise the athlete is logging. It is the plan's, unless the
+  /// server's row says it was swapped for a gentler one for a sore joint (the
+  /// row's `performed_name` is then the swap's), or the athlete swapped it
+  /// during the workout.
+  PlannedExercise exercise;
   final List<WorkoutSetDraft> sets;
 
   /// `unknown`, `performed` or `skipped`, as the sync RPC accepts.
   String status = 'unknown';
   bool pain = false;
+
+  /// The server's id for this exercise's performance, once its row has been
+  /// read; a pain report can name it.
+  String? performanceId;
+
+  /// The athlete swapped this exercise during the workout and the server has
+  /// not confirmed it yet: a server row that still says "prescribed" must not
+  /// undo it.
+  bool swapPending = false;
+
+  /// The exercise was left out today for a sore joint: the server made no
+  /// set rows for it, so nothing is logged against it and nothing is sent.
+  bool get leftOut => sets.isEmpty;
+
+  /// A set has something on it: it is never dropped or relabelled.
+  bool get hasEntries => sets.any((set) => !set.isUntouched);
+
+  /// The swap this exercise is logged as, when it is one: the keys the sync
+  /// RPC reads to record a substituted performance (reason `pain`).
+  Map<String, Object> get swapFields => exercise.swappedFrom == null
+      ? const {}
+      : {
+          'performance_kind': 'substituted',
+          'performed_name': exercise.name,
+          'substitution_reason': 'pain',
+        };
+
+  /// Swaps this exercise for [name] (catalog [slug]) during the workout. The
+  /// swap carries no starting load. Only before any set has an entry.
+  bool swapForPain({required String name, String? slug}) {
+    if (hasEntries) return false;
+    exercise = exercise.swappedTo(name: name, slug: slug);
+    swapPending = true;
+    return true;
+  }
+
+  /// Takes the exercise's identity from a server row or a saved draft:
+  /// `performance_kind` and `performed_name`. A substituted row shows and logs
+  /// the swap's name; a prescribed one shows the plan's. Returns true when
+  /// the name moved while sets with entries were already logged against the
+  /// other one (they are never relabelled or dropped; the sync needs
+  /// attention instead).
+  bool takeIdentity(Map<dynamic, dynamic> row) {
+    final id = row['performance_id'];
+    if (id is String) performanceId = id;
+    final kind = row['performance_kind'];
+    final name = row['performed_name'];
+    if (kind == 'substituted' && name is String && name.trim().isNotEmpty) {
+      if (exercise.name == name) {
+        swapPending = false;
+        return false;
+      }
+      final moved = hasEntries;
+      final slug = row['exercise_slug'];
+      exercise = exercise.asPlanned.swappedTo(
+        name: name,
+        slug: slug is String ? slug : null,
+      );
+      swapPending = false;
+      return moved;
+    }
+    if (kind == 'prescribed' && exercise.swappedFrom != null && !swapPending) {
+      final moved = hasEntries;
+      exercise = exercise.asPlanned;
+      return moved;
+    }
+    return false;
+  }
 
   bool get skipped => status == 'skipped';
 
@@ -275,8 +347,11 @@ class ExerciseDraft {
   void restore(Map<String, dynamic> map) {
     status = map['status'] as String? ?? 'unknown';
     pain = map['pain_flag'] == true;
-    final rows = map['sets'] as List? ?? const [];
-    if (rows.isNotEmpty) alignTo(rows.length);
+    takeIdentity(map);
+    // A list of no rows is an exercise left out today: it has no sets.
+    final rows = map['sets'];
+    if (rows is! List) return;
+    alignTo(rows.length);
     for (var i = 0; i < rows.length && i < sets.length; i++) {
       final row = rows[i];
       if (row is Map) {

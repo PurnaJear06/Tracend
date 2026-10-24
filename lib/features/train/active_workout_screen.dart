@@ -9,6 +9,9 @@ import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/notification_repository.dart';
+import 'package:tracend/features/readiness/pain_check_sheet.dart';
+import 'package:tracend/features/readiness/pain_reporting.dart';
+import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/rest_timer.dart';
 import 'package:tracend/features/train/set_timing.dart';
@@ -51,6 +54,7 @@ class ActiveWorkoutScreen extends StatefulWidget {
     this.activity = const MethodChannelWorkoutActivityBridge(),
     this.lockScreenNumbers = readLockScreenNumbers,
     this.watchPrompt,
+    this.pain,
     super.key,
   });
 
@@ -84,6 +88,11 @@ class ActiveWorkoutScreen extends StatefulWidget {
   /// screen makes the server-backed one for the Supabase repository and
   /// suggests nothing otherwise.
   final WatchWorkoutPromptSource? watchPrompt;
+
+  /// Sends the pain check made on an exercise ("Pain or discomfort") and keeps
+  /// it on the phone until Tracend has it. Without it the check cannot be
+  /// made.
+  final PainReporting? pain;
 
   static int _open = 0;
 
@@ -410,14 +419,24 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         );
       }
       final revision = (draft['revision'] as num?)?.toInt() ?? 0;
-      final payload = serverDraftPayload(draft, id);
-      await syncDraft(repository, id, revision, payload);
+      final sent = await syncDraft(
+        repository,
+        id,
+        revision,
+        serverDraftPayload(draft, id),
+        readRows: () async {
+          final session = await repository.loadSession(widget.workout);
+          return session != null && session['session_id'] == id
+              ? session['exercises']
+              : null;
+        },
+      );
       if (finish != null) {
         await repository.completeWithEffort(
           id,
           revision,
           finish.durationSeconds,
-          payload,
+          sent,
           sessionEffort: finish.sessionEffort,
         );
       }
@@ -503,9 +522,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
   }
 
-  /// Makes each exercise have as many sets as the server's rows in
-  /// [exercises]. `fits` is false when a set with something on it has no row
-  /// (it is never dropped); `changed` when any count moved.
+  /// Makes each exercise be the one the server's row in [exercises] holds
+  /// and have as many sets as that row. A row with no sets is an exercise
+  /// left out today for a sore joint: it has none here either, so nothing is
+  /// logged or synced for it. A substituted row is the gentler exercise it
+  /// names. `fits` is false when a set with something on it has no row or sits
+  /// on an exercise the row names differently (it is never dropped or
+  /// relabelled); `changed` when any count or name moved.
   ({bool fits, bool changed}) _alignSets(Object? exercises) {
     var fits = true;
     var changed = false;
@@ -514,13 +537,17 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       if (row is! Map) continue;
       final order = (row['order'] as num?)?.toInt();
       final sets = row['sets'];
-      if (sets is! List || sets.isEmpty) continue;
+      if (sets is! List) continue;
       final index = _exercises.indexWhere((e) => e.exercise.order == order);
       if (index < 0) continue;
       final draft = _exercises[index];
       final before = draft.sets.length;
+      final nameBefore = draft.exercise.name;
+      if (draft.takeIdentity(row)) fits = false;
       draft.alignTo(sets.length);
-      if (draft.sets.length != before) changed = true;
+      if (draft.sets.length != before || draft.exercise.name != nameBefore) {
+        changed = true;
+      }
       if (draft.sets.length != sets.length) fits = false;
     }
     return (fits: fits, changed: changed);
@@ -716,6 +743,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           'status': draft.status,
           'pain_flag': draft.pain,
           'rest_seconds': draft.exercise.restSeconds,
+          ...draft.swapFields,
           'sets': [
             for (var j = 0; j < draft.sets.length; j++)
               {
@@ -823,6 +851,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       result = await _send(id) ?? _Sync.attention;
     }
     if (mounted) setState(() => _sync = result);
+    // Back online: pain reports made while the connection was down go too.
+    if (result == _Sync.saved) unawaited(widget.pain?.drain());
     return result;
   }
 
@@ -1130,6 +1160,76 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       debugPrint('Non-critical error: saving a button press failed: $e');
     }
   }
+
+  /// "Pain or discomfort": asks where, how strong and the two red-flag
+  /// questions, sends the report (or keeps it on the phone), flags the exercise
+  /// so the next target holds it, and says what to do. A report that routes out
+  /// stops the exercise and shows the referral, and has to be answered.
+  Future<void> _reportPain(int exercise) async {
+    final reporting = widget.pain;
+    if (reporting == null || _closed || _viewingCompleted) return;
+    final draft = _exercises[exercise];
+    final order = draft.exercise.order;
+    final adjustment = reporting.readiness?.current;
+    final submission = await showPainCheckSheet(
+      context,
+      reporting: reporting,
+      exerciseName: draft.exercise.name,
+      localDate: reporting.readiness?.serverDay ?? _dayText(widget.clock()),
+      preselected: adjustment?.likelyJoint(order),
+      exercisePerformanceId: draft.performanceId,
+    );
+    if (submission == null || !mounted) return;
+    draft.pain = true;
+    _changed();
+    // A swap only before anything is logged on the exercise, and never for one
+    // already swapped: its options are for the plan's exercise.
+    final swap = draft.hasEntries || draft.exercise.swappedFrom != null
+        ? null
+        : adjustment?.jointOptionsFor(order)?.options[submission.report.area];
+    final action = await showPainResultSheet(
+      context,
+      submission: submission,
+      swap: swap,
+    );
+    // The referral was read here: Today does not open it again for the day.
+    final route = submission.outcome.route;
+    if (route != null) {
+      unawaited(
+        reporting.acknowledge(
+          reporting.readiness?.serverDay ?? _dayText(widget.clock()),
+          route,
+        ),
+      );
+    }
+    if (!mounted) return;
+    switch (action) {
+      case PainChipAction.skipExercise:
+        draft.status = 'skipped';
+        _changed();
+        _syncActivity();
+      case PainChipAction.useSwap:
+        if (swap != null &&
+            draft.swapForPain(name: swap.name, slug: swap.slug)) {
+          _changed();
+          _syncActivity();
+          TracendToast.show(
+            context,
+            '${swap.name} instead. $swapLoadLine',
+            icon: CupertinoIcons.arrow_2_squarepath,
+          );
+        }
+      case PainChipAction.endWorkout:
+        await _saveAndLeave();
+      case PainChipAction.continueExercise || null:
+        break;
+    }
+  }
+
+  static String _dayText(DateTime day) =>
+      '${day.year.toString().padLeft(4, '0')}-'
+      '${day.month.toString().padLeft(2, '0')}-'
+      '${day.day.toString().padLeft(2, '0')}';
 
   Future<void> _more(int exercise) async {
     final draft = _exercises[exercise];
@@ -1975,10 +2075,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       onUndo: (set) => _undoSet(i, set),
       onRir: (set, rir) => _setRir(i, set, rir),
       onFillRir: (rir) => _fillRir(i, rir),
-      onPain: () {
-        _exercises[i].pain = !_exercises[i].pain;
-        _changed();
-      },
+      onPain: () => _reportPain(i),
       onMore: () => _more(i),
     );
   }

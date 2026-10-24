@@ -163,7 +163,8 @@ void main() {
       expect(node.flagsCollection.isSelected, Tristate.isTrue);
     });
 
-    testWidgets('some pain asks how strong before it saves', (tester) async {
+    testWidgets('some pain asks how strong, where and the red-flag question '
+        'before it saves', (tester) async {
       final recorder = _Recorder();
       await _open(tester, recorder);
 
@@ -174,10 +175,28 @@ void main() {
         find.text('Choose how strong the pain is to save.'),
         findsOneWidget,
       );
+      expect(find.text('Choose where the pain is to save.'), findsOneWidget);
 
-      await _choose(tester, 'Pain 7 of 10');
+      await _choose(tester, 'Pain 4 of 10');
       await _save(tester);
-      expect(recorder.payloads.single['pain_severity'], 7);
+      expect(recorder.payloads, isEmpty);
+      expect(find.text('Choose where the pain is to save.'), findsOneWidget);
+
+      await _choose(tester, 'Where is it?: Knee');
+      await _save(tester);
+      expect(recorder.payloads, isEmpty);
+      expect(
+        find.text('Choose any that apply, or None of these.'),
+        findsOneWidget,
+      );
+
+      await _choose(tester, 'Do any of these apply?: None of these');
+      await _save(tester);
+      final payload = recorder.payloads.single;
+      expect(payload['pain_severity'], 4);
+      expect(payload['pain_area'], 'knee');
+      expect(payload['pain_red_flags'], isEmpty);
+      expect(payload.containsKey('pain_pattern'), isFalse);
     });
 
     testWidgets('going back to no pain stores 0', (tester) async {
@@ -186,10 +205,25 @@ void main() {
 
       await _choose(tester, 'Pain: Some pain');
       await _choose(tester, 'Pain 4 of 10');
+      await _choose(tester, 'Where is it?: Knee');
       await _choose(tester, 'Pain: No pain');
       await _save(tester);
 
-      expect(recorder.payloads.single['pain_severity'], 0);
+      final payload = recorder.payloads.single;
+      expect(payload['pain_severity'], 0);
+      expect(
+        payload.keys.where((key) => key != 'pain_severity'),
+        [
+          'sleep_quality',
+          'energy',
+          'soreness',
+          'hunger',
+          'mood',
+          'available_to_train',
+          'note',
+        ],
+        reason: 'no pain answer travels once the pain is taken back',
+      );
     });
 
     testWidgets('the note counter appears only near the limit', (tester) async {

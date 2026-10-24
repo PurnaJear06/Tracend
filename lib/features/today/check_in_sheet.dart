@@ -6,39 +6,60 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/readiness/day_adjustment.dart';
+import 'package:tracend/features/readiness/choice_widgets.dart';
+import 'package:tracend/features/readiness/pain_check.dart';
+import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_sheet.dart';
 import 'package:tracend/shared/widgets/tracend_toast.dart';
 
+/// What a saved check-in left to say.
+@immutable
+class CheckInSaved {
+  const CheckInSaved({required this.delivered, this.referralRoute});
+
+  /// Tracend has the check-in. False when it waits on this phone.
+  final bool delivered;
+
+  /// The safety route the pain answers give (`urgent`, `clinician_today` or
+  /// `clinician`), worked out on the phone by the same rules as the server's
+  /// so that a red flag is answered at once even when nothing was sent.
+  final String? referralRoute;
+}
+
 /// Opens the daily check-in sheet. [sender] replaces the
 /// `save_daily_check_in` RPC (tests inject a recording fake); without it the
 /// sheet calls Supabase when the environment is configured.
-/// Resolves true when the check-in was saved, delivered or queued on this
-/// device, and false when the sheet was dismissed.
+/// Resolves with what was saved when the check-in was saved, delivered or
+/// queued on this device, and null when the sheet was dismissed.
 ///
 /// [localDate] (`YYYY-MM-DD`) is the athlete's own today as the server counts
 /// it, when it is known: the check-in is saved, and queued, under that day, so
 /// the rules that read "today's check-in" find it. Without it the phone's date
 /// is used.
-Future<bool> showCheckInSheet(
+///
+/// [jointStates] are the areas already held, limited or on watch: the sheet
+/// asks how each is today.
+Future<CheckInSaved?> showCheckInSheet(
   BuildContext context,
   AppEnvironment environment, {
   CheckInSend? sender,
   String? localDate,
-}) async =>
-    await showTracendSheet<bool>(
-      context,
-      title: 'Daily check-in',
-      scrollable: false,
-      padding: EdgeInsets.zero,
-      builder: (_) => _CheckInSheet(
-        environment: environment,
-        sender: sender,
-        localDate: localDate,
-      ),
-    ) ??
-    false;
+  List<JointState> jointStates = const [],
+}) => showTracendSheet<CheckInSaved>(
+  context,
+  title: 'Daily check-in',
+  scrollable: false,
+  padding: EdgeInsets.zero,
+  builder: (_) => _CheckInSheet(
+    environment: environment,
+    sender: sender,
+    localDate: localDate,
+    jointStates: jointStates,
+  ),
+);
 
 /// One labelled five-point question. The labels run from the first stored
 /// value to the last: `labels[0]` is stored as 1 and `labels[4]` as 5.
@@ -111,11 +132,13 @@ class _CheckInSheet extends StatefulWidget {
     required this.environment,
     required this.sender,
     required this.localDate,
+    required this.jointStates,
   });
 
   final AppEnvironment environment;
   final CheckInSend? sender;
   final String? localDate;
+  final List<JointState> jointStates;
 
   @override
   State<_CheckInSheet> createState() => _CheckInSheetState();
@@ -136,6 +159,22 @@ class _CheckInSheetState extends State<_CheckInSheet> {
   int _pain = 0;
   bool _painReported = false;
   bool _painMissing = false;
+
+  /// Where the pain is, when it hurts, and the red-flag answer. The flags
+  /// are the codes ticked; [_noneOfThese] is the answer "None of these".
+  PainArea? _area;
+  String? _pattern;
+  final Set<String> _flags = {};
+  bool _noneOfThese = false;
+  bool _areaMissing = false;
+  bool _flagsMissing = false;
+
+  /// How each area that was already held, limited or on watch is today.
+  final Map<PainArea, _FollowUp> _followUps = {};
+  final Set<PainArea> _followMissing = {};
+
+  /// The server refused the check-in's pain answers (22023).
+  bool _refused = false;
   final _note = TextEditingController();
   bool _available = true;
   bool _saving = false;
@@ -146,13 +185,92 @@ class _CheckInSheetState extends State<_CheckInSheet> {
     super.dispose();
   }
 
-  Future<void> _save() async {
-    if (_painReported && _pain == 0) {
-      unawaited(TracendHaptics.warning());
-      setState(() => _painMissing = true);
-      return;
+  /// The follow-ups that will be sent: an area the athlete reports again as
+  /// today's pain is answered there, with its own red-flag question.
+  Map<PainArea, _FollowUp> get _sentFollowUps => {
+    for (final entry in _followUps.entries)
+      if (entry.value.answered && !(_painReported && _area == entry.key))
+        entry.key: entry.value,
+  };
+
+  /// Whether the pain answers are complete; sets the messages when not.
+  bool _painAnswersComplete() {
+    final missingStrength = _painReported && _pain == 0;
+    final missingArea = _painReported && _area == null;
+    final missingFlags = _painReported && !_noneOfThese && _flags.isEmpty;
+    final missingFollow = {
+      for (final entry in _followUps.entries)
+        if (entry.value.needsStrength &&
+            entry.value.severity == null &&
+            !(_painReported && _area == entry.key))
+          entry.key,
+    };
+    if (!missingStrength &&
+        !missingArea &&
+        !missingFlags &&
+        missingFollow.isEmpty) {
+      return true;
     }
-    setState(() => _saving = true);
+    unawaited(TracendHaptics.warning());
+    setState(() {
+      _painMissing = missingStrength;
+      _areaMissing = missingArea;
+      _flagsMissing = missingFlags;
+      _followMissing
+        ..clear()
+        ..addAll(missingFollow);
+    });
+    return false;
+  }
+
+  /// The pain answers as `save_daily_check_in` takes them. Nothing is sent
+  /// for a check-in with no pain and no follow-up, which a build that did not
+  /// ask the questions also sends.
+  Map<String, dynamic> _painPayload() {
+    final follow = _sentFollowUps;
+    return {
+      if (_painReported && _area != null) ...{
+        'pain_area': _area!.name,
+        'pain_pattern': ?_pattern,
+        'pain_red_flags': (_flags.toList()..sort()),
+      },
+      if (follow.isNotEmpty)
+        'pain_followups': [
+          for (final entry in follow.entries)
+            {
+              'area': entry.key.name,
+              'severity': entry.value.reportedSeverity,
+              'cleared_by_clinician': entry.value.cleared,
+            },
+        ],
+    };
+  }
+
+  /// The strictest route the pain answers give, by the server's own rules.
+  String? _localRoute() {
+    PainOutcome? strictest;
+    void consider(PainOutcome outcome) {
+      if (!outcome.routesOut) return;
+      if (strictest == null || outcome.index < strictest!.index) {
+        strictest = outcome;
+      }
+    }
+
+    if (_painReported && _area != null) {
+      consider(painOutcome(_pain, _flags.toList()));
+    }
+    for (final entry in _sentFollowUps.entries) {
+      consider(painOutcome(entry.value.reportedSeverity, null));
+    }
+    return strictest?.route;
+  }
+
+  Future<void> _save() async {
+    if (!_painAnswersComplete()) return;
+    setState(() {
+      _saving = true;
+      _refused = false;
+    });
     final now = DateTime.now();
     final localDate =
         widget.localDate ?? now.toIso8601String().substring(0, 10);
@@ -160,6 +278,7 @@ class _CheckInSheetState extends State<_CheckInSheet> {
     final payload = {
       for (final scale in checkInScales) scale.key: _values[scale.key]!,
       'pain_severity': _pain,
+      ..._painPayload(),
       'available_to_train': _available,
       'note': _note.text.trim(),
     };
@@ -196,24 +315,48 @@ class _CheckInSheetState extends State<_CheckInSheet> {
         }
         delivered = true;
       }
+    } on PostgrestException catch (e) {
+      debugPrint('Non-critical error: check-in not sent: ${e.code}');
+      // The server will not take these pain answers as they are (the date is
+      // more than a day from its own): waiting would never help, so say so
+      // now instead of promising a sync.
+      if (e.code == '22023' && payload.keys.any(_isPainKey)) {
+        await queue.clear();
+        if (!mounted) return;
+        setState(() {
+          _saving = false;
+          _refused = true;
+        });
+        return;
+      }
     } catch (e) {
       debugPrint('Non-critical error: $e');
     }
     // An undelivered envelope stays queued; Today replays it next launch.
     if (delivered) await queue.clear();
     if (!mounted) return;
+    final withPain = payload.keys.any(_isPainKey);
     if (delivered) {
       unawaited(TracendHaptics.success());
       TracendToast.show(context, 'Check-in saved');
     } else {
       TracendToast.show(
         context,
-        'Check-in saved on this device. It will sync when you are online.',
+        withPain
+            ? painQueuedToast
+            : 'Check-in saved on this device. It will sync when you are '
+                  'online.',
         icon: CupertinoIcons.cloud_upload,
       );
     }
-    Navigator.pop(context, true);
+    Navigator.pop(
+      context,
+      CheckInSaved(delivered: delivered, referralRoute: _localRoute()),
+    );
   }
+
+  static bool _isPainKey(String key) =>
+      key.startsWith('pain_') && key != 'pain_severity';
 
   @override
   Widget build(BuildContext context) {
@@ -249,20 +392,74 @@ class _CheckInSheetState extends State<_CheckInSheet> {
                   ),
                   const SizedBox(height: TracendSpacing.lg),
                 ],
+                for (final joint in widget.jointStates) ...[
+                  _FollowUpQuestion(
+                    joint: joint,
+                    followUp: _followUps.putIfAbsent(joint.area, _FollowUp.new),
+                    answeredBelow: _painReported && _area == joint.area,
+                    missing: _followMissing.contains(joint.area),
+                    onChanged: () =>
+                        setState(() => _followMissing.remove(joint.area)),
+                  ),
+                  const SizedBox(height: TracendSpacing.lg),
+                ],
                 _PainQuestion(
                   reported: _painReported,
                   severity: _pain,
                   missing: _painMissing,
+                  area: _area,
+                  areaMissing: _areaMissing,
+                  pattern: _pattern,
+                  flags: _flags,
+                  noneOfThese: _noneOfThese,
+                  flagsMissing: _flagsMissing,
                   onReported: (reported) => setState(() {
                     _painReported = reported;
                     _painMissing = false;
-                    if (!reported) _pain = 0;
+                    _areaMissing = false;
+                    _flagsMissing = false;
+                    if (!reported) {
+                      _pain = 0;
+                      _area = null;
+                      _pattern = null;
+                      _flags.clear();
+                      _noneOfThese = false;
+                    }
                   }),
                   onSeverity: (value) => setState(() {
                     _pain = value;
                     _painMissing = false;
                   }),
+                  onArea: (area) => setState(() {
+                    _area = area;
+                    _areaMissing = false;
+                    // Only the questions this area asks stay answered.
+                    _flags.retainWhere(redFlagCodesFor(area).contains);
+                  }),
+                  onPattern: (pattern) => setState(() => _pattern = pattern),
+                  onFlag: (code) => setState(() {
+                    if (!_flags.remove(code)) _flags.add(code);
+                    _noneOfThese = false;
+                    _flagsMissing = false;
+                  }),
+                  onNone: () => setState(() {
+                    _noneOfThese = !_noneOfThese;
+                    if (_noneOfThese) _flags.clear();
+                    _flagsMissing = false;
+                  }),
                 ),
+                if (_refused) ...[
+                  const SizedBox(height: TracendSpacing.sm),
+                  Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      "Tracend could not record these pain answers. Check that your phone's date is right, then save again.",
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colors.stateDanger,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: TracendSpacing.lg),
                 DecoratedBox(
                   decoration: BoxDecoration(
@@ -352,7 +549,7 @@ class _ScaleQuestion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _ChoiceGroup(
+    return ChoiceGroup(
       title: scale.title,
       options: [
         for (var i = 0; i < scale.labels.length; i++)
@@ -366,31 +563,185 @@ class _ScaleQuestion extends StatelessWidget {
   }
 }
 
-/// Pain: "No pain" or "Some pain", and for some pain how strong it is from
-/// 1 to 10, stored as `pain_severity` 0–10 exactly as before.
-class _PainQuestion extends StatelessWidget {
-  const _PainQuestion({
-    required this.reported,
-    required this.severity,
+/// How an area that was already held, limited or on watch is today. A held
+/// area asks whether a doctor or physio has cleared it; any other asks
+/// whether the pain is gone.
+enum _FollowChoice { gone, still, cleared, notYet }
+
+class _FollowUp {
+  _FollowChoice? choice;
+  int? severity;
+
+  bool get needsStrength =>
+      choice == _FollowChoice.still || choice == _FollowChoice.cleared;
+
+  bool get answered =>
+      choice == _FollowChoice.gone || (needsStrength && severity != null);
+
+  int get reportedSeverity => choice == _FollowChoice.gone ? 0 : severity ?? 0;
+
+  bool get cleared => choice == _FollowChoice.cleared;
+}
+
+class _FollowUpQuestion extends StatelessWidget {
+  const _FollowUpQuestion({
+    required this.joint,
+    required this.followUp,
+    required this.answeredBelow,
     required this.missing,
-    required this.onReported,
-    required this.onSeverity,
+    required this.onChanged,
   });
 
-  final bool reported;
-  final int severity;
+  final JointState joint;
+  final _FollowUp followUp;
+
+  /// The athlete reports this area again as today's pain, below.
+  final bool answeredBelow;
   final bool missing;
-  final ValueChanged<bool> onReported;
-  final ValueChanged<int> onSeverity;
+  final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
     final textTheme = Theme.of(context).textTheme;
+    final held = joint.state == JointStateKind.held;
+    final title = held ? clearedTitle(joint.area) : followUpTitle(joint.area);
+    if (answeredBelow) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(title, style: textTheme.titleMedium),
+          const SizedBox(height: TracendSpacing.xxs),
+          Text(
+            'You are answering for this area below.',
+            style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+          ),
+        ],
+      );
+    }
+    void pick(_FollowChoice choice) {
+      followUp.choice = choice;
+      if (!followUp.needsStrength) followUp.severity = null;
+      onChanged();
+    }
+
+    final first = held ? _FollowChoice.cleared : _FollowChoice.gone;
+    final second = held ? _FollowChoice.notYet : _FollowChoice.still;
+    String label(_FollowChoice choice) => switch (choice) {
+      _FollowChoice.gone => followUpGone,
+      _FollowChoice.still => followUpStillThere,
+      _FollowChoice.cleared => followUpYes,
+      _FollowChoice.notYet => followUpNotYet,
+    };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _ChoiceGroup(
+        ChoiceGroup(
+          title: title,
+          options: [
+            for (final choice in [first, second])
+              (
+                label: label(choice),
+                selected: followUp.choice == choice,
+                onTap: () => pick(choice),
+              ),
+          ],
+        ),
+        if (followUp.needsStrength) ...[
+          const SizedBox(height: TracendSpacing.md),
+          Text(
+            followUp.cleared
+                ? followUpStrengthTitle
+                : 'How strong, from 1 to 10?',
+            style: textTheme.titleSmall,
+          ),
+          if (followUp.cleared) ...[
+            const SizedBox(height: TracendSpacing.xxs),
+            Text(
+              followUpStrengthHint,
+              style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+            ),
+          ],
+          const SizedBox(height: TracendSpacing.sm),
+          Wrap(
+            spacing: TracendSpacing.xs,
+            runSpacing: TracendSpacing.xs,
+            children: [
+              for (var level = followUp.cleared ? 0 : 1; level <= 10; level++)
+                SeverityChip(
+                  level: level,
+                  selected: followUp.severity == level,
+                  onTap: () {
+                    followUp.severity = level;
+                    onChanged();
+                  },
+                ),
+            ],
+          ),
+          if (missing) ...[
+            const SizedBox(height: TracendSpacing.xs),
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                followUpStrengthRequired,
+                style: textTheme.bodySmall?.copyWith(color: colors.stateDanger),
+              ),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
+/// Pain: "No pain" or "Some pain", and for some pain how strong it is from
+/// 1 to 10 (`pain_severity`, 0–10 as before), where it is, when it hurts and
+/// the red-flag questions for that area. Save stays closed until the area and
+/// the red-flag answer are given.
+class _PainQuestion extends StatelessWidget {
+  const _PainQuestion({
+    required this.reported,
+    required this.severity,
+    required this.missing,
+    required this.area,
+    required this.areaMissing,
+    required this.pattern,
+    required this.flags,
+    required this.noneOfThese,
+    required this.flagsMissing,
+    required this.onReported,
+    required this.onSeverity,
+    required this.onArea,
+    required this.onPattern,
+    required this.onFlag,
+    required this.onNone,
+  });
+
+  final bool reported;
+  final int severity;
+  final bool missing;
+  final PainArea? area;
+  final bool areaMissing;
+  final String? pattern;
+  final Set<String> flags;
+  final bool noneOfThese;
+  final bool flagsMissing;
+  final ValueChanged<bool> onReported;
+  final ValueChanged<int> onSeverity;
+  final ValueChanged<PainArea> onArea;
+  final ValueChanged<String?> onPattern;
+  final ValueChanged<String> onFlag;
+  final VoidCallback onNone;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    final textTheme = Theme.of(context).textTheme;
+    final chosen = area;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ChoiceGroup(
           title: 'Pain',
           options: [
             (
@@ -419,7 +770,7 @@ class _PainQuestion extends StatelessWidget {
             runSpacing: TracendSpacing.xs,
             children: [
               for (var level = 1; level <= 10; level++)
-                _SeverityChip(
+                SeverityChip(
                   level: level,
                   selected: severity == level,
                   onTap: () => onSeverity(level),
@@ -431,179 +782,79 @@ class _PainQuestion extends StatelessWidget {
             Semantics(
               liveRegion: true,
               child: Text(
-                'Choose how strong the pain is to save.',
+                painStrengthRequired,
                 style: textTheme.bodySmall?.copyWith(color: colors.stateDanger),
               ),
             ),
           ],
-        ],
-      ],
-    );
-  }
-}
-
-class _SeverityChip extends StatelessWidget {
-  const _SeverityChip({
-    required this.level,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final int level;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tracendColors;
-    return Semantics(
-      button: true,
-      selected: selected,
-      inMutuallyExclusiveGroup: true,
-      label: 'Pain $level of 10',
-      excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          if (!selected) TracendHaptics.selection();
-          onTap();
-        },
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: selected ? colors.accentSignal : colors.surfaceRaised,
-              borderRadius: BorderRadius.circular(TracendRadii.pill),
+          const SizedBox(height: TracendSpacing.lg),
+          ChoiceGroup(
+            title: painWhereTitle,
+            options: [
+              for (final option in PainArea.values)
+                (
+                  label: areaChoice(option),
+                  selected: chosen == option,
+                  onTap: () => onArea(option),
+                ),
+            ],
+          ),
+          if (areaMissing) ...[
+            const SizedBox(height: TracendSpacing.xs),
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                painWhereRequired,
+                style: textTheme.bodySmall?.copyWith(color: colors.stateDanger),
+              ),
             ),
-            child: Center(
-              widthFactor: 1,
-              heightFactor: 1,
-              child: Padding(
-                padding: const EdgeInsets.all(TracendSpacing.xs),
+          ],
+          const SizedBox(height: TracendSpacing.lg),
+          ChoiceGroup(
+            title: painWhenTitle,
+            options: [
+              (
+                label: painWhenMove,
+                selected: pattern == 'movement',
+                onTap: () => onPattern('movement'),
+              ),
+              (
+                label: painWhenRest,
+                selected: pattern == 'rest',
+                onTap: () => onPattern('rest'),
+              ),
+            ],
+          ),
+          if (chosen != null) ...[
+            const SizedBox(height: TracendSpacing.lg),
+            ChoiceGroup(
+              title: redFlagsTitle,
+              exclusive: false,
+              options: [
+                for (final code in redFlagCodesFor(chosen))
+                  (
+                    label: redFlagQuestion(code) ?? code,
+                    selected: flags.contains(code),
+                    onTap: () => onFlag(code),
+                  ),
+                (label: redFlagsNone, selected: noneOfThese, onTap: onNone),
+              ],
+            ),
+            if (flagsMissing) ...[
+              const SizedBox(height: TracendSpacing.xs),
+              Semantics(
+                liveRegion: true,
                 child: Text(
-                  '$level',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontFamily: TracendFonts.numericFamily,
-                    color: selected
-                        ? colors.onAccentSignal
-                        : colors.textPrimary,
+                  redFlagsRequired,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colors.stateDanger,
                   ),
                 ),
               ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-typedef _Choice = ({String label, bool selected, VoidCallback onTap});
-
-/// A titled single-choice list on one `surface`: rows with hairline
-/// separators and a lime check on the selected row.
-class _ChoiceGroup extends StatelessWidget {
-  const _ChoiceGroup({required this.title, required this.options});
-
-  final String title;
-  final List<_Choice> options;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tracendColors;
-    final textTheme = Theme.of(context).textTheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 2, bottom: TracendSpacing.xs),
-          child: Semantics(
-            header: true,
-            child: Text(title, style: textTheme.titleMedium),
-          ),
-        ),
-        Material(
-          color: colors.surface,
-          borderRadius: BorderRadius.circular(TracendRadii.card),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (var i = 0; i < options.length; i++) ...[
-                if (i > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(left: TracendSpacing.md),
-                    child: Divider(
-                      height: 1,
-                      thickness: 1,
-                      color: colors.borderHairline,
-                    ),
-                  ),
-                _ChoiceRow(title: title, choice: options[i]),
-              ],
             ],
-          ),
-        ),
+          ],
+        ],
       ],
-    );
-  }
-}
-
-class _ChoiceRow extends StatelessWidget {
-  const _ChoiceRow({required this.title, required this.choice});
-
-  final String title;
-  final _Choice choice;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tracendColors;
-    final textTheme = Theme.of(context).textTheme;
-    return Semantics(
-      button: true,
-      selected: choice.selected,
-      inMutuallyExclusiveGroup: true,
-      label: '$title: ${choice.label}',
-      excludeSemantics: true,
-      child: InkWell(
-        onTap: () {
-          if (!choice.selected) TracendHaptics.selection();
-          choice.onTap();
-        },
-        highlightColor: colors.surfaceRaised,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 48),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: TracendSpacing.md,
-              vertical: TracendSpacing.sm,
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    choice.label,
-                    style: choice.selected
-                        ? textTheme.titleSmall
-                        : textTheme.bodyLarge?.copyWith(fontSize: 15),
-                  ),
-                ),
-                const SizedBox(width: TracendSpacing.sm),
-                SizedBox.square(
-                  dimension: 20,
-                  child: choice.selected
-                      ? Icon(
-                          CupertinoIcons.checkmark_alt,
-                          size: 20,
-                          color: colors.accentSignalInk,
-                        )
-                      : null,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
