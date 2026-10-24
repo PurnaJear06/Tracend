@@ -1,6 +1,7 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@2.49.8";
 import { strToU8, zipSync } from "npm:fflate@0.8.2";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
+import { fetchAllPages } from "../_shared/paging.ts";
 import { isUserStorageKey } from "../_shared/storage_keys.ts";
 export const dataTables = [
   "user_accounts",
@@ -50,7 +51,46 @@ export const dataTables = [
   "ai_usage_events",
   "audit_events",
   "notification_preferences",
+  "user_preferences",
+  "user_baselines",
+  "metric_baseline_history",
+  "daily_computed_metrics",
+  "nutrition_schedule_versions",
+  "nutrition_schedule_items",
+  "health_workout_references",
+  "workout_reconciliations",
+  "coach_threads",
+  "coach_messages",
+  "coach_narrative_entries",
+  "coach_session_summaries",
+  "coach_context_snapshots",
+  "ai_budget_reservations",
+  "data_exports",
+  "deletion_requests",
 ] as const;
+
+// Tables that hold a user_id and are deliberately not exported. Each needs a reason, and the test in
+// coverage_test.ts fails when a table with a user_id is in neither list.
+export const exportExclusions: Readonly<Record<string, string>> = {
+  "private.day_adjustment_metric_attempts":
+    "Rate-limit counter for readiness metric lookups: timestamps only, no athlete content. The answers it limits are in day_adjustments.",
+};
+
+// A stable order for paging. Most tables have an `id` primary key; these do not.
+const orderColumns: Readonly<Record<string, readonly string[]>> = {
+  health_history_months: ["user_id", "month"],
+  sleeping_heart_rate_nights: ["user_id", "local_date"],
+  exercise_set_heart_rate: ["exercise_set_id"],
+  notification_preferences: ["user_id"],
+  onboarding_drafts: ["user_id"],
+  user_profiles: ["user_id"],
+};
+
+// Columns the database derives from other columns of the same row. They add nothing to a readable
+// package (a search index over coach_messages.content).
+const derivedColumns: Readonly<Record<string, readonly string[]>> = {
+  coach_messages: ["search_vector"],
+};
 
 function encodeBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -117,13 +157,33 @@ export async function encrypt(zip: Uint8Array, password: string): Promise<Uint8A
   return output;
 }
 
-async function collectRows(client: SupabaseClient, userId: string) {
+type Page = Readonly<{ data: ReadonlyArray<Record<string, unknown>> | null; error: unknown }>;
+type PagedQuery = {
+  order: (column: string, options: { ascending: boolean }) => PagedQuery;
+  range: (from: number, to: number) => PromiseLike<Page>;
+};
+export type RowsClient = {
+  from: (table: string) => {
+    select: (columns: string) => { eq: (column: string, value: string) => PagedQuery };
+  };
+};
+
+export async function collectRows(client: RowsClient, userId: string) {
   const output: Record<string, ReadonlyArray<Record<string, unknown>>> = {};
   for (const table of dataTables) {
     const ownerColumn = table === "user_accounts" ? "id" : "user_id";
-    const { data, error } = await client.from(table).select("*").eq(ownerColumn, userId);
-    if (error) throw new Error(`table_${table}`);
-    output[table] = (data ?? []) as ReadonlyArray<Record<string, unknown>>;
+    const order = orderColumns[table] ?? ["id"];
+    const rows = await fetchAllPages<Record<string, unknown>>((from, to) => {
+      let query = client.from(table).select("*").eq(ownerColumn, userId);
+      for (const column of order) query = query.order(column, { ascending: true });
+      return query.range(from, to);
+    }, `table_${table}`);
+    const derived = derivedColumns[table] ?? [];
+    output[table] = derived.length === 0 ? rows : rows.map((row) => {
+      const kept = { ...row };
+      for (const column of derived) delete kept[column];
+      return kept;
+    });
   }
   return output;
 }
@@ -167,7 +227,7 @@ async function buildExport(
   userId: string,
   email: string | undefined,
 ) {
-  const rows = await collectRows(client, userId);
+  const rows = await collectRows(client as unknown as RowsClient, userId);
   const files: Record<string, Uint8Array> = {};
   const skippedMedia = await addMedia(files, client, rows, userId);
   const generatedAt = new Date().toISOString();
@@ -261,7 +321,8 @@ export async function handlePrivacyExport(request: Request): Promise<Response> {
       encrypted,
       {
         contentType: "application/octet-stream",
-        upsert: false,
+        // A retry of an export that stopped after its upload writes the same path again.
+        upsert: true,
       },
     );
     if (upload.error) throw new Error("export_upload_failed");
