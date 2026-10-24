@@ -217,7 +217,7 @@ select is(public.get_my_exercise_history(array['barbell-bench-press'])->'exercis
 
 set local "request.jwt.claim.sub" = 'a7000000-0000-4000-8000-000000000001';
 insert into hub select public.get_my_training_hub(28);
-select is((select j->>'schema_version' from hub), '1.8', 'hub schema 1.8');
+select is((select j->>'schema_version' from hub), '1.9', 'hub schema 1.9');
 select is((select j->'active_plan'->>'effective_date' from hub), '2026-09-16',
   'without an effective date the plan starts on the local day it was approved');
 select is((select j->'active_plan'->>'approved_on' from hub), '2026-09-16',

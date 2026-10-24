@@ -63,7 +63,7 @@ select is(
 select is(
   (public.get_my_training_hub(28)->'today_workout'->>'weekday')::integer,
   extract(isodow from current_date)::integer,
-  'the training hub keeps using the server date for its own today_workout');
+  'the training hub reads the athlete''s local date (UTC here) for its own today_workout');
 
 select * from finish();
 rollback;
