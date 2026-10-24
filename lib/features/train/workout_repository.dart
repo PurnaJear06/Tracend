@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/muscle_groups.dart';
+import 'package:tracend/features/train/unfinished_workout.dart';
 
 /// What the next session's target does with last time's result.
 enum NextTargetAction {
@@ -768,7 +769,8 @@ class SupabaseWorkoutRepository
         TrainingHubRepository,
         WorkoutRepairRepository,
         WorkoutReconciliationRepository,
-        HealthkitCandidateRepository {
+        HealthkitCandidateRepository,
+        UnfinishedWorkoutRepository {
   SupabaseWorkoutRepository(this._client, this._preferences);
   final SupabaseClient _client;
   final SharedPreferencesAsync _preferences;
@@ -873,6 +875,113 @@ class SupabaseWorkoutRepository
       'respond_workout_reconciliation',
       params: {'p_reconciliation_id': id, 'p_accept': accept},
     );
+  }
+
+  @override
+  Future<UnfinishedWorkout?> loadUnfinishedWorkout() async {
+    // A discard queued offline goes first: the server then records it as the
+    // athlete's answer, and one that is still waiting hides its session.
+    final waiting = await _replayDiscards();
+    final value = await _client.rpc('get_my_unfinished_workout_v1');
+    if (value is! Map) return null;
+    final workout = UnfinishedWorkout.fromJson(value['workout']);
+    if (workout != null && waiting.contains(workout.sessionId)) return null;
+    return workout;
+  }
+
+  @override
+  Future<void> saveUnfinishedWorkout(
+    UnfinishedWorkout workout, {
+    required int sessionEffort,
+  }) async {
+    RangeError.checkValueInInterval(sessionEffort, 1, 10, 'sessionEffort');
+    // Sets and times that never reached the server go first: the draft is
+    // removed after the answer, so it must not hold anything the server lacks.
+    // When they cannot be sent nothing is answered and nothing is removed. A
+    // session that already refuses them (55000) was settled by an earlier try
+    // whose answer was lost; the answer below then replays or says it is gone.
+    try {
+      await _sendDraftOf(workout);
+    } on PostgrestException catch (e) {
+      if (e.code != '55000') rethrow;
+    }
+    await _answer(workout, {
+      'p_session_id': workout.sessionId,
+      'p_action': 'save',
+      'p_session_effort': sessionEffort,
+    });
+    AppBreadcrumbs.workout('Unfinished workout saved');
+    await _dropDraftOf(workout);
+  }
+
+  @override
+  Future<void> discardUnfinishedWorkout(UnfinishedWorkout workout) async {
+    await _answer(workout, {
+      'p_session_id': workout.sessionId,
+      'p_action': 'discard',
+    });
+    AppBreadcrumbs.workout('Unfinished workout discarded');
+    await _dropDraftOf(workout);
+  }
+
+  /// `resolve_unfinished_workout_v1`. Answers that say the workout can no
+  /// longer be answered become [UnfinishedWorkoutGone]: P0002 (past its seven
+  /// days, or not an unfinished workout any more), 55000 (it was discarded; the
+  /// phone's draft of it goes, since it can never be sent) and, for a discard,
+  /// 22023 (it was finished meanwhile).
+  Future<void> _answer(
+    UnfinishedWorkout workout,
+    Map<String, Object> params,
+  ) async {
+    try {
+      await _client.rpc('resolve_unfinished_workout_v1', params: params);
+    } on PostgrestException catch (e) {
+      final gone =
+          e.code == 'P0002' ||
+          e.code == '55000' ||
+          (params['p_action'] == 'discard' && e.code == '22023');
+      if (!gone) rethrow;
+      if (e.code == '55000') await _dropDraftOf(workout);
+      throw const UnfinishedWorkoutGone();
+    }
+  }
+
+  /// Sends the phone's draft of [workout] (its sets and times) to its
+  /// session, which takes them while it is closed as stale. Nothing is sent
+  /// without a readable draft of that very session; a failed send throws.
+  Future<void> _sendDraftOf(UnfinishedWorkout workout) async {
+    final saved = await loadDraft(workout.plannedWorkoutId);
+    if (saved == null) return;
+    final Map<String, dynamic> draft;
+    try {
+      draft = decodeDraft(saved);
+    } catch (error) {
+      debugPrint('Non-critical error: workout draft not read: $error');
+      return;
+    }
+    if (draft['session_id'] != workout.sessionId) return;
+    await syncDraft(
+      this,
+      workout.sessionId,
+      (draft['revision'] as num?)?.toInt() ?? 0,
+      serverDraftPayload(draft, workout.sessionId),
+    );
+  }
+
+  /// This phone's draft and saved finish of an answered workout. Only the
+  /// draft that belongs to that session goes: opening the planned workout
+  /// again must not find it and send its sets into a session the server no
+  /// longer takes them for, and a draft of a newer session of the same
+  /// workout stays.
+  Future<void> _dropDraftOf(UnfinishedWorkout workout) async {
+    try {
+      final saved = await loadDraft(workout.plannedWorkoutId);
+      if (saved == null) return;
+      if (decodeDraft(saved)['session_id'] != workout.sessionId) return;
+      await clearDraft(workout.plannedWorkoutId);
+    } catch (error) {
+      debugPrint('Non-critical error: workout draft not removed: $error');
+    }
   }
 
   @override
@@ -1341,3 +1450,67 @@ abstract final class WorkoutLocalKeys {
 
 Map<String, dynamic> decodeDraft(String value) =>
     Map<String, dynamic>.from(jsonDecode(value) as Map);
+
+/// The keys of a saved draft that the server reads; the rest only this phone
+/// needs.
+const _serverDraftKeys = [
+  'workout_id',
+  'session_id',
+  'idempotency_key',
+  'revision',
+  'exercises',
+  'notes',
+];
+
+/// The five set keys the server may refuse when this phone's times are off.
+const _timingKeys = [
+  'started_at',
+  'completed_at',
+  'rest_before_seconds',
+  'rir',
+  'timing_source',
+];
+
+/// What the server reads of [draft], for session [sessionId].
+Map<String, dynamic> serverDraftPayload(
+  Map<String, dynamic> draft,
+  String sessionId,
+) => {
+  for (final key in _serverDraftKeys)
+    if (draft.containsKey(key)) key: draft[key],
+  'session_id': sessionId,
+};
+
+/// Sends [payload] with `sync_workout_draft`. When the server refuses the
+/// set times (22023, a phone clock that is off) the sets are sent again
+/// without them.
+Future<void> syncDraft(
+  WorkoutRepository repository,
+  String sessionId,
+  int revision,
+  Map<String, dynamic> payload,
+) async {
+  try {
+    await repository.sync(sessionId, revision, payload);
+  } on PostgrestException catch (e) {
+    if (e.code != '22023') rethrow;
+    await repository.sync(sessionId, revision, _withoutTiming(payload));
+  }
+}
+
+Map<String, dynamic> _withoutTiming(Map<String, dynamic> payload) => {
+  ...payload,
+  'exercises': [
+    for (final exercise in payload['exercises'] as List)
+      {
+        ...(exercise as Map<String, dynamic>),
+        'sets': [
+          for (final set in exercise['sets'] as List)
+            {
+              for (final entry in (set as Map<String, dynamic>).entries)
+                if (!_timingKeys.contains(entry.key)) entry.key: entry.value,
+            },
+        ],
+      },
+  ],
+};
