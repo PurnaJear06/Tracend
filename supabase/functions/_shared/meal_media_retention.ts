@@ -119,6 +119,7 @@ export function reportRetentionOutcome(
     meals: RetentionResult | null;
     orphans: OrphanSweepResult | null;
     exportFailures: number;
+    exportUnfinalized: number;
   }>,
   report: FailureReporter,
 ): void {
@@ -134,6 +135,9 @@ export function reportRetentionOutcome(
   }
   if (outcome.exportFailures > 0) {
     report(`export_removal_failed_${outcome.exportFailures}`, "storage_removal_failed");
+  }
+  if (outcome.exportUnfinalized > 0) {
+    report(`export_unfinalized_${outcome.exportUnfinalized}`, "retention_completion_failed");
   }
   if (orphans && orphans.unsafe > 0) {
     report(`orphan_unsafe_keys_${orphans.unsafe}`, "unsafe_storage_key");

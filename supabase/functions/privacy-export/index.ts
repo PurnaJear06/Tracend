@@ -1,7 +1,7 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@2.49.8";
 import { strToU8, zipSync } from "npm:fflate@0.8.2";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
-import { fetchAllPages } from "../_shared/paging.ts";
+import { fetchAllByKey } from "../_shared/paging.ts";
 import { isUserStorageKey } from "../_shared/storage_keys.ts";
 export const dataTables = [
   "user_accounts",
@@ -64,7 +64,6 @@ export const dataTables = [
   "coach_narrative_entries",
   "coach_session_summaries",
   "coach_context_snapshots",
-  "ai_budget_reservations",
   "data_exports",
   "deletion_requests",
 ] as const;
@@ -74,23 +73,70 @@ export const dataTables = [
 export const exportExclusions: Readonly<Record<string, string>> = {
   "private.day_adjustment_metric_attempts":
     "Rate-limit counter for readiness metric lookups: timestamps only, no athlete content. The answers it limits are in day_adjustments.",
+  "public.ai_budget_reservations":
+    "Internal spend reservations for the AI budget. The settled cost of each call is in ai_usage_events, which is exported.",
 };
 
-// A stable order for paging. Most tables have an `id` primary key; these do not.
-const orderColumns: Readonly<Record<string, readonly string[]>> = {
-  health_history_months: ["user_id", "month"],
-  sleeping_heart_rate_nights: ["user_id", "local_date"],
-  exercise_set_heart_rate: ["exercise_set_id"],
-  notification_preferences: ["user_id"],
-  onboarding_drafts: ["user_id"],
-  user_profiles: ["user_id"],
+// Columns left out of an exported table, each with the reason. The coverage test checks that every
+// column named here exists in the migrations.
+export const omittedColumns: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  coach_context_snapshots: {
+    context:
+      "A derived copy of tables that are exported (up to about 40 KB for every Coach turn). The snapshot's id, thread, trigger, date, checksum and time stay.",
+  },
+  coach_messages: {
+    search_vector: "A search index the database derives from content.",
+    guard_faults:
+      "Diagnostics of the Coach answer check, not something the athlete said or was told.",
+    lookups: "Diagnostics: which data lookups the Coach turn ran.",
+    lookup_rounds: "Diagnostics: how many lookup rounds the Coach turn took.",
+    library_version: "Diagnostics: the version of the research library that turn read.",
+  },
+  data_exports: {
+    storage_path:
+      "Internal Storage path of the package; the athlete cannot read it (no column grant).",
+    queue_message_id: "Internal queue number; the athlete cannot read it (no column grant).",
+  },
+  deletion_requests: {
+    queue_message_id: "Internal queue number; the athlete cannot read it.",
+  },
 };
 
-// Columns the database derives from other columns of the same row. They add nothing to a readable
-// package (a search index over coach_messages.content).
-const derivedColumns: Readonly<Record<string, readonly string[]>> = {
-  coach_messages: ["search_vector"],
+// Rows linked to the account by a column other than user_id, or by the account email, read through
+// export_linked_account_rows_v1. The invite list's private note about the invitee is not the
+// athlete's data and is left out, and so are the waitlist's token hashes and referral graph.
+export const linkedExports = ["signup_invites", "waitlist_signups"] as const;
+
+// Every uuid column that points at the account (references user_accounts or auth.users) or is named
+// `*_by`, other than user_id, with how its rows reach the export. The coverage test fails on a
+// column that is not listed here, and on a listed column that no longer exists.
+export const linkedColumns: Readonly<Record<string, string>> = {
+  "public.user_accounts.id": "The account row itself: exported as user_accounts.",
+  "public.coach_narrative_entries.superseded_by":
+    "Points at another entry of the same athlete; the table is exported by user_id.",
+  "private.signup_invites.claimed_by":
+    "The invite the account claimed: exported as signup_invites through export_linked_account_rows_v1.",
 };
+
+// The column pages are ordered and continued by. It is unique among one owner's rows: the primary
+// key, or the primary key without user_id. Most tables use `id`.
+export const keyColumns: Readonly<Record<string, string>> = {
+  health_history_months: "month",
+  sleeping_heart_rate_nights: "local_date",
+  exercise_set_heart_rate: "exercise_set_id",
+  notification_preferences: "user_id",
+  onboarding_drafts: "user_id",
+  user_profiles: "user_id",
+};
+
+// A table whose rows are large is read in smaller pages.
+const pageSizes: Readonly<Record<string, number>> = { coach_context_snapshots: 100 };
+
+// What one export may hold in memory. The JSON copy, the CSV copies, the zip and the encrypted
+// package are all in memory at once in a 256 MB function, so an account over these limits fails
+// with a code instead of running the function out of memory.
+export const maxRowBytes = 16 * 1024 * 1024;
+export const maxMediaBytes = 32 * 1024 * 1024;
 
 function encodeBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -98,15 +144,22 @@ function encodeBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+// A JSON value longer than this is not repeated in the CSV: the same text is in data/all-data.json.
+export const csvInlineLimit = 2000;
+export const csvPointer = "[see data/all-data.json]";
+
 export function csv(rows: ReadonlyArray<Record<string, unknown>>): string {
   if (rows.length === 0) return "";
   const fields = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
   const cell = (value: unknown) => {
-    const text = value == null
+    let text = value == null
       ? ""
       : typeof value === "object"
       ? JSON.stringify(value)
       : String(value);
+    if (typeof value === "object" && value != null && text.length > csvInlineLimit) {
+      text = csvPointer;
+    }
     return `"${text.replaceAll('"', '""')}"`;
   };
   return [
@@ -159,31 +212,65 @@ export async function encrypt(zip: Uint8Array, password: string): Promise<Uint8A
 
 type Page = Readonly<{ data: ReadonlyArray<Record<string, unknown>> | null; error: unknown }>;
 type PagedQuery = {
+  gt: (column: string, value: string) => PagedQuery;
   order: (column: string, options: { ascending: boolean }) => PagedQuery;
-  range: (from: number, to: number) => PromiseLike<Page>;
+  limit: (count: number) => PromiseLike<Page>;
 };
 export type RowsClient = {
   from: (table: string) => {
     select: (columns: string) => { eq: (column: string, value: string) => PagedQuery };
   };
+  rpc: (
+    name: string,
+    args: { target_user_id: string; target_email: string | null },
+  ) => PromiseLike<{ data: unknown; error: unknown }>;
 };
 
-export async function collectRows(client: RowsClient, userId: string) {
+export async function collectRows(
+  client: RowsClient,
+  userId: string,
+  email: string | null = null,
+  limit = maxRowBytes,
+) {
   const output: Record<string, ReadonlyArray<Record<string, unknown>>> = {};
+  let bytes = 0;
+  const add = (table: string, rows: ReadonlyArray<Record<string, unknown>>) => {
+    bytes += JSON.stringify(rows).length;
+    if (bytes > limit) throw new Error("export_too_large");
+    output[table] = rows;
+  };
   for (const table of dataTables) {
     const ownerColumn = table === "user_accounts" ? "id" : "user_id";
-    const order = orderColumns[table] ?? ["id"];
-    const rows = await fetchAllPages<Record<string, unknown>>((from, to) => {
-      let query = client.from(table).select("*").eq(ownerColumn, userId);
-      for (const column of order) query = query.order(column, { ascending: true });
-      return query.range(from, to);
-    }, `table_${table}`);
-    const derived = derivedColumns[table] ?? [];
-    output[table] = derived.length === 0 ? rows : rows.map((row) => {
-      const kept = { ...row };
-      for (const column of derived) delete kept[column];
-      return kept;
-    });
+    const key = keyColumns[table] ?? "id";
+    const omitted = Object.keys(omittedColumns[table] ?? {});
+    const rows = await fetchAllByKey<Record<string, unknown>>(
+      (after, size) => {
+        let query = client.from(table).select("*").eq(ownerColumn, userId);
+        if (after !== null) query = query.gt(key, after);
+        return query.order(key, { ascending: true }).limit(size);
+      },
+      (row) => row[key],
+      `table_${table}`,
+      pageSizes[table],
+    );
+    add(
+      table,
+      omitted.length === 0 ? rows : rows.map((row) => {
+        const kept = { ...row };
+        for (const column of omitted) delete kept[column];
+        return kept;
+      }),
+    );
+  }
+  const linked = await client.rpc("export_linked_account_rows_v1", {
+    target_user_id: userId,
+    target_email: email,
+  });
+  const body = linked.data as Record<string, unknown> | null;
+  if (linked.error || body == null || typeof body !== "object") throw new Error("table_linked");
+  for (const name of linkedExports) {
+    const rows = body[name];
+    add(name, Array.isArray(rows) ? rows as Record<string, unknown>[] : []);
   }
   return output;
 }
@@ -196,26 +283,45 @@ type MediaStorage = Readonly<{
   };
 }>;
 
-// Returns the ids of media rows whose key is not a safe key in the user's own
-// folder. They are listed in the manifest instead of downloaded.
+function isMissingObject(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const { statusCode, status, message } = error as Record<string, unknown>;
+  return String(statusCode ?? status) === "404" ||
+    (typeof message === "string" && /not found/i.test(message));
+}
+
+// Returns the ids of media rows that are listed in the manifest instead of downloaded: a key that is
+// not a safe key in the user's own folder, a photo the retention worker is deleting right now, and an
+// object that is already gone from Storage. None of them fails the export. Any other download error
+// does, and so does a package over the memory limit.
 export async function addMedia(
   files: Record<string, Uint8Array>,
   client: MediaStorage,
   rows: Record<string, ReadonlyArray<Record<string, unknown>>>,
   userId: string,
+  limit = maxMediaBytes,
 ): Promise<string[]> {
   const skipped: string[] = [];
   const media = rows.media_objects ?? [];
+  let bytes = 0;
   for (const object of media) {
     if (object.lifecycle_status === "deleted" || typeof object.object_key !== "string") continue;
-    if (!isUserStorageKey(userId, object.object_key)) {
+    if (
+      object.lifecycle_status === "pending_deletion" || !isUserStorageKey(userId, object.object_key)
+    ) {
       skipped.push(String(object.id));
       continue;
     }
     const purpose = String(object.purpose ?? "unknown");
     const bucket = purpose === "meal_analysis" ? "meal-images" : "progress-photos";
     const { data, error } = await client.storage.from(bucket).download(object.object_key);
+    if (isMissingObject(error)) {
+      skipped.push(String(object.id));
+      continue;
+    }
     if (error || !data) throw new Error("media_download_failed");
+    bytes += data.size;
+    if (bytes > limit) throw new Error("export_too_large");
     const name = object.object_key.split("/").at(-1) ?? `${object.id}.bin`;
     files[`media/${purpose}/${object.id}-${name}`] = new Uint8Array(await data.arrayBuffer());
   }
@@ -227,7 +333,7 @@ async function buildExport(
   userId: string,
   email: string | undefined,
 ) {
-  const rows = await collectRows(client as unknown as RowsClient, userId);
+  const rows = await collectRows(client as unknown as RowsClient, userId, email ?? null);
   const files: Record<string, Uint8Array> = {};
   const skippedMedia = await addMedia(files, client, rows, userId);
   const generatedAt = new Date().toISOString();

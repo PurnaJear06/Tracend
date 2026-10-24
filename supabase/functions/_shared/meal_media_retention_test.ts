@@ -158,12 +158,14 @@ Deno.test("the retention report carries counts and codes, never keys", () => {
     meals: { claimed: 9, deleted: 4, failed: 5, unsafe: 2, unfinalized: 1 },
     orphans: { listed: 3, removed: 0, failed: 2, unsafe: 1 },
     exportFailures: 1,
+    exportUnfinalized: 2,
   }, (message, code) => reports.push([message, code]));
   assertEquals(reports, [
     ["meal_media_unsafe_keys_2", "unsafe_storage_key"],
     ["meal_media_removal_failed_3", "storage_removal_failed"],
     ["meal_media_unfinalized_1", "retention_completion_failed"],
     ["export_removal_failed_1", "storage_removal_failed"],
+    ["export_unfinalized_2", "retention_completion_failed"],
     ["orphan_unsafe_keys_1", "unsafe_storage_key"],
     ["orphan_removal_failed_2", "storage_removal_failed"],
   ]);
@@ -172,6 +174,7 @@ Deno.test("the retention report carries counts and codes, never keys", () => {
     meals: { claimed: 1, deleted: 1, failed: 0, unsafe: 0, unfinalized: 0 },
     orphans: null,
     exportFailures: 0,
+    exportUnfinalized: 0,
   }, (message) => quiet.push(message));
   assertEquals(quiet, []);
 });

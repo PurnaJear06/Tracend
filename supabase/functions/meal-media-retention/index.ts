@@ -103,11 +103,14 @@ export async function handleMealMediaRetention(request: Request): Promise<Respon
     }],
   ], report);
 
-  const exportRun = results.export_retention as { failed: number } | undefined;
+  const exportRun = results.export_retention as
+    | { failed: number; unfinalized: number }
+    | undefined;
   reportRetentionOutcome({
     meals: (results.meal_media as RetentionResult | undefined) ?? null,
     orphans: (results.orphan_sweep as OrphanSweepResult | undefined) ?? null,
     exportFailures: exportRun?.failed ?? 0,
+    exportUnfinalized: exportRun?.unfinalized ?? 0,
   }, report);
 
   if (failedStages.length > 0) {

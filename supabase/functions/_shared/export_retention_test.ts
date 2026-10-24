@@ -11,7 +11,7 @@ Deno.test("export retention clears successful objects and preserves failures for
       return Promise.resolve();
     },
   });
-  assertEquals(result, { claimed: 2, deleted: 1, failed: 1 });
+  assertEquals(result, { claimed: 2, deleted: 1, failed: 1, unfinalized: 0 });
   assertEquals(completions, [["one", true], ["two", false]]);
 });
 
@@ -25,6 +25,22 @@ Deno.test("export retention never sends an unsafe path to Storage", async () => 
     },
     complete: () => Promise.resolve(),
   });
-  assertEquals(result, { claimed: 2, deleted: 1, failed: 1 });
+  assertEquals(result, { claimed: 2, deleted: 1, failed: 1, unfinalized: 0 });
   assertEquals(removed, ["user/y"]);
+});
+
+Deno.test("an export whose result cannot be written back does not strand the rest of the batch", async () => {
+  const completions: string[] = [];
+  const result = await cleanExpiredExports({
+    claim: () => Promise.resolve([{ storage_path: "u/one" }, { storage_path: "u/two" }]),
+    remove: () => Promise.resolve(true),
+    complete: (path) => {
+      completions.push(path);
+      return path === "u/one"
+        ? Promise.reject(new Error("export_completion_failed"))
+        : Promise.resolve();
+    },
+  });
+  assertEquals(completions, ["u/one", "u/two"]);
+  assertEquals(result, { claimed: 2, deleted: 2, failed: 0, unfinalized: 1 });
 });

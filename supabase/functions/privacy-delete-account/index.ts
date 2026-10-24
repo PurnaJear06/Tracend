@@ -1,5 +1,5 @@
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
-import { fetchAllPages } from "../_shared/paging.ts";
+import { fetchAllByKey } from "../_shared/paging.ts";
 import { captureException } from "../_shared/sentry.ts";
 import { isUserStorageKey } from "../_shared/storage_keys.ts";
 
@@ -36,48 +36,80 @@ export function deletableKeys(
 }
 
 type Page<T> = Readonly<{ data: readonly T[] | null; error: unknown }>;
-type MediaRow = Readonly<{ purpose: string; object_key: string }>;
-type ExportRow = Readonly<{ storage_path: string }>;
+type MediaRow = Readonly<{ id: string; purpose: string; object_key: string }>;
+type ExportRow = Readonly<{ id: string; storage_path: string }>;
 type StorageObject = Readonly<{ bucket_id: string; name: string }>;
+type KeysetQuery<T> = {
+  gt: (column: string, value: string) => KeysetQuery<T>;
+  order: (column: string, options: { ascending: boolean }) => KeysetQuery<T>;
+  limit: (count: number) => PromiseLike<Page<T>>;
+};
 export type StorageListingClient = {
   from: (table: string) => {
     select: (columns: string) => {
       eq: (column: string, value: string) => {
-        neq: (column: string, value: string) => PagedQuery<MediaRow>;
-        not: (column: string, operator: string, value: null) => PagedQuery<ExportRow>;
+        neq: (column: string, value: string) => KeysetQuery<MediaRow>;
+        not: (column: string, operator: string, value: null) => KeysetQuery<ExportRow>;
       };
     };
   };
-  rpc: (name: string, args: { target_user_id: string }) => PagedQuery<StorageObject>;
-};
-type PagedQuery<T> = {
-  order: (column: string, options: { ascending: boolean }) => PagedQuery<T>;
-  range: (from: number, to: number) => PromiseLike<Page<T>>;
+  rpc: (name: string, args: { target_user_id: string }) => {
+    eq: (column: string, value: string) => KeysetQuery<StorageObject>;
+  };
 };
 
-// PostgREST returns 1000 rows at most per request, so each list is read page by page. A list cut
-// at 1000 would leave every later file in Storage after the account is gone.
+export const accountBuckets = ["meal-images", "progress-photos", "account-exports"] as const;
+
+// PostgREST returns 1000 rows at most per request, so each list is read in keyset pages (rows after
+// the last key, in key order). A list cut at 1000 would leave every later file in Storage after the
+// account is gone, and offset pages would skip files when rows move while the list is read.
 export async function listAccountStorage(client: StorageListingClient, userId: string) {
-  const media = await fetchAllPages<MediaRow>(
-    (from, to) =>
-      client.from("media_objects").select("purpose,object_key").eq("user_id", userId)
-        .neq("lifecycle_status", "deleted").order("id", { ascending: true }).range(from, to),
+  const media = await fetchAllByKey<MediaRow>(
+    (after, size) => {
+      let query = client.from("media_objects").select("id,purpose,object_key").eq("user_id", userId)
+        .neq("lifecycle_status", "deleted");
+      if (after !== null) query = query.gt("id", after);
+      return query.order("id", { ascending: true }).limit(size);
+    },
+    (row) => row.id,
     "media_lookup_failed",
   );
-  const exports = await fetchAllPages<ExportRow>(
-    (from, to) =>
-      client.from("data_exports").select("storage_path").eq("user_id", userId)
-        .not("storage_path", "is", null).order("id", { ascending: true }).range(from, to),
+  const exports = await fetchAllByKey<ExportRow>(
+    (after, size) => {
+      let query = client.from("data_exports").select("id,storage_path").eq("user_id", userId)
+        .not("storage_path", "is", null);
+      if (after !== null) query = query.gt("id", after);
+      return query.order("id", { ascending: true }).limit(size);
+    },
+    (row) => row.id,
     "export_lookup_failed",
   );
-  // Uploads that never got a database row are in the user's folders too.
-  const objects = await fetchAllPages<StorageObject>(
-    (from, to) =>
-      client.rpc("list_account_storage_objects", { target_user_id: userId })
-        .order("bucket_id", { ascending: true }).order("name", { ascending: true }).range(from, to),
-    "storage_listing_failed",
-  );
+  // Uploads that never got a database row are in the user's folders too. A name is unique within
+  // its bucket, so each bucket is paged by name.
+  const objects: StorageObject[] = [];
+  for (const bucket of accountBuckets) {
+    objects.push(
+      ...await fetchAllByKey<StorageObject>(
+        (after, size) => {
+          let query = client.rpc("list_account_storage_objects", { target_user_id: userId })
+            .eq("bucket_id", bucket);
+          if (after !== null) query = query.gt("name", after);
+          return query.order("name", { ascending: true }).limit(size);
+        },
+        (row) => row.name,
+        "storage_listing_failed",
+      ),
+    );
+  }
   return { media, exports, objects };
+}
+
+// Counts only: the event carries no user id, key or path.
+export function reportUnsafeKeys(unsafe: number): void {
+  captureException(new Error(`account_deletion_unsafe_keys_${unsafe}`), {
+    functionName: "privacy-delete-account",
+    failureCode: "unsafe_storage_key",
+  });
 }
 
 export async function handleAccountDeletion(request: Request): Promise<Response> {
@@ -137,11 +169,7 @@ export async function handleAccountDeletion(request: Request): Promise<Response>
     // that object by hand before the athlete retries.
     const unsafe = meals.unsafe + progress.unsafe + exportKeys.unsafe;
     if (unsafe > 0) {
-      captureException(new Error(`account_deletion_unsafe_keys_${unsafe}`), {
-        userId: auth.userId,
-        functionName: "privacy-delete-account",
-        failureCode: "unsafe_storage_key",
-      });
+      reportUnsafeKeys(unsafe);
       throw new Error("unsafe_storage_key");
     }
     await removeObjects(auth.serviceClient, "meal-images", meals.keys);
