@@ -306,3 +306,14 @@ Deno.test("stone, kilogrammes, markdown and look-alike digits are read as the we
   assertEquals(kg("You'll be ５０ kg by March."), ["50.0"]);
   assertEquals(kg("You'll be 5O kg by March."), ["50.0"]);
 });
+
+Deno.test("a figure is read from the start of its number, never from inside it", () => {
+  const kg = (sentence: string) => weightFiguresIn(sentence).flatMap((f) => f.kgs);
+  assertEquals(kg("Falling 0.26 kg a week."), []);
+  assertEquals(kg("Falling **0.47 kg** a week."), []);
+  assertEquals(kg("Down -0.39 kg/week."), []);
+  assertEquals(kg("You moved 1,026 kg in total."), []);
+  assertEquals(kg("You'll be 55.5 kg by March."), [55.5]);
+  assertEquals(kg("You'll be 55,5 kg by March."), [55.5]);
+  assertEquals(kg("You'll be 55-58 kg by March."), [55, 58]);
+});

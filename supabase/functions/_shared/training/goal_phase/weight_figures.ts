@@ -21,8 +21,10 @@ import { exerciseCatalogV1 } from "../../onboarding/catalog.ts";
 
 const kgWord = "(?:kg|kgs|kilos?|kilogram(?:me)?s?)";
 const lbWord = "(?:lbs?|pounds?)";
+// A figure starts at the start of a number: never inside one, so the "26" of "0.26 kg a week" (a
+// rate) or of "1,026 kg" is not read as a weight of its own.
 const weightPattern = new RegExp(
-  `(\\d{2,3}(?:[.,]\\d+)?)(?:\\s*(?:-|–|to)\\s*(\\d{2,3}(?:[.,]\\d+)?))?\\s*(${kgWord}|${lbWord})\\b`,
+  `(?<!\\d)(?<!\\d[.,])(\\d{2,3}(?:[.,]\\d+)?)(?:\\s*(?:-|–|to)\\s*(\\d{2,3}(?:[.,]\\d+)?))?\\s*(${kgWord}|${lbWord})\\b`,
   "gi",
 );
 
