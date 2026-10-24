@@ -533,6 +533,14 @@ Training and Nutrition remain perspectives in one controlled decision pipeline, 
 agents. The Coach tab answers direct questions through the same workflow and never behaves like
 three separate autonomous chatbots.
 
+- **Opening Coach.** Coach reopens the conversation the athlete last had open only when its last
+  message is under 6 hours old. Later, it opens a new conversation (its thread is created by the
+  first send) with one row above the suggestions, **Continue last chat**, whose subtitle is the
+  earlier chat's first question; tapping it opens that conversation. Older conversations stay in
+  Saved conversations. Opening any conversation lands on its newest message, and stays there while
+  late content (a proposal card, a long reply) lays out, until the athlete touches the screen.
+  The same 6-hour check runs when the athlete returns to the Coach tab or the app resumes on it,
+  unless a reply is on its way or a draft is typed; a chat opened on purpose stays for that visit.
 - **AI label.** A reply a model wrote carries the small label **AI answer · checked by Tracend**,
   with no provider name (D11). A reply no model wrote (the deterministic safety boundary, stored
   with provider `mock`) reads **Tracend safety answer · not AI** and never carries the AI badge. A

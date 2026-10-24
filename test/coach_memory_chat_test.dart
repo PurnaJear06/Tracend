@@ -78,7 +78,11 @@ Future<void> _open(WidgetTester tester, _Chat chat, {String? last}) async {
     MaterialApp(
       theme: TracendTheme.dark,
       home: Scaffold(
-        body: CoachScreen(repository: chat, threadMemory: _LastThread(last)),
+        body: CoachScreen(
+          repository: chat,
+          threadMemory: _LastThread(last),
+          now: () => _when.add(const Duration(hours: 1)),
+        ),
       ),
     ),
   );
