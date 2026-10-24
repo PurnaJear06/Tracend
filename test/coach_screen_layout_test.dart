@@ -88,7 +88,11 @@ final _conversation = [
 Widget _app(CoachRepository repository, {bool dark = true}) => MaterialApp(
   theme: dark ? TracendTheme.dark : TracendTheme.light,
   home: Scaffold(
-    body: CoachScreen(repository: repository, threadMemory: _Memory()),
+    body: CoachScreen(
+      repository: repository,
+      threadMemory: _Memory(),
+      now: () => _when.add(const Duration(hours: 1)),
+    ),
   ),
 );
 

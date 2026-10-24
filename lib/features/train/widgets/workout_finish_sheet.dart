@@ -12,16 +12,22 @@ import 'package:tracend/shared/widgets/tracend_sheet.dart';
 ///
 /// The answer is required and nothing is preselected: it sets the training
 /// load, and it is never derived from the sets' own efforts.
+///
+/// [saving] words the sheet for a workout left unfinished on an earlier day:
+/// the athlete saves it instead of finishing it, and has nothing to keep
+/// logging.
 Future<int?> showWorkoutFinishSheet(
   BuildContext context, {
   required String workoutName,
   required int unloggedSets,
+  bool saving = false,
 }) => showTracendSheet<int>(
   context,
-  title: 'Finish workout',
+  title: saving ? 'Save workout' : 'Finish workout',
   subtitle: workoutName,
   builder: (sheetContext) => WorkoutFinishForm(
     unloggedSets: unloggedSets,
+    saving: saving,
     onFinish: (effort) => Navigator.of(sheetContext).pop(effort),
     onKeepLogging: () => Navigator.of(sheetContext).pop(),
   ),
@@ -33,12 +39,18 @@ class WorkoutFinishForm extends StatefulWidget {
     required this.unloggedSets,
     required this.onFinish,
     required this.onKeepLogging,
+    this.saving = false,
     super.key,
   });
 
   final int unloggedSets;
   final ValueChanged<int> onFinish;
+
+  /// "Keep logging", or "Not now" when [saving].
   final VoidCallback onKeepLogging;
+
+  /// The workout is an unfinished one being saved, not one being finished.
+  final bool saving;
 
   @override
   State<WorkoutFinishForm> createState() => _WorkoutFinishFormState();
@@ -173,11 +185,14 @@ class _WorkoutFinishFormState extends State<WorkoutFinishForm>
           style: text.bodySmall?.copyWith(color: colors.textSecondary),
         ),
         const SizedBox(height: TracendSpacing.lg),
-        FilledButton(onPressed: _finish, child: const Text('Finish workout')),
+        FilledButton(
+          onPressed: _finish,
+          child: Text(widget.saving ? 'Save workout' : 'Finish workout'),
+        ),
         const SizedBox(height: TracendSpacing.xs),
         TextButton(
           onPressed: widget.onKeepLogging,
-          child: const Text('Keep logging'),
+          child: Text(widget.saving ? 'Not now' : 'Keep logging'),
         ),
       ],
     );

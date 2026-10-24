@@ -376,6 +376,7 @@ class _AppShellState extends State<AppShell> {
       ),
       () => CoachScreen(
         key: const ValueKey('tab_coach'),
+        active: _selectedIndex == 2,
         repository: _coach,
         aiConsent: widget.aiConsent,
         proposals: _proposals,

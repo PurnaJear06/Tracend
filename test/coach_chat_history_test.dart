@@ -8,16 +8,29 @@ import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/coach_screen.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/coach/widgets/coach_message_bubble.dart';
+import 'package:tracend/shared/coach_draft_requests.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_toast.dart';
 
-Widget _app(CoachRepository repository, CoachThreadMemory memory) =>
-    MaterialApp(
-      theme: TracendTheme.dark,
-      home: Scaffold(
-        body: CoachScreen(repository: repository, threadMemory: memory),
-      ),
-    );
+Widget _app(
+  CoachRepository repository,
+  CoachThreadMemory memory, {
+  Duration age = const Duration(hours: 1),
+  bool active = true,
+  CoachDraftRequests? drafts,
+}) => MaterialApp(
+  theme: TracendTheme.dark,
+  home: Scaffold(
+    body: CoachScreen(
+      repository: repository,
+      threadMemory: memory,
+      // Threads are last updated at [_when]; this is how long ago that was.
+      now: () => _when.add(age),
+      active: active,
+      draftRequests: drafts,
+    ),
+  ),
+);
 
 Future<void> _tall(WidgetTester tester) async {
   tester.view.physicalSize = const Size(800, 2400);
@@ -39,6 +52,20 @@ Future<void> _send(WidgetTester tester, String question) async {
 Future<void> _openSheet(WidgetTester tester) async {
   await tester.tap(find.byTooltip('Saved conversations'));
   await tester.pumpAndSettle();
+}
+
+/// The app leaves and returns, in the order the platform reports it.
+void _backgroundAndResume(WidgetTester tester) {
+  for (final state in [
+    AppLifecycleState.inactive,
+    AppLifecycleState.hidden,
+    AppLifecycleState.paused,
+    AppLifecycleState.hidden,
+    AppLifecycleState.inactive,
+    AppLifecycleState.resumed,
+  ]) {
+    tester.binding.handleAppLifecycleStateChanged(state);
+  }
 }
 
 final _when = DateTime(2026, 9, 29);
@@ -86,6 +113,451 @@ CoachMessage _summary({
 );
 
 void main() {
+  group('opening Coach', () {
+    Future<_HistoryRepository> open(
+      WidgetTester tester, {
+      required Duration age,
+      String remembered = 't-old',
+    }) async {
+      final repository = _HistoryRepository(
+        threads: [_thread('t-old', 'Taking a 15 days break')],
+        messages: {
+          't-old': [
+            _user('o1', 'I am thinking of taking a break'),
+            _answer('o2', 'A short break is fine.'),
+          ],
+        },
+      );
+      await tester.pumpWidget(_app(repository, _Memory(remembered), age: age));
+      await tester.pumpAndSettle();
+      return repository;
+    }
+
+    testWidgets('reopens a conversation whose last message is 2 hours old', (
+      tester,
+    ) async {
+      await _tall(tester);
+      await open(tester, age: const Duration(hours: 2));
+
+      expect(find.text('I am thinking of taking a break'), findsOneWidget);
+      expect(find.text('Continue last chat'), findsNothing);
+    });
+
+    testWidgets('starts a new conversation when the last message is 7 hours '
+        'old, and offers to continue the old one', (tester) async {
+      await _tall(tester);
+      final repository = await open(tester, age: const Duration(hours: 7));
+
+      expect(find.text('I am thinking of taking a break'), findsNothing);
+      expect(find.textContaining('Ask about training'), findsOneWidget);
+      expect(find.text('Continue last chat'), findsOneWidget);
+      expect(find.text('Taking a 15 days break'), findsOneWidget);
+      expect(repository.created, 0);
+
+      // The new question starts its own thread, not the old one.
+      repository._replies.add(_answer('a1', 'Yes, train legs.'));
+      await _send(tester, 'Should I train legs today?');
+      expect(repository.sent, [('thread-1', 'Should I train legs today?')]);
+      expect(find.text('Continue last chat'), findsNothing);
+    });
+
+    testWidgets('exactly 6 hours old is no longer reopened', (tester) async {
+      await _tall(tester);
+      await open(tester, age: coachReopenWindow);
+
+      expect(find.text('Continue last chat'), findsOneWidget);
+    });
+
+    testWidgets('uses the newest conversation when none is remembered', (
+      tester,
+    ) async {
+      await _tall(tester);
+      await open(tester, age: const Duration(hours: 7), remembered: 'gone');
+
+      expect(find.text('Continue last chat'), findsOneWidget);
+      expect(find.text('Taking a 15 days break'), findsOneWidget);
+    });
+
+    testWidgets('Continue last chat opens that conversation', (tester) async {
+      await _tall(tester);
+      final memory = _Memory('t-old');
+      final repository = _HistoryRepository(
+        threads: [_thread('t-old', 'Taking a 15 days break')],
+        messages: {
+          't-old': [
+            _user('o1', 'I am thinking of taking a break'),
+            _answer('o2', 'A short break is fine.'),
+          ],
+        },
+      );
+      await tester.pumpWidget(
+        _app(repository, memory, age: const Duration(days: 6)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Continue last chat'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('I am thinking of taking a break'), findsOneWidget);
+      expect(find.text('A short break is fine.'), findsOneWidget);
+      expect(find.text('Continue last chat'), findsNothing);
+      expect(memory.remembered, ['t-old']);
+    });
+
+    testWidgets('Continue last chat offers the remembered conversation, not '
+        'the newest one', (tester) async {
+      await _tall(tester);
+      final memory = _Memory('t-old');
+      final repository = _HistoryRepository(
+        threads: [
+          _thread('t-new', 'Meal ideas'),
+          _thread('t-old', 'Taking a 15 days break'),
+        ],
+        messages: {
+          't-new': [_user('n1', 'Give me meal ideas')],
+          't-old': [_user('o1', 'I am thinking of taking a break')],
+        },
+      );
+      await tester.pumpWidget(
+        _app(repository, memory, age: const Duration(days: 6)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Taking a 15 days break'), findsOneWidget);
+      await tester.tap(find.text('Continue last chat'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('I am thinking of taking a break'), findsOneWidget);
+      expect(find.text('Give me meal ideas'), findsNothing);
+    });
+
+    testWidgets('a new conversation without earlier ones has no Continue row', (
+      tester,
+    ) async {
+      await _tall(tester);
+      await tester.pumpWidget(_app(_HistoryRepository(), _Memory()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Continue last chat'), findsNothing);
+    });
+  });
+
+  group('coming back to Coach', () {
+    final thread = _thread('t-old', 'Taking a 15 days break');
+    final messages = {
+      't-old': [
+        _user('o1', 'I am thinking of taking a break'),
+        _answer('o2', 'A short break is fine.'),
+      ],
+    };
+
+    Future<(_HistoryRepository, _Memory)> openAt(
+      WidgetTester tester,
+      Duration age,
+    ) async {
+      await _tall(tester);
+      final repository = _HistoryRepository(
+        threads: [thread],
+        messages: messages,
+        replies: [Completer<CoachMessage>()],
+      );
+      final memory = _Memory('t-old');
+      await tester.pumpWidget(_app(repository, memory, age: age));
+      await tester.pumpAndSettle();
+      expect(find.text('I am thinking of taking a break'), findsOneWidget);
+      return (repository, memory);
+    }
+
+    Future<void> leaveAndReturn(
+      WidgetTester tester,
+      _HistoryRepository repository,
+      _Memory memory,
+      Duration after,
+    ) async {
+      await tester.pumpWidget(
+        _app(repository, memory, age: const Duration(hours: 1), active: false),
+      );
+      await tester.pumpWidget(_app(repository, memory, age: after));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the tab re-activated after 7 hours starts a new '
+        'conversation', (tester) async {
+      final (repository, memory) = await openAt(
+        tester,
+        const Duration(hours: 1),
+      );
+      await leaveAndReturn(
+        tester,
+        repository,
+        memory,
+        const Duration(hours: 7),
+      );
+
+      expect(find.text('I am thinking of taking a break'), findsNothing);
+      expect(find.text('Continue last chat'), findsOneWidget);
+
+      repository._replies
+        ..clear()
+        ..add(_answer('a1', 'Yes, train legs.'));
+      await _send(tester, 'Should I train legs today?');
+      expect(repository.sent, [('thread-1', 'Should I train legs today?')]);
+    });
+
+    testWidgets('the tab re-activated after 2 hours keeps the chat', (
+      tester,
+    ) async {
+      final (repository, memory) = await openAt(
+        tester,
+        const Duration(hours: 1),
+      );
+      await leaveAndReturn(
+        tester,
+        repository,
+        memory,
+        const Duration(hours: 2),
+      );
+
+      expect(find.text('I am thinking of taking a break'), findsOneWidget);
+      expect(find.text('Continue last chat'), findsNothing);
+    });
+
+    testWidgets('resuming the app after 7 hours starts a new conversation', (
+      tester,
+    ) async {
+      final (repository, memory) = await openAt(
+        tester,
+        const Duration(hours: 1),
+      );
+      await tester.pumpWidget(
+        _app(repository, memory, age: const Duration(hours: 7)),
+      );
+      expect(find.text('I am thinking of taking a break'), findsOneWidget);
+
+      _backgroundAndResume(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('I am thinking of taking a break'), findsNothing);
+      expect(find.text('Continue last chat'), findsOneWidget);
+    });
+
+    testWidgets('resuming while another tab shows changes nothing', (
+      tester,
+    ) async {
+      final (repository, memory) = await openAt(
+        tester,
+        const Duration(hours: 1),
+      );
+      await tester.pumpWidget(
+        _app(repository, memory, age: const Duration(hours: 7), active: false),
+      );
+
+      _backgroundAndResume(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('I am thinking of taking a break'), findsOneWidget);
+    });
+
+    testWidgets('a typed draft keeps the chat, and the next return checks '
+        'again', (tester) async {
+      final (repository, memory) = await openAt(
+        tester,
+        const Duration(hours: 1),
+      );
+      await tester.enterText(find.byType(TextField), 'Should I train legs');
+      await leaveAndReturn(
+        tester,
+        repository,
+        memory,
+        const Duration(hours: 7),
+      );
+
+      expect(find.text('I am thinking of taking a break'), findsOneWidget);
+      expect(find.text('Continue last chat'), findsNothing);
+
+      await tester.enterText(find.byType(TextField), '');
+      await leaveAndReturn(
+        tester,
+        repository,
+        memory,
+        const Duration(hours: 8),
+      );
+
+      expect(find.text('I am thinking of taking a break'), findsNothing);
+      expect(find.text('Continue last chat'), findsOneWidget);
+    });
+
+    testWidgets('a question left by another screen opens a fresh chat when '
+        'the old one is over 6 hours old', (tester) async {
+      await _tall(tester);
+      final repository = _HistoryRepository(
+        threads: [thread],
+        messages: messages,
+        replies: [Completer<CoachMessage>()],
+      );
+      final memory = _Memory('t-old');
+      final drafts = CoachDraftRequests();
+      await tester.pumpWidget(
+        _app(repository, memory, age: const Duration(hours: 1), drafts: drafts),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('I am thinking of taking a break'), findsOneWidget);
+
+      await tester.pumpWidget(
+        _app(repository, memory, age: const Duration(hours: 7), drafts: drafts),
+      );
+      drafts.request('Can we talk it through?');
+      await tester.pumpAndSettle();
+
+      expect(find.text('I am thinking of taking a break'), findsNothing);
+      expect(find.text('Continue last chat'), findsOneWidget);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Can we talk it through?',
+      );
+      expect(repository.sent, isEmpty, reason: 'the question is not sent');
+    });
+
+    testWidgets('a question left by another screen stays in a fresh chat', (
+      tester,
+    ) async {
+      await _tall(tester);
+      final repository = _HistoryRepository(
+        threads: [thread],
+        messages: messages,
+        replies: [Completer<CoachMessage>()],
+      );
+      final memory = _Memory('t-old');
+      final drafts = CoachDraftRequests();
+      await tester.pumpWidget(
+        _app(repository, memory, age: const Duration(hours: 1), drafts: drafts),
+      );
+      await tester.pumpAndSettle();
+      drafts.request('Can we talk it through?');
+      await tester.pumpAndSettle();
+      expect(find.text('I am thinking of taking a break'), findsOneWidget);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Can we talk it through?',
+      );
+    });
+
+    testWidgets('a send in flight keeps the chat', (tester) async {
+      final (repository, memory) = await openAt(
+        tester,
+        const Duration(hours: 1),
+      );
+      await tester.enterText(find.byType(TextField), 'Should I train legs?');
+      await tester.tap(find.byTooltip('Send message'));
+      await tester.pump();
+      expect(repository.sent, [('t-old', 'Should I train legs?')]);
+
+      await leaveAndReturn(
+        tester,
+        repository,
+        memory,
+        const Duration(hours: 7),
+      );
+
+      expect(find.text('I am thinking of taking a break'), findsOneWidget);
+      expect(find.text('Continue last chat'), findsNothing);
+    });
+
+    testWidgets('a chat opened on purpose stays open for the visit', (
+      tester,
+    ) async {
+      await _tall(tester);
+      final repository = _HistoryRepository(
+        threads: [thread],
+        messages: messages,
+      );
+      final memory = _Memory('t-old');
+      await tester.pumpWidget(
+        _app(repository, memory, age: const Duration(days: 6)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Continue last chat'));
+      await tester.pumpAndSettle();
+
+      _backgroundAndResume(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('I am thinking of taking a break'), findsOneWidget);
+
+      // Six hours after it was opened, the next return starts fresh.
+      await tester.pumpWidget(
+        _app(repository, memory, age: const Duration(days: 6, hours: 7)),
+      );
+      _backgroundAndResume(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('I am thinking of taking a break'), findsNothing);
+      expect(find.text('Continue last chat'), findsOneWidget);
+    });
+  });
+
+  group('landing on the newest message', () {
+    List<CoachMessage> longThread() => [
+      for (var i = 0; i < 30; i++) ...[
+        _user('u$i', 'Question $i ${'about my training ' * 6}'),
+        _answer('a$i', 'Answer $i ${'with a long explanation ' * 25}'),
+      ],
+    ];
+
+    ScrollPosition position(WidgetTester tester) => tester
+        .state<ScrollableState>(
+          find
+              .descendant(
+                of: find.byType(CoachScreen),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        )
+        .position;
+
+    void expectAtNewest(WidgetTester tester) {
+      final scroll = position(tester);
+      expect(scroll.maxScrollExtent, greaterThan(1000));
+      expect(scroll.pixels, scroll.maxScrollExtent);
+      expect(find.textContaining('Answer 29 '), findsOneWidget);
+    }
+
+    testWidgets('a restored long conversation opens at its newest message', (
+      tester,
+    ) async {
+      await _tall(tester);
+      tester.view.physicalSize = const Size(800, 900);
+      final repository = _HistoryRepository(
+        threads: [_thread('t1', 'Long chat')],
+        messages: {'t1': longThread()},
+      );
+      await tester.pumpWidget(_app(repository, _Memory('t1')));
+      await tester.pumpAndSettle();
+
+      expectAtNewest(tester);
+    });
+
+    testWidgets('a conversation picked from Saved conversations opens at its '
+        'newest message', (tester) async {
+      await _tall(tester);
+      tester.view.physicalSize = const Size(800, 900);
+      final repository = _HistoryRepository(
+        threads: [_thread('t1', 'Short chat'), _thread('t2', 'Long chat')],
+        messages: {
+          't1': [_user('s1', 'Short question')],
+          't2': longThread(),
+        },
+      );
+      await tester.pumpWidget(_app(repository, _Memory('t1')));
+      await tester.pumpAndSettle();
+      expect(find.text('Short question'), findsOneWidget);
+
+      await _openSheet(tester);
+      await tester.tap(find.text('Long chat'));
+      await tester.pumpAndSettle();
+
+      expectAtNewest(tester);
+    });
+  });
+
   testWidgets('reopens the conversation the user last had open', (
     tester,
   ) async {

@@ -26,6 +26,12 @@ String shortDate(DateTime date, {DateTime? now}) {
   return date.year == reference.year ? base : '$base ${date.year}';
 }
 
+/// "Mon 22 Aug" (with the year when it differs from [now]).
+String dayAndDate(DateTime date, {DateTime? now}) {
+  final day = DateTime(date.year, date.month, date.day);
+  return '${_weekdays[day.weekday - 1]} ${shortDate(day, now: now)}';
+}
+
 /// "Today", "Yesterday", or "Mon 22 Aug" (with the year when it differs).
 String friendlyDate(DateTime date, {DateTime? now}) {
   final reference = now ?? DateTime.now();
@@ -34,7 +40,7 @@ String friendlyDate(DateTime date, {DateTime? now}) {
   final difference = today.difference(day).inDays;
   if (difference == 0) return 'Today';
   if (difference == 1) return 'Yesterday';
-  return '${_weekdays[day.weekday - 1]} ${shortDate(day, now: reference)}';
+  return dayAndDate(day, now: reference);
 }
 
 /// "Breakfast" for `breakfast`; unknown values are capitalized as-is.
