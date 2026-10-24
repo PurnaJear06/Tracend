@@ -287,6 +287,16 @@ class _CheckInSheetState extends State<_CheckInSheet> {
   Future<void> _save() async {
     if (!_painAnswersComplete()) return;
     setState(() => _saving = true);
+    try {
+      await _saveNow();
+    } on Object catch (error) {
+      // Whatever went wrong, the sheet is not left saving for good.
+      debugPrint('Non-critical error: check-in not saved: $error');
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _saveNow() async {
     final now = DateTime.now();
     final localDate =
         widget.localDate ?? now.toIso8601String().substring(0, 10);
@@ -338,64 +348,64 @@ class _CheckInSheetState extends State<_CheckInSheet> {
     Navigator.pop(context, CheckInSaved(delivered: result == _Sent.delivered));
   }
 
-  /// Keeps the envelope on the phone, then sends it. A delivered check-in
-  /// leaves the queue; one whose pain answers the server refuses (22023) stays,
-  /// marked, so the athlete is told and the rest of it is not lost; anything
-  /// else waits to be replayed. Does not need the sheet to be open.
+  /// Keeps the envelope on the phone, then sends it through the queue, so any
+  /// older envelope that waits goes first and this one last (the server counts
+  /// the last one sent as the day's check-in). A delivered check-in leaves the
+  /// queue; one whose pain answers the server refuses stays, marked, so the
+  /// athlete is told and the rest of it is not lost; anything else waits to be
+  /// replayed. Never throws, and does not need the sheet to be open.
   Future<_Sent> _persistAndSend(
     Map<String, dynamic> payload,
     String localDate,
     String timezone,
   ) async {
-    final preferences = await SharedPreferences.getInstance();
-    final queue = CheckInQueue(
-      preferences,
-      userId: widget.environment.hasSupabaseConfiguration
-          ? Supabase.instance.client.auth.currentUser?.id
-          : null,
-    );
-    final idempotencyKey = await queue.enqueue(
-      payload: payload,
-      localDate: localDate,
-      timezone: timezone,
-    );
-    var delivered = false;
     try {
-      final sender = widget.sender;
-      if (sender != null) {
-        delivered = await sender(localDate, timezone, idempotencyKey, payload);
-      } else {
-        if (widget.environment.hasSupabaseConfiguration) {
-          await Supabase.instance.client.rpc(
-            'save_daily_check_in',
-            params: {
-              'local_date': localDate,
-              'timezone': timezone,
-              'idempotency_key': idempotencyKey,
-              'payload': payload,
-            },
-          );
-        }
-        delivered = true;
-      }
-    } on PostgrestException catch (e) {
-      debugPrint('Non-critical error: check-in not sent: ${e.code}');
-      if (e.code == '22023' && payload.keys.any(_isPainKey)) {
-        await queue.markPainRefused(
-          idempotencyKey,
-          tooOld: isPainDateRefusal(e),
-        );
-        return _Sent.painRefused;
-      }
-    } catch (e) {
-      debugPrint('Non-critical error: $e');
+      final preferences = await SharedPreferences.getInstance();
+      final queue = CheckInQueue(
+        preferences,
+        userId: widget.environment.hasSupabaseConfiguration
+            ? Supabase.instance.client.auth.currentUser?.id
+            : null,
+      );
+      await queue.enqueue(
+        payload: payload,
+        localDate: localDate,
+        timezone: timezone,
+      );
+      final outcome = await queue.replay(_send);
+      return switch (outcome) {
+        CheckInReplayOutcome.delivered => _Sent.delivered,
+        CheckInReplayOutcome.painRefused => _Sent.painRefused,
+        _ => _Sent.waiting,
+      };
+    } on Object catch (error) {
+      debugPrint('Non-critical error: check-in waits: $error');
+      return _Sent.waiting;
     }
-    // An undelivered envelope stays queued; Today replays it next launch.
-    if (delivered) {
-      await queue.clearDelivered(idempotencyKey);
-      return _Sent.delivered;
+  }
+
+  Future<bool> _send(
+    String localDate,
+    String timezone,
+    String idempotencyKey,
+    Map<String, dynamic> payload,
+  ) async {
+    final sender = widget.sender;
+    if (sender != null) {
+      return sender(localDate, timezone, idempotencyKey, payload);
     }
-    return _Sent.waiting;
+    if (widget.environment.hasSupabaseConfiguration) {
+      await Supabase.instance.client.rpc(
+        'save_daily_check_in',
+        params: {
+          'local_date': localDate,
+          'timezone': timezone,
+          'idempotency_key': idempotencyKey,
+          'payload': payload,
+        },
+      );
+    }
+    return true;
   }
 
   static bool _isPainKey(String key) =>

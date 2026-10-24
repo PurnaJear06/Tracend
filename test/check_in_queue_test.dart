@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -566,6 +567,211 @@ void main() {
       await queue.markPainRefused(key, tooOld: false);
       expect(queue.painState, CheckInPainState.refused);
       expect(queue.painRefusedTooOld, isFalse);
+    });
+  });
+
+  group('while a replay waits on the network', () {
+    const base = {
+      'sleep_quality': 3,
+      'energy': 3,
+      'soreness': 3,
+      'hunger': 3,
+      'mood': 3,
+      'available_to_train': true,
+      'note': '',
+    };
+    const pain = {
+      'pain_severity': 6,
+      'pain_area': 'knee',
+      'pain_red_flags': <String>[],
+    };
+
+    Future<String> save(CheckInQueue queue, Map<String, dynamic> extra) =>
+        queue.enqueue(
+          payload: {...base, ...extra},
+          localDate: '2026-10-24',
+          timezone: 'Asia/Kolkata',
+        );
+
+    test('a check-in saved meanwhile survives when the first lands', () async {
+      SharedPreferences.setMockInitialValues({});
+      final queue = await buildQueue();
+      final first = await save(queue, pain);
+      final gate = Completer<void>();
+      final sent = <String>[];
+      final replaying = queue.replay((date, zone, key, payload) async {
+        sent.add(key);
+        if (key == first) await gate.future;
+        return key == first;
+      });
+      await Future<void>.delayed(Duration.zero);
+
+      final second = await save(queue, {'pain_severity': 0});
+      gate.complete();
+      expect(await replaying, CheckInReplayOutcome.retained);
+
+      expect(sent, [first, second], reason: 'the earlier one first');
+      final preferences = await SharedPreferences.getInstance();
+      final waiting =
+          jsonDecode(preferences.getString('daily_check_in_pending')!) as Map;
+      expect(waiting['idempotency_key'], second, reason: 'not wiped');
+      expect(
+        preferences.getString('daily_check_in_pending.earlier.'),
+        isNull,
+        reason: 'the first one was delivered and went',
+      );
+    });
+
+    test(
+      'a check-in saved meanwhile survives when the first is refused',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final queue = await buildQueue();
+        final first = await save(queue, pain);
+        final gate = Completer<void>();
+        final sent = <String>[];
+        final replaying = queue.replay((date, zone, key, payload) async {
+          sent.add(key);
+          if (key == first) {
+            await gate.future;
+            throw const PostgrestException(message: 'no', code: '22023');
+          }
+          return false;
+        });
+        await Future<void>.delayed(Duration.zero);
+
+        final second = await save(queue, {'pain_severity': 0});
+        gate.complete();
+        await replaying;
+
+        expect(sent, [first, second]);
+        final preferences = await SharedPreferences.getInstance();
+        final waiting =
+            jsonDecode(preferences.getString('daily_check_in_pending')!) as Map;
+        expect(waiting['idempotency_key'], second);
+        expect(waiting.containsKey('pain_refused'), isFalse);
+        expect(queue.painState, CheckInPainState.refused, reason: 'the first');
+      },
+    );
+
+    test('replays run one after the other, each envelope once', () async {
+      SharedPreferences.setMockInitialValues({});
+      final queue = await buildQueue();
+      final key = await save(queue, pain);
+      final gate = Completer<void>();
+      var calls = 0;
+      Future<bool> send(
+        String date,
+        String zone,
+        String id,
+        Map<String, dynamic> payload,
+      ) async {
+        calls++;
+        await gate.future;
+        return true;
+      }
+
+      final one = queue.replay(send);
+      final two = (await buildQueue()).replay(send);
+      await Future<void>.delayed(Duration.zero);
+      gate.complete();
+      expect(await one, CheckInReplayOutcome.delivered);
+      expect(await two, CheckInReplayOutcome.none);
+      expect(calls, 1);
+      expect(key, isNotEmpty);
+    });
+
+    test(
+      'a refused check-in that a newer one replaced is not sent later',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final queue = await buildQueue();
+        await save(queue, {...pain, 'energy': 1});
+        Future<bool> refuse(
+          String date,
+          String zone,
+          String id,
+          Map<String, dynamic> payload,
+        ) async {
+          throw const PostgrestException(message: 'no', code: '22023');
+        }
+
+        expect(await queue.replay(refuse), CheckInReplayOutcome.painRefused);
+        final second = await save(queue, {'pain_severity': 0});
+        final sent = <String>[];
+        expect(
+          await queue.replay((date, zone, key, payload) async {
+            sent.add(key);
+            return true;
+          }),
+          CheckInReplayOutcome.delivered,
+        );
+        expect(sent, [second]);
+        expect(queue.painState, CheckInPainState.refused, reason: 'still told');
+
+        await queue.acknowledgeRefusedPain((date, zone, key, payload) async {
+          sent.add(key);
+          return true;
+        });
+        expect(sent, [second], reason: 'the older one would become the last');
+        expect(queue.painState, CheckInPainState.none);
+        final preferences = await SharedPreferences.getInstance();
+        expect(
+          preferences.getKeys().where((k) => k.contains('pending')),
+          isEmpty,
+        );
+      },
+    );
+
+    test('the day\'s limit on pain reports is a refusal: told, and the later '
+        'check-in goes on', () async {
+      SharedPreferences.setMockInitialValues({});
+      final queue = await buildQueue();
+      final first = await save(queue, pain);
+      final second = await save(queue, {'pain_severity': 0});
+      final sent = <String>[];
+      final outcome = await queue.replay((date, zone, key, payload) async {
+        sent.add(key);
+        if (key == first) {
+          throw const PostgrestException(
+            message: 'too many pain reports today',
+            code: 'P0001',
+          );
+        }
+        return true;
+      });
+      expect(outcome, CheckInReplayOutcome.delivered);
+      expect(sent, [first, second]);
+      expect(queue.painState, CheckInPainState.refused);
+      expect(queue.painRefusedTooOld, isFalse);
+    });
+
+    test(
+      'another P0001, or one without a pain check, is just retained',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final queue = await buildQueue();
+        await save(queue, pain);
+        expect(
+          await queue.replay((date, zone, key, payload) async {
+            throw const PostgrestException(message: 'busy', code: 'P0001');
+          }),
+          CheckInReplayOutcome.retained,
+        );
+        expect(queue.painState, CheckInPainState.waiting);
+      },
+    );
+
+    test('a duplicate key means the server has it: delivered', () async {
+      SharedPreferences.setMockInitialValues({});
+      final queue = await buildQueue();
+      await save(queue, {'pain_severity': 0});
+      final outcome = await queue.replay((date, zone, key, payload) async {
+        throw const PostgrestException(message: 'duplicate', code: '23505');
+      });
+      expect(outcome, CheckInReplayOutcome.delivered);
+      final preferences = await SharedPreferences.getInstance();
+      expect(preferences.getString('daily_check_in_pending'), isNull);
     });
   });
 }

@@ -80,8 +80,9 @@ Future<void> _openWith(
   WidgetTester tester,
   CheckInSend sender, {
   void Function(CheckInSaved?)? onSaved,
+  bool keepStored = false,
 }) async {
-  SharedPreferences.setMockInitialValues({});
+  if (!keepStored) SharedPreferences.setMockInitialValues({});
   await tester.pumpWidget(
     MaterialApp(
       theme: TracendTheme.dark,
@@ -447,6 +448,83 @@ void main() {
       expect(replayed!['pain_red_flags'], isEmpty);
     });
 
+    testWidgets('a check-in made online goes after an older one that waits, '
+        'so it is the day\'s last', (tester) async {
+      final sent = <(String, Map<String, dynamic>)>[];
+      // The first check-in has a red flag and cannot be sent.
+      await _openWith(tester, (date, zone, key, payload) async {
+        sent.add((key, payload));
+        return false;
+      });
+      await hurt(tester, strength: 3, area: 'Lower back');
+      await _choose(
+        tester,
+        'Do any of these apply?: Numbness, tingling or weakness in an arm or '
+        'leg',
+      );
+      await _save(tester);
+      expect(sent, hasLength(1));
+      final first = sent.single.$1;
+      sent.clear();
+
+      // Online, the athlete checks in again (and clears the pain).
+      await tester.pumpWidget(const SizedBox.shrink());
+      CheckInSaved? saved;
+      await _openWith(
+        tester,
+        (date, zone, key, payload) async {
+          sent.add((key, payload));
+          return true;
+        },
+        keepStored: true,
+        onSaved: (value) => saved = value,
+      );
+      await _choose(tester, 'Energy: Very low');
+      await _save(tester);
+
+      expect(sent, hasLength(2));
+      expect(sent.first.$1, first, reason: 'the older one first');
+      expect(sent.first.$2['pain_red_flags'], ['numb_weak_limb']);
+      expect(sent.last.$2['energy'], 1, reason: 'this one last');
+      expect(saved!.delivered, isTrue);
+      expect(
+        CheckInQueue(await SharedPreferences.getInstance()).painState,
+        CheckInPainState.none,
+      );
+    });
+
+    testWidgets('a sender that fails in any way leaves the check-in waiting, '
+        'and the sheet closes', (tester) async {
+      CheckInSaved? saved;
+      await _openWith(
+        tester,
+        (date, zone, key, payload) async => throw StateError('broken'),
+        onSaved: (value) => saved = value,
+      );
+      await _save(tester);
+      expect(saved, isNotNull);
+      expect(saved!.delivered, isFalse);
+      expect(find.textContaining('saved on this device'), findsOne);
+      expect(find.text('Save check-in'), findsNothing);
+    });
+
+    testWidgets('a duplicate key means the server has it: no "saved on this '
+        'phone" toast', (tester) async {
+      CheckInSaved? saved;
+      await _openWith(
+        tester,
+        (date, zone, key, payload) async => throw const PostgrestException(
+          message: 'duplicate key',
+          code: '23505',
+        ),
+        onSaved: (value) => saved = value,
+      );
+      await _save(tester);
+      expect(saved!.delivered, isTrue);
+      expect(find.text('Check-in saved'), findsOne);
+      expect(find.textContaining('saved on this device'), findsNothing);
+    });
+
     testWidgets('a refusal still shows the referral and keeps the whole '
         'check-in', (tester) async {
       final recorder = _Recorder(refuses: true);
@@ -539,6 +617,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(saved!.delivered, isFalse);
       expect(find.textContaining('saved on this device'), findsOne);
+      hang.complete(false);
+      await tester.pumpAndSettle();
     });
 
     testWidgets('an area a clinician cleared, chosen again as today\'s pain, '
