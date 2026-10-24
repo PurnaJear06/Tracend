@@ -157,13 +157,16 @@ class _Nutrition extends FixtureNutritionRepository {
   }
 }
 
-/// A coach whose newest decision is for [day]; counts the decisions it makes.
+/// A coach whose newest decision is for [day]; a decision it makes is for the
+/// day it is asked for (the phone's when it is asked for none), as the
+/// server's is.
 class _Coach implements CoachRepository {
   _Coach(this.day, {this.missingData = const []});
 
-  final String day;
-  final List<String> missingData;
-  int generated = 0;
+  String day;
+  List<String> missingData;
+  final asked = <String?>[];
+  int get generated => asked.length;
 
   @override
   Future<CoachDecision?> loadLatest() async => CoachDecision(
@@ -183,8 +186,10 @@ class _Coach implements CoachRepository {
   );
 
   @override
-  Future<CoachDecision> generate() async {
-    generated++;
+  Future<CoachDecision> generate({String? localDate}) async {
+    asked.add(localDate);
+    day = localDate ?? _key(_phone);
+    missingData = const [];
     return (await loadLatest())!;
   }
 
@@ -196,6 +201,7 @@ class _Coach implements CoachRepository {
 /// decision it shows is current.
 Future<_Coach> _grantAndCheck(
   WidgetTester tester, {
+  bool askAgain = false,
   required String decisionDay,
   required DayAdjustmentController controller,
   List<String> missingData = const [],
@@ -228,6 +234,12 @@ Future<_Coach> _grantAndCheck(
   expect(coach.generated, 0, reason: 'AI coaching is off until it is granted');
   await consent.record(granted: true);
   await _settle(tester);
+  if (askAgain) {
+    // Turning AI coaching off and on again checks the decision once more.
+    await consent.record(granted: false);
+    await consent.record(granted: true);
+    await _settle(tester);
+  }
   return coach;
 }
 
@@ -476,6 +488,34 @@ void main() {
         controller: never,
       );
       expect(stale.generated, 1);
+    });
+
+    testWidgets("the decision is made for the server's day, and once made it "
+        'is current: a second check does not make another', (tester) async {
+      final coach = await _grantAndCheck(
+        tester,
+        decisionDay: '2026-10-01',
+        askAgain: true,
+        controller: _controller(FakeDayAdjustmentRepository(_noCheckIn())),
+      );
+      expect(coach.asked, ['2026-10-02']);
+    });
+
+    testWidgets("a decision made before the server's day is known is for the "
+        "phone's day", (tester) async {
+      final never = DayAdjustmentController(
+        repository: FakeDayAdjustmentRepository(_noCheckIn()),
+        clock: () => _phone,
+        serverToday: () => Completer<DateTime?>().future,
+      );
+      addTearDown(never.dispose);
+      final coach = await _grantAndCheck(
+        tester,
+        decisionDay: '2026-09-30',
+        askAgain: true,
+        controller: never,
+      );
+      expect(coach.asked, ['2026-10-01']);
     });
   });
 }

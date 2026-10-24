@@ -678,7 +678,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
                   citedCheckInMissing)) {
             // Same freshness rule as _refreshDecisionAfterEvidence: a
             // decision generated before the check-in landed is stale.
-            await widget.coach.generate();
+            await widget.coach.generate(localDate: today);
           }
           if (!mounted) return;
           setState(() {
@@ -747,7 +747,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
           (latest == null ||
               latest.localDate != today ||
               citedCheckInMissing)) {
-        await widget.coach.generate();
+        await widget.coach.generate(localDate: today);
       }
       if (!mounted) return;
       setState(() {

@@ -69,7 +69,7 @@ const bandWords: Readonly<Record<ReadinessContext["band"], string>> = Object.fre
   green: "green (no sign of a poor day)",
   amber: "amber (a lighter day may be sensible)",
   red: "red (a poor day)",
-  unknown: "no reading yet (usually the check-in is missing)",
+  unknown: "no reading yet",
 });
 
 const closedWords: Readonly<Record<NonNullable<ReadinessContext["unavailableReason"]>, string>> =
@@ -104,9 +104,7 @@ const joinAreas = (areas: readonly ContextJointArea[]) =>
 /** The lines of the card's block, with its date marked as a record. */
 function readinessLines(card: ReadinessContext): string[] {
   const lines = [
-    `Today's readiness card (${
-      record(card.localDate)
-    }), worked out by Tracend from the athlete's check-in, sleep and recovery.`,
+    `Today's readiness card (${record(card.localDate)}), as Tracend worked it out.`,
     `Readiness: ${bandWords[card.band]}${
       card.confidence === null ? "" : `; Tracend's confidence in the reading: ${card.confidence}`
     }.`,

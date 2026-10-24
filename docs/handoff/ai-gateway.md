@@ -1762,6 +1762,14 @@ nothing when `cardio_withheld` names a reason, no deload line on a safety-route 
 prompt text only; A8 `buildNextSessionAdjustment` and the A5 daily snapshot do not know the day adjustment.
 `intensity_or_phase` tool text now says a deload is one week (send 1).
 
+**Review round 1.** (1) The daily decision is now requested for the server day: `CoachRepository.generate({localDate})`
+sends it to coach-decide (the phone's date only before the server day is known), so the decision Today treats as
+current is the one it asked for and a second refresh does not make another (tested with phone day != server day).
+coach-decide accepts any well-formed `YYYY-MM-DD` and does not bound or override it server-side (only the daily
+rate limit applies; `prepare_daily_coaching` does not compare it with the athlete's day), so the app is what keeps
+it right. (2) The readiness block no longer names a check-in, sleep or recovery: a card can come from a pain
+report or a hold alone (tested without a check-in).
+
 **Daily coaching retry and error codes.** Production showed `anthropic_request_failed` for about 5 of 9 daily
 calls, about 400 ms each. Reading the path: coach-decide made one request per run and no retry, and
 `gatewayFailureCode` folded every 5xx, 529, 4xx and broken connection into one code, so the cause could not be

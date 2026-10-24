@@ -95,7 +95,7 @@ class _FakeCoachRepository implements CoachRepository {
   }
 
   @override
-  Future<CoachDecision> generate() async {
+  Future<CoachDecision> generate({String? localDate}) async {
     generateCalls++;
     return latest ??
         CoachDecision(

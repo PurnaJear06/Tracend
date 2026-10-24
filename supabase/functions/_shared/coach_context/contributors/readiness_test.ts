@@ -187,7 +187,7 @@ Deno.test("each state of the card renders its own facts and its own rules", asyn
   assertStringIncludes(closed.text, "The card is closed: the session has already started.");
 
   const noReading = await rendered(payload({ band: "unknown", confidence: null }));
-  assertStringIncludes(noReading.text, "no reading yet");
+  assertStringIncludes(noReading.text, "Readiness: no reading yet");
   assert(!noReading.text.includes("confidence"));
   assertStringIncludes(green.text, "confidence in the reading: medium");
 });
@@ -507,4 +507,39 @@ Deno.test("the migration's reader returns exactly the keys the context parser kn
     sql,
     "revoke all on function public.get_readiness_context_v1(uuid, date) from public, anon, authenticated;",
   );
+});
+
+Deno.test("a card from a pain report or a hold alone does not claim a check-in, sleep or recovery behind it", async () => {
+  const cards = [
+    // Only a hold on a joint: no reading, nothing offered.
+    payload({
+      band: "unknown",
+      confidence: null,
+      joint_states: [{ area: "knee", state: "held", persistent: false }],
+    }),
+    // Only a pain report that routed out.
+    payload({
+      band: "red",
+      confidence: null,
+      safety_route: "clinician_today",
+      joint_states: [{ area: "back", state: "held", persistent: false }],
+    }),
+    // A limited joint with an adjustment and no confidence.
+    payload({
+      band: "unknown",
+      confidence: null,
+      kind: "joint_adjust",
+      status: "proposed",
+      joint_states: [{ area: "shoulder", state: "limited", persistent: true }],
+    }),
+  ];
+  for (const data of cards) {
+    const result = await rendered(data);
+    assertEquals(result.trace, { readiness: "ok" });
+    assertStringIncludes(
+      result.text,
+      "Today's readiness card (2026-10-24), as Tracend worked it out.",
+    );
+    assert(!/check-in|sleep|recover|confidence/i.test(result.text), result.text);
+  }
 });
