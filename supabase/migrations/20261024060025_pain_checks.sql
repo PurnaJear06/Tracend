@@ -1364,6 +1364,8 @@ begin
       'joint_states', states,
       'exercise_joint_options', exercise_options));
 end $$;
+revoke all on function private.day_adjustment_compute(uuid, date, boolean)
+  from public, anon, authenticated;
 
 create or replace function private.day_adjustment_stands(p_row public.day_adjustments, p_payload jsonb)
 returns boolean language sql immutable set search_path = '' as $$
