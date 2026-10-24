@@ -22,16 +22,21 @@ Map<String, dynamic> _row(String id, String role, String text, int minute) => {
   'created_at': '2026-10-24T08:0$minute:00Z',
 };
 
-/// A PostgREST stand-in that honours the `order` parameter the way the real
-/// one does, rows without a direction included: descending by default is
-/// postgrest-dart's, so the repository must ask for ascending itself.
+/// A PostgREST stand-in that honours every column of the `order` parameter
+/// the way the real one does: descending by default is postgrest-dart's, so
+/// the repository must ask for ascending itself.
 class _Server {
-  final rows = [
-    _row('a1', 'assistant', 'Keep today’s session.', 1),
-    _row('u1', 'user', 'Should I train legs today?', 0),
-    _row('a2', 'assistant', 'Eat protein after.', 3),
-    _row('u2', 'user', 'And what should I eat?', 2),
-  ];
+  _Server([List<Map<String, dynamic>>? rows])
+    : rows =
+          rows ??
+          [
+            _row('a1', 'assistant', 'Keep today’s session.', 1),
+            _row('u1', 'user', 'Should I train legs today?', 0),
+            _row('a2', 'assistant', 'Eat protein after.', 3),
+            _row('u2', 'user', 'And what should I eat?', 2),
+          ];
+
+  final List<Map<String, dynamic>> rows;
 
   late final client = SupabaseClient(
     'https://tracend-test.supabase.co',
@@ -57,16 +62,22 @@ class _Server {
         case '/rest/v1/rpc/get_my_coach_context_status':
           return json({'sources': <Object>[]});
         case '/rest/v1/coach_messages':
-          final sorted = [...rows];
-          final order = request.url.queryParameters['order'] ?? '';
-          // Only the first column matters here: created_at.
-          final ascending = order.split(',').first.contains('.asc');
-          sorted.sort(
-            (a, b) => (a['created_at'] as String).compareTo(
-              b['created_at'] as String,
-            ),
-          );
-          return json(ascending ? sorted : sorted.reversed.toList());
+          final keys = [
+            for (final part
+                in (request.url.queryParameters['order'] ?? '')
+                    .split(',')
+                    .where((part) => part.isNotEmpty))
+              (part.split('.').first, part.contains('.asc')),
+          ];
+          final sorted = [...rows]
+            ..sort((a, b) {
+              for (final (column, ascending) in keys) {
+                final compared = '${a[column]}'.compareTo('${b[column]}');
+                if (compared != 0) return ascending ? compared : -compared;
+              }
+              return 0;
+            });
+          return json(sorted);
       }
       return json(<Object>[]);
     }),
@@ -82,7 +93,11 @@ class _Memory implements CoachThreadMemory {
   Future<void> remember(String threadId) async {}
 }
 
-Future<void> _open(WidgetTester tester, Size size) async {
+Future<void> _open(
+  WidgetTester tester,
+  Size size, {
+  List<Map<String, dynamic>>? rows,
+}) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
@@ -97,7 +112,7 @@ Future<void> _open(WidgetTester tester, Size size) async {
       home: Scaffold(
         body: CoachScreen(
           repository: SupabaseCoachRepository(
-            _Server().client,
+            _Server(rows).client,
             now: () => _now,
           ),
           threadMemory: _Memory(),
@@ -124,6 +139,24 @@ void main() {
     ];
     expect(tops, orderedEquals([...tops]..sort()));
     expect(tops.toSet(), hasLength(4));
+  });
+
+  testWidgets('a question and its answer stored in the same instant read '
+      'question first, whatever their ids', (tester) async {
+    // One transaction stores both rows, so they share created_at; these ids
+    // would put the answer first if the id settled the tie.
+    await _open(
+      tester,
+      const Size(800, 2400),
+      rows: [
+        _row('b-question', 'user', 'Should I train legs today?', 0),
+        _row('a-answer', 'assistant', 'Keep today’s session.', 0),
+      ],
+    );
+    expect(
+      tester.getTopLeft(find.text('Should I train legs today?')).dy,
+      lessThan(tester.getTopLeft(find.text('Keep today’s session.')).dy),
+    );
   });
 
   testWidgets('a restored conversation opens on its newest message', (

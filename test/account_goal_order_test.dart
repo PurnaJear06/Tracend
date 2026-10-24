@@ -44,7 +44,7 @@ void main() {
               request.headers['Accept']?.contains('vnd.pgrst.object') == true;
           return http.Response(
             jsonEncode(single ? <String, Object?>{} : <Object>[]),
-            single ? 200 : 200,
+            200,
             headers: {'content-type': 'application/json'},
             request: request,
           );

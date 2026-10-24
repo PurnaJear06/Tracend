@@ -494,7 +494,7 @@ void main() {
       await repository.loadMessages(_threadId);
       // postgrest-dart sorts descending unless told otherwise; a descending
       // read puts every answer above its question.
-      expect(server.messageOrders, ['created_at.asc,id.asc']);
+      expect(server.messageOrders, ['created_at.asc,role.desc,id.asc']);
     });
 
     test('a thread hides the questions the server marked superseded', () async {
