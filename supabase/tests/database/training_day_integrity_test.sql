@@ -499,7 +499,8 @@ declare
   d integer := extract(isodow from private.local_date_for(uid))::integer;
 begin
   insert into public.user_profiles(user_id, experience_level, equipment)
-  values (uid, 'intermediate', array['dumbbells', 'barbell', 'bench', 'cables', 'machines']);
+  values (uid, 'intermediate', array['dumbbells', 'barbell', 'bench', 'cables', 'machines', 'pull_up_bar',
+    'kettlebells', 'bands']);
   insert into public.training_plans(id, user_id, title, source) values (pl, uid, 'Plan', 'imported');
   insert into public.training_plan_versions(id, user_id, plan_id, version_number, status, block_weeks,
     sessions_per_week, prescription, rationale, approved_at, effective_date)

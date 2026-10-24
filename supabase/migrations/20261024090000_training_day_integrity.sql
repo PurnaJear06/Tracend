@@ -65,8 +65,8 @@ revoke all on function private.default_workout_weekdays(uuid, integer) from publ
 create function private.fill_workout_weekdays(p_version uuid)
 returns void language sql set search_path = '' as $$
   update public.planned_workouts w
-  set preferred_weekday = (private.default_workout_weekdays(r.user_id, r.n))[r.pos]
-  from (select x.id, x.user_id, count(*) over () as n, row_number() over (order by x.workout_order) as pos
+  set preferred_weekday = (private.default_workout_weekdays(r.user_id, r.n))[r.pos::integer]
+  from (select x.id, x.user_id, (count(*) over ())::integer as n, row_number() over (order by x.workout_order) as pos
     from public.planned_workouts x where x.plan_version_id = p_version) r
   where w.id = r.id
     and not exists (select 1 from public.planned_workouts y
