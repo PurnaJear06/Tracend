@@ -16,6 +16,7 @@ export const deloadSuppressions = [
   "screening",
   "block_running",
   "recent_deload",
+  "declined_recently",
   "not_enough_training",
   "no_plan",
   "safety_route",

@@ -8,7 +8,7 @@ select no_plan();
 
 insert into auth.users(id, role)
 select ('b5400000-0000-4000-8000-0000000000' || lpad(n::text, 2, '0'))::uuid, 'authenticated'
-from generate_series(1, 30) n;
+from generate_series(1, 36) n;
 
 create function pg_temp.u(p_n integer) returns uuid language sql as $$
   select ('b5400000-0000-4000-8000-0000000000' || lpad(p_n::text, 2, '0'))::uuid
@@ -61,6 +61,23 @@ begin
     p_pain, true);
 end $$;
 
+-- A health check the athlete passed: hard cardio is open only for an athlete with a cleared row.
+create function pg_temp.cleared(p_n integer) returns void language plpgsql as $$
+begin
+  insert into public.onboarding_screenings(user_id, exercises_regularly, known_disease, symptoms,
+    cleared_by_professional, outcome)
+  values (pg_temp.u(p_n), true, false, false, false, 'cleared');
+end $$;
+
+-- Today's check-in with the athlete saying they cannot train.
+create function pg_temp.unavailable(p_n integer) returns void language plpgsql as $$
+declare uid uuid := pg_temp.u(p_n);
+begin
+  insert into public.daily_check_ins(user_id, local_date, timezone, revision, idempotency_key,
+    sleep_quality, energy, soreness, hunger, mood, pain_severity, available_to_train)
+  values (uid, private.local_date_for(uid), 'UTC', 1, gen_random_uuid(), 3, 3, 3, 3, 3, 0, false);
+end $$;
+
 create function pg_temp.goal(p_n integer, p_type text) returns void language plpgsql as $$
 begin
   insert into public.user_goals(user_id, goal_type, priority, status)
@@ -95,6 +112,9 @@ select ok(has_function_privilege('authenticated', 'public.get_my_training_guidan
 
 -- The week's numbers -------------------------------------------------------------------------------------------------
 
+select pg_temp.cleared(1);
+select pg_temp.cleared(19);
+select pg_temp.cleared(25);
 select pg_temp.summaries(1, array[0, 1, 2, 3, 4, 5, 6]);
 select pg_temp.workout(1, 5, 'WALKING', 30);
 select pg_temp.workout(1, 3, 'RUNNING', 45);
@@ -241,6 +261,34 @@ values (pg_temp.u(26), true, false, true, false, 'see_professional');
 select is(pg_temp.guidance(26) ->> 'cardio_withheld', 'safety_route',
   'a safety route is named before the health check');
 select is(pg_temp.guidance(1) ->> 'cardio_withheld', null, 'and an ordinary day withholds nothing');
+
+-- Review fixes: hard cardio needs a cleared row and an available athlete; five more workout names ----------------------------------
+
+select pg_temp.cleared(31);
+select pg_temp.unavailable(31);
+select is(pg_temp.week(31) ->> 'vigorous_allowed', 'false',
+  'an athlete who says they cannot train today is offered no hard cardio, whatever the band');
+select pg_temp.cleared(32);
+select is(pg_temp.week(32) ->> 'vigorous_allowed', 'true',
+  'and the same cleared athlete on a green band, with no unavailable answer, is');
+select is(pg_temp.week(31) ->> 'vigorous_sessions_max', '2', 'the weekly cap does not depend on today''s answer');
+
+select is(pg_temp.week(33) ->> 'vigorous_allowed', 'false',
+  'with no screening row the athlete is not cleared for hard cardio');
+select is(private.current_screening_outcome(pg_temp.u(33)), 'cleared',
+  'while the screening outcome itself still reads cleared for an athlete never screened');
+select pg_temp.cleared(34);
+select is(pg_temp.week(34) ->> 'vigorous_allowed', 'true', 'a cleared row opens it');
+
+select pg_temp.summaries(35, array[0, 1, 2, 3, 4, 5, 6]);
+select pg_temp.workout(35, 1, 'WHEELCHAIR_WALK_PACE', 10);
+select pg_temp.workout(35, 2, 'WHEELCHAIR_RUN_PACE', 10);
+select pg_temp.workout(35, 3, 'CROSS_COUNTRY_SKIING', 10);
+select pg_temp.workout(35, 4, 'PADDLE_SPORTS', 10);
+select pg_temp.workout(35, 5, 'SOCIAL_DANCE', 10);
+select pg_temp.workout(35, 6, 'WHEELCHAIR', 10);
+select is(pg_temp.week(35) -> 'done_min', '50'::jsonb,
+  'the wheelchair walk and run paces, cross-country skiing, paddle sports and social dance count; a plain wheelchair workout does not');
 
 -- The easy-cardio day and the weekly row quote one dose -----------------------------------------------------------------------------------
 

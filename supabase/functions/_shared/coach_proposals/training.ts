@@ -513,7 +513,7 @@ export function buildIntensityOrPhase(
       rationale: `${reasonText(intent.reason, intent.note)} For ${plural(weeks, "week")} your ` +
         (deload
           ? `sets are halved, ${
-            result.loadsHeld ? "loads stay where your last sets left them, " : ""
+            result.loadsHeld ? "loads stay at your current working weights, " : ""
           }and effort stays at ${deloadRpeCap.value} or below.`
           : `effort stays at ${moderateEffortRpe} or below (about three reps left in the tank).`) +
         ` Your regular plan returns after ${shortDate(endsOn)}.`,

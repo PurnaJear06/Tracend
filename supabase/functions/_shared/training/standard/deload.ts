@@ -2,7 +2,8 @@
 // The week is built by the Coach proposal builder (_shared/coach_proposals/training.ts) from the
 // values below, so the athlete approves a card, a new plan version is written, an audit event is
 // stored and the regular plan returns on its own. When one could help is worked out in SQL
-// (migration 20261024060125_deloads.sql: private.deload_rules, private.deload_signals) because the
+// (migrations 20261024060125_deloads.sql and 20261024060325_deload_cardio_review_fixes.sql:
+// private.deload_rules, private.deload_signals) because the
 // sessions, check-ins and targets live in the database; a test keeps this file equal to the
 // migration. Nothing here applies a deload: the signals only suggest, and the athlete decides.
 // Heart rate is not an input to any value (decision D9).
@@ -96,6 +97,14 @@ export const deloadRecentDays = sourced(
     "signals say. The athlete can still ask for a deload at any time.",
 );
 
+/** Days after a declined or unanswered deload proposal before another is suggested. */
+export const deloadDeclinedCooldownDays = sourced(
+  14,
+  ["tracend_in_house"],
+  "In-house: an athlete who said no, or let the card lapse, is not asked again for two weeks. " +
+    "The athlete can still ask Coach for a deload at any time.",
+);
+
 /** Weeks of the last few that must contain a completed session. */
 export const deloadActiveWeeks = sourced(
   Object.freeze({ windows: 4, minActive: 3 }),
@@ -119,6 +128,7 @@ export function deloadRulesJson(): Readonly<Record<string, unknown>> {
     block_done_min_completion_pct: deloadBlockDone.value.minCompletionPct,
     completion_window_days: deloadBlockDone.value.completionWindowDays,
     recent_deload_days: deloadRecentDays.value,
+    declined_cooldown_days: deloadDeclinedCooldownDays.value,
     active_week_windows: deloadActiveWeeks.value.windows,
     active_week_windows_min: deloadActiveWeeks.value.minActive,
   };

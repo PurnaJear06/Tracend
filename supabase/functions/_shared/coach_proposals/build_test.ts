@@ -998,7 +998,7 @@ Deno.test("a deload holds the last working load, never the target's step up", ()
       { kind: "intensity_or_phase", reason: "fatigue", level: "deload", weeks: 1 },
       state,
     )).rationale,
-    "loads stay where your last sets left them",
+    "loads stay at your current working weights",
   );
 });
 

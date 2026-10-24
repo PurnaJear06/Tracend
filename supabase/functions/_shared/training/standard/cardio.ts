@@ -1,6 +1,6 @@
 // Cardio dosing (B5-4, rules version cardio-v1): how much cardio a week, what counts, and what
-// intensity is open today. The week is worked out in SQL (migration 20261024060225_cardio_dosing.sql:
-// private.cardio_rules, private.cardio_week) because the workouts and the check-in live in the
+// intensity is open today. The week is worked out in SQL (migrations 20261024060225_cardio_dosing.sql
+// and 20261024060325_deload_cardio_review_fixes.sql: private.cardio_rules, private.cardio_week) because the workouts and the check-in live in the
 // database; a test keeps this file equal to the migration. Heart rate may inform cardio dosing
 // (decision D9): the easy ceiling is a share of heart-rate reserve that the app turns into beats
 // per minute from the athlete's own profile, with the talk test as the plain-words rule. It never
@@ -121,6 +121,11 @@ export const cardioTypes = sourced<readonly string[]>(
     "CARDIO_DANCE",
     "MIXED_CARDIO",
     "HIGH_INTENSITY_INTERVAL_TRAINING",
+    "WHEELCHAIR_WALK_PACE",
+    "WHEELCHAIR_RUN_PACE",
+    "CROSS_COUNTRY_SKIING",
+    "PADDLE_SPORTS",
+    "SOCIAL_DANCE",
   ]),
   ["tracend_in_house"],
   "In-house list of the plugin's workout types that are cardio; the names are the ones " +

@@ -24,6 +24,7 @@ const read = (name: string) =>
 const deloads = await read("20261024060125_deloads.sql");
 const cardio = await read("20261024060225_cardio_dosing.sql");
 const readiness = await read("20261023140024_day_adjustments.sql");
+const fixes = await read("20261024060325_deload_cardio_review_fixes.sql");
 
 const code = (sql: string) =>
   sql.split("\n").filter((line) => !line.trim().startsWith("--")).join("\n");
@@ -31,7 +32,7 @@ const code = (sql: string) =>
 const literal = (sql: string, name: string) => {
   const match = sql.match(
     new RegExp(
-      `create function private\\.${name}\\(\\)[^$]*\\$\\$\\s*select '(\\{.*?\\})'::jsonb;`,
+      `create (?:or replace )?function private\\.${name}\\(\\)[^$]*\\$\\$\\s*select '(\\{.*?\\})'::jsonb;`,
       "s",
     ),
   );
@@ -41,16 +42,18 @@ const literal = (sql: string, name: string) => {
 
 // The rules run in SQL; these tests keep the TypeScript numbers and the migrations from drifting.
 Deno.test("the deload rules in the migration are the sourced values", () => {
-  assertEquals(literal(deloads, "deload_rules"), JSON.parse(JSON.stringify(deloadRulesJson())));
+  // The newest definition (the review fixes add the cool-down after a declined proposal).
+  assertEquals(literal(fixes, "deload_rules"), JSON.parse(JSON.stringify(deloadRulesJson())));
 });
 
 Deno.test("the cardio rules in the migration are the sourced values", () => {
-  assertEquals(literal(cardio, "cardio_rules"), JSON.parse(JSON.stringify(cardioRulesJson())));
+  // The newest definition (the review fixes add five workout names).
+  assertEquals(literal(fixes, "cardio_rules"), JSON.parse(JSON.stringify(cardioRulesJson())));
 });
 
 Deno.test("the weekly row and the easy-cardio day card quote one dose", () => {
   const dose = readinessEasyCardioMinutes.value;
-  assertEquals([...(literal(cardio, "cardio_rules").easy_minutes as number[])], [...dose]);
+  assertEquals([...(literal(fixes, "cardio_rules").easy_minutes as number[])], [...dose]);
   assertEquals([...(literal(readiness, "readiness_rules").easy_cardio_minutes as number[])], [
     ...dose,
   ]);

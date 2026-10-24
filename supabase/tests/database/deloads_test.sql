@@ -9,7 +9,7 @@ select no_plan();
 
 insert into auth.users(id, role)
 select ('b5300000-0000-4000-8000-0000000000' || lpad(n::text, 2, '0'))::uuid, 'authenticated'
-from generate_series(1, 44) n;
+from generate_series(1, 56) n;
 
 create function pg_temp.u(p_n integer) returns uuid language sql as $$
   select ('b5300000-0000-4000-8000-0000000000' || lpad(p_n::text, 2, '0'))::uuid
@@ -632,6 +632,218 @@ select is((select j ->> 'kind' from r where name = 'poor_day'), 'reduce_sets',
 select is((select array[j -> 'changes' -> 0 ->> 'sets_from', j -> 'changes' -> 0 ->> 'sets_to',
     j -> 'changes' -> 0 ->> 'rpe_to'] from r where name = 'poor_day'), array['3', '2', '6'],
   'one set fewer than the deload week''s three, and effort one point under its 7');
+
+-- Review round 1 -------------------------------------------------------------------------------------------------------------------
+
+-- A deload week for the athlete's bench: 2 sets of the plan's 5 to 8 at effort 7, 60 kg held. Stored, not approved.
+create function pg_temp.bench_deload(p_n integer) returns uuid language plpgsql as $$
+declare
+  uid uuid := pg_temp.u(p_n);
+  today date := private.local_date_for(pg_temp.u(p_n));
+  payload jsonb;
+begin
+  payload := jsonb_build_object('training', jsonb_build_object('mode', 'block', 'block_kind', 'intensity',
+    'intensity_level', 'deload', 'title', 'Deload until 31 Oct', 'block_weeks', 1, 'ends_on', today + 6,
+    'weekly_structure', jsonb_build_array(jsonb_build_object('workout_order', 1, 'name', 'Upper A',
+      'objective', 'Easy week', 'preferred_weekday', extract(isodow from today)::integer,
+      'estimated_minutes', 30, 'warm_up_guidance', 'w', 'cool_down_guidance', 'c',
+      'exercises', jsonb_build_array(jsonb_build_object('exercise_order', 1, 'slug', 'barbell-bench-press',
+        'name', 'Barbell bench press', 'sets', 2, 'rep_min', 5, 'rep_max', 8, 'target_rpe', 7,
+        'rest_seconds', 120, 'notes', '', 'start_load_kg', 60))))));
+  return (public.persist_coach_proposal_v1(uid, 'intensity_or_phase', 'Deload until 31 Oct',
+    'Because you asked.', 'A benefit.', 'A downside.', 'medium',
+    '[{"code":"TRAINING_STANDARD","label":"Limits","source":"policy_evaluation"}]',
+    '{"rows":[{"label":"Sets","value":"9"}]}', '{"rows":[{"label":"Sets","value":"5"}]}',
+    payload,
+    jsonb_build_object('screening', 'cleared', 'nutrition_version_id', null, 'goal_id', null,
+      'training_version_id', (select v.id from public.training_plan_versions v
+        where v.user_id = uid and v.status = 'active')),
+    today + 6, 72) ->> 'proposal_id')::uuid;
+end $$;
+
+create function pg_temp.respond(p_n integer, p_proposal uuid, p_action text) returns void language plpgsql as $$
+begin
+  perform set_config('request.jwt.claim.sub', pg_temp.u(p_n)::text, true);
+  set local role authenticated;
+  perform public.respond_to_coach_proposal_v1(p_proposal, p_action);
+  reset role;
+end $$;
+
+-- A completed bench session p_days ago, logged against the athlete's active plan version: p_sets x p_reps at
+-- p_kg with p_rir reps left.
+create function pg_temp.bench(p_n integer, p_days integer, p_sets integer, p_reps integer,
+  p_kg numeric default 60, p_rir integer default 3) returns void language plpgsql as $$
+declare
+  uid uuid := pg_temp.u(p_n);
+  sid uuid := gen_random_uuid();
+  pid uuid; v uuid; w uuid; e uuid;
+begin
+  select pv.id, pw.id, pe.id into v, w, e
+  from public.training_plan_versions pv
+  join public.planned_workouts pw on pw.plan_version_id = pv.id and pw.user_id = pv.user_id
+  join public.planned_exercises pe on pe.planned_workout_id = pw.id and pe.user_id = pw.user_id
+  where pv.user_id = uid and pv.status = 'active' and pe.exercise_slug = 'barbell-bench-press';
+  insert into public.workout_sessions(id, user_id, plan_version_id, planned_workout_id, local_date,
+    timezone, state, idempotency_key, completed_at, duration_seconds, session_effort,
+    session_effort_source, completion_source)
+  values (sid, uid, v, w, private.local_date_for(uid) - p_days, 'UTC', 'completed', gen_random_uuid(),
+    now() - p_days * interval '1 day', 3000, 7, 'athlete', 'manual');
+  insert into public.exercise_performances(user_id, workout_session_id, planned_exercise_id,
+    exercise_order, status, performance_kind)
+  values (uid, sid, e, 1, 'performed', 'prescribed') returning id into pid;
+  insert into public.exercise_sets(user_id, exercise_performance_id, set_number, repetitions, load_kg, rir, completed)
+  select uid, pid, s, p_reps, p_kg, p_rir, true from generate_series(1, p_sets) s;
+end $$;
+
+-- The B3 target for the athlete's bench.
+create function pg_temp.bench_target(p_n integer) returns jsonb language sql as $$
+  select t from jsonb_array_elements(private.next_session_targets(pg_temp.u(p_n))) t
+  where t ->> 'exercise_key' = 'barbell-bench-press'
+$$;
+
+-- H1: during a deload week B3 never steps the load up. The last session before the week was at the top
+-- of the range with three reps left, which on a normal week is a step up.
+select pg_temp.make_athlete(45);
+select pg_temp.bench(45, 4, 4, 8);
+select is(pg_temp.bench_target(45) ->> 'action', 'add_load', 'before the deload the top of the range with reps left adds load');
+select is((pg_temp.bench_target(45) ->> 'load_kg')::numeric, 62.5, 'one step up');
+insert into p select 'h1', pg_temp.bench_deload(45);
+select pg_temp.approve(45, (select id from p where name = 'h1'));
+select is(pg_temp.bench_target(45) ->> 'action', 'hold', 'in the deload week the same evidence holds');
+select is(pg_temp.bench_target(45) ->> 'reason', 'deload', 'with the reason deload');
+select is((pg_temp.bench_target(45) ->> 'load_kg')::numeric, 60.0, 'at the last working load');
+select is(pg_temp.bench_target(45) ->> 'reps', '8', 'and the reps the athlete reached');
+-- The second session of the lift in the same week reads the first deload session.
+select pg_temp.bench(45, 0, 2, 8);
+select is(pg_temp.bench_target(45) ->> 'action', 'hold', 'after the first deload session the target still holds');
+select is(pg_temp.bench_target(45) ->> 'reason', 'deload', 'for the same reason');
+select is((pg_temp.bench_target(45) ->> 'load_kg')::numeric, 60.0, 'at the same load');
+select is(pg_temp.bench_target(45) -> 'basis' -> 'recent' -> 0 ->> 'adjusted', 'true',
+  'and the deload session is marked adjusted, like a session done under an accepted day answer');
+
+-- H2: deload sessions are not stall evidence. During the week:
+select pg_temp.make_athlete(47);
+select pg_temp.bench(47, 30, 4, 6, 60, 2);
+select pg_temp.bench(47, 25, 4, 6, 60, 2);
+select is(pg_temp.bench_target(47) ->> 'reason', 'within_range', 'two full sessions at one load are not yet a stall');
+insert into p select 'h2_during', pg_temp.bench_deload(47);
+select pg_temp.approve(47, (select id from p where name = 'h2_during'));
+select pg_temp.bench(47, 1, 2, 6, 60, 3);
+select is(pg_temp.bench_target(47) ->> 'action', 'add_reps',
+  'a half-set deload session at the same load and reps is not the third stalled session');
+
+-- and after it: two deload sessions, then a full session matching the pre-deload reps.
+select pg_temp.make_athlete(46);
+select pg_temp.bench(46, 40, 4, 6, 60, 2);
+insert into p select 'h2_after', pg_temp.bench_deload(46);
+select pg_temp.approve(46, (select id from p where name = 'h2_after'));
+select pg_temp.bench(46, 17, 2, 6, 60, 3);
+select pg_temp.bench(46, 16, 2, 6, 60, 3);
+update public.training_plan_versions set ends_on = (select today from t) - 8
+where user_id = pg_temp.u(46) and status = 'active';
+select private.end_ended_plan_blocks(pg_temp.u(46));
+select pg_temp.bench(46, 2, 4, 6, 60, 2);
+select is((select count(*) from public.training_plan_versions where user_id = pg_temp.u(46)
+    and status = 'active' and block_kind is null), 1::bigint, 'the regular plan is back');
+select isnt(pg_temp.bench_target(46) ->> 'action', 'lower', 'the first full session after the deload is not a stall');
+select is(pg_temp.bench_target(46) ->> 'action', 'add_reps', 'it asks for one more rep, as any full session below the range top does');
+select is((select count(*) from jsonb_array_elements(pg_temp.bench_target(46) -> 'basis' -> 'recent') s
+    where s ->> 'adjusted' = 'true'), 2::bigint, 'the two deload sessions are the ones marked adjusted');
+
+-- M1: a pending deload proposal is not shown on a day with a safety route, and cannot be approved.
+select pg_temp.make_athlete(48);
+select pg_temp.sessions(48, array[1, 6, 12, 20]);
+insert into p select 'routed', pg_temp.bench_deload(48);
+select is(pg_temp.d(48) ->> 'status', 'pending', 'an open deload proposal is pending on an ordinary day');
+select pg_temp.as_user(pg_temp.u(48)::text);
+set local role authenticated;
+select public.record_pain_check_v1((select today from t), 'check_in', 'back', 5, 'rest',
+  array['bladder_bowel_saddle'], false, null, gen_random_uuid());
+reset role;
+select is(private.training_guidance(pg_temp.u(48), (select today from t)) ->> 'safety_route', 'urgent', 'an urgent red flag today');
+select is(private.training_guidance(pg_temp.u(48), (select today from t)) -> 'deload' ->> 'status', 'not_due',
+  'the pending proposal is withheld');
+select is(private.training_guidance(pg_temp.u(48), (select today from t)) -> 'deload' -> 'proposal_id', 'null'::jsonb,
+  'with no proposal id');
+select is(private.training_guidance(pg_temp.u(48), (select today from t)) -> 'deload' ->> 'suppressed_by', 'safety_route',
+  'because of the safety route');
+select is(private.training_guidance(pg_temp.u(48), (select today from t)) -> 'deload' -> 'reasons', '[]'::jsonb,
+  'and names no reason');
+set local role authenticated;
+select throws_ok($$select public.respond_to_coach_proposal_v1((select id from p where name = 'routed'), 'approve')$$,
+  '55000', 'a deload cannot be approved on a day with a safety route', 'approving it is refused');
+reset role;
+select is((select status::text from public.change_proposals where id = (select id from p where name = 'routed')),
+  'pending', 'and it stays open');
+
+select pg_temp.make_athlete(49);
+select pg_temp.sessions(49, array[1, 6, 12, 20]);
+insert into p select 'referral', pg_temp.bench_deload(49);
+select pg_temp.check_in(49, 0, 3, 3, 3, 3, 8);
+select is(private.training_guidance(pg_temp.u(49), (select today from t)) ->> 'safety_route', 'pain_referral', 'a pain of 8 today');
+select is(private.training_guidance(pg_temp.u(49), (select today from t)) -> 'deload' ->> 'suppressed_by', 'safety_route',
+  'withholds the pending proposal too');
+select is(private.training_guidance(pg_temp.u(49), (select today from t)) -> 'deload' -> 'proposal_id', 'null'::jsonb,
+  'with no proposal id');
+select pg_temp.as_user(pg_temp.u(49)::text);
+set local role authenticated;
+select throws_ok($$select public.respond_to_coach_proposal_v1((select id from p where name = 'referral'), 'approve')$$,
+  '55000', 'a deload cannot be approved on a day with a safety route', 'and approving it is refused');
+reset role;
+
+-- M2: no new suggestion for 14 days after a deload proposal was declined or ran out unanswered.
+select pg_temp.make_athlete(50);
+select pg_temp.stall_both(50);
+insert into p select 'dec13', pg_temp.bench_deload(50);
+select pg_temp.respond(50, (select id from p where name = 'dec13'), 'decline');
+update public.change_responses set created_at = now() - interval '13 days'
+where proposal_id = (select id from p where name = 'dec13');
+select is(pg_temp.d(50) ->> 'suppressed_by', 'declined_recently', 'declined 13 days ago: still held back');
+select is(pg_temp.d(50) ->> 'status', 'not_due', 'so nothing is suggested');
+select is(pg_temp.d(50) -> 'reasons', '[]'::jsonb, 'and no reason is given');
+
+select pg_temp.make_athlete(51);
+select pg_temp.stall_both(51);
+insert into p select 'dec15', pg_temp.bench_deload(51);
+select pg_temp.respond(51, (select id from p where name = 'dec15'), 'decline');
+update public.change_responses set created_at = now() - interval '15 days'
+where proposal_id = (select id from p where name = 'dec15');
+select is(pg_temp.d(51) ->> 'status', 'suggested', 'declined 15 days ago: the signals suggest again');
+select is(pg_temp.d(51) -> 'suppressed_by', 'null'::jsonb, 'with nothing in the way');
+
+select pg_temp.make_athlete(52);
+select pg_temp.stall_both(52);
+insert into p select 'exp13', pg_temp.bench_deload(52);
+update public.change_proposals set expires_at = now() - interval '13 days' where id = (select id from p where name = 'exp13');
+select is(pg_temp.d(52) ->> 'suppressed_by', 'declined_recently', 'a proposal that ran out 13 days ago holds suggestions back');
+select is(pg_temp.d(52) ->> 'status', 'not_due', 'so nothing is suggested');
+
+select pg_temp.make_athlete(53);
+select pg_temp.stall_both(53);
+insert into p select 'exp15', pg_temp.bench_deload(53);
+update public.change_proposals set expires_at = now() - interval '15 days' where id = (select id from p where name = 'exp15');
+select is(pg_temp.d(53) ->> 'status', 'suggested', 'one that ran out 15 days ago does not');
+
+-- A proposal a newer one replaced did not run out.
+select pg_temp.make_athlete(55);
+select pg_temp.stall_both(55);
+insert into p select 'old_card', pg_temp.bench_deload(55);
+insert into p select 'new_card', pg_temp.bench_deload(55);
+select is((select status::text from public.change_proposals where id = (select id from p where name = 'old_card')),
+  'expired', 'the newer card replaced the older');
+select is(pg_temp.d(55) ->> 'status', 'pending', 'the newer card is the pending one');
+select is(pg_temp.d(55) ->> 'suppressed_by', null, 'and the replaced one does not start a cool-down');
+
+-- L4: a pending proposal built on a plan version that is no longer the current one is stale, not pending.
+select pg_temp.make_athlete(54);
+select pg_temp.sessions(54, array[1, 6, 12, 20]);
+insert into p select 'moved', pg_temp.bench_deload(54);
+select is(pg_temp.d(54) ->> 'status', 'pending', 'built on the current plan version it is pending');
+update public.change_proposals
+set basis = jsonb_set(basis, '{training_version_id}', to_jsonb(gen_random_uuid()::text))
+where id = (select id from p where name = 'moved');
+select is(pg_temp.d(54) ->> 'status', 'not_due', 'built on another plan version it is not offered');
+select is(pg_temp.d(54) -> 'proposal_id', 'null'::jsonb, 'and not named');
 
 select * from finish();
 rollback;
