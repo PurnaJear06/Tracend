@@ -1712,7 +1712,8 @@ loading, or the composer holds text; the next return checks again. Tests: "comin
 Saved conversations showed the reply above its question and opened on the oldest message. postgrest-dart's
 `order(column, {ascending = false})` sorts **descending** when the direction is left out, and
 `SupabaseCoachRepository.loadMessages` called `.order('created_at')`. It now asks for
-`created_at.asc,id.asc` (the id breaks exact ties); the superseded-question filter below it already assumed
+`created_at.asc,id.asc` (the id breaks exact ties; since the lost-replies change it reads the newest 200 in the
+reverse order and flips them); the superseded-question filter below it already assumed
 oldest-first, so it is right again. App only, no migration. Every other `.order(` in `lib/` now states its
 direction, and `test/query_order_explicit_test.dart` fails the build if one does not. Changed to ascending
 because the intended order is ascending: the active goal's `priority` (1 is the top goal; Account x2 and
@@ -1722,6 +1723,37 @@ the photo-set `id` tie-break. Reads that wanted newest-first already said `ascen
 `test/coach_chat_errors_test.dart` (request order), `test/coach_restored_order_test.dart` (a restored
 conversation reads question then answer, newest last), `test/query_order_directions_test.dart` and
 `test/account_goal_order_test.dart` (the other directions).
+
+## Lost replies, idempotent writes and thread switching (2026-10-24, branch `claude/lost-replies-thread-switch`)
+
+QA audit groups E and F, app only, no migration. A write whose reply was lost, or whose retry was not idempotent,
+now settles against the server instead of guessing; switching Coach conversations can no longer mix threads.
+
+- **Coach threads.** `_openThread` takes a view token (`_beginView`, never reused), clears the messages when the
+  open starts and applies its result only if it is still the latest; `_restoreChat` checks the same token. A failed
+  open puts the previous chat back (thread, messages, failure, view token), so a send still goes to the thread on
+  screen. `New conversation` uses `_threadId ?? _previousThreadId`. `loadMessages` asks for the newest 200
+  (`coachMessageWindow`) in the exact reverse of the shown order (`created_at desc, role asc, id desc`, explicit
+  directions plus `limit`) and reverses them, so the tie-break `created_at asc, role desc, id asc` is unchanged.
+  A suggested next action or "Change it" tapped while a reply is in flight, or during the retry countdown, is
+  queued and shown ("Sends when Coach is ready") instead of dropped; a failed reply puts it in the composer.
+- **Coach proposals.** Every exception (socket, timeout, client) is a connection message. After any error the card
+  re-reads the proposal and shows what the server holds (applied, declined, change requested, undone), calling
+  `onPlanChanged` when the plan changed, including a retry refused with 55000 on an accepted proposal.
+- **Onboarding.** After a failed answer the flow reads `loadGeneration()`'s proposal status: `accepted` goes to
+  "You're set", `expired` offers the rebuild, anything unreadable keeps the proposal on screen with a "could not
+  confirm" message. A recorded reject or revision goes to Review even if the follow-up `saveDraft` fails.
+- **Nutrition.** `saveManualMeal` and `saveScheduledMeal` take an `idempotencyKey`; the manual sheet makes one per
+  entered meal, keeps its inputs and shows an error when the save fails, repeats the key on an unchanged retry and
+  makes a new one when the meal changed, and the day reloads after a failure. A failed meal photo analysis now
+  deletes its draft (`delete_my_meal`; a draft whose creation reply was lost is found by its request key). A draft
+  with no candidates opens a sheet with **Delete draft** instead of a Confirm that never enables.
+- **Apple Health.** One idempotency key per sync, reused by its retries.
+- Not in this change: workout finish (M-E3), owned by the open workout PRs.
+
+Tests: `test/coach_thread_switching_test.dart`, `test/coach_restored_order_test.dart`,
+`test/coach_proposal_card_test.dart`, `test/coach_proposal_repository_test.dart`, `test/phase_2_flow_test.dart`
+("an answer to the plan whose reply is lost"), `test/nutrition_lost_reply_test.dart`, `test/health_sync_key_test.dart`.
 
 ## Next agent starts here
 

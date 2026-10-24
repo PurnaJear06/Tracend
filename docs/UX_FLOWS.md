@@ -329,6 +329,14 @@ request."); it needs a note, which is sent with the next build. **Reject proposa
 destructive confirm, **Reject this plan?** (**Reject plan** / **Keep reviewing**); answers stay
 saved and are edited from Review.
 
+If an answer to the proposal fails (a lost reply, a retry refused as stale), the app asks the
+server what it holds before saying anything. A plan that was accepted shows **You're set.**; a
+proposal the server holds as expired offers the rebuild; one still waiting says "Your response was
+not saved. Nothing has changed; try again."; and when the server cannot be read, the app says it
+could not confirm the response and keeps the plan on screen, so it never claims a change that
+happened is missing and never offers a rebuild that would spend another generation. A rejection or
+change request that is recorded goes back to Review even when saving the draft's place fails.
+
 Approval activates exactly those workouts, then shows **You're set.** once: "Your plan is active.
 Nothing else changes without your approval.", the plan, the next session ("Next session: ‹day› ·
 ‹name› · about N min"), the daily calories and protein, and the Apple Health status, with **Go to
@@ -557,6 +565,16 @@ three separate autonomous chatbots.
   late content (a proposal card, a long reply) lays out, until the athlete touches the screen.
   The same 6-hour check runs when the athlete returns to the Coach tab or the app resumes on it,
   unless a reply is on its way or a draft is typed; a chat opened on purpose stays for that visit.
+- **Switching conversations.** Opening a saved conversation clears the messages on screen and
+  shows the loading state; only the latest open applies its result, so tapping B then C shows C,
+  and tapping B then **New conversation** shows an empty new chat, whichever load finishes last. If
+  the conversation cannot be opened, the chat that was open comes back with its messages and its
+  thread, with "Conversation could not be opened." **New conversation** on a chat that is already
+  new keeps offering the same **Continue last chat**. A conversation loads its newest 200 messages.
+- **A follow-up while Coach is busy.** A suggested next action or **Change it** tapped while a
+  reply is on its way, or during a retry countdown, is not dropped: it shows as "Sends when Coach is
+  ready: ‹text›" with **Cancel**, and goes out when Coach is free. If the reply it waited for
+  failed, the text is put in the composer instead.
 - **AI label.** A reply a model wrote carries the small label **AI answer · checked by Tracend**,
   with no provider name (D11). A reply no model wrote (the deterministic safety boundary, stored
   with provider `mock`) reads **Tracend safety answer · not AI** and never carries the AI badge. A
@@ -966,7 +984,9 @@ and a state word, so color is never the only signal:
   sheet holding **Delete meal**. Deletion then requires a destructive confirmation (**Delete this
   meal?**, Cancel as the default) explaining that the meal leaves the day's totals.
 - A draft shows **Needs review** and a **Review foods** action that restores its candidates; users
-  never need to create a second analysis to resume unfinished review.
+  never need to create a second analysis to resume unfinished review. A draft with no estimates (its
+  photo analysis failed earlier) opens a sheet that says there is nothing to review and offers
+  **Delete draft**, instead of a Confirm button that never enables.
 - Unlogged slots show **Due now**, **Planned**, **Optional**, or **Not logged** with their planned
   foods and a **Log** action.
 - With nothing logged or planned the timeline reads "Nothing logged yet".
@@ -977,6 +997,11 @@ Breakfast before 10:30, Lunch before 15:00, Snack before 17:30, then Dinner) and
 a photo**, **Choose from Photo Library**, or **Enter manually** as one grouped list. A photo meal is
 saved under the chosen type. The coach's nutrition guidance sits at the end of the screen under a
 sentence-case **Coach** label, with its confidence in words.
+
+**Enter manually** keeps its sheet open until the meal is saved. If the save fails, the sheet says
+so and keeps what was typed; **Confirm meal** again repeats the same request key, so a save whose
+reply was lost adds nothing twice, while a changed meal is a new save. The day reloads after a
+failure too.
 
 Feedback: confirming a meal (manual entry or reviewed candidates) plays the `success` haptic and
 shows a **Meal logged** toast; a deleted meal shows **Meal deleted**. Failures stay on the page in
@@ -1031,7 +1056,8 @@ AI observation                 Confirmed meal
   diagnostic · analysis: 503 meal_analysis_unavailable`. No message names a provider.
 - Failure offers **Retry**, **Enter manually**, and **Delete photo**. **Not built yet:** a photo
   failure is a notice in words with its diagnostic; a draft that cannot open says to retry or
-  delete it and enter the meal manually.
+  delete it and enter the meal manually. A failed analysis (503, 429, 422) removes the photo and
+  the draft with it, so no **Needs review** row is left behind.
 
 ## 9. Progress Review
 
@@ -1174,6 +1200,11 @@ place a Coach suggestion can be applied, and only the athlete's tap applies it:
   it can no longer be undone from here.
 - A proposal that expired, or whose plan, targets or goal changed meanwhile, is never applied: the
   card says what happened and to ask Coach again.
+- After any error (offline, a timeout, a refused retry) the card reads the proposal again. If the
+  answer had been recorded and only the reply was lost, the card shows what the server holds
+  (**Applied**, **Not now**, **Change requested**, **Undone**) and the plan screens reload when it
+  was applied or restored; otherwise it says "Could not reach Tracend. Check your connection and
+  try again." and the buttons stay usable.
 - A request the rules refuse (a calorie target under the floor, too little logging, a screening cap)
   gets no card; Coach replies with the plain reason.
 - The card carries no model or company name (D11). It renders from a proposal the caller has or
@@ -1219,6 +1250,8 @@ plan. **Not built yet:** links to source data, charts, and a proposed-adjustment
   (and once in onboarding).
 - Revocation keeps manual features usable and explains iOS settings.
 - Sync shows date range and last success instead of an indefinite spinner.
+- A sync that is retried repeats one request key, so an attempt whose reply was lost is not applied
+  twice.
 - **Heart-rate zones (C3).** The Apple Health sheet in Account, once Apple Health is connected, ends
   with a small "Heart-rate zones" section under the signals: one line with resting heart rate and the
   maximum ("Resting 59 bpm · Max 183 bpm, estimated from your age", or "from your workouts" once a
