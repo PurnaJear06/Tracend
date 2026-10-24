@@ -41,6 +41,7 @@ void main() {
             'weight_kg': 80,
           },
         ),
+        // ignore: deprecated_member_use
         extra: {
           'joint_states': [
             {'area': 'knee', 'state': 'held'},
@@ -87,7 +88,9 @@ void main() {
       // Everything else on the old list is redacted, and plain facts stay.
       expect(data['weight_kg'], redacted);
       expect(payload['note'], 'left in');
+      // ignore: deprecated_member_use
       expect(scrubbed.extra!.keys, ['kept']);
+      // ignore: deprecated_member_use
       expect(scrubbed.extra!['kept'], 'a plain fact');
       expect(scrubbed.tags, {'screen': 'today'});
       expect(scrubbed.exceptions!.single.type, 'PostgrestException');

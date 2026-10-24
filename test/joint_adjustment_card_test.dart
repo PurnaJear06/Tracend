@@ -224,7 +224,7 @@ void main() {
         tester,
         _held(
           explanation:
-              "Your check-in looks fine. Train as planned. Your knee is on "
+              'Your check-in looks fine. Train as planned. Your knee is on '
               "hold until you've had it checked.",
         ),
       );
@@ -303,7 +303,7 @@ void main() {
       ('clinician', 'See a doctor or physio'),
       ('pain_referral', "Don't train through this pain"),
     ]) {
-      testWidgets('$route', (tester) async {
+      testWidgets(route, (tester) async {
         final json = _fixture('day_adjustment_v1_1_red_flag')
           ..['safety_route'] = route;
         await _pump(tester, json);
@@ -315,7 +315,7 @@ void main() {
 
     testWidgets('the two-week line goes with the referral', (tester) async {
       final json = _fixture('day_adjustment_v1_1_red_flag');
-      (json['joint_states'] as List)[0]['persistent'] = true;
+      ((json['joint_states'] as List)[0] as Map)['persistent'] = true;
       await _pump(tester, json);
       expect(_text('Get this checked today'), findsOneWidget);
       expect(
@@ -488,7 +488,7 @@ void main() {
 
     test('a swap without its replacement is not a swap', () {
       final json = _swap(_fixture('day_adjustment_v1_1_joint'));
-      (json['changes'] as List)[0]['swap_to_name'] = null;
+      ((json['changes'] as List)[0] as Map)['swap_to_name'] = null;
       final change = DayAdjustment.tryParse(json)!.changes.single;
       expect(change.jointAction, isNull);
     });
