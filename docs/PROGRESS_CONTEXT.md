@@ -122,8 +122,14 @@ one week, half the sets, loads held, effort 7 or lower. Nothing is applied by ru
 nothing. Review round 1 (migration `20261024060325`): B3 holds instead of stepping up during a deload week
 and ignores deload sessions as stall evidence, a pending deload is withheld and unapprovable on a safety-route
 day, 14 days of quiet after a declined or expired proposal, and the cardio gates (unavailable today, a cleared
-screening row). Not built yet: the `training-proposals` Edge Function (lead: config and deploy list), the Train
-card and Cardio row (app), the Coach contributor. Details: "B5-3 and B5-4" in
+screening row). **App and function (2026-10-24, branch `claude/train-deload-cardio-ui`, PR open):** Train shows
+"A lighter week could help" ("Suggested by Tracend": the reasons in words, one tap to **See what changes**,
+then Approve or Not now through the Coach proposal card, Undo for 7 days; a running week keeps a
+**Details and undo** card) and a **Cardio this week** row with a sheet (minutes against 150, hard cardio
+open or easy only, "Not enough Apple Health data" when `done_min` is null, never 0). The new JWT function
+`training-proposals` stores the pending deload for a `suggested` status (same one-week builder as Coach,
+no model); it is in `config.toml`, `deploy.yml` and `hotfix.yml`, so it deploys with the merge and needs no
+reinstall order beyond the app build. Not built yet: the Coach contributor. Details: "B5-3 and B5-4" in
 [`training-engine.md`](./handoff/training-engine.md).
 
 **Unfinished workouts (2026-10-24, branch `claude/unfinished-workout`, PR open):** the owner's Legs B (23 sets logged,

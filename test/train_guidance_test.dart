@@ -382,8 +382,8 @@ void main() {
       expect(_text(cardioTitle), findsOneWidget);
       expect(_text('85 of 150 min'), findsOneWidget);
       await openSheet(tester);
-      expect(_text('85'), findsOneWidget);
-      expect(_text(' of 150 min'), findsOneWidget);
+      // The row and the sheet's big figure.
+      expect(find.text('85 of 150 min', findRichText: true), findsNWidgets(2));
       expect(
         _text('65 min to go to reach the weekly guideline.'),
         findsOneWidget,
@@ -391,7 +391,7 @@ void main() {
       expect(_text(cardioGuideline), findsOneWidget);
       expect(find.textContaining('build toward 300 minutes'), findsOneWidget);
       expect(_text(cardioAllModerate), findsOneWidget);
-      expect(_text('Last 7 days, to Sat 24 Oct'), findsNothing);
+      expect(_text('Last 7 days, to Sat 24 Oct'), findsOneWidget);
       expect(_text(cardioPermissionNote), findsOneWidget);
       expect(_text(cardioProvenance), findsOneWidget);
     });
