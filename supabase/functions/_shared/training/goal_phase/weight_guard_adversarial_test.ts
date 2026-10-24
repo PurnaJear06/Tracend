@@ -307,7 +307,7 @@ Deno.test("stone, kilogrammes, markdown and look-alike digits are read as the we
   assertEquals(kg("You'll be 5O kg by March."), ["50.0"]);
 });
 
-Deno.test("a figure is read from the start of its number, never from inside it", () => {
+Deno.test("a figure is read from the start of its number: a small decimal or a thousands group is no weight", () => {
   const kg = (sentence: string) => weightFiguresIn(sentence).flatMap((f) => f.kgs);
   assertEquals(kg("Falling 0.26 kg a week."), []);
   assertEquals(kg("Falling **0.47 kg** a week."), []);
@@ -316,4 +316,22 @@ Deno.test("a figure is read from the start of its number, never from inside it",
   assertEquals(kg("You'll be 55.5 kg by March."), [55.5]);
   assertEquals(kg("You'll be 55,5 kg by March."), [55.5]);
   assertEquals(kg("You'll be 55-58 kg by March."), [55, 58]);
+});
+
+// Round 2 (hostile review of #177): a label run into a weight still fails closed, and digits of
+// another script are the digits they stand for.
+Deno.test("a weight run into a label or written in another script is still read", () => {
+  const facts = { currentKg: 74.8, floorKg: 59.9, hasTarget: true, direction: -1 } as const;
+  const ask = "How am I doing?";
+  assertEquals(
+    weightClaimViolation("Week 2.45 kg is where you will be by March.", ask, facts),
+    "weight_below_healthy_floor",
+  );
+  assertEquals(
+    weightClaimViolation("You will weigh ४५ kg by March.", ask, facts),
+    "weight_below_healthy_floor",
+  );
+  // A rate and a small amount stay what they are.
+  assertEquals(weightClaimViolation("You will lose 1.25 kg a week.", ask, facts), null);
+  assertEquals(weightClaimViolation("You will lose 0.45 kg by Friday.", ask, facts), null);
 });
