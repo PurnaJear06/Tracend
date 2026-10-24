@@ -981,9 +981,91 @@ the shell and given to Today and Train), the card (`day_adjustment_card.dart`) a
   `today_day_adjustment_test.dart`, `train_day_adjustment_test.dart`,
   `contract/day_adjustment_rpc_contract_test.dart` (parses every B4-1 fixture, pins the parameters).
 
+**B5-3 and B5-4 (review; deloads and cardio dosing, server side; migrations `20261024060125_deloads.sql` and `20261024060225_cardio_dosing.sql`, code 25).**
+Based on the owner-approved B4/B5 design (2026-10-23; O6, O7, O11, O13 as recommended, O1 amended).
+ALGORITHMS section 4 ("Deloads", "Cardio Dosing") has the rules; AI_SAFETY_SPEC section 6 ("Deloads
+and cardio dosing") the boundaries. No app change, no new table, no Edge Function.
+- **Deloads.** `private.deload_rules()` (rules `deload-v1`), `private.deload_signals(user, date)` (status,
+  reasons, last end, weeks since, proposal, suppression), `private.readiness_band_on` (the band a past day
+  had, from that day's check-in, sleep and stored recovery score; never rescored here),
+  `private.is_deload_proposal`, `private.training_guidance` (built 1.0 here, 1.1 in B5-4) and the two
+  readers `get_my_training_guidance_v1(local_date)` (own today only; 22023 otherwise) and
+  `get_training_guidance_for_v1(p_user_id, p_local_date)` (service role). Read-only. The A8 builder
+  (`coach_proposals/training.ts`) now builds a deload as exactly one week (a longer length asked for is
+  cut to one, not refused), half the sets rounded up, loads held, effort 7 or lower (no target becomes
+  7), from `standard/deload.ts`; the old in-house `deloadRules` is deleted. The stored block carries
+  `training.intensity_level` (`deload` or `moderate`), which is how SQL tells a deload from another effort
+  block; a block approved before the key existed is found by its title "Deload until <date>".
+- **Cardio.** `private.cardio_rules()` (`cardio-v1`) and `private.cardio_week(user, date, band)`;
+  `private.training_guidance` is replaced by 1.1, B5-3's text plus three hunks (pinned by
+  `deload_cardio_test.ts`); the readers are unchanged. Observed minutes are the union of the
+  athlete's cardio workouts (overlaps count once, 180 minutes a workout), so a watch and a phone
+  recording one walk never double count.
+- **Strictest wins, and the safety route.** Nothing here computes a safety route: the guidance reads it
+  from `private.day_adjustment_compute` (so it is exactly the day adjustment's route, including a held area's
+  urgent or same-day outcome), turns a suggested deload into `not_due` (`suppressed_by` `safety_route`) and
+  withholds the cardio dose (`cardio_withheld` `safety_route`). A running deload is an ordinary plan
+  version, so a held or limited joint still swaps or drops its exercise and a poor night still takes a
+  set off it (pgTAP `deloads_test.sql`, the interplay groups). The original migrations redefine no
+  existing function except B5-3's own; review round 1 (below) replaces `next_session_targets` and
+  `respond_to_coach_proposal_v1` in a new migration.
+- **Choices where the brief was ambiguous (the safer one taken).**
+  (a) Deload start load: the lower of the last working load and the B3 target's load (for an assisted
+  exercise the higher help), not the last load alone: a target that steps down is followed, a step up never.
+  (b) A deload length other than 1 is cut to 1 rather than refused, so Coach's request still produces
+  a card. (c) `vigorous_allowed` needs a green band today: no check-in (unknown), amber and red are
+  easy-only days, and a joint that is held or limited closes it too; `vigorous_sessions_max` follows the
+  health check only. (d) Under `see_professional` no cardio dose is given (the brief was silent).
+  (e) An undone deload is not counted as the last one; a block ended early counts as ended today.
+  (f) A past day's band uses that day's assessment only (a pain of 7 or more reads red) and not that
+  day's joint or pain-report routes. (g) "Opt-in" for the block-end offer (O13) is read as "only ever a
+  suggestion"; no preference is stored. (h) The cardio dose counts only plugin workout names that are
+  cardio; undercounting can only understate the week. (i) HHS 2018 is not in `sources.ts` (it has no DOI or
+  PubMed id; WHO 2020 and ACSM 2011 state the same dose). (j) `rpe_cap` 7, the half and the one week are in
+  `deload_rules()` although SQL does not read them: the builder does, and one drift test pins both sides.
+- **B3 after a deload.** The first session after a deload week reads as incomplete against the
+  restored plan's full set count, so B3 holds the load for it (reason `incomplete`) and moves on after one
+  full session. Review round 1 corrected the earlier claim that deload sessions need no marking: a held
+  load at half the sets looked like a stall (same load, reps not rising) and gave `lower` during the week
+  and on the first full session after it. Sessions logged under a deload week's plan version are now
+  marked `adjusted` in `next_session_targets`, so they are never stall or lowering evidence.
+- **Review round 1 (migration `20261024060325_deload_cardio_review_fixes.sql`, PR #174).** Seven functions
+  replaced with `create or replace`, each pinned as its latest earlier definition plus the intended hunks by
+  `deload_cardio_review_test.ts`: `deload_rules` (+`declined_cooldown_days` 14), `deload_signals`,
+  `cardio_rules`, `cardio_week`, `training_guidance`, `next_session_targets`, `respond_to_coach_proposal_v1`.
+  (H1) While a deload week is the active plan, a B3 target never steps up: `add_load` becomes `hold`, reason
+  `deload`, at the last working load (the app prefills from the target before the plan's `start_load_kg`).
+  (H2) Deload sessions are `adjusted` evidence (see above). (M1) A pending deload is withheld on a
+  safety-route day (no `proposal_id`, `not_due`, `suppressed_by` `safety_route`) and approving one on such
+  a day is refused with 55000. (M2) A declined deload proposal, or one that ran out unanswered, suppresses
+  new suggestions for 14 days (`suppressed_by` `declined_recently`; a proposal replaced by a newer one does
+  not count, nor does one that expired for another reason such as the plan moving on: the audit reason
+  decides, and a timeout found by an approval attempt, reason `expired`, still counts; a proposal asked for
+  through Coach and declined counts the same). `last_ended_on` is now the day the block-ended audit event was
+  written (never later than the block's own last day), so a deload ended early keeps one end date and the
+  28 days count from it (before, it moved forward every day). (L1) `vigorous_allowed` is
+  false when today's check-in says not available to train. (L2) It also needs a screening row: no row is not
+  cleared for hard cardio (`current_screening_outcome` itself is unchanged, no row still reads cleared
+  elsewhere). (L3) Five more cardio names (wheelchair walk and run paces, cross-country skiing, paddle
+  sports, social dance); a denied Apple Health workout permission reads as 0 minutes, not as missing.
+  (L4) A pending proposal built on a plan version that is no longer current is stale, not pending. (L6) The
+  Coach tool text now says a deload is always one week; the rationale says loads stay at the current working
+  weights, or, when a B3 target had stepped down, that loads don't go up and the small step down is kept. (M3, not done) `training_guidance` still computes
+  `next_session_targets` twice (through the day adjustment and the deload signals) and the screening
+  outcome three times; passing them in would change several signatures. Run EXPLAIN ANALYZE on
+  `get_training_guidance_for_v1` before the Coach reads it every turn.
+- **Not built.** The `training-proposals` Edge Function (O7): it needs `supabase/config.toml` and the
+  deploy workflow (lead); until then a rules-suggested deload has no card and an athlete gets one by asking
+  Coach. The Train card and the Cardio row (app); the `readiness` contributor (ai-gateway); eval cases. The
+  contract requests 7 to 9 in the program doc say what each needs.
+- **In-house numbers needing a coach's review before an external beta:** the half, the cap of 7, the
+  thresholds (two lifts, four of seven days, 75%, 28 days, three of four weeks), the stretch-goal mapping,
+  the two hard sessions, the 180-minute cap and the five-of-seven-days rule.
+- **Tests that fail without each rule.** pgTAP `deloads_test.sql`, `cardio_dosing_test.sql`; Deno
+  `deload_cardio_test.ts` and the deload tests in `coach_proposals/build_test.ts`.
+
 ## Next agent starts here
 
-B4-2 (the app side of the readiness adjustment) and B5-2 (the pain check in the app) are in review (B5-2 builds on
-B5-1's RPCs and B4-1's); B5 (deloads, cardio dosing) builds on B3's targets (`private.next_session_targets`,
-hub 1.7), the templates and B4-1's `day_adjustments`. B6's server wiring is done (see the B6
+B4-2 (the app side of the readiness adjustment) and B5-2 (the pain check in the app; builds on B5-1's RPCs and B4-1's) are in review; B5-3 and B5-4 (deloads, cardio dosing; server) are in review: the app card and
+cardio row and the `training-proposals` function are what is left of them. B6's server wiring is done (see the B6
 section). The briefs are in the program doc.

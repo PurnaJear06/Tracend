@@ -766,6 +766,12 @@ Deno.test("proposals are offered only when asked for, in the rules; the schema a
   assertStringIncludes(prompt(true), "# Proposing a change");
   assertStringIncludes(prompt(true), "proposal you can approve");
   assert(!prompt(false).includes("# Proposing a change"));
+  // A deload is one week whatever length is asked for (A8 builder, standard/deload.ts); the tool text says so.
+  assertStringIncludes(prompt(true), "A deload is always one week");
+  assert(
+    !prompt(true).includes("weeks (1 to 8) and exactly one of level"),
+    "no longer implies any length",
+  );
 });
 
 Deno.test("the model's intent is handed on in the engine's shape and is not part of the stored answer", async () => {

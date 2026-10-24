@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.1",
+  "local_date": "2026-10-24",
+  "safety_route": null,
+  "deload": {
+    "status": "suggested",
+    "reasons": ["performance_drop", "run_down"],
+    "last_ended_on": null,
+    "weeks_since": 9,
+    "proposal_id": null,
+    "suppressed_by": null
+  },
+  "cardio_withheld": null,
+  "cardio_week": {
+    "target_min": 150,
+    "stretch_max": 300,
+    "done_min": 85,
+    "intensity_known": false,
+    "vigorous_allowed": true,
+    "vigorous_sessions_max": 2,
+    "vigorous_counts_as": 2,
+    "lift_separation_hours": 3,
+    "easy_hr_reserve_max": 60,
+    "window_from": "2026-10-18",
+    "window_to": "2026-10-24"
+  }
+}

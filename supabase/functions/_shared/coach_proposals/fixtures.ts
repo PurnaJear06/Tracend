@@ -28,8 +28,9 @@ export const plannedExerciseIdFor = (workout: number, exercise: number) =>
 export function planFor(
   weekdays: readonly number[],
   overrides: Partial<StatePlan> = {},
+  answerOverrides: Partial<typeof baseAnswers> = {},
 ): StatePlan {
-  const answers = { ...baseAnswers, trainingWeekdays: weekdays };
+  const answers = { ...baseAnswers, ...answerOverrides, trainingWeekdays: weekdays };
   const policies = policiesFor(answers, exerciseCatalogV1);
   const built = validRulesPlan(policies);
   const training = buildOnboardingProposal(built, policies, {
