@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/readiness/day_adjustment_repository.dart';
 
@@ -222,6 +224,9 @@ class FakeDayAdjustmentRepository implements DayAdjustmentRepository {
   DayAdjustmentException? loadError;
   DayAdjustmentException? respondError;
 
+  /// When set, an answer waits for it: the answer is on its way.
+  Completer<void>? respondGate;
+
   @override
   Future<DayAdjustment> load(DateTime localToday) async {
     loads.add(localToday);
@@ -240,6 +245,7 @@ class FakeDayAdjustmentRepository implements DayAdjustmentRepository {
     DayAdjustmentKind? chosen,
   }) async {
     responses.add((day: localToday, accept: accept, chosen: chosen));
+    await respondGate?.future;
     if (respondError != null) throw respondError!;
     json = answered(json, accept: accept, chosen: chosen?.wire);
     return _parse();

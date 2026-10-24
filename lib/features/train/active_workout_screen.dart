@@ -526,6 +526,20 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
   }
 
+  /// Makes each exercise have as many sets as the server's rows in
+  /// [exercises].
+  void _alignSets(Object? exercises) {
+    if (exercises is! List) return;
+    for (final row in exercises) {
+      if (row is! Map) continue;
+      final order = (row['order'] as num?)?.toInt();
+      final sets = row['sets'];
+      if (sets is! List || sets.isEmpty) continue;
+      final index = _exercises.indexWhere((e) => e.exercise.order == order);
+      if (index >= 0) _exercises[index].alignTo(sets.length);
+    }
+  }
+
   /// Sets whose load the athlete emptied on purpose, kept only in this
   /// phone's draft (the server stores just an empty load), so a restored
   /// workout never suggests a weight there again.
@@ -537,9 +551,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// The local draft field that holds [_timingRefused].
   static const _timingRefusedKey = 'timing_refused';
 
-  /// When the server's copy of session [id] began, read back from the
-  /// server; the phone's clock only when that read fails (an estimate: a
-  /// refused time then falls back to syncing without times).
+  /// Reads back the session [id] the server just started. Its set rows are
+  /// the truth for this workout (`start_workout` applies the athlete's
+  /// accepted same-day answer), so the logger takes their number per exercise
+  /// before anything is synced. Returns when it began; the phone's clock only
+  /// when the read fails (an estimate: a refused time then falls back to
+  /// syncing without times).
   Future<DateTime> _serverStartOf(String id) async {
     try {
       final session = await widget.repository.loadSession(
@@ -547,6 +564,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         localDate: widget.sessionDate,
       );
       if (session != null && session['session_id'] == id) {
+        _alignSets(session['exercises']);
+        if (mounted) setState(() {});
         final start = DateTime.tryParse(
           '${session['actual_started_at'] ?? ''}',
         );

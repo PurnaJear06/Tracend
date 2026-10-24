@@ -94,9 +94,16 @@ class DayAdjustmentCard extends StatefulWidget {
     required this.onTalkToCoach,
     this.onCheckIn,
     this.computed,
+    this.forDate,
     this.embedded = false,
     super.key,
   });
+
+  /// The day the surrounding screen's data (the brief, the readiness numbers)
+  /// was loaded for, `YYYY-MM-DD`. The card is shown only for the server's
+  /// adjustment of that same day, so a phone date that differs from the
+  /// server's never puts one day's card beside another day's numbers.
+  final String? forDate;
 
   final DayAdjustmentController controller;
 
@@ -172,7 +179,10 @@ class _DayAdjustmentCardState extends State<DayAdjustmentCard> {
         );
       }
       final state = dayCardState(adjustment);
-      if (state == DayCardState.hidden) return const SizedBox.shrink();
+      if (state == DayCardState.hidden ||
+          (widget.forDate != null && adjustment.localDate != widget.forDate)) {
+        return const SizedBox.shrink();
+      }
       return _Panel(
         embedded: widget.embedded,
         child: _content(context, adjustment, state),

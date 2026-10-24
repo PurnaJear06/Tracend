@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/readiness/day_adjustment_card.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/readiness/readiness_copy.dart';
+import 'package:tracend/features/train/active_workout_screen.dart';
 import 'package:tracend/features/train/train_screen.dart';
+import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/features/train/widgets/train_parts.dart';
 
 import 'day_adjustment_fixtures.dart';
@@ -20,12 +24,15 @@ const _upper = [
 ];
 
 Future<(FakeDayAdjustmentRepository, DayAdjustmentController, List<String>)>
-_pump(WidgetTester tester, Map<String, dynamic> json) async {
-  final repository = FakeDayAdjustmentRepository(json);
-  final controller = DayAdjustmentController(
-    repository: repository,
-    clock: trainNow,
-  );
+_pump(
+  WidgetTester tester,
+  Map<String, dynamic> json, {
+  TrainFixtureRepository? repository,
+  TrainBriefRepository? brief,
+  DateTime Function()? now,
+}) async {
+  final fake = FakeDayAdjustmentRepository(json);
+  final controller = DayAdjustmentController(repository: fake, clock: trainNow);
   addTearDown(controller.dispose);
   final questions = <String>[];
   tester.view.physicalSize = const Size(390, 3000);
@@ -36,10 +43,10 @@ _pump(WidgetTester tester, Map<String, dynamic> json) async {
       theme: TracendTheme.dark,
       home: Scaffold(
         body: TrainScreen(
-          repository: TrainFixtureRepository(),
-          brief: TrainBriefRepository(computed: trainComputed()),
+          repository: repository ?? TrainFixtureRepository(),
+          brief: brief ?? TrainBriefRepository(computed: trainComputed()),
           coach: const TrainCoachRepository(),
-          now: trainNow,
+          now: now ?? trainNow,
           dayAdjustment: controller,
           onTalkToCoach: questions.add,
         ),
@@ -47,7 +54,7 @@ _pump(WidgetTester tester, Map<String, dynamic> json) async {
     ),
   );
   await tester.pumpAndSettle();
-  return (repository, controller, questions);
+  return (fake, controller, questions);
 }
 
 void main() {
@@ -201,6 +208,131 @@ void main() {
     // Readiness is for today only: no card on another day.
     expect(find.byType(DayAdjustmentCard), findsNothing);
     expect(find.text('Lighter session set for today.'), findsNothing);
+  });
+
+  group(
+    "the logger gets the plan's sets, never the phone's copy of the answer",
+    () {
+      Future<void> startFromHero(WidgetTester tester) async {
+        await tester.tap(find.text('Start workout').first);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 600));
+      }
+
+      PlannedWorkout given(WidgetTester tester) => tester
+          .widget<ActiveWorkoutScreen>(find.byType(ActiveWorkoutScreen))
+          .workout;
+
+      testWidgets('an accepted answer: plan set counts, held weights', (
+        tester,
+      ) async {
+        await _pump(tester, adjustmentJson(exercises: _upper));
+        await tester.tap(find.text('Use lighter session'));
+        await tester.pumpAndSettle();
+        await startFromHero(tester);
+        final bench = given(tester).exercises.first;
+        expect(bench.setCount, 3, reason: 'the server decides the sets');
+        expect(bench.loadHeld, isTrue);
+        expect(bench.nextTarget?.loadKg, 57.5);
+      });
+
+      testWidgets(
+        "a severe-pain day after an accepted answer: still the plan's "
+        'sets, and the referral stays on top',
+        (tester) async {
+          final (fake, controller, _) = await _pump(
+            tester,
+            adjustmentJson(exercises: _upper),
+          );
+          await tester.tap(find.text('Use lighter session'));
+          await tester.pumpAndSettle();
+          // The check-in changed: the rules now route the day out, while the
+          // accepted row is still the one start_workout applies.
+          fake.json = adjustmentJson(
+            exercises: _upper,
+            kind: 'none',
+            status: 'none',
+            band: 'red',
+            triggers: const ['pain_severe'],
+            safetyRoute: 'pain_referral',
+          );
+          await controller.load();
+          await tester.pumpAndSettle();
+          expect(find.text("Don't train through this pain"), findsOneWidget);
+          expect(find.text('Train as planned'), findsNothing);
+          await startFromHero(tester);
+          final bench = given(tester).exercises.first;
+          expect(bench.setCount, 3);
+          expect(bench.loadHeld, isFalse);
+        },
+      );
+
+      testWidgets('Start waits while an answer is on its way', (tester) async {
+        final (fake, _, _) = await _pump(
+          tester,
+          adjustmentJson(exercises: _upper),
+        );
+        final gate = fake.respondGate = Completer<void>();
+        await tester.tap(find.text('Use lighter session'));
+        await tester.pump();
+        final start = tester.widget<FilledButton>(
+          find.widgetWithText(FilledButton, 'Start workout').first,
+        );
+        expect(start.onPressed, isNull);
+        expect(find.byType(ActiveWorkoutScreen), findsNothing);
+        gate.complete();
+        await tester.pumpAndSettle();
+        final after = tester.widget<FilledButton>(
+          find.widgetWithText(FilledButton, 'Start workout').first,
+        );
+        expect(after.onPressed, isNotNull);
+      });
+
+      testWidgets('closing the workout reads the adjustment again', (
+        tester,
+      ) async {
+        final (fake, _, _) = await _pump(
+          tester,
+          adjustmentJson(exercises: _upper),
+        );
+        await tester.tap(find.text('Use lighter session'));
+        await tester.pumpAndSettle();
+        expect(find.text(undoLabel), findsOneWidget);
+        await startFromHero(tester);
+        // The workout started: the server now says so.
+        fake.json = adjustmentJson(
+          exercises: _upper,
+          status: 'accepted',
+          origin: 'proposed',
+          available: false,
+          unavailable: 'session_started',
+        );
+        final reads = fake.loads.length;
+        Navigator.of(
+          tester.element(find.byType(ActiveWorkoutScreen)),
+        ).pop(false);
+        await tester.pumpAndSettle();
+        expect(fake.loads.length, greaterThan(reads));
+        expect(find.text(undoLabel), findsNothing);
+        expect(find.text('Lighter session today'), findsOneWidget);
+      });
+    },
+  );
+
+  group('the card and the numbers are for one day', () {
+    testWidgets('readiness is read again for the hub\'s day when the phone '
+        'differs', (tester) async {
+      final brief = TrainBriefRepository(computed: trainComputed());
+      await _pump(
+        tester,
+        adjustmentJson(exercises: _upper),
+        brief: brief,
+        now: () => DateTime(2026, 10, 1, 23, 50),
+      );
+      expect(brief.loads.first, DateTime(2026, 10, 1));
+      expect(brief.loads.last, DateTime(2026, 10, 2));
+      expect(find.text('One set fewer today'), findsOneWidget);
+    });
   });
 
   test('an unadjusted workout has no note', () {

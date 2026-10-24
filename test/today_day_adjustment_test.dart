@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
@@ -6,6 +8,9 @@ import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/coach_screen.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
+import 'package:tracend/features/train/active_workout_screen.dart';
+import 'package:tracend/features/train/workout_detail_screen.dart';
+import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/features/readiness/readiness_copy.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/widgets/today_session_card.dart';
@@ -190,10 +195,119 @@ void main() {
       expect(_blocks(tester), hasLength(9));
     });
 
+    testWidgets('a phone date that is not the server day shows no card and no '
+        'numbers', (tester) async {
+      await _pump(
+        tester,
+        adjustmentJson(), // the server's day: 2 October
+        brief: _brief(day: '2026-10-01'), // loaded for the phone's day
+      );
+      expect(find.text('One set fewer today'), findsNothing);
+      expect(find.text(readinessKicker), findsNothing);
+      expect(find.text(seesTitle), findsNothing);
+    });
+
     testWidgets('Talk to Coach hands over a question', (tester) async {
       final (_, _, questions) = await _pump(tester, adjustmentJson());
       await tester.tap(find.text(talkToCoach));
       expect(questions, hasLength(1));
+    });
+  });
+
+  group('the workout overview page', () {
+    final workout = PlannedWorkout.fromHubJson({
+      'id': 'w-upper-a',
+      'name': 'Upper body A',
+      'objective': 'Press.',
+      'estimated_minutes': 48,
+      'exercises': [
+        for (final (i, name) in [
+          'Bench press',
+          'Barbell row',
+          'Overhead press',
+        ].indexed)
+          {
+            'id': 'e${i + 1}',
+            'order': i + 1,
+            'name': name,
+            'set_count': 3,
+            'rep_min': 6,
+            'rep_max': 8,
+            'target_rpe': 8,
+          },
+      ],
+    });
+
+    Future<(FakeDayAdjustmentRepository, DayAdjustmentController)> open(
+      WidgetTester tester,
+      Map<String, dynamic> json,
+    ) async {
+      final repository = FakeDayAdjustmentRepository(json);
+      final controller = DayAdjustmentController(
+        repository: repository,
+        clock: () => DateTime(2026, 10, 2, 9),
+        serverToday: () async => DateTime(2026, 10, 2),
+      );
+      addTearDown(controller.dispose);
+      await controller.load();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: WorkoutDetailScreen(
+            repository: FixtureWorkoutRepository(),
+            workout: workout,
+            sessionDate: DateTime(2026, 10, 2),
+            dayAdjustment: controller,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return (repository, controller);
+    }
+
+    testWidgets('shows what an accepted answer changed and starts with the '
+        "plan's sets", (tester) async {
+      await open(
+        tester,
+        adjustmentJson(status: 'accepted', origin: 'proposed'),
+      );
+      expect(find.text('Lighter today: 6 of 9 sets'), findsOneWidget);
+      await tester.tap(find.text('Start workout'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      final given = tester
+          .widget<ActiveWorkoutScreen>(find.byType(ActiveWorkoutScreen))
+          .workout;
+      expect(given.exercises.first.setCount, 3);
+    });
+
+    testWidgets('Start waits while an answer is on its way', (tester) async {
+      final (repository, controller) = await open(tester, adjustmentJson());
+      repository.respondGate = Completer<void>();
+      unawaited(controller.respond(accept: true));
+      await tester.pump();
+      final start = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Start workout'),
+      );
+      expect(start.onPressed, isNull);
+      repository.respondGate!.complete();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('closing the workout reads the adjustment again', (
+      tester,
+    ) async {
+      final (repository, _) = await open(
+        tester,
+        adjustmentJson(status: 'accepted', origin: 'proposed'),
+      );
+      await tester.tap(find.text('Start workout'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      final reads = repository.loads.length;
+      Navigator.of(tester.element(find.byType(ActiveWorkoutScreen))).pop(false);
+      await tester.pumpAndSettle();
+      expect(repository.loads.length, greaterThan(reads));
     });
   });
 

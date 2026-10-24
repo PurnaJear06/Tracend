@@ -85,6 +85,7 @@ class TodaySessionCard extends StatelessWidget {
         : DayAdjustmentCard(
             controller: dayAdjustment!,
             embedded: true,
+            forDate: brief.localDate,
             computed: brief.computed,
             onCheckIn: onCheckIn,
             onTalkToCoach: onTalkToCoach ?? (_) {},

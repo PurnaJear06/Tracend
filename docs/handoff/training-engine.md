@@ -687,11 +687,20 @@ the shell and given to Today and Train), the card (`day_adjustment_card.dart`) a
 - **Reasons.** `previous_answer.reason` is `check_in` ("Your check-in changed") or `new_data` ("New
   sleep or recovery data came in"); any other value reads "Things changed since you answered". An
   accepted earlier answer is said to stay until the athlete chooses again, because `start_workout`
-  applies the accepted unsuperseded row; the app then applies the set counts of today's option of that
-  kind so the logger matches the server's rows.
-- **Applied state.** `DayAdjustment.applyTo(workout)` lowers set counts (reduce_sets) and sets a held
-  target (`hold`, last load and reps) on Train, the overview, the logger and Today's strip; the plan
-  is never edited. Easy cardio leaves the sets. `nextTargetWhy` explains a `day_adjustment` target.
+  applies the accepted unsuperseded row; the preview uses today's option of that kind.
+- **Applied state.** `DayAdjustment.applyTo(workout)` previews an accepted answer (lower set counts,
+  held target) on Train's lines, hero and overview and on Today's strip; the plan is never edited. The
+  logger is not built from that preview: it gets the plan's set counts plus the held weights
+  (`applyTo(..., sets: false)`), and after `start` it reads the session back (`get_my_workout_session`)
+  and `ExerciseDraft.alignTo` makes each exercise have exactly the set rows the server made (untouched
+  trailing sets go, missing ones are added; a restored draft or server session follows its rows too).
+  `start_workout` is the only authority for the set shape, so a pending answer or an accepted row the
+  phone does not know of (a safety day after reduce_sets) cannot desync the logger. Start is disabled
+  while an answer is on its way, and the adjustment is read again whenever a workout screen closes.
+  Easy cardio leaves the sets. `nextTargetWhy` explains a `day_adjustment` target.
+- **One day.** The card shows only when its `local_date` equals the date the surrounding data was
+  loaded for: Train reloads its readiness numbers for the hub's day, Today reloads the brief for the
+  server's day when the adjustment names another one.
 - **Talk to Coach.** `CoachDraftRequests` (shell-owned) puts a question in the Coach composer; it is
   never sent for the athlete.
 - **Not done.** The easy-cardio heart-rate line ("under N bpm, the top of your Easy zone") is not

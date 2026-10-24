@@ -4,6 +4,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/readiness/day_adjustment.dart';
+import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/train/active_workout_screen.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/widgets/exercise_detail_sheet.dart';
@@ -443,11 +445,17 @@ class WorkoutDetailScreen extends StatefulWidget {
     this.repository,
     this.workout,
     this.sessionDate,
+    this.dayAdjustment,
     super.key,
   });
   final WorkoutRepository? repository;
   final PlannedWorkout? workout;
   final DateTime? sessionDate;
+
+  /// Today's same-day readiness adjustment. The overview shows what an
+  /// accepted answer changed; Start waits while an answer is on its way, and
+  /// the adjustment is read again when the workout screen closes.
+  final DayAdjustmentController? dayAdjustment;
 
   @override
   State<WorkoutDetailScreen> createState() => _WorkoutDetailScreenState();
@@ -478,27 +486,57 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     return (raw is String ? DateTime.tryParse(raw) : null) ?? DateTime(0);
   }
 
+  /// The accepted answer, when it is for the day this screen shows.
+  DayAdjustment? get _adjustment {
+    final adjustment = widget.dayAdjustment?.current;
+    final day = _date;
+    final iso =
+        '${day.year.toString().padLeft(4, '0')}-'
+        '${day.month.toString().padLeft(2, '0')}-'
+        '${day.day.toString().padLeft(2, '0')}';
+    return adjustment?.localDate == iso ? adjustment : null;
+  }
+
+  /// The workout as the overview shows it: lighter once an answer says so.
+  PlannedWorkout get _shown => _adjustment?.applyTo(_workout) ?? _workout;
+
   Future<void> _start() async {
     final navigator = Navigator.of(context);
+    final readiness = widget.dayAdjustment;
+    if (readiness?.busy ?? false) return;
+    // The logger gets the plan's set counts and the held weights; the server
+    // decides the sets when the workout starts.
     final completed = await startWorkout(
       context,
-      workout: _workout,
+      workout: _adjustment?.applyTo(_workout, sets: false) ?? _workout,
       repository: _repository,
       sessionDate: widget.sessionDate,
     );
+    if (readiness != null) unawaited(readiness.load());
     if (completed && mounted) navigator.pop(true);
   }
 
   void _openExercise(PlannedExercise exercise) => showExerciseDetailSheet(
     context,
-    workout: _workout,
+    workout: _shown,
     exercise: exercise,
     repository: _repository,
   );
 
   @override
   Widget build(BuildContext context) {
+    final readiness = widget.dayAdjustment;
+    if (readiness == null) return _page(context);
+    return ListenableBuilder(
+      listenable: readiness,
+      builder: (context, _) => _page(context),
+    );
+  }
+
+  Widget _page(BuildContext context) {
     final colors = context.tracendColors;
+    final readiness = widget.dayAdjustment;
+    final shown = _shown;
     return Scaffold(
       appBar: AppBar(title: Text(_workout.name)),
       body: SafeArea(
@@ -517,10 +555,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                 context,
               ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
             ),
-            WorkoutOverviewBody(
-              workout: _workout,
-              onExerciseTap: _openExercise,
-            ),
+            WorkoutOverviewBody(workout: shown, onExerciseTap: _openExercise),
             const SizedBox(height: TracendSpacing.lg),
             FutureBuilder<bool>(
               future: _completed,
@@ -540,7 +575,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                   );
                 }
                 return FilledButton.icon(
-                  onPressed: _start,
+                  onPressed: readiness?.busy ?? false ? null : _start,
                   icon: const Icon(CupertinoIcons.play_fill, size: 18),
                   label: const Text('Start workout'),
                 );

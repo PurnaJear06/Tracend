@@ -115,6 +115,9 @@ class _TrainScreenState extends State<TrainScreen> {
   /// "what Tracend sees". Null until the brief loads.
   ComputedMetrics? _computed;
 
+  /// The day [_readiness] and [_computed] were loaded for.
+  late DateTime _readinessDay;
+
   List<WorkoutRepairCandidate> _repairs = const [];
   List<WorkoutReconciliation> _reconciliations = const [];
   final Set<String> _respondedReconciliationIds = {};
@@ -180,9 +183,8 @@ class _TrainScreenState extends State<TrainScreen> {
     _resumePending = false;
     if (ActiveWorkoutScreen.isOpen) return;
     final today = _today;
-    final planned = hub.workoutForWeekday(today.weekday);
-    if (planned == null || hub.isDayCompleted(today)) return;
-    final workout = _forDay(planned, today);
+    final workout = hub.workoutForWeekday(today.weekday);
+    if (workout == null || hub.isDayCompleted(today)) return;
     String? draft;
     try {
       draft = await _source.loadDraft(workout.id);
@@ -242,6 +244,13 @@ class _TrainScreenState extends State<TrainScreen> {
           _selected = normalizedDate(hub.localToday!);
           _weekStart = mondayOf(_selected);
         }
+        // The readiness numbers were read for the phone's day: read them
+        // again for the server's when the two differ.
+        if (hub.localToday != null &&
+            !sameDay(hub.localToday!, _readinessDay)) {
+          _computed = null;
+          _readiness = _loadReadiness()..ignore();
+        }
       });
       unawaited(_resumeWorkout());
       // The hub names the athlete's own today: the day readiness is read for.
@@ -279,10 +288,14 @@ class _TrainScreenState extends State<TrainScreen> {
 
   Future<_Readiness> _loadReadiness() async {
     final repository = widget.brief ?? const FixtureDailyBriefRepository();
-    final today = normalizedDate(_clock());
+    // The hub's day once it is known: the server's today, not the phone's.
+    final today = _today;
+    _readinessDay = today;
     final brief = await repository.load(today);
     final computed = brief.computed;
-    if (mounted) setState(() => _computed = computed);
+    if (mounted && sameDay(today, _readinessDay)) {
+      setState(() => _computed = computed);
+    }
     bool connected =
         brief.health != null ||
         computed?.baselines.hrv != null ||
@@ -390,20 +403,49 @@ class _TrainScreenState extends State<TrainScreen> {
   // ---------------------------------------------------------------------------
 
   /// [workout] as the athlete's accepted same-day adjustment leaves it, when
-  /// [date] is today; any other day's workout is the plan as written.
+  /// [date] is today, for showing; any other day's workout is the plan as
+  /// written.
   PlannedWorkout _forDay(PlannedWorkout workout, DateTime date) {
     final adjustment = widget.dayAdjustment?.current;
     if (adjustment == null || !sameDay(date, _today)) return workout;
     return adjustment.applyTo(workout);
   }
 
-  Future<void> _start(PlannedWorkout workout, DateTime date) async {
+  /// The plan's own copy of [shown], which may be today's adjusted view.
+  PlannedWorkout _planned(PlannedWorkout shown) {
+    for (final workout in _hub?.workouts ?? const <PlannedWorkout>[]) {
+      if (workout.id == shown.id) return workout;
+    }
+    return shown;
+  }
+
+  /// Opens the logger for [planned], the plan as written. The logger takes
+  /// held weights from today's accepted answer, never its set counts: the
+  /// server decides the sets when the workout starts, and the logger follows
+  /// the rows it reads back. Nothing starts while an answer is on its way, so
+  /// a start never races the answer it should carry. The adjustment is read
+  /// again whenever the workout screen closes.
+  Future<void> _start(PlannedWorkout planned, DateTime date) async {
+    final readiness = widget.dayAdjustment;
+    if (readiness?.busy ?? false) {
+      TracendToast.show(
+        context,
+        'Saving your choice for today. Try again in a moment.',
+        icon: CupertinoIcons.hourglass,
+      );
+      return;
+    }
+    final adjustment = readiness?.current;
+    final workout = adjustment == null || !sameDay(date, _today)
+        ? planned
+        : adjustment.applyTo(planned, sets: false);
     final completed = await startWorkout(
       context,
       workout: workout,
       repository: _source,
       sessionDate: date,
     );
+    if (readiness != null) unawaited(readiness.load());
     if (completed && mounted) {
       setState(() => _candidate = null);
       await _refresh();
@@ -441,7 +483,7 @@ class _TrainScreenState extends State<TrainScreen> {
     if (!mounted || action == null) return;
     switch (action) {
       case WorkoutOverviewAction.start:
-        await _start(workout, date);
+        await _start(_planned(workout), date);
       case WorkoutOverviewAction.viewSummary:
         _viewSummary(workout, date);
     }
@@ -689,7 +731,8 @@ class _TrainScreenState extends State<TrainScreen> {
       if (widget.dayAdjustment != null && sameDay(_selected, _today))
         DayAdjustmentCard(
           controller: widget.dayAdjustment!,
-          computed: _computed,
+          forDate: DayBoxesStrip.iso(_today),
+          computed: sameDay(_readinessDay, _today) ? _computed : null,
           onCheckIn: widget.onCheckIn,
           onTalkToCoach: widget.onTalkToCoach ?? (_) {},
         ),
@@ -799,7 +842,9 @@ class _TrainScreenState extends State<TrainScreen> {
           side: _side,
           onSideChanged: (side) => setState(() => _side = side),
           onOpenOverview: () => _openOverview(workout, date, done: done),
-          onStart: () => _start(workout, date),
+          onStart: widget.dayAdjustment?.busy ?? false
+              ? null
+              : () => _start(_planned(workout), date),
           onViewSummary: () => _viewSummary(workout, date),
           onOpenMuscles: () => showMusclesSheet(context, workout: workout),
           healthkitCandidate: candidate,
@@ -809,7 +854,10 @@ class _TrainScreenState extends State<TrainScreen> {
               : () => _autoComplete(candidate),
           onHealthkitManual: candidate == null
               ? null
-              : () => _start(workout, normalizedDate(candidate.localDate)),
+              : () => _start(
+                  _planned(workout),
+                  normalizedDate(candidate.localDate),
+                ),
         ),
         Builder(
           builder: (context) => SectionLabel(

@@ -2029,6 +2029,8 @@ void main() {
               'rpe': 8.0,
               'completed': true,
             },
+            // The server holds a row for every set the session has.
+            {'number': 2, 'completed': false},
           ],
         },
       ],

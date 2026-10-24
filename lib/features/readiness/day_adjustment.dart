@@ -400,9 +400,15 @@ class DayAdjustment {
   }
 
   /// [workout] as today's accepted answer leaves it: fewer sets and the last
-  /// loads held, so the logger starts from them. Anything else is returned as
-  /// it is, including a workout this answer is not about.
-  PlannedWorkout applyTo(PlannedWorkout workout) {
+  /// loads held. Anything else is returned as it is, including a workout this
+  /// answer is not about.
+  ///
+  /// With [sets] false the set counts stay the plan's and only the held loads
+  /// and effort apply: that is what the logger gets. How many sets a started
+  /// workout has is the server's to say (`start_workout` reads the accepted
+  /// answer itself), and the logger follows the rows the server holds, never
+  /// this phone's copy of the answer.
+  PlannedWorkout applyTo(PlannedWorkout workout, {bool sets = true}) {
     if (!easesSession || workout.id != plannedWorkoutId) return workout;
     final byOrder = {
       for (final change in appliedChanges) change.exerciseOrder: change,
@@ -411,7 +417,7 @@ class DayAdjustment {
       for (final exercise in workout.exercises)
         if (byOrder[exercise.order] case final change?)
           exercise.eased(
-            setCount: change.setsTo,
+            setCount: sets ? change.setsTo : exercise.setCount,
             targetRpe: change.rpeTo,
             heldLoadKg: change.loadKgTo,
             heldReps: change.repsTo,
