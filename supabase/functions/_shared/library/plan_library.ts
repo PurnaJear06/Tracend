@@ -145,24 +145,26 @@ export async function retrievePlanLibrary(
   const startedAt = now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const searches = Promise.allSettled(queries.map((query) => searchOnce(deps, userId, query)));
-    searches.catch(() => {});
+    // Each search is kept as it finishes: past the deadline, the ones already done still count and
+    // the one still out is a search that failed (so "none" is never claimed).
+    const results: (OneSearch | undefined)[] = queries.map(() => undefined);
+    const searches = Promise.all(
+      queries.map((query, index) =>
+        searchOnce(deps, userId, query).then((search) => {
+          results[index] = search;
+        }, () => undefined)
+      ),
+    );
     const timedOut = new Promise<"timeout">((resolve) => {
       timer = setTimeout(() => resolve("timeout"), deps.deadlineMs ?? planLibraryDeadlineMs);
     });
-    const settled = await Promise.race([searches, timedOut]);
-    if (settled === "timeout") {
-      return unavailable({
-        queries: queries.length,
-        timeout: true,
-        elapsed_ms: Math.round(now() - startedAt),
-      });
-    }
-    const done = settled.flatMap((entry) => entry.status === "fulfilled" ? [entry.value] : []);
+    const timeout = (await Promise.race([searches, timedOut])) === "timeout";
+    const done = results.flatMap((search) => search === undefined ? [] : [search]);
     if (done.length === 0) {
       return unavailable({
         queries: queries.length,
-        failed: settled.length,
+        failed: queries.length,
+        ...(timeout ? { timeout: true } : {}),
         elapsed_ms: Math.round(now() - startedAt),
       });
     }
@@ -182,7 +184,7 @@ export async function retrievePlanLibrary(
     // held the excerpts, so with none shown the research could not be checked: "unavailable".
     const status: PlanLibraryStatus = shown.length > 0
       ? "found"
-      : done.length < settled.length
+      : done.length < queries.length
       ? "unavailable"
       : "none";
     return {
@@ -192,7 +194,8 @@ export async function retrievePlanLibrary(
       trace: {
         status,
         queries: queries.length,
-        failed: settled.length - done.length,
+        failed: queries.length - done.length,
+        ...(timeout ? { timeout: true } : {}),
         embed_ms: Math.max(...done.map((search) => search.embedMs)),
         degraded: done.find((search) => search.degraded !== "none")?.degraded ?? "none",
         candidates: done.reduce((sum, search) => sum + search.candidates.length, 0),

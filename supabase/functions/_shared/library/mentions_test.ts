@@ -1,5 +1,11 @@
 import { assertEquals } from "jsr:@std/assert@1.0.14";
-import { namedShownSources, studyMentions, unshownStudies } from "./mentions.ts";
+import {
+  namedShownPhrases,
+  namedShownSources,
+  studyMentions,
+  unshownStudies,
+  unshownStudyPhrases,
+} from "./mentions.ts";
 
 const shown = {
   maughan_2018_ioc_supplements: {
@@ -99,4 +105,56 @@ Deno.test("an institution's initials never match a word in an excerpt", () => {
     ["maughan_2018_ioc_supplements"],
   );
   assertEquals(namedShownSources("The who guidelines", athletes), []);
+});
+
+Deno.test("calorie and plan numbers are not years, so they name no study", () => {
+  for (
+    const text of [
+      "BMR 1980 kcal and TDEE (2010 kcal).",
+      "Eat 2000 kcal a day. Target 1990 kcal.",
+      "Roughly 2005 calories, aim 1995 kcal, maintenance 2015 kcal, deficit 1985 kcal.",
+      "Walk 2000 steps, 1999 g of rice, 2020 kg is not a weight.",
+      "Your plan has a surplus of 2010 kcal.",
+    ]
+  ) assertEquals(unshownStudies(text, {}), [], text);
+  // A year must end at a word boundary, and a real citation still counts.
+  assertEquals(studyMentions("BMR 19800 is not a year."), []);
+  assertEquals(unshownStudies("Smith 2019 found more.", {}), [{ authors: ["smith"], year: 2019 }]);
+  assertEquals(unshownStudyPhrases("Smith 2019 found more.", {}).map((entry) => entry.phrase), [
+    "Smith 2019",
+  ]);
+});
+
+Deno.test("an author named without a year, with et al., names a study", () => {
+  assertEquals(studyMentions("Grgic et al. found more strength."), [
+    { authors: ["grgic"], year: null },
+  ]);
+  assertEquals(studyMentions("Schoenfeld et al. (2017) found more."), [
+    { authors: ["schoenfeld"], year: 2017 },
+  ]);
+  const grgic = {
+    grgic_2018_frequency_strength: {
+      label: "Frequency and strength (2018)",
+      text: "[source: grgic_2018_frequency_strength] Source: Grgic et al. 2018, frequency.",
+    },
+  };
+  assertEquals(namedShownSources("Grgic et al. found more.", grgic), [
+    "grgic_2018_frequency_strength",
+  ]);
+  assertEquals(unshownStudies("Smith et al. found more.", grgic).length, 1);
+});
+
+Deno.test("a shown source is named the way its own excerpt names it", () => {
+  const sources = {
+    acsm_2026_resistance_prescription: {
+      label: "Resistance training prescription (2026)",
+      text:
+        "[source: acsm_2026_resistance_prescription] Source: Currier et al. 2026, Resistance training prescription.",
+    },
+  };
+  assertEquals(
+    namedShownPhrases("Currier et al. 2026 suggest this.", sources),
+    [{ id: "acsm_2026_resistance_prescription", phrase: "Currier et al. 2026" }],
+  );
+  assertEquals(unshownStudies("Currier et al. 2026 suggest this.", sources), []);
 });

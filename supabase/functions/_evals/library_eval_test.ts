@@ -12,7 +12,6 @@ import planFile from "./library_questions_plan.json" with { type: "json" };
 import questionFile from "./library_questions.json" with { type: "json" };
 import {
   floorGrid,
-  interleaveKeys,
   keysPassing,
   keywordGrid,
   keywordKeysPassing,
@@ -320,10 +319,4 @@ Deno.test("the onboarding cases name known sources and build two searches from e
   for (const goal of ["fat_loss", "muscle_gain", "recomposition", "strength", "aesthetic"]) {
     assert(goals.has(goal), goal);
   }
-});
-
-Deno.test("merged result lists alternate, best first, and keep each source once", () => {
-  assertEquals(interleaveKeys([["a", "b", "c"], ["d", "a", "e"]]), ["a", "d", "b", "c", "e"]);
-  assertEquals(interleaveKeys([["a"], []]), ["a"]);
-  assertEquals(interleaveKeys([]), []);
 });

@@ -1052,6 +1052,119 @@ Deno.test("prose that still names an unlisted source after the repair becomes th
   assertEquals(h.persisted[0].proposal.evidence.some((item) => item.source === "library"), false);
 });
 
+// Excerpts as the library shows them: the author text sits in the header of each.
+const authored = {
+  acsm_2026_resistance_prescription: {
+    label: "Resistance training prescription (2026)",
+    text:
+      "[source: acsm_2026_resistance_prescription] Position stand, 2026. Source: Currier et al. 2026, Resistance training prescription. Section: Volume.\nMore sets help.",
+  },
+  who_2020_physical_activity: {
+    label: "WHO guidelines on physical activity and sedentary behaviour (2020)",
+    text:
+      "[source: who_2020_physical_activity] Guideline, 2020. Source: Bull et al. 2020, WHO guidelines. Section: Adults.\nStrength work twice a week.",
+  },
+  acsm_2011_quantity_quality: {
+    label: "ACSM position stand: quantity and quality of exercise (2011)",
+    text:
+      "[source: acsm_2011_quantity_quality] Position stand, 2011. Source: Garber et al. 2011, Quantity and quality of exercise. Section: Resistance.\nTwo to three days.",
+  },
+  grgic_2018_frequency_strength: {
+    label: "Training frequency and strength (2018)",
+    text:
+      "[source: grgic_2018_frequency_strength] Meta-analysis, 2018. Source: Grgic et al. 2018, frequency. Section: Results.\nFrequency matters little.",
+  },
+};
+const libraryOf = (sources: Record<string, { label: string; text: string }>): PlanLibrary => ({
+  status: "found",
+  text: `${planLibraryHeading}\n\n${
+    Object.values(sources).map((source) => source.text).join("\n\n")
+  }`,
+  shown: sources,
+  trace: { status: "found", queries: 2, shown: Object.keys(sources) },
+});
+
+Deno.test("calorie numbers are not studies: a valid plan with kcal figures in its prose is accepted", async () => {
+  const h = harness();
+  const numbers = planWith((plan) => {
+    plan.rationale = "BMR 1980 kcal, TDEE (2010 kcal), Eat 2000 kcal and Target 1990 kcal a day.";
+  });
+  const { fetch, sent } = fakeFetch(() => claude(numbers));
+  await run("plan", h, { plan: planRoute() }, fetch, withLibrary(foundLibrary()));
+  assertEquals(sent.length, 1);
+  assertEquals(training(h).origin, "ai");
+});
+
+Deno.test("a study that was not shown is refused, and the repair quotes the phrase to change", async () => {
+  const h = harness();
+  const invented = planWith((plan) => {
+    plan.rationale = "Smith 2019 found this volume works.";
+  });
+  const answers = [invented, JSON.stringify(validPlan())];
+  const { fetch, sent } = fakeFetch(() => claude(answers.shift()!));
+  await run("plan", h, { plan: planRoute() }, fetch, withLibrary(foundLibrary()));
+  assertEquals(sent.length, 2);
+  const repair = (sent[1].body as { messages: { content: { text: string }[] }[] })
+    .messages[0].content[1].text;
+  assert(repair.includes('broke the rule "source_not_retrieved" at $.'));
+  assert(repair.includes('"Smith 2019"'));
+  assert(repair.includes("Delete the name"));
+  assertEquals(training(h).origin, "ai");
+});
+
+Deno.test("a listed source named the way its own excerpt names it is accepted; unlisted it is refused by name", async () => {
+  const cases: [string, string][] = [
+    ["Currier et al. 2026 support this volume.", "acsm_2026_resistance_prescription"],
+    ["Bull et al. 2020 and the WHO guidelines agree.", "who_2020_physical_activity"],
+    ["Garber 2011 recommends two to three days.", "acsm_2011_quantity_quality"],
+    ["Grgic et al. found frequency matters little.", "grgic_2018_frequency_strength"],
+    ["This follows [source: grgic_2018_frequency_strength].", "grgic_2018_frequency_strength"],
+    ["This follows grgic_2018_frequency_strength.", "grgic_2018_frequency_strength"],
+  ];
+  for (const [prose, id] of cases) {
+    const listed = harness();
+    const answer = planWith((plan) => {
+      plan.rationale = prose;
+      plan.sources = [id];
+    });
+    const first = fakeFetch(() => claude(answer));
+    await run("plan", listed, { plan: planRoute() }, first.fetch, withLibrary(libraryOf(authored)));
+    assertEquals(first.sent.length, 1, prose);
+    assertEquals(training(listed).origin, "ai", prose);
+    assertEquals(listed.persisted[0].proposal.evidence.at(-1)?.code, id, prose);
+
+    const unlisted = harness();
+    const bad = planWith((plan) => {
+      plan.rationale = prose;
+    });
+    const answers = [bad, JSON.stringify(validPlan())];
+    const second = fakeFetch(() => claude(answers.shift()!));
+    await run(
+      "plan",
+      unlisted,
+      { plan: planRoute() },
+      second.fetch,
+      withLibrary(libraryOf(authored)),
+    );
+    assertEquals(second.sent.length, 2, prose);
+    const repair = (second.sent[1].body as { messages: { content: { text: string }[] }[] })
+      .messages[0].content[1].text;
+    assert(repair.includes('broke the rule "source_not_listed" at $.'), prose);
+    assert(repair.includes(id), prose);
+  }
+});
+
+Deno.test("an author named without a year who was not shown is refused", async () => {
+  const h = harness();
+  const bad = planWith((plan) => {
+    plan.rationale = "Helms et al. found this protein range works.";
+  });
+  const { fetch, sent } = fakeFetch(() => claude(bad));
+  await run("plan", h, { plan: planRoute() }, fetch, withLibrary(libraryOf(authored)));
+  assertEquals(sent.length, 2);
+  assertEquals(training(h).fallback_reason, "source_not_retrieved");
+});
+
 Deno.test("no excerpt found: the prompt says to cite nothing and the plan is low confidence with a note", async () => {
   const h = harness();
   const { fetch, sent } = fakeFetch(() => claude(JSON.stringify(validPlan())));

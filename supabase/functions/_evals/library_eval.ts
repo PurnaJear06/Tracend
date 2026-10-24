@@ -45,18 +45,27 @@ import {
   type PlanFacts,
 } from "../_shared/library/plan_explanation.ts";
 import { libraryRetrievalQuery } from "../_shared/library/query.ts";
-import { planLibraryMatchCount } from "../_shared/library/plan_library.ts";
 import {
+  planLibraryBudgetChars,
+  planLibraryHeading,
+  planLibraryMatchCount,
+} from "../_shared/library/plan_library.ts";
+import {
+  interleave,
+  libraryBudgetChars,
   libraryKeywordFloor,
   libraryMatchCount,
   libraryRelevanceFloor,
+  type LibraryRow,
+  relevantRows,
+  renderExcerpts,
+  renderLibraryChunks,
 } from "../_shared/library/retrieval.ts";
 import holdoutFile from "./library_questions_holdout.json" with { type: "json" };
 import planFile from "./library_questions_plan.json" with { type: "json" };
 import questionFile from "./library_questions.json" with { type: "json" };
 import {
   floorGrid,
-  interleaveKeys,
   keysPassing,
   keywordGrid,
   keywordKeysPassing,
@@ -130,13 +139,13 @@ async function embed(texts: string[]): Promise<number[][]> {
   return embeddings;
 }
 
-async function search(
+async function searchRows(
   text: string | null,
   embedding: number[] | null,
   region: readonly string[],
   matchCount = 8,
-): Promise<ScoredHit[]> {
-  const rows = libraryRowsOf(
+): Promise<LibraryRow[]> {
+  return libraryRowsOf(
     await post("/rest/v1/rpc/search_library_v3", serviceKey, {
       query_text: text,
       query_embedding: embedding,
@@ -145,6 +154,15 @@ async function search(
       filters: { region },
     }),
   );
+}
+
+async function search(
+  text: string | null,
+  embedding: number[] | null,
+  region: readonly string[],
+  matchCount = 8,
+): Promise<ScoredHit[]> {
+  const rows = await searchRows(text, embedding, region, matchCount);
   return rows.map((row) => ({
     sourceKey: row.sourceId,
     vectorDistance: row.vectorDistance ?? null,
@@ -341,23 +359,35 @@ type PlanQuestion = LibraryQuestion & { plan: PlanFacts };
 type OnboardingCase = { id: string; facts: OnboardingLibraryFacts; expected: string[] };
 const planQuestions = planFile.questions as unknown as PlanQuestion[];
 const onboardingCases = planFile.onboarding as unknown as OnboardingCase[];
-const mergedKeys = async (texts: readonly string[], matchCount: number): Promise<string[]> => {
+// The sources a search (or two, merged) actually shows: each list passes the floor, the lists are
+// merged as production merges them, and the block is rendered at production's character budget, so
+// a chunk that would not fit is not counted as found.
+type Renderer = (rows: readonly LibraryRow[]) => { shown: Readonly<Record<string, unknown>> };
+const shownKeys = async (
+  texts: readonly string[],
+  matchCount: number,
+  render: Renderer,
+): Promise<string[]> => {
   const vectors = await embed([...texts]);
-  const lists: string[][] = [];
+  const lists: LibraryRow[][] = [];
   for (const [index, text] of texts.entries()) {
-    lists.push(
-      keysPassing(
-        await search(text, vectors[index], defaultRegion, matchCount),
-        libraryRelevanceFloor,
-      ),
-    );
+    lists.push(relevantRows(await searchRows(text, vectors[index], defaultRegion, matchCount)));
   }
-  return interleaveKeys(lists);
+  return Object.keys(render(lists.length === 1 ? lists[0] : interleave(lists)).shown);
 };
-const planScores = async (searches: (question: PlanQuestion) => readonly string[]) => {
+const coachBlock = (planExplanation: boolean): Renderer => (rows) =>
+  renderLibraryChunks(rows, libraryBudgetChars, false, planExplanation);
+const onboardingBlock: Renderer = (rows) =>
+  renderExcerpts(rows, planLibraryBudgetChars, planLibraryHeading, "");
+const planScores = async (
+  searches: (question: PlanQuestion) => readonly string[],
+  render: Renderer,
+) => {
   const scores: QuestionScore[] = [];
   for (const question of planQuestions) {
-    scores.push(scoreQuestion(question, await mergedKeys(searches(question), libraryMatchCount)));
+    scores.push(
+      scoreQuestion(question, await shownKeys(searches(question), libraryMatchCount, render)),
+    );
   }
   return scores;
 };
@@ -365,15 +395,19 @@ const planScores = async (searches: (question: PlanQuestion) => readonly string[
 const enrichedPlan = holdout ? [] : await planScores((question) => {
   const query = libraryRetrievalQuery(question.text, [], question.plan);
   return [query.text, query.planText!];
-});
-const barePlan = holdout ? [] : await planScores((question) => [question.text]);
+}, coachBlock(true));
+const barePlan = holdout ? [] : await planScores((question) => [question.text], coachBlock(false));
 const onboardingScores: QuestionScore[] = [];
 if (!holdout) {
   for (const entry of onboardingCases) {
     onboardingScores.push(
       scoreQuestion(
         { id: entry.id, text: "", expected: entry.expected },
-        await mergedKeys(onboardingLibraryQueries(entry.facts), planLibraryMatchCount),
+        await shownKeys(
+          onboardingLibraryQueries(entry.facts),
+          planLibraryMatchCount,
+          onboardingBlock,
+        ),
       ),
     );
   }

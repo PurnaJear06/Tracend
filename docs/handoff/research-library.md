@@ -1351,6 +1351,23 @@ count 8), onboarding plan searches **0.600** (count 6; 0.733 at 8): the strength
 its three sources, the others as before. The gate (0.4) still leaves 0.2 of headroom, so it is not
 changed; the strength case is the next tuning target for `onboardingLibraryQueries`.
 
+**Review round 2 changes.**
+- `mentions.ts` (shared with the Coach reply guard): a number with a unit (kcal, cal, calories, g, kg,
+  lb, steps, min, %) is masked before the scan and a year must end at a word boundary, so "BMR 1980
+  kcal", "Eat 2000 kcal", "TDEE (2010 kcal)" and "Target 1990 kcal" name no study; `notAnAuthor` gains
+  the calorie and plan words; "Grgic et al." without a year names a study; `unshownStudyPhrases` and
+  `namedShownPhrases` return the words of the text, and the plan's repair quotes them and says what to
+  change. `printedKeysIn` finds an id bare, in brackets or as `[source: id]`.
+- The plan library context carries each shown source's excerpt text, so a listed source named the way
+  its own excerpt names it ("Currier et al. 2026", "Bull et al. 2020", "Garber 2011") is accepted, and
+  shown but unlisted it is `source_not_listed`.
+- Coach plan turns start the question-as-asked search at once, beside the plan facts; only the
+  enriched search waits. The whole plan block is answered by `libraryPlanDeadlineMs` (3.2 s, inside
+  the host's 4 s) with what has finished; a search still out counts as failed, so the turn keeps its
+  "could not check" note. `retrievePlanLibrary` keeps the searches that finished at its 4 s limit.
+- The retrieval gate scores only the sources actually shown: the lists are merged and the block is
+  rendered at production's budgets (9,000 characters for Coach, 6,000 for onboarding).
+
 ### Decisions and limits
 
 1. **Region.** Nothing new: the search takes the athlete's id and `search_library_v3` applies

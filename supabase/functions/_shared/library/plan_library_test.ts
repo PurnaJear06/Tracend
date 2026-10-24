@@ -168,6 +168,35 @@ Deno.test("a search that outlasts the deadline gives 'unavailable' and never thr
   assert(performance.now() - started < 1_000);
 });
 
+Deno.test("at the deadline a finished search is kept, and one still out is a failed search", async () => {
+  const hang = (request: LibrarySearchRequest, rows: LibraryRow[]) =>
+    request.text === queries[0] ? Promise.resolve(rows) : new Promise<LibraryRow[]>(() => {});
+  const kept = await retrievePlanLibrary(
+    {
+      embed: () => () => Promise.resolve([0.5]),
+      search: (request) => hang(request, [row("morton_2018_protein", 0.06)]),
+      deadlineMs: 30,
+    },
+    "athlete-1",
+    queries,
+  );
+  assertEquals(kept.status, "found");
+  assertEquals(Object.keys(kept.shown), ["morton_2018_protein"]);
+  assertEquals(kept.trace.timeout, true);
+  assertEquals(kept.trace.failed, 1);
+  // Nothing close enough in the one that finished: the other might have held it.
+  const unknown = await retrievePlanLibrary(
+    {
+      embed: () => () => Promise.resolve([0.5]),
+      search: (request) => hang(request, [row("morton_2018_protein", 0.9)]),
+      deadlineMs: 30,
+    },
+    "athlete-1",
+    queries,
+  );
+  assertEquals(unknown.status, "unavailable");
+});
+
 Deno.test("an embedding that fails or is late runs the search on the words alone", async () => {
   for (
     const embed of [

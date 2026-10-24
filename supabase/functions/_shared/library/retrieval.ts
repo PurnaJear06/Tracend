@@ -334,9 +334,21 @@ export type LibraryContributorDeps = Readonly<{
    * question searched with the general topics of a plan.
    */
   planFacts?: (input: CoachContextInput) => Promise<PlanFacts | null>;
+  /**
+   * How long a plan question's block may take from the start of `render`, so it is answered before
+   * the host's 4 s limit; defaults to `libraryPlanDeadlineMs`.
+   */
+  planDeadlineMs?: number;
   /** How long the plan facts may take; defaults to `libraryPlanFactsDeadlineMs`. */
   planFactsDeadlineMs?: number;
 }>;
+
+/**
+ * A plan question's whole block (facts, both searches) is answered by here, inside the host's 4 s
+ * limit (`coachContextContributorTimeoutMs`): what has finished is shown, and a search still out
+ * is treated as failed, so the plan turn keeps its "could not check the research" note.
+ */
+export const libraryPlanDeadlineMs = 3_200;
 
 /** The most the plan facts may take: they are a read already under way for the plan section. */
 export const libraryPlanFactsDeadlineMs = 800;
@@ -446,26 +458,61 @@ export function createLibraryContributor(deps: LibraryContributorDeps): CoachCon
     budgetChars: libraryBudgetChars,
     async render(input) {
       const asksAboutPlan = isPlanExplanationQuestion(input.question);
-      const facts = asksAboutPlan && deps.planFacts
-        ? await planFactsWithin(
-          () => deps.planFacts!(input),
-          deps.planFactsDeadlineMs ?? libraryPlanFactsDeadlineMs,
-        )
-        : null;
-      const query = libraryRetrievalQuery(
+      const startedRender = now();
+      const previous = input.previousQuestions ?? [];
+      // The question as asked (a plan question's first search): it does not wait for the plan facts.
+      const asked = libraryRetrievalQuery(
         input.question,
-        input.previousQuestions ?? [],
-        asksAboutPlan ? facts : undefined,
+        previous,
+        asksAboutPlan ? null : undefined,
       );
-      const early = input.queryEmbedding?.text === query.text ? input.queryEmbedding : undefined;
-      // A plan question (E5) is searched twice, side by side: as asked, which keeps a question about
-      // one part of the plan on its own topic, and with what the plan is made of added, which gives
-      // "Why is my plan like this?" the topics it lacks. Their results are merged.
-      const settled = await Promise.allSettled([
-        search(input.userId, query.text, early),
-        ...(query.planText === undefined ? [] : [search(input.userId, query.planText, undefined)]),
-      ]);
-      const runs = settled.flatMap((entry) => entry.status === "fulfilled" ? [entry.value] : []);
+      const early = input.queryEmbedding?.text === asked.text ? input.queryEmbedding : undefined;
+      const finished: (Run | undefined)[] = [undefined, undefined];
+      let failure: { reason: unknown } | undefined;
+      // A search never rejects here: a failure is noted, and the search has no run.
+      const track = (index: number, running: Promise<Run>) =>
+        running.then((run) => {
+          finished[index] = run;
+        }, (reason) => {
+          failure ??= { reason };
+        });
+      const started: Promise<void>[] = [track(0, search(input.userId, asked.text, early))];
+      let facts: PlanFacts | null = null;
+      let query = asked;
+      if (asksAboutPlan) {
+        // A plan question (E5) is searched twice, side by side: as asked, which keeps a question
+        // about one part of the plan on its own topic, and with what the plan is made of added,
+        // which gives "Why is my plan like this?" the topics it lacks. Their results are merged.
+        // The facts are read while the first search runs; only the second search waits for them.
+        facts = deps.planFacts
+          ? await planFactsWithin(
+            () => deps.planFacts!(input),
+            deps.planFactsDeadlineMs ?? libraryPlanFactsDeadlineMs,
+          )
+          : null;
+        query = libraryRetrievalQuery(input.question, previous, facts);
+        started.push(track(1, search(input.userId, query.planText!, undefined)));
+      }
+      // A search that did not finish, or failed, has no run in `finished`.
+      const everySearch = Promise.all(started);
+      if (asksAboutPlan) {
+        // The host drops a block that takes over 4 s. A plan turn answers before that with what has
+        // finished, and a search still out counts as one that failed (the note, not "no match").
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          everySearch,
+          new Promise<void>((resolve) => {
+            timer = setTimeout(
+              resolve,
+              Math.max(0, (deps.planDeadlineMs ?? libraryPlanDeadlineMs) - (now() - startedRender)),
+            );
+          }),
+        ]);
+        clearTimeout(timer);
+      } else {
+        await everySearch;
+      }
+      const runs = finished.flatMap((run) => run === undefined ? [] : [run]);
       const unavailable = (): RenderedBlock => ({
         text: libraryPlanUnavailableText,
         shown: {},
@@ -485,7 +532,7 @@ export function createLibraryContributor(deps: LibraryContributorDeps): CoachCon
       if (runs.length === 0) {
         // Any other turn is answered without the library (the host leaves the block out); a plan
         // question is told it, so Coach says it could not check the research behind the plan.
-        if (!asksAboutPlan) throw (settled[0] as PromiseRejectedResult).reason;
+        if (!asksAboutPlan && failure !== undefined) throw failure.reason;
         return unavailable();
       }
       const block = renderLibraryChunks(
@@ -496,7 +543,7 @@ export function createLibraryContributor(deps: LibraryContributorDeps): CoachCon
       );
       // A search that failed may have held the excerpts: with none shown, that is not "no match".
       if (
-        asksAboutPlan && Object.keys(block.shown).length === 0 && runs.length < settled.length
+        asksAboutPlan && Object.keys(block.shown).length === 0 && runs.length < started.length
       ) return unavailable();
       const rows = runs.flatMap((run) => run.rows);
       const distances = rows.flatMap((row) =>
@@ -521,15 +568,23 @@ export function createLibraryContributor(deps: LibraryContributorDeps): CoachCon
 // ---- citations ----------------------------------------------------------------------------
 
 // A manifest key reads author_year_topic (for example schoenfeld_2017_weekly_volume): lower-case
-// words joined by underscores around a four-digit year, in square brackets.
-const bracketedKey = /\[([a-z0-9][a-z0-9_.-]*_(?:19|20)\d{2}_[a-z0-9_.-]+)\]/g;
+// words joined by underscores around a four-digit year. It is found bare, in square brackets, or as
+// "[source: key]" (how the excerpts mark it).
+const printedKey =
+  /(?<![a-z0-9_])(?:\[(?:source:\s*)?)?([a-z0-9][a-z0-9_.-]*_(?:19|20)\d{2}_[a-z0-9_.-]+)\]?/g;
+
+/** Every source id written inline in a text, each once. */
+export function printedKeysIn(text: string): string[] {
+  // A sentence's full stop or a dash after a bare id is not part of it.
+  return [
+    ...new Set([...text.matchAll(printedKey)].map((match) => match[1].replace(/[.-]+$/, ""))),
+  ];
+}
 
 /**
  * Source ids written inline in the reply text that were not shown. The persona tells Coach not to
  * print ids, so one is rare; but a printed id that was never retrieved is a citation of nothing.
  */
 export function unshownKeysIn(text: string, shown: ReadonlySet<string>): string[] {
-  return [...new Set([...text.matchAll(bracketedKey)].map((match) => match[1]))].filter((key) =>
-    !shown.has(key)
-  );
+  return printedKeysIn(text).filter((key) => !shown.has(key));
 }

@@ -13,6 +13,7 @@ import {
   libraryKeywordFloor,
   libraryMatchCount,
   libraryNoMatchText,
+  libraryPlanDeadlineMs,
   libraryPlanNoMatchText,
   libraryPlanUnavailableText,
   libraryPlanWordsOnlyText,
@@ -20,6 +21,7 @@ import {
   type LibraryRow,
   type LibrarySearchRequest,
   libraryWordsOnlyText,
+  printedKeysIn,
   relevantRows,
   renderLibraryChunks,
   termCoverage,
@@ -881,4 +883,87 @@ Deno.test("a plan question is prefetched like any other, unless it reads as a fo
   assertEquals(prefetchLibraryEmbedding("Why is my plan like this?", embedder), null);
   await new Promise((resolve) => setTimeout(resolve, 0));
   assertEquals(started, 1);
+});
+
+Deno.test("a printed id is found bare, in brackets or as [source: id], without a sentence's full stop", () => {
+  assertEquals(
+    printedKeysIn("See [source: schoenfeld_2017_weekly_volume] and morton_2018_protein."),
+    [
+      "schoenfeld_2017_weekly_volume",
+      "morton_2018_protein",
+    ],
+  );
+  assertEquals(printedKeysIn("As in [pelland_2026_volume_frequency]."), [
+    "pelland_2026_volume_frequency",
+  ]);
+  assertEquals(printedKeysIn("No ids here, only 2026 and a_b."), []);
+  assertEquals(
+    unshownKeysIn(
+      "Per [source: made_up_2020_topic] and schoenfeld_2017_weekly_volume.",
+      new Set(["schoenfeld_2017_weekly_volume"]),
+    ),
+    ["made_up_2020_topic"],
+  );
+});
+
+Deno.test("a plan question's first search starts at once, beside the plan facts", async () => {
+  const requests: LibrarySearchRequest[] = [];
+  let release: (facts: PlanFacts) => void = () => {};
+  const contributor = createLibraryContributor({
+    embed: () => () => Promise.resolve([1]),
+    search: (request) => {
+      requests.push(request);
+      return Promise.resolve([near("schoenfeld_2017_weekly_volume")]);
+    },
+    planFacts: () => new Promise<PlanFacts>((resolve) => (release = resolve)),
+  });
+  const rendering = contributor.render(planInput);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  // The facts are still out: the question as asked is already being searched, the second is not.
+  assertEquals(requests.map((request) => request.text), ["Why is my plan like this?"]);
+  release(planFacts);
+  const block = await rendering as { text: string };
+  assertEquals(requests.length, 2);
+  assertStringIncludes(requests[1].text, "4 training days a week");
+  assertStringIncludes(block.text, "[source: schoenfeld_2017_weekly_volume]");
+});
+
+Deno.test("a plan question is answered inside the host's limit, with what finished", async () => {
+  const hang = () => new Promise<LibraryRow[]>(() => {});
+  const make = (first: () => Promise<LibraryRow[]>) =>
+    createLibraryContributor({
+      embed: () => () => Promise.resolve([1]),
+      search: (request) => request.text === planInput.question ? first() : hang(),
+      planFacts: () => Promise.resolve(planFacts),
+      planDeadlineMs: 40,
+    });
+  const started = performance.now();
+  // Both searches out: the note that the research could not be checked, not a dropped block.
+  const none = await renderCoachContext([
+    createLibraryContributor({
+      embed: () => () => Promise.resolve([1]),
+      search: hang,
+      planFacts: () => new Promise<PlanFacts>(() => {}),
+      planFactsDeadlineMs: 10,
+      planDeadlineMs: 40,
+    }),
+  ], planInput);
+  assertEquals(none.outcomes.map((item) => item.outcome), ["rendered"]);
+  assertEquals(none.texts.library, libraryPlanUnavailableText);
+  assert(performance.now() - started < 1_000);
+  // One search finished with excerpts: they are shown; the one still out is left behind.
+  const partial = await renderCoachContext(
+    [make(() => Promise.resolve([near("schoenfeld_2017_weekly_volume")]))],
+    planInput,
+  );
+  assertEquals(Object.keys(partial.shown), ["schoenfeld_2017_weekly_volume"]);
+  // The finished one found nothing close enough: the other might have, so not "no match".
+  const unknown = await renderCoachContext(
+    [make(() =>
+      Promise.resolve([{ ...near("schoenfeld_2017_weekly_volume"), vectorDistance: 0.9 }])
+    )],
+    planInput,
+  );
+  assertEquals(unknown.texts.library, libraryPlanUnavailableText);
+  assert(libraryPlanDeadlineMs < 4_000);
 });

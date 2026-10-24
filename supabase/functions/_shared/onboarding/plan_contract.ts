@@ -377,6 +377,11 @@ export type PlanPolicies = Readonly<{
 export type PlanLibraryContext = Readonly<{
   status: "found" | "none" | "unavailable";
   labels: Readonly<Record<string, string>>;
+  /**
+   * The excerpts shown for each source, with the author text in them: a plan that names a source
+   * the way its own excerpt does ("Currier et al.") is found naming it.
+   */
+  texts?: Readonly<Record<string, string>>;
 }>;
 
 /** The screening outcome says to see a professional first, so no plan is built (Contract 8). */
@@ -648,9 +653,10 @@ export function buildOnboardingProposal(
   const workouts = [...plan.workouts].sort((a, b) => a.weekday - b.weekday);
   const uncited = origin.origin === "ai" && policies.library !== undefined &&
     plan.sources.length === 0;
-  // A search that found nothing, or failed, lowers confidence a step (Architecture 8: missing data
-  // lowers confidence): the plan stands on Tracend's rules alone. Excerpts that were shown and
-  // simply not cited leave it as it was, with the note below.
+  // A search that found nothing, or failed, lowers confidence to low (Architecture 8: missing data
+  // lowers confidence; the cap was medium, so this is a step down): the plan stands on Tracend's
+  // rules alone. Excerpts that were shown and simply not cited leave confidence as it was, with the
+  // note below.
   const searchedEmpty = origin.origin === "ai" && policies.library !== undefined &&
     policies.library.status !== "found";
   const cap = searchedEmpty ? "low" : confidenceCap(policies.answers, policies.nutrition);

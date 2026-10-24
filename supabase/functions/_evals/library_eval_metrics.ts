@@ -323,18 +323,3 @@ export function percentile(values: readonly number[], p: number): number {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1))];
 }
-
-/**
- * The keys of several result lists in turn (best first), each key once: how the onboarding plan and
- * a plan question merge their searches, so no list crowds out the others.
- */
-export function interleaveKeys(lists: readonly (readonly string[])[]): string[] {
-  const merged: string[] = [];
-  for (let index = 0; index < Math.max(0, ...lists.map((list) => list.length)); index++) {
-    for (const list of lists) {
-      const key = list[index];
-      if (key !== undefined && !merged.includes(key)) merged.push(key);
-    }
-  }
-  return merged;
-}
