@@ -199,3 +199,20 @@ Deno.test("a duration that is not a round session item still has to be in the da
     assertEquals(missing(reply), [figure], reply);
   }
 });
+
+// Captured from the answer bank on 2026-10-24: each figure passed in its own sentence and failed
+// once the reply's other lines (a reasoning step, a follow-up) were joined after or before it.
+Deno.test("a figure's unit is read within its own line, and a range's unit across a line break", () => {
+  const ground = numberGroundOf([
+    "Latest weight 74.8 kg on 2026-10-13.",
+    "[source: jager_2017_protein] about 1.4 to 2.0 g per kg a day for people who train.",
+  ]);
+  assertEquals(ungroundedNumbers("Latest reading and BMI\n74.8 kg on 2026-10-13", ground), []);
+  assertEquals(
+    ungroundedNumbers("1.4 to 2.0 g per kg a day\nPlateau point from meta-analysis", ground),
+    [],
+  );
+  // The unit still decides: a BMI on the figure's own line is a BMI, and a gram range is not kcal.
+  assertEquals(ungroundedNumbers("Your BMI is 74.8", ground), ["74.8"]);
+  assertEquals(ungroundedNumbers("1.4 to 2.0 kcal per kg\nmore", ground), ["1.4", "2.0"]);
+});

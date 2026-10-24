@@ -171,7 +171,9 @@ function tokensOf(text: string): Token[] {
       raw: match[0],
       before,
       after,
-      unit: unitOf(before, rangeEnd.exec(after)?.[1] ?? after),
+      // The unit is read within the figure's own line: "BMI" ending the line before ("Latest
+      // reading and BMI" then "74.8 kg") is not this figure's unit.
+      unit: unitOf(before.slice(before.lastIndexOf("\n") + 1), rangeEnd.exec(after)?.[1] ?? after),
     });
   }
   return found;
@@ -246,7 +248,9 @@ const measuredBefore = /\b(?:bmi|rhr|hrv)\s*(?:of|is|was|at|about|around|~|:)?\s
 const scaleBefore = /\b(?:rpe|rir)\s*(?:of|is|was|at|about|around|~|:)?\s*$/;
 const timesAfter = /^\s*[x×]\s*\d/;
 const timesBefore = /\d\s*[x×]\s*$/;
-const rangeEnd = /^\s*(?:-|–|—|to)\s*\d[\d,]*(?:\.\d+)?(.*)$/;
+// The rest after a range's second figure, across a line break too: "1.4 to 2.0 g per kg a day" is
+// in grams whether or not another line follows within the window read.
+const rangeEnd = /^\s*(?:-|–|—|to)\s*\d[\d,]*(?:\.\d+)?([\s\S]*)$/;
 
 /** Whether a figure of minutes states how long to do a named activity, not a fact about the athlete. */
 function isSessionItemLength(token: Token, after: string): boolean {
