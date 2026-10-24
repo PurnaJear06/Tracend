@@ -1366,7 +1366,10 @@ changed; the strength case is the next tuning target for `onboardingLibraryQueri
   the host's 4 s) with what has finished; a search still out counts as failed, so the turn keeps its
   "could not check" note. `retrievePlanLibrary` keeps the searches that finished at its 4 s limit.
 - The retrieval gate scores only the sources actually shown: the lists are merged and the block is
-  rendered at production's budgets (9,000 characters for Coach, 6,000 for onboarding).
+  rendered at production's budgets (9,000 characters for Coach, 6,000 for onboarding). Measured that way: plan
+  questions **0.708** (every source found for 58%; the bare question 0.292), onboarding searches
+  **0.600** (the strength athlete still finds 0 of 3); calibration unchanged (0.867). Both are above
+  their gates (0.5 and 0.4), so no gate changed; the strength case remains the tuning target.
 
 ### Decisions and limits
 
