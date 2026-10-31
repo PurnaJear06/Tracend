@@ -228,6 +228,27 @@ function acronymsOf(title: string): string[] {
   ).filter((initials) => initials.length >= 2);
 }
 
+/** Words an organisation's initials leave out ("International Society of Sports Nutrition"). */
+const connectorWords = new Set(["of", "the", "and", "for", "on", "in", "a", "an", "to"]);
+
+/**
+ * The initials of every run of three to six words in a title's name (before its colon), in any
+ * case: a title written in sentence case ("International society of sports nutrition position
+ * stand: caffeine ...") still answers to "the ISSN position stand".
+ */
+function wordRunInitials(title: string): string[] {
+  const significant = words(title.split(":")[0]).filter((word) =>
+    !connectorWords.has(word) && !/^\d/.test(word)
+  );
+  const found: string[] = [];
+  for (let start = 0; start < significant.length; start++) {
+    for (let size = 3; size <= 6 && start + size <= significant.length; size++) {
+      found.push(significant.slice(start, start + size).map((word) => word[0]).join(""));
+    }
+  }
+  return found;
+}
+
 function identityOf(id: string, source: ShownSources[string]): Identity {
   const label = source.label ?? "";
   const parts = words(id.replaceAll("_", " "));
@@ -239,6 +260,7 @@ function identityOf(id: string, source: ShownSources[string]): Identity {
     // Case matters here: "WHO" is an acronym in a title, "who" is a word in an excerpt.
     acronyms: new Set([
       ...acronymsOf(label),
+      ...wordRunInitials(label),
       ...(label.match(/\b\p{Lu}{2,6}\b/gu) ?? []).map((word) => word.toLowerCase()),
     ]),
     year: at !== -1 ? Number(parts[at]) : labelYear ? Number(labelYear) : null,

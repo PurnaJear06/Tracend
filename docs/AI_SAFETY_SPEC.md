@@ -1134,14 +1134,18 @@ routes stay available by settings alone for two weeks after the cutover.
   quotable only from the Calculated section's rows. Matching tolerates rounding: a reply may round
   to the digits it writes (74 matches 73.6 to 74.4); a larger rounded figure (1,800, 2,000) matches
   within half its step and at most 5%; the sign is ignored; the units must agree (12 weeks never
-  matches 11.8 kg); a given number with no unit (a table cell) matches any unit; a date must be a
+  matches 11.8 kg); a given number with no unit (a table cell) matches any unit; a load in rep
+  notation with no unit ("115 for 5", "112.5 x 6", in the athlete's message or the reply) matches
+  the same figure in kg or lb, never a duration, calories or a percentage; a date must be a
   date in the given text; a figure with no unit matches any unit; a range's lower figure takes
   the unit of its upper ("1.4 to 2.0 g"). A year-like number (1900 to 2099) is a year only in a
   year context ("in 2026", "since 2025", "March 2026"); with a unit after it (2000 kcal) or an
   amount word before it ("around 2000") it is a measurement and is checked. Not checked: list
   numbers, ordinals, clock times, real years, whole numbers
   up to ten with no measurement unit, and prescription numbers a coach gives as advice (sets up to
-  ten, reps up to thirty, rest seconds, RPE and RIR, `3x8`, whole minutes up to five, and the
+  ten, reps up to thirty, rest seconds, RPE and RIR, `3x8`, whole minutes up to five, a rest of
+  up to five minutes in half minutes ("2 to 2.5 min between sets") unless the wording gives it to
+  the athlete's past or records, and the
   length of a session item in a plan: a whole number of minutes from 10 to 90 in steps of five
   that says how long to do a named activity, such as "30 min easy walk", "walk for 20-30
   minutes", "walk 20 min after dinner" or "a 45-minute session"; the named activity is what makes
@@ -1437,7 +1441,9 @@ and shows Coach the chunks it found. The library never decides a number; it grou
   initials beside the kind of document it publishes ("NIH fact sheet", "ACSM position stand",
   "WHO guidelines"; `library/mentions.ts`). A mention matches a source shown this turn by the words
   of the source's id (author, year, topic), its title and the initials of its title ("International
-  Society of Sports Nutrition" is ISSN), and, for a mention with a year, the author's name in the
+  Society of Sports Nutrition" is ISSN; a title in sentence case, "International society of sports
+  nutrition position stand: caffeine ...", gives the same initials from any run of three to six
+  words before its colon), and, for a mention with a year, the author's name in the
   excerpt shown. An institution's initials with no year match only the id or the title's acronyms
   (case matters: "WHO" is an acronym, "who" a word in an excerpt), never the excerpt. When it matches, the server adds the source's evidence item to the reply (code the
   source id, label the retrieved title and year, source `library`) when the evidence has room, and

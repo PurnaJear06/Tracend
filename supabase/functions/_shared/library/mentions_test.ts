@@ -187,3 +187,23 @@ Deno.test("a shown source is named the way its own excerpt names it", () => {
   );
   assertEquals(unshownStudies("Currier et al. 2026 suggest this.", sources), []);
 });
+
+// Coach simulation 2026-10-31: "The ISSN position stand (Guest et al. 2021)" was refused as an
+// unshown source although guest_2021_caffeine was shown; its title is in sentence case, so the
+// capitalised-run initials were "i", and the turn ended in the data summary.
+Deno.test("an institution's initials match a shown title written in sentence case", () => {
+  const sentenceCase = {
+    guest_2021_caffeine: {
+      label:
+        "International society of sports nutrition position stand: caffeine and exercise performance (2021)",
+      text: "[source: guest_2021_caffeine] Doses of 3 to 6 mg per kg.",
+    },
+  };
+  const text = "The ISSN position stand (Guest et al. 2021) says 3 to 6 mg per kg helps.";
+  assertEquals(unshownStudies(text, sentenceCase), []);
+  assertEquals(namedShownSources(text, sentenceCase), ["guest_2021_caffeine"]);
+  // Initials that no run of the title's words gives are still unshown.
+  assertEquals(unshownStudies("The ACSM position stand says so.", sentenceCase).length, 1);
+  // The words after the colon are the topic, not the organisation.
+  assertEquals(unshownStudies("The CEP guidelines say so.", sentenceCase).length, 1);
+});

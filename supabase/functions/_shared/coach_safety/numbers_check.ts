@@ -13,13 +13,14 @@
 //   2. A rounded larger figure (100 or more, written with trailing zeros: "1,800", "2,000")
 //      matches a given number within half its rounding step, but never by more than 5%.
 //   3. The units must agree: "12 weeks" never matches 11.8 kg, and "0.9 kg" never matches
-//      0.93%. A given number with no unit after it (a table cell) matches any unit.
+//      0.93%. A given number with no unit after it (a table cell) matches any unit. A load in
+//      rep notation with no unit ("115 for 5", "112.5 x 6") matches the same figure in kg or lb.
 //   4. A date written as YYYY-MM-DD must be a date in the given text; "Oct 4" or "4 Oct" must
 //      match a month and day of one.
 // Figures that carry no claim about the athlete are not checked (the allow-list): list numbers,
 // ordinals, clock times, years, whole numbers up to ten with no measurement unit, and the
 // prescription numbers a coach gives as advice (sets, reps, rest seconds, effort scales,
-// "3x8", up to 30 reps and 10 sets), and the length of a session item in a plan: a round number
+// "3x8", up to 30 reps and 10 sets, a rest of up to five minutes in whole or half minutes), and the length of a session item in a plan: a round number
 // of minutes (10 to 90, in fives) that states how long to do a named activity ("30 min easy
 // walk", "walk for 20-30 minutes", "walk 20 min after dinner", "a 45-minute session"). Like rest
 // seconds, it is advice about what to do, not a claim about the athlete. It never covers a
@@ -149,11 +150,21 @@ const unitClasses: readonly (readonly [RegExp, string])[] = [
 ];
 const bmiBefore = /\bbmi\b[^.\d]{0,24}$/;
 
+// A load written in rep notation with no unit of its own ("115 for 5", "112.5 x 6", "100x5"):
+// the figure is a lifting load, in the athlete's unit. "for" must be followed by a bare count, not
+// a duration or another measurement ("20 for 30 minutes" is not a load).
+const repNotation =
+  /^\s*(?:[x×]\s*\d|for\s+\d+(?:\s*(?:-|–|to)\s*\d+)?(?![\d.,]|\s*(?:-|–|to)\s*\d)(?!\s*-?\s*(?:%|percent|kg|kilos?|lbs?|pounds?|kcal|cal|g\b|grams?|min|mins?|minutes?|sec|secs?|seconds?|s\b|h\b|hrs?|hours?|wks?|weeks?|days?|months?|steps?|bpm|ms\b|cm\b|mm\b)))/;
+
 function unitOf(before: string, after: string): string {
   if (bmiBefore.test(before)) return "bmi";
   for (const [pattern, unit] of unitClasses) if (pattern.test(after)) return unit;
+  if (repNotation.test(after)) return "load";
   return /^\s*[a-z]/.test(after) ? "other" : "";
 }
+
+/** The units a lifting load is written in. */
+const loadUnits: ReadonlySet<string> = new Set(["kg", "lb", "load"]);
 
 function tokensOf(text: string): Token[] {
   const found: Token[] = [];
@@ -267,6 +278,15 @@ function isSessionItemLength(token: Token, after: string): boolean {
   return activityAfterMinutes.test(after) || activityBeforeMinutes.test(token.before);
 }
 
+/**
+ * Whether a figure of minutes is a rest between sets given as advice: up to five minutes, in whole
+ * or half minutes ("rest 2 to 2.5 min"), never said of the athlete's own past or records.
+ */
+function isRestLength(token: Token): boolean {
+  return token.value <= 5 && Number.isInteger(token.value * 2) &&
+    !describesTheAthlete(token.before);
+}
+
 /** Whether the figure is a claim about the athlete that must come from the given text. */
 function mustBeGrounded(token: Token): boolean {
   const range = rangeEnd.exec(token.after);
@@ -274,6 +294,7 @@ function mustBeGrounded(token: Token): boolean {
   const integer = token.decimals === 0;
   if (measurementUnit.test(after) || measuredBefore.test(token.before)) return true;
   if (minuteUnit.test(after) && isSessionItemLength(token, after)) return false;
+  if (minuteUnit.test(after) && isRestLength(token)) return false;
   if (timeUnit.test(after)) return !(integer && token.value <= 5);
   if (scaleBefore.test(token.before)) return !(integer && token.value <= 10);
   if (timesAfter.test(token.after) || timesBefore.test(token.before)) {
@@ -288,9 +309,16 @@ function mustBeGrounded(token: Token): boolean {
   return token.value > 10;
 }
 
-/** Units agree when the reply's is the given number's, or either has no unit at all. */
+/**
+ * Units agree when the reply's is the given number's, or either has no unit at all. A load in rep
+ * notation agrees with the same figure in kg or lb ("115 for 5" in the athlete's message grounds
+ * "115 kg x 5" in the reply, and "112.5 kg" in a lookup grounds "112.5 x 6").
+ */
 function unitsAgree(token: Token, given: GivenNumber): boolean {
   if (given.unit === "" || token.unit === "") return true;
+  if (token.unit === "load" || given.unit === "load") {
+    return loadUnits.has(token.unit) && loadUnits.has(given.unit) || given.unit === "other";
+  }
   const known = token.unit !== "" && token.unit !== "other";
   return known ? given.unit === token.unit : given.unit === token.unit || given.unit === "other";
 }

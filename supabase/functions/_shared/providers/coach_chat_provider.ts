@@ -40,6 +40,7 @@ import {
   maxScheduleAheadDays,
 } from "../coach_lookups/catalogue.ts";
 import type { LookupCount } from "../coach_lookups/runner.ts";
+import { maxBlockStartLeadDays } from "../coach_proposals/training.ts";
 import {
   blockSettings,
   goalPhases,
@@ -1563,12 +1564,15 @@ const proposalContract = "\n# Proposing a change\n" +
   'proposal_intent is [] when no change is being asked for, otherwise a list of exactly one item {"kind": ..., "reason": ..., "note": ..., "params": [...]}. params holds the fields of the kind below as {"name": ..., "value": ...} pairs, with every value written as text: dates as YYYY-MM-DD, counted from the context date; figures as plain numbers ("8"); weekdays as a comma list ("1,3,5"). Send only the fields the kind needs.\n' +
   "Kinds:\n" +
   "- temporary_block: a spell away from the gym or the usual setup. setting (" +
-  blockSettings.join(" | ") + "), start_date, end_date. For a range of days use the longer end.\n" +
-  "- training_schedule: a new week for some weeks. weeks (1 to 12; 8 when the athlete gives no length), and any of days_per_week (1 to 6), weekdays (ISO, 1 is Monday), session_minutes (30 to 120).\n" +
+  blockSettings.join(" | ") +
+  "), start_date, end_date. For a range of days use the longer end. It starts on approval, so start_date is at most " +
+  maxBlockStartLeadDays +
+  " days ahead; for a later spell, propose nothing yet and say when to ask.\n" +
+  "- training_schedule: a new week for some weeks. weeks (1 to 12; 8 when the athlete gives no length), and any of days_per_week (1 to 6), weekdays (ISO, 1 is Monday), session_minutes (30 to 120). Only days, session length and weeks: the plan's own week is refused.\n" +
   "- exercise_swap: from_exercise (an exercise name from the plan) and, only if the athlete named one, to_exercise.\n" +
   "- intensity_or_phase: exactly one of level (" + intensityLevels.join(" | ") +
   ") or focus (" + trainingFocuses.join(" | ") +
-  "), and weeks (1 to 8). A deload is always one week, " +
+  "), and weeks (1 to 8). Use focus for a stalled lift, more strength or size. A deload is always one week, " +
   "whatever weeks says, and the regular plan returns by itself after it.\n" +
   "- goal_or_phase: phase (" + goalPhases.join(" | ") +
   "), and target_weight_kg and target_date only if the athlete gave them.\n" +

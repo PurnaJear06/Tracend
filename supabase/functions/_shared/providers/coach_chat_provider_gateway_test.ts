@@ -1,5 +1,6 @@
 // Coach chat through the AI gateway, offline: every provider answer comes from a fake fetch.
 
+import { maxBlockStartLeadDays } from "../coach_proposals/training.ts";
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
 import {
   captureLogs,
@@ -772,6 +773,27 @@ Deno.test("proposals are offered only when asked for, in the rules; the schema a
     !prompt(true).includes("weeks (1 to 8) and exactly one of level"),
     "no longer implies any length",
   );
+});
+
+// Coach simulation 2026-10-31: a travel block asked for on Friday for Monday was refused
+// (block_start_too_far) after the reply promised it, and "change my plan so the bench moves" became
+// a training_schedule with the plan's own week (no_change). The rules now say both limits.
+Deno.test("the proposal rules say how far ahead a block may start and which kind changes what the plan trains", () => {
+  const rules = buildCoachChatGatewayPrompt(
+    "I travel next week",
+    rich(),
+    "general",
+    undefined,
+    undefined,
+    undefined,
+    true,
+  ).system.map((part) => part.type === "text" ? part.text : "").join("");
+  assertStringIncludes(
+    rules,
+    `start_date is at most ${maxBlockStartLeadDays} days ahead; for a later spell, propose nothing yet and say when to ask.`,
+  );
+  assertStringIncludes(rules, "the plan's own week is refused");
+  assertStringIncludes(rules, "Use focus for a stalled lift, more strength or size.");
 });
 
 Deno.test("the model's intent is handed on in the engine's shape and is not part of the stored answer", async () => {
