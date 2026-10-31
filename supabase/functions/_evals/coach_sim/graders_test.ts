@@ -6,6 +6,7 @@ import {
   asksAboutOwnData,
   asksForPlanChange,
   athleteFiguresIn,
+  athleteSees,
   checkProposal,
   gradeConversation,
   gradeTurn,
@@ -247,4 +248,49 @@ Deno.test("restating a figure the athlete asked about, or the sets of a proposal
     history: asked.history,
   };
   assertEquals(gradeTurn(unprompted, [first]).find((g) => g.grader === "no_repeat")!.pass, false);
+});
+
+Deno.test("a session of the athlete's own plan named by the reply counts as using the data", () => {
+  const state = proposalStateOf(primary.records, stateFixture(), primary.profile);
+  const session = state.plan!.workouts[0].name;
+  const question = "I'm travelling Monday to Friday next week. What do I do with my training?";
+  assert(asksAboutOwnData(question));
+  const named = gradeTurn(
+    { ...turn(1, question, `Keep ${session} on Monday with dumbbells.`), proposalState: state },
+    [],
+  ).find((g) => g.grader === "uses_data")!;
+  assert(named.pass, named.detail);
+  const generic = gradeTurn(
+    { ...turn(1, question, "Keep training with dumbbells."), proposalState: state },
+    [],
+  ).find((g) => g.grader === "uses_data")!;
+  assert(!generic.pass);
+});
+
+Deno.test("what the athlete reads: a refused intent loses its promise and shows the reason", () => {
+  const state = proposalStateOf(primary.records, stateFixture(), primary.profile);
+  const intent = {
+    kind: "temporary_block",
+    reason: "travel",
+    note: "hotel",
+    setting: "minimal_equipment",
+    start_date: "2026-10-21",
+    end_date: "2026-10-23",
+  };
+  const answer = "Pack light. I've put a travel block up which you can approve below.";
+  const check = checkProposal(intent, "Travel next week", "2026-10-16", state);
+  assert(check.ok && !check.built && check.refusal === "block_start_too_far");
+  const seen = athleteSees(reply(answer, { proposalIntent: intent }), check);
+  assertEquals(seen, `Pack light.\n\n${check.reason}`);
+  // No intent: a promise is removed and nothing takes its place.
+  assertEquals(athleteSees(reply(answer), null), "Pack light.");
+  // A built proposal leaves the reply as it is.
+  const built = checkProposal(
+    { ...intent, start_date: "2026-10-17" },
+    "Travel tomorrow",
+    "2026-10-16",
+    state,
+  );
+  assert(built.ok && built.built, JSON.stringify(built));
+  assertEquals(athleteSees(reply(answer, { proposalIntent: intent }), built), answer);
 });

@@ -6,7 +6,15 @@ import type { ProposalKind, RefusalCode } from "../../_shared/coach_proposals/ty
 import type { CoachFact } from "../../_shared/coach_memory/facts.ts";
 import type { CoachNote } from "../../_shared/coach_memory/notes.ts";
 
-export type Turn = Readonly<{ role: "user" | "assistant"; content: string }>;
+/**
+ * One message of the thread, as recent_messages holds it; a labelled data summary the app gave
+ * instead of a model reply carries answer_source "data_summary" (prepare_coach_chat_v10).
+ */
+export type Turn = Readonly<{
+  role: "user" | "assistant";
+  content: string;
+  answer_source?: "data_summary";
+}>;
 
 /** How a case is graded and gated. */
 export const bankCategories = [

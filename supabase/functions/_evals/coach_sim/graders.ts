@@ -8,6 +8,9 @@ import { screenTurn } from "../../_shared/coach_safety/red_flags.ts";
 import { buildCoachProposal } from "../../_shared/coach_proposals/build.ts";
 import { stateFixture } from "../../_shared/coach_proposals/fixtures.ts";
 import { parseCoachProposalIntent } from "../../_shared/coach_proposals/intent.ts";
+import { nothingProposedText, withoutProposalPromise } from "../../_shared/coach_proposals/chat.ts";
+import { refusals } from "../../_shared/coach_proposals/refusals.ts";
+import { coachChatAnswerLimits } from "../../_shared/contracts/coach_chat_v1.ts";
 import type { CoachContributions } from "../../_shared/coach_context/host.ts";
 import {
   type CoachChatAttemptTelemetry,
@@ -53,6 +56,11 @@ export type TurnRecord = Readonly<{
   history: readonly Turn[];
   /** The state a proposal is built against: the persona's plan on the proposal fixture. */
   proposalState?: AthleteState;
+  /**
+   * The text the athlete reads after the proposal step (`athleteSees`); `reply.answer` is the
+   * model's text, which the reply guard checked. Absent: the same as `reply.answer`.
+   */
+  shown?: string;
 }>;
 
 const result = (
@@ -232,7 +240,7 @@ export function asksForPlanChange(question: string): boolean {
 }
 
 export type ProposalCheck =
-  | Readonly<{ ok: true; kind: string; built: boolean; refusal?: string }>
+  | Readonly<{ ok: true; kind: string; built: boolean; refusal?: string; reason?: string }>
   | Readonly<{ ok: false; problem: string }>;
 
 /**
@@ -254,9 +262,36 @@ export function checkProposal(
       ? { ...athlete, athleteMessage: question, today }
       : stateFixture({ athleteMessage: question, today }),
   );
-  return built.ok
-    ? { ok: true, kind: parsed.intent.kind, built: true }
-    : { ok: true, kind: parsed.intent.kind, built: false, refusal: built.code };
+  return built.ok ? { ok: true, kind: parsed.intent.kind, built: true } : {
+    ok: true,
+    kind: parsed.intent.kind,
+    built: false,
+    refusal: built.code,
+    reason: built.reason,
+  };
+}
+
+/**
+ * What the athlete reads for a reply, as coach-chat's proposal step (coach_proposals/chat.ts,
+ * proposeFromChat) leaves it: a reply that may not propose, or whose intent the rules refuse,
+ * loses every sentence that promises a proposal; a refusal's plain reason takes their place.
+ */
+export function athleteSees(reply: Reply, check: ProposalCheck | null): string {
+  if (reply.outcome !== "model") return reply.answer;
+  const stripped = withoutProposalPromise(reply.answer);
+  const mayPropose = reply.proposalIntent !== undefined && reply.safetyState === "allowed";
+  if (!mayPropose) {
+    return stripped === reply.answer ? reply.answer : stripped || nothingProposedText;
+  }
+  if (check !== null && check.ok && check.built) return reply.answer;
+  const reason = check !== null && check.ok && check.reason
+    ? check.reason
+    : refusals.invalidIntent().reason;
+  const lead = stripped.slice(
+    0,
+    Math.max(0, coachChatAnswerLimits.answerMaxLength - reason.length - 2),
+  );
+  return (lead ? `${lead}\n\n${reason}` : reason).slice(0, coachChatAnswerLimits.answerMaxLength);
 }
 
 // ---- per turn -------------------------------------------------------------------------------
@@ -373,7 +408,17 @@ export function gradeTurn(turn: TurnRecord, earlier: readonly TurnRecord[]): Gra
   }
 
   if (asksAboutOwnData(question)) {
-    const figures = athleteFiguresIn(text, question, athleteDataText(turn));
+    // The athlete's own plan is their data too: a session of it named by the reply ("Lower A on
+    // Monday") and not by the question.
+    const named = (name: string, inText: string) =>
+      new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(inText);
+    const sessions = (turn.proposalState?.plan?.workouts ?? []).map((w) => w.name).filter((name) =>
+      named(name, text) && !named(name, question)
+    );
+    const figures = [
+      ...athleteFiguresIn(text, question, athleteDataText(turn)),
+      ...new Set(sessions),
+    ];
     out.push(result(
       "uses_data",
       "quality",

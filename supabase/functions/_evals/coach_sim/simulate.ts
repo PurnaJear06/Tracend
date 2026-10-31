@@ -25,7 +25,14 @@ import {
 } from "./diagnostics.ts";
 import { providerErrorCodes } from "./verdict.ts";
 import { nextAthleteMessage } from "./athlete.ts";
-import { athleteDataText, gradeConversation, gradeTurn, type TurnRecord } from "./graders.ts";
+import {
+  athleteDataText,
+  athleteSees,
+  checkProposal,
+  gradeConversation,
+  gradeTurn,
+  type TurnRecord,
+} from "./graders.ts";
 import { type Claim, type ExpertVerdict, judgeClaims, judgeExpert } from "./judges.ts";
 import { wordSearch } from "./library_search.ts";
 import { inspectAnswers, type Rejection } from "./rejections.ts";
@@ -110,7 +117,9 @@ export const brokenRouteTurns = 6;
 
 /** The text an athlete sees for a reply: the answer, or what the app shows instead. */
 const shownToAthlete = (turn: TurnRecord) =>
-  turn.reply.outcome === "dead_end" ? "(No reply: the app showed an error.)" : turn.reply.answer;
+  turn.reply.outcome === "dead_end"
+    ? "(No reply: the app showed an error.)"
+    : turn.shown ?? turn.reply.answer;
 
 export async function simulate(options: SimulationOptions): Promise<SimulationResult> {
   const spend: Spend = { coach: 0, athlete: 0, judges: 0 };
@@ -262,7 +271,7 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
       );
       spend.coach += coachCost;
       const metadata = answered.failure?.metadata;
-      const record: TurnRecord = {
+      let record: TurnRecord = {
         number,
         question,
         reply: { ...answered.reply, costUsd: coachCost },
@@ -278,6 +287,15 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
         history: [...thread],
         proposalState,
       };
+      // What the athlete reads: the proposal step runs after the reply guard, as in coach-chat.
+      const proposalCheck = record.reply.proposalIntent === undefined ? null : checkProposal(
+        record.reply.proposalIntent,
+        question,
+        String(base.context.coaching_date),
+        proposalState,
+      );
+      const shown = athleteSees(record.reply, proposalCheck);
+      if (shown !== record.reply.answer) record = { ...record, shown };
       const grades = gradeTurn(record, turns);
       const rejected = inspectAnswers(
         turnAnswers,
@@ -302,7 +320,7 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
           coachBrief: scenario.coachBrief,
           earlier: seen,
           question,
-          reply: record.reply.answer,
+          reply: shownToAthlete(record),
           lookedUp: record.lookedUp,
         });
         judgeCost += judged.costUsd;
@@ -317,7 +335,7 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
         );
         if (cited.length > 0 && !overBudget()) {
           const checked = await judgeClaims(options.chat, options.judgeModel, {
-            reply: record.reply.answer,
+            reply: shownToAthlete(record),
             excerpts: Object.fromEntries(cited.map((key) => [key, contributions.shown[key].text])),
           });
           judgeCost += checked.costUsd;
@@ -341,11 +359,18 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
         costs: { coach: coachCost, athlete: athleteCost, judges: judgeCost },
       });
 
-      // The thread as coach-chat stores it: the question always, the answer unless it was a
-      // labelled data summary (prepare_coach_chat leaves those out) or nothing arrived.
+      // The thread as coach-chat stores it (prepare_coach_chat_v10): the question always, the
+      // answer as the athlete read it, a labelled data summary marked as the app's own reply, and
+      // nothing when nothing arrived.
       thread.push({ role: "user", content: question });
       if (record.reply.outcome === "model" || record.reply.outcome === "boundary") {
-        thread.push({ role: "assistant", content: record.reply.answer });
+        thread.push({ role: "assistant", content: shownToAthlete(record) });
+      } else if (record.reply.outcome === "data_summary") {
+        thread.push({
+          role: "assistant",
+          content: record.reply.answer,
+          answer_source: "data_summary",
+        });
       }
       seen.push({ role: "user", content: question }, {
         role: "assistant",

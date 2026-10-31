@@ -290,7 +290,7 @@ function stubOptions(
   };
 }
 
-Deno.test("a labelled data summary is shown to the athlete but left out of the thread, as coach-chat stores it", async () => {
+Deno.test("a labelled data summary stays in the thread, marked as the app's own reply, as prepare_coach_chat_v10 stores it", async () => {
   const seen: GenerateInput[] = [];
   let call = 0;
   const coach: Generate = (input) => {
@@ -303,14 +303,40 @@ Deno.test("a labelled data summary is shown to the athlete but left out of the t
   const [run] = (await simulate(stubOptions(coach))).conversations;
   assertEquals(run.turns[0].reply.outcome, "data_summary");
   assertEquals(run.turns[0].grades.find((g) => g.grader === "answered")!.pass, false);
-  assertEquals(
-    (seen[1].context.recent_messages as { role: string }[]).map((m) => m.role),
-    ["user"],
-  );
+  const thread = seen[1].context.recent_messages as { role: string; answer_source?: string }[];
+  assertEquals(thread.map((m) => m.role), ["user", "assistant"]);
+  assertEquals(thread[1].answer_source, "data_summary");
   assertEquals(
     (seen[2].context.recent_messages as { role: string }[]).map((m) => m.role),
-    ["user", "user", "assistant"],
+    ["user", "assistant", "user", "assistant"],
   );
+});
+
+Deno.test("the athlete reads the reply after the proposal step: a refused intent's promise gives way to the reason", async () => {
+  const seen: GenerateInput[] = [];
+  const coach: Generate = (input) => {
+    seen.push(input);
+    return Promise.resolve({
+      ...generation("Pack light. Here's a travel block you can approve below."),
+      // Five days from the coaching date: the rules start a block only within two.
+      proposalIntent: {
+        kind: "temporary_block",
+        reason: "travel",
+        note: "hotel gym",
+        setting: "minimal_equipment",
+        start_date: "2026-10-21",
+        end_date: "2026-10-23",
+      },
+    } as CoachChatGeneration);
+  };
+  const [run] = (await simulate(stubOptions(coach, { maxTurns: 2 }))).conversations;
+  const turn = run.turns[0];
+  assertEquals(turn.reply.answer, "Pack light. Here's a travel block you can approve below.");
+  assertStringIncludes(turn.shown!, "Pack light.");
+  assert(!turn.shown!.includes("approve below"));
+  assertStringIncludes(turn.shown!, "Ask again closer to the start date.");
+  const thread = seen[1].context.recent_messages as { role: string; content: string }[];
+  assertEquals(thread[1].content, turn.shown);
 });
 
 Deno.test("the budget cap stops new turns; a thrown error is a harness error", async () => {

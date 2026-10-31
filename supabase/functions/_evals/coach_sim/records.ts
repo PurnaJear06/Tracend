@@ -993,7 +993,7 @@ export function athleteFile(records: Records, profile: ProfileFacts): Record<str
   if ((todayHealth?.sleep_quality ?? 70) < 55) permitted.push("SLEEP_QUALITY_LOW");
   if (chronic > 0 && acute / chronic > 1.3) permitted.push("TRAINING_LOAD_ELEVATED");
   return {
-    schema_version: "8.0",
+    schema_version: "8.1",
     coaching_date: today,
     context_kind: "general",
     active_plan: {

@@ -201,7 +201,16 @@ function transcript(run: ConversationRun): string[] {
   for (const turn of run.turns) {
     lines.push(`**Turn ${turn.number}, ${persona.name}:** ${oneLine(turn.question)}`, "");
     lines.push(`**Coach** (${turnLine(turn)}):`, "");
-    lines.push(turn.reply.answer ? quote(turn.reply.answer) : "> (no reply)", "");
+    const shown = turn.shown ?? turn.reply.answer;
+    lines.push(shown ? quote(shown) : "> (no reply)", "");
+    if (turn.shown !== undefined) {
+      lines.push(
+        "Before Tracend's proposal step (what the reply guard checked), the reply read:",
+        "",
+        quote(turn.reply.answer),
+        "",
+      );
+    }
     const failed = turn.grades.filter((g) => !g.pass);
     lines.push(
       `Checks: ${turn.grades.length - failed.length}/${turn.grades.length} passed${
