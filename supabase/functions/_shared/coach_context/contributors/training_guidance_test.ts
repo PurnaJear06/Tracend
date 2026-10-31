@@ -120,7 +120,7 @@ Deno.test("a suggestion tells the reasons in words, leaves the decision to the a
   assertStringIncludes(result.text, "never start, accept, decline or change a lighter week");
   assertStringIncludes(result.text, "a widely used coaching practice, not a proven requirement");
   // 85 of 150 minutes, the upper figure for the goal, and hard cardio open.
-  assertStringIncludes(result.text, "85 of 150 minutes of moderate cardio (up to 300 for");
+  assertStringIncludes(result.text, "85 of 150 minutes of moderate cardio (up to 300 minutes for");
   assertStringIncludes(result.text, "every counted minute is read as moderate");
   assertStringIncludes(result.text, "Hard cardio is open today, up to 2 sessions a week");
   assertStringIncludes(result.text, "at least 3 hours from lifting");
@@ -183,6 +183,14 @@ Deno.test("the cardio week reads as it is: not countable, zero and the hard or e
   assertStringIncludes(easy.text, "Today is an easy-cardio day: hard cardio is not open");
   assertStringIncludes(easy.text, "below 60% of heart-rate reserve");
   assert(!easy.text.includes("Hard cardio is open"));
+
+  // Every cardio figure carries its own unit, so the numbers check grounds "300 minutes" and never lets a
+  // unitless 2 ground an invented "2 kg".
+  const hard = await rendered(
+    payload({ cardio_week: cardio({ stretch_max: 300, vigorous_allowed: true }) }),
+  );
+  assertStringIncludes(hard.text, "(up to 300 minutes for the athlete's goal)");
+  assertStringIncludes(hard.text, "a hard minute counts as 2 moderate minutes.");
 
   const known = await rendered(payload({ cardio_week: cardio({ intensity_known: true }) }));
   assert(!known.text.includes("every counted minute is read as moderate"));

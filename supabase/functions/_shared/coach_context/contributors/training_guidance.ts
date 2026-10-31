@@ -138,7 +138,7 @@ function cardioLines(guidance: TrainingGuidance): string[] {
   } else {
     const upper = week.stretchMax === null
       ? ""
-      : ` (up to ${record(week.stretchMax)} for the athlete's goal)`;
+      : ` (up to ${record(week.stretchMax)} minutes for the athlete's goal)`;
     lines.push(
       `Cardio this week (${window}): ${record(week.doneMin)} of ${
         record(week.targetMin)
@@ -159,7 +159,7 @@ function cardioLines(guidance: TrainingGuidance): string[] {
         record(week.vigorousSessionsMax)
       } sessions a week, and a hard minute counts as ${
         record(week.vigorousCountsAs)
-      }. Keep it at least ${
+      } moderate minutes. Keep it at least ${
         record(week.liftSeparationHours)
       } hours from lifting when explosive strength matters.`
       : `Today is an easy-cardio day: hard cardio is not open (the health check, today's readiness or a sore joint decides). Easy means below ${
