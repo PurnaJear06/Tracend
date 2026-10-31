@@ -632,27 +632,40 @@ void main() {
   group('Daily Brief contract — get_my_daily_brief v1.9 (availability)', () {
     const fixture = 'daily_brief_v1_9.json';
 
-    test('every v1.8 key is unchanged and availability is added', () {
-      final v18 = _loadFixtureJson('daily_brief_v1_8.json');
-      final v19 = _loadFixtureJson(fixture);
-      expect(v19['schema_version'], '1.9');
-      expect(v19.keys.toSet(), {...v18.keys, 'availability'});
-      for (final key in v18.keys.where((key) => key != 'schema_version')) {
-        expect(v19[key], v18[key], reason: key);
-      }
-      final availability = v19['availability'] as Map<String, dynamic>;
-      expect(availability.keys.toSet(), {
-        'schema_version',
-        'local_date',
-        'status',
-        'unavailable_today',
-        'safety_route',
-        'paused',
-        'pause',
-        'return_from_pause',
-        'offer_break',
-      });
-    });
+    test(
+      'every v1.8 key is unchanged, availability is added and each day says paused',
+      () {
+        final v18 = _loadFixtureJson('daily_brief_v1_8.json');
+        final v19 = _loadFixtureJson(fixture);
+        expect(v19['schema_version'], '1.9');
+        expect(v19.keys.toSet(), {...v18.keys, 'availability'});
+        for (final key in v18.keys.where(
+          (key) => key != 'schema_version' && key != 'week',
+        )) {
+          expect(v19[key], v18[key], reason: key);
+        }
+        // A week day keeps every 1.8 key and adds paused.
+        final week18 = (v18['week'] as List).cast<Map<String, dynamic>>();
+        final week19 = (v19['week'] as List).cast<Map<String, dynamic>>();
+        expect(week19.length, week18.length);
+        for (var i = 0; i < week18.length; i++) {
+          expect(week19[i].keys.toSet(), {...week18[i].keys, 'paused'});
+          expect({...week19[i]}..remove('paused'), week18[i]);
+        }
+        final availability = v19['availability'] as Map<String, dynamic>;
+        expect(availability.keys.toSet(), {
+          'schema_version',
+          'local_date',
+          'status',
+          'unavailable_today',
+          'safety_route',
+          'paused',
+          'pause',
+          'return_from_pause',
+          'offer_break',
+        });
+      },
+    );
 
     test('a can\'t-train day with the break offer parses', () {
       final brief = DailyBrief.fromJson(_loadFixtureJson(fixture));
