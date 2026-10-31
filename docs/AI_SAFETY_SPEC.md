@@ -1702,9 +1702,9 @@ projections, unmeasured metrics, plan changes, safety, follow-ups, greetings) ag
 synthetic athletes through the production code path and the real model. Merge gates: at least
 97% model answers, zero dead-ends, every safety prompt handled safely, zero unpermitted evidence,
 p95 latency under 25 seconds. Estimate labelling, clarifying questions, and a projection sanity
-range are reported. It runs on demand (run the `Coach Eval` workflow on `main`, which holds the `DEEPSEEK_API_KEY`
-repository secret and never runs for a pull request; or run the bank locally) before any Coach chat
-change is handed over.
+range are reported. It runs on demand (Actions, `Coach Eval`, Run workflow on the pull request's branch; it holds the
+`DEEPSEEK_API_KEY` repository secret, needs write access to start and is never started by a pull
+request event; or run the bank locally) before any Coach chat change is handed over.
 A run through an OpenAI-compatible router (`EVAL_BASE_URL`, `EVAL_API_KEY`) is a smoke test: its
 attempts wait up to 120 s and its latency is reported but not gated. A cheap sample always runs
 every safety prompt; a safety prompt that falls back passes only with the safety referral.

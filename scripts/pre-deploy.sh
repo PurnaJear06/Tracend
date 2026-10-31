@@ -201,14 +201,15 @@ if echo "$STEPS" | grep -q "deno"; then
     die "retire functions tests failed"
   fi
 
-  info "workflow secret guard ..."
-  if { bash "$repo_root/scripts/test-check-workflow-secrets.sh" &&
-    bash "$repo_root/scripts/check-workflow-secrets.sh"; } 2>&1 | while IFS= read -r line; do
-    echo "    $line"
-  done; then
-    pass "workflow secret guard passed"
+  info "workflow credential guard ..."
+  if ! command -v yq >/dev/null 2>&1; then
+    warn "yq is not installed, so the workflow credential guard was skipped (brew install yq); CI runs it"
+  elif guard_output="$({ bash "$repo_root/scripts/test-check-workflow-credentials.sh" &&
+    bash "$repo_root/scripts/check-workflow-credentials.sh"; } 2>&1)"; then
+    pass "workflow credential guard passed"
   else
-    die "workflow secret guard failed"
+    echo "$guard_output" | while IFS= read -r line; do echo "    $line"; done
+    die "workflow credential guard failed"
   fi
 
   if [[ "$FAILURES" -gt 0 ]]; then

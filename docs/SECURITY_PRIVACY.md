@@ -467,8 +467,12 @@ and numbers only. The exception value is the call site's failure code (every `ca
 pass one; the class name stands in when it is not a short code), the type is the error's class name,
 and `error.message`, causes, provider response bodies, parse errors quoting model text and stack
 source text are never sent. Tags and extra fields are short codes (letters, digits, `_ . : / -`, no
-spaces) or numbers (HTTP status, latency, counts), and the stack keeps function, file and line of
-at most 30 frames. A report may carry the account ID and device and app details, never name or email.
+spaces) or numbers (HTTP status, latency, counts). The stack keeps function, file and line of at
+most 30 frames: the header (the message, even over several lines) is cut off first, a function name
+has no spaces except a leading `async ` or `new `, and a frame whose file is not a URL of a loaded
+module (`file:`, `ext:`, `https:`, `node:`, `jsr:`, `npm:`) is dropped; if the header cannot be
+located no frame is sent. A provider failure keeps its short code and HTTP status (for example
+`meal_vision_request_failed:503:overloaded`) only when the text is a code. Reporting never throws. A report may carry the account ID and device and app details, never name or email.
 
 Audit events record access and changes using opaque IDs and action codes, not copies of sensitive
 content.

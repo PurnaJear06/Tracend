@@ -1,11 +1,12 @@
 name: Coach Eval
 
 # The live Coach model evaluations. Not a required check, and on demand only: Actions > Coach Eval >
-# Run workflow, on main. They never run for a pull request, because a pull request runs its own
-# code and these jobs hold provider keys (scripts/check-workflow-secrets.sh, run in ci.yml, fails
-# any workflow that a pull request triggers and that reads a secret). To check a Coach change
-# before it merges, merge it to main behind its deterministic tests, or run the bank locally with
-# the AI_COACH_CHAT_* settings (live_model.ts). Every Coach change must pass the answer bank
+# Run workflow, choosing the branch to evaluate (a pull request's branch before it merges, or main).
+# Starting it needs write access to the repository, so the owner is the only one who can; a pull
+# request event never starts it, and a fork's pull request never receives these credentials
+# (scripts/check-workflow-credentials.sh, run in ci.yml, fails any workflow that an untrusted event
+# can start and that mentions them). To run the bank on your own machine instead, use the
+# AI_COACH_CHAT_* settings (live_model.ts). Every Coach change must pass the answer bank
 # (docs/TESTING_STRATEGY.md).
 #
 # Two parts:

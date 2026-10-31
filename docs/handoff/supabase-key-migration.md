@@ -68,6 +68,22 @@ publishable key and a `default` secret key. So the new keys already exist; nothi
    - Read-only SQL (dashboard SQL editor): the newest `cron.job_run_details` rows for the library-embed
      and meal-media-retention jobs show `succeeded` after their next run; `select count(*) from
      public.model_runs where created_at > now() - interval '1 hour'` keeps growing during use.
+   - **Storage (meal photos and signed export URLs).** In the app, take a meal photo and let it be
+     analysed (meal-analyze reads the stored photo from `meal-images` with the secret key), then request a
+     data export from Settings (privacy-export uploads to `account-exports` and creates the signed link
+     with `createSignedUrl`). Open the export link once: it must download. A 401 or "invalid signature"
+     on either is a key failure.
+   - **Waitlist functions.** Submit the website waitlist form with a throwaway address you control
+     (waitlist-join), open the confirmation link (waitlist-confirm), then the unsubscribe link
+     (waitlist-unsubscribe). They read the key through `readSettings()`, so a missing or rejected
+     key shows as `not_configured` in Sentry or a 5xx on the form.
+   - **Account deletion (`auth.admin.deleteUser` and Storage deletion).** privacy-delete-account is the
+     one function that deletes the auth user and every stored object with the secret key. Test it
+     only with a throwaway test account created for this (sign up on a build pointed at production
+     is switched off, so create it from the dashboard's Authentication page, give it one meal photo
+     and one export), never the owner's account. Delete it from Settings and confirm in the
+     dashboard that the user and its Storage objects are gone. If a throwaway account cannot be
+     made, leave this check for the cutover and keep the legacy key in place until it passes.
 4. **Set the publishable key** the same way (`TRACEND_SUPABASE_PUBLISHABLE_KEY`, the `default`
    publishable key), then repeat step 3's Coach chat check: it is the only path that uses it.
 5. **Watch for a day.** Sentry (`function` and `failure_code` tags) and the Edge Function logs show no

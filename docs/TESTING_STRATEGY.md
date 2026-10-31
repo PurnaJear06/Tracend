@@ -132,8 +132,9 @@ accepted as a permanent retry.
   over-caution rate and the optional tone judge (a different model, binary rubric,
   ungated until checked against about 30 human labels) are reported. Every Coach pull request must
   pass the bank before the lead hands it over: run `coach_bank/run.ts` locally, or run the `Coach
-  Eval` workflow on `main` (Actions, Coach Eval, Run workflow; a pull request cannot start it,
-  because the job holds provider keys), and say in the pull request which model ran;
+  Eval` workflow on the pull request's branch (Actions, Coach Eval, Run workflow; it needs write
+  access, and no pull request event can start a job that holds provider keys), and say in the pull
+  request which model ran;
 - the operations evaluation (`coach_chat_eval.ts`, same workflow) runs about 54 varied prompts × 3
   synthetic athletes for the model-answer rate (at least 97%), dead ends (none), unpermitted
   evidence (none) and p95 latency (under 25 s), and proves the prompt cache. A run makes 17 calls
@@ -638,10 +639,11 @@ measured vertical slice.
 
 Branch protection requires seven of them; `Website Build` is not required. The live AI
 evaluations (`coach-eval.yml`, `onboarding-eval.yml`) run on demand only (Actions, the workflow, Run
-workflow on `main`); no pull request event can start them, because they hold provider keys and a
-pull request runs its own code (`scripts/check-workflow-secrets.sh` fails CI for any workflow that
-a pull request triggers and that reads a secret). They are not required checks, but a Coach pull
-request is not handed over until the answer bank has passed, locally or by a run on `main`.
+workflow on the branch to evaluate; starting one needs write access); no pull request event can
+start them, because they hold provider keys and a pull request runs its own code
+(`scripts/check-workflow-credentials.sh` fails CI for any workflow that an untrusted event can start
+and that mentions secrets). They are not required checks, but a Coach pull request is not handed
+over until the answer bank has passed, locally or by a run on its branch.
 
 Before TestFlight expansion:
 

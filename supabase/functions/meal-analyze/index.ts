@@ -1,7 +1,7 @@
 import { AiBudget } from "../_shared/ai_budget.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { createLogger, extractCorrelationId } from "../_shared/logger.ts";
-import { captureException } from "../_shared/sentry.ts";
+import { captureException, providerFailure } from "../_shared/sentry.ts";
 import { handleMealAnalyze } from "./handler.ts";
 import { mealVisionPath, readMealConsent, reserveMealBudget } from "./vision.ts";
 
@@ -42,6 +42,7 @@ Deno.serve(async (request) => {
           mealId,
           provider,
           failureCode: "meal_analysis_unavailable",
+          ...providerFailure(error),
         }),
       store: {
         consent: () =>

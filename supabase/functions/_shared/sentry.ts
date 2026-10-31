@@ -70,23 +70,68 @@ function safeNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+/** Runs a reader of an arbitrary error (a getter can throw); a failure reads as nothing. */
+function attempt<T>(read: () => T, fallback: T): T {
+  try {
+    return read();
+  } catch {
+    return fallback;
+  }
+}
+
 /** The error's class name, or a fixed name for anything that is not an Error. */
 function errorClass(error: unknown): string {
-  return error instanceof Error && namePattern.test(error.name) ? error.name : "NonError";
+  return attempt(
+    () => error instanceof Error && namePattern.test(error.name) ? error.name : "NonError",
+    "NonError",
+  );
 }
 
 /** The HTTP status an error carries as a number, if any. */
 function errorStatus(error: unknown): number | undefined {
-  if (typeof error !== "object" || error === null) return undefined;
-  const status = (error as { status?: unknown }).status ??
-    (error as { httpStatus?: unknown }).httpStatus;
-  return typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599
-    ? status
-    : undefined;
+  return attempt(() => {
+    if (typeof error !== "object" || error === null) return undefined;
+    const status = (error as { status?: unknown }).status ??
+      (error as { httpStatus?: unknown }).httpStatus;
+    return typeof status === "number" && Number.isInteger(status) && status >= 100 &&
+        status <= 599
+      ? status
+      : undefined;
+  }, undefined);
+}
+
+/**
+ * What a provider call that failed can say: its short error code and HTTP status, read from the
+ * error's `code` or, when that is not a code, its message, but only when the text is a code (no
+ * spaces) such as `meal_vision_request_failed:503:overloaded`. A message with words in it, a
+ * response body or model text says nothing here.
+ */
+export function providerFailure(
+  error: unknown,
+): { errorCode?: string; httpStatus?: number } {
+  return attempt(() => {
+    if (typeof error !== "object" || error === null) return {};
+    const candidates = [
+      (error as { code?: unknown }).code,
+      (error as { message?: unknown }).message,
+    ];
+    const errorCode = candidates.find((value): value is string =>
+      typeof value === "string" && codePattern.test(value)
+    );
+    if (errorCode === undefined) return {};
+    const status = /^[A-Za-z0-9_]+:([1-5]\d\d)(?::|$)/.exec(errorCode)?.[1];
+    return status === undefined ? { errorCode } : { errorCode, httpStatus: Number(status) };
+  }, {});
 }
 
 const framePattern = /^\s*at\s+(?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?\s*$/;
-const functionPattern = /^[A-Za-z0-9_$.<>[\] ]{1,100}$/;
+/** A function name from V8: no spaces except a leading `async ` or `new `. */
+const functionPattern = /^(?:(?:async|new) )?[A-Za-z0-9_$.<>[\]]{1,100}$/;
+/**
+ * Frames come from code the runtime loaded, so the file is a URL (a local path may hold spaces);
+ * any other frame is dropped.
+ */
+const filenamePattern = /^(?:file|ext|https?|node|jsr|npm):.{1,300}$/;
 
 interface SentryFrame {
   function?: string;
@@ -95,25 +140,46 @@ interface SentryFrame {
 }
 
 /**
+ * The text of `error.stack` after the header (`Name: message`, which may span several lines and
+ * may itself look like frames), or null when the header cannot be located.
+ */
+function stackAfterHeader(error: Error): string | null {
+  const stack = error.stack;
+  if (typeof stack !== "string") return null;
+  const message = error.message;
+  if (message === "") {
+    const newline = stack.indexOf("\n");
+    return newline === -1 ? "" : stack.slice(newline + 1);
+  }
+  const at = stack.indexOf(message);
+  return at === -1 ? null : stack.slice(at + message.length);
+}
+
+/**
  * The frames of a stack, oldest first as Sentry expects: function name, file and line only. The
- * message on the first line of `error.stack`, and any source text, is dropped.
+ * header (the message, however many lines it has), source text and any line that is not a frame
+ * in a loaded file are dropped.
  */
 function stackFrames(error: unknown): SentryFrame[] {
-  if (!(error instanceof Error) || typeof error.stack !== "string") return [];
-  const frames: SentryFrame[] = [];
-  for (const line of error.stack.split("\n")) {
-    const match = framePattern.exec(line);
-    if (!match) continue;
-    const filename = match[2].replace(/[?#].*$/, "");
-    if (filename.length === 0 || filename.length > 300 || /\s/.test(filename)) continue;
-    frames.push({
-      ...(match[1] !== undefined && functionPattern.test(match[1]) ? { function: match[1] } : {}),
-      filename,
-      lineno: Number(match[3]),
-    });
-    if (frames.length === maxFrames) break;
-  }
-  return frames.reverse();
+  return attempt(() => {
+    if (!(error instanceof Error)) return [];
+    const section = stackAfterHeader(error);
+    if (section === null) return [];
+    const frames: SentryFrame[] = [];
+    for (const line of section.split("\n")) {
+      const match = framePattern.exec(line);
+      if (!match) continue;
+      const filename = match[2].replace(/[?#].*$/, "");
+      if (!filenamePattern.test(filename)) continue;
+      frames.push({
+        ...(match[1] !== undefined && functionPattern.test(match[1]) ? { function: match[1] } : {}),
+        filename,
+        lineno: Number(match[3]),
+      });
+      if (frames.length === maxFrames) break;
+    }
+    return frames.reverse();
+  }, []);
 }
 
 interface ParsedDsn {
@@ -159,8 +225,12 @@ export function captureException(
   error: unknown,
   context: SentryContext & { failureCode: string },
 ): void {
-  if (!Deno.env.get("SENTRY_DSN")) return;
-  send(buildSentryEvent(error, context));
+  try {
+    if (!Deno.env.get("SENTRY_DSN")) return;
+    send(buildSentryEvent(error, context));
+  } catch {
+    // Silent: reporting a failure must never become one.
+  }
 }
 
 /** A message event that is not an error, such as a turn that succeeded but ran slowly. */
@@ -169,8 +239,12 @@ export function captureMessage(
   level: "warning" | "info",
   context?: SentryContext,
 ): void {
-  if (!Deno.env.get("SENTRY_DSN")) return;
-  send(buildSentryMessageEvent(message, level, context));
+  try {
+    if (!Deno.env.get("SENTRY_DSN")) return;
+    send(buildSentryMessageEvent(message, level, context));
+  } catch {
+    // Silent: reporting a failure must never become one.
+  }
 }
 
 const tagValue = (value: string | number | boolean | undefined): string => {

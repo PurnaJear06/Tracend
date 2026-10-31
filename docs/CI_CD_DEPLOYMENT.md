@@ -251,14 +251,19 @@ single-owner repository cannot be permanently deadlocked.
 - Each workflow's default token is read-only (`permissions: contents: read`). Only the
   `tag-release` jobs, which push the release tag, get `contents: write`, and they are the only
   checkouts that keep credentials (`persist-credentials: false` everywhere else).
-- No pull request runs with a repository secret (2026-10-31). A pull request runs the branch's own
-  code, so a workflow that a `pull_request` or `pull_request_target` event triggers may not read any
-  secret except `GITHUB_TOKEN`, and may not call a local reusable workflow.
-  `scripts/check-workflow-secrets.sh` enforces it in the `Deno` job of `ci.yml` (its fixtures are in
-  `scripts/test-check-workflow-secrets.sh`, and `pre-deploy.sh` runs both). The live AI evaluations
-  (`coach-eval.yml`, `onboarding-eval.yml`) are `workflow_dispatch` only: Actions, pick the
-  workflow, Run workflow on `main`. They no longer start from a pull request label, so a Coach or
-  onboarding change is evaluated after it merges, or locally. The library retrieval evaluation
+- No event a stranger can influence starts a job with a repository secret (2026-10-31). A pull
+  request runs the branch's own code, so a workflow that any `pull_request*` event (including
+  `pull_request_target`, `pull_request_review` and its comments), `issue_comment` or `workflow_run`
+  triggers may not mention `secrets` anywhere (the raw file, comments included) except the exact
+  token `secrets.GITHUB_TOKEN`, and may not call a local reusable workflow. The one allowed
+  `workflow_run` is the one limited to `branches: [main]` (`deploy.yml`). The trigger is read with
+  `yq`, which GitHub's ubuntu runners have; `scripts/check-workflow-credentials.sh` enforces it in
+  the `Deno` job of `ci.yml`, its fixtures are in `scripts/test-check-workflow-credentials.sh`, and
+  `pre-deploy.sh` runs both when `yq` is installed (`brew install yq`) and warns when it is not.
+  The live AI evaluations (`coach-eval.yml`, `onboarding-eval.yml`) are `workflow_dispatch` only:
+  Actions, pick the workflow, Run workflow on the branch to evaluate (a pull request's branch before
+  it merges). Starting a run needs write access, so only the owner can; a fork's pull request never
+  receives secrets. They no longer start from a pull request label. The library retrieval evaluation
   (`library-eval.yml`) holds no secret and still runs on library pull requests.
 - Jobs that use production secrets run in the `production` environment, and a hotfix runs only
   from `main`. Once the secrets move into that environment, a workflow on another branch cannot

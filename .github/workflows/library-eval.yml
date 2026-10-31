@@ -14,9 +14,10 @@ name: Library Eval
 #
 # It runs by itself on every pull request that changes the library content, the shared library
 # code or a library migration (not a required check), and on demand with Run workflow. It calls no
-# model and reads no repository secret: a pull request runs this workflow with the branch's own
-# code, so scripts/check-workflow-secrets.sh keeps secrets out of every pull request workflow. The
-# live model evaluations are in coach-eval.yml and onboarding-eval.yml (Run workflow on main only).
+# model and reads no repository credential: a pull request runs this workflow with the branch's own
+# code, so scripts/check-workflow-credentials.sh keeps credentials out of every workflow that a
+# pull request can start. The live model evaluations are in coach-eval.yml and onboarding-eval.yml:
+# Run workflow from Actions on the branch to evaluate (write access needed).
 on:
   workflow_dispatch:
     inputs:

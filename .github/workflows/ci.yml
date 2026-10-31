@@ -54,11 +54,11 @@ jobs:
       - name: Retire functions script tests
         run: bash scripts/test-retire-functions.sh
 
-      - name: Workflow secret guard tests
-        run: bash scripts/test-check-workflow-secrets.sh
+      - name: Workflow credential guard tests
+        run: bash scripts/test-check-workflow-credentials.sh
 
-      - name: No pull request workflow reads a secret
-        run: bash scripts/check-workflow-secrets.sh
+      - name: No untrusted-trigger workflow mentions credentials
+        run: bash scripts/check-workflow-credentials.sh
 
   flutter-analyze:
     name: Flutter Analyze
@@ -223,7 +223,7 @@ jobs:
           sudo mv gitleaks /usr/local/bin/gitleaks
           gitleaks version
 
-      - name: Scan full git history for secrets
+      - name: Scan full git history for leaked credentials
         run: gitleaks git --verbose .
 
   migration-check:
