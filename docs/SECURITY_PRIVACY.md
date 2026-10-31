@@ -465,7 +465,11 @@ version only; the check-in, sleep and recovery values stay in the Restricted `da
 pattern or a red-flag answer. Neither widgets nor the Live Activity show a readiness adjustment,
 a pain check or a joint state. Logs and Sentry carry codes and counts, never a pain severity, area
 or red-flag answer; the Edge Functions and the database write none of them to a log, and the app's
-`beforeSend` scrubber must treat the `pain_*` check-in keys as health values (B5-2 extends its test).
+`beforeSend` and `beforeBreadcrumb` scrubber drops the `pain_*` and `joint_*` keys, the red-flag codes, areas,
+severities and routes from events and breadcrumbs (built in B5-2, tested in `test/sentry_scrubber_test.dart`). On
+the phone a pain report that cannot be sent waits per athlete in local storage (kept apart from other athletes and removed with the
+other local data when the account is deleted) and is sent again for at most a day, because the server records a pain report
+only for today or yesterday; the referral acknowledgements are kept per athlete the same way.
 The Coach context view `get_readiness_context_v1` returns band, kind, status, route and each joint's
 area, state and lasting flag only (service role); the red-flag codes behind a route and the
 severity are not in it.

@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:ui' show Tristate;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
+import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/today/check_in_sheet.dart';
 
@@ -15,9 +18,13 @@ const _environment = AppEnvironment(
 );
 
 class _Recorder {
-  _Recorder({this.delivers = true});
+  _Recorder({this.delivers = true, this.refuses = false});
 
   final bool delivers;
+
+  /// The server refuses the check-in (22023), as for pain on a day it does
+  /// not record.
+  final bool refuses;
   final payloads = <Map<String, dynamic>>[];
 
   Future<bool> send(
@@ -27,11 +34,19 @@ class _Recorder {
     Map<String, dynamic> payload,
   ) async {
     payloads.add(Map<String, dynamic>.from(payload));
+    if (refuses) {
+      throw const PostgrestException(message: 'refused', code: '22023');
+    }
     return delivers;
   }
 }
 
-Future<void> _open(WidgetTester tester, _Recorder recorder) async {
+Future<void> _open(
+  WidgetTester tester,
+  _Recorder recorder, {
+  List<JointState> jointStates = const [],
+  void Function(CheckInSaved?)? onSaved,
+}) async {
   SharedPreferences.setMockInitialValues({});
   await tester.pumpWidget(
     MaterialApp(
@@ -40,11 +55,49 @@ Future<void> _open(WidgetTester tester, _Recorder recorder) async {
         body: Builder(
           builder: (context) => Center(
             child: TextButton(
-              onPressed: () => showCheckInSheet(
-                context,
-                _environment,
-                sender: recorder.send,
-              ),
+              onPressed: () async {
+                final saved = await showCheckInSheet(
+                  context,
+                  _environment,
+                  sender: recorder.send,
+                  jointStates: jointStates,
+                );
+                onSaved?.call(saved);
+              },
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('Open'));
+  await tester.pumpAndSettle();
+}
+
+/// Like [_open], with a sender of its own.
+Future<void> _openWith(
+  WidgetTester tester,
+  CheckInSend sender, {
+  void Function(CheckInSaved?)? onSaved,
+  bool keepStored = false,
+}) async {
+  if (!keepStored) SharedPreferences.setMockInitialValues({});
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: TracendTheme.dark,
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => Center(
+            child: TextButton(
+              onPressed: () async {
+                final saved = await showCheckInSheet(
+                  context,
+                  _environment,
+                  sender: sender,
+                );
+                onSaved?.call(saved);
+              },
               child: const Text('Open'),
             ),
           ),
@@ -163,7 +216,8 @@ void main() {
       expect(node.flagsCollection.isSelected, Tristate.isTrue);
     });
 
-    testWidgets('some pain asks how strong before it saves', (tester) async {
+    testWidgets('some pain asks how strong, where and the red-flag question '
+        'before it saves', (tester) async {
       final recorder = _Recorder();
       await _open(tester, recorder);
 
@@ -174,10 +228,28 @@ void main() {
         find.text('Choose how strong the pain is to save.'),
         findsOneWidget,
       );
+      expect(find.text('Choose where the pain is to save.'), findsOneWidget);
 
-      await _choose(tester, 'Pain 7 of 10');
+      await _choose(tester, 'Pain 4 of 10');
       await _save(tester);
-      expect(recorder.payloads.single['pain_severity'], 7);
+      expect(recorder.payloads, isEmpty);
+      expect(find.text('Choose where the pain is to save.'), findsOneWidget);
+
+      await _choose(tester, 'Where is it?: Knee');
+      await _save(tester);
+      expect(recorder.payloads, isEmpty);
+      expect(
+        find.text('Choose any that apply, or None of these.'),
+        findsOneWidget,
+      );
+
+      await _choose(tester, 'Do any of these apply?: None of these');
+      await _save(tester);
+      final payload = recorder.payloads.single;
+      expect(payload['pain_severity'], 4);
+      expect(payload['pain_area'], 'knee');
+      expect(payload['pain_red_flags'], isEmpty);
+      expect(payload.containsKey('pain_pattern'), isFalse);
     });
 
     testWidgets('going back to no pain stores 0', (tester) async {
@@ -186,10 +258,25 @@ void main() {
 
       await _choose(tester, 'Pain: Some pain');
       await _choose(tester, 'Pain 4 of 10');
+      await _choose(tester, 'Where is it?: Knee');
       await _choose(tester, 'Pain: No pain');
       await _save(tester);
 
-      expect(recorder.payloads.single['pain_severity'], 0);
+      final payload = recorder.payloads.single;
+      expect(payload['pain_severity'], 0);
+      expect(
+        payload.keys.where((key) => key != 'pain_severity'),
+        [
+          'sleep_quality',
+          'energy',
+          'soreness',
+          'hunger',
+          'mood',
+          'available_to_train',
+          'note',
+        ],
+        reason: 'no pain answer travels once the pain is taken back',
+      );
     });
 
     testWidgets('the note counter appears only near the limit', (tester) async {
@@ -240,6 +327,447 @@ void main() {
       await tester.tap(find.text('Save check-in'));
       await tester.pumpAndSettle();
       expect(recorder.payloads, hasLength(1));
+    });
+  });
+
+  group('the pain check in the check-in', () {
+    Future<void> hurt(
+      WidgetTester tester, {
+      required int strength,
+      required String area,
+    }) async {
+      await _choose(tester, 'Pain: Some pain');
+      await _choose(tester, 'Pain $strength of 10');
+      await _choose(tester, 'Where is it?: $area');
+    }
+
+    testWidgets('red flags are ticked, sent sorted and routed out', (
+      tester,
+    ) async {
+      final recorder = _Recorder();
+      CheckInSaved? saved;
+      await _open(tester, recorder, onSaved: (value) => saved = value);
+      await hurt(tester, strength: 3, area: 'Lower back');
+      await _choose(tester, 'When does it hurt?: Even at rest');
+      await _choose(
+        tester,
+        'Do any of these apply?: Numbness, tingling or weakness in an arm or '
+        'leg',
+      );
+      await _save(tester);
+
+      final payload = recorder.payloads.single;
+      expect(payload['pain_area'], 'back');
+      expect(payload['pain_pattern'], 'rest');
+      expect(payload['pain_red_flags'], ['numb_weak_limb']);
+      expect(saved!.referralRoute, 'clinician_today');
+      expect(
+        await saved!.pending,
+        isTrue,
+        reason: 'the sheet closes for the referral; the send finishes after',
+      );
+      expect(
+        CheckInQueue(await SharedPreferences.getInstance()).painState,
+        CheckInPainState.none,
+        reason: 'delivered, so nothing waits',
+      );
+    });
+
+    testWidgets('an urgent flag is the strictest route', (tester) async {
+      final recorder = _Recorder();
+      CheckInSaved? saved;
+      await _open(tester, recorder, onSaved: (value) => saved = value);
+      await hurt(tester, strength: 2, area: 'Lower back');
+      await _choose(
+        tester,
+        'Do any of these apply?: New trouble controlling your bladder or '
+        'bowels, or numbness around your groin or inner thighs',
+      );
+      await _choose(
+        tester,
+        'Do any of these apply?: Numbness, tingling or weakness in an arm or '
+        'leg',
+      );
+      await _save(tester);
+      expect(saved!.referralRoute, 'urgent');
+    });
+
+    testWidgets('None of these clears the ticks, and a tick clears None', (
+      tester,
+    ) async {
+      final recorder = _Recorder();
+      await _open(tester, recorder);
+      await hurt(tester, strength: 4, area: 'Knee');
+      await _choose(tester, 'Do any of these apply?: It swelled up quickly');
+      await _choose(tester, 'Do any of these apply?: None of these');
+      await _save(tester);
+      expect(recorder.payloads.single['pain_red_flags'], isEmpty);
+    });
+
+    testWidgets('changing the area drops the answers it does not ask', (
+      tester,
+    ) async {
+      final recorder = _Recorder();
+      await _open(tester, recorder);
+      await hurt(tester, strength: 4, area: 'Knee');
+      await _choose(
+        tester,
+        'Do any of these apply?: The knee locks or gives way',
+      );
+      await _choose(tester, 'Where is it?: Shoulder');
+      await _save(tester);
+      expect(recorder.payloads, isEmpty, reason: 'the red-flag answer is open');
+      expect(
+        find.text('Choose any that apply, or None of these.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an undelivered report is kept and said so, with its flags', (
+      tester,
+    ) async {
+      final recorder = _Recorder(delivers: false);
+      CheckInSaved? saved;
+      await _open(tester, recorder, onSaved: (value) => saved = value);
+      await hurt(tester, strength: 8, area: 'Knee');
+      await _choose(tester, 'Do any of these apply?: None of these');
+      await _save(tester);
+
+      expect(saved!.delivered, isFalse);
+      expect(saved!.referralRoute, 'clinician_today');
+      expect(await saved!.pending, isFalse);
+      final preferences = await SharedPreferences.getInstance();
+      final queue = CheckInQueue(preferences);
+      expect(queue.painState, CheckInPainState.waiting);
+      Map<String, dynamic>? replayed;
+      await queue.replay((date, zone, key, payload) async {
+        replayed = payload;
+        return true;
+      });
+      expect(replayed!['pain_area'], 'knee');
+      expect(replayed!['pain_red_flags'], isEmpty);
+    });
+
+    testWidgets('a check-in made online goes after an older one that waits, '
+        'so it is the day\'s last', (tester) async {
+      final sent = <(String, Map<String, dynamic>)>[];
+      // The first check-in has a red flag and cannot be sent.
+      await _openWith(tester, (date, zone, key, payload) async {
+        sent.add((key, payload));
+        return false;
+      });
+      await hurt(tester, strength: 3, area: 'Lower back');
+      await _choose(
+        tester,
+        'Do any of these apply?: Numbness, tingling or weakness in an arm or '
+        'leg',
+      );
+      await _save(tester);
+      expect(sent, hasLength(1));
+      final first = sent.single.$1;
+      sent.clear();
+
+      // Online, the athlete checks in again (and clears the pain).
+      await tester.pumpWidget(const SizedBox.shrink());
+      CheckInSaved? saved;
+      await _openWith(
+        tester,
+        (date, zone, key, payload) async {
+          sent.add((key, payload));
+          return true;
+        },
+        keepStored: true,
+        onSaved: (value) => saved = value,
+      );
+      await _choose(tester, 'Energy: Very low');
+      await _save(tester);
+
+      expect(sent, hasLength(2));
+      expect(sent.first.$1, first, reason: 'the older one first');
+      expect(sent.first.$2['pain_red_flags'], ['numb_weak_limb']);
+      expect(sent.last.$2['energy'], 1, reason: 'this one last');
+      expect(saved!.delivered, isTrue);
+      expect(
+        CheckInQueue(await SharedPreferences.getInstance()).painState,
+        CheckInPainState.none,
+      );
+    });
+
+    testWidgets('a sender that fails in any way leaves the check-in waiting, '
+        'and the sheet closes', (tester) async {
+      CheckInSaved? saved;
+      await _openWith(
+        tester,
+        (date, zone, key, payload) async => throw StateError('broken'),
+        onSaved: (value) => saved = value,
+      );
+      await _save(tester);
+      expect(saved, isNotNull);
+      expect(saved!.delivered, isFalse);
+      expect(find.textContaining('saved on this device'), findsOne);
+      expect(find.text('Save check-in'), findsNothing);
+    });
+
+    testWidgets('a duplicate key means the server has it: no "saved on this '
+        'phone" toast', (tester) async {
+      CheckInSaved? saved;
+      await _openWith(
+        tester,
+        (date, zone, key, payload) async => throw const PostgrestException(
+          message: 'duplicate key',
+          code: '23505',
+        ),
+        onSaved: (value) => saved = value,
+      );
+      await _save(tester);
+      expect(saved!.delivered, isTrue);
+      expect(find.text('Check-in saved'), findsOne);
+      expect(find.textContaining('saved on this device'), findsNothing);
+    });
+
+    testWidgets('a refusal still shows the referral and keeps the whole '
+        'check-in', (tester) async {
+      final recorder = _Recorder(refuses: true);
+      CheckInSaved? saved;
+      await _open(tester, recorder, onSaved: (value) => saved = value);
+      await hurt(tester, strength: 3, area: 'Lower back');
+      await _choose(
+        tester,
+        'Do any of these apply?: New trouble controlling your bladder or '
+        'bowels, or numbness around your groin or inner thighs',
+      );
+      await _choose(tester, 'Energy: Very low');
+      await _save(tester);
+
+      expect(
+        saved!.referralRoute,
+        'urgent',
+        reason: 'whatever the server said',
+      );
+      expect(await saved!.pending, isFalse);
+      // The check-in is kept, marked, not thrown away.
+      final queue = CheckInQueue(await SharedPreferences.getInstance());
+      expect(queue.painState, CheckInPainState.refused);
+      Map<String, dynamic>? rest;
+      await queue.acknowledgeRefusedPain((date, zone, key, payload) async {
+        rest = payload;
+        return true;
+      });
+      expect(rest!['energy'], 1);
+      expect(rest!.containsKey('pain_area'), isFalse);
+    });
+
+    testWidgets('a refusal with no referral closes, says so and keeps the '
+        'check-in', (tester) async {
+      final recorder = _Recorder(refuses: true);
+      CheckInSaved? saved;
+      await _open(tester, recorder, onSaved: (value) => saved = value);
+      await hurt(tester, strength: 5, area: 'Knee');
+      await _choose(tester, 'Do any of these apply?: None of these');
+      await _save(tester);
+
+      expect(saved, isNotNull, reason: 'the sheet does not stay open');
+      expect(saved!.delivered, isFalse);
+      expect(saved!.referralRoute, isNull);
+      expect(find.textContaining('could not record this report'), findsOne);
+      final queue = CheckInQueue(await SharedPreferences.getInstance());
+      expect(queue.painState, CheckInPainState.refused);
+    });
+
+    testWidgets('a server that never answers does not hold back a referral', (
+      tester,
+    ) async {
+      final hang = Completer<bool>();
+      CheckInSaved? saved;
+      await _openWith(
+        tester,
+        (date, zone, key, payload) => hang.future,
+        onSaved: (value) => saved = value,
+      );
+      await hurt(tester, strength: 8, area: 'Knee');
+      await _choose(tester, 'Do any of these apply?: None of these');
+      await _save(tester);
+
+      expect(saved, isNotNull, reason: 'closed without the server');
+      expect(saved!.referralRoute, 'clinician_today');
+      expect(saved!.delivered, isFalse);
+      expect(
+        CheckInQueue(await SharedPreferences.getInstance()).painState,
+        CheckInPainState.waiting,
+        reason: 'kept on the phone meanwhile',
+      );
+      hang.complete(true);
+      await tester.pumpAndSettle();
+      expect(await saved!.pending, isTrue);
+    });
+
+    testWidgets('a server that never answers is waited for a short while, '
+        'then the check-in waits on the phone', (tester) async {
+      final hang = Completer<bool>();
+      CheckInSaved? saved;
+      await _openWith(
+        tester,
+        (date, zone, key, payload) => hang.future,
+        onSaved: (value) => saved = value,
+      );
+      await tester.tap(find.text('Save check-in'));
+      await tester.pump();
+      expect(saved, isNull);
+      await tester.pump(const Duration(seconds: 9));
+      await tester.pumpAndSettle();
+      expect(saved!.delivered, isFalse);
+      expect(find.textContaining('saved on this device'), findsOne);
+      hang.complete(false);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('an area a clinician cleared, chosen again as today\'s pain, '
+        'is one report that carries the clearance', (tester) async {
+      final recorder = _Recorder();
+      await _open(
+        tester,
+        recorder,
+        jointStates: const [
+          JointState(
+            area: PainArea.knee,
+            state: JointStateKind.held,
+            severity: 8,
+            persistent: false,
+            holdOutcome: 'clinician_today',
+          ),
+        ],
+      );
+      await _choose(
+        tester,
+        'Has a doctor or physio cleared you to train your knee?: Yes',
+      );
+      await _choose(tester, 'Pain: Some pain');
+      // The area chosen, the follow-up above it is answered here instead.
+      await _choose(tester, 'Where is it?: Knee');
+      await _choose(tester, 'Pain 2 of 10');
+      await _choose(tester, 'Do any of these apply?: None of these');
+      await _save(tester);
+
+      final payload = recorder.payloads.single;
+      expect(payload['pain_area'], 'knee');
+      expect(payload['pain_cleared_by_clinician'], isTrue);
+      expect(
+        payload.containsKey('pain_followups'),
+        isFalse,
+        reason: 'one report per area in a check-in',
+      );
+    });
+
+    testWidgets('an area already noted asks how it is today', (tester) async {
+      final recorder = _Recorder();
+      await _open(
+        tester,
+        recorder,
+        jointStates: const [
+          JointState(
+            area: PainArea.knee,
+            state: JointStateKind.limited,
+            severity: 5,
+            persistent: false,
+          ),
+        ],
+      );
+      expect(
+        find.text('Last time you noted knee pain. How is it today?'),
+        findsOneWidget,
+      );
+      await _choose(
+        tester,
+        'Last time you noted knee pain. How is it today?: Gone',
+      );
+      await _save(tester);
+      expect(recorder.payloads.single['pain_followups'], [
+        {'area': 'knee', 'severity': 0, 'cleared_by_clinician': false},
+      ]);
+      expect(recorder.payloads.single.containsKey('pain_area'), isFalse);
+    });
+
+    testWidgets('still there asks how strong before it saves', (tester) async {
+      final recorder = _Recorder();
+      await _open(
+        tester,
+        recorder,
+        jointStates: const [
+          JointState(
+            area: PainArea.knee,
+            state: JointStateKind.limited,
+            severity: 5,
+            persistent: false,
+          ),
+        ],
+      );
+      await _choose(
+        tester,
+        'Last time you noted knee pain. How is it today?: Still there',
+      );
+      await _save(tester);
+      expect(recorder.payloads, isEmpty);
+      expect(find.text('Choose how strong it is now to save.'), findsOneWidget);
+      await _choose(tester, 'Pain 7 of 10');
+      await _save(tester);
+      expect(recorder.payloads.single['pain_followups'], [
+        {'area': 'knee', 'severity': 7, 'cleared_by_clinician': false},
+      ]);
+    });
+
+    testWidgets('a held area asks whether a doctor or physio cleared it', (
+      tester,
+    ) async {
+      final recorder = _Recorder();
+      await _open(
+        tester,
+        recorder,
+        jointStates: const [
+          JointState(
+            area: PainArea.shoulder,
+            state: JointStateKind.held,
+            severity: 8,
+            persistent: false,
+            holdOutcome: 'clinician_today',
+          ),
+        ],
+      );
+      expect(
+        find.text('Has a doctor or physio cleared you to train your shoulder?'),
+        findsOneWidget,
+      );
+      await _choose(
+        tester,
+        'Has a doctor or physio cleared you to train your shoulder?: Yes',
+      );
+      await _choose(tester, 'Pain 1 of 10');
+      await _save(tester);
+      expect(recorder.payloads.single['pain_followups'], [
+        {'area': 'shoulder', 'severity': 1, 'cleared_by_clinician': true},
+      ]);
+    });
+
+    testWidgets('Not yet sends nothing for a held area', (tester) async {
+      final recorder = _Recorder();
+      await _open(
+        tester,
+        recorder,
+        jointStates: const [
+          JointState(
+            area: PainArea.shoulder,
+            state: JointStateKind.held,
+            severity: 8,
+            persistent: false,
+            holdOutcome: 'clinician_today',
+          ),
+        ],
+      );
+      await _choose(
+        tester,
+        'Has a doctor or physio cleared you to train your shoulder?: Not yet',
+      );
+      await _save(tester);
+      expect(recorder.payloads.single.containsKey('pain_followups'), isFalse);
     });
   });
 }

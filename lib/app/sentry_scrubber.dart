@@ -5,8 +5,43 @@ import 'package:http/http.dart' as http;
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:tracend/shared/diagnostics.dart';
 
+// Keeps what is private out of the error reports Tracend sends.
+//
+// Health values, meal content, photo links and prompts never leave the phone,
+// and neither does anything from the pain check: the area, the strength, the
+// red-flag answers and the referral they led to are among the most private
+// things the app holds. A report says that something failed, never what the
+// athlete answered.
+
 /// What replaces a value the athlete entered or the phone measured.
 const redactedValue = '[redacted]';
+
+/// The pain check's own keys (B5): answers, areas, severities and the
+/// referral. They go entirely, name and value, because even that a pain
+/// answer was present is nobody else's to know.
+const _droppedKeys = {
+  'area',
+  'area_state',
+  'cleared_by_clinician',
+  'followups',
+  'hold_outcome',
+  'range_note_code',
+  'range_note_codes',
+  'red_flags',
+  'safety_route',
+  'severity',
+  'swap_to_name',
+  'swap_to_slug',
+};
+
+/// Keys that start with these are the pain check's too: `pain_area`,
+/// `pain_severity`, `pain_red_flags`, `joint_states`, `joint_action`.
+const _droppedPrefixes = ['pain_', 'joint_', 'red_flag'];
+
+bool _dropKey(String key) {
+  final lower = key.toLowerCase();
+  return _droppedKeys.contains(lower) || _droppedPrefixes.any(lower.startsWith);
+}
 
 /// A key that names something the athlete entered or the phone measured.
 /// Matched as a part of the key, lower-cased, so `resting_heart_rate_bpm` and
@@ -75,7 +110,11 @@ final _detailsPattern = RegExp(
   r'details:\s*.*?(?=,\s*hint:|\)\s*$|$)',
   dotAll: true,
 );
-final _failingRowPattern = RegExp(r'Failing row contains \([^)]*\)');
+
+/// What the database says of a row it refused: the values are the athlete's
+/// answers, so everything from there to the end of the line goes, even when
+/// the message was cut short before its closing bracket.
+final _refusedRowPattern = RegExp(r'Failing row contains \(.*');
 final _keyPairPattern = RegExp(r'Key \([^)]*\)=\([^)]*\)');
 final _urlPattern = RegExp(r'''https?://[^\s"')]+''');
 final _uuidPattern = RegExp(
@@ -86,10 +125,45 @@ final _measurePattern = RegExp(
   r'\b\d+(?:[.,]\d+)?\s?(?:kg|lbs?|kcal|bpm)\b',
   caseSensitive: false,
 );
+
+/// The value after a key in free text. A list, or a string in either kind of
+/// quote (an escaped quote does not end it), goes whole. Anything else, which
+/// may be several words, goes to the end of the line, and so does a string
+/// whose closing quote was cut off.
+const _valuePattern =
+    r'''(?:\[[^\]]*\]|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|.*)''';
+
+/// A pain key with its value, in any text: `pain_area=back`,
+/// `pain_severity: 8`, `"red_flags":["night_pain"]`, `area = 'knee'`. The whole
+/// expression goes, so the answer does not stay behind the key.
+final _painPairPattern = RegExp(
+  r'''["']?\b(?:pain_[a-z_]+|joint_[a-z_]+|red_flags?|area|area_state|severity|'''
+  r'''cleared_by_clinician|followups|hold_outcome|safety_route|'''
+  r'''range_note_codes?|swap_to_(?:name|slug))["']?[ \t]*[:=][ \t]*'''
+  '$_valuePattern',
+);
+
+/// A key that names something the athlete entered or the phone measured, with
+/// its value, in any text. The key stays so a report still shows what kind of
+/// thing it was about.
 final _sensitivePairPattern = RegExp(
   '(["\']?\\b\\w*(?:${_sensitiveKeyParts.map(RegExp.escape).join('|')})\\w*["\']?)'
-  r'''\s*(?::|=>|=)\s*("[^"]*"|'[^']*'|[^\s,;)}\]]+)''',
+  '[ \\t]*(?::|=>|=)[ \\t]*$_valuePattern',
   caseSensitive: false,
+);
+
+/// The words that carry a pain answer or a referral when they appear inside
+/// text: the codes of the red-flag list, the routes and outcomes that name a
+/// referral, the pain check's own `pain_` and `joint_` tokens, and the names
+/// of its table and function (`pain_reports`, `record_pain_check`). Names of
+/// other functions and screens are not among them.
+final _painWordPattern = RegExp(
+  r'(pain_(?:area|severity|pattern|red_flags|followups|cleared_by_clinician|'
+  r'referral|flag|mild|moderate|severe|reports)|record_pain_check[a-z0-9_]*|'
+  r'red_flag[a-z_:]*|joint_[a-z_]+|'
+  r'bladder_bowel_saddle|chest_or_breath|numb_weak_limb|pop_or_sudden|'
+  r'cannot_bear_or_move|rapid_swelling|dislocated_or_cannot_lift|'
+  r'locks_gives_way|fever_unwell|night_pain|clinician_today|clinician)',
 );
 
 /// [text] without the values it carries: a Postgres row's details, ids,
@@ -98,15 +172,17 @@ final _sensitivePairPattern = RegExp(
 String scrubText(String text) {
   var out = text
       .replaceAll(_detailsPattern, 'details: $redactedValue')
-      .replaceAll(_failingRowPattern, 'Failing row contains ($redactedValue)')
+      .replaceAll(_refusedRowPattern, 'Failing row contains ($redactedValue)')
       .replaceAll(_keyPairPattern, 'Key ($redactedValue)=($redactedValue)')
       .replaceAllMapped(_urlPattern, (match) => templateUrl(match[0]!))
       .replaceAll(_uuidPattern, '[id]')
       .replaceAll(_emailPattern, '[email]')
+      .replaceAll(_painPairPattern, redactedValue)
       .replaceAllMapped(
         _sensitivePairPattern,
         (match) => '${match[1]}: $redactedValue',
       )
+      .replaceAll(_painWordPattern, redactedValue)
       .replaceAll(_measurePattern, '[value]');
   if (out.length > _maxTextLength) out = '${out.substring(0, _maxTextLength)}…';
   return out;
@@ -166,15 +242,16 @@ String? _failureLabel(Object? thrown) {
   return describeFailure(thrown);
 }
 
-/// [value] with every sensitive key's value replaced and every text scrubbed,
-/// at any depth.
+/// [value] with every sensitive key's value replaced, every pain-check key
+/// removed, and every text scrubbed, at any depth.
 Object? scrubValue(Object? value, {String? key}) {
   if (key != null && _isSensitiveKey(key)) return redactedValue;
   return switch (value) {
     final String text => scrubText(text),
     final Map<dynamic, dynamic> map => {
       for (final entry in map.entries)
-        '${entry.key}': scrubValue(entry.value, key: '${entry.key}'),
+        if (!_dropKey('${entry.key}'))
+          '${entry.key}': scrubValue(entry.value, key: '${entry.key}'),
     },
     final List<dynamic> list => [for (final item in list) scrubValue(item)],
     _ => value,
@@ -207,17 +284,18 @@ Breadcrumb? scrubBreadcrumb(Breadcrumb? crumb, Hint hint) {
   return crumb;
 }
 
-/// The event Sentry may send, scrubbed in place: the request body and query,
-/// contexts, `extra`, the message, every exception value (reduced to its type
-/// and code) and every breadcrumb. An event that cannot be scrubbed is dropped, never sent as it
-/// was.
+/// The event Sentry may send, scrubbed in place: the request (reduced to its
+/// method, route template and scrubbed body), contexts, `extra`, tags, the
+/// message (its template and parameters are dropped), every exception value
+/// (reduced to its type and code) and every breadcrumb. An event that cannot
+/// be scrubbed is dropped, never sent as it was.
 SentryEvent? scrubEvent(SentryEvent event, Hint hint) {
   try {
     final request = event.request;
     if (request != null) {
       // Cookies, headers, the query and the fragment never travel.
       event.request = SentryRequest(
-        url: request.url == null ? null : templateUrl(request.url!),
+        url: request.url == null ? null : scrubText(templateUrl(request.url!)),
         method: request.method,
         data: scrubValue(request.data),
       );
@@ -234,6 +312,14 @@ SentryEvent? scrubEvent(SentryEvent event, Hint hint) {
     if (extra != null) {
       // ignore: deprecated_member_use
       event.extra = _scrubMap(extra);
+    }
+    final tags = event.tags;
+    if (tags != null) {
+      event.tags = {
+        for (final entry in tags.entries)
+          if (!_dropKey(entry.key))
+            entry.key: '${scrubValue(entry.value, key: entry.key)}',
+      };
     }
     final message = event.message;
     if (message != null) {
