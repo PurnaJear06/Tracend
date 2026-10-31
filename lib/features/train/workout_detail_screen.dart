@@ -21,16 +21,19 @@ import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_sheet.dart';
 
 /// What the workout overview sheet asks the screen to do.
-enum WorkoutOverviewAction { start, viewSummary }
+enum WorkoutOverviewAction { start, doToday, viewSummary }
 
 /// Opens the workout overview: objective, warm-up, exercises and cooldown,
-/// with Start workout, or View summary once the day is done. Completes with
+/// with Start workout, or View summary once the day is done. A day that has
+/// not begun ([canStart] false) is a preview whose one action is Do it today.
+/// Completes with
 /// the chosen action, or null when dismissed.
 Future<WorkoutOverviewAction?> showWorkoutOverviewSheet(
   BuildContext context, {
   required PlannedWorkout workout,
   required bool isCompleted,
   required ValueChanged<PlannedExercise> onExerciseTap,
+  bool canStart = true,
 }) => showTracendSheet<WorkoutOverviewAction>(
   context,
   title: workout.name,
@@ -48,10 +51,13 @@ Future<WorkoutOverviewAction?> showWorkoutOverviewSheet(
         )
       else
         FilledButton.icon(
-          onPressed: () =>
-              Navigator.of(sheetContext).pop(WorkoutOverviewAction.start),
+          onPressed: () => Navigator.of(sheetContext).pop(
+            canStart
+                ? WorkoutOverviewAction.start
+                : WorkoutOverviewAction.doToday,
+          ),
           icon: const Icon(CupertinoIcons.play_fill, size: 18),
-          label: const Text('Start workout'),
+          label: Text(canStart ? 'Start workout' : 'Do it today'),
         ),
     ],
   ),
@@ -386,7 +392,9 @@ class _SummaryContentState extends State<_SummaryContent> {
             ),
             TrainStatTile(
               label: 'Sets',
-              value: '${logged.completedSets} of ${totalSets(workout)}',
+              value: totalSets(workout) == 0
+                  ? '${logged.completedSets}'
+                  : '${logged.completedSets} of ${totalSets(workout)}',
             ),
             TrainStatTile(
               label: 'Effort',

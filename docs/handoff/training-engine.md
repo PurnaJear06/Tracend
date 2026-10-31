@@ -1087,6 +1087,49 @@ and cardio dosing") the boundaries. No app change, no new table, no Edge Functio
 - **Tests that fail without each rule.** pgTAP `deloads_test.sql`, `cardio_dosing_test.sql`; Deno
   `deload_cardio_test.ts` and the deload tests in `coach_proposals/build_test.ts`.
 
+**Training-day integrity (QA audit group A; migration `20261024090000_training_day_integrity.sql`).**
+- **Sessions of earlier plan versions stay done.** The hub's `completed` joined only the active
+  version's workouts, so a session logged before a Coach change, block restore or deload vanished from
+  Train, the history and the week count, and its day could be logged again. It now takes every completed
+  session by date (hub 1.9, which adds `recent_sessions[].current_workout_id`). The duplicate checks
+  (`start_workout`, `get_healthkit_completion_candidate`, `healthkit_auto_complete_workout`, plus
+  `day_adjustment_compute`'s `session_done` and `private.unfinished_workouts`) and the summary read
+  (`get_my_workout_session`) use `private.workout_identity_ids`: same name and `workout_order`, any
+  version. No lineage column and no unique index (see `DATA_MODEL.md`; production holds one repeat).
+- **No start on a day that has not begun.** `start_workout` raises `22023` for a date after the
+  athlete's local today (after the idempotent replay). The app shows **Preview workout** for those days
+  and **Do it today** (starts that workout with today's date; the server applies the joint rules to a
+  workout that is not the day's scheduled one); `lib/features/train/widgets/workout_hero.dart`
+  (`HeroDayState.upcoming`). The logger treats 22023 and 55000 from `start_workout` as final: 22023 closes
+  with a message and keeps the draft, 55000 opens the finished session (named as logged), neither reads as
+  offline. Today opens its workout on the server's day.
+- **Resuming is stricter than finishing.** A session in progress is resumed under another version's copy
+  only when the copy has the same exercises in the same order (`private.workout_resumable_ids`,
+  `workout_exercise_list`); otherwise the copy starts its own session, so the logger (which matches
+  rows by exercise order) never writes sets under the wrong exercise. The logger also ignores a session
+  whose prescribed exercise names differ from the plan's (`_sessionFitsPlan`). The older session stays
+  open under its own version until the stale rule closes it.
+- **Refused or finished sessions in the logger.** A 55000 from `start_workout` or `sync_workout_draft`
+  whose session is read back as finished (a finish whose answer was lost, or the day logged elsewhere)
+  opens that session read-only and clears this workout's draft and saved finish, so Send finish no longer
+  fails forever and a later occurrence cannot restore the stale sets. When sets had been logged here, a
+  toast says they were not added (a finished session takes no more sets).
+- **Train, a day done as another workout.** The hero stays Done without borrowing that session's minutes,
+  and View summary opens that session through its own workout id and name.
+- **Today and the server's day.** Tapping the session card while the brief on screen is for another day
+  than the server's loads the server day's brief first and opens its workout.
+- **One date for the hub.** Every `current_date` in the hub is the athlete's local date.
+- **A plan with no weekdays** (a Coach proposal may omit them) got rest days from every server reader
+  (no readiness card, no joint adjustment). One rule now lives on the server: `fill_workout_weekdays` (see
+  `DATA_MODEL.md`), called by `coach_insert_workouts` and run over existing versions by the migration
+  (none in production). The app shows what the server says; only the no-backend fixture plan has a lone
+  weekday-less workout, shown on every day.
+- **Tests.** pgTAP `training_day_integrity_test.sql` (logged under v1, copied to v2: hub, start,
+  session read, Apple Health candidate and auto-complete, future day, an athlete whose local date differs
+  from UTC); Deno `training_day_integrity_test.ts` pins the seven redefinitions to their latest earlier
+  definitions plus the hunks (and `joints_test.ts`'s "no later migration" guard allows
+  `day_adjustment_compute` once); Flutter `train_screen_test.dart` and the 1.9 contract fixture.
+
 **B5-3/B5-4 app and function (review; branch `claude/train-deload-cardio-ui`).**
 - **`training-proposals` (O7).** `supabase/functions/training-proposals/` (JWT; in `config.toml`,
   `deploy.yml`, `hotfix.yml`). Body `{schema_version "1.0", kind "deload", local_date}` and nothing else (a

@@ -982,7 +982,15 @@ confirmation actions. The tab reads top to bottom:
     muscles selecting each other, and a note that muscles come from the exercise catalog or
     Tracend's reviewed exercise list.
   - The one action is **Start workout** (heavy haptic), **Log this workout** for a past day with
-    nothing logged, or **View summary** for a done day. The summary sheet shows "Done on ‹date›",
+    nothing logged, **Preview workout** for a day that has not begun (it opens the overview, whose one
+    action is **Do it today**, as does a link under the preview: it starts that workout with today's
+    date; the server refuses a start for a future date), or **View summary** for a
+    done day. A day done under an earlier plan version (a Coach change, a block or a deload copies the
+    workouts) shows as done, with its session. Train shows the weekdays the server holds. A Coach proposal that carries no
+    weekday gets the athlete's training days when they are as many as the workouts, else a spread
+    (two: Monday, Thursday; three: Monday, Wednesday, Friday; four: Monday, Tuesday, Thursday, Friday;
+    one, or five or more, from Monday), so every server reader agrees on the same days. Only a plan
+    with no backend can lack weekdays; its lone workout shows on every day. The summary sheet shows "Done on ‹date›",
     time, sets logged of planned, the athlete's own effort ("N of 10", or "Not rated" for app
     defaults) and **What you logged** per exercise. "Auto-completed from Apple Health. Sets were not
     logged in Tracend." shows only when `completion_source` is `healthkit`.
