@@ -9,6 +9,10 @@ import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/notification_repository.dart';
+import 'package:tracend/features/readiness/day_adjustment.dart';
+import 'package:tracend/features/readiness/pain_check_sheet.dart';
+import 'package:tracend/features/readiness/pain_reporting.dart';
+import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/rest_timer.dart';
 import 'package:tracend/features/train/set_timing.dart';
@@ -51,6 +55,7 @@ class ActiveWorkoutScreen extends StatefulWidget {
     this.activity = const MethodChannelWorkoutActivityBridge(),
     this.lockScreenNumbers = readLockScreenNumbers,
     this.watchPrompt,
+    this.pain,
     super.key,
   });
 
@@ -84,6 +89,11 @@ class ActiveWorkoutScreen extends StatefulWidget {
   /// screen makes the server-backed one for the Supabase repository and
   /// suggests nothing otherwise.
   final WatchWorkoutPromptSource? watchPrompt;
+
+  /// Sends the pain check made on an exercise ("Pain or discomfort") and keeps
+  /// it on the phone until Tracend has it. Without it the check cannot be
+  /// made.
+  final PainReporting? pain;
 
   static int _open = 0;
 
@@ -177,6 +187,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   bool _timingRefused = false;
   bool _ready = false;
   _Sync _sync = _Sync.saving;
+
+  /// The server's rows name an exercise differently from what is logged on
+  /// it here (or lack a set that has something on it). Nothing is relabelled
+  /// or dropped and nothing is sent until the rows fit again: the draft stays
+  /// on this phone and the sync needs attention.
+  bool _rowsConflict = false;
 
   /// The workout is finished or discarded: nothing is saved any more.
   bool _closed = false;
@@ -410,14 +426,30 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         );
       }
       final revision = (draft['revision'] as num?)?.toInt() ?? 0;
-      final payload = serverDraftPayload(draft, id);
-      await syncDraft(repository, id, revision, payload);
+      final sent = await syncDraft(
+        repository,
+        id,
+        revision,
+        serverDraftPayload(draft, id),
+        readRows: () async {
+          // The session of the day the draft was made on, not today's.
+          final session = await repository.loadSession(
+            widget.workout,
+            localDate: DateTime.tryParse(
+              '${draft['actual_started_at'] ?? ''}',
+            )?.toLocal(),
+          );
+          return session != null && session['session_id'] == id
+              ? session['exercises']
+              : null;
+        },
+      );
       if (finish != null) {
         await repository.completeWithEffort(
           id,
           revision,
           finish.durationSeconds,
-          payload,
+          sent,
           sessionEffort: finish.sessionEffort,
         );
       }
@@ -503,9 +535,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
   }
 
-  /// Makes each exercise have as many sets as the server's rows in
-  /// [exercises]. `fits` is false when a set with something on it has no row
-  /// (it is never dropped); `changed` when any count moved.
+  /// Makes each exercise be the one the server's row in [exercises] holds
+  /// and have as many sets as that row. A row with no sets is an exercise
+  /// left out today for a sore joint: it has none here either, so nothing is
+  /// logged or synced for it. A substituted row is the gentler exercise it
+  /// names. A row that names an exercise differently from what is logged on
+  /// it does not move the logged sets: they keep their identity and it is sent
+  /// with them (see [ExerciseDraft.takeIdentity]). `fits` is false when a set
+  /// with something on it has no row (it is never dropped); `changed` when any
+  /// count or name moved.
   ({bool fits, bool changed}) _alignSets(Object? exercises) {
     var fits = true;
     var changed = false;
@@ -514,15 +552,20 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       if (row is! Map) continue;
       final order = (row['order'] as num?)?.toInt();
       final sets = row['sets'];
-      if (sets is! List || sets.isEmpty) continue;
+      if (sets is! List) continue;
       final index = _exercises.indexWhere((e) => e.exercise.order == order);
       if (index < 0) continue;
       final draft = _exercises[index];
       final before = draft.sets.length;
+      final nameBefore = draft.exercise.name;
+      draft.takeIdentity(row);
       draft.alignTo(sets.length);
-      if (draft.sets.length != before) changed = true;
+      if (draft.sets.length != before || draft.exercise.name != nameBefore) {
+        changed = true;
+      }
       if (draft.sets.length != sets.length) fits = false;
     }
+    _rowsConflict = !fits;
     return (fits: fits, changed: changed);
   }
 
@@ -704,7 +747,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   /// The draft. With [notBefore] (for the server), set times before it are
   /// left out; without [timing], every set's timing keys are.
-  Map<String, dynamic> _draft({DateTime? notBefore, bool timing = true}) => {
+  Map<String, dynamic> _draft({
+    DateTime? notBefore,
+    bool timing = true,
+    bool local = false,
+  }) => {
     'workout_id': widget.workout.id,
     'session_id': _sessionId,
     'idempotency_key': _idempotencyKey,
@@ -716,6 +763,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           'status': draft.status,
           'pain_flag': draft.pain,
           'rest_seconds': draft.exercise.restSeconds,
+          ...draft.swapFields,
+          // Only this phone needs to know that a swap waits to be confirmed
+          // (and which catalog exercise it is), so a restart keeps it.
+          if (local && draft.swapPending) 'swap_pending': true,
+          if (local && draft.keepsOwnIdentity) 'keep_identity': true,
+          if (local && draft.exercise.swappedFrom != null)
+            'exercise_slug': ?draft.exercise.exerciseSlug,
           'sets': [
             for (var j = 0; j < draft.sets.length; j++)
               {
@@ -731,7 +785,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// the running rest and the end of the last rest, which only the device
   /// needs.
   Map<String, dynamic> _localDraft() => {
-    ..._draft(),
+    ..._draft(local: true),
     'actual_started_at': _startedAt.toUtc().toIso8601String(),
     _serverStartedKey: ?_serverStartedAt?.toUtc().toIso8601String(),
     if (_timingRefused) _timingRefusedKey: true,
@@ -782,12 +836,21 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         return _Sync.offline;
       }
     }
-    if (!_rowsAligned && await _readRows(id) == null) {
-      // The server's rows are not known yet: sending sets now could name a
-      // set it does not have. The draft is on the phone; the next save tries
-      // again.
-      if (mounted) setState(() => _sync = _Sync.offline);
-      return _Sync.offline;
+    if (!_rowsAligned || _rowsConflict) {
+      final rows = await _readRows(id);
+      if (rows == null) {
+        // The server's rows are not known yet: sending sets now could name a
+        // set it does not have. The draft is on the phone; the next save
+        // tries again.
+        if (mounted) setState(() => _sync = _Sync.offline);
+        return _Sync.offline;
+      }
+      if (!rows.fits) {
+        // The rows and what is logged disagree: keep the draft, send none of
+        // it under another exercise's name, and say so.
+        if (mounted) setState(() => _sync = _Sync.attention);
+        return _Sync.attention;
+      }
     }
     if (mounted) setState(() => _sync = _Sync.saving);
     var first = await _send(id);
@@ -823,6 +886,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       result = await _send(id) ?? _Sync.attention;
     }
     if (mounted) setState(() => _sync = result);
+    // Back online: pain reports made while the connection was down go too.
+    if (result == _Sync.saved) unawaited(widget.pain?.drain());
     return result;
   }
 
@@ -1130,6 +1195,118 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       debugPrint('Non-critical error: saving a button press failed: $e');
     }
   }
+
+  /// "Pain or discomfort": asks where, how strong and the two red-flag
+  /// questions, sends the report (or keeps it on the phone), flags the exercise
+  /// so the next target holds it, and says what to do. A report that routes out
+  /// stops the exercise and shows the referral, and has to be answered.
+  Future<void> _reportPain(int exercise) async {
+    final reporting = widget.pain;
+    if (reporting == null || _closed || _viewingCompleted) return;
+    final draft = _exercises[exercise];
+    final order = draft.exercise.order;
+    final before = reporting.readiness?.current;
+    final submission = await showPainCheckSheet(
+      context,
+      reporting: reporting,
+      exerciseName: draft.exercise.name,
+      localDate: reporting.readiness?.serverDay ?? _dayText(widget.clock()),
+      preselected: before?.likelyJoint(order),
+      exercisePerformanceId: draft.performanceId,
+    );
+    if (submission == null || !mounted) return;
+    draft.pain = true;
+    _changed();
+    final area = submission.report.area;
+    var adjustment = reporting.readiness?.current;
+    // The answer is shown at once, from what the phone knows: today's safety
+    // route, an area that is already held, and the report's own outcome. The
+    // server's word on the area is waited for only briefly, and only when
+    // nothing here already stops the exercise.
+    var held = _areaHeld(adjustment, area);
+    if (!submission.outcome.routesOut &&
+        adjustment?.safetyRoute == null &&
+        !held) {
+      // Whatever happens to the send, the answer is shown.
+      final delivery = await submission.delivery
+          .timeout(
+            _areaStateWait,
+            onTimeout: () =>
+                PainDelivery(outcome: submission.outcome, sent: false),
+          )
+          .onError<Object>(
+            (_, _) => PainDelivery(outcome: submission.outcome, sent: false),
+          );
+      held = delivery.areaState == 'held';
+      if (!mounted) return;
+      adjustment = reporting.readiness?.current;
+    }
+    final dayRoute = adjustment?.safetyRoute;
+    final stops = held || dayRoute != null || submission.outcome.routesOut;
+    // A swap only before anything is logged on the exercise, and never for one
+    // already swapped: its options are for the plan's exercise. None when the
+    // exercise stops, and none on a day with a safety route.
+    final swap = stops || draft.hasEntries || draft.exercise.swappedFrom != null
+        ? null
+        : adjustment?.jointOptionsFor(order)?.options[area];
+    final action = await showPainResultSheet(
+      context,
+      submission: submission,
+      swap: swap,
+      dayRoute: dayRoute,
+      heldArea: held,
+    );
+    // The referral was read here: Today does not open it again for the day.
+    final route = stricterRoute(submission.outcome.route, dayRoute);
+    if (route != null) {
+      unawaited(
+        reporting.acknowledge(
+          reporting.readiness?.serverDay ?? _dayText(widget.clock()),
+          route,
+        ),
+      );
+    }
+    if (!mounted) return;
+    switch (action) {
+      case PainChipAction.skipExercise:
+        draft.status = 'skipped';
+        _changed();
+        _syncActivity();
+      case PainChipAction.useSwap:
+        if (swap != null &&
+            draft.swapForPain(name: swap.name, slug: swap.slug)) {
+          _changed();
+          _syncActivity();
+          TracendToast.show(
+            context,
+            '${swap.name} instead. $swapLoadLine',
+            icon: CupertinoIcons.arrow_2_squarepath,
+          );
+        }
+      case PainChipAction.endWorkout:
+        await _saveAndLeave();
+      case PainChipAction.continueExercise || null:
+        break;
+    }
+  }
+
+  /// How long the server's word on whether the area is held is waited for
+  /// before the answer is shown from what the phone knows.
+  static const _areaStateWait = Duration(milliseconds: 1500);
+
+  /// Whether [area] is held today: a hold that stays until the athlete has
+  /// been seen. Judged from today's readiness; the server's answer to the
+  /// report adds to it.
+  static bool _areaHeld(DayAdjustment? adjustment, PainArea area) =>
+      adjustment?.jointStates.any(
+        (state) => state.area == area && state.state == JointStateKind.held,
+      ) ??
+      false;
+
+  static String _dayText(DateTime day) =>
+      '${day.year.toString().padLeft(4, '0')}-'
+      '${day.month.toString().padLeft(2, '0')}-'
+      '${day.day.toString().padLeft(2, '0')}';
 
   Future<void> _more(int exercise) async {
     final draft = _exercises[exercise];
@@ -1975,10 +2152,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       onUndo: (set) => _undoSet(i, set),
       onRir: (set, rir) => _setRir(i, set, rir),
       onFillRir: (rir) => _fillRir(i, rir),
-      onPain: () {
-        _exercises[i].pain = !_exercises[i].pain;
-        _changed();
-      },
+      onPain: () => _reportPain(i),
       onMore: () => _more(i),
     );
   }

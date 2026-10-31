@@ -22,6 +22,8 @@ import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
+import 'package:tracend/features/readiness/pain_report_queue.dart';
+import 'package:tracend/features/readiness/safety_acknowledgements.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
@@ -200,6 +202,9 @@ void main() {
       SharedPreferencesCoachThreadMemory.storageKey: 'thread-1',
       CheckInQueue.storageKeyFor(_userId): '{}',
       CheckInQueue.storageKeyFor(_otherUserId): '{}',
+      PainReportQueue.storageKeyFor(_userId): '[]',
+      PainReportQueue.storageKeyFor(_otherUserId): '[]',
+      SafetyAcknowledgements.storageKeyFor(_userId): '[]',
     });
   });
 
@@ -269,6 +274,16 @@ void main() {
       legacy.getString(CheckInQueue.storageKeyFor(_otherUserId)),
       isNotNull,
     );
+    // A pain report and the referrals read go with the account too.
+    expect(legacy.getString(PainReportQueue.storageKeyFor(_userId)), isNull);
+    expect(
+      legacy.getString(SafetyAcknowledgements.storageKeyFor(_userId)),
+      isNull,
+    );
+    expect(
+      legacy.getString(PainReportQueue.storageKeyFor(_otherUserId)),
+      isNotNull,
+    );
   }
 
   /// A refused session may belong to an account that still exists: only the
@@ -285,6 +300,7 @@ void main() {
       isNull,
     );
     expect(legacy.getString(CheckInQueue.storageKeyFor(_userId)), isNotNull);
+    expect(legacy.getString(PainReportQueue.storageKeyFor(_userId)), isNotNull);
   }
 
   late FakeWorkoutActivityBridge liveActivity;
