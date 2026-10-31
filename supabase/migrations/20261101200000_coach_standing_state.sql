@@ -86,6 +86,17 @@ returns boolean language sql stable security definer set search_path = '' as $$
 $$;
 revoke all on function private.is_paused_on(uuid, date) from public, anon, authenticated;
 
+-- A day the athlete chose not to train: a break covers it, or that day's check-in says they cannot train.
+-- Such a day is never due and never missed (the brief's week and the hub's adherence leave it out of
+-- planned, unless a session was logged on it). It never blocks opening or starting a workout.
+create function private.is_rest_day(p_user uuid, p_date date)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select private.is_paused_on(p_user, p_date) or exists (select 1 from public.daily_check_ins c
+    where c.user_id = p_user and c.local_date = p_date and c.superseded_at is null
+      and c.available_to_train is false);
+$$;
+revoke all on function private.is_rest_day(uuid, date) from public, anon, authenticated;
+
 -- Every day from p_from to p_to that a break covers.
 create function private.paused_days(p_user uuid, p_from date, p_to date)
 returns setof date language sql stable security definer set search_path = '' as $$
@@ -523,7 +534,8 @@ begin
   if p_payload ? 'training' and not private.coach_training_uses_catalog(p_payload -> 'training') then
     raise exception 'coach proposal is invalid' using errcode = '22023';
   end if;
-  if not exists (
+  -- A break computes nothing, so it needs no complete or eligible profile.
+  if not p_payload ? 'pause' and not exists (
     select 1 from public.user_profiles
     where user_id = p_user_id and eligible is true and adult_attested_at is not null
   ) then
@@ -1114,10 +1126,11 @@ begin
           where s.user_id = v_user_id
             and s.local_date = d.day
             and s.state = 'completed'),
-        -- A day a break covers is not planned unless a session was logged on it (it then counts
-        -- as planned and trained, as in the hub's adherence); paused says which days it covers.
+        -- A day the athlete chose not to train (a break, or a can't-train check-in) is not planned
+        -- unless a session was logged on it (it then counts as planned and trained, as in the hub's
+        -- adherence); paused says which days a break covers.
         'paused', private.is_paused_on(v_user_id, d.day),
-        'planned', (not private.is_paused_on(v_user_id, d.day) or exists (
+        'planned', (not private.is_rest_day(v_user_id, d.day) or exists (
           select 1 from public.workout_sessions s
           where s.user_id = v_user_id
             and s.local_date = d.day
@@ -1234,15 +1247,18 @@ with active_version as (
     and dcm.local_date=(select today from local_day)
   order by dcm.computed_at desc
   limit 1
-), paused_sessions as (
-  -- Planned sessions on days a break covers: neither due nor missed, so left out of adherence. A
-  -- day a session was logged on stays planned, so done never passes planned.
-  select count(*)::integer as n
-  from private.paused_days(auth.uid(),
-    (select today from local_day)-greatest(7,least(period_days,365))+1,
-    (select today from local_day)) d
-  join workouts w on w.preferred_weekday=extract(isodow from d)::integer
-  where not exists (select 1 from completed c where c.local_date=d)
+), rest_sessions as (
+  -- Planned sessions on days the athlete chose not to train (a break, or a can't-train check-in):
+  -- neither due nor missed, so left out of adherence. A day a session was logged on stays planned,
+  -- so done never passes planned.
+  select count(*) filter (where private.is_paused_on(auth.uid(),x.d))::integer as paused,
+    count(*) filter (where not private.is_paused_on(auth.uid(),x.d))::integer as unavailable
+  from (select g::date as d from generate_series(
+      ((select today from local_day)-greatest(7,least(period_days,365))+1)::timestamp,
+      (select today from local_day)::timestamp, interval '1 day') g) x
+  join workouts w on w.preferred_weekday=extract(isodow from x.d)::integer
+  where private.is_rest_day(auth.uid(),x.d)
+    and not exists (select 1 from completed c where c.local_date=x.d)
 )
 select jsonb_build_object(
   'schema_version','1.10','period_days',greatest(7,least(period_days,365)),
@@ -1270,8 +1286,9 @@ select jsonb_build_object(
     'completed_sessions',(select count(*) from completed),
     'planned_sessions',greatest(0,coalesce((select sessions_per_week from active_version),0)
       * greatest(1,ceil(greatest(7,least(period_days,365))/7.0)::integer)
-      - (select n from paused_sessions)),
-    'paused_sessions',(select n from paused_sessions)),
+      - (select paused+unavailable from rest_sessions)),
+    'paused_sessions',(select paused from rest_sessions),
+    'unavailable_sessions',(select unavailable from rest_sessions)),
   'progression',coalesce((select jsonb_agg(jsonb_build_object(
     'exercise',exercise,'sessions',sessions,'best_load_kg',best_load_kg,
     'best_repetitions',best_repetitions,'latest_date',latest_date
@@ -1286,7 +1303,12 @@ select jsonb_build_object(
   'availability',private.availability_on(auth.uid(),(select today from local_day),false),
   'paused_days',coalesce((select jsonb_agg(d order by d) from private.paused_days(auth.uid(),
     (select today from local_day)-greatest(7,least(period_days,365))+1,
-    (select today from local_day)+13) d),'[]'::jsonb)
+    (select today from local_day)+13) d),'[]'::jsonb),
+  'unavailable_days',coalesce((select jsonb_agg(c.local_date order by c.local_date)
+    from public.daily_check_ins c
+    where c.user_id=auth.uid() and c.superseded_at is null and c.available_to_train is false
+      and c.local_date between (select today from local_day)-greatest(7,least(period_days,365))+1
+        and (select today from local_day)),'[]'::jsonb)
 );
 $$;
 

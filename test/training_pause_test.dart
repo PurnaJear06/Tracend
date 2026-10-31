@@ -158,6 +158,7 @@ Future<void> _pumpToday(
 TrainingHubData _hub({
   TrainingAvailability availability = TrainingAvailability.available,
   Set<DateTime> paused = const {},
+  Set<DateTime> unavailable = const {},
 }) {
   final base = trainHub();
   return TrainingHubData(
@@ -174,6 +175,7 @@ TrainingHubData _hub({
     load: base.load,
     availability: availability,
     pausedDays: paused,
+    unavailableDays: unavailable,
   );
 }
 
@@ -291,6 +293,22 @@ void main() {
       expect(hub.isDayPaused(DateTime(2026, 10, 3)), isFalse);
       expect(hub.pausedSessions, 2);
       expect(hub.plannedSessions, 3);
+      expect(hub.unavailableDays, isEmpty);
+
+      final unavailable = TrainingHubData.fromHubJson({
+        'schema_version': '1.10',
+        'local_today': '2026-10-02',
+        'adherence': {
+          'completed_sessions': 1,
+          'planned_sessions': 2,
+          'paused_sessions': 0,
+          'unavailable_sessions': 1,
+        },
+        'unavailable_days': ['2026-09-30'],
+      });
+      expect(unavailable.unavailableSessions, 1);
+      expect(unavailable.isRestChosen(DateTime(2026, 9, 30, 8)), isTrue);
+      expect(unavailable.isDayPaused(DateTime(2026, 9, 30)), isFalse);
       expect(hub.availability.paused, isTrue);
 
       final older = TrainingHubData.fromHubJson({
@@ -681,6 +699,34 @@ void main() {
       await tester.pumpAndSettle();
       expect(pauses.ends, ['pause-1']);
     });
+
+    testWidgets(
+      'a can\'t-train day is not due or counted, and its workout can still start',
+      (tester) async {
+        final base = _hub();
+        final today = DateTime(2026, 10, 2);
+        await _pumpTrain(
+          tester,
+          hub: _hub(
+            availability: TrainingAvailability.fromJson(
+              _availabilityJson(status: 'unavailable_today', unavailable: true),
+            ),
+            unavailable: {today},
+          ),
+          pauses: _Pauses(),
+        );
+        const weekday = 'Friday 2 October';
+        // The day reads as a rest day, not a planned one.
+        expect(
+          find.bySemanticsLabel(RegExp('^$weekday, (?!.*planned).*today\$')),
+          findsOneWidget,
+        );
+        // The athlete may change their mind: the workout still opens.
+        if (base.workoutForWeekday(today.weekday) != null) {
+          expect(find.text('Start workout'), findsOneWidget);
+        }
+      },
+    );
 
     testWidgets('a normal day offers Taking a break', (tester) async {
       await _pumpTrain(tester, hub: _hub(), pauses: _Pauses());

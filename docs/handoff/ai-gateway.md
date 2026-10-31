@@ -2355,6 +2355,13 @@ back."
     unchanged;
   - the simulator regexes had backspace characters instead of `\b` (fixed; a test checks each
     scenario's phrases against an intended and a forbidden reply).
+- **Second review (Codex):** one non-due-day rule, `private.is_rest_day` (a break or a can't-train
+  check-in), for the brief's week and the hub's adherence (`unavailable_days`,
+  `adherence.unavailable_sessions`); the plan, watch-outs and missed-day facts already used the standing
+  state's union of both. Such a day is not due or missed but never blocks opening or starting a workout;
+  Train shows it as a rest day and leaves it out of the week's count unless a session was logged. A
+  break proposal no longer hits the "eligible adult profile required" gate in `persist_coach_proposal_v1`
+  (approval and undo never gated it); other kinds still do.
 - **Simulator scenarios** (not run live): `checkin-unavailable-hi`, `break-across-chats`,
   `first-day-back`, `end-break-early`, each with a `setup` that seeds the standing state (the bank
   harness renders the real contributor, plan and watch-outs over it).

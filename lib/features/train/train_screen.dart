@@ -1214,15 +1214,16 @@ class _TrainScreenState extends State<TrainScreen> {
     final doneThisWeek = currentWeek.where(hub.isDayCompleted).length;
     final open = _open;
     final assigned = hub.workouts.any((w) => w.weekday != null);
-    // A day of a break has nothing due, so it does not count as planned,
-    // unless a session was logged on it: then it counts as planned and done,
-    // as in the hub's adherence, so done never passes planned.
+    // A day the athlete chose not to train (a break, or a can't-train
+    // check-in) has nothing due, so it does not count as planned, unless a
+    // session was logged on it: then it counts as planned and done, as in the
+    // hub's adherence, so done never passes planned.
     final plannedThisWeek = assigned
         ? currentWeek
               .where(
                 (d) =>
                     hub.workoutForWeekday(d.weekday) != null &&
-                    (!hub.isDayPaused(d) || hub.isDayCompleted(d)),
+                    (!hub.isRestChosen(d) || hub.isDayCompleted(d)),
               )
               .length
         : hub.plan?.sessionsPerWeek ?? hub.workouts.length;
@@ -1264,7 +1265,10 @@ class _TrainScreenState extends State<TrainScreen> {
             ? DayBoxStatus.done
             : hub.isDayPaused(date)
             ? DayBoxStatus.paused
-            : hub.workoutForWeekday(date.weekday) != null
+            // A can't-train day is not due: it reads as a rest day, though its
+            // workout can still be opened and started.
+            : hub.workoutForWeekday(date.weekday) != null &&
+                  !hub.isRestChosen(date)
             ? DayBoxStatus.planned
             : DayBoxStatus.rest,
         workoutNameFor: (date) => hub.workoutForWeekday(date.weekday)?.name,

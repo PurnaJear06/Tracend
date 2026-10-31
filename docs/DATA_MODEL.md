@@ -747,9 +747,11 @@ writes them from the client. Every write has an audit event (`training_pause_sta
 `paused`, `unavailable_today` or `available`, with the break covering the day (or the next one ahead),
 `return_from_pause` (the break that ended in the 7 days before while no session has been finished since:
 the first day back) and `offer_break` (two can't-train check-ins in a row and no break). The daily brief
-(1.9; each day of its `week` also says `paused`, and a break day is `planned` only when a session was
-logged on it) and the training hub (1.10, with `paused_days` and `adherence.paused_sessions`, which
-leaves out break days without a logged session, so done never passes planned) carry it, and
+(1.9; each day of its `week` also says `paused`, and a day the athlete chose not to train, a break day
+or a can't-train check-in day (`private.is_rest_day`), is `planned` only when a session was logged on
+it) and the training hub (1.10, with `paused_days`, `unavailable_days`, `adherence.paused_sessions` and
+`adherence.unavailable_sessions`, which leave out such days without a logged session, so done never
+passes planned) carry it, and
 `get_coach_standing_state_v1` gives it to the Coach (with `high_pain`, the highest pain of 7 or more in 7
 days with its area and date). A day in a break adds the readiness trigger `paused`, which
 `day_adjustments.triggers` allows, and offers no readiness choice; a held or limited joint's own change

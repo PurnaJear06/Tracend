@@ -93,6 +93,10 @@ Deno.test("persist_coach_proposal_v1 is its latest earlier definition plus the s
       "  -- A break computes nothing and only rests, so the health check never holds one back.\n  if not p_payload ? 'pause' then\n    perform private.assert_screening_allows(p_user_id, p_basis ->> 'screening');\n  end if;\n",
     ],
     [
+      "  if not exists (\n",
+      "  -- A break computes nothing, so it needs no complete or eligible profile.\n  if not p_payload ? 'pause' and not exists (\n",
+    ],
+    [
       "    raise exception 'the plan changed while the proposal was built' using errcode = '55000';\n  end if;\n",
       "    raise exception 'the plan changed while the proposal was built' using errcode = '55000';\n  end if;\n  -- A break must still fit when it is stored: dates from today to two days ahead, at most 42 days and\n  -- no overlap with another break.\n  if p_payload ? 'pause' and private.training_pause_problem(p_user_id,\n      (p_payload -> 'pause' ->> 'start_date')::date, (p_payload -> 'pause' ->> 'end_date')::date,\n      private.local_date_for(p_user_id)) is not null then\n    raise exception 'the break no longer fits' using errcode = '55000';\n  end if;\n",
     ],
@@ -186,7 +190,7 @@ Deno.test("get_my_daily_brief is its latest earlier definition plus the standing
     ],
     [
       "        'planned', exists (\n          select 1\n          from public.planned_workouts w\n",
-      "        -- A day a break covers is not planned unless a session was logged on it (it then counts\n        -- as planned and trained, as in the hub's adherence); paused says which days it covers.\n        'paused', private.is_paused_on(v_user_id, d.day),\n        'planned', (not private.is_paused_on(v_user_id, d.day) or exists (\n          select 1 from public.workout_sessions s\n          where s.user_id = v_user_id\n            and s.local_date = d.day\n            and s.state = 'completed')) and exists (\n          select 1\n          from public.planned_workouts w\n",
+      "        -- A day the athlete chose not to train (a break, or a can't-train check-in) is not planned\n        -- unless a session was logged on it (it then counts as planned and trained, as in the hub's\n        -- adherence); paused says which days a break covers.\n        'paused', private.is_paused_on(v_user_id, d.day),\n        'planned', (not private.is_rest_day(v_user_id, d.day) or exists (\n          select 1 from public.workout_sessions s\n          where s.user_id = v_user_id\n            and s.local_date = d.day\n            and s.state = 'completed')) and exists (\n          select 1\n          from public.planned_workouts w\n",
     ],
   ];
   await pinned(
@@ -202,7 +206,7 @@ Deno.test("get_my_training_hub is its latest earlier definition plus the standin
   const hunks: Hunks = [
     [
       "  order by dcm.computed_at desc\n  limit 1\n)\nselect jsonb_build_object(",
-      "  order by dcm.computed_at desc\n  limit 1\n), paused_sessions as (\n  -- Planned sessions on days a break covers: neither due nor missed, so left out of adherence. A\n  -- day a session was logged on stays planned, so done never passes planned.\n  select count(*)::integer as n\n  from private.paused_days(auth.uid(),\n    (select today from local_day)-greatest(7,least(period_days,365))+1,\n    (select today from local_day)) d\n  join workouts w on w.preferred_weekday=extract(isodow from d)::integer\n  where not exists (select 1 from completed c where c.local_date=d)\n)\nselect jsonb_build_object(",
+      "  order by dcm.computed_at desc\n  limit 1\n), rest_sessions as (\n  -- Planned sessions on days the athlete chose not to train (a break, or a can't-train check-in):\n  -- neither due nor missed, so left out of adherence. A day a session was logged on stays planned,\n  -- so done never passes planned.\n  select count(*) filter (where private.is_paused_on(auth.uid(),x.d))::integer as paused,\n    count(*) filter (where not private.is_paused_on(auth.uid(),x.d))::integer as unavailable\n  from (select g::date as d from generate_series(\n      ((select today from local_day)-greatest(7,least(period_days,365))+1)::timestamp,\n      (select today from local_day)::timestamp, interval '1 day') g) x\n  join workouts w on w.preferred_weekday=extract(isodow from x.d)::integer\n  where private.is_rest_day(auth.uid(),x.d)\n    and not exists (select 1 from completed c where c.local_date=x.d)\n)\nselect jsonb_build_object(",
     ],
     [
       "'schema_version','1.9'",
@@ -210,11 +214,11 @@ Deno.test("get_my_training_hub is its latest earlier definition plus the standin
     ],
     [
       "    'planned_sessions',coalesce((select sessions_per_week from active_version),0)\n      * greatest(1,ceil(greatest(7,least(period_days,365))/7.0)::integer)),\n",
-      "    'planned_sessions',greatest(0,coalesce((select sessions_per_week from active_version),0)\n      * greatest(1,ceil(greatest(7,least(period_days,365))/7.0)::integer)\n      - (select n from paused_sessions)),\n    'paused_sessions',(select n from paused_sessions)),\n",
+      "    'planned_sessions',greatest(0,coalesce((select sessions_per_week from active_version),0)\n      * greatest(1,ceil(greatest(7,least(period_days,365))/7.0)::integer)\n      - (select paused+unavailable from rest_sessions)),\n    'paused_sessions',(select paused from rest_sessions),\n    'unavailable_sessions',(select unavailable from rest_sessions)),\n",
     ],
     [
       "  'next_targets',private.next_session_targets(auth.uid())\n);",
-      "  'next_targets',private.next_session_targets(auth.uid()),\n  'availability',private.availability_on(auth.uid(),(select today from local_day),false),\n  'paused_days',coalesce((select jsonb_agg(d order by d) from private.paused_days(auth.uid(),\n    (select today from local_day)-greatest(7,least(period_days,365))+1,\n    (select today from local_day)+13) d),'[]'::jsonb)\n);",
+      "  'next_targets',private.next_session_targets(auth.uid()),\n  'availability',private.availability_on(auth.uid(),(select today from local_day),false),\n  'paused_days',coalesce((select jsonb_agg(d order by d) from private.paused_days(auth.uid(),\n    (select today from local_day)-greatest(7,least(period_days,365))+1,\n    (select today from local_day)+13) d),'[]'::jsonb),\n  'unavailable_days',coalesce((select jsonb_agg(c.local_date order by c.local_date)\n    from public.daily_check_ins c\n    where c.user_id=auth.uid() and c.superseded_at is null and c.available_to_train is false\n      and c.local_date between (select today from local_day)-greatest(7,least(period_days,365))+1\n        and (select today from local_day)),'[]'::jsonb)\n);",
     ],
   ];
   await pinned(

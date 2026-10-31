@@ -582,7 +582,8 @@ plan resumes by itself after the break's last day. Today, Train and Coach all re
 - **First day back:** within a week after a break, until the first session is finished, Today shows a
   "First day back" note (ease in; the plan resumes as it was).
 - **Can't train today:** a check-in that says the athlete cannot train makes the session card a rest
-  day, and the readiness card reads "Rest day: you said you can't train today." After two such
+  day (the workout can still be opened and started; the day is just not due or missed, and Train and
+  Today's week leave it out of the count unless a session was logged), and the readiness card reads "Rest day: you said you can't train today." After two such
   check-ins in a row, with no break running or ahead, Today offers "Taking a few days off? Set a
   break", which opens the same sheet (the athlete taps; nothing is set by itself).
 - **In chat:** "I'm taking 15 days off" can end in a Coach proposal card "Break · 1–15 Nov"; approving

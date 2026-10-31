@@ -1,5 +1,5 @@
 begin;
-select plan(79);
+select plan(84);
 
 -- Coach standing state (20261101200000): a break is approved state (training_pauses, an overlay), one
 -- availability helper answers "can this athlete train today?", the brief, the hub, the readiness card and
@@ -40,6 +40,8 @@ select pg_temp.athlete(pg_temp.u(3));
 select pg_temp.athlete(pg_temp.u(4));
 select pg_temp.athlete(pg_temp.u(5));
 select pg_temp.athlete(pg_temp.u(6));
+select pg_temp.athlete(pg_temp.u(7));
+update public.user_profiles set eligible = false, adult_attested_at = null where user_id = pg_temp.u(7);
 create temporary table t as select private.local_date_for(pg_temp.u(1)) as today;
 create temporary table r(name text primary key, j jsonb);
 create temporary table p(name text primary key, id uuid);
@@ -357,9 +359,13 @@ begin
   insert into public.workout_sessions(user_id, plan_version_id, planned_workout_id, local_date,
     timezone, state, idempotency_key, completed_at, duration_seconds, session_effort,
     session_effort_source, completion_source)
-  select pg_temp.u(5), v, w.id, mon, 'UTC', 'completed', gen_random_uuid(),
-    now() - (private.local_date_for(pg_temp.u(5)) - mon) * interval '1 day', 3000, 7, 'athlete', 'manual'
-  from public.planned_workouts w where w.plan_version_id = v and w.preferred_weekday = 1;
+  select pg_temp.u(5), v, w.id, mon + (w.preferred_weekday - 1), 'UTC', 'completed', gen_random_uuid(),
+    now() - (private.local_date_for(pg_temp.u(5)) - mon - (w.preferred_weekday - 1)) * interval '1 day',
+    3000, 7, 'athlete', 'manual'
+  from public.planned_workouts w where w.plan_version_id = v and w.preferred_weekday in (1, 4);
+  -- Can't-train check-ins on Wednesday (no session) and Thursday (a session logged anyway).
+  perform pg_temp.check_in(pg_temp.u(5), mon + 2, false);
+  perform pg_temp.check_in(pg_temp.u(5), mon + 3, false);
 end $$;
 set local role authenticated;
 set local "request.jwt.claim.sub" = 'c5000000-0000-4000-8000-000000000005';
@@ -371,11 +377,15 @@ select ok((select j -> 'availability' -> 'pause' = 'null'::jsonb from r where na
 select is((select array_agg((day ->> 'paused') || '/' || (day ->> 'planned') || '/' || (day ->> 'trained')
       order by day ->> 'local_date')
     from r, jsonb_array_elements(j -> 'week') day where name = 'week_brief'),
-  array['true/true/true', 'true/false/false', 'false/true/false', 'false/true/false', 'false/true/false',
+  array['true/true/true', 'true/false/false', 'false/false/false', 'false/true/true', 'false/true/false',
     'false/true/false', 'false/true/false'],
-  'per day: a break day is not planned, unless a session was logged on it');
+  'per day: a break or can''t-train day is not planned, unless a session was logged on it');
 select is((select j -> 'adherence' ->> 'paused_sessions' from r where name = 'week_hub'), '1',
   'the hub leaves out the break day with no session, and keeps the logged one as planned');
+select is((select array[j -> 'adherence' ->> 'unavailable_sessions',
+      (j -> 'unavailable_days' ? ((select monday from wk) + 2)::text)::text,
+      (j -> 'unavailable_days' ? ((select monday from wk) + 3)::text)::text] from r where name = 'week_hub'),
+  array['1', 'true', 'true'], 'the can''t-train day with no session is left out too; both days are listed');
 select ok((select (j -> 'adherence' ->> 'completed_sessions')::integer
     <= (j -> 'adherence' ->> 'planned_sessions')::integer from r where name = 'week_hub'),
   'so done never passes planned');
@@ -394,6 +404,26 @@ select ok(public.get_coach_standing_state_v1(pg_temp.u(3), (select today from t)
 select is((select count(*)::integer from private.paused_days(pg_temp.u(4), (select today from t) - 30,
     (select today from t) + 30) d), 1,
   'the undone break adds no paused day (only the one-day break set directly does)');
+
+
+-- 13. A break needs no complete or eligible profile; other proposals still do --------------------------
+
+insert into p select 'ineligible_break', pg_temp.store_pause(pg_temp.u(7), (select today from t), (select today from t) + 2);
+select isnt((select id from p where name = 'ineligible_break'), null,
+  'an athlete with an incomplete, ineligible profile can store a break proposal');
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'c5000000-0000-4000-8000-000000000007';
+insert into r select 'ineligible_approved', public.respond_to_coach_proposal_v1(
+  (select id from p where name = 'ineligible_break'), 'approve');
+insert into r select 'ineligible_undone', public.undo_coach_proposal_v1((select id from p where name = 'ineligible_break'));
+reset role;
+select is((select j ->> 'status' from r where name = 'ineligible_approved'), 'accepted', 'and approve it');
+select is((select j ->> 'status' from r where name = 'ineligible_undone'), 'undone', 'and undo it');
+select throws_ok($$select public.persist_coach_proposal_v1(pg_temp.u(7), 'nutrition_targets', 'Calories', 'r', 'b',
+    'd', 'medium', '[]', '{"rows":[]}', '{"rows":[]}',
+    '{"nutrition":{"calories":2000,"protein_g":140,"carbohydrate_g":215,"fat_g":65,"rationale":"A gentler pace."}}',
+    '{"screening":"cleared","gates":[],"nutrition_version_id":null}', null, 72)$$,
+  '22023', 'eligible adult profile required', 'any other kind still needs an eligible adult profile');
 
 select * from finish();
 rollback;

@@ -666,6 +666,8 @@ class TrainingHubData {
     this.availability = TrainingAvailability.available,
     this.pausedDays = const {},
     this.pausedSessions = 0,
+    this.unavailableDays = const {},
+    this.unavailableSessions = 0,
   });
 
   /// The hub this phone saved at [CachedTrainingHub.savedAt], for a launch
@@ -785,6 +787,12 @@ class TrainingHubData {
           ?availabilityDate(day),
       },
       pausedSessions: (adherence['paused_sessions'] as num? ?? 0).toInt(),
+      unavailableDays: {
+        for (final day in (value['unavailable_days'] as List? ?? const []))
+          ?availabilityDate(day),
+      },
+      unavailableSessions: (adherence['unavailable_sessions'] as num? ?? 0)
+          .toInt(),
     );
   }
 
@@ -849,8 +857,22 @@ class TrainingHubData {
   /// of [plannedSessions].
   final int pausedSessions;
 
+  /// The days of the window whose check-in said the athlete can't train (hub
+  /// 1.10): not due and never missed, though a workout can still be started.
+  final Set<DateTime> unavailableDays;
+
+  /// Sessions of the window on a can't-train day with nothing logged; the
+  /// server leaves them out of [plannedSessions].
+  final int unavailableSessions;
+
   bool isDayPaused(DateTime date) =>
       pausedDays.contains(DateTime(date.year, date.month, date.day));
+
+  /// A day the athlete chose not to train: a break, or a can't-train check-in.
+  /// It is never due or missed, unless a session was logged on it.
+  bool isRestChosen(DateTime date) =>
+      isDayPaused(date) ||
+      unavailableDays.contains(DateTime(date.year, date.month, date.day));
 
   bool isDayCompleted(DateTime date) => completedDays.any(
     (d) => d.year == date.year && d.month == date.month && d.day == date.day,
