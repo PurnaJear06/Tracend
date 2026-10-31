@@ -1019,6 +1019,51 @@ and cardio dosing") the boundaries. No app change, no new table, no Edge Functio
   `train_guidance_test.dart` (suggested, pending, running, declined_recently and the other suppressions, safety
   route, unknown status and reason, failures, cardio met/partial/zero/null/easy-only/hard/unreadable, copy lint).
 
+## Guidance performance (M3 of the deload and cardio review; branch `claude/guidance-perf-coach`, migration `20261031110000_guidance_perf.sql`)
+
+`get_training_guidance_for_v1` took about 1.7 s on a cold connection and 0.25 to 0.7 s warm in production with 59
+workout sessions behind it, so data volume was not the cost. Read-only checks (`explain (analyze)` of each function
+of the chain for the one athlete with a plan; no ids printed):
+
+| Piece | Before (production) |
+|---|---|
+| `training_guidance`, one backend, first call / each later call | 2.9 s / about 250 ms |
+| `next_session_targets` (called twice per read) | 1.0 s cold / 91 ms warm; 25 ms with the date given |
+| `deload_signals` | about 158 ms warm (91 of it `next_session_targets`) |
+| `day_adjustment_compute` | about 108 ms warm (91 of it `next_session_targets`) |
+| `cardio_week`, `joint_states`, `current_screening_outcome` | 6 ms, 4 ms, 1 ms |
+| `select ... from pg_catalog.pg_timezone_names where name = 'x'` | about 56 ms every call |
+
+**Cause.** Every reader of the athlete's time zone checked it with `join pg_catalog.pg_timezone_names z on z.name =
+a.timezone`. The view lists every zone by reading the tz database and Postgres cannot push the name into it, so each
+check cost about 56 ms (the first on a connection, much more). One guidance read made four or five: the date check,
+`next_session_targets` twice (through the day adjustment and the deload signals), `deload_signals`, and
+`local_day_of` per pain report. The Coach tools' `local_day` made one per row.
+
+**Fix (no change of result).** `private.timezone_names` (the view's names, copied in the migration) and
+`private.known_timezone(zone)`: a name in the table is known; any other name is asked of the view itself, so the
+answer is the view's answer for every input (a new zone after a tz update, a case variant, an abbreviation) and only
+fast for the names an athlete can store (`set_my_timezone` stores nothing else). The join is replaced by
+`private.known_timezone(a.timezone)` in `local_date_for`, `local_day_of`, `local_day`, `user_timezone` and
+`deload_signals`, each its latest earlier definition plus that one hunk (`guidance_perf_test.ts`). `next_session_targets`
+needed no change: it reads today through `local_date_for`. No signature, grant or result changes. pgTAP
+`guidance_perf_test.sql` pins the table equal to the view, the check equal to the view for every name, a case
+variant, an abbreviation, a POSIX name and an unknown name, and the four readers and `deload_signals` for a known,
+an unknown and a null-like zone.
+
+**Expected after deploy (a projection; the migration is not applied to production by this PR).** With the four
+56 ms calls gone the remaining work is about 25 ms for each `next_session_targets` (measured with the date given),
+about 11 ms for the rest of `deload_signals`, 17 ms for the rest of the day adjustment and 6 ms for the cardio week:
+about 85 to 100 ms warm, and the cold first call no longer loads the tz files. To confirm after the deploy, run on the
+linked project (read-only): `explain (analyze, timing off) select private.training_guidance(u.id, current_date) from
+(select user_id as id from public.training_plan_versions where status='active' limit 1) u` and compare with 250 ms warm and
+2.9 s cold. Other functions that still join the view directly (the hub, `start_workout` and the other workout
+functions, the goal date in the Coach plan context) belong to changes that replace them and were left alone; the same
+one-line swap applies to them.
+
+`next_session_targets` is still computed twice per guidance read (about 25 ms each): passing it in would change
+several signatures, and the saving is small now.
+
 ## Next agent starts here
 
 B4-2 (the app side of the readiness adjustment) is in review; B5-2 (the pain check in the app) builds on

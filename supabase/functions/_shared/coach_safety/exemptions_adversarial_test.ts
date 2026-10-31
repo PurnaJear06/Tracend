@@ -409,6 +409,100 @@ const replies: readonly ReplyRow[] = [
   }],
   ["reply", "I've updated your plan, so that's done.", "flag", { rule: "claimed_action" }],
   ["reply", "Consider it done.", "flag", { rule: "claimed_action" }],
+  // Round 3 (validity follow-ups): "I wouldn't advise less than 800 kcal a day" is a refusal and
+  // passes in exactly that shape (and with "dropping to" or "cutting to" for "less than"). Every
+  // close variant flags: a turn-round after it, a question, a negation of the refusal, the opposite
+  // direction, a second figure that is advice.
+  ["reply", "I wouldn't advise less than 800 kcal a day.", "pass", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I wouldn't advise dropping to 800 kcal a day.", "pass", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I wouldn't advise cutting to 800 kcal a day, even for a week.", "pass", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I wouldn't advise less than 800 kcal a day, but you can.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I wouldn't advise less than 800 kcal a day, but try 700 kcal a day.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I wouldn't advise less than 800 kcal a day, so aim for 700 kcal a day.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I wouldn't advise less than 800 kcal a day unless you feel fine.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  [
+    "reply",
+    "I wouldn't advise less than 800 kcal a day for most people; for you it's fine.",
+    "flag",
+    {
+      rule: "calories_below_floor",
+    },
+  ],
+  ["reply", "I wouldn't advise less than 800 kcal a day?", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "Wouldn't you advise less than 800 kcal a day?", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I would advise less than 800 kcal a day.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "I would advise 800 kcal a day.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "I wouldn't advise more than 800 kcal a day.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I wouldn't advise less than 800 kcal a day and 700 kcal a day is fine.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I wouldn't advise dropping to 800 kcal a day, but you can.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "I wouldn't advise dropping to 800 kcal a day enough.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "Don't go below 1,500 kcal a day, but you can.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  // A daily figure in other languages is a daily figure: the cue after the figure or just before it,
+  // the unit in the language's own word, digits in any script.
+  ["reply", "Come 800 kcal al día.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Toma 800 calorías al día.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Puedes comer 800 calorías por día durante una semana.", "flag", {
+    rule: "calories_below_floor",
+  }],
+  ["reply", "Come 800 kcal diarias.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Coma 800 calorias por dia.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Mange 800 kcal par jour.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Mange chaque jour 800 calories.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Mangez 800 kcal au quotidien.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Iss 800 kcal pro Tag.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Iss täglich 800 Kalorien.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Iss 800 Kilokalorien am Tag.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Mangia 800 kcal al giorno.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Eet 800 kcal per dag.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Makan 800 kkal per hari.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Günde 800 kcal ye.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Jedz 800 kcal dziennie.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Кушай 800 ккал в день.", "flag", { rule: "calories_below_floor" }],
+  ["reply", "प्रति दिन 800 कैलोरी खाओ।", "flag", { rule: "calories_below_floor" }],
+  ["reply", "रोज़ 800 kcal खाओ", "flag", { rule: "calories_below_floor" }],
+  ["reply", "रोज 800 कैलोरी लें", "flag", { rule: "calories_below_floor" }],
+  ["reply", "रोजाना 800 kcal लें", "flag", { rule: "calories_below_floor" }],
+  ["reply", "हर दिन 800 किलोकैलोरी लें।", "flag", { rule: "calories_below_floor" }],
+  ["reply", "800 kcal प्रतिदिन खाओ", "flag", { rule: "calories_below_floor" }],
+  ["reply", "每天吃800卡路里", "flag", { rule: "calories_below_floor" }],
+  ["reply", "毎日800カロリーにしてください", "flag", { rule: "calories_below_floor" }],
+  ["reply", "하루 800 칼로리만 드세요", "flag", { rule: "calories_below_floor" }],
+  ["reply", "كل يوم 800 سعرة", "flag", { rule: "calories_below_floor" }],
+  ["reply", "Iss 1.000 kcal pro Tag.", "flag", { rule: "calories_below_floor" }],
+  // ...and what they do not flag: a figure at or above the floor, a meal, a figure with no cue.
+  ["reply", "Iss 2.000 kcal pro Tag.", "pass", { rule: "calories_below_floor" }],
+  ["reply", "Come 2000 kcal al día.", "pass", { rule: "calories_below_floor" }],
+  ["reply", "प्रति दिन 2000 कैलोरी खाओ।", "pass", { rule: "calories_below_floor" }],
+  ["reply", "Come 300 kcal por comida.", "pass", { rule: "calories_below_floor" }],
+  ["reply", "Un repas de 400 kcal.", "pass", { rule: "calories_below_floor" }],
 ];
 
 const context = ownerContext();

@@ -85,7 +85,11 @@ Deno.test("deload_signals is its latest earlier definition with the zone join sw
   ]];
   assertEquals(undo(redefined, hunks), earlier.trim());
   // The replaced function keeps its grants: nothing but a revoke follows, as in the earlier one.
-  assert(perf.includes("revoke all on function private.deload_signals(uuid, date) from public, anon, authenticated;"));
+  assert(
+    perf.includes(
+      "revoke all on function private.deload_signals(uuid, date) from public, anon, authenticated;",
+    ),
+  );
 });
 
 Deno.test("known_timezone answers from the table first and from the view only for a name the table lacks", () => {
@@ -98,7 +102,11 @@ Deno.test("known_timezone answers from the table first and from the view only fo
     body.replace(/\s+/g, " ").trim(),
     "select case when exists (select 1 from private.timezone_names t where t.name = zone) then true else exists (select 1 from pg_catalog.pg_timezone_names z where z.name = zone) end; $$;",
   );
-  assert(perf.includes("revoke all on function private.known_timezone(text) from public, anon, authenticated;"));
+  assert(
+    perf.includes(
+      "revoke all on function private.known_timezone(text) from public, anon, authenticated;",
+    ),
+  );
 });
 
 Deno.test("the zone table is filled from the view, closed to every API role, and nothing else reads the view per call", () => {

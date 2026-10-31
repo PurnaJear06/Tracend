@@ -1869,6 +1869,39 @@ pattern matches the new codes. Budget: a retry follows an unbilled failure, so a
 per run. The root cause of the 400 ms rejections is not known from the code: a fast, repeated failure points at
 a request the provider rejects (a 4xx) rather than a busy provider, and the new code will say which status.
 
+## Coach knows the training guidance; the calorie guard reads other languages (2026-10-31, branch `claude/guidance-perf-coach`)
+
+**`training_guidance` contributor** (`coach_context/contributors/training_guidance.ts`, read-only, volatile, right after
+`readiness`, on both routes). It reads `get_training_guidance_for_v1` and gives Coach the facts to explain: a lighter
+week (deload) running until a date, waiting for the athlete's answer, suggested (the reasons in words, never counted) or
+not offered and why; and the week's cardio against the guideline dose (minutes done and target as marked records,
+"not countable yet" when Apple Health data is missing, zero never read as "did no cardio"), whether hard cardio is
+open today and the easy-effort wording. It never applies anything: the rules say Coach never starts, accepts, declines or
+changes a lighter week or a plan, and heart rate only colours the easy wording. A safety-route day, or a health check that
+asks for a professional first, gives no training line at all (the block says so and points to the referral). The read
+has its own 1.5 s deadline in parallel with the card's (`coach_context/read_within.ts`, now shared with `readiness`); a
+slow, failed or unreadable read renders a 446-character "could not be read just now" block, never "nothing due", and
+costs only its own block (tested next to the card). Trace `training_guidance` is logged as `training_guidance_context`.
+The proposal id, heart-rate values and pain figures never reach the text. Grounding is `records` (the dates, the
+minutes and the rules' own figures are marked records; a probe test pins that no other number grounds). Budget 2,000
+characters, about 1,100 used; `docs/CONTEXT_BUDGET.md` has the row and the new totals. It could be wired because the
+guidance read dropped from about 250 ms warm to an expected 85 to 100 ms (training-engine handoff, "Guidance
+performance"). Next-session targets stay in the training plan block.
+
+**Calorie guard (follow-ups from #177).** (a) A below-floor figure with a daily cue in another language now flags: the
+cue after the figure or in the six words before it (Hindi and Turkish put it first) for Spanish, Portuguese, French,
+German, Dutch, Scandinavian, Italian, Indonesian, Turkish, Polish, Vietnamese, Russian, Hindi, Bengali, Tamil, Arabic,
+Chinese, Japanese, Korean and Thai, with the calorie word of those languages (`calorías`, `Kalorien`, `कैलोरी`, `ккал`,
+`卡路里`, `カロリー`, `칼로리`, `kkal`, ...). No English exemption applies to text in another language, so such a reply is
+flagged for the repair (validity cost accepted; safety first). A point as thousands separator ("2.000 kcal") is read as
+2000, which also stops "2.000" being read as 0. The Devanagari danda ends a sentence and a clause. (b) "I wouldn't
+advise less than 800 kcal a day" already passed (the limit exemption); what was a false flag was the same refusal with
+"dropping to", "cutting to" or "going down to", now accepted in the same exact shape as "going to". The limit exemption
+was too wide in the other direction: it no longer applies in a question, after a turn-round ("but you can", "so aim
+for", "unless", "for you it's fine") or with anything after the figure but the day, "for you" or an "even ..." aside.
+`exemptions_adversarial_test.ts` gains 49 rows (the refusal and its variants, then each language and the cases that must
+not flag). Not done: English "daily" before the figure ("your daily target is 800 kcal") is still a miss, as before.
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in

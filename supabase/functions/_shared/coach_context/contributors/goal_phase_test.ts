@@ -72,6 +72,7 @@ Deno.test("the registry holds the goal phase contributor after the screening and
     "goal_phase",
     "training_plan",
     "readiness",
+    "training_guidance",
     "nutrition_state",
     "coach_proposals",
     "heart_rate_profile",
