@@ -1040,7 +1040,8 @@ confirmation actions. The tab reads top to bottom:
   - **One workout at a time.** Starting a workout while another has sets logged asks first, in an
     action sheet: "Legs B (Fri) has 2 sets logged." with **Resume it** and **Start this one
     anyway**. Starting anyway leaves that draft as it is; nothing is discarded. The same workout
-    open on another day shares its draft on this phone, so it offers only **Resume it**.
+    open on another day shares its draft on this phone, so it is asked about first, even when
+    another workout's draft is newer, and only **Resume it** is offered.
   - A started workout keeps the day it is logged under in its draft on this phone. Every start and
     every late send uses that day, so a past day's workout logged offline is filed on that day
     (a draft saved before this was kept goes on the day it began). A day done under an earlier plan version (a Coach change, a block or a deload copies the

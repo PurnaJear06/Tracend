@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
@@ -77,6 +78,17 @@ class _Drafts extends TrainFixtureRepository implements OpenWorkoutRepository {
   @override
   Future<List<OpenWorkout>> loadOpenWorkouts() async =>
       openWorkoutsFrom(Map.of(drafts));
+}
+
+/// [_Drafts] whose send of waiting workouts has a workout in hand that never
+/// finishes: a stalled request.
+class _StalledSend extends _Drafts implements WorkoutSendInFlight {
+  _StalledSend({super.hub});
+
+  final stalled = Completer<void>();
+
+  @override
+  Future<void> sendInFlight(String workoutId) => stalled.future;
 }
 
 /// The plan's week with nothing done yet: Tuesday and Wednesday are missed.
@@ -200,6 +212,23 @@ void main() {
       final screen = await logger(tester);
       expect(screen?.workout.id, lowerA.id);
       expect(screen?.sessionDate, _wednesday);
+    });
+
+    testWidgets('a stalled send never holds Resume back', (tester) async {
+      final stalled = _StalledSend(hub: _week());
+      repository = stalled;
+      stalled.drafts[lowerA.id] = _draft(lowerA, _wednesday);
+      await pumpTrain(tester);
+
+      // Train opens the logger at once; the logger waits for the send within
+      // its own three-second bound (offline_cold_start_test.dart, "a send of
+      // the same workout that stalls does not hold the logger").
+      await tapText(tester, find.widgetWithText(FilledButton, 'Resume').first);
+      final screen = await logger(tester);
+      expect(screen?.workout.id, lowerA.id);
+      expect(screen?.sessionDate, _wednesday);
+      expect(stalled.stalled.isCompleted, isFalse);
+      await tester.pump(const Duration(seconds: 4));
     });
 
     testWidgets('a workout with no set done is not offered', (tester) async {
@@ -339,6 +368,29 @@ void main() {
 
       await tester.tap(find.text('Cancel'));
       expect(await logger(tester), isNull);
+    });
+
+    testWidgets('the same workout open on another day is asked about first, '
+        'even when another workout\'s draft is newer', (tester) async {
+      repository.drafts
+        ..[lowerA.id] = _draft(
+          lowerA,
+          _wednesday,
+          lastDone: DateTime(2026, 10, 2, 8, 30),
+        )
+        ..[upperA.id] = _draft(
+          upperA,
+          DateTime(2026, 9, 25),
+          lastDone: DateTime(2026, 10, 1, 8),
+        );
+      await startToday(tester);
+
+      expect(
+        find.text('Upper body A (Fri) has 2 sets logged.'),
+        findsOneWidget,
+      );
+      expect(find.text('Lower body A (Wed) has 2 sets logged.'), findsNothing);
+      expect(find.text('Start this one anyway'), findsNothing);
     });
 
     testWidgets('the same workout open on another day can only be resumed', (

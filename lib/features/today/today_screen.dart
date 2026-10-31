@@ -1248,10 +1248,14 @@ class _TodayScreenState extends State<TodayScreen> {
 
   /// The open workouts the Resume card offers: one the server already offers
   /// back as [unfinished] is answered on that card, whose Save sends its
-  /// draft first, so it is not offered twice.
+  /// draft first, so it is not offered twice. It is the same workout by its
+  /// session, or by its planned workout and day when the draft's session
+  /// never reached the server (`pending-`) or names another.
   List<OpenWorkout> _openBeside(UnfinishedWorkout? unfinished) => [
     for (final workout in _open)
-      if (unfinished == null || workout.sessionId != unfinished.sessionId)
+      if (unfinished == null ||
+          (workout.sessionId != unfinished.sessionId &&
+              !workout.isOn(unfinished.plannedWorkoutId, unfinished.localDate)))
         workout,
   ];
 

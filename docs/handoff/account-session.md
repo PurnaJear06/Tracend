@@ -289,20 +289,21 @@ Refs FLUTTER-N.
   offline. Train's Resume card, the day hero, the Live Activity link and Today's card all use it.
 - **Train**: the `OpenWorkoutCard` at the top ("Legs B · Fri 30 Oct · 2 sets logged" with
   **Resume**; others under "Also in progress"). A day with an open workout reads "In progress" with
-  **Resume**. Before opening, Resume waits for a send of waiting workouts that has that workout and
-  reads the drafts again, so a workout the send filed on its day is never started again (toast to
-  answer it on Today).
+  **Resume**. Before opening, Resume reads the drafts again, so a workout the send of waiting
+  workouts already filed on its day is never started again (toast to answer it on Today). A send
+  still under way is left to the logger's own bounded wait (3 s), the single mechanism for it.
 - **Today**: the same card under the hero; **Resume** goes to Train through `ResumeRequests`. A
   workout the server already offers back as unfinished shows only on that card. Today reads the
-  drafts again when its tab is shown and on resume.
+  drafts again when its tab is shown and on resume. The server's unfinished workout is matched by
+  session id, or by planned workout and day when the draft's session is `pending-` or differs.
 - **Missed day** (owner decision 2026-10-31, replaces the old "Log this workout"): a past day with
   nothing logged reads "Tuesday, missed" with **Do it today** as its action and a quiet "I did it,
   log it for Tue 29 Sep" that confirms and logs under that day. Its overview offers **Do it today**.
   Today and future days are unchanged.
 - **One workout at a time**: a start while another workout has done sets asks in an action sheet
   ("Legs B (Fri) has 2 sets logged." with **Resume it** / **Start this one anyway**); starting anyway
-  leaves that draft alone. The same workout open on another day shares its draft key, so only
-  **Resume it** is offered.
+  leaves that draft alone. The same workout open on another day shares its draft key, so it is asked
+  about first, even when another workout's draft is newer, and only **Resume it** is offered.
 - **Session date in the draft**: the logger writes `session_local_date` and `workout_name` to its
   local draft (not sent to the server). The logger's `_sessionDate`, `sendLeftOverDraft` (start and
   rows read) and `sendWaiting`'s left-over test use the stored day; drafts without it keep the old

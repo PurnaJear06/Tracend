@@ -172,6 +172,47 @@ void main() {
     expect(find.text(line), findsNothing);
   });
 
+  testWidgets('a draft that never reached the server is matched to the '
+      'unfinished workout by its workout and day', (tester) async {
+    final pending = OpenWorkout(
+      workoutId: 'legs-b',
+      name: 'Legs B',
+      date: DateTime(2026, 10, 30),
+      doneSets: 2,
+      lastActivity: DateTime.utc(2026, 10, 31, 11, 40),
+      sessionId: 'pending-55555555-5555-4555-8555-555555555555',
+    );
+    final elsewhere = OpenWorkout(
+      workoutId: 'legs-b',
+      name: 'Legs B',
+      date: DateTime(2026, 10, 23),
+      doneSets: 1,
+      lastActivity: DateTime.utc(2026, 10, 24, 11),
+      sessionId: 'pending-66666666-6666-4666-8666-666666666666',
+    );
+    await pumpToday(
+      tester,
+      _Workouts(
+        open: [pending, elsewhere],
+        unfinished: UnfinishedWorkout(
+          sessionId: _sessionId,
+          plannedWorkoutId: 'legs-b',
+          name: 'Legs B',
+          localDate: DateTime(2026, 10, 30),
+          loggedSets: 2,
+          totalSets: 12,
+          saveBy: DateTime(2026, 11, 6),
+        ),
+      ),
+      onResume: (_) {},
+    );
+
+    expect(find.text('Workout not finished'), findsOneWidget);
+    expect(find.text(line), findsNothing);
+    // The same workout on another day is still offered.
+    expect(find.text('Legs B · Fri 23 Oct · 1 set logged'), findsOneWidget);
+  });
+
   testWidgets('coming back to the tab reads the open workouts again', (
     tester,
   ) async {

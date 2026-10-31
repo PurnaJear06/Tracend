@@ -340,15 +340,11 @@ class _TrainScreenState extends State<TrainScreen> {
     if (mounted) setState(() => _open = open);
   }
 
-  /// Opens [open] in the logger on the day it is logged under. A send of
-  /// waiting workouts that has this one in hand finishes first, and the
-  /// drafts are read again: a workout that send filed on its day is answered
-  /// on Today, never started again here.
+  /// Opens [open] in the logger on the day it is logged under. The drafts
+  /// are read again first: a workout the send of waiting workouts already
+  /// filed on its day is answered on Today, never started again here. A send
+  /// still under way is the logger's to wait for, within its own bound.
   Future<void> _reopen(OpenWorkout open) async {
-    final source = _source;
-    if (source is WorkoutSendInFlight) {
-      await (source as WorkoutSendInFlight).sendInFlight(open.workoutId);
-    }
     final current = await _readOpenWorkouts();
     if (!mounted) return;
     setState(() => _open = current);
@@ -754,7 +750,12 @@ class _TrainScreenState extends State<TrainScreen> {
     }
     final open = await _readOpenWorkouts();
     if (!mounted) return;
-    final other = open.where((o) => !o.isOn(planned.id, date)).firstOrNull;
+    // The same workout open on another day comes first, whatever else is
+    // newer: it shares this start's draft, so starting would open it.
+    final elsewhere = open.where((o) => !o.isOn(planned.id, date));
+    final other =
+        elsewhere.where((o) => o.workoutId == planned.id).firstOrNull ??
+        elsewhere.firstOrNull;
     if (other != null) {
       final name = other.nameOr(_planWorkout(other.workoutId)?.name);
       final day = weekdayName(other.date).substring(0, 3);
