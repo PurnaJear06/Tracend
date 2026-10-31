@@ -285,7 +285,7 @@ select lives_ok(format($q$select public.start_workout(%L, %L, 'UTC', gen_random_
 reset role;
 insert into auth.users(id, role)
 select ('e1000000-0000-4000-8000-0000000000' || lpad(n::text, 2, '0'))::uuid, 'authenticated'
-from generate_series(4, 16) n;
+from generate_series(4, 17) n;
 
 create function pg_temp.u(n integer) returns uuid language sql as $$
   select ('e1000000-0000-4000-8000-0000000000' || lpad(n::text, 2, '0'))::uuid
@@ -385,6 +385,38 @@ select is(public.get_my_workout_session((select id from sv where name = 'p4_Uppe
 reset role;
 select is(pg_temp.unavailable(4, pg_temp.today(4)), 'session_started',
   'and the readiness card is not offered again for a workout already started');
+
+-- A session in progress is not resumed under a copy whose exercises changed ------------------------------
+
+select pg_temp.mkplan(17);
+set local role authenticated;
+select pg_temp.as_user(17);
+insert into sv(name, id) select 's17_first', public.start_workout((select id from sv where name = 'p17_Upper A_v1'),
+  pg_temp.today(17), 'UTC', gen_random_uuid());
+reset role;
+select pg_temp.clone(17);
+update public.planned_exercises set display_name_snapshot = 'Overhead press'
+where planned_workout_id = (select id from sv where name = 'p17_Upper A_v2');
+select is(private.workout_resumable_ids(pg_temp.u(17), (select id from sv where name = 'p17_Upper A_v2')),
+  array[(select id from sv where name = 'p17_Upper A_v2')],
+  'a copy whose exercises changed resumes only itself');
+select is(cardinality(private.workout_identity_ids(pg_temp.u(17), (select id from sv where name = 'p17_Upper A_v2'))), 2,
+  'though it shares the workout''s identity');
+select is(cardinality(private.workout_resumable_ids(pg_temp.u(4), (select id from sv where name = 'p4_Upper A_v2'))), 2,
+  'a copy holding the same exercises resumes the older session');
+set local role authenticated;
+select pg_temp.as_user(17);
+select is(public.get_my_workout_session((select id from sv where name = 'p17_Upper A_v2'), pg_temp.today(17)),
+  null::jsonb, 'the changed copy does not read the older session in progress');
+insert into sv(name, id) select 's17_second', public.start_workout((select id from sv where name = 'p17_Upper A_v2'),
+  pg_temp.today(17), 'UTC', gen_random_uuid());
+select isnt((select id from sv where name = 's17_second'), (select id from sv where name = 's17_first'),
+  'and starting it makes its own session, never the older one with another exercise''s sets');
+select is(public.get_my_workout_session((select id from sv where name = 'p17_Upper A_v2'), pg_temp.today(17))
+  ->> 'session_id', (select id::text from sv where name = 's17_second'), 'which is the one it then reads');
+select is(public.get_my_workout_session((select id from sv where name = 'p17_Upper A_v2'), pg_temp.today(17))
+  -> 'exercises' -> 0 ->> 'performed_name', 'Overhead press', 'under its own exercise name');
+reset role;
 
 -- L7: the day done under version 1 is done for the readiness card ---------------------------------------
 

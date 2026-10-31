@@ -42,6 +42,28 @@ returns uuid[] language sql stable set search_path = '' as $$
 $$;
 revoke all on function private.workout_identity_ids(uuid, uuid) from public, anon, authenticated;
 
+-- A session in progress is resumed under another plan version's copy of its workout only when the copy
+-- holds the same exercises, in the same order: the logger rows are the session's own exercises, matched to
+-- the plan's by order, so a copy whose exercises changed would put sets under the wrong exercise. A day
+-- already finished is not resumed, so it keeps the wider identity.
+create function private.workout_exercise_list(p_workout uuid)
+returns text[] language sql stable set search_path = '' as $$
+  select coalesce(array_agg(e.exercise_order::text || ':' || lower(btrim(e.display_name_snapshot))
+    order by e.exercise_order), '{}'::text[])
+  from public.planned_exercises e where e.planned_workout_id = p_workout;
+$$;
+revoke all on function private.workout_exercise_list(uuid) from public, anon, authenticated;
+
+create function private.workout_resumable_ids(p_user uuid, p_workout uuid)
+returns uuid[] language sql stable set search_path = '' as $$
+  select coalesce(
+    (select array_agg(i) from unnest(private.workout_identity_ids(p_user, p_workout)) i
+     where i = p_workout
+       or private.workout_exercise_list(i) = private.workout_exercise_list(p_workout)),
+    array[p_workout]);
+$$;
+revoke all on function private.workout_resumable_ids(uuid, uuid) from public, anon, authenticated;
+
 -- 2. Weekdays for a plan version that has none ---------------------------------------------------------
 
 -- The training days for p_count workouts: the profile's own days when they are as many as the workouts,
@@ -151,7 +173,7 @@ begin
   -- A session left open from an earlier day is closed first, so it is never found as today's.
   perform private.abandon_stale_workouts(auth.uid());
   select id into result_id from public.workout_sessions
-  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))::uuid[]) and state='in_progress'
+  where user_id=auth.uid() and planned_workout_id = any((select private.workout_resumable_ids(auth.uid(), p_planned_workout_id))::uuid[]) and state='in_progress'
   order by started_at desc limit 1;
   if result_id is not null then return result_id; end if;
 
@@ -256,11 +278,13 @@ begin
   if auth.uid() is null then raise exception 'authentication required' using errcode='42501'; end if;
   perform private.abandon_stale_workouts(auth.uid());
   select * into target from public.workout_sessions
-  -- The same workout under any plan version: a session in progress or finished that day under an earlier
-  -- version is the one this workout's day holds.
-  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))::uuid[])
-    and state<>'abandoned'
-    and (state='in_progress' or local_date=p_local_date)
+  -- The same workout under any plan version: a session finished that day under an earlier version is the
+  -- one this workout's day holds, and one in progress is resumed under a copy holding the same exercises.
+  where user_id=auth.uid() and state<>'abandoned'
+    and ((state='in_progress'
+        and planned_workout_id = any((select private.workout_resumable_ids(auth.uid(), p_planned_workout_id))::uuid[]))
+      or (state<>'in_progress' and local_date=p_local_date
+        and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))::uuid[])))
   order by case state when 'in_progress' then 0 else 1 end, started_at desc
   limit 1;
   if not found then return null; end if;

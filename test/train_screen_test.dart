@@ -489,31 +489,58 @@ void main() {
     });
 
     testWidgets(
-      'a day stays done when the plan has no copy of its workout, with no borrowed session',
+      'a day stays done when the plan has no copy of its workout, and View '
+      'summary opens that session',
       (tester) async {
-        await _pumpTrain(
-          tester,
-          repository: TrainFixtureRepository(
-            hub: trainHub(
-              sessions: [
-                TrainingSessionSummary(
-                  name: 'Old lower body',
-                  date: DateTime(2026, 9, 30),
-                  durationSeconds: 3120,
-                  workoutId: 'w-retired',
-                ),
-              ],
-            ),
+        final repository = TrainFixtureRepository(
+          hub: trainHub(
+            sessions: [
+              TrainingSessionSummary(
+                name: 'Old lower body',
+                date: DateTime(2026, 9, 30),
+                durationSeconds: 3120,
+                workoutId: 'w-retired',
+              ),
+            ],
           ),
         );
+        await _pumpTrain(tester, repository: repository);
         await _tapDay(tester, '2026-09-30');
         expect(find.text('Done on Wednesday'), findsOneWidget);
         // The session was another workout: its minutes are not shown as this
         // workout's.
         expect(find.text('52 min, 2 exercises'), findsNothing);
         expect(find.text('Log this workout'), findsNothing);
+        await tester.tap(find.widgetWithText(OutlinedButton, 'View summary'));
+        await tester.pumpAndSettle();
+        // The summary reads the session through its own workout, never the
+        // shown one, which would find nothing.
+        expect(repository.sessionRequests.single.$1, 'w-retired');
+        expect(find.text('Old lower body'), findsOneWidget);
       },
     );
+
+    testWidgets("View summary of this workout's own session reads it through "
+        'the shown workout', (tester) async {
+      final repository = TrainFixtureRepository(
+        hub: trainHub(
+          sessions: [
+            TrainingSessionSummary(
+              name: 'Lower body A',
+              date: DateTime(2026, 9, 30),
+              durationSeconds: 3120,
+              workoutId: 'w-lower-a-v1',
+              currentWorkoutId: lowerA.id,
+            ),
+          ],
+        ),
+      );
+      await _pumpTrain(tester, repository: repository);
+      await _tapDay(tester, '2026-09-30');
+      await tester.tap(find.widgetWithText(OutlinedButton, 'View summary'));
+      await tester.pumpAndSettle();
+      expect(repository.sessionRequests.single.$1, lowerA.id);
+    });
 
     testWidgets('a past rest day reads as rest without a jump', (tester) async {
       await _pumpTrain(tester, repository: TrainFixtureRepository());

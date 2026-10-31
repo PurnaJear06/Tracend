@@ -969,6 +969,21 @@ and cardio dosing") the boundaries. No app change, no new table, no Edge Functio
   (`HeroDayState.upcoming`). The logger treats 22023 and 55000 from `start_workout` as final: 22023 closes
   with a message and keeps the draft, 55000 opens the finished session (named as logged), neither reads as
   offline. Today opens its workout on the server's day.
+- **Resuming is stricter than finishing.** A session in progress is resumed under another version's copy
+  only when the copy has the same exercises in the same order (`private.workout_resumable_ids`,
+  `workout_exercise_list`); otherwise the copy starts its own session, so the logger (which matches
+  rows by exercise order) never writes sets under the wrong exercise. The logger also ignores a session
+  whose prescribed exercise names differ from the plan's (`_sessionFitsPlan`). The older session stays
+  open under its own version until the stale rule closes it.
+- **Refused or finished sessions in the logger.** A 55000 from `start_workout` or `sync_workout_draft`
+  whose session is read back as finished (a finish whose answer was lost, or the day logged elsewhere)
+  opens that session read-only and clears this workout's draft and saved finish, so Send finish no longer
+  fails forever and a later occurrence cannot restore the stale sets. When sets had been logged here, a
+  toast says they were not added (a finished session takes no more sets).
+- **Train, a day done as another workout.** The hero stays Done without borrowing that session's minutes,
+  and View summary opens that session through its own workout id and name.
+- **Today and the server's day.** Tapping the session card while the brief on screen is for another day
+  than the server's loads the server day's brief first and opens its workout.
 - **One date for the hub.** Every `current_date` in the hub is the athlete's local date.
 - **A plan with no weekdays** (a Coach proposal may omit them) got rest days from every server reader
   (no readiness card, no joint adjustment). One rule now lives on the server: `fill_workout_weekdays` (see

@@ -50,7 +50,7 @@ Deno.test("start_workout is the pain-check definition plus the future-day refusa
     ],
     [
       "  where user_id=auth.uid() and planned_workout_id=p_planned_workout_id and state='in_progress'\n",
-      "  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))::uuid[]) and state='in_progress'\n",
+      "  where user_id=auth.uid() and planned_workout_id = any((select private.workout_resumable_ids(auth.uid(), p_planned_workout_id))::uuid[]) and state='in_progress'\n",
     ],
     [
       "  if exists (\n    select 1 from public.workout_sessions\n    where user_id=auth.uid() and planned_workout_id=p_planned_workout_id\n      and local_date=p_local_date and state='completed'\n  ) then",
@@ -70,11 +70,11 @@ Deno.test("start_workout is the pain-check definition plus the future-day refusa
   );
 });
 
-Deno.test("get_my_workout_session is the stale-close definition plus the earlier-version completed session only", async () => {
+Deno.test("get_my_workout_session is the stale-close definition plus the earlier-version sessions only", async () => {
   const hunks: Hunks = [
     [
       "  where user_id=auth.uid() and planned_workout_id=p_planned_workout_id\n    and state<>'abandoned'\n    and (state='in_progress' or local_date=p_local_date)\n",
-      "  -- The same workout under any plan version: a session in progress or finished that day under an earlier\n  -- version is the one this workout's day holds.\n  where user_id=auth.uid() and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))::uuid[])\n    and state<>'abandoned'\n    and (state='in_progress' or local_date=p_local_date)\n",
+      "  -- The same workout under any plan version: a session finished that day under an earlier version is the\n  -- one this workout's day holds, and one in progress is resumed under a copy holding the same exercises.\n  where user_id=auth.uid() and state<>'abandoned'\n    and ((state='in_progress'\n        and planned_workout_id = any((select private.workout_resumable_ids(auth.uid(), p_planned_workout_id))::uuid[]))\n      or (state<>'in_progress' and local_date=p_local_date\n        and planned_workout_id = any((select private.workout_identity_ids(auth.uid(), p_planned_workout_id))::uuid[])))\n",
     ],
   ];
   await pinned(
@@ -243,6 +243,49 @@ Deno.test("a workout's identity is its name and order, across the athlete's own 
   assert(!helper.includes("plan_version_id"), "no version filter: every version counts");
   assert(helper.includes("set search_path = ''"));
   assert(!helper.includes("security definer"), "called from definer functions only");
+});
+
+Deno.test("a session in progress is resumed only under a copy holding the same exercises", () => {
+  const list = between(
+    integrity,
+    "create function private.workout_exercise_list(",
+    "from public, anon, authenticated;",
+  );
+  assert(list.includes("lower(btrim(e.display_name_snapshot))"));
+  assert(list.includes("order by e.exercise_order"));
+  assert(list.includes("set search_path = ''"));
+  const helper = between(
+    integrity,
+    "create function private.workout_resumable_ids(",
+    "from public, anon, authenticated;",
+  );
+  assert(helper.includes("private.workout_identity_ids(p_user, p_workout)"));
+  assert(
+    helper.includes("private.workout_exercise_list(i) = private.workout_exercise_list(p_workout)"),
+  );
+  assert(helper.includes("i = p_workout"), "the workout itself always resumes");
+  assert(helper.includes("array[p_workout]"));
+  const start = between(
+    integrity,
+    "create or replace function public.start_workout(",
+    "end $$;",
+  );
+  assert(
+    start.includes(
+      "workout_resumable_ids(auth.uid(), p_planned_workout_id))::uuid[]) and state='in_progress'",
+    ),
+  );
+  const read = between(
+    integrity,
+    "create or replace function public.get_my_workout_session(",
+    "end $$;",
+  );
+  assert(
+    read.includes(
+      "state='in_progress'\n        and planned_workout_id = any((select private.workout_resumable_ids(",
+    ),
+  );
+  assert(read.includes("state<>'in_progress' and local_date=p_local_date"));
 });
 
 Deno.test("the future-day refusal comes after the idempotent replay and before anything is closed or resumed", () => {

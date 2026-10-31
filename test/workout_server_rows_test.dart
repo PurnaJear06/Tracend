@@ -91,6 +91,13 @@ class _Server extends FixtureWorkoutRepository {
   /// finished session of an earlier plan version.
   Map<String, dynamic>? loggedSession;
 
+  /// The exercise names the session on the server was begun with, by order;
+  /// the plan's own when not set (an earlier plan version may have had others).
+  Map<int, String> sessionNames = const {};
+
+  /// Orders the session on the server made as a substitution (for pain).
+  Set<int> substituted = const {};
+
   Map<String, dynamic> _session() => {
     'session_id': 'srv-1',
     'state': 'in_progress',
@@ -103,6 +110,10 @@ class _Server extends FixtureWorkoutRepository {
         {
           'order': exercise.order,
           'status': 'unknown',
+          'performance_kind': substituted.contains(exercise.order)
+              ? 'substituted'
+              : 'prescribed',
+          'performed_name': sessionNames[exercise.order] ?? exercise.name,
           'sets': [
             for (var n = 1; n <= (rows[exercise.order] ?? 0); n++)
               {'number': n, 'completed': false},
@@ -286,6 +297,69 @@ void main() {
       final server = _Server({1: 3, 2: 3})..startRefusal = 'offline';
       await _openPushed(tester, server);
       expect(find.byType(ActiveWorkoutScreen), findsOneWidget);
+    });
+  });
+
+  group('a session in progress under another plan version', () {
+    testWidgets('begun on the same exercises is resumed', (tester) async {
+      final server = _Server({1: 2, 2: 3}, alreadyStarted: true);
+      await _open(tester, server);
+      expect(server.started, isFalse, reason: 'resumed, not started again');
+      expect(find.text('Set 1 of 2'), findsOneWidget);
+    });
+
+    testWidgets('begun on other exercises is never this workout\'s: its sets '
+        'would be logged under the wrong names', (tester) async {
+      final server = _Server({1: 2, 2: 3}, alreadyStarted: true)
+        ..sessionNames = {1: 'Overhead press'};
+      await _open(tester, server);
+      expect(server.started, isTrue, reason: 'started as its own session');
+      expect(find.text('Bench press'), findsWidgets);
+    });
+
+    testWidgets('a substitution made for pain is not a different workout', (
+      tester,
+    ) async {
+      final server = _Server({1: 2, 2: 3}, alreadyStarted: true)
+        ..sessionNames = {1: 'Machine chest press'}
+        ..substituted = {1};
+      await _open(tester, server);
+      expect(server.started, isFalse);
+    });
+  });
+
+  group('a start refused after sets were logged here', () {
+    testWidgets('the finished session opens, the draft goes, and the athlete '
+        'is told what was not added', (tester) async {
+      final handle = tester.ensureSemantics();
+      final server = _Server({1: 3, 2: 3})..startRefusal = 'offline';
+      await _open(tester, server);
+      await _doneSet(tester, 1);
+      expect(await server.loadDraft('upper-a'), isNotNull);
+      server
+        ..startRefusal = '55000'
+        ..loggedSession = {
+          'session_id': 'done-1',
+          'state': 'completed',
+          'duration_seconds': 3000,
+          'exercises': const [],
+        };
+      await tester.tap(find.text('Done set 2'));
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pumpAndSettle();
+      expect(find.text('Completed · 50 min'), findsOneWidget);
+      expect(
+        find.text(
+          'Sets you logged here were not added to the finished workout.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        await server.loadDraft('upper-a'),
+        isNull,
+        reason: 'a later occurrence of this workout must not restore it',
+      );
+      handle.dispose();
     });
   });
 

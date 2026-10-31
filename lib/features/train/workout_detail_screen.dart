@@ -391,7 +391,9 @@ class _SummaryContentState extends State<_SummaryContent> {
             ),
             TrainStatTile(
               label: 'Sets',
-              value: '${logged.completedSets} of ${totalSets(workout)}',
+              value: totalSets(workout) == 0
+                  ? '${logged.completedSets}'
+                  : '${logged.completedSets} of ${totalSets(workout)}',
             ),
             TrainStatTile(
               label: 'Effort',

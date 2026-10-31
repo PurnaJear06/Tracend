@@ -479,8 +479,12 @@ the same name (case and outer spaces ignored) and the same `workout_order`, the 
 context already makes (`completed_this_week`): `private.workout_identity_ids(user, workout)` returns
 every such id of the athlete. Everything that asks whether a day is already logged uses it, not the
 bare id: `start_workout` (a second start for the same workout and day raises `55000`; a session in
-progress under an earlier version is the one a start of the copy returns, so no second one opens),
-`get_my_workout_session` (finds the day's session of an earlier version, in progress or finished),
+progress under an earlier version is the one a start of the copy returns, so no second one opens, but
+only when the copy holds the same exercises in the same order, `private.workout_resumable_ids`: the
+logger's rows are the session's own exercises matched by order, so a copy whose exercises changed
+starts its own session and never receives the older one's sets under other names),
+`get_my_workout_session` (finds the day's finished session of an earlier version, and a session in
+progress under a copy with the same exercises),
 `get_healthkit_completion_candidate`, `healthkit_auto_complete_workout`, `day_adjustment_compute`
 (`session_started` and `session_done`) and `private.unfinished_workouts`. The hub's history does not need it: it counts
 every completed session of the athlete by date. There is no unique index on (athlete, day, workout):

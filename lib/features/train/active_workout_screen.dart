@@ -279,6 +279,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _showCompleted(server);
       return;
     }
+    // Rows are matched to the plan's exercises by order, so a session begun
+    // on other exercises is never this workout's: its sets would be logged
+    // under the wrong names.
+    if (server != null && !_sessionFitsPlan(server)) server = null;
     final saved = await widget.repository.loadDraft(widget.workout.id);
     var local = saved == null ? null : _decode(saved);
     if (local != null &&
@@ -376,6 +380,25 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     await _save();
   }
 
+  /// Whether the exercises the session [server] was begun with, as prescribed,
+  /// are this workout's own at each order.
+  bool _sessionFitsPlan(Map<String, dynamic> server) {
+    final rows = server['exercises'];
+    if (rows is! List) return true;
+    String key(String name) => name.trim().toLowerCase();
+    for (final row in rows) {
+      if (row is! Map || row['performance_kind'] != 'prescribed') continue;
+      final name = row['performed_name'];
+      final order = (row['order'] as num?)?.toInt();
+      final index = _exercises.indexWhere((e) => e.exercise.order == order);
+      if (name is! String || name.trim().isEmpty) continue;
+      if (index < 0 || key(_exercises[index].exercise.name) != key(name)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /// Opens the finished session [server] read-only. The exercises are named
   /// as they were logged: the plan may have been copied since, so this
   /// workout's own exercises can be other ones.
@@ -435,7 +458,18 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         debugPrint('Non-critical error: logged session not read: $e');
       }
       if (server != null && server['state'] == 'completed') {
-        _showCompleted(server);
+        // The sets logged here cannot join a finished session, and this
+        // workout's draft must not open again as a later day's: the athlete
+        // is told what was not added.
+        final hadSets = _anySetDone;
+        await _openFinished(server);
+        if (hadSets && mounted) {
+          TracendToast.show(
+            context,
+            'Sets you logged here were not added to the finished workout.',
+            icon: CupertinoIcons.exclamationmark_triangle,
+          );
+        }
         return true;
       }
     }
@@ -452,6 +486,29 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       icon: CupertinoIcons.exclamationmark_triangle,
     );
     Navigator.of(context).pop(false);
+    return true;
+  }
+
+  /// Opens the finished session [server] read-only and drops this phone's
+  /// draft and saved finish of the workout: the finished session is the truth,
+  /// and a draft left behind could open again as a later day's.
+  Future<void> _openFinished(Map<String, dynamic> server) async {
+    _saveTimer?.cancel();
+    await _rest.stop();
+    await widget.repository.clearDraft(widget.workout.id);
+    _pendingFinish = null;
+    _finishError = null;
+    _showCompleted(server);
+    _events.emit(WorkoutEnded(at: widget.clock(), completed: true));
+  }
+
+  /// A session that refuses a sync (55000) is finished or discarded. When it
+  /// is finished, say by a finish whose answer was lost, the screen opens it
+  /// instead of failing to send forever. True when it did.
+  Future<bool> _settleFinished(String id) async {
+    final server = await _readSession(id);
+    if (server == null || server['state'] != 'completed') return false;
+    await _openFinished(server);
     return true;
   }
 
@@ -865,6 +922,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
     if (mounted) setState(() => _sync = _Sync.saving);
     var first = await _send(id);
+    if (_refusalCode == '55000' && await _settleFinished(id)) return null;
     if (_refusalCode == '22023') {
       // The server may have refused a set number it does not have: read its
       // rows again, and send once more when they moved. A set with something
