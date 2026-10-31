@@ -104,7 +104,8 @@ Deno.test("eval retries a transport failure, never a model answer", async () => 
   let calls = 0;
   const fake = fakeFetch(async (sent) => {
     calls++;
-    if (calls === 1) return jsonResponse({}, 529);
+    // The provider tries a busy answer twice itself; the eval retries once that has failed.
+    if (calls <= 2) return jsonResponse({}, 529);
     const { decision } = await new MockCoachModelProvider().generateDecision(contextOf(sent));
     return jsonResponse(
       claudeMessage({ content: [{ type: "text", text: JSON.stringify(decision) }] }),
@@ -115,7 +116,7 @@ Deno.test("eval retries a transport failure, never a model answer", async () => 
   );
   assertEquals(result.summary.valid, 13);
   assertEquals(result.summary.transport_retries, 1);
-  assertEquals(fake.sent.length, 14);
+  assertEquals(fake.sent.length, 15);
   const broken = answering((decision) => ({ ...decision, change_proposals: [{}] }));
   const { result: invalid } = await captureLogs(() =>
     runEval(env({ EVAL_ATTEMPTS: "3" }), { fetch: broken.fetch }, () => {})

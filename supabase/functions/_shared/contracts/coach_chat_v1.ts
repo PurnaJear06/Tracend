@@ -124,6 +124,11 @@ export type CoachChatAnswerBreak = Readonly<{
   rules?: readonly CoachChatValidationRule[];
   detail?: string;
   count?: number;
+  /**
+   * The sentences of the reply that broke a rule, as the check read them, for the repair only.
+   * They are athlete-facing model text, so they are never logged.
+   */
+  sentences?: readonly string[];
 }>;
 
 export class CoachChatAnswerValidationError extends Error {
@@ -135,6 +140,8 @@ export class CoachChatAnswerValidationError extends Error {
     readonly rules: readonly CoachChatValidationRule[] = [rule],
     /** Repair instruction only; never logged. */
     readonly detail?: string,
+    /** The sentences that broke a rule: repair instruction only; never logged. */
+    readonly sentences?: readonly string[],
   ) {
     super(`invalid_chat_answer:${rule}:${path}`);
     this.name = "CoachChatAnswerValidationError";
@@ -331,6 +338,10 @@ export function parseCoachChatAnswer(
       invalid("evidence_source_invalid", `${path}.source`);
     }
   }
+  // A reasoning step may point at a library source the evidence cites (checked above against the
+  // sources shown this turn): it is the step's evidence, and the app does not show the id.
+  const citedLibraryCodes = (answer.evidence as Record<string, unknown>[])
+    .filter((item) => item.source === "library").map((item) => item.code as string);
   if (answer.reasoning_chain !== undefined) {
     if (!Array.isArray(answer.reasoning_chain)) {
       invalid("reasoning_not_array", "reasoning_chain");
@@ -373,7 +384,10 @@ export function parseCoachChatAnswer(
       if (step.evidence_id !== null && typeof step.evidence_id !== "string") {
         invalid("reasoning_evidence_invalid", `${path}.evidence_id`);
       }
-      if (typeof step.evidence_id === "string" && !permittedEvidence.includes(step.evidence_id)) {
+      if (
+        typeof step.evidence_id === "string" && !permittedEvidence.includes(step.evidence_id) &&
+        !citedLibraryCodes.includes(step.evidence_id)
+      ) {
         invalid("reasoning_evidence_not_permitted", `${path}.evidence_id`);
       }
     }
@@ -402,6 +416,7 @@ export function parseCoachChatAnswer(
       broken.count,
       broken.rules ?? [broken.rule],
       broken.detail,
+      broken.sentences,
     );
   }
   if (cited.length === 0) return answer as unknown as CoachChatAnswerV2;

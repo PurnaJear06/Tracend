@@ -151,6 +151,12 @@ const institution = new RegExp(
   "g",
 );
 
+// A day label: a weekday, today or tomorrow before a full date ("Thu 2026-10-15", "Mon,
+// 2026/10/12"). It is blanked before the scan, so it never reads as a study by "Thu" in 2026; "Sun
+// et al. 2020" and "Smith 2026-10-15 showed" stay citations.
+const dayLabel =
+  /\b(?:mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun|today|tomorrow|yesterday|tonight)(?:day)?\.?,?\s+\d{4}[-/.](?:0?[1-9]|1[0-2])[-/.](?:0?[1-9]|[12]\d|3[01])(?!\d)/gi;
+
 /** Lower-case words with accents removed ("Jäger" and "jager" are the same author). */
 const words = (text: string) =>
   text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
@@ -160,7 +166,8 @@ type Scanned = Readonly<{ mention: StudyMention; phrase: string }>;
 /** The studies a text names, each with the words of the text that name it. */
 function scan(text: string): Scanned[] {
   const found: Scanned[] = [];
-  const plain = text.replace(measurement, " ");
+  const plain = text.replace(dayLabel, (label) => " ".repeat(label.length))
+    .replace(measurement, " ");
   const authorsOf = (raw: string) =>
     words(raw).filter((word) =>
       word !== "et" && word !== "al" && word !== "and" && !notAnAuthor.has(word)

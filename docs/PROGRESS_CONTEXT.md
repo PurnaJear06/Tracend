@@ -22,7 +22,11 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   red-flag screen before the model, a numbers check, safe ranges and reply guards on every visible
   field, a screening contributor, the coaching-principles digest in the stable prefix, an optional
   stronger route) and #142 (app: plain error messages, same-key retries, the athlete's local date,
-  chat without a plan, one budget gate, a warning at 80%; migration 19). Handoff:
+  chat without a plan, one budget gate, a warning at 80%; migration 19). Coach answer validity
+  (2026-10-24, branch `claude/coach-response-validity`, in review): 22% of bank answers fell back
+  as `provider_response_invalid`, now 3%; causes were parser and validator false positives
+  ("0.26 kg a week" read as a 26 kg body weight, "Thu 2026-10-15" as a study, refusals read as
+  advice), not truncation or the schema. Handoff:
   [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
   sources; nothing reads it until B2). Phase 3 round 1 merged (2026-10-17): B2 templates and
@@ -132,6 +136,15 @@ no model); it is in `config.toml`, `deploy.yml` and `hotfix.yml`, so it deploys 
 migration `20261024060425` (guidance 1.2: `proposal_origin`, `ends_on`; an undone deload waits 14 days; a per-athlete
 lock in `persist_coach_proposal_v1`): install the app only after it has deployed. Not built yet: the Coach contributor. Details: "B5-3 and B5-4" in
 [`training-engine.md`](./handoff/training-engine.md).
+
+**Coach knows today's readiness card (2026-10-24, branch `claude/coach-readiness-context`, PR open):** a `readiness`
+Coach context block (band, the card's answer state, safety route and strictness, held/limited/watched joints, fixed
+rules; no red-flag code or severity) read from `get_readiness_context_v1` with a 1.5 s deadline and an
+ok/unavailable/failed/timeout trace; the deload and cardio-week reader (`get_training_guidance_for_v1`) is not wired yet: it needs a cost measurement first. Today's meals
+and the Coach decision's freshness follow the server day on Today, not the phone date. Daily coaching retries a
+busy or failing provider once and names a rejection by its HTTP status (`anthropic_request_failed_status_<n>`,
+`anthropic_overloaded`). Details: "Coach knows today's readiness card" in [`ai-gateway.md`](./handoff/ai-gateway.md).
+Still open: the reply guard and the A9 screen do not read pain reports (contract requests 2 and 3).
 
 **Unfinished workouts (2026-10-24, branch `claude/unfinished-workout`, PR open):** the owner's Legs B (23 sets logged,
 never finished) was closed by the stale rule and Coach then called it "not done". A stale-closed session with logged sets
