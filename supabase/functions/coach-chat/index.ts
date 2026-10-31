@@ -181,7 +181,11 @@ function usableCoachRoute(
     log.error("coach_context_registry_invalid", {
       message: error instanceof Error ? error.message : "unknown",
     });
-    captureException(error, { functionName: "coach-chat", runtime: "edge" });
+    captureException(error, {
+      functionName: "coach-chat",
+      runtime: "edge",
+      failureCode: "coach_context_registry_invalid",
+    });
     return null;
   }
   const choice = chooseCoachChatRoute(found, coachContextContributors);
@@ -542,6 +546,7 @@ export async function handleCoachChat(
         userId: auth.userId,
         functionName: "coach-chat",
         correlationId,
+        failureCode: "ai_consent_check_failed",
       });
     }
     return reply(refusal.status, versionedResponse({ error: refusal.error }));
@@ -656,7 +661,7 @@ export async function handleCoachChat(
       error_code: prepareError?.code ?? "missing_prepared_context",
       reason,
     });
-    captureException(new Error(`coach_chat_context_unavailable: ${reason}`), {
+    captureException(new Error("coach_chat_context_unavailable"), {
       userId: auth.userId,
       functionName: "coach-chat",
       correlationId,
@@ -718,7 +723,8 @@ export async function handleCoachChat(
       functionName: "coach-chat",
       correlationId,
       runtime: "edge",
-      failureCode: recordError.code ?? "unknown",
+      failureCode: "coach_chat_question_not_recorded",
+      errorCode: recordError.code ?? "unknown",
     });
   }
 
@@ -1080,7 +1086,8 @@ export async function handleCoachChat(
         functionName: "coach-chat",
         correlationId,
         runtime: "edge",
-        failureCode: failedRunError.code ?? "unknown",
+        failureCode: "coach_chat_failure_not_recorded",
+        errorCode: failedRunError.code ?? "unknown",
       });
     }
 
@@ -1105,7 +1112,8 @@ export async function handleCoachChat(
         functionName: "coach-chat",
         correlationId,
         runtime: "edge",
-        failureCode: storeError.code ?? "unknown",
+        failureCode: "coach_chat_data_summary_not_stored",
+        errorCode: storeError.code ?? "unknown",
       });
     }
     const traced = await recordTurnTrace(

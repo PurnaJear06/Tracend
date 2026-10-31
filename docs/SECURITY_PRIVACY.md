@@ -461,8 +461,18 @@ General logs and third-party analytics must not contain:
 
 Mobile analytics are minimized and disabled for sensitive-screen content. Crash reporting scrubs
 navigation parameters, text fields, and network bodies. Sentry is active in Flutter and Edge
-Functions with a `beforeSend` scrubber that redacts health values, meal content, photo URLs and
-prompts; a report may carry the account ID and device and app details, never name or email.
+Functions. The app scrubs events with `beforeSend` (health values, meal content, photo URLs, prompts).
+The Edge Function reporter (`_shared/sentry.ts`) fails closed instead: an event carries finite codes
+and numbers only. The exception value is the call site's failure code (every `captureException` must
+pass one; the class name stands in when it is not a short code), the type is the error's class name,
+and `error.message`, causes, provider response bodies, parse errors quoting model text and stack
+source text are never sent. Tags and extra fields are short codes (letters, digits, `_ . : / -`, no
+spaces) or numbers (HTTP status, latency, counts). The stack keeps function, file and line of at
+most 30 frames: the header (the message, even over several lines) is cut off first, a function name
+has no spaces except a leading `async ` or `new `, and a frame whose file is not a URL of a loaded
+module (`file:`, `ext:`, `https:`, `node:`, `jsr:`, `npm:`) is dropped; if the header cannot be
+located no frame is sent. A provider failure keeps its short code and HTTP status (for example
+`meal_vision_request_failed:503:overloaded`) only when the text is a code. Reporting never throws. A report may carry the account ID and device and app details, never name or email.
 In Flutter (`lib/app/sentry_scrubber.dart`) the scrubber also covers exception values, `extra`,
 contexts and breadcrumbs; the app's prints are not breadcrumbs (`enablePrintBreadcrumbs` is off);
 a `beforeBreadcrumb` drops console crumbs and cuts HTTP crumbs to method, status and address

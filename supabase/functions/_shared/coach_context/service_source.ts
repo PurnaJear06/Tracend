@@ -1,3 +1,5 @@
+import { supabaseSecretKey } from "../supabase_keys.ts";
+
 // The service-role RPC caller the Coach context contributors and lookups share. The client is
 // built on first use, so importing the registry needs no environment (tests, type checks). A
 // missing key fails the call, which the host leaves out of the turn, and the next call tries
@@ -14,7 +16,7 @@ export function serviceRoleRpc(): ServiceRpc {
   return async (name, params) => {
     if (!rpc) {
       const url = Deno.env.get("SUPABASE_URL");
-      const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      const key = supabaseSecretKey();
       if (!url || !key) throw new Error("service role is not configured");
       const { createClient } = await import("npm:@supabase/supabase-js@2.49.8");
       const client = createClient(url, key, { auth: { persistSession: false } });

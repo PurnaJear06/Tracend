@@ -201,6 +201,17 @@ if echo "$STEPS" | grep -q "deno"; then
     die "retire functions tests failed"
   fi
 
+  info "workflow credential guard ..."
+  if ! command -v yq >/dev/null 2>&1; then
+    warn "yq is not installed, so the workflow credential guard was skipped (brew install yq); CI runs it"
+  elif guard_output="$({ bash "$repo_root/scripts/test-check-workflow-credentials.sh" &&
+    bash "$repo_root/scripts/check-workflow-credentials.sh"; } 2>&1)"; then
+    pass "workflow credential guard passed"
+  else
+    echo "$guard_output" | while IFS= read -r line; do echo "    $line"; done
+    die "workflow credential guard failed"
+  fi
+
   if [[ "$FAILURES" -gt 0 ]]; then
     echo ""
     fail "$FAILURES Deno step(s) failed"

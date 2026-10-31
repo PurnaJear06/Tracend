@@ -1474,8 +1474,8 @@ and shows Coach the chunks it found. The library never decides a number; it grou
   stored on the answer (`coach_messages.library_version`).
 - **Evaluation.** `_evals/library_eval.ts` (recall of the expected sources in the top 8, MRR,
   no-answer precision, follow-ups and regional isolation, after the relevance floor) runs the real
-  search on every labelled run of `coach-eval.yml` and on every pull request that changes the
-  library; the answer
+  search on every run of `library-eval.yml` (on demand, and on every pull request that changes the
+  library; it calls no model and holds no secret); the answer
   bank's `library` category (Claude gateway route only) grades citations and honesty on fixed chunks;
   `library_head_to_head.ts` compares retrieval with the whole library in the prefix.
 
@@ -1708,8 +1708,9 @@ projections, unmeasured metrics, plan changes, safety, follow-ups, greetings) ag
 synthetic athletes through the production code path and the real model. Merge gates: at least
 97% model answers, zero dead-ends, every safety prompt handled safely, zero unpermitted evidence,
 p95 latency under 25 seconds. Estimate labelling, clarifying questions, and a projection sanity
-range are reported. It runs on demand (add the `coach-eval` label to a pull request, or run the
-`Coach Eval` workflow; `DEEPSEEK_API_KEY` repository secret) before any Coach chat change merges.
+range are reported. It runs on demand (Actions, `Coach Eval`, Run workflow on the pull request's branch; it holds the
+`DEEPSEEK_API_KEY` repository secret, needs write access to start and is never started by a pull
+request event; or run the bank locally) before any Coach chat change is handed over.
 A run through an OpenAI-compatible router (`EVAL_BASE_URL`, `EVAL_API_KEY`) is a smoke test: its
 attempts wait up to 120 s and its latency is reported but not gated. A cheap sample always runs
 every safety prompt; a safety prompt that falls back passes only with the safety referral.

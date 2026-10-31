@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.8";
+import { supabasePublishableKey, supabaseSecretKey } from "./supabase_keys.ts";
 
 const jsonHeaders = { "Content-Type": "application/json" };
 
@@ -18,8 +19,8 @@ export class AuthError extends Error {
 
 export async function requireAuth(request: Request) {
   const url = Deno.env.get("SUPABASE_URL");
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const anonKey = supabasePublishableKey();
+  const serviceKey = supabaseSecretKey();
   const authorization = request.headers.get("Authorization");
   if (!url || !anonKey || !serviceKey || !authorization) {
     throw new AuthError("authentication_required", 401);

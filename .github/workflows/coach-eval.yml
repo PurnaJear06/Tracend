@@ -1,11 +1,15 @@
 name: Coach Eval
 
-# The live Coach evaluations. Not a required check. The model evaluations run on demand only, and
-# the library retrieval evaluation also runs on library pull requests (below). Before merging a Coach
-# change, add the `coach-eval` label to the pull request (runs that PR's code) or use Run
-# workflow on main. Every Coach pull request must pass the answer bank (docs/TESTING_STRATEGY.md).
+# The live Coach model evaluations. Not a required check, and on demand only: Actions > Coach Eval >
+# Run workflow, choosing the branch to evaluate (a pull request's branch before it merges, or main).
+# Starting it needs write access to the repository, so the owner is the only one who can; a pull
+# request event never starts it, and a fork's pull request never receives these credentials
+# (scripts/check-workflow-credentials.sh, run in ci.yml, fails any workflow that an untrusted event
+# can start and that mentions them). To run the bank on your own machine instead, use the
+# AI_COACH_CHAT_* settings (live_model.ts). Every Coach change must pass the answer bank
+# (docs/TESTING_STRATEGY.md).
 #
-# Three parts:
+# Two parts:
 #   - Answer bank (supabase/functions/_evals/coach_bank/): about 100 synthetic athletes, each run
 #     3 times against the real model, graded by code. Safety categories allow zero failures; the
 #     others report a pass rate against a threshold. Its deterministic half (graders, red-flag
@@ -14,19 +18,7 @@ name: Coach Eval
 #     dead ends, latency, spend and the prompt cache. Each run makes 17 calls unless `max_calls`
 #     or the `EVAL_MAX_CALLS` variable says otherwise: one prompt from each category, rotating
 #     prompts and athletes; "all" runs every prompt for every athlete.
-#   - Library retrieval (library_eval.ts, E3's gate): the retrieval questions (follow-ups and
-#     no-answer questions included) through the real hybrid search, search_library_v3, on a local
-#     Supabase stack with the real gte-small embeddings, before and after the relevance floor,
-#     scored as recall@8, MRR and no-answer precision, with the sweep that calibrates the floor;
-#     the run fails under the thresholds in library_eval.ts or when a regional source reaches an
-#     athlete outside its region. It needs the database and the embedding model, so it cannot run
-#     in the Deno job. It also runs by itself on every pull request that changes the library
-#     content, the shared library code or a library migration (not a required check). Run it
-#     alone with `retrieval_only`. It also scores the plan-explanation questions
-#     (library_questions_plan.json, E5) as asked and as Coach chat searches them, and the onboarding
-#     plan's two searches, and fails under EVAL_MIN_PLAN_RECALL or EVAL_MIN_ONBOARDING_RECALL. It reads the calibration questions (library_questions.json),
-#     which choose the relevance floor; `question_set: holdout` runs the hold-out questions
-#     (library_questions_holdout.json) once to confirm it, without the tuning output.
+#   The library retrieval evaluation (no model, no spend) is library-eval.yml.
 #
 # The model is called as before: by default DeepSeek (`DEEPSEEK_API_KEY` secret). Set the
 # repository variable `EVAL_BASE_URL` (for example https://router.bynara.id/v1) and the
@@ -54,21 +46,6 @@ on:
         description: Comma-separated parts of case ids to run (empty runs the whole bank)
         required: false
         default: ""
-      retrieval_only:
-        description: Run only the library retrieval evaluation (no model, no spend)
-        type: boolean
-        required: false
-        default: false
-      question_set:
-        description: "Retrieval questions for the library evaluation: calibration (chooses thresholds) or holdout (confirms them once, never tunes)"
-        type: choice
-        options:
-          - calibration
-          - holdout
-        required: false
-        default: calibration
-  pull_request:
-    types: [labeled, opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -76,7 +53,6 @@ permissions:
 jobs:
   coach-eval:
     name: Coach chat live evaluation
-    if: (github.event_name == 'workflow_dispatch' && !inputs.retrieval_only) || github.event.label.name == 'coach-eval'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     concurrency:
@@ -132,143 +108,4 @@ jobs:
         with:
           name: coach-eval-report
           path: eval-report
-          retention-days: 30
-
-  # Whether a pull request (opened or pushed to) changes the library, so its retrieval runs.
-  library-changes:
-    name: Library changes
-    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      library: ${{ steps.diff.outputs.library }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-
-      - name: Look for library changes
-        id: diff
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          changed=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
-          library=false
-          # Everything the retrieval score depends on: the library content, its shared code, the
-          # embedding function, the evaluation and its question files, the few shared modules
-          # the evaluation imports (query building, red flags, the RPC caller, logging), the
-          # local stack's configuration and this workflow.
-          paths='^supabase/(library|functions/(_shared/library|library-embed))/'
-          paths="$paths|^supabase/functions/_evals/library_[^/]+$"
-          paths="$paths|^supabase/functions/_shared/(coach_context/(host|service_source)|coach_safety/red_flags|logger|sentry)\.ts$"
-          paths="$paths|^supabase/config\.toml$|^\.github/workflows/coach-eval\.yml$"
-          if printf '%s\n' "$changed" | grep -Eq "$paths"; then
-            library=true
-          fi
-          # A migration is a library migration when it touches the library's tables or functions.
-          for file in $(printf '%s\n' "$changed" | grep -E '^supabase/migrations/[^/]+\.sql$' || true); do
-            if [ -f "$file" ] && grep -Eq 'library_|search_library' "$file"; then library=true; fi
-          done
-          echo "library=$library" >> "$GITHUB_OUTPUT"
-          echo "Library changed: $library"
-
-  library-retrieval:
-    name: Library retrieval evaluation
-    needs: library-changes
-    if: >-
-      !cancelled() && (github.event_name == 'workflow_dispatch' ||
-      github.event.label.name == 'coach-eval' || needs.library-changes.outputs.library == 'true')
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    concurrency:
-      group: library-retrieval-${{ github.event.pull_request.number || github.ref }}
-      cancel-in-progress: true
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: "2.9.0"
-
-      - uses: supabase/setup-cli@afb1b15109756ea5cf9d8985a359d9095235ca2b # v2.1.2
-        with:
-          version: "2.101.0"
-
-      - name: Install the PostgreSQL client
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends postgresql-client
-
-      - name: Start the local Supabase stack with every migration
-        run: |
-          supabase start
-          supabase db reset
-
-      - name: Serve the embedding function
-        run: |
-          supabase functions serve --no-verify-jwt > functions.log 2>&1 &
-          for attempt in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-              http://127.0.0.1:54321/functions/v1/library-embed \
-              -H 'Content-Type: application/json' -d '{}' || true)
-            if [ "$code" = 401 ] || [ "$code" = 403 ]; then exit 0; fi
-            sleep 5
-          done
-          cat functions.log
-          echo '::error::library-embed did not start.'
-          exit 1
-
-      - name: Embed every chunk with the real model
-        run: |
-          secret=$(PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -tA \
-            -c 'select private.library_worker_secret()')
-          key=$(supabase status -o env | sed -n 's/^SERVICE_ROLE_KEY="\(.*\)"/\1/p')
-          echo "::add-mask::$secret"
-          echo "::add-mask::$key"
-          echo "EVAL_WORKER_SECRET=$secret" >> "$GITHUB_ENV"
-          echo "EVAL_SERVICE_KEY=$key" >> "$GITHUB_ENV"
-          for attempt in $(seq 1 60); do
-            curl -sS -X POST http://127.0.0.1:54321/functions/v1/library-embed \
-              -H "Authorization: Bearer $secret" -H 'Content-Type: application/json' \
-              -d '{}' > /dev/null || true
-            status=$(curl -sS -X POST http://127.0.0.1:54321/rest/v1/rpc/library_status_v1 \
-              -H "apikey: $key" -H "Authorization: Bearer $key" \
-              -H 'Content-Type: application/json' -d '{}')
-            echo "$status"
-            chunks=$(printf '%s' "$status" | jq '.chunks')
-            embedded=$(printf '%s' "$status" | jq '.embedded_chunks')
-            if [ "$chunks" -gt 0 ] && [ "$chunks" = "$embedded" ]; then exit 0; fi
-            sleep 5
-          done
-          echo '::error::Not every chunk was embedded.'
-          exit 1
-
-      - name: Run the retrieval evaluation
-        env:
-          EVAL_QUESTION_SET: ${{ inputs.question_set || 'calibration' }}
-          EVAL_HITS_FILE: retrieval-hits.json
-        run: |
-          set -o pipefail
-          deno run --allow-env --allow-net=127.0.0.1 --allow-read=supabase/functions/_evals \
-            --allow-write=retrieval-hits.json \
-            supabase/functions/_evals/library_eval.ts | tee retrieval-report.txt
-
-      - name: Add the report to the run summary
-        if: always()
-        run: |
-          if [ -f retrieval-report.txt ]; then cat retrieval-report.txt >> "$GITHUB_STEP_SUMMARY"; fi
-
-      - name: Upload report
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: library-retrieval-report
-          path: |
-            retrieval-report.txt
-            retrieval-hits.json
-          if-no-files-found: ignore
           retention-days: 30
