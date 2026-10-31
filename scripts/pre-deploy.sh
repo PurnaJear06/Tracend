@@ -9,10 +9,11 @@ CLEANUP=true
 STEPS="pg,tap,deno,flutter,analyze,build,dryrun"
 COLOUR_CLEAN="${COLOUR_CLEAN:-}"
 
-BOLD=""; GREEN=""; RED=""; YELLOW=""; CYAN=""; RESET=""
-if [[ -t 2 ]] || [[ "${COLOUR_CLEAN:-false}" == "false" ]]; then
-  BOLD="\033[1m"; GREEN="\033[32m"; RED="\033[31m"
-  YELLOW="\033[33m"; CYAN="\033[36m"; RESET="\033[0m"
+# Colour codes carry a C_ prefix so they never overwrite a flag (RESET above).
+C_BOLD=""; C_GREEN=""; C_RED=""; C_YELLOW=""; C_CYAN=""; C_RESET=""
+if [[ -t 1 ]] && [[ "$COLOUR_CLEAN" != "true" ]]; then
+  C_BOLD="\033[1m"; C_GREEN="\033[32m"; C_RED="\033[31m"
+  C_YELLOW="\033[33m"; C_CYAN="\033[36m"; C_RESET="\033[0m"
 fi
 
 usage() {
@@ -25,7 +26,7 @@ Exits non-zero on the first failure. Pass --help for options.
 Options:
   --skip-colima         Skip Colima start/stop (use if already running)
   --skip-reset          Skip 'supabase db reset' (use if DB is already current)
-  --no-cleanup          Keep Colima + Supabase running after the gate
+  --no-cleanup          Leave running the Colima + Supabase this run started
   --deno-only           Run only Deno (fmt + lint + test)
   --flutter-only        Run only Flutter (analyze + test + build)
   --db-only             Run only pgTAP (requires running Colima + Supabase)
@@ -63,13 +64,16 @@ fi
 
 # ── helpers ───────────────────────────────────────────────────────────────
 now() { date '+%H:%M:%S'; }
-pass()  { echo -e "  ${GREEN}✓${RESET} $* ($(now))"; }
-fail()  { echo -e "  ${RED}✗${RESET} $* ($(now))" >&2; }
-warn()  { echo -e "  ${YELLOW}!${RESET} $* ($(now))"; }
-info()  { echo -e "  ${CYAN}→${RESET} $*"; }
-step()  { echo -e "${BOLD}═══ $* ═══${RESET}"; }
+pass()  { echo -e "  ${C_GREEN}✓${C_RESET} $* ($(now))"; }
+fail()  { echo -e "  ${C_RED}✗${C_RESET} $* ($(now))" >&2; }
+warn()  { echo -e "  ${C_YELLOW}!${C_RESET} $* ($(now))"; }
+info()  { echo -e "  ${C_CYAN}→${C_RESET} $*"; }
+step()  { echo -e "${C_BOLD}═══ $* ═══${C_RESET}"; }
 
 FAILURES=0
+# Set when this run starts a service, so cleanup never stops one another session started.
+STARTED_COLIMA=false
+STARTED_SUPABASE=false
 
 die() {
   fail "$*"
@@ -77,14 +81,23 @@ die() {
 }
 
 cleanup() {
-  if [[ "$CLEANUP" == "true" ]]; then
-    echo ""
-    step "CLEANUP"
+  if [[ "$CLEANUP" != "true" ]]; then
+    return
+  fi
+  if [[ "$STARTED_SUPABASE" != "true" ]] && [[ "$STARTED_COLIMA" != "true" ]]; then
+    return
+  fi
+  echo ""
+  step "CLEANUP"
+  if [[ "$STARTED_SUPABASE" == "true" ]]; then
     info "Stopping local Supabase ..."
     "$repo_root/scripts/supabase.sh" stop >/dev/null 2>&1 || true
+    pass "Supabase stopped"
+  fi
+  if [[ "$STARTED_COLIMA" == "true" ]]; then
     info "Stopping Colima ..."
     "$repo_root/scripts/container.sh" stop >/dev/null 2>&1 || true
-    pass "Colima + Supabase stopped"
+    pass "Colima stopped"
   fi
 }
 
@@ -94,17 +107,29 @@ if echo "$STEPS" | grep -q "pg"; then
 
   if [[ "$COLIMA" == "true" ]]; then
     info "Starting Colima ..."
-    "$repo_root/scripts/container.sh" start 2>&1 | while IFS= read -r line; do
+    STARTED_COLIMA=true
+    if "$repo_root/scripts/container.sh" start 2>&1 | while IFS= read -r line; do
       echo "    $line"
-    done
-    pass "Colima running"
+    done; then
+      pass "Colima running"
+    else
+      fail "Colima failed to start"
+      cleanup
+      exit 1
+    fi
   fi
 
   info "Starting Supabase ..."
-  "$repo_root/scripts/supabase.sh" start 2>&1 | while IFS= read -r line; do
+  STARTED_SUPABASE=true
+  if "$repo_root/scripts/supabase.sh" start 2>&1 | while IFS= read -r line; do
     echo "    $line"
-  done
-  pass "Supabase running"
+  done; then
+    pass "Supabase running"
+  else
+    fail "Supabase failed to start"
+    cleanup
+    exit 1
+  fi
 
   # Derive local Supabase URL + anon key for contract tests
   CONTRACT_URL="${CONTRACT_URL:-http://127.0.0.1:54321}"
@@ -289,6 +314,6 @@ fi
 # ── final report ──────────────────────────────────────────────────────────
 echo ""
 step "GATE RESULT"
-echo -e "  ${GREEN}All checks passed${RESET} — ${BOLD}safe to deploy to production${RESET}  ($(date))"
+echo -e "  ${C_GREEN}All checks passed${C_RESET} — ${C_BOLD}safe to deploy to production${C_RESET}  ($(date))"
 cleanup
 exit 0
