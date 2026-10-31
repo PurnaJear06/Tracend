@@ -26,8 +26,12 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   (2026-10-24, branch `claude/coach-response-validity`, in review): 22% of bank answers fell back
   as `provider_response_invalid`, now 3%; causes were parser and validator false positives
   ("0.26 kg a week" read as a 26 kg body weight, "Thu 2026-10-15" as a study, refusals read as
-  advice), not truncation or the schema. Handoff:
-  [`ai-gateway.md`](./handoff/ai-gateway.md).
+  advice), not truncation or the schema. Coach simulator (eval only, `claude/coach-simulator`,
+  #154): simulated athletes with months of synthetic records talk to Coach in eight scenarios on
+  the production gateway path, graded by code, an expert-coach judge and a claim-support judge
+  (RAG audit P1-3), report only. First run on the production model (2026-10-31, Haiku 5.5 on
+  Anthropic directly, USD 1.97 in two runs): `docs/reviews/2026-10-31-coach-simulation.md`; fixes
+  in #187. Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
   sources; nothing reads it until B2). Phase 3 round 1 merged (2026-10-17): B2 templates and
   fractional volume (#127), B6 screening gate (#128, migration 26). Round 2 merged (2026-10-17): B3 progression from logged sets, hub 1.7 (#132); B7 goal phase review,

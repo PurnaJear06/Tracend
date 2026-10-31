@@ -4,13 +4,23 @@
 //   ./scripts/deno.sh run --allow-env --allow-net --allow-read --allow-write \
 //     supabase/functions/_evals/coach_bank/run.ts
 //
-// The model comes from live_model.ts (a gateway route from AI_COACH_CHAT_*, a router, or
-// DeepSeek). Optional: EVAL_REPEATS (default 3 per model case), EVAL_CONCURRENCY (default 4),
+// The model comes from live_model.ts: a gateway route from AI_COACH_CHAT_*, else the router
+// gateway route when EVAL_BASE_URL and EVAL_API_KEY are set (the production gateway path over the
+// eval router, so the library cases run too), else DeepSeek. Optional: EVAL_REPEATS (default 3 per model case), EVAL_CONCURRENCY (default 4),
 // EVAL_MAX_USD (default 3; the run stops there and fails), EVAL_REPORT_DIR (default
 // .tooling/coach-evals/<timestamp>), EVAL_CASES (comma-separated id parts to run a few cases) and
 // the tone judge settings in judge.ts. Exits 1 when the gate fails, 2 when nothing could be sent.
 // Synthetic data only.
-import { type Generate, hostSleep, liveModelFromEnv, runAwake, runPool } from "../live_model.ts";
+import { route } from "../../_shared/ai/routes.ts";
+import {
+  type Generate,
+  hostSleep,
+  type LiveModel,
+  liveModelFromEnv,
+  routerGatewayFromEnv,
+  runAwake,
+  runPool,
+} from "../live_model.ts";
 import { bankCases } from "./cases.ts";
 import { gradeReply, gradeScreen } from "./graders.ts";
 import { answer, prepare } from "./harness.ts";
@@ -135,21 +145,30 @@ function selectCases(filter: string | undefined): readonly BankCase[] {
     : bankCases.filter((bank) => parts.some((part) => bank.id.includes(part)));
 }
 
+/** The bank's model: a gateway route, else the router gateway route, else DeepSeek. */
+async function bankModel(): Promise<LiveModel | { error: string }> {
+  if (route("coach_chat") || !Deno.env.get("EVAL_BASE_URL")?.trim()) return liveModelFromEnv();
+  const routed = await routerGatewayFromEnv();
+  if (!("error" in routed)) console.log(`Coach model: ${routed.coachModel} (${routed.choice}).`);
+  return routed;
+}
+
 async function main(): Promise<void> {
-  const live = liveModelFromEnv();
+  const live = await bankModel();
   if ("error" in live) {
     console.error(live.error);
     Deno.exit(2);
   }
   const judgeRoute = distinctJudgeRoute(live.models);
   const selected = selectCases(Deno.env.get("EVAL_CASES"));
-  // The library cases need the gateway route: only it carries the library citation fields.
+  // The library cases need a gateway route (AI_COACH_CHAT_* or the router's): only it carries the
+  // library citation fields.
   const cases = live.coachRoute ? selected : selected.filter((bank) => bank.category !== "library");
   if (cases.length < selected.length) {
     console.log(
       `Skipped ${
         selected.length - cases.length
-      } library cases: they need a gateway route (AI_COACH_CHAT_*).`,
+      } library cases: they need a gateway route (AI_COACH_CHAT_* or EVAL_BASE_URL).`,
     );
   }
   if (cases.length === 0) {
