@@ -875,11 +875,12 @@ abstract interface class WorkoutPlanRemapper {
   });
 }
 
-/// A repository that can say when the workouts it is sending have gone out.
+/// A repository that can say when a workout it is sending has gone out.
 abstract interface class WorkoutSendInFlight {
-  /// Completes once the send of waiting workouts running now for the
-  /// signed-in athlete (if any) is over. Never throws.
-  Future<void> sendInFlight();
+  /// Completes once the send of [workoutId] that the send of waiting
+  /// workouts is making now for the signed-in athlete (if any) is over; at
+  /// once when that send is on another workout or none runs. Never throws.
+  Future<void> sendInFlight(String workoutId);
 }
 
 /// A repository that keeps the athlete's last sore-area notes beside the
@@ -1233,8 +1234,17 @@ class SupabaseWorkoutRepository
     final existing = await _preferences.getString(_draftKey(to));
     if (existing != null) {
       final same = _sameSession(draft, existing);
-      if (same) await clearDraft(from);
-      return same;
+      if (!same) return false;
+      // An earlier move that stopped after writing the draft may not have
+      // copied the saved finish: it goes over before the source is cleared,
+      // so the only copy of a finish is never the one removed.
+      final finish = await _preferences.getString(_finishKey(from));
+      if (finish != null &&
+          await _preferences.getString(_finishKey(to)) == null) {
+        await _preferences.setString(_finishKey(to), finish);
+      }
+      await clearDraft(from);
+      return true;
     }
     final moved = decodeDraft(draft)..['workout_id'] = to;
     await _preferences.setString(_draftKey(to), jsonEncode(moved));
@@ -1261,16 +1271,24 @@ class SupabaseWorkoutRepository
   /// a repository, and both ask after a reconnect.
   static final Map<String, Future<void>> _sending = {};
 
+  /// The workout each athlete's send is on now, and when that one is over.
+  static final Map<String, ({String workoutId, Future<void> done})>
+  _sendingWorkout = {};
+
   /// Forgets sends that never finished (a test that ended inside one).
   @visibleForTesting
-  static void forgetSending() => _sending.clear();
+  static void forgetSending() {
+    _sending.clear();
+    _sendingWorkout.clear();
+  }
 
   @override
-  Future<void> sendInFlight() {
+  Future<void> sendInFlight(String workoutId) {
     final userId = _client.auth.currentUser?.id;
-    return userId == null
-        ? Future<void>.value()
-        : _sending[userId] ?? Future<void>.value();
+    final current = userId == null ? null : _sendingWorkout[userId];
+    return current != null && current.workoutId == workoutId
+        ? current.done
+        : Future<void>.value();
   }
 
   /// Sends every workout of this athlete that is finished, or was left on an
@@ -1297,7 +1315,16 @@ class SupabaseWorkoutRepository
       for (final id in ids) {
         if (_client.auth.currentUser?.id != userId) return;
         if (_loggerOpen?.call() ?? false) return;
-        await _sendWaitingWorkout(id);
+        final done = _sendWaitingWorkout(id);
+        _sendingWorkout[userId] = (
+          workoutId: id,
+          done: done.then<void>((_) {}, onError: (Object _) {}),
+        );
+        try {
+          await done;
+        } finally {
+          _sendingWorkout.remove(userId);
+        }
       }
     } catch (e) {
       logNonCritical(e, 'waiting workouts not sent');
@@ -1324,7 +1351,31 @@ class SupabaseWorkoutRepository
       PlannedWorkout.byId(workoutId),
       draft,
     );
-    if (result.settled) await clearDraft(result.workoutId);
+    if (result.settled) await _clearUnlessRewritten(result.workoutId, draft);
+  }
+
+  /// Clears the draft of [workoutId] once [sent] reached the server, unless a
+  /// logger that opened meanwhile wrote to it: a later revision, or another
+  /// session's draft, stays with that logger.
+  Future<void> _clearUnlessRewritten(
+    String workoutId,
+    Map<String, dynamic> sent,
+  ) async {
+    final saved = await loadDraft(workoutId);
+    if (saved != null) {
+      try {
+        final current = decodeDraft(saved);
+        final revision = (current['revision'] as num?)?.toInt() ?? 0;
+        final sentRevision = (sent['revision'] as num?)?.toInt() ?? 0;
+        if (current['idempotency_key'] != sent['idempotency_key'] ||
+            revision > sentRevision) {
+          return;
+        }
+      } catch (_) {
+        // A draft that cannot be read holds nothing to keep.
+      }
+    }
+    await clearDraft(workoutId);
   }
 
   bool _leftOnEarlierDay(Map<String, dynamic> draft) {
@@ -2044,8 +2095,10 @@ typedef LeftOverResult = ({bool settled, String workoutId});
 /// have: its sets, and its finish when one was saved. [LeftOverResult.settled]
 /// is true when nothing is left on this phone that the server lacks, so the
 /// draft may go: no set was done and no finish waits, or everything reached
-/// the server. False keeps the draft (offline, or a draft whose session was
-/// never created and has no finish to send). A session that no longer takes
+/// the server. False keeps the draft (offline, or a draft with no key or start
+/// time to start its session under). A session the server never created is
+/// started on the day the draft was started, never on the day it is sent, so
+/// an earlier day's sets stay on that day. A session that no longer takes
 /// sets or a finish (55000: it was saved or discarded already, say by an
 /// earlier try whose answer was lost) is settled: nothing of the draft can
 /// reach it, so it goes and never opens as a workout.
@@ -2076,7 +2129,7 @@ Future<LeftOverResult> sendLeftOverDraft(
     final started = DateTime.tryParse('${data['actual_started_at'] ?? ''}');
     if (id == null || id.startsWith('pending-')) {
       final key = data['idempotency_key'] as String?;
-      if (finish == null || key == null || started == null) {
+      if (key == null || started == null) {
         return (settled: false, workoutId: current.id);
       }
       try {

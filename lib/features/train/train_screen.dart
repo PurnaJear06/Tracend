@@ -941,7 +941,9 @@ class _TrainScreenState extends State<TrainScreen> {
     final offline = hub.cachedAt != null;
     // The cardio week is the last seven days up to today: it belongs to this
     // week's summary only, never to a past week the athlete paged back to.
-    final cardio = sameDay(_weekStart, _currentWeek)
+    // The guidance is the server's last answer: on a saved plan it may be
+    // stale, and what it would open cannot be checked, so none of it shows.
+    final cardio = !offline && sameDay(_weekStart, _currentWeek)
         ? widget.guidance?.current?.cardioWeek
         : null;
     return [
@@ -992,7 +994,7 @@ class _TrainScreenState extends State<TrainScreen> {
           onCheckIn: widget.onCheckIn,
           onTalkToCoach: widget.onTalkToCoach ?? (_) {},
         ),
-      if (widget.guidance != null && widget.proposals != null)
+      if (!offline && widget.guidance != null && widget.proposals != null)
         DeloadCard(
           controller: widget.guidance!,
           proposals: widget.proposals!,

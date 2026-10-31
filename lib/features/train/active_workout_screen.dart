@@ -180,6 +180,20 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// plan, and this follows it.
   late PlannedWorkout _workout = widget.workout;
 
+  /// The day the session is logged under: [ActiveWorkoutScreen.sessionDate],
+  /// or the day an unsent draft left on an earlier day was started, so its
+  /// sets never land on the day it is opened.
+  late DateTime? _sessionDate = widget.sessionDate;
+
+  /// The send of waiting workouts' copy of this workout, when one was under
+  /// way as the logger opened. The logger reads and logs on the phone without
+  /// it, but starts, syncs and discards only after it, so the session never
+  /// has two writers.
+  Future<void> _replay = Future<void>.value();
+
+  /// How long opening waits for [_replay] before it shows the draft anyway.
+  static const _replayWait = Duration(seconds: 3);
+
   String? _sessionId;
 
   /// The server no longer has this workout and the current plan has no copy
@@ -271,7 +285,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _heartRate = SetHeartRateRecorder.shared(Supabase.instance.client).listen(
         _events.events,
         loadSession: () =>
-            repository.loadSession(_workout, localDate: widget.sessionDate),
+            repository.loadSession(_workout, localDate: _sessionDate),
       );
     }
     _watchPrompt =
@@ -321,16 +335,19 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   Future<void> _restore() async {
     unawaited(_loadAlertPreference());
     // A send of waiting workouts that started before this logger opened may be
-    // finishing this very workout: read the server after it is over.
+    // finishing this very workout: the server is read after it is over, unless
+    // it stalls. A send of another workout is never waited for.
     final repository = widget.repository;
+    var replaying = false;
     if (repository is WorkoutSendInFlight) {
-      await (repository as WorkoutSendInFlight).sendInFlight();
+      _replay = (repository as WorkoutSendInFlight).sendInFlight(_workout.id);
+      await _replay.timeout(_replayWait, onTimeout: () => replaying = true);
     }
     Map<String, dynamic>? server;
     try {
       server = await widget.repository.loadSession(
         _workout,
-        localDate: widget.sessionDate,
+        localDate: _sessionDate,
       );
     } catch (e) {
       logNonCritical(e, 'workout session not loaded');
@@ -346,7 +363,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (server != null && !_sessionFitsPlan(server)) server = null;
     final saved = await widget.repository.loadDraft(_workout.id);
     var local = saved == null ? null : _decode(saved);
+    // A send still under way has this draft in hand: it is not sent twice.
     if (local != null &&
+        !replaying &&
         _leftOnEarlierDay(local) &&
         local['session_id'] != server?['session_id'] &&
         await _sendLeftOver(local)) {
@@ -359,6 +378,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       local = null;
     }
     final draft = _newer(server, local);
+    if (local != null &&
+        draft?['session_id'] == local['session_id'] &&
+        _leftOnEarlierDay(local)) {
+      // The earlier day's draft could not be sent and opens as it was saved:
+      // its session is started, read and finished on the day it was started.
+      final started = DateTime.parse('${local['actual_started_at']}');
+      _sessionDate = started.toLocal();
+    }
     if (draft != null) {
       _sessionId = draft['session_id'] as String?;
       _idempotencyKey = draft['idempotency_key'] as String? ?? _idempotencyKey;
@@ -491,6 +518,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// this workout's copy in the current plan and starts again under the same
   /// key; with no copy the sets stay on the phone and the workout says so.
   Future<String?> _startSession({bool moved = false}) async {
+    await _replay;
     if (_unmatched) {
       _sync = _Sync.attention;
       return null;
@@ -503,7 +531,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       return await widget.repository.start(
         _workout,
         _idempotencyKey,
-        localDate: widget.sessionDate,
+        localDate: _sessionDate,
       );
     } on PostgrestException catch (e) {
       logNonCritical(e, 'workout start refused');
@@ -574,7 +602,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       try {
         server = await widget.repository.loadSession(
           _workout,
-          localDate: widget.sessionDate,
+          localDate: _sessionDate,
         );
       } catch (e) {
         logNonCritical(e, 'logged session not read');
@@ -749,7 +777,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     try {
       final session = await widget.repository.loadSession(
         _workout,
-        localDate: widget.sessionDate,
+        localDate: _sessionDate,
       );
       return session != null && session['session_id'] == id ? session : null;
     } catch (e) {
@@ -1048,6 +1076,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// (22023) while it still carried this phone's set times; any other
   /// refusal needs attention.
   Future<_Sync?> _send(String id) async {
+    await _replay;
     _refusalCode = null;
     try {
       await widget.repository.sync(
@@ -1710,6 +1739,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     _saveTimer?.cancel();
     _closed = true;
     await _rest.stop();
+    await _replay;
     try {
       await widget.repository.abandon(
         _sessionId ?? 'pending-$_idempotencyKey',
@@ -1812,6 +1842,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       unawaited(TracendHaptics.warning());
       return;
     }
+    await _replay;
     try {
       await widget.repository.completeWithEffort(
         _sessionId ?? 'pending-$_idempotencyKey',
@@ -1880,7 +1911,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
     return WorkoutSummary(
       workoutName: widget.workout.name,
-      date: widget.sessionDate ?? widget.clock(),
+      date: _sessionDate ?? widget.clock(),
       durationSeconds: durationSeconds,
       completedSets: _completedSets,
       weightLiftedKg: weightLiftedKg([

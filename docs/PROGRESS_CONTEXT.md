@@ -402,6 +402,10 @@ Round 2 review fixes: an account switch during a hung workout start never moves 
 earlier athlete's workout in the new account; a sync refused because the workout was finished
 meanwhile opens it as completed; a finish with no match in the plan is kept on the phone and reported;
 sore-area notes are saved only for the athlete they came for.
+Round 3 review fixes (after merging #181 to #183): an earlier day's unfinished sets are sent on that
+day, never today's; a stalled send no longer holds the workout screen (bounded wait, no second
+writer); Train on a saved plan hides the lighter-week card and cardio row; an interrupted plan-copy
+move keeps the saved finish.
 
 ## Shipped baseline
 

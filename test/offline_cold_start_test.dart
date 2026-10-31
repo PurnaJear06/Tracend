@@ -77,6 +77,9 @@ class _Backend {
   /// The planned workout ids `start_workout` was asked for, in order.
   final startedIds = <String>[];
 
+  /// The local dates `start_workout` was asked for, in order.
+  final startDates = <String>[];
+
   /// The workout ids the draft payloads of `sync_workout_draft` named.
   final syncedWorkoutIds = <String>[];
 
@@ -130,6 +133,7 @@ class _Backend {
         final params = jsonDecode(request.body) as Map;
         final id = params['p_planned_workout_id'] as String;
         startedIds.add(id);
+        startDates.add(params['p_local_date'] as String);
         await holdStart?.future;
         if (staleIds.contains(id)) return _error('P0002', 'not found');
         final refusal = startRefusal;
@@ -979,6 +983,7 @@ void main() {
   group('a plan copied while the workout waited', () {
     const oldId = 'old-workout';
     const newId = 'new-workout';
+    const key = '44444444-4444-4444-8444-444444444444';
 
     Future<SupabaseWorkoutRepository> pumpLogger(
       WidgetTester tester,
@@ -1084,6 +1089,90 @@ void main() {
         contains(containsPair('completed', true)),
       );
       expect(find.text('Offline'), findsNothing);
+    });
+
+    testWidgets('an earlier day\'s unfinished sets that could not be sent are '
+        'started on their own day, never on the day the logger opens', (
+      tester,
+    ) async {
+      final earlier = DateTime.now().subtract(const Duration(days: 2));
+      final workout = _workoutOf(oldId);
+      await preferences.setString(
+        '${WorkoutLocalKeys.draftPrefix(_userId)}$oldId',
+        jsonEncode(_draftOf(workout, key: key, startedAt: earlier)),
+      );
+      await pumpLogger(tester, workout);
+      expect(find.text('Offline'), findsOneWidget);
+
+      backend.online = true;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(backend.startKeys, [key]);
+      expect(backend.startDates, everyElement(localDayKey(earlier)));
+      expect(backend.syncedWorkoutIds, isNotEmpty);
+    });
+
+    testWidgets('opened online, an earlier day\'s unfinished sets go to their '
+        'own day and today starts fresh', (tester) async {
+      final earlier = DateTime.now().subtract(const Duration(days: 2));
+      final workout = _workoutOf(oldId);
+      await preferences.setString(
+        '${WorkoutLocalKeys.draftPrefix(_userId)}$oldId',
+        jsonEncode(_draftOf(workout, key: key, startedAt: earlier)),
+      );
+      backend.online = true;
+      await pumpLogger(tester, workout);
+
+      expect(backend.startDates, [
+        localDayKey(earlier),
+        localDayKey(DateTime.now()),
+      ]);
+      expect(backend.startKeys.first, key);
+      expect(backend.startKeys.last, isNot(key));
+      expect(find.text('Done set 1'), findsOneWidget);
+    });
+
+    testWidgets('a send of the same workout that stalls does not hold the '
+        'logger, and the logger starts nothing until it is over', (
+      tester,
+    ) async {
+      final source = SupabaseWorkoutRepository(
+        await startSupabase(tester),
+        preferences,
+      );
+      final workout = _workoutOf(oldId);
+      final draft = _draftOf(workout, key: key);
+      await source.saveDraft(oldId, jsonEncode(draft));
+      await expectLater(
+        source.completeWithEffort(
+          draft['session_id'] as String,
+          3,
+          1800,
+          draft,
+          sessionEffort: 6,
+        ),
+        throwsA(isA<WorkoutSessionPendingException>()),
+      );
+      final hold = Completer<void>();
+      backend
+        ..online = true
+        ..holdStart = hold;
+      final sending = source.sendWaiting();
+      await tester.pump();
+
+      await pumpLogger(tester, workout, using: source);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+
+      // The phone's sets are on screen, and only the stalled send started.
+      expect(find.text('Finish not sent yet'), findsOneWidget);
+      expect(backend.startedIds, [oldId]);
+
+      hold.complete();
+      await sending;
+      await tester.pumpAndSettle();
+      expect(backend.efforts, [6], reason: 'the finish is sent once');
     });
 
     testWidgets('a workout the server holds as completed opens as completed '
@@ -1314,6 +1403,52 @@ void main() {
       expect(backend.efforts, [6]);
       expect(await source.loadDraft(newId), isNull);
       expect(await source.loadPendingFinish(newId), isNull);
+      expect(await source.loadDraft(oldId), isNull);
+    });
+
+    testWidgets('a move cut short after the draft was written keeps the '
+        'finish: it goes to the new id before the old one is cleared', (
+      tester,
+    ) async {
+      final source = await repo(tester);
+      final workout = _workoutOf(oldId);
+      await finished(source, workout);
+      // The earlier move wrote the draft under the new id and stopped there.
+      await source.saveDraft(
+        newId,
+        jsonEncode(_draftOf(_workoutOf(newId), key: key)),
+      );
+      backend
+        ..online = true
+        ..hub = _singleHub(newId);
+
+      final moved = await source.moveToCurrentPlan(
+        oldId,
+        workout.identity,
+        ownerId: _userId,
+      );
+
+      expect(moved?.id, newId);
+      expect(await source.loadPendingFinish(newId), isNotNull);
+      expect(await source.loadDraft(oldId), isNull);
+    });
+
+    testWidgets('an earlier day\'s unfinished sets are sent on their own day '
+        'with no screen open', (tester) async {
+      final source = await repo(tester);
+      final earlier = DateTime.now().subtract(const Duration(days: 2));
+      await source.saveDraft(
+        oldId,
+        jsonEncode(_draftOf(_workoutOf(oldId), key: key, startedAt: earlier)),
+      );
+      backend.online = true;
+
+      await source.sendWaiting();
+
+      expect(backend.startDates, [localDayKey(earlier)]);
+      expect(backend.startKeys, [key]);
+      expect(backend.syncedWorkoutIds, [oldId]);
+      expect(backend.efforts, isEmpty, reason: 'it was never finished');
       expect(await source.loadDraft(oldId), isNull);
     });
 

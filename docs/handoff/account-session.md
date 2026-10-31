@@ -214,8 +214,8 @@ which is updated). App only, no migration, needs a reinstall.
   match: the sets stay under the old id, the logger says "Not in your current plan", and finish says
   it cannot be finished yet. 55000: the logger opens as the completed workout and the draft goes
   (the existing completed path). Other codes: **Needs attention**, not Offline. The plan unreadable
-  at that moment stays offline. Identity rules from #181 are not on main yet; replace
-  `WorkoutIdentity.matches` with its helper when they are.
+  at that moment stays offline. Since the merge with #181, `WorkoutIdentity.sameName` is the one
+  exercise-name rule for a plan copy and for #181's check of a server session against the plan.
 - **Sending without the logger (MEDIUM).** `SupabaseWorkoutRepository.sendWaiting` sends this
   athlete's finished workouts (draft + saved finish) and drafts with done sets left on an earlier
   day, one at a time, through `sendLeftOverDraft` (the logger's earlier-day logic, now shared; it
@@ -240,14 +240,37 @@ which is updated). App only, no migration, needs a reinstall.
   `sendLeftOverDraft` captures the signed-in athlete before the first start (`signedInUserId` on
   `WorkoutPlanRemapper`) and checks it again right before the retry start, and the logger does the
   same. Nothing of athlete A's is moved or started in B's account; the draft stays under A's keys.
-- **55000 from a sync.** A refusal "not taking sets" now takes the existing completed path
-  (`_showCompletedAlready`): the logger opens as the completed workout and the draft goes, instead of
-  "could not save your sets". Opening the logger first waits for any send of waiting workouts already
-  running for this athlete (`WorkoutSendInFlight.sendInFlight`), so it reads the server after it.
+- **55000 from a sync.** A refusal "not taking sets" now opens the finished session (since the
+  merge with #181, through its `_settleFinished`/`_openFinished`): the draft goes, instead of
+  "could not save your sets". Opening the logger waits for a send of waiting workouts that is on
+  this workout (`WorkoutSendInFlight.sendInFlight`), so it reads the server after it (bounded since
+  round 3).
 - **Finish with no match in the plan.** The finish effort is kept on the phone with the draft
   (`savePendingFinish`, the same write `completeWithEffort` makes), so `sendWaiting` sends it once a
   match exists. The no-match is reported to Sentry as "workout not in current plan" (type only).
 - **Sore-area notes** are saved under the athlete the shell opened for, and dropped if another
   athlete is signed in when the answer arrives (`saveSafetyNotes(adjustment, userId:)`).
 - **Manual meal sheet** uses the app's clock again (`widget.clock()`), lost in a merge.
-- #181's app-side identity logic is not on main yet: `WorkoutIdentity` stays until it is.
+- Merged with main (#181 to #183): one start path in the logger. 22023 closes with a message and
+  keeps a draft with sets; 55000 opens the finished session, clears the draft and says when sets
+  were not added; P0002 moves the draft. The gate restores reminders only after a successful account
+  check, through #182's reminder queue, so a restore never lands after a sign-out's cancel.
+
+### Offline cold start, round 3 review fixes (PR #185)
+
+- **An earlier day's unfinished sets stay on that day.** `sendLeftOverDraft` now starts a session the
+  server never created whenever the draft has done sets, finished or not, on the local date the
+  draft was started (`actual_started_at`), then syncs it. A draft that still cannot be sent opens in
+  the logger as saved, and its start, reads and finish use that day (`_sessionDate`), never the day
+  the logger opened.
+- **A stalled send no longer holds the logger.** `sendInFlight(workoutId)` waits only for a send of
+  the workout being opened, and opening waits at most three seconds. Past that the logger shows the
+  phone's draft and logs on the phone, but its start, syncs and discard wait for that send, and it
+  does not send the earlier-day draft itself. The send clears a draft only if no logger wrote a later
+  revision or another session to it meanwhile.
+- **Train on a saved hub shows no guidance.** The lighter-week card and the cardio row come from the
+  server's last answer, which cannot be checked offline: both are hidden while the hub is a saved
+  copy.
+- **A move cut short keeps its finish.** When the new id already holds the same session's draft (an
+  earlier move stopped after writing it), the saved finish is copied over before the old id is
+  cleared.
