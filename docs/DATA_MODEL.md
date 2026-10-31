@@ -760,7 +760,7 @@ entries are never promoted globally without review.
 
 Private-object metadata: user, purpose, opaque object key, content type (`image/jpeg`,
 `image/png`, `image/heic`), byte size (at most 10 MB), checksum, lifecycle status (`active`,
-`pending_deletion`, `deleted`), retention deadline, retention exemption, and deletion time. Meal
+`pending_deletion`, `deleted`), retention deadline, retention exemption, the time the retention worker claimed it (`retention_claimed_at`; a claim older than 30 minutes is handed out again), and deletion time. Meal
 photos get a 7-day deadline at upload; progress photos are exempt (deleted with their set or the
 account). Retention workers claim due objects before deleting Storage bytes, then finalize or
 schedule a retry. Clients never use object keys as authorization.
