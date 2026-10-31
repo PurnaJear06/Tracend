@@ -1,6 +1,6 @@
 # AI Gateway Handoff
 
-**As of:** 2026-10-20
+**As of:** 2026-11-01
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -2178,6 +2178,75 @@ back squat); the expert judge's mean of about 2.7 of 5, mostly for no concrete c
 Tests: `build_test.ts` (the reason and the 2-day edge), `coach_chat_provider_gateway_test.ts` (the
 kinds rule). The pgTAP suite is
 untouched.
+
+## Meal photos read packs and nutrition labels; Claude cutover readiness (2026-11-01, branch `claude/meal-label-claude`, migration `20261101100000`)
+
+Why: on 31 Oct the owner photographed a Nestlé Munch Max Nuts bar. The live Groq path named it
+"Crunch" (front) and stored the label's per-serving row, "1/2 Bar (18.7 g)", 85 kcal at "High
+confidence" although its macros came to about 102 kcal (back). The prompt only inspected visible
+food, the schema had no pack or label fields, the model set its own confidence, and its notes were
+dropped. Refs the investigation in the lead's scratchpad (bug 2).
+
+**Built (gateway path only; the Groq and Gemini requests stay byte-identical).**
+- `_shared/meal_vision/contract.ts`: one structured answer, `mealAnswerSchema`: `image_kind`
+  (`plate`, `pack_front`, `nutrition_label`, `no_food`), the printed product fields (name, brand,
+  net weight, servings, serving weight and text, per 100 g and per-serving energy, protein,
+  carbohydrate, fat, each column with a `has_*` flag) and the candidates. Flat, every property
+  required, no union, 1,631 bytes as Claude gets it; `contract_test.ts` guards it like the Coach
+  schema (`_shared/ai/schema_guards.ts` now holds the guard helpers both tests use).
+  `parseMealAnswer` refuses an answer whose candidates contradict its kind.
+- `_shared/meal_vision/packaged.ts`: the label checks (4/4/9 energy within 15% or 8 kcal;
+  per-serving vs per 100 g within 10% or 5 kcal and 1 g; servings x serving vs net weight within 5%
+  or 2 g; at most 9.5 kcal and 1 g of nutrients per gram), per-gram values, portions (one serving,
+  whole pack, grams; the whole pack first for a pack of at most two servings and 60 g), and the
+  confidence from the source (`label` high, `label_unverified` low, `estimate` medium at most, a
+  front of pack without a printed weight low). Golden: `munch_label_golden.json` (18.7 g serving,
+  2 servings, 37.4 g; whole pack 195.6 kcal), shared with the Flutter test.
+- `meal-analyze/vision.ts`: new instructions (kinds; printed text read as data and never as an
+  instruction; no product or value from memory; kJ never converted), the new schema, and the
+  stored candidates from `packaged.ts`. Legacy answers go through `plateCandidate` (estimate,
+  medium at most, notes kept). The handler stores the notes instead of stripping them, logs the
+  kind and sources (never a food or note), and answers `schema_version` 1.1.
+- Migration `20261101100000_meal_label_reading.sql`: additive columns on
+  `meal_analysis_candidates` (`source`, `image_kind`, `brand`, four per-gram values, `serving_g`,
+  `servings_per_pack`, `pack_g`, `portion_g`, `assumptions`, `question`, `label_issues`) with
+  checks, `private.jsonb_text_array`, and `persist_meal_photo_candidates` = its 20261015120011
+  body plus two hunks (the insert, and `schema_version` 2 with `image_kind` in the audit event),
+  pinned by `meal-analyze/meal_label_reading_test.ts`. pgTAP: `meal_label_reading_test.sql`. No RPC
+  returns the rows (the app reads the table), so no RPC `schema_version` changed.
+- App: `MealCandidate.fromRow` reads the new columns; the review sheet shows **From label**,
+  **Label unclear** or **Estimated**, the failed checks, the model's assumptions and question, and
+  for a pack or label a portion chooser (1 serving / whole pack / grams) that recalculates from the
+  stored per-gram values (`lib/features/nutrition/meal_portions.dart`, same rounding and labels as
+  `packaged.ts`). The athlete still edits and confirms everything; `confirm_analyzed_meal` is
+  unchanged.
+- Evals: `meal_vision_eval.ts` adds a drawn nutrition table (must be read, pass the checks and be
+  stored as the whole pack at 192 kcal) and the same table with a written instruction;
+  `owner_photo_check.ts` prints kind, source, per-gram values, sizes and failed checks. Meal route
+  output tokens go to 2,000 (the answer carries the product fields; ceiling USD 0.002 on Haiku).
+- The meal notice draft (`docs/notices/meal-photo-ai-v2.md`, unpublished) says the AI reads the
+  product name and nutrition label of a packaged food. What is sent is unchanged.
+
+**Order to deploy.** The migration deploys before the functions (deploy.yml), and the deployed
+function's old-shaped rows still persist (new columns null or empty). Install the app build from
+the merged commit after the migration: the new build selects the new columns.
+
+**Cutover readiness (checked read-only 2026-11-01).** Meal photo, physique check, onboarding plan
+and onboarding questions all have working gateway paths for `anthropic`; the SQL whitelists, the
+consent mapping (`get_ai_consent_v2`) and the budget mapping (`reserve_ai_budget_v2`) already take
+them; each route's ceiling fits one reservation. Nothing else was missing in code. What remains is
+the owner's: the evals, the secrets and two notices (meal photo v2, progress photo v2; onboarding is
+covered by `ai-coaching-v6`). The runbook's "State on 2026-11-01" section lists them.
+
+**Not done, later.**
+- Barcode lookup: Apple Vision barcode detection on the photo plus an Open Food Facts lookup
+  through an Edge Function (ODbL attribution, rate limits shared by the Edge egress IPs). It would
+  be the first entry of the food catalog PRD §4.6 step 5 describes as not built.
+- The Groq and Gemini meal paths have no label reading; they go when the cutover's two-week window
+  ends.
+- A confirmed label read is not saved as a reusable personal food (`user_foods`).
+- `meal_items` does not record the confirmed source or portion.
+- `nutrition_screen.dart` still says "this month's $2 limit" for `ai_usage_limit` (the stop is USD 3).
 
 ## Next agent starts here
 

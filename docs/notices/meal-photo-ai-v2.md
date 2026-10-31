@@ -11,6 +11,10 @@ Covers: meal photo analysis (`meal_vision`). Names the receiving company once, "
 show it. Retention wording: Anthropic's published commercial policy (deleted within 30 days, not used
 for training; see the note in `ai-coaching-v6.md`). Re-check it on the day you publish.
 
+2026-11-01: the text now says that for a packaged food the AI reads the product name and nutrition
+label printed on it (the packaged-product path, AI_SAFETY_SPEC §8). What is sent is unchanged: the one
+photo.
+
 ## Publish (owner, SQL editor)
 
 ```sql
@@ -19,7 +23,7 @@ select private.publish_meal_photo_ai_notice(
   'anthropic',
   'Anthropic',
   'claude-haiku-5-5',
-  $notice$Meal photo analysis is an AI estimate, not a measurement. When you analyze a meal photo, Tracend sends Anthropic, a US company, a resized copy of that one photo. Its AI suggests the foods it sees with portions, calories and macros. Your name, email address, other photos and the rest of your data are not sent.
+  $notice$Meal photo analysis is an AI estimate, not a measurement. When you analyze a meal photo, Tracend sends Anthropic, a US company, a resized copy of that one photo. Its AI suggests the foods it sees with portions, calories and macros, or, for a packaged food, reads the product name and nutrition label printed on it. Your name, email address, other photos and the rest of your data are not sent.
 
 Under its standard commercial terms, that company deletes the photo and its answer within 30 days and does not use them to train its models. It may keep them longer only where the law requires it or to enforce its usage rules. Tracend keeps the photo privately in your account and deletes it after the review window unless you save it.
 

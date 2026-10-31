@@ -7,6 +7,8 @@ import {
   syntheticKey,
 } from "../_shared/ai/fakes.ts";
 import { physiqueRules } from "../_shared/providers/physique_vision_provider.ts";
+import golden from "../_shared/meal_vision/munch_label_golden.json" with { type: "json" };
+import { plateAnswer } from "../_shared/meal_vision/test_fixtures.ts";
 import { mealVisionInstructions } from "../meal-analyze/vision.ts";
 import { type CheckIo, type FolderEntry, runOwnerPhotoCheck } from "./owner_photo_check.ts";
 
@@ -22,10 +24,11 @@ const dal = {
   protein_g: 11,
   carbohydrate_g: 28,
   fat_g: 8,
-  confidence: "medium",
+  confidence: "medium" as const,
   assumptions: ["Ghee on top is about 1 tsp"],
   question: "Was ghee added after cooking?",
 };
+const plate = (candidates: typeof dal[]) => JSON.stringify(plateAnswer(candidates));
 const validPhysique = JSON.stringify({
   development_priorities: [
     { muscle: "chest", confidence: "medium", reason: "Upper chest looks less full than the arms." },
@@ -68,7 +71,7 @@ const answer = (text: string, model: string) =>
 Deno.test("meal: each photo goes to Anthropic with the feature's own request and its parse is printed", async () => {
   const run = harness(
     { "/photos": [file("lunch.JPG"), file("notes.txt"), file("breakfast.jpg"), directory("old")] },
-    () => answer(JSON.stringify({ candidates: [dal] }), "claude-haiku-5-5"),
+    () => answer(plate([dal]), "claude-haiku-5-5"),
   );
   assertEquals(await runOwnerPhotoCheck(["meal", "/photos"], run.io), 0);
 
@@ -77,12 +80,13 @@ Deno.test("meal: each photo goes to Anthropic with the feature's own request and
   for (const sent of run.sent) {
     assertEquals(sent.url, "https://api.anthropic.com/v1/messages");
     assertEquals(sent.body.model, "claude-haiku-5-5");
-    assertEquals(sent.body.max_tokens, 1500);
+    assertEquals(sent.body.max_tokens, 2000);
     assertStringIncludes(JSON.stringify(sent.body.system), mealVisionInstructions.slice(0, 60));
     assert(JSON.stringify(sent.body.messages).includes('"type":"image"'));
   }
   const output = run.lines.join("\n");
   assertStringIncludes(output, "Dal tadka | 1 bowl | 220 kcal");
+  assertStringIncludes(output, "confidence medium | plate, estimate");
   assertStringIncludes(output, "asks: Was ghee added after cooking?");
   assertStringIncludes(output, "Done: 2 checked");
   // The key is sent as a header and never printed.
@@ -97,7 +101,7 @@ Deno.test("meal: no food is printed as such, and an unusable answer does not sto
     () => {
       calls += 1;
       return answer(
-        calls === 1 ? '{"candidates": ' : JSON.stringify({ candidates: [] }),
+        calls === 1 ? '{"candidates": ' : plate([]),
         "claude-haiku-5-5",
       );
     },
@@ -108,10 +112,22 @@ Deno.test("meal: no food is printed as such, and an unusable answer does not sto
   assertStringIncludes(output, "no food found");
 });
 
+Deno.test("meal: a nutrition label prints its source, sizes and per-gram values", async () => {
+  const run = harness(
+    { "/photos": [file("label.jpg")] },
+    () => answer(JSON.stringify(golden.answer), "claude-haiku-5-5"),
+  );
+  assertEquals(await runOwnerPhotoCheck(["meal", "/photos"], run.io), 0);
+  const output = run.lines.join("\n");
+  assertStringIncludes(output, "Nestlé Munch Max Nuts | Whole pack (37.4 g) | 195.6 kcal");
+  assertStringIncludes(output, "confidence high | nutrition_label, label");
+  assertStringIncludes(output, "per gram 5.23 kcal; serving 18.7 g, pack 37.4 g, 2 servings");
+});
+
 Deno.test("meal: stops before a call that could pass the spend cap", async () => {
   const run = harness(
     { "/photos": [file("a.jpg"), file("b.jpg")] },
-    () => answer(JSON.stringify({ candidates: [dal] }), "claude-haiku-5-5"),
+    () => answer(plate([dal]), "claude-haiku-5-5"),
   );
   assertEquals(await runOwnerPhotoCheck(["meal", "/photos", "--cap-usd", "0.001"], run.io), 3);
   assertEquals(run.sent.length, 0);

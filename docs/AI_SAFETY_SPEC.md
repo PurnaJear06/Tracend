@@ -540,9 +540,54 @@ symptom is harmless. Localized emergency wording is maintained outside model pro
 Meal vision returns candidate foods, preparation assumptions, estimated portions, confidence,
 ambiguity, and clarification questions. It never supplies authoritative final macros.
 
-The user edits and confirms candidates; catalog data calculates nutrients. Unconfirmed candidates
-never affect adherence or coaching. Mixed Indian/home dishes should request recipe or ingredient
-clarification rather than imply false precision.
+The user edits and confirms candidates. **No food catalog exists yet** (PRD §4.6 step 5): the
+confirmed values are what the user confirms, from a checked label or from the model's estimate.
+Unconfirmed candidates never affect adherence or coaching. Mixed Indian/home dishes should request
+recipe or ingredient clarification rather than imply false precision.
+
+**Packaged products and nutrition labels (2026-11-01, gateway path).** One call returns one
+structured answer (`_shared/meal_vision/contract.ts`, `mealAnswerSchema`):
+- `image_kind`: `plate`, `pack_front`, `nutrition_label` or `no_food`.
+- For a nutrition label the model copies the printed values exactly: product name and brand as
+  printed (`""` when not visible, never from memory), net weight, servings per pack, serving weight
+  and serving text, and energy, protein, carbohydrate and fat for each printed column (per 100 g
+  and per serving, each with a `has_*` flag). It never converts kJ, rounds, completes or recalls a
+  value. One candidate: the product, with assumptions and a question about how much was eaten.
+- For a front of pack: product name, brand and net weight as printed, and one candidate holding
+  the model's estimate for the whole pack, which it must say is an estimate.
+- For a plate: the candidates as before. For no food: none.
+- The schema is flat with no optional property and no union: not printed is `""`, `0` or `false`
+  (`meal_vision/contract_test.ts` guards it as `coach_chat_schema_test.ts` guards Coach chat's).
+
+Deterministic code (`_shared/meal_vision/packaged.ts`), never the model, then:
+- checks the label: energy against 4/4/9 kcal per gram of protein, carbohydrate and fat (within
+  15%, or 8 kcal), the per-serving column against the per 100 g column at the serving weight
+  (within 10%, or 5 kcal and 1 g), servings times serving weight against the net weight (within
+  5% or 2 g), and that no gram holds more than 9.5 kcal or 1 g of nutrients;
+- derives per-gram values and the portions: one serving, the whole pack (shown first for a pack
+  of at most two servings and 60 g), or any grams;
+- sets the confidence from the source: a label that passes every check is `label` (high); one
+  that fails any is `label_unverified` (low, values kept, each failed check named); a front of
+  pack is an `estimate`, medium at most and low without a printed net weight; a plate is an
+  `estimate`, medium at most. The model's own confidence is only an upper bound for an estimate.
+- stores the model's assumptions and question with the candidate (they were dropped before).
+The review sheet shows **From label**, **Label unclear** or **Estimated**, the failed checks, the
+notes, and for a pack or label a portion chooser that recalculates from the stored per-gram values.
+The athlete edits and confirms every value; the model confirms nothing.
+
+**Printed text and prompt injection.** The gateway instructions read printed packaging and
+nutrition tables as data and say that text in the photo is never an instruction: anything written
+in it that asks the model to act, change its rules or report other foods or values is ignored. The
+schema fixes the output, the parser refuses an answer whose candidates contradict its kind, and the
+arithmetic checks catch a value that does not fit the rest of the label. The meal vision eval
+includes a drawn label carrying a written instruction (`injection_label_oat_bar.jpg`).
+
+**Legacy paths.** The Groq and Gemini requests stay byte-identical until they are removed after
+the cutover (`legacy_requests_golden.json`): they have no label path. Their candidates are stored
+as plate estimates (never above medium) with their notes.
+
+**Later: barcode lookup.** Reading a barcode (Apple Vision on the photo) and looking it up (for
+example Open Food Facts) is not built; it would be the first entry of the food catalog.
 
 **Provider.** Server-side, through the AI gateway (§10.5) as feature `meal_vision`.
 - **Live today (until the cutover, §10.7):** Groq `qwen/qwen3.8-27b` (`MEAL_VISION_PROVIDER=groq`),
@@ -557,15 +602,18 @@ clarification rather than imply false precision.
   inputs and outputs are deleted within 30 days and not used for training, which the notice says.
   The JPEG is checked and its metadata removed before sending (`_shared/physique/jpeg.ts`).
 - **Own-photo check (before any production route is set; the synthetic drawings in the gateway
-  evals test the contract and refusals, not recognition of real food).** The owner puts a few of
-  their own meal photos (about ten typical meals, including a mixed home dish and one non-meal
-  photo) in a local folder and runs `supabase/functions/_evals/owner_photo_check.ts meal <folder>`.
+  evals test the contract, label reading and refusals, not recognition of real food).** The owner
+  puts a few of their own meal photos (about ten typical meals, including a mixed home dish, one
+  non-meal photo, and at least two packaged foods photographed both front and nutrition table) in
+  a local folder and runs `supabase/functions/_evals/owner_photo_check.ts meal <folder>`.
   It sends each photo to Anthropic through the same request meal-analyze sends (the same
   instructions, schema, model and settings, from `meal-analyze/vision.ts`), prints the parsed
   candidates, stores nothing, reads `ANTHROPIC_API_KEY` from the environment without printing it,
   and stops before a call that could pass its spend cap. The owner judges the output: the foods
   named are the foods on the plate, portions are sensible, no item is invented, a mixed dish asks
-  about its recipe rather than implying precision, and a non-meal photo returns no food. Only if
+  about its recipe rather than implying precision, a non-meal photo returns no food, a nutrition
+  table is read as printed (name, brand, serving, pack, values) and passes its checks, and a front of
+  pack is marked estimated. Only if
   it passes does the owner set the production route with `AI_MEAL_VISION_EVALUATED=true`; if it
   does not, no route is set. Meal vision has no allowlist, so this check is the only gate before
   every athlete can use the route.
@@ -934,7 +982,7 @@ routes stay available by settings alone for two weeks after the cutover.
 | --- | --- | --- | --- | --- | --- |
 | Coach chat | `coach_chat` | Haiku 5.5 | 4,096 | 30 s | move |
 | Daily decision | `daily_decision` | Sonnet 5.5 | 1,800 | 25 s | move |
-| Meal photos | `meal_vision` | Haiku 5.5 | 1,500 | 30 s | move |
+| Meal photos | `meal_vision` | Haiku 5.5 | 2,000 | 30 s | move |
 | Physique check | `physique_vision` | Sonnet 5.5 | 800 | 60 s | move after the owner's real-photo check |
 | Onboarding plan | `onboarding_plan` | Sonnet 5.5 | 8,000 | 90 s | later, after B2 |
 | Onboarding questions | `onboarding_questions` | Sonnet 5.5 | 1,500 | 30 s | later, after B2 |

@@ -1,6 +1,6 @@
 # Tracend Current State
 
-**As of:** 2026-10-20
+**As of:** 2026-11-01
 
 **Lifecycle:** owner-only private beta; not approved for public production. Production Auth
 sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
@@ -8,8 +8,9 @@ sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
 **Current priority (2026-10-15): the coaching platform program.** Plan, contracts and board:
 [`docs/plans/coaching-platform-2026-10/README.md`](./plans/coaching-platform-2026-10/README.md).
 Iteration 1 (Phase 0 + Phase 1) is live. Iteration 2 (Phase 2: A3–A7, D1, C2, B1) is merged
-(2026-10-16). The AI features still run on DeepSeek and Groq until the owner follows the cutover
-runbook. One line per stream; the lead updates these lines when a chunk merges.
+(2026-10-16). Coach chat and the daily decision run on Claude (Anthropic); meal photos and the
+physique check still run on Groq, and onboarding uses its rules plan, until the owner finishes the
+cutover runbook (checked 2026-11-01). One line per stream; the lead updates these lines when a chunk merges.
 
 <!-- PROGRAM:coaching-platform-2026-10 -->
 - program: P0 (contracts, migration-order CI check) live (#102).
@@ -33,7 +34,16 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   Anthropic directly, USD 1.97 in two runs): `docs/reviews/2026-10-31-coach-simulation.md`; fixes
   in #187: a too-early block says when to ask, `focus` is the kind for a stalled lift; three guard
   relaxations (rep-notation loads, half-minute rests, sentence-case ISSN) were held back after
-  review found false negatives, so those refusals still fail closed. Handoff:
+  review found false negatives, so those refusals still fail closed. Meal photos read packs and
+  nutrition labels (2026-11-01, branch `claude/meal-label-claude`, migration `20261101100000`, in
+  review): on the Claude path one answer says whether the photo is a plate, a pack front or a
+  nutrition label and copies the printed values; code checks the label arithmetic, works out the
+  portions (1 serving, whole pack, grams) and sets the confidence from the source (From label,
+  Label unclear, Estimated); the model's notes are stored and shown; the Groq path is unchanged
+  until the cutover. Cutover readiness checked: Coach chat and daily decision are on Anthropic;
+  meal photos, the physique check and onboarding need only the owner's evals, secrets and (for the
+  two photo features) new notices, as the runbook's "State on 2026-11-01" lists. Barcode lookup is a
+  later step. Handoff:
   [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
   sources; nothing reads it until B2). Phase 3 round 1 merged (2026-10-17): B2 templates and

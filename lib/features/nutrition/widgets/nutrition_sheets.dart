@@ -8,6 +8,7 @@ import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
 import 'package:uuid/uuid.dart';
 import 'package:tracend/shared/diagnostics.dart';
 
@@ -508,8 +509,15 @@ class _CandidateSheetState extends State<CandidateSheet> {
             child: HideKeyboardButton(),
           ),
           Text(
-            'These are estimates from your photo. Check portions, oil, '
-            'sauces, and hidden ingredients, then confirm only what you ate.',
+            widget.candidates.any(
+                  (candidate) => candidate.source == MealSource.label,
+                )
+                ? 'Values read from a label can still be misread. Check the '
+                      'name, the numbers and how much you ate, then confirm '
+                      'only what you ate.'
+                : 'These are estimates from your photo. Check portions, oil, '
+                      'sauces, and hidden ingredients, then confirm only what '
+                      'you ate.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: TracendSpacing.md),
@@ -571,6 +579,14 @@ class _CandidateEditorState extends State<CandidateEditor> {
     text: _shown(widget.candidate.carbohydrate),
   );
   late final _fat = TextEditingController(text: _shown(widget.candidate.fat));
+  late PortionKind _portion = initialPortionKind(
+    portionGrams: widget.candidate.portionGrams,
+    servingGrams: widget.candidate.servingGrams,
+    packGrams: widget.candidate.packGrams,
+  );
+  late final _grams = TextEditingController(
+    text: gramsText(widget.candidate.portionGrams ?? 100),
+  );
   bool _expanded = false;
 
   /// A value as the field shows it: whole, or to one decimal.
@@ -594,6 +610,7 @@ class _CandidateEditorState extends State<CandidateEditor> {
       _protein,
       _carbs,
       _fat,
+      _grams,
     ]) {
       controller.dispose();
     }
@@ -639,6 +656,41 @@ class _CandidateEditorState extends State<CandidateEditor> {
     );
   }
 
+  /// The largest portion the chooser recalculates: the most one meal row
+  /// holds.
+  static const _maxGrams = 5000.0;
+
+  String? _gramsError(String? value) {
+    final grams = parseDecimal(value);
+    if (grams == null || grams <= 0 || grams > _maxGrams) {
+      return 'Enter 1 to 5000 g';
+    }
+    final calories = widget.candidate.perGram?.scale(grams).calories ?? 0;
+    return calories > 5000 ? 'That is more than one meal can hold' : null;
+  }
+
+  /// Recalculates every value from the stored per-gram values for the chosen
+  /// portion. The fields stay editable afterwards.
+  void _choosePortion(PortionKind kind) {
+    final grams = switch (kind) {
+      PortionKind.serving => widget.candidate.servingGrams,
+      PortionKind.pack => widget.candidate.packGrams,
+      PortionKind.grams => parseDecimal(_grams.text),
+    };
+    setState(() => _portion = kind);
+    final perGram = widget.candidate.perGram;
+    if (grams == null || perGram == null || _gramsError('$grams') != null) {
+      return;
+    }
+    final values = perGram.scale(grams);
+    _serving.text = portionLabel(kind, grams);
+    _calories.text = _shown(values.calories);
+    _protein.text = _shown(values.protein);
+    _carbs.text = _shown(values.carbohydrate);
+    _fat.text = _shown(values.fat);
+    _notify();
+  }
+
   /// Closing the editor hides its fields, and hidden fields are not checked
   /// when the sheet confirms; so a value that cannot be confirmed keeps the
   /// editor open, with its message.
@@ -664,6 +716,27 @@ class _CandidateEditorState extends State<CandidateEditor> {
           ),
           onChanged: (value) => widget.onSelected(value ?? false),
         ),
+        if (widget.candidate.source case final source?)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: MealSourceBadge(source: source),
+          ),
+        if (widget.candidate.labelIssues.isNotEmpty) ...[
+          const SizedBox(height: TracendSpacing.xs),
+          LabelIssuesNote(issues: widget.candidate.labelIssues),
+        ],
+        if (widget.selected && widget.candidate.perGram != null) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          _portionChooser(context),
+        ],
+        if (widget.candidate.assumptions.isNotEmpty ||
+            widget.candidate.question.isNotEmpty) ...[
+          const SizedBox(height: TracendSpacing.xs),
+          MealModelNotes(
+            assumptions: widget.candidate.assumptions,
+            question: widget.candidate.question,
+          ),
+        ],
         Align(
           alignment: Alignment.centerLeft,
           child: TextButton.icon(
@@ -718,6 +791,48 @@ class _CandidateEditorState extends State<CandidateEditor> {
     ),
   );
 
+  Widget _portionChooser(BuildContext context) {
+    final options = portionOptions(
+      servingGrams: widget.candidate.servingGrams,
+      packGrams: widget.candidate.packGrams,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'How much did you eat?',
+          style: Theme.of(context).textTheme.labelLarge,
+        ),
+        const SizedBox(height: TracendSpacing.xs),
+        TracendSegmentedControl<PortionKind>(
+          segments: [
+            for (final option in options)
+              (
+                option.kind,
+                option.kind == PortionKind.serving ? '1 serving' : 'Whole pack',
+              ),
+            (PortionKind.grams, 'Grams'),
+          ],
+          selected: _portion,
+          onChanged: _choosePortion,
+        ),
+        if (_portion == PortionKind.grams) ...[
+          const SizedBox(height: TracendSpacing.xs),
+          TextFormField(
+            key: const ValueKey('portion-grams'),
+            controller: _grams,
+            decoration: const InputDecoration(labelText: 'Grams eaten'),
+            keyboardType: decimalKeyboard,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+            validator: _gramsError,
+            onTapOutside: dismissKeyboard,
+            onChanged: (_) => _choosePortion(PortionKind.grams),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _numberField(TextEditingController controller, String label) =>
       TextFormField(
         controller: controller,
@@ -730,4 +845,114 @@ class _CandidateEditorState extends State<CandidateEditor> {
           setState(() {});
         },
       );
+}
+
+/// "From label", "Label unclear" or "Estimated": where a candidate's values
+/// came from, as the server worked it out.
+class MealSourceBadge extends StatelessWidget {
+  const MealSourceBadge({required this.source, super.key});
+
+  final MealSource source;
+
+  static String label(MealSource source) => switch (source) {
+    MealSource.label => 'From label',
+    MealSource.labelUnverified => 'Label unclear',
+    MealSource.estimate => 'Estimated',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    final (background, foreground) = switch (source) {
+      MealSource.label => (colors.accentSignalTint, colors.accentSignalInk),
+      MealSource.labelUnverified => (
+        colors.surfaceRaised,
+        colors.stateAttention,
+      ),
+      MealSource.estimate => (colors.surfaceRaised, colors.textSecondary),
+    };
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(TracendRadii.pill),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: TracendSpacing.xs,
+          vertical: TracendSpacing.xxs,
+        ),
+        child: Text(
+          label(source),
+          style: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(color: foreground),
+        ),
+      ),
+    );
+  }
+}
+
+/// Why a label's numbers were not trusted, one line per failed check.
+class LabelIssuesNote extends StatelessWidget {
+  const LabelIssuesNote({required this.issues, super.key});
+
+  final List<String> issues;
+
+  static String message(String issue) => switch (issue) {
+    'energy_mismatch' =>
+      "The calories don't match the protein, carbs and fat on the label.",
+    'basis_mismatch' => "The per-serving and per-100 g columns don't agree.",
+    'pack_mismatch' =>
+      "Servings times serving size doesn't match the pack weight.",
+    'energy_not_printed' =>
+      'No calories were read, so they were calculated from protein, carbs '
+          'and fat.',
+    'serving_size_missing' =>
+      'No serving weight was read, so other portions cannot be calculated.',
+    'values_implausible' => 'Some values read from the label look impossible.',
+    'values_not_printed' =>
+      'No nutrition values could be read, so these are estimates.',
+    _ => 'Something on the label could not be checked.',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodySmall?.copyWith(
+      color: context.tracendColors.stateAttention,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Check these numbers against the pack:', style: style),
+        for (final issue in issues) Text('• ${message(issue)}', style: style),
+      ],
+    );
+  }
+}
+
+/// What the model assumed and what it asks, shown as it wrote them.
+class MealModelNotes extends StatelessWidget {
+  const MealModelNotes({
+    required this.assumptions,
+    required this.question,
+    super.key,
+  });
+
+  final List<String> assumptions;
+  final String question;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: context.tracendColors.textSecondary);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (assumptions.isNotEmpty)
+          Text('Assumed: ${assumptions.join('; ')}', style: style),
+        if (question.isNotEmpty) Text('Question: $question', style: style),
+      ],
+    );
+  }
 }

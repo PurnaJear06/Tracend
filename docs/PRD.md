@@ -231,13 +231,29 @@ user's confirmation. HealthKit data never silently changes adherence.
 
 ### 4.6 Meal photo and nutrition confirmation
 
-1. The user uploads or captures a meal photo.
+1. The user uploads or captures a meal photo: a plate, the front of a packaged product, or a
+   product's printed nutrition table.
 2. AI proposes visible foods, preparation assumptions, portion estimates, confidence, and questions.
-3. The user adds, removes, edits, or confirms foods and portions.
-4. Confirmed items are matched to the hybrid food catalog and macros are calculated from catalog
-   values.
-5. Only confirmed items count toward daily nutrition totals.
-6. A confirmed home meal can be saved as a reusable personal food or recipe.
+   For a pack or a nutrition table it copies what is printed (product name and brand, net weight,
+   serving size, servings per pack, and the per 100 g and per-serving values); it never names a
+   product or a value from memory.
+3. Deterministic code, never the model, checks a label's arithmetic (energy against protein,
+   carbohydrate and fat; the per-serving column against the per 100 g column; servings times
+   serving size against the net weight), works out the portions (one serving, the whole pack, or
+   any grams) from per-gram values, and sets the confidence from the source: **From label** when a
+   label passes its checks, **Label unclear** when it does not (each failed check is named),
+   **Estimated** for a plate or the front of a pack (never high confidence). The model's
+   assumptions and question are shown with each candidate.
+4. The user adds, removes, edits, or confirms foods and portions; for a pack or label a portion
+   chooser recalculates every value from the stored per-gram values. Nothing counts until the
+   user confirms it.
+5. **Not built: the hybrid food catalog.** The intended step, matching confirmed items to a food
+   catalog and calculating macros from catalog values, does not exist. Until it does, the confirmed
+   values are the ones the user confirms: a checked nutrition label read from the photo (the interim
+   path for packaged foods) or the model's estimate, as edited. Barcode lookup (for example Open
+   Food Facts) is a later step that would feed that catalog.
+6. Only confirmed items count toward daily nutrition totals.
+7. A confirmed home meal can be saved as a reusable personal food or recipe.
 
 Confirmed daily logs remain available by date after the coaching day changes; midnight changes the
 default day but never deletes or visually strands history.

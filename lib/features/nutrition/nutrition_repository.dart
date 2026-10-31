@@ -2,11 +2,13 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/consent/photo_ai_notice.dart';
+import 'package:tracend/features/nutrition/meal_portions.dart';
 import 'package:tracend/shared/shared_reads.dart';
 import 'package:uuid/uuid.dart';
 import 'package:tracend/shared/diagnostics.dart';
 
 export 'package:tracend/features/consent/photo_ai_notice.dart';
+export 'package:tracend/features/nutrition/meal_portions.dart';
 
 class NutritionSummary {
   const NutritionSummary({
@@ -236,6 +238,31 @@ class MealSaveOutcomeUnknown implements Exception {
   String toString() => 'MealSaveOutcomeUnknown';
 }
 
+/// Where a candidate's values came from (`meal_analysis_candidates.source`).
+enum MealSource {
+  /// Printed nutrition values that passed the server's arithmetic checks.
+  label,
+
+  /// Printed values that did not pass them; [MealCandidate.labelIssues] says
+  /// which.
+  labelUnverified,
+
+  /// The model's estimate (a plate, or the front of a pack).
+  estimate,
+}
+
+MealSource? _mealSource(Object? value) => switch (value) {
+  'label' => MealSource.label,
+  'label_unverified' => MealSource.labelUnverified,
+  'estimate' => MealSource.estimate,
+  _ => null,
+};
+
+double? _number(Object? value) => value is num ? value.toDouble() : null;
+
+List<String> _strings(Object? value) =>
+    value is List ? value.whereType<String>().toList() : const [];
+
 class MealCandidate {
   const MealCandidate({
     required this.id,
@@ -246,7 +273,62 @@ class MealCandidate {
     required this.carbohydrate,
     required this.fat,
     required this.confidence,
+    this.source,
+    this.brand = '',
+    this.perGram,
+    this.servingGrams,
+    this.servingsPerPack,
+    this.packGrams,
+    this.portionGrams,
+    this.assumptions = const [],
+    this.question = '',
+    this.labelIssues = const [],
   });
+
+  /// Maps a `meal_analysis_candidates` row. Rows stored before the packaged
+  /// food columns existed have no source and no notes.
+  factory MealCandidate.fromRow(Map<String, dynamic> row) {
+    final kcal = _number(row['kcal_per_g']);
+    final protein = _number(row['protein_per_g']);
+    final carbohydrate = _number(row['carbohydrate_per_g']);
+    final fat = _number(row['fat_per_g']);
+    return MealCandidate(
+      id: row['id'] as String,
+      name: row['food_label'] as String,
+      servingLabel: row['serving_label'] as String,
+      calories: (row['calories'] as num).toDouble(),
+      protein: (row['protein_g'] as num).toDouble(),
+      carbohydrate: (row['carbohydrate_g'] as num).toDouble(),
+      fat: (row['fat_g'] as num).toDouble(),
+      confidence: row['confidence'] as String,
+      source: _mealSource(row['source']),
+      brand: row['brand'] as String? ?? '',
+      perGram:
+          kcal == null || protein == null || carbohydrate == null || fat == null
+          ? null
+          : PerGramNutrients(
+              kcal: kcal,
+              protein: protein,
+              carbohydrate: carbohydrate,
+              fat: fat,
+            ),
+      servingGrams: _number(row['serving_g']),
+      servingsPerPack: _number(row['servings_per_pack']),
+      packGrams: _number(row['pack_g']),
+      portionGrams: _number(row['portion_g']),
+      assumptions: _strings(row['assumptions']),
+      question: row['question'] as String? ?? '',
+      labelIssues: _strings(row['label_issues']),
+    );
+  }
+
+  /// The columns [MealCandidate.fromRow] reads.
+  static const columns =
+      'id,food_label,serving_label,calories,protein_g,carbohydrate_g,fat_g,'
+      'confidence,source,brand,kcal_per_g,protein_per_g,carbohydrate_per_g,'
+      'fat_per_g,serving_g,servings_per_pack,pack_g,portion_g,assumptions,'
+      'question,label_issues';
+
   final String id;
   final String name;
   final String servingLabel;
@@ -255,6 +337,27 @@ class MealCandidate {
   final double carbohydrate;
   final double fat;
   final String confidence;
+
+  /// Null for a row stored before sources were recorded.
+  final MealSource? source;
+  final String brand;
+
+  /// Present when any portion can be recalculated (a label, or a pack whose
+  /// weight is printed).
+  final PerGramNutrients? perGram;
+  final double? servingGrams;
+  final double? servingsPerPack;
+  final double? packGrams;
+
+  /// The grams the stored values are for.
+  final double? portionGrams;
+
+  /// What the model assumed, and its question for the athlete.
+  final List<String> assumptions;
+  final String question;
+
+  /// The label checks that failed (`energy_mismatch`, …).
+  final List<String> labelIssues;
 
   MealCandidate copyWith({
     String? name,
@@ -272,6 +375,16 @@ class MealCandidate {
     carbohydrate: carbohydrate ?? this.carbohydrate,
     fat: fat ?? this.fat,
     confidence: confidence,
+    source: source,
+    brand: brand,
+    perGram: perGram,
+    servingGrams: servingGrams,
+    servingsPerPack: servingsPerPack,
+    packGrams: packGrams,
+    portionGrams: portionGrams,
+    assumptions: assumptions,
+    question: question,
+    labelIssues: labelIssues,
   );
 
   Map<String, dynamic> toConfirmationJson() => {
@@ -633,25 +746,10 @@ class SupabaseNutritionRepository
   Future<List<MealCandidate>> loadCandidates(String mealId) async {
     final rows = await _client
         .from('meal_analysis_candidates')
-        .select(
-          'id,food_label,serving_label,calories,protein_g,carbohydrate_g,fat_g,confidence',
-        )
+        .select(MealCandidate.columns)
         .eq('meal_id', mealId)
         .order('candidate_order', ascending: true);
-    return rows
-        .map(
-          (row) => MealCandidate(
-            id: row['id'] as String,
-            name: row['food_label'] as String,
-            servingLabel: row['serving_label'] as String,
-            calories: (row['calories'] as num).toDouble(),
-            protein: (row['protein_g'] as num).toDouble(),
-            carbohydrate: (row['carbohydrate_g'] as num).toDouble(),
-            fat: (row['fat_g'] as num).toDouble(),
-            confidence: row['confidence'] as String,
-          ),
-        )
-        .toList();
+    return rows.map(MealCandidate.fromRow).toList();
   }
 
   @override

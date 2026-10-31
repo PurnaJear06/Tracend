@@ -828,6 +828,26 @@ only approved provider and model pairs. User corrections remain unconfirmed unti
 confirmation snapshots them into meal items. An analysis never contributes directly to nutrition
 totals.
 
+Since migration `20261101100000` (packaged products and nutrition labels) a candidate also holds
+what code worked out from the model's answer (`supabase/functions/_shared/meal_vision/packaged.ts`).
+All the columns are additive; rows from before have nulls and empty defaults.
+
+| Column | Meaning |
+| --- | --- |
+| `source` | `label` (printed values that passed the label checks, high confidence), `label_unverified` (printed values that did not, low), `estimate` (a plate or the front of a pack; never high). Null before the migration. `label` and `label_unverified` only on a `nutrition_label`. |
+| `image_kind` | `plate`, `pack_front` or `nutrition_label` (a photo of no food stores nothing). |
+| `brand` | The brand as printed, or `''`. |
+| `kcal_per_g`, `protein_per_g`, `carbohydrate_per_g`, `fat_per_g` | Per gram of food, 4 decimals, all four or none (at most 10 kcal and 1 g). From the label's per 100 g column, else its per-serving column over the serving weight; for a front of pack, the estimate over the printed net weight. |
+| `serving_g`, `servings_per_pack`, `pack_g` | Printed serving weight, servings and net weight (or servings x serving weight). |
+| `portion_g` | The grams the stored values are for (needs per-gram values). The app's portion chooser recalculates from the per-gram values. |
+| `assumptions`, `question` | The model's notes (at most 8, and 500 characters), shown on the review sheet. |
+| `label_issues` | Failed checks: `energy_mismatch`, `basis_mismatch`, `pack_mismatch`, `energy_not_printed`, `serving_size_missing`, `values_implausible`, `values_not_printed`. |
+
+The app reads the rows directly under the owner-read policy (no RPC returns them, so no RPC
+`schema_version` changed). The `meal.photo.candidates_created` audit event adds `schema_version` 2
+and the `image_kind`. Confirmation (`confirm_analyzed_meal`) is unchanged: it stores what the
+athlete confirmed, whatever the source.
+
 ### `meals`
 
 Meal header: local date and time zone, meal type (`breakfast`, `lunch`, `dinner`, `snack`), source,

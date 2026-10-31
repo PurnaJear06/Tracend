@@ -58,7 +58,7 @@ const defaults: Record<Mode, Record<string, string>> = {
   meal: {
     AI_MEAL_VISION_PROVIDER: "anthropic",
     AI_MEAL_VISION_MODEL: "claude-haiku-5-5",
-    AI_MEAL_VISION_MAX_OUTPUT_TOKENS: "1500",
+    AI_MEAL_VISION_MAX_OUTPUT_TOKENS: "2000",
     AI_MEAL_VISION_TIMEOUT_MS: "30000",
   },
   physique: {
@@ -186,8 +186,17 @@ async function mealItems(folder: string, io: CheckIo): Promise<Item[] | string> 
           check.log(
             `  - ${food.name} | ${food.serving_label} | ${food.calories} kcal, ` +
               `P ${food.protein_g} g, C ${food.carbohydrate_g} g, F ${food.fat_g} g | ` +
-              `confidence ${food.confidence}`,
+              `confidence ${food.confidence} | ${food.image_kind}, ${food.source}`,
           );
+          if (food.kcal_per_g !== null) {
+            check.log(
+              `      per gram ${food.kcal_per_g} kcal; serving ${food.serving_g ?? "-"} g, ` +
+                `pack ${food.pack_g ?? "-"} g, ${food.servings_per_pack ?? "-"} servings`,
+            );
+          }
+          if (food.label_issues.length > 0) {
+            check.log(`      label checks failed: ${food.label_issues.join(", ")}`);
+          }
           if (food.assumptions.length > 0) {
             check.log(`      assumed: ${food.assumptions.join("; ")}`);
           }

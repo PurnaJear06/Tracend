@@ -1,0 +1,104 @@
+{
+  "_comment": "The 31 Oct 2026 regression case: a Nestle Munch Max Nuts bar's nutrition table (typical printed values; 1 serving is half the 37.4 g bar). 'answer' is the model's reading as the gateway schema returns it; 'portion_options' and 'stored' are what deterministic code must make of it (packaged_test.ts), and the app's portion chooser must give the same numbers (test/meal_portion_test.dart). 'live_answer' is the per-serving reading the live Groq path stored that day (85 kcal for macros worth 102 kcal), read as a label.",
+  "answer": {
+    "image_kind": "nutrition_label",
+    "product_name": "Munch Max Nuts",
+    "brand": "Nestlé",
+    "net_weight_g": 37.4,
+    "servings_per_pack": 2,
+    "serving_size_g": 18.7,
+    "serving_text": "1/2 bar (18.7 g)",
+    "has_per_100g": true,
+    "per_100g_kcal": 523,
+    "per_100g_protein_g": 8.2,
+    "per_100g_carbohydrate_g": 57.6,
+    "per_100g_fat_g": 28.9,
+    "has_per_serving": true,
+    "per_serving_kcal": 98,
+    "per_serving_protein_g": 1.5,
+    "per_serving_carbohydrate_g": 10.8,
+    "per_serving_fat_g": 5.4,
+    "candidates": [
+      {
+        "name": "Munch Max Nuts",
+        "serving_label": "1/2 bar (18.7 g)",
+        "calories": 98,
+        "protein_g": 1.5,
+        "carbohydrate_g": 10.8,
+        "fat_g": 5.4,
+        "confidence": "high",
+        "assumptions": ["Values copied from the printed nutrition table"],
+        "question": "Did you eat the whole bar (2 servings) or half of it?"
+      }
+    ]
+  },
+  "portion_options": [
+    {
+      "kind": "serving",
+      "grams": 18.7,
+      "label": "1 serving (18.7 g)",
+      "nutrients": { "kcal": 97.8, "protein_g": 1.5, "carbohydrate_g": 10.8, "fat_g": 5.4 }
+    },
+    {
+      "kind": "pack",
+      "grams": 37.4,
+      "label": "Whole pack (37.4 g)",
+      "nutrients": { "kcal": 195.6, "protein_g": 3.1, "carbohydrate_g": 21.5, "fat_g": 10.8 }
+    }
+  ],
+  "stored": {
+    "name": "Nestlé Munch Max Nuts",
+    "serving_label": "Whole pack (37.4 g)",
+    "calories": 195.6,
+    "protein_g": 3.1,
+    "carbohydrate_g": 21.5,
+    "fat_g": 10.8,
+    "confidence": "high",
+    "source": "label",
+    "image_kind": "nutrition_label",
+    "brand": "Nestlé",
+    "kcal_per_g": 5.23,
+    "protein_per_g": 0.082,
+    "carbohydrate_per_g": 0.576,
+    "fat_per_g": 0.289,
+    "serving_g": 18.7,
+    "servings_per_pack": 2,
+    "pack_g": 37.4,
+    "portion_g": 37.4,
+    "assumptions": ["Values copied from the printed nutrition table"],
+    "question": "Did you eat the whole bar (2 servings) or half of it?",
+    "label_issues": []
+  },
+  "live_answer": {
+    "image_kind": "nutrition_label",
+    "product_name": "Nestle Milk & Nuts (Peanuts) Bar",
+    "brand": "",
+    "net_weight_g": 0,
+    "servings_per_pack": 0,
+    "serving_size_g": 18.7,
+    "serving_text": "1/2 Bar (18.7 g)",
+    "has_per_100g": false,
+    "per_100g_kcal": 0,
+    "per_100g_protein_g": 0,
+    "per_100g_carbohydrate_g": 0,
+    "per_100g_fat_g": 0,
+    "has_per_serving": true,
+    "per_serving_kcal": 85,
+    "per_serving_protein_g": 1.5,
+    "per_serving_carbohydrate_g": 8.7,
+    "per_serving_fat_g": 6.8,
+    "candidates": [
+      {
+        "name": "Nestle Milk & Nuts (Peanuts) Bar",
+        "serving_label": "1/2 Bar (18.7 g)",
+        "calories": 85,
+        "protein_g": 1.5,
+        "carbohydrate_g": 8.7,
+        "fat_g": 6.8,
+        "confidence": "high",
+        "assumptions": [],
+        "question": ""
+      }
+    ]
+  }
+}
