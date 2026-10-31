@@ -9,6 +9,7 @@ import 'package:tracend/features/coach/proposals/coach_proposal_repository.dart'
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/readiness/day_adjustment_card.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
+import 'package:tracend/features/readiness/pain_reporting.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/train/active_workout_screen.dart';
@@ -59,8 +60,12 @@ class TrainScreen extends StatefulWidget {
     this.proposals,
     this.onTalkToCoach,
     this.onCheckIn,
+    this.pain,
     super.key,
   });
+
+  /// Sends the pain check made during a workout started from here.
+  final PainReporting? pain;
 
   /// Today's same-day readiness adjustment, shared with Today. Null without a
   /// backend, where there is none.
@@ -460,6 +465,7 @@ class _TrainScreenState extends State<TrainScreen> {
       workout: workout,
       repository: _source,
       sessionDate: date,
+      pain: widget.pain,
     );
     if (readiness != null) unawaited(readiness.load());
     if (completed && mounted) {

@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/account/notification_repository.dart';
+import 'package:tracend/features/readiness/pain_reporting.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/train/active_workout_screen.dart';
 import 'package:tracend/features/train/exercise_history.dart';
@@ -24,6 +25,7 @@ import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
 
 import 'live_activity/fake_workout_activity_bridge.dart';
+import 'pain_fakes.dart';
 import 'widgets/haptics_recorder.dart';
 
 const _workout = PlannedWorkout(
@@ -350,6 +352,7 @@ Future<void> _open(
   WorkoutEventHub? events,
   PlannedWorkout workout = _workout,
   WatchWorkoutPromptSource? watchPrompt,
+  PainReporting? pain,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -375,6 +378,7 @@ Future<void> _open(
                     activity: h.activity,
                     lockScreenNumbers: () async => h.lockNumbers,
                     watchPrompt: watchPrompt,
+                    pain: pain,
                   ),
                 ),
               );
@@ -2289,10 +2293,22 @@ void main() {
   testWidgets('skipped lives in the more menu; pain stays visible', (
     tester,
   ) async {
+    SharedPreferences.setMockInitialValues({});
     final h = _Harness();
-    await _open(tester, h);
+    final pain = PainReporting(repository: FakePainCheckRepository());
+    await _open(tester, h, pain: pain);
     expect(find.text('Pain or discomfort'), findsOneWidget);
     await _tapLabel(tester, 'Pain or discomfort');
+    await _tapLabel(tester, 'Where?: Shoulder');
+    await _tapLabel(tester, 'Pain 2 of 10');
+    await _tapLabel(
+      tester,
+      'Was it sharp or sudden, or did you feel a pop?: No',
+    );
+    await _tapLabel(tester, 'Any numbness or tingling?: No');
+    await _tap(tester, find.text('Check this exercise'));
+    expect(find.text('Keep it light'), findsOneWidget);
+    await _tap(tester, find.text('Continue'));
     expect(find.text('Pain noted'), findsOneWidget);
 
     await _tapLabel(tester, 'More for Bench press');

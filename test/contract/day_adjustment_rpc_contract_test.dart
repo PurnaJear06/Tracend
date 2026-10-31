@@ -25,6 +25,7 @@ void main() {
     'day_adjustment_v1_0_unknown',
     'respond_to_day_adjustment_v1_0',
   ];
+  const v11 = ['day_adjustment_v1_1_joint', 'day_adjustment_v1_1_red_flag'];
 
   group('the app reads every 1.0 payload', () {
     for (final name in names) {
@@ -42,7 +43,11 @@ void main() {
       final reduce = read('day_adjustment_v1_0_reduce');
       expect(reduce.kind, DayAdjustmentKind.reduceSets);
       expect([reduce.setsTotalFrom, reduce.setsTotalTo], [9, 7]);
-      expect(reduce.options.map((o) => o.kind), DayAdjustmentKind.values);
+      expect(reduce.options.map((o) => o.kind), [
+        DayAdjustmentKind.holdLoad,
+        DayAdjustmentKind.reduceSets,
+        DayAdjustmentKind.swapToEasyCardio,
+      ]);
       final cardio = read('day_adjustment_v1_0_cardio');
       expect(cardio.cardio?.minutesMin, 20);
       expect(cardio.cardio?.minutesMax, 30);
@@ -70,23 +75,50 @@ void main() {
       expect(DayAdjustment.tryParse(json), isNull);
     });
 
-    test('the 1.1 joint payload reads; its kind is one this build cannot '
-        'apply', () {
+    for (final name in v11) {
+      test('$name (1.1) reads', () {
+        final adjustment = DayAdjustment.tryParse(_fixture(name));
+        expect(adjustment, isNotNull);
+        expect(adjustment!.localDate, '2026-10-24');
+      });
+    }
+
+    test('the 1.1 joint payload is a kind this build applies', () {
       final adjustment = DayAdjustment.tryParse(
         _fixture('day_adjustment_v1_1_joint'),
       )!;
-      expect(adjustment.unsupportedKind, isTrue);
-      expect(adjustment.kind, isNull);
+      expect(adjustment.unsupportedKind, isFalse);
+      expect(adjustment.kind, DayAdjustmentKind.jointAdjust);
       expect(adjustment.band, DayBand.green);
       expect(adjustment.explanation, contains('shoulder'));
-      expect(adjustment.changes, isEmpty);
-      expect(adjustment.appliedChanges, isEmpty);
-      // The option of an unknown kind is skipped; the known ones stay.
+      final change = adjustment.changes.single;
+      expect(change.jointAction, JointAction.limit);
+      expect(change.joint, PainArea.shoulder);
+      expect(change.rangeNoteCodes, ['shoulder_press_depth']);
       expect(adjustment.options.map((o) => o.kind), [
         DayAdjustmentKind.reduceSets,
         DayAdjustmentKind.swapToEasyCardio,
+        DayAdjustmentKind.jointAdjust,
       ]);
-      expect(dayCardState(adjustment), DayCardState.note);
+      final state = adjustment.jointStates.single;
+      expect(state.area, PainArea.shoulder);
+      expect(state.state, JointStateKind.watch);
+      expect(state.persistent, isFalse);
+      final bench = adjustment.jointOptionsFor(1)!;
+      expect(bench.options[PainArea.shoulder]!.slug, 'machine-chest-press');
+      expect(bench.options.containsKey(PainArea.knee), isFalse);
+      expect(dayCardState(adjustment), DayCardState.proposed);
+    });
+
+    test('the 1.1 red-flag payload carries its held area', () {
+      final adjustment = DayAdjustment.tryParse(
+        _fixture('day_adjustment_v1_1_red_flag'),
+      )!;
+      final state = adjustment.jointStates.single;
+      expect(state.area, PainArea.knee);
+      expect(state.state, JointStateKind.held);
+      expect(state.holdOutcome, 'clinician_today');
+      expect(state.isReminderHold, isFalse);
     });
 
     test('the 1.1 red-flag payload keeps its safety route', () {
@@ -141,7 +173,10 @@ void main() {
     test('a read sends the day as given, as a plain date', () async {
       await repository().load(DateTime(2026, 10, 24));
       expect(calls.single.$1, 'get_my_day_adjustment_v1');
-      expect(calls.single.$2, {'local_date': '2026-10-24'});
+      expect(calls.single.$2, {
+        'local_date': '2026-10-24',
+        'supports_joint_changes': true,
+      });
     });
 
     test(
@@ -158,15 +193,42 @@ void main() {
         expect(calls.map((c) => c.$1).toSet(), {
           'respond_to_day_adjustment_v1',
         });
-        expect(calls[0].$2, {'local_date': '2026-10-24', 'accept': true});
+        expect(calls[0].$2, {
+          'local_date': '2026-10-24',
+          'accept': true,
+          'supports_joint_changes': true,
+        });
         expect(calls[1].$2, {
           'local_date': '2026-10-24',
           'accept': true,
           'chosen_kind': 'hold_load',
+          'supports_joint_changes': true,
         });
-        expect(calls[2].$2, {'local_date': '2026-10-24', 'accept': false});
+        expect(calls[2].$2, {
+          'local_date': '2026-10-24',
+          'accept': false,
+          'supports_joint_changes': true,
+        });
       },
     );
+
+    test('every read and every answer says the app handles joint changes, '
+        'never one without the other', () async {
+      final repo = repository();
+      await repo.load(DateTime(2026, 10, 24));
+      await repo.respond(DateTime(2026, 10, 24), accept: true);
+      await repo.respond(DateTime(2026, 10, 24), accept: false);
+      await repo.respond(
+        DateTime(2026, 10, 24),
+        accept: true,
+        chosen: DayAdjustmentKind.jointAdjust,
+      );
+      expect(calls, hasLength(4));
+      for (final call in calls) {
+        expect(call.$2['supports_joint_changes'], isTrue, reason: call.$1);
+      }
+      expect(calls.last.$2['chosen_kind'], 'joint_adjust');
+    });
 
     for (final (code, read, answered) in [
       ('22023', DayAdjustmentFailure.wrongDate, DayAdjustmentFailure.refused),

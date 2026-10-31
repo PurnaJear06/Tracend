@@ -364,7 +364,8 @@ class _DecisionCoachRepository implements CoachRepository {
   Future<CoachDecision?> loadLatest() async => _decision();
 
   @override
-  Future<CoachDecision> generate() => throw StateError('not needed');
+  Future<CoachDecision> generate({String? localDate}) =>
+      throw StateError('not needed');
 
   @override
   Future<Map<String, dynamic>> loadUsage() async => const {};

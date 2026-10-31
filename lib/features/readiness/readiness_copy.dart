@@ -16,7 +16,6 @@ const trainAsPlanned = 'Train as planned';
 const talkToCoach = 'Talk to Coach';
 const checkInLabel = 'Check in';
 const undoLabel = 'Undo';
-const gotItLabel = 'Got it';
 const changeLabel = 'Change';
 const otherOptionsLabel = 'Other options';
 const chooseYourselfLabel = 'Or choose for yourself';
@@ -28,6 +27,7 @@ String kindTitle(DayAdjustmentKind kind) => switch (kind) {
   DayAdjustmentKind.holdLoad => 'Hold your weights today',
   DayAdjustmentKind.reduceSets => 'One set fewer today',
   DayAdjustmentKind.swapToEasyCardio => 'Easy cardio instead today',
+  DayAdjustmentKind.jointAdjust => 'Easier on your joints today',
 };
 
 /// The primary button when the rules propose [kind].
@@ -35,6 +35,7 @@ String kindAcceptLabel(DayAdjustmentKind kind) => switch (kind) {
   DayAdjustmentKind.holdLoad => 'Hold weights',
   DayAdjustmentKind.reduceSets => 'Use lighter session',
   DayAdjustmentKind.swapToEasyCardio => 'Swap to easy cardio',
+  DayAdjustmentKind.jointAdjust => 'Use these changes',
 };
 
 /// A choice in a list the athlete picks from.
@@ -42,6 +43,7 @@ String kindChoiceLabel(DayAdjustmentKind kind) => switch (kind) {
   DayAdjustmentKind.holdLoad => 'Hold your weights',
   DayAdjustmentKind.reduceSets => 'One set fewer',
   DayAdjustmentKind.swapToEasyCardio => 'Easy cardio instead',
+  DayAdjustmentKind.jointAdjust => 'Changes for your joints',
 };
 
 /// "holding your weights": [kind] inside a sentence.
@@ -49,6 +51,7 @@ String kindPhrase(DayAdjustmentKind kind) => switch (kind) {
   DayAdjustmentKind.holdLoad => 'holding your weights',
   DayAdjustmentKind.reduceSets => 'a lighter session',
   DayAdjustmentKind.swapToEasyCardio => 'easy cardio',
+  DayAdjustmentKind.jointAdjust => 'changes for my joints',
 };
 
 /// "fewer sets": [kind] in brackets, for an earlier answer said in words only.
@@ -56,6 +59,7 @@ String kindShort(DayAdjustmentKind kind) => switch (kind) {
   DayAdjustmentKind.holdLoad => 'weights held',
   DayAdjustmentKind.reduceSets => 'fewer sets',
   DayAdjustmentKind.swapToEasyCardio => 'easy cardio',
+  DayAdjustmentKind.jointAdjust => 'joint changes',
 };
 
 /// The title once [kind] is accepted and can still be changed.
@@ -63,6 +67,7 @@ String kindAppliedTitle(DayAdjustmentKind kind) => switch (kind) {
   DayAdjustmentKind.holdLoad => 'Weights held for today.',
   DayAdjustmentKind.reduceSets => 'Lighter session set for today.',
   DayAdjustmentKind.swapToEasyCardio => 'Easy cardio set for today.',
+  DayAdjustmentKind.jointAdjust => 'Joint changes set for today.',
 };
 
 /// The title of an accepted answer once the session started: read only.
@@ -70,6 +75,7 @@ String kindBegunTitle(DayAdjustmentKind kind) => switch (kind) {
   DayAdjustmentKind.holdLoad => 'Weights held today',
   DayAdjustmentKind.reduceSets => 'Lighter session today',
   DayAdjustmentKind.swapToEasyCardio => 'Easy cardio chosen today',
+  DayAdjustmentKind.jointAdjust => 'Joint changes today',
 };
 
 const declinedTitle = 'Training as planned today.';
@@ -131,43 +137,6 @@ String previousAnswerLine(PreviousDayAnswer previous) {
   }
   return '$why, so Tracend looked again.';
 }
-
-/// The sheet shown for a day with a safety route: no training choice.
-typedef SafetyWords = ({String title, String body});
-
-const SafetyWords _urgentWords = (
-  title: 'Get medical help now',
-  body:
-      'What you described needs urgent care. Call your local emergency '
-      'number or go to an emergency department now. Tracend will not '
-      "suggest any training until you've been seen.",
-);
-
-/// A route this build does not know (a later server version) is read as the
-/// strictest one, so a referral is never softened by an old build.
-SafetyWords safetyWords(String route) => switch (route) {
-  'pain_referral' => (
-    title: "Don't train through this pain",
-    body:
-        'Pain of 7 or more is too high to train through. Rest the area and '
-        'see a doctor or physio before you train it again. Get seen today if '
-        "it's sharp, getting worse, or you can't move it.",
-  ),
-  'urgent' => _urgentWords,
-  'clinician_today' => (
-    title: 'Get this checked today',
-    body:
-        'Please see a doctor or physio today, before you train this area '
-        'again. Tracend leaves training aside for today.',
-  ),
-  'clinician' => (
-    title: 'See a doctor or physio',
-    body:
-        'Please book a doctor or physio before you train this area again. '
-        'Tracend leaves training aside for today.',
-  ),
-  _ => _urgentWords,
-};
 
 /// Why an answer or a read did not go through, in words for the card.
 String failureLine(DayAdjustmentFailure failure) => switch (failure) {
@@ -270,6 +239,12 @@ String? basisLine(DayAdjustment adjustment) {
 /// changes it first; nothing is sent for them.
 String coachQuestion(DayAdjustment adjustment) {
   final kind = adjustment.kind;
+  if (kind == DayAdjustmentKind.jointAdjust &&
+      (adjustment.status == DayAdjustmentStatus.proposed ||
+          adjustment.isAccepted)) {
+    return "Tracend changed today's session for my sore joints. Can we talk "
+        'about whether that makes sense?';
+  }
   if (adjustment.status == DayAdjustmentStatus.proposed && kind != null) {
     return 'Tracend suggests ${kindPhrase(kind)} for today because of how I '
         'feel and sleep. Can we talk it through before I decide?';

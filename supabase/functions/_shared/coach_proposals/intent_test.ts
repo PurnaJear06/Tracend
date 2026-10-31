@@ -264,3 +264,31 @@ Deno.test("the intent schema has every property required and no union", () => {
   assertEquals(Object.keys(item.properties), [...item.required]);
   assertEquals(item.properties.params.items.properties.name.enum, [...proposalParamNames]);
 });
+
+// Captured from the answer bank on 2026-10-24: "Please update my plan to 4 days a week." The model
+// copies only figures the athlete wrote, so it leaves weeks out; the rules give the default length.
+Deno.test("a new week with no length the athlete gave gets the rules' default length", () => {
+  const parsed = parseCoachProposalIntent(
+    intentFromModel([{
+      kind: "training_schedule",
+      reason: "athlete_request",
+      note: "four days a week",
+      params: [{ name: "days_per_week", value: "4" }],
+    }]),
+  );
+  assert(parsed.ok);
+  assertEquals(parsed.intent, {
+    kind: "training_schedule",
+    reason: "athlete_request",
+    note: "four days a week",
+    daysPerWeek: 4,
+    weeks: 8,
+  });
+  // A length that is given is still checked.
+  for (const weeks of [0, 13, 2.5, "8"]) {
+    assertEquals(
+      parseCoachProposalIntent({ kind: "training_schedule", reason: "time", weeks }).ok,
+      false,
+    );
+  }
+});
