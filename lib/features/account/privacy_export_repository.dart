@@ -26,6 +26,18 @@ class PrivacyExport {
   bool get isReady => status == 'ready';
 }
 
+/// The server answered that the account holds more than an export can carry in memory
+/// (413 `export_too_large`). Trying again cannot help.
+class PrivacyExportTooLarge implements Exception {
+  const PrivacyExportTooLarge();
+
+  static bool matches(FunctionException error) {
+    final details = error.details;
+    return error.status == 413 ||
+        (details is Map && details['error'] == 'export_too_large');
+  }
+}
+
 abstract interface class PrivacyExportRepository {
   Future<PrivacyExport?> load();
   Future<PrivacyExport> request({
@@ -66,10 +78,18 @@ class SupabasePrivacyExportRepository implements PrivacyExportRepository {
       email: email,
       password: accountPassword,
     );
-    final result = await _client.functions.invoke(
-      'privacy-export',
-      body: {'action': 'request', 'password': exportPassword},
-    );
+    final FunctionResponse result;
+    try {
+      result = await _client.functions.invoke(
+        'privacy-export',
+        body: {'action': 'request', 'password': exportPassword},
+      );
+    } on FunctionException catch (error) {
+      if (PrivacyExportTooLarge.matches(error)) {
+        throw const PrivacyExportTooLarge();
+      }
+      rethrow;
+    }
     final body = result.data;
     if (result.status != 200 || body is! Map) {
       throw StateError('Export could not be prepared.');

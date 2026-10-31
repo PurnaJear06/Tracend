@@ -979,11 +979,38 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Opens the brief's workout: the one planned for the date the brief was
-  /// loaded for. A fixture brief carries no workout id, so its repository's
-  /// workout opens instead.
+  /// Opens the workout of the day the server counts. The brief on screen can
+  /// be for the phone's day while the server's brief is still loading (the
+  /// two differ near midnight and across a travelled time zone), and its
+  /// workout is that other day's: it is never started with the server's date.
+  /// The brief for the server's day is loaded first when they differ. A
+  /// fixture brief carries no workout id, so its repository's workout opens
+  /// instead.
   Future<void> _openWorkout(DailyBrief brief) async {
-    final row = brief.workout;
+    final readiness = widget.dayAdjustment;
+    if (readiness != null && readiness.serverDay == null) {
+      await readiness.load();
+      if (!mounted) return;
+    }
+    final serverDay = readiness?.serverDay;
+    var opening = brief;
+    if (serverDay != null && brief.localDate != serverDay) {
+      try {
+        opening = await widget.brief.load(DateTime.parse(serverDay));
+      } catch (e) {
+        debugPrint('Non-critical error: the server day brief not loaded: $e');
+        if (mounted) {
+          TracendToast.show(
+            context,
+            'Today could not load. Try again.',
+            icon: CupertinoIcons.exclamationmark_triangle,
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+    }
+    final row = opening.workout;
     PlannedWorkout? workout;
     if (row != null && row['id'] is String) {
       workout = PlannedWorkout.fromHubJson(row);
@@ -995,6 +1022,10 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       }
     }
     if (workout == null || !mounted) return;
+    final sessionDay =
+        DateTime.tryParse(serverDay ?? '') ??
+        DateTime.tryParse(opening.localDate) ??
+        DateTime.now();
     final completed = await Navigator.of(context).push<bool>(
       CupertinoPageRoute(
         builder: (_) => WorkoutDetailScreen(
@@ -1002,7 +1033,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
           dayAdjustment: widget.dayAdjustment,
           pain: widget.pain,
           workout: workout,
-          sessionDate: DateTime.tryParse(brief.localDate) ?? DateTime.now(),
+          sessionDate: sessionDay,
         ),
       ),
     );

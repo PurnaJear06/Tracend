@@ -193,8 +193,8 @@ See `docs/CI_CD_DEPLOYMENT.md` for full design.
   configured together.
 - **Platform:** iOS only, owner's iPhone 12. No Android. `build ios --release --no-codesign`
   is the compilation gate.
-- **9 Edge Functions:** coach-chat, coach-decide, health-check, health-sync, meal-analyze,
-  meal-media-retention, onboarding-propose-plan, privacy-delete-account, privacy-export.
+- **8 Edge Functions:** coach-chat, coach-decide, health-check, health-sync, meal-analyze,
+  meal-media-retention, privacy-delete-account, privacy-export.
 - **meal-media-retention** validates a `RETENTION_WORKER_SECRET` (not JWT), stored in Edge
   Function secrets + Supabase Vault. Never in Flutter, logs, or committed files.
 - **Sentry:** active in Flutter (`--dart-define SENTRY_DSN=...`) and Edge Functions

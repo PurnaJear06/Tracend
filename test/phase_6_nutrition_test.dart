@@ -72,13 +72,11 @@ void main() {
     expect(find.text('Enter a valid number'), findsNWidgets(4));
   });
 
-  testWidgets('Fixture candidates require explicit confirmation', (
-    tester,
-  ) async {
-    final repository = _NutritionRepository();
+  testWidgets('Draft candidates require explicit confirmation', (tester) async {
+    final repository = _NutritionRepository(includeDraft: true);
     await tester.pumpWidget(_app(repository));
     await tester.pumpAndSettle();
-    await _tapReviewSampleAnalysis(tester);
+    await _reviewDraft(tester);
     expect(find.text('Rice bowl'), findsOneWidget);
     expect(find.text('Confirm selected foods'), findsOneWidget);
     expect(repository.confirmed, isFalse);
@@ -88,13 +86,13 @@ void main() {
     expect(repository.confirmed, isTrue);
   });
 
-  testWidgets('Fixture candidates can be corrected before confirmation', (
+  testWidgets('Draft candidates can be corrected before confirmation', (
     tester,
   ) async {
-    final repository = _NutritionRepository();
+    final repository = _NutritionRepository(includeDraft: true);
     await tester.pumpWidget(_app(repository));
     await tester.pumpAndSettle();
-    await _tapReviewSampleAnalysis(tester);
+    await _reviewDraft(tester);
     await tester.tap(find.text('Edit estimate'));
     await tester.pumpAndSettle();
     final foodName = find.widgetWithText(TextFormField, 'Food name');
@@ -135,9 +133,9 @@ void main() {
   testWidgets('Candidate form dismisses the keyboard outside a field', (
     tester,
   ) async {
-    await tester.pumpWidget(_app(_NutritionRepository()));
+    await tester.pumpWidget(_app(_NutritionRepository(includeDraft: true)));
     await tester.pumpAndSettle();
-    await _tapReviewSampleAnalysis(tester);
+    await _reviewDraft(tester);
     await tester.tap(find.text('Edit estimate'));
     await tester.pumpAndSettle();
     final foodName = find.widgetWithText(TextFormField, 'Food name');
@@ -213,10 +211,10 @@ void main() {
     tester,
   ) async {
     final haptics = recordHaptics(tester);
-    final repository = _NutritionRepository();
+    final repository = _NutritionRepository(includeDraft: true);
     await tester.pumpWidget(_app(repository));
     await tester.pumpAndSettle();
-    await _tapReviewSampleAnalysis(tester);
+    await _reviewDraft(tester);
     expect(haptics, isNot(contains('HapticFeedbackType.successNotification')));
     await tester.ensureVisible(find.text('Confirm selected foods'));
     await tester.tap(find.text('Confirm selected foods'));
@@ -254,10 +252,12 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-    await tester.pumpWidget(_app(_NutritionRepository()));
+    await tester.pumpWidget(_app(_NutritionRepository(includeDraft: true)));
     await tester.pumpAndSettle();
-    await _tapReviewSampleAnalysis(tester);
+    await _reviewDraft(tester);
     expect(tester.takeException(), isNull);
+    await tester.ensureVisible(find.text('Edit estimate'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Edit estimate'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Confirm selected foods'));
@@ -268,9 +268,9 @@ void main() {
   testWidgets('Candidates read their confidence in sentence case', (
     tester,
   ) async {
-    await tester.pumpWidget(_app(_NutritionRepository()));
+    await tester.pumpWidget(_app(_NutritionRepository(includeDraft: true)));
     await tester.pumpAndSettle();
-    await _tapReviewSampleAnalysis(tester);
+    await _reviewDraft(tester);
     expect(find.textContaining('Medium confidence'), findsOneWidget);
     expect(find.textContaining('medium confidence'), findsNothing);
   });
@@ -324,9 +324,17 @@ Future<void> _openLogMeal(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-Future<void> _tapReviewSampleAnalysis(WidgetTester tester) async {
-  await _openLogMeal(tester);
-  await tester.tap(find.text('Review sample analysis'));
+/// Opens the candidate review of the repository's draft meal.
+Future<void> _reviewDraft(WidgetTester tester) async {
+  final reviewButton = find.byKey(const ValueKey('review-meal-draft-1'));
+  await tester.scrollUntilVisible(
+    reviewButton,
+    180,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.ensureVisible(reviewButton);
+  await tester.pumpAndSettle();
+  await tester.tap(reviewButton);
   await tester.pumpAndSettle();
 }
 
@@ -396,12 +404,10 @@ class _NutritionRepository implements NutritionRepository {
     required DateTime date,
     required String mealType,
     required ManualFoodInput food,
+    required String idempotencyKey,
   }) async {}
   @override
-  Future<String> createFixtureMeal({
-    required DateTime date,
-    required String mealType,
-  }) async => 'fixture-1';
+  Future<bool> isMealSaved(String idempotencyKey) async => false;
   @override
   Future<List<MealCandidate>> loadCandidates(String mealId) async => const [
     MealCandidate(

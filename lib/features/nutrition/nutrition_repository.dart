@@ -20,6 +20,35 @@ class NutritionSummary {
   final double carbohydrate;
   final double fat;
   final int confirmedMeals;
+
+  /// Reads `get_my_daily_nutrition` (schema version 1.x; an answer from
+  /// before the field existed reads as 1.0).
+  factory NutritionSummary.fromJson(Object? value) {
+    if (value is! Map || !_isVersionOne(value['schema_version'])) {
+      throw const FormatException('The daily nutrition answer is unreadable.');
+    }
+    return NutritionSummary(
+      calories: (value['calories'] as num).toDouble(),
+      protein: (value['protein_g'] as num).toDouble(),
+      carbohydrate: (value['carbohydrate_g'] as num).toDouble(),
+      fat: (value['fat_g'] as num).toDouble(),
+      confirmedMeals: (value['confirmed_meals'] as num).toInt(),
+    );
+  }
+}
+
+bool _isVersionOne(Object? version) =>
+    version == null || (version is String && version.startsWith('1.'));
+
+/// The meal a photo draft was made for, from `create_meal_photo_draft`
+/// (schema version 1.x).
+String mealIdFromDraft(Object? value) {
+  if (value is! Map ||
+      !_isVersionOne(value['schema_version']) ||
+      value['meal_id'] is! String) {
+    throw const FormatException('The meal photo draft is unreadable.');
+  }
+  return value['meal_id'] as String;
 }
 
 class NutritionTargets {
@@ -148,11 +177,14 @@ abstract interface class NutritionScheduleRepository {
 }
 
 abstract interface class ScheduledMealLogger {
+  /// [idempotencyKey] makes a repeat of the same save return the meal the
+  /// first one wrote.
   Future<void> saveScheduledMeal({
     required DateTime date,
     required String scheduleItemId,
     required String mealType,
     required ManualFoodInput food,
+    required String idempotencyKey,
   });
 }
 
@@ -188,6 +220,19 @@ class MealPhotoFailure implements Exception {
 
   @override
   String toString() => 'MealPhotoFailure($step: $code)';
+}
+
+/// How long a draft meal's photo analysis can take at most; an older draft
+/// without estimates is a failed analysis.
+const mealAnalysisWindow = Duration(minutes: 10);
+
+/// A manual meal save failed and the app could not find out whether the
+/// server wrote it: the meal may or may not exist.
+class MealSaveOutcomeUnknown implements Exception {
+  const MealSaveOutcomeUnknown();
+
+  @override
+  String toString() => 'MealSaveOutcomeUnknown';
 }
 
 class MealCandidate {
@@ -269,15 +314,19 @@ abstract interface class NutritionRepository {
   Future<NutritionTargets?> loadTargets();
   Future<NutritionSummary> loadSummary(DateTime date);
   Future<List<MealEntry>> loadMeals(DateTime date);
+
+  /// [idempotencyKey] makes a repeat of the same save return the meal the
+  /// first one wrote, so a retry after a lost reply adds nothing.
   Future<void> saveManualMeal({
     required DateTime date,
     required String mealType,
     required ManualFoodInput food,
+    required String idempotencyKey,
   });
-  Future<String> createFixtureMeal({
-    required DateTime date,
-    required String mealType,
-  });
+
+  /// Whether a meal saved with [idempotencyKey] exists: how the app learns
+  /// the outcome of a save whose reply was lost. Throws when it cannot ask.
+  Future<bool> isMealSaved(String idempotencyKey);
   Future<List<MealCandidate>> loadCandidates(String mealId);
   Future<void> confirmCandidates(String mealId, List<MealCandidate> candidates);
   Future<void> deleteMeal(String mealId);
@@ -354,43 +403,44 @@ class SupabaseNutritionRepository
       );
     }
     var step = 'draft';
+    String? mealId;
     try {
       final account = await _client
           .from('user_accounts')
           .select('timezone')
           .single();
-      final draft = Map<String, dynamic>.from(
+      final created = mealIdFromDraft(
         await _client.rpc(
-              'create_meal_photo_draft',
-              params: {
-                'meal_date': _dateKey(date),
-                'meal_timezone': account['timezone'] as String? ?? 'UTC',
-                'meal_kind': mealType,
-                'request_idempotency_key': requestId,
-                'object_path': path,
-                'object_content_type': 'image/jpeg',
-                'object_byte_size': bytes.length,
-                'object_checksum': sha256.convert(bytes).toString(),
-              },
-            )
-            as Map,
+          'create_meal_photo_draft',
+          params: {
+            'meal_date': _dateKey(date),
+            'meal_timezone': account['timezone'] as String? ?? 'UTC',
+            'meal_kind': mealType,
+            'request_idempotency_key': requestId,
+            'object_path': path,
+            'object_content_type': 'image/jpeg',
+            'object_byte_size': bytes.length,
+            'object_checksum': sha256.convert(bytes).toString(),
+          },
+        ),
       );
-      final mealId = draft['meal_id'] as String;
+      mealId = created;
       step = 'analysis';
       final response = await _client.functions.invoke(
         'meal-analyze',
-        body: {'schema_version': '1.0', 'meal_id': mealId},
+        body: {'schema_version': '1.0', 'meal_id': created},
       );
       if (response.status != 200) {
         throw MealPhotoFailure(step, '${response.status}');
       }
-      return mealId;
+      return created;
     } catch (error) {
       try {
         await _client.storage.from('meal-images').remove([path]);
       } catch (_) {
         // Best effort: a failed removal must not hide why the photo failed.
       }
+      await _discardDraft(requestId, mealId);
       throw switch (error) {
         MealPhotoFailure() => error,
         FunctionException() => MealPhotoFailure(step, _functionFailure(error)),
@@ -402,6 +452,32 @@ class SupabaseNutritionRepository
       };
     }
   });
+
+  /// A photo that failed leaves no draft behind: without its photo and
+  /// estimates the draft would be a "Needs review" row with nothing to
+  /// review. A draft whose creation reply was lost is found by the key the
+  /// request carried. Best effort: a failure here must not hide why the
+  /// photo failed, and an empty draft that stays can be deleted from its
+  /// sheet.
+  Future<void> _discardDraft(String requestId, String? mealId) async {
+    try {
+      var id = mealId;
+      if (id == null) {
+        final rows = await _client
+            .from('meals')
+            .select('id')
+            .eq('idempotency_key', requestId)
+            .eq('status', 'draft')
+            .limit(1);
+        id = rows.isEmpty ? null : rows.first['id'] as String;
+      }
+      if (id != null) {
+        await _client.rpc('delete_my_meal', params: {'target_meal_id': id});
+      }
+    } catch (error) {
+      debugPrint('Non-critical error: $error');
+    }
+  }
 
   /// `503 meal_analysis_unavailable` from the function's JSON error body.
   static String _functionFailure(FunctionException error) {
@@ -451,6 +527,7 @@ class SupabaseNutritionRepository
     required String scheduleItemId,
     required String mealType,
     required ManualFoodInput food,
+    required String idempotencyKey,
   }) => _reads.afterWrite(() async {
     final account = await _client
         .from('user_accounts')
@@ -462,7 +539,7 @@ class SupabaseNutritionRepository
         'meal_date': _dateKey(date),
         'meal_timezone': account['timezone'] as String? ?? 'UTC',
         'meal_kind': mealType,
-        'request_idempotency_key': _uuid.v4(),
+        'request_idempotency_key': idempotencyKey,
         'item_payload': [food.toJson()],
         'schedule_item_id': scheduleItemId,
         'meal_note': '',
@@ -492,19 +569,11 @@ class SupabaseNutritionRepository
 
   @override
   Future<NutritionSummary> loadSummary(DateTime date) async {
-    final value = Map<String, dynamic>.from(
+    return NutritionSummary.fromJson(
       await _client.rpc(
-            'get_my_daily_nutrition',
-            params: {'target_date': _dateKey(date)},
-          )
-          as Map,
-    );
-    return NutritionSummary(
-      calories: (value['calories'] as num).toDouble(),
-      protein: (value['protein_g'] as num).toDouble(),
-      carbohydrate: (value['carbohydrate_g'] as num).toDouble(),
-      fat: (value['fat_g'] as num).toDouble(),
-      confirmedMeals: (value['confirmed_meals'] as num).toInt(),
+        'get_my_daily_nutrition',
+        params: {'target_date': _dateKey(date)},
+      ),
     );
   }
 
@@ -530,6 +599,7 @@ class SupabaseNutritionRepository
     required DateTime date,
     required String mealType,
     required ManualFoodInput food,
+    required String idempotencyKey,
   }) => _reads.afterWrite(() async {
     final account = await _client
         .from('user_accounts')
@@ -541,7 +611,7 @@ class SupabaseNutritionRepository
         'meal_date': _dateKey(date),
         'meal_timezone': account['timezone'] as String? ?? 'UTC',
         'meal_kind': mealType,
-        'request_idempotency_key': _uuid.v4(),
+        'request_idempotency_key': idempotencyKey,
         'item_payload': [food.toJson()],
         'meal_note': '',
       },
@@ -549,25 +619,14 @@ class SupabaseNutritionRepository
   });
 
   @override
-  Future<String> createFixtureMeal({
-    required DateTime date,
-    required String mealType,
-  }) => _reads.afterWrite(() async {
-    final account = await _client
-        .from('user_accounts')
-        .select('timezone')
-        .single();
-    return await _client.rpc(
-          'create_fixture_meal',
-          params: {
-            'meal_date': _dateKey(date),
-            'meal_timezone': account['timezone'] as String? ?? 'UTC',
-            'meal_kind': mealType,
-            'request_idempotency_key': _uuid.v4(),
-          },
-        )
-        as String;
-  });
+  Future<bool> isMealSaved(String idempotencyKey) async {
+    final rows = await _client
+        .from('meals')
+        .select('id')
+        .eq('idempotency_key', idempotencyKey)
+        .limit(1);
+    return rows.isNotEmpty;
+  }
 
   @override
   Future<List<MealCandidate>> loadCandidates(String mealId) async {
@@ -666,6 +725,7 @@ class FixtureNutritionRepository
     required String scheduleItemId,
     required String mealType,
     required ManualFoodInput food,
+    required String idempotencyKey,
   }) async {}
   @override
   Future<List<MealEntry>> loadMeals(DateTime date) async => const [];
@@ -690,12 +750,10 @@ class FixtureNutritionRepository
     required DateTime date,
     required String mealType,
     required ManualFoodInput food,
+    required String idempotencyKey,
   }) => throw StateError('Configure Supabase to save meals.');
   @override
-  Future<String> createFixtureMeal({
-    required DateTime date,
-    required String mealType,
-  }) => throw StateError('Configure Supabase to analyze meals.');
+  Future<bool> isMealSaved(String idempotencyKey) async => false;
   @override
   Future<List<MealCandidate>> loadCandidates(String mealId) async => const [];
   @override

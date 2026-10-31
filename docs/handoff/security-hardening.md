@@ -228,3 +228,40 @@ again), and run a physique check (its notice is unchanged).
 4. Merge order: #88 → #89 → #90 → #91 → #92, then Dependabot #87 (supabase_flutter 2.18.0),
    then this PR once it is updated onto that `main` (its `pubspec.lock` changes overlap #87's) and
    CI has passed again.
+
+## Privacy export, deletion and retention (2026-10-24, branch `claude/privacy-export-complete`)
+
+- `privacy-export`: `dataTables` now lists every public table with a `user_id` (Coach threads and
+  messages, narrative, summaries, context snapshots, preferences, baselines, computed metrics,
+  nutrition schedules, workout references and reconciliations, AI budget reservations, the athlete's
+  own export and deletion request rows; not `ai_budget_reservations`, excluded with a reason).
+  `collectRows` reads keyset pages (`_shared/paging.ts`: after the last key, stop on an empty page)
+  and drops the columns in `omittedColumns` (snapshot `context`, message diagnostics, internal paths).
+  `export_linked_account_rows_v1` adds the account's invite and waitlist rows. Rows over 16 MiB of
+  JSON or media over 32 MiB fail with `export_too_large`. `coverage_test.ts` parses the
+  migrations; a table with a `user_id` must be exported or listed in `exportExclusions` with a reason
+  (today only `private.day_adjustment_metric_attempts`, a rate-limit counter). A retry after a crash
+  uploads with `upsert`.
+- `privacy-delete-account`: media rows, export rows and the `list_account_storage_objects` result
+  are read page by page (`_shared/paging.ts`).
+- Migration `20261024070000_privacy_retention_recovery.sql` (additive): `claim_data_export` takes a
+  `processing` export older than 15 minutes; `request_my_data_export` marks a `ready` export that is
+  expired or out of downloads as `expired` before looking for an open one;
+  `claim_expired_meal_media` takes `pending_deletion` rows whose new `retention_claimed_at` is older
+  than 30 minutes (or null). `privacy_recovery_test.ts` pins each as the earlier definition plus the
+  intended hunks; `privacy_retention_recovery_test.sql` is the pgTAP.
+- `meal-media-retention`: stages run independently, a failed write-back of one row is counted
+  (`unfinalized`) and the batch goes on, failures reach Sentry as codes and counts, and the bearer
+  secret is compared with `_shared/secret_compare.ts`.
+- No app change: a stuck export now simply succeeds on the athlete's next attempt.
+- Production check (read-only, 2026-10-24): no row is stuck today (0 `pending_deletion` photos, 0
+  `processing` exports, 0 dead `ready` exports). Cron `meal-media-retention-daily` (`15 2 * * *`) is
+  active but was made by hand; the migration now creates it (replacing the hand-made job by name)
+  behind Vault: the deploy workflow stores `meal_media_retention_url`, `retention_worker_secret`
+  stays the owner's. Production snapshot size (read-only): 4 snapshots, 1 account, 33,759 bytes of
+  `context` in total, 10,967 bytes at most per row.
+- Review round 2: omitted columns are never selected (`selectedColumns`, checked against the
+  migrations), the byte budget is counted per page, `export_too_large` answers 413 and the app shows
+  its own message (`PrivacyExportTooLarge`), the cron guard checks `username = current_user`, the
+  hotfix workflow sets the library and retention URLs like the deploy workflow, and
+  `meal_media_retention_set_url` fails when `retention_worker_secret` is not in Vault.

@@ -61,8 +61,15 @@ The pipeline now guards against this:
   compares its files byte for byte with the commit. It retries while a new version propagates.
 - If a function is not live after its deploy, the job deploys it once more. If it is still not live,
   the job fails and the release is not tagged.
-- `Verify Live Functions` runs `scripts/verify-live-function.sh --all` after all deploys, so a
-  function missing from the deploy matrix also fails.
+- `Retire Removed Functions` runs `scripts/retire-functions.sh` after all deploys (in `deploy.yml`
+  and `hotfix.yml`). A function removed from the repository stays deployed until deleted, so its
+  name goes into `scripts/retired-functions.txt` in the same pull request. The job reads
+  `supabase functions list` and deletes exactly the listed names that are still deployed; a name
+  already gone is a no-op, and nothing outside the list is ever deleted. It refuses a listed name
+  that still has a directory.
+- `Verify Live Functions` runs `scripts/verify-live-function.sh --all` after the retire job, so a
+  function missing from the deploy matrix also fails, and so does a deployed function that has no
+  directory and is not in the retired list.
 
 Changing an Edge secret (`supabase secrets set`) also creates a new version of every function, with
 an unchanged `UPDATED_AT`:

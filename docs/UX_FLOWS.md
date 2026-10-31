@@ -190,6 +190,13 @@ sign-in**.
    server refuses for a malformed or professional-first screening sends the athlete back to it (the
    latter with the same guidance and Continue closed). Builds from before the
    health check never send answers; the server reads that as cleared.
+   After onboarding the same four questions reopen from **Account › Plan › Health check**
+   (`record_screening_v1` again). The saved answers show first, with the moderate-effort note when
+   it applies; changing an answer clears the result until **Save answers**. Only the athlete's own
+   updated answers lift the cap or a see-a-professional result, and the outcome is worked out from
+   the current answers exactly as in onboarding (AI_SAFETY_SPEC §7): Tracend never lifts either for
+   them. A plan already approved keeps
+   its effort until it is next changed; new plans and Coach proposals use the new outcome.
 7. Choose whether to allow AI coaching. **Allow AI coaching** and **Not now** are both valid
    answers.
    - The text is the server's current notice (`get_current_ai_notice`). The app records that
@@ -328,6 +335,17 @@ The proposal screen shows, top to bottom:
 request."); it needs a note, which is sent with the next build. **Reject proposal** asks with a
 destructive confirm, **Reject this plan?** (**Reject plan** / **Keep reviewing**); answers stay
 saved and are edited from Review.
+
+If an answer to the proposal fails (a lost reply, a retry refused as stale), the app asks the
+server what it holds before saying anything. A plan that was accepted shows **You're set.**; a
+proposal the server holds as expired, rejected or revision-requested, or a refusal as stale (the
+server's own final answer, even when its status cannot be read), offers the rebuild; one still
+waiting says "Your response was not saved. Nothing has changed; try again."; and when the server
+cannot be read after a plain network error, the app says it could not confirm the response and
+keeps the plan on screen. An accepted plan is **You're set.** whichever answer failed, so the app
+never claims a change that happened is missing and never offers a rebuild that would spend another
+generation. A rejection or
+change request that is recorded goes back to Review even when saving the draft's place fails.
 
 Approval activates exactly those workouts, then shows **You're set.** once: "Your plan is active.
 Nothing else changes without your approval.", the plan, the next session ("Next session: ‹day› ·
@@ -590,6 +608,20 @@ three separate autonomous chatbots.
   late content (a proposal card, a long reply) lays out, until the athlete touches the screen.
   The same 6-hour check runs when the athlete returns to the Coach tab or the app resumes on it,
   unless a reply is on its way or a draft is typed; a chat opened on purpose stays for that visit.
+- **Switching conversations.** Opening a saved conversation clears the messages on screen and
+  shows the loading state; only the latest open applies its result, so tapping B then C shows C,
+  and tapping B then **New conversation** shows an empty new chat, whichever load finishes last. If
+  the conversation cannot be opened, the chat that was open comes back with its messages and its
+  thread, with "Conversation could not be opened." **New conversation** on a chat that is already
+  new keeps offering the same **Continue last chat**. A saved conversation cannot be opened while a
+  reply is on its way ("Coach is still answering. Open another conversation when it’s done."), so a
+  failed open can never lose that reply. A conversation loads its newest 200 messages, starting at
+  a question (an answer whose question was cut is dropped).
+- **A follow-up while Coach is busy.** A suggested next action or **Change it** tapped while a
+  reply is on its way, or during a retry countdown, is not dropped: it shows as "Sends when Coach is
+  ready: ‹text›" with **Cancel**, and goes out when Coach is free. In every other case (Cancel, a
+  failed reply, a newer follow-up, a switch of conversation, AI coaching turned off) the text is put
+  in the composer instead, never lost, and no consent sheet opens by itself.
 - **AI label.** A reply a model wrote carries the small label **AI answer · checked by Tracend**,
   with no provider name (D11). A reply no model wrote (the deterministic safety boundary, stored
   with provider `mock`) reads **Tracend safety answer · not AI** and never carries the AI badge. A
@@ -957,7 +989,15 @@ confirmation actions. The tab reads top to bottom:
     muscles selecting each other, and a note that muscles come from the exercise catalog or
     Tracend's reviewed exercise list.
   - The one action is **Start workout** (heavy haptic), **Log this workout** for a past day with
-    nothing logged, or **View summary** for a done day. The summary sheet shows "Done on ‹date›",
+    nothing logged, **Preview workout** for a day that has not begun (it opens the overview, whose one
+    action is **Do it today**, as does a link under the preview: it starts that workout with today's
+    date; the server refuses a start for a future date), or **View summary** for a
+    done day. A day done under an earlier plan version (a Coach change, a block or a deload copies the
+    workouts) shows as done, with its session. Train shows the weekdays the server holds. A Coach proposal that carries no
+    weekday gets the athlete's training days when they are as many as the workouts, else a spread
+    (two: Monday, Thursday; three: Monday, Wednesday, Friday; four: Monday, Tuesday, Thursday, Friday;
+    one, or five or more, from Monday), so every server reader agrees on the same days. Only a plan
+    with no backend can lack weekdays; its lone workout shows on every day. The summary sheet shows "Done on ‹date›",
     time, sets logged of planned, the athlete's own effort ("N of 10", or "Not rated" for app
     defaults) and **What you logged** per exercise. "Auto-completed from Apple Health. Sets were not
     logged in Tracend." shows only when `completion_source` is `healthkit`.
@@ -1053,7 +1093,10 @@ and a state word, so color is never the only signal:
   sheet holding **Delete meal**. Deletion then requires a destructive confirmation (**Delete this
   meal?**, Cancel as the default) explaining that the meal leaves the day's totals.
 - A draft shows **Needs review** and a **Review foods** action that restores its candidates; users
-  never need to create a second analysis to resume unfinished review.
+  never need to create a second analysis to resume unfinished review. A draft with no estimates (its
+  photo analysis failed earlier) opens a sheet that says there is nothing to review and offers
+  **Delete draft**, instead of a Confirm button that never enables. A draft under 10 minutes old
+  may still be analyzing, so its sheet says to check again and offers no delete.
 - Unlogged slots show **Due now**, **Planned**, **Optional**, or **Not logged** with their planned
   foods and a **Log** action.
 - With nothing logged or planned the timeline reads "Nothing logged yet".
@@ -1064,6 +1107,12 @@ Breakfast before 10:30, Lunch before 15:00, Snack before 17:30, then Dinner) and
 a photo**, **Choose from Photo Library**, or **Enter manually** as one grouped list. A photo meal is
 saved under the chosen type. The coach's nutrition guidance sits at the end of the screen under a
 sentence-case **Coach** label, with its confidence in words.
+
+**Enter manually** keeps its sheet open until the meal is saved. If the save fails, the sheet says
+so and keeps what was typed; **Confirm meal** again repeats the same request key, so a save whose
+reply was lost adds nothing twice, while a changed meal is a new save. After a failure the app asks
+the server whether it wrote the meal: if it did, the sheet closes as saved; if it cannot find out,
+the sheet says the meal "may not have been saved". The day reloads after a failure too.
 
 Feedback: confirming a meal (manual entry or reviewed candidates) plays the `success` haptic and
 shows a **Meal logged** toast; a deleted meal shows **Meal deleted**. Failures stay on the page in
@@ -1118,7 +1167,8 @@ AI observation                 Confirmed meal
   diagnostic · analysis: 503 meal_analysis_unavailable`. No message names a provider.
 - Failure offers **Retry**, **Enter manually**, and **Delete photo**. **Not built yet:** a photo
   failure is a notice in words with its diagnostic; a draft that cannot open says to retry or
-  delete it and enter the meal manually.
+  delete it and enter the meal manually. A failed analysis (503, 429, 422) removes the photo and
+  the draft with it, so no **Needs review** row is left behind.
 
 ## 9. Progress Review
 
@@ -1183,8 +1233,11 @@ detail sheet is read-only, with no protocol and no correction path.
 Guide distance, pose, framing, lighting, clothing consistency, and timing. Retake remains available.
 Physique photos never appear in general dashboard surfaces or notifications.
 
-Capture requires explicit storage consent: an alert, **Save private progress photos?** ("They are
-never sent to an AI model."), with **I agree and continue** and Cancel. It then opens a capture
+Capture requires explicit storage consent: an alert, **Save private progress photos?** (photos are
+stored privately and only the athlete can open them; the text says they are "never sent to an AI
+model" only when the account is known to have no physique check, and otherwise that they are sent
+to an AI model only if the athlete chooses a physique check, which asks for permission first,
+including when the lookup failed), with **I agree and continue** and Cancel. It then opens a capture
 sheet that lists front, side, back, and lower body with framing guidance, a check per finished
 pose, and how many are done. The user explicitly opens the camera or library for a pose; the native
 camera is never launched without this in-app context. Each pose uploads as soon as it is picked.
@@ -1265,6 +1318,11 @@ place a Coach suggestion can be applied, and only the athlete's tap applies it:
   it can no longer be undone from here.
 - A proposal that expired, or whose plan, targets or goal changed meanwhile, is never applied: the
   card says what happened and to ask Coach again.
+- After any error (offline, a timeout, a refused retry) the card reads the proposal again. If the
+  answer had been recorded and only the reply was lost, the card shows what the server holds
+  (**Applied**, **Not now**, **Change requested**, **Undone**) and the plan screens reload when it
+  was applied or restored; otherwise it says "Could not reach Tracend. Check your connection and
+  try again." and the buttons stay usable.
 - A request the rules refuse (a calorie target under the floor, too little logging, a screening cap)
   gets no card; Coach replies with the plain reason.
 - The card carries no model or company name (D11). It renders from a proposal the caller has or
@@ -1310,6 +1368,8 @@ plan. **Not built yet:** links to source data, charts, and a proposed-adjustment
   (and once in onboarding).
 - Revocation keeps manual features usable and explains iOS settings.
 - Sync shows date range and last success instead of an indefinite spinner.
+- A sync that is retried repeats one request key, so an attempt whose reply was lost is not applied
+  twice.
 - **Heart-rate zones (C3).** The Apple Health sheet in Account, once Apple Health is connected, ends
   with a small "Heart-rate zones" section under the signals: one line with resting heart rate and the
   maximum ("Resting 59 bpm · Max 183 bpm, estimated from your age", or "from your workouts" once a
@@ -1329,7 +1389,11 @@ Account is one iOS inset-grouped settings page:
 - **Identity:** the name from the email local-part, a **Private beta** chip and **Current goal**
   when the active-goal query returns one. There is no separate Edit control; **Profile and goals**
   is the edit entry.
-- **Plan:** **Profile and goals** opens the read-only screen of that title (§4.4).
+- **Plan:** **Profile and goals** opens the read-only screen of that title (§4.4). **Health check**
+  reopens the four health-check questions (§4.1, step 6). Signing out, and a session that ends on
+  another device, return to sign-in from any screen; a double tap on **Sign out** signs out once.
+  Signing out or deleting the account also removes the reminders from the phone; signing in puts the
+  athlete's saved reminder choices back.
 - **Health:** **Apple Health** with its status in plain words ("Updated today at 14:05",
   "· needs a refresh", "· some signals missing", or "Not connected · manual logging works"). It
   opens a sheet with the full status card and **Connect** or **Refresh Apple Health**.

@@ -220,7 +220,9 @@ physique check answer within the request.
     until the deploy workflow stores that URL after the migrations, via
     `private.library_set_embed_url`, executable by `service_role` only); and
   - the daily `meal-media-retention` worker, which authenticates with `RETENTION_WORKER_SECRET`
-    read from Vault. The same worker removes expired export packages and orphaned Storage objects;
+    read from Vault (job `meal-media-retention-daily`, created by migration; it posts only to the
+    URL in the Vault secret `meal_media_retention_url`, set by the deploy workflow via
+    `private.meal_media_retention_set_url`). The same worker removes expired export packages and orphaned Storage objects;
     a failed Storage deletion keeps the object reference for retry.
 
 The weekly-review worker is database-native. Daily Cron deduplicates one job per active user and
@@ -391,7 +393,6 @@ health-sync              JWT    HealthKit summaries and workouts
 meal-analyze             JWT    meal-photo candidates
 meal-media-retention     secret retention, export expiry, orphan sweep
 onboarding-plan          JWT    starting plan and follow-up questions
-onboarding-propose-plan  JWT    Phase-2 mock, kept for installed older builds
 physique-check           JWT    owner-only physique check
 privacy-delete-account   JWT    account deletion
 privacy-export           JWT    encrypted export

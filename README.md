@@ -113,9 +113,9 @@ sequenceDiagram
 
 ## Architecture
 
-Flutter iOS client. Supabase backend: PostgreSQL with row-level security, 9 Deno Edge Functions, Storage, and automated backups. AI providers are routed server-side only, so the app never names, embeds, or depends on a specific one. The single source of truth for model boundaries and provider rules is [`docs/AI_SAFETY_SPEC.md`](docs/AI_SAFETY_SPEC.md).
+Flutter iOS client. Supabase backend: PostgreSQL with row-level security, 8 Deno Edge Functions, Storage, and automated backups. AI providers are routed server-side only, so the app never names, embeds, or depends on a specific one. The single source of truth for model boundaries and provider rules is [`docs/AI_SAFETY_SPEC.md`](docs/AI_SAFETY_SPEC.md).
 
-**9 Edge Functions:** `coach-chat` · `coach-decide` · `health-check` · `health-sync` · `meal-analyze` · `meal-media-retention` · `onboarding-propose-plan` · `privacy-delete-account` · `privacy-export`
+**8 Edge Functions:** `coach-chat` · `coach-decide` · `health-check` · `health-sync` · `meal-analyze` · `meal-media-retention` · `privacy-delete-account` · `privacy-export`
 
 ## Quick Start
 

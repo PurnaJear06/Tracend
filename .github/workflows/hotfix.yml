@@ -55,6 +55,26 @@ jobs:
           supabase link --project-ref qsfzzsjenopqqqhvpyaw
           supabase db push --linked
 
+      # The research library's embedding job posts only where this Vault secret
+      # exists, so local and CI databases stay inert. Idempotent; Vault is not
+      # part of a restore, so every deploy sets it again.
+      - name: Point the library embedder at production
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase db query --linked \
+            "select private.library_set_embed_url('https://qsfzzsjenopqqqhvpyaw.supabase.co/functions/v1/library-embed');"
+
+      # The daily retention job posts only where this Vault secret exists. The step fails when the
+      # Vault secret retention_worker_secret (set by hand) is missing, so a deploy cannot leave the
+      # job doing nothing. Idempotent; Vault is not part of a restore.
+      - name: Point the meal-media retention job at production
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase db query --linked \
+            "select private.meal_media_retention_set_url('https://qsfzzsjenopqqqhvpyaw.supabase.co/functions/v1/meal-media-retention');"
+
   deploy-functions:
     name: Deploy Edge Functions
     needs: deploy-migrations
@@ -76,7 +96,6 @@ jobs:
           - meal-analyze
           - meal-media-retention
           - onboarding-plan
-          - onboarding-propose-plan
           - physique-check
           - privacy-delete-account
           - privacy-export
@@ -114,9 +133,33 @@ jobs:
           scripts/deploy-function.sh ${{ matrix.function }}
           scripts/verify-live-function.sh ${{ matrix.function }}
 
+  retire-functions:
+    name: Retire Removed Functions
+    needs: deploy-functions
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: supabase/setup-cli@afb1b15109756ea5cf9d8985a359d9095235ca2b # v2.1.2
+        with:
+          version: "2.101.0"
+
+      - name: Delete the functions in scripts/retired-functions.txt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_CLI: supabase
+        run: |
+          # Only the names in that file, and only while they are still deployed;
+          # a name that is already gone is a no-op.
+          scripts/retire-functions.sh
+
   verify-functions:
     name: Verify Live Functions
-    needs: deploy-functions
+    needs: retire-functions
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 10
@@ -136,7 +179,8 @@ jobs:
           VERIFY_ATTEMPTS: "3"
         run: |
           # Checks every function directory in the commit, so a function missing
-          # from the deploy matrix fails here too.
+          # from the deploy matrix fails here too, and fails on a deployed
+          # function that has no directory and is not retired.
           scripts/verify-live-function.sh --all
 
   smoke-test:

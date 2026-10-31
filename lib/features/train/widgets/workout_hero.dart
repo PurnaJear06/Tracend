@@ -10,8 +10,11 @@ import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
 
 /// Where the selected day's workout stands.
 enum HeroDayState {
-  /// Today or a coming day: ready to start.
+  /// Today: ready to start.
   planned,
+
+  /// A day that has not begun: its workout can be previewed, never started.
+  upcoming,
 
   /// A past day with nothing logged; it can still be logged.
   notLogged,
@@ -38,6 +41,7 @@ class WorkoutHero extends StatelessWidget {
     required this.onViewSummary,
     required this.onOpenMuscles,
     this.doneSession,
+    this.onDoToday,
     this.healthkitCandidate,
     this.onHealthkitComplete,
     this.onHealthkitManual,
@@ -62,6 +66,9 @@ class WorkoutHero extends StatelessWidget {
   final VoidCallback? onStart;
   final VoidCallback onViewSummary;
   final VoidCallback onOpenMuscles;
+
+  /// Starts a coming day's workout today; shown with the preview.
+  final VoidCallback? onDoToday;
 
   final HealthkitCompletionCandidate? healthkitCandidate;
   final VoidCallback? onHealthkitComplete;
@@ -161,7 +168,17 @@ class WorkoutHero extends StatelessWidget {
                   onPressed: onViewSummary,
                   child: const Text('View summary'),
                 )
-              else
+              else if (state == HeroDayState.upcoming) ...[
+                OutlinedButton(
+                  onPressed: onOpenOverview,
+                  child: const Text('Preview workout'),
+                ),
+                if (onDoToday != null)
+                  TextButton(
+                    onPressed: onDoToday,
+                    child: const Text('Do it today'),
+                  ),
+              ] else
                 FilledButton.icon(
                   onPressed: onStart,
                   icon: const Icon(CupertinoIcons.play_fill, size: 18),
@@ -206,7 +223,7 @@ class WorkoutHero extends StatelessWidget {
         text: 'Today',
         color: colors.accentSignalInk,
       ),
-      HeroDayState.planned => _Kicker(
+      HeroDayState.planned || HeroDayState.upcoming => _Kicker(
         text: weekdayName(date),
         color: colors.textSecondary,
       ),

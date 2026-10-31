@@ -363,3 +363,92 @@ for short sleep.
   account (experienced path, lifts, chest focus, answer or skip questions); read-only SQL for the
   `onboarding.questions.generated` and `onboarding.plan.generated` audit telemetry.
 
+
+## QA audit groups G and H: legacy retirement, auth dead ends, forms (2026-10-31)
+
+Branch `claude/onboarding-legacy-forms`, migration `20261031100000_onboarding_legacy_and_forms.sql`
+(additive). From the pre-beta QA audit of `5680530`; M-G5 (offline cold start) belongs to another
+builder.
+
+**Onboarding and auth**
+
+- **M-G1:** the Plan step's **Try again** no longer spins forever. A start that fails for any reason
+  other than a refusal puts the Plan step on its retry card with the message ("Your plan could not be
+  started. Check the connection and try again."); a refusal still sends the athlete to the step that
+  decides it.
+- **M-G2:** **Account › Plan › Health check** reopens the four screening questions
+  (`HealthCheckScreen`, sharing `ScreeningForm` with onboarding). It calls `record_screening_v1`
+  again, so only the athlete's own updated answers change the outcome; nothing else lifts the cap.
+  The server needed no change: the outcome is read when a plan or Coach proposal is built, so a
+  cleared outcome applies from the next plan or proposal, and a plan already approved keeps its
+  effort until it is next changed (the screen says so). Copy stays non-diagnostic.
+- **M-G3:** the legacy path is closed. Revoked from `public`, `anon`, `authenticated`:
+  `respond_to_onboarding_proposal` (v1), `create_fixture_meal`, `confirm_fixture_meal`,
+  `confirm_fixture_meal_v2`, `persist_coach_preference` (the service role keeps the last; nothing
+  calls it). `user_accounts.onboarding_state` can no longer be inserted or updated by the app role:
+  approval already sets `completed` inside `respond_to_onboarding_proposal_v2`, and the new trigger
+  `onboarding_drafts_mark_started` moves `not_started` to `in_progress` with the first draft, so the
+  app's second write in `saveDraft` is gone. Checked first: no caller in `lib/` or Edge Functions;
+  production grants read-only (all five were executable by `authenticated`, none by `anon`).
+  Deleted: `createFixtureMeal` and the Log a meal "Review sample analysis" path, and the
+  `onboarding-propose-plan` Edge Function (directory, `config.toml`, `deploy.yml`,
+  `hotfix.yml`). The
+  SQL function `persist_mock_onboarding_proposal` stays (service role only; the still-deployed old
+  function calls it). **No owner step:** the deploy now has a `Retire Removed Functions` job (in
+  `deploy.yml` and `hotfix.yml`, after the functions deploy and before the live check) that runs
+  `scripts/retire-functions.sh`. It deletes, only while still deployed, the names in
+  `scripts/retired-functions.txt` (just `onboarding-propose-plan`), reads `supabase functions list`
+  first and verifies afterwards, so a rerun is a no-op and nothing outside the list is ever deleted.
+  `verify-live-function.sh --all` also fails when production has a function that has no directory and
+  is not in that list (`retire-functions.sh --check`, read-only), so a leftover is caught. A later
+  cleanup migration can drop the SQL function.
+- **M-G4:** a session that ends anywhere (remote sign-out, password change, deleted account) pops
+  every pushed route back to the gate (`popUntil(isFirst)` in the gate's signed-out handler).
+- **G LOWs:** a double tap on Sign out signs out once, and Account pops only if the gate has not
+  already closed it (no black screen); 422 and `email_not_confirmed` (and 429, `signup_disabled`,
+  `email_exists`, `weak_password`) have their own messages; every onboarding call has a 20 s limit
+  (`SupabaseOnboardingRepository.callTimeout`; the plan builder keeps its own); Sign out stays
+  available while an answer is saving; the daily and weekly reminders and the rest alert are removed
+  from the phone on every signed-out transition (sign-out, remote end, deletion) and the next
+  sign-in puts the athlete's saved choices back (`NotificationRepository.load` re-applies them). A
+  restore whose server read is still in flight when the session ends configures nothing: its
+  changes go through the gate's reminder queue (the same queue as the cancel) and check the
+  session counter first. The misplaced doc comment in `onboarding_repository.dart` is fixed. `respond` (approve) deliberately
+  has no timeout here: a timeout would report "not saved" for a write that may have committed (M-E2).
+
+**Meals and Progress forms**
+
+- **M-H1:** body-fat targets have a sex-aware floor, `private.body_fat_floor_pct`: **5% for men,
+  12% for women and for anyone whose sex is unknown (the more conservative figure)**. No floor
+  existed in the repo, so these are the widely cited essential-fat figures (the ACE body-fat
+  categories put essential fat at 2 to 5% for men and 10 to 13% for women); the brief set the floors
+  at 5% (the top of the men's range) and 12% (inside the women's). Both goal-target functions return `min_target_body_fat_pct`
+  (`schema_version "1.1"`, additive); the target sheet shows it and stops a lower value; the server
+  refuses it (22023). Fixtures and pgTAP updated. Coach proposals carry no body-fat target.
+- **Progress photos:** the storage question is asked once (the newest `progress_photo_storage` record
+  is read first) and inserts one record; the copy says photos go to an AI model only if the athlete
+  chooses a physique check, which asks for its own permission, on accounts that have it. The word "never" appears only when
+  the physique-check lookup succeeded and the account has none; when the lookup fails the copy uses
+  the conditional wording, so no consent record carries a claim that could be untrue. The photo
+  sets read is capped at the newest 100 sets and reads photos for those sets only.
+  `deletePhotoSet` deletes the rows first; a file that fails to go is removed by the retention
+  worker's orphan sweep (it covers `progress-photos`).
+- **Forms:** acknowledging a weekly review shows a message on failure; the weigh-in form checks the
+  database ranges (weight 25 to 350 kg, waist/chest/hip 30 to 250, arm 10 to 100, thigh 20 to 150
+  cm) and a 23514 refusal reads "A value is outside the range Tracend accepts" instead of "check your
+  connection"; manual meal fields use the decimal keyboard and accept a decimal comma; the candidate
+  editor keeps itself open while a value cannot be confirmed and shows decimals as stored, so hidden
+  fields never confirm other values; Log a meal waits (at most 10 s) for the photo notice.
+- **schema_version:** `get_my_daily_nutrition` and `create_meal_photo_draft` return `"1.0"`; the
+  app parsers (`NutritionSummary.fromJson`, `mealIdFromDraft`) accept an answer without it (the
+  server deploys before the app) and refuse another major version. Contract fixtures
+  `daily_nutrition_v1_0.json`, `meal_photo_draft_v1_0.json`, `goal_target*_v1_1.json`.
+
+**Tests:** pgTAP `legacy_retirement_test.sql` (privileges by `has_function_privilege`, never by
+calling as a closed role; the column grants; the trigger), `goal_targets_test.sql` (floor),
+`meal_photo_draft_test.sql`; the older tests that called the retired functions now seed their
+fixture meals as the table owner and confirm through `confirm_analyzed_meal`. Deno hunk test
+`goal_phase/legacy_forms_migration_test.ts`. Flutter: `health_check_screen_test.dart`,
+`onboarding_progress_repository_test.dart`, `nutrition_forms_test.dart`, `progress_forms_test.dart`,
+and additions to `phase_2_flow_test.dart`, `account_session_test.dart`, `account_screen_test.dart`,
+`owner_auth_message_test.dart`, `goal_target_test.dart` and the contract tests.

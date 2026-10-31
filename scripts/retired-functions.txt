@@ -1,0 +1,6 @@
+# Edge Functions that were removed from supabase/functions and must not stay deployed.
+# One name per line. scripts/retire-functions.sh deletes exactly these from production
+# (and nothing else) after the functions deploy; scripts/verify-live-function.sh --all
+# fails on any other deployed function that has no directory in the checkout.
+# Add a name here in the same pull request that removes its directory.
+onboarding-propose-plan
