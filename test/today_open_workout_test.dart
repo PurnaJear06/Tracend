@@ -73,11 +73,15 @@ class _Workouts extends FixtureWorkoutRepository
 }
 
 class _Brief implements DailyBriefRepository {
-  const _Brief();
+  const _Brief({this.fails = false});
+
+  final bool fails;
 
   @override
-  Future<DailyBrief> load(DateTime date) async =>
-      const DailyBrief(localDate: '2026-10-31');
+  Future<DailyBrief> load(DateTime date) async {
+    if (fails) throw StateError('brief unavailable');
+    return const DailyBrief(localDate: '2026-10-31');
+  }
 }
 
 class _Health implements HealthRepository {
@@ -103,6 +107,7 @@ void main() {
     _Workouts workouts, {
     ValueChanged<OpenWorkout>? onResume,
     bool active = true,
+    bool briefFails = false,
   }) async {
     SharedPreferences.setMockInitialValues({});
     tester.view.physicalSize = const Size(390, 1600);
@@ -115,7 +120,7 @@ void main() {
           body: TodayScreen(
             environment: _environment,
             workouts: workouts,
-            brief: const _Brief(),
+            brief: _Brief(fails: briefFails),
             health: const _Health(),
             nutrition: const FixtureNutritionRepository(),
             coach: const FixtureCoachRepository(),
@@ -141,6 +146,24 @@ void main() {
 
     expect(resumed.single.workoutId, 'legs-b');
     expect(resumed.single.date, DateTime(2026, 10, 30));
+  });
+
+  testWidgets('a brief that fails still offers the open workout', (
+    tester,
+  ) async {
+    final resumed = <OpenWorkout>[];
+    await pumpToday(
+      tester,
+      _Workouts(open: [_legsB]),
+      onResume: resumed.add,
+      briefFails: true,
+    );
+
+    expect(find.text('Use your approved plan.'), findsOneWidget);
+    expect(find.text('Legs B · Fri 30 Oct · 2 sets logged'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Resume'));
+    await tester.pumpAndSettle();
+    expect(resumed.single.workoutId, 'legs-b');
   });
 
   testWidgets('shows no card where nothing can reopen it', (tester) async {

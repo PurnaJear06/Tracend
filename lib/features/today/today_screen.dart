@@ -1223,21 +1223,34 @@ class _TodayScreenState extends State<TodayScreen> {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const _BriefSkeleton();
               }
-              return TracendCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Use your approved plan.',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    const SizedBox(height: TracendSpacing.xs),
-                    const Text(
-                      'The daily brief is unavailable. Workout and meal logging '
-                      'remain available. Pull down to try again.',
-                    ),
+              // The open workouts come from this phone, not the brief: a
+              // brief that failed still offers them back.
+              final open = _openBeside(_unfinished);
+              final onResume = widget.onResumeWorkout;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (open.isNotEmpty && onResume != null) ...[
+                    OpenWorkoutCard(workouts: open, onResume: onResume),
+                    const SizedBox(height: TracendSpacing.sm),
                   ],
-                ),
+                  TracendCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Use your approved plan.',
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        const SizedBox(height: TracendSpacing.xs),
+                        const Text(
+                          'The daily brief is unavailable. Workout and meal '
+                          'logging remain available. Pull down to try again.',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               );
             },
           ),

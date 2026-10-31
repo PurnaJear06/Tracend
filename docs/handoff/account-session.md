@@ -323,6 +323,15 @@ Refs FLUTTER-N.
   offline, relaunch through the gate with the account check failing, Resume opens Friday with both
   sets, back online the sets sync to Friday's session with one start), the stored-date start and the
   repository's stored-date send.
+- **Review round 2 (Codex):** Apple Health's "mark complete" is hidden on a day with a workout in
+  progress (the hero, and `_autoComplete` refuses it too); a draft made before a plan copy is
+  matched by its stored `workout_identity` and moved with `WorkoutPlanRemapper.moveToCurrentPlan`
+  before Resume opens it ("kept on this phone" only with no copy; no connection asks to connect);
+  Today shows the Resume card when the brief fails. The logger reads the draft before waiting for a
+  send of waiting workouts: if that send clears a draft with done sets within the wait, it filed the
+  workout on its day, so the logger closes with the same message instead of starting an empty
+  second session. Past the 3-second wait the logger keeps the phone's draft and its own idempotency
+  key, so a later start replays the same session.
 - Device check: start a past day's workout with "I did it", log a set, airplane mode, log a set,
   kill, reopen offline: Train shows the Resume card; Resume opens that day with both sets; back
   online the workout saves on that day.

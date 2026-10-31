@@ -97,7 +97,12 @@ class WorkoutHero extends StatelessWidget {
     final sets = muscleMapCoversWorkout(workout.exercises)
         ? muscleSetsFor(workout.exercises)
         : const <MuscleSets>[];
-    final candidate = state == HeroDayState.done ? null : healthkitCandidate;
+    // A done day needs no completion, and a workout in progress is resumed:
+    // completing it from Apple Health would record a second session.
+    final candidate =
+        state == HeroDayState.done || state == HeroDayState.inProgress
+        ? null
+        : healthkitCandidate;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(

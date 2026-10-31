@@ -466,7 +466,8 @@ Reading order:
      logged under ("Legs B · Fri 30 Oct · 2 sets logged") with **Resume**, which switches to Train
      and opens it on that day. More than one: the newest leads and the others are listed under
      "Also in progress", each with its own **Resume**. A workout the server already offers back as
-     unfinished shows only on that card. It reads only this phone's drafts.
+     unfinished shows only on that card. It reads only this phone's drafts, so it shows even when
+     the brief fails to load (above the "Use your approved plan." card).
 3. **Plan progress**: the plan's title and "Week 3 of 20" with a thin bar; past the block, "Week
    22 · block of 20 done".
 4. **Tiles**: Sleep (tall: duration, sleep debt or quality, a deep/REM share bar from Apple
@@ -958,7 +959,11 @@ confirmation actions. The tab reads top to bottom:
   newest (by the last set done) leads, and the others are listed under "Also in progress", each with
   its own **Resume**. It reads only this phone's drafts, so it shows offline too. A workout that the
   send of waiting workouts filed on its day meanwhile answers "This workout was sent to Tracend.
-  Save or discard it on Today."
+  Save or discard it on Today." (the workout screen closes with the same words when the send files
+  it while the screen opens, so it is never started a second time). A workout begun before the plan
+  was copied with new ids is found by its place and exercises and moves to its copy in the current
+  plan before it opens; with no copy it says "This workout is no longer in your plan. Its sets are
+  kept on this phone.", and with no connection to read the plan it asks to connect.
 - **Day boxes.** Seven boxes for the week: a check for a done day, a dot for a planned day, a lime
   ring for today and a raised fill for the selected day. A tap plays the selection haptic and slides
   the day's content in from the side it came from (a crossfade under Reduce Motion). A horizontal
@@ -1100,7 +1105,8 @@ targets.
 
 When Apple Health records a workout on a day with a scheduled Tracend workout but no completed
 session, the workout hero replaces its action (**Start workout**, or **Do it today** on a missed
-day) with a prompt. It never shows on a done day.
+day) with a prompt. A day with a workout in progress on this phone never shows it (completing from
+Apple Health would record a second session); it shows **Resume**. It never shows on a done day.
 
 - Kicker: **Apple Health detected workout** with the `heart_fill` icon.
 - "Apple Health recorded a N min workout today / yesterday / on 2 October. Did you complete

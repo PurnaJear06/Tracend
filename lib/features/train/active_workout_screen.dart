@@ -342,7 +342,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     // it stalls. A send of another workout is never waited for.
     final repository = widget.repository;
     var replaying = false;
+    // The draft as it stood before the wait, so a send that files it on its
+    // own day meanwhile is told apart from a workout with no draft.
+    String? before;
     if (repository is WorkoutSendInFlight) {
+      before = await widget.repository.loadDraft(_workout.id);
       _replay = (repository as WorkoutSendInFlight).sendInFlight(_workout.id);
       await _replay.timeout(_replayWait, onTimeout: () => replaying = true);
     }
@@ -365,6 +369,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     // under the wrong names.
     if (server != null && !_sessionFitsPlan(server)) server = null;
     final saved = await widget.repository.loadDraft(_workout.id);
+    if (saved == null && !replaying && _filedMeanwhile(before)) {
+      // The send of waiting workouts filed this workout on its own day while
+      // the screen opened: its sets reached the server, and it is answered on
+      // Today. Starting it again here would open an empty second session.
+      await _closeFiled();
+      return;
+    }
     var local = saved == null ? null : _decode(saved);
     // A send still under way has this draft in hand: it is not sent twice.
     if (local != null &&
@@ -466,6 +477,27 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     await _save();
+  }
+
+  /// Whether [before], the draft this screen found as it opened, had sets
+  /// done: a send that clears such a draft has filed it on its own day.
+  static bool _filedMeanwhile(String? before) {
+    final draft = before == null ? null : _decode(before);
+    return draft != null && draftHasDoneSet(draft);
+  }
+
+  /// Closes the screen for a workout the send of waiting workouts filed while
+  /// it opened, and says where to answer it.
+  Future<void> _closeFiled() async {
+    _closed = true;
+    _events.emit(WorkoutEnded(at: widget.clock(), completed: false));
+    if (!mounted) return;
+    TracendToast.show(
+      context,
+      workoutFiledMessage,
+      icon: CupertinoIcons.checkmark_circle,
+    );
+    Navigator.of(context).pop(false);
   }
 
   /// Whether the exercises the session [server] was begun with, as prescribed,

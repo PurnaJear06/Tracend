@@ -18,6 +18,11 @@ const sessionDateDraftKey = 'session_local_date';
 /// it without the plan.
 const workoutNameDraftKey = 'workout_name';
 
+/// What the athlete is told when a workout they reopen was filed on its own
+/// day by the send of waiting workouts meanwhile: it is answered on Today.
+const workoutFiledMessage =
+    'This workout was sent to Tracend. Save or discard it on Today.';
+
 /// The day [draft] stored as its session's, or null for a draft saved before
 /// the date was kept.
 DateTime? draftSessionDate(Map<String, dynamic> draft) {
@@ -37,6 +42,7 @@ class OpenWorkout {
     required this.doneSets,
     required this.lastActivity,
     this.sessionId,
+    this.identityJson,
   });
 
   /// The planned workout the draft is kept under.
@@ -58,6 +64,10 @@ class OpenWorkout {
   final DateTime lastActivity;
 
   final String? sessionId;
+
+  /// Who the workout is in a plan copied with new ids, as the draft stored it
+  /// (`WorkoutIdentity.toJson`); null for a draft that kept none.
+  final Object? identityJson;
 
   /// Whether this is the draft of [workoutId] logged under [day].
   bool isOn(String workoutId, DateTime day) =>
@@ -121,6 +131,7 @@ class OpenWorkout {
       doneSets: done,
       lastActivity: last.toUtc(),
       sessionId: session is String ? session : null,
+      identityJson: draft['workout_identity'],
     );
   }
 }

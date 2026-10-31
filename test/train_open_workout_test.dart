@@ -21,10 +21,12 @@ String _draft(
   DateTime day, {
   int done = 2,
   DateTime? lastDone,
+  String? id,
 }) {
   final last = lastDone ?? DateTime(2026, 10, 2, 8);
   return jsonEncode({
-    'workout_id': workout.id,
+    'workout_id': id ?? workout.id,
+    'workout_identity': ?workout.identity?.toJson(),
     'session_id': 'session-${workout.id}',
     'idempotency_key': 'key-${workout.id}',
     'revision': 5,
@@ -90,6 +92,47 @@ class _StalledSend extends _Drafts implements WorkoutSendInFlight {
   @override
   Future<void> sendInFlight(String workoutId) => stalled.future;
 }
+
+/// [_Drafts] that can find a workout again after the plan was copied with
+/// new ids: [moved] is the copy it finds (null for none), or [readError] is
+/// thrown as a plan that cannot be read.
+class _Copied extends _Drafts implements WorkoutPlanRemapper {
+  _Copied({super.hub, this.moved, this.readError});
+
+  final PlannedWorkout? moved;
+  final Object? readError;
+  final moves = <(String, WorkoutIdentity?)>[];
+
+  @override
+  String? get signedInUserId => 'athlete';
+
+  @override
+  Future<PlannedWorkout?> moveToCurrentPlan(
+    String staleId,
+    WorkoutIdentity? identity, {
+    required String? ownerId,
+  }) async {
+    moves.add((staleId, identity));
+    final error = readError;
+    if (error != null) throw error;
+    final copy = moved;
+    if (copy == null) return null;
+    drafts[copy.id] = drafts.remove(staleId)!;
+    return copy;
+  }
+}
+
+/// Lower body A as a plan copy names it: its place in the plan and its
+/// exercises, under a new id.
+final _lowerCopy = PlannedWorkout(
+  id: 'w-lower-a-v2',
+  name: lowerA.name,
+  objective: lowerA.objective,
+  estimatedMinutes: lowerA.estimatedMinutes,
+  exercises: lowerA.exercises,
+  order: 3,
+  weekday: 3,
+);
 
 /// The plan's week with nothing done yet: Tuesday and Wednesday are missed.
 TrainingHubData _week() => trainHub(completed: const {}, sessions: const []);
@@ -323,6 +366,116 @@ void main() {
       expect(screen?.workout.id, upperA.id);
       expect(screen?.sessionDate, trainToday);
       expect(find.byType(CupertinoActionSheet), findsNothing);
+    });
+  });
+
+  group('Apple Health beside a workout in progress', () {
+    HealthkitCompletionCandidate candidate(
+      PlannedWorkout workout,
+      DateTime day,
+    ) => HealthkitCompletionCandidate(
+      plannedWorkoutId: workout.id,
+      plannedWorkoutName: workout.name,
+      workoutCount: 1,
+      workoutMinutes: 50,
+      localDate: day,
+    );
+
+    testWidgets('a day with an open workout offers Resume, never the Apple '
+        'Health completion', (tester) async {
+      repository
+        ..drafts[lowerA.id] = _draft(lowerA, _wednesday)
+        ..candidate = candidate(lowerA, _wednesday);
+      await pumpTrain(tester);
+      await tapDay(tester, _wednesday);
+
+      expect(find.text('In progress'), findsOneWidget);
+      expect(find.text('Apple Health detected workout'), findsNothing);
+      expect(find.widgetWithText(FilledButton, 'Resume'), findsNWidgets(2));
+    });
+
+    testWidgets('a missed day still offers it', (tester) async {
+      repository.candidate = candidate(upperB, _tuesday);
+      await pumpTrain(tester);
+      await tapDay(tester, _tuesday);
+
+      expect(find.text('Apple Health detected workout'), findsOneWidget);
+    });
+  });
+
+  group('after the plan was copied with new ids', () {
+    TrainingHubData copiedWeek() => trainHub(
+      completed: const {},
+      sessions: const [],
+      workouts: [upperA, upperB, _lowerCopy, lowerB],
+    );
+
+    testWidgets('the open workout is found by its identity and moves to its '
+        'copy before it opens', (tester) async {
+      final copied = _Copied(hub: copiedWeek(), moved: _lowerCopy);
+      repository = copied;
+      copied.drafts['w-lower-a-v1'] = _draft(
+        _lowerCopy,
+        _wednesday,
+        id: 'w-lower-a-v1',
+      );
+      await pumpTrain(tester);
+      await tapDay(tester, _wednesday);
+      expect(find.text('In progress'), findsOneWidget);
+
+      await tapText(tester, find.widgetWithText(FilledButton, 'Resume').first);
+      final screen = await logger(tester);
+      expect(copied.moves.single.$1, 'w-lower-a-v1');
+      expect(copied.moves.single.$2?.order, 3);
+      expect(screen?.workout.id, _lowerCopy.id);
+      expect(screen?.sessionDate, _wednesday);
+      expect(copied.drafts.keys, [_lowerCopy.id]);
+    });
+
+    testWidgets('with no copy in the current plan the sets stay on the phone', (
+      tester,
+    ) async {
+      final copied = _Copied(hub: copiedWeek());
+      repository = copied;
+      copied.drafts['w-retired'] = _draft(
+        _lowerCopy,
+        _wednesday,
+        id: 'w-retired',
+      );
+      await pumpTrain(tester);
+
+      await tapText(tester, find.widgetWithText(FilledButton, 'Resume').first);
+      expect(await logger(tester), isNull);
+      expect(
+        find.text(
+          'This workout is no longer in your plan. Its sets are kept on this '
+          'phone.',
+        ),
+        findsOneWidget,
+      );
+      expect(copied.drafts.keys, ['w-retired']);
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets('with the plan unreadable it asks for a connection and keeps '
+        'the sets', (tester) async {
+      final copied = _Copied(
+        hub: copiedWeek(),
+        readError: Exception('offline'),
+      );
+      repository = copied;
+      copied.drafts['w-lower-a-v1'] = _draft(
+        _lowerCopy,
+        _wednesday,
+        id: 'w-lower-a-v1',
+      );
+      await pumpTrain(tester);
+
+      await tapText(tester, find.widgetWithText(FilledButton, 'Resume').first);
+      expect(await logger(tester), isNull);
+      expect(find.textContaining('Connect to open it'), findsOneWidget);
+      expect(copied.drafts.keys, ['w-lower-a-v1']);
+      await tester.pump(const Duration(seconds: 3));
     });
   });
 

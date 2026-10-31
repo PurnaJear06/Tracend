@@ -1277,6 +1277,43 @@ void main() {
       expect(await source.loadDraft(oldId), isNull);
     });
 
+    testWidgets('a workout the send files on its own day while the logger '
+        'opens is never started again', (tester) async {
+      final client = await startSupabase(tester);
+      final source = SupabaseWorkoutRepository(client, preferences);
+      final workout = _workoutOf(oldId);
+      await source.saveDraft(
+        oldId,
+        jsonEncode(
+          _draftOf(
+            workout,
+            key: '77777777-7777-4777-8777-777777777777',
+            startedAt: DateTime.now().subtract(const Duration(days: 2)),
+          ),
+        ),
+      );
+      final hold = Completer<void>();
+      backend
+        ..online = true
+        // The server closed the earlier day's session as stale: its read no
+        // longer offers it as in progress.
+        ..sessionState = 'abandoned'
+        ..holdStart = hold;
+      final sending = source.sendWaiting();
+      await tester.pump();
+
+      await pumpLogger(tester, workout, using: source);
+      hold.complete();
+      await sending;
+      await tester.pumpAndSettle();
+
+      expect(backend.startedIds, [oldId], reason: 'the workout starts once');
+      expect(backend.syncedWorkoutIds, [oldId]);
+      expect(find.byType(ActiveWorkoutScreen), findsNothing);
+      expect(find.text(workoutFiledMessage), findsOneWidget);
+      await tester.pump(const Duration(seconds: 3));
+    });
+
     testWidgets('a finish with no match in the plan stays on the phone and '
         'reaches Sentry without user data', (tester) async {
       final reported = <NonCriticalFailure>[];
