@@ -316,3 +316,35 @@ Deno.test("a figure not attached to a lift in its own sentence is a body weight,
     );
   }
 });
+
+// Captured from the answer bank on 2026-10-24: every one of these replies was refused as a body
+// weight below the healthy floor, because "0.26 kg" was read as 26 kg, so the repair could not fix
+// it and the athlete got the fallback.
+Deno.test("a weekly rate written with a decimal is not a body weight", () => {
+  const ask = "How's my weight trending this month?";
+  for (
+    const sentence of [
+      "Over the last 4 weeks of readings it is falling **0.26 kg a week**, and over the last 8 weeks **0.39 kg a week**.",
+      "Over the last 8 weeks of readings it dropped about **0.39 kg a week**, and over the last 4 weeks about **0.26 kg a week**.",
+      "Here's where you are: **74.8 kg** on 2026-10-13, down **-0.26 kg/week** over the last 4 weeks of readings and **-0.39 kg/week** over the last 8.",
+      "Your weight is **78.4 kg** on 2026-09-27, falling **0.47 kg a week** over the last 8 weeks of readings, and you've trained **4 sessions** in the last 7 days.",
+      "You will lose 0.55 kg a week for the next 8 weeks.",
+    ]
+  ) {
+    assertEquals(weightClaimViolation(sentence, ask, withTarget), null, sentence);
+    assertEquals(weightClaimViolation(sentence, ask, noTarget), null, sentence);
+  }
+  // The rate's neighbour is still read: a body weight below the floor in the same sentence fails.
+  assertEquals(
+    weightClaimViolation(
+      "You're losing 0.39 kg a week, so in 8 weeks you'll be at 55 kg.",
+      ask,
+      withTarget,
+    ),
+    "weight_below_healthy_floor",
+  );
+  assertEquals(
+    weightClaimViolation("Keep going and you'll reach 55.5 kg by March.", ask, withTarget),
+    "weight_below_healthy_floor",
+  );
+});
