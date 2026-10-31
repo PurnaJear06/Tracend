@@ -9,6 +9,7 @@ import {
   coverageBriefContributorId,
 } from "./contributors/coverage_brief.ts";
 import { readinessContributor } from "./contributors/readiness.ts";
+import { trainingGuidanceContributor } from "./contributors/training_guidance.ts";
 import { watchOutsContributor } from "./contributors/watch_outs.ts";
 import { heartRateContributor } from "./contributors/heart_rate.ts";
 import { confirmedFactsContributor } from "./contributors/confirmed_facts.ts";
@@ -21,7 +22,9 @@ import { libraryContributorId } from "../library/retrieval.ts";
 // digest (E2), the screening (A9), the goal phase (B7), the plan (A10: today's or the next session
 // with targets and home alternatives), the week's nutrition (A10), the proposals and phases (A8) and the index of what Coach can
 // look up and how fresh each kind is (the Coverage Brief) are registered, with today's readiness card
-// (B4/B5: band, adjustment, safety route and joint areas, read-only, right after the plan), the watch-outs (the facts
+// (B4/B5: band, adjustment, safety route and joint areas, read-only, right after the plan), the
+// training guidance (B5-3/B5-4: a lighter week and the week's cardio, read-only, right after the
+// card), the watch-outs (the facts
 // computed across several kinds of record), the heart-rate profile (C3), the athlete's confirmed facts
 // (A10 part 2, stable: they change only when the athlete changes them), the Coach's own notes
 // (A10 part 2, untrusted and capped) and the library (E3: the chunks found for this turn's
@@ -38,6 +41,7 @@ export const coachContextContributors: readonly CoachContextContributor[] = Obje
   goalPhaseContributor,
   trainingPlanContributor,
   readinessContributor,
+  trainingGuidanceContributor,
   nutritionStateContributor,
   proposalsContributor,
   heartRateContributor,

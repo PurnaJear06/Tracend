@@ -32,6 +32,13 @@ import { createNutritionStateContributor } from "./nutrition_state.ts";
 import { ownersPlanPayload, splitPlanPayload } from "./plan_fixtures.ts";
 import { createProposalsContributor } from "./proposals.ts";
 import { createReadinessContributor } from "./readiness.ts";
+import {
+  createTrainingGuidanceContributor,
+  trainingGuidanceSourceFromRpc,
+} from "./training_guidance.ts";
+import runningGuidance from "../../../../../test/contract/fixtures/training_guidance_v1_2_running.json" with {
+  type: "json",
+};
 import { createScreeningContributor } from "./screening.ts";
 import { createTrainingPlanContributor } from "./training_plan.ts";
 import { createWatchOutsContributor } from "./watch_outs.ts";
@@ -51,6 +58,7 @@ Deno.test("every contributor that grounds as records has a probe here", () => {
     "goal_phase",
     "training_plan",
     "readiness",
+    "training_guidance",
     "nutrition_state",
     "coach_proposals",
     "heart_rate_profile",
@@ -413,6 +421,27 @@ Deno.test("readiness: the card's date grounds; the fixed wording states no figur
   for (const side of [inputs.ground, inputs.athleteGround!]) {
     // Nothing on the card is a number: no band, state or day count stands behind a figure.
     assertEquals(ungroundedNumbers("Your knee has been held for 14 days.", side), ["14"]);
+  }
+});
+
+Deno.test("training guidance: its dates, minutes and rule figures ground; no other number does", async () => {
+  const block = await blockOf(
+    createTrainingGuidanceContributor(
+      trainingGuidanceSourceFromRpc(() => Promise.resolve({ data: runningGuidance, error: null })),
+    ),
+    runningGuidance.local_date,
+  );
+  const inputs = probeContributor({
+    id: "training_guidance",
+    block,
+    fixture: runningGuidance,
+    // The deload's effort cap (7) is the rule's own figure, stated in the block.
+    calculated: [7],
+    fixed: [],
+  });
+  for (const side of [inputs.ground, inputs.athleteGround!]) {
+    // A count of weeks or days the block never states grounds nothing.
+    assertEquals(ungroundedNumbers("Your last deload was 14 days ago.", side), ["14"]);
   }
 });
 

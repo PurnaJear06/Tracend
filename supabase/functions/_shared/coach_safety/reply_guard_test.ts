@@ -221,18 +221,26 @@ Deno.test("calories_below_floor: only a real warning is exempt, parsed for direc
     assert(broken(reply).includes("calories_below_floor"), reply);
   }
   const warnings = [
-    "Don't go below 1,500 kcal a day.",
-    "Never under 1,200 calories.",
-    "You should not eat less than 1,000 kcal a day.",
+    "Don't drop to 1,500 calories a day.",
     "1,200 kcal a day is too low for you.",
     "Eating 1,200 kcal a day isn't safe.",
     "A 400 kcal snack is fine.",
     "Reduce dinner to 400 kcal.",
     "You burn 600 kcal in a session.",
-    "Please avoid dropping under 1,400 calories a day.",
   ];
   for (const reply of warnings) {
     assert(!broken(reply).includes("calories_below_floor"), reply);
+  }
+  // A limit below the floor is a minimum, and tells the athlete what is fine up to the floor.
+  for (
+    const reply of [
+      "Don't go below 1,500 kcal a day.",
+      "Never under 1,200 calories.",
+      "You should not eat less than 1,000 kcal a day.",
+      "Please avoid dropping under 1,400 calories a day.",
+    ]
+  ) {
+    assert(broken(reply).includes("calories_below_floor"), reply);
   }
 });
 
