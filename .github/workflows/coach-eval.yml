@@ -56,7 +56,9 @@ name: Coach Eval
 # report says which. Without a router the bank and the operations evaluation call DeepSeek
 # directly (`DEEPSEEK_API_KEY` secret). A router run is a smoke test: each attempt may wait up to
 # 120 s and latency is reported, not gated, because it is not production latency. No Anthropic
-# key is stored in this repository.
+# key is stored in this repository: to run the simulator on the production Claude route, run
+# coach_sim/run.ts locally without EVAL_BASE_URL, with the AI_COACH_CHAT_* settings and
+# ANTHROPIC_API_KEY (docs/reviews/2026-10-31-coach-simulation.md, Reproduce).
 on:
   workflow_dispatch:
     inputs:

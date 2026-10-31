@@ -1350,8 +1350,25 @@ ignore the athlete's data, a Coach that cannot change the plan). Nothing in prod
   `EVAL_SIM_MAX_USD` (default 3), uploads `coach-simulation-report` (`simulation.md`, `simulation.json`) and writes
   the scorecard and ranked problems to the job summary. Exit 1 only on a harness error or when no
   Coach turn ran.
-- **Not measured here:** the vector search, the prompt cache, production latency and the Claude
-  Messages API request itself.
+- **Not measured here:** the vector search and the prompt cache over the router (the direct run
+  below sends the production Claude request itself).
+- **Direct run on Claude (2026-10-31).** With no `EVAL_BASE_URL`, `run.ts` takes the Coach from the
+  `AI_COACH_CHAT_*` route with `ANTHROPIC_API_KEY` (`coach_sim/anthropic_client.ts`,
+  `anthropicGatewayFromEnv`: the production gateway path and timing with a metered fetch), and the
+  athlete and the judges call the Messages API with the same key (`anthropicChat`; thinking off as
+  production sets it, no sampling options). The preflight sends one tiny request per model
+  (`preflightDirect`); a run whose estimate exceeds the cap at its smallest size does not start.
+  Since this merge the simulator also shows what the athlete reads after the proposal step
+  (`athleteSees`, as `proposeFromChat` leaves it), keeps a data summary in the thread marked
+  `answer_source: "data_summary"` (v10, context 8.1), counts a session of the athlete's own plan
+  as data use, and gives the Coverage Brief the 1.2 index (`Contributors.dataIndex`; the bank
+  builds one with `bankIndex`).
+- **First run on the production model** (2026-10-31, Haiku 5.5 Coach, Haiku athlete, Sonnet 5.5
+  judges; USD 1.23 for 16 conversations and 48 turns, then USD 0.74 for 8 with #187 applied):
+  report `docs/reviews/2026-10-31-coach-simulation.md`. 3 data summaries (two rep-notation loads
+  the numbers check did not ground, one ISSN false positive) went to 0 with #187; expert judge mean
+  about 2.7 of 5; open: a two-item proposal intent, scheduling a block ahead (owner), length, lift
+  mix-ups.
 
 ## Coach reply guards: lift loads, plans, studies, summaries, repeats (2026-10-18)
 
