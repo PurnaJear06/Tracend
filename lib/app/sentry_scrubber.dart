@@ -1,4 +1,9 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:http/http.dart' as http;
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// What replaces a value the athlete entered or the phone measured.
 const redactedValue = '[redacted]';
@@ -95,7 +100,7 @@ String scrubText(String text) {
       .replaceAll(_detailsPattern, 'details: $redactedValue')
       .replaceAll(_failingRowPattern, 'Failing row contains ($redactedValue)')
       .replaceAll(_keyPairPattern, 'Key ($redactedValue)=($redactedValue)')
-      .replaceAllMapped(_urlPattern, (match) => _stripQuery(match[0]!))
+      .replaceAllMapped(_urlPattern, (match) => templateUrl(match[0]!))
       .replaceAll(_uuidPattern, '[id]')
       .replaceAll(_emailPattern, '[email]')
       .replaceAllMapped(
@@ -107,9 +112,58 @@ String scrubText(String text) {
   return out;
 }
 
-String _stripQuery(String url) {
-  final cut = url.indexOf(RegExp(r'[?#]'));
-  return cut < 0 ? url : url.substring(0, cut);
+final _digitsPattern = RegExp(r'^\d+$');
+
+/// A path segment that names one record or file rather than a route: an id,
+/// a number, a filename, or a long token that mixes letters and digits.
+bool _isRecordSegment(String segment) =>
+    _uuidPattern.hasMatch(segment) ||
+    _digitsPattern.hasMatch(segment) ||
+    segment.contains('.') ||
+    (segment.length >= 16 && segment.contains(RegExp(r'\d')));
+
+/// [url] reduced to its origin and a route template: no query, no fragment, no
+/// credentials, every segment that names a record or a file (a UUID, a number,
+/// `IMG_1234.JPG`, a token) replaced by `:id`, and everything after
+/// `/object/` (a Storage bucket, owner and photo path) replaced by `:path`.
+/// A Storage URL keeps no athlete id, set id or pose.
+String templateUrl(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null || !uri.hasScheme || uri.host.isEmpty) return '[url]';
+  final segments = <String>[];
+  var afterObject = false;
+  for (final segment in uri.pathSegments) {
+    if (segment.isEmpty) continue;
+    if (afterObject) {
+      if (segments.last != ':path') segments.add(':path');
+      continue;
+    }
+    if (segment == 'object') {
+      afterObject = true;
+      segments.add(segment);
+      continue;
+    }
+    segments.add(_isRecordSegment(segment) ? ':id' : segment);
+  }
+  final port = uri.hasPort ? ':${uri.port}' : '';
+  final path = segments.isEmpty ? '' : '/${segments.join('/')}';
+  return '${uri.scheme}://${uri.host}$port$path';
+}
+
+/// What an exception is, with no free text: its type and code (see
+/// [describeFailure]); a lost connection is `network`. A failure the app
+/// reported keeps its own fixed wording. Null for an exception whose type is
+/// not the event's thrown one (a chained cause), which keeps its type only.
+String? _failureLabel(Object? thrown) {
+  if (thrown == null) return null;
+  if (thrown is NonCriticalFailure) return thrown.toString();
+  if (thrown is SocketException ||
+      thrown is HandshakeException ||
+      thrown is TimeoutException ||
+      thrown is http.ClientException) {
+    return '${thrown.runtimeType} network';
+  }
+  return describeFailure(thrown);
 }
 
 /// [value] with every sensitive key's value replaced and every text scrubbed,
@@ -154,8 +208,8 @@ Breadcrumb? scrubBreadcrumb(Breadcrumb? crumb, Hint hint) {
 }
 
 /// The event Sentry may send, scrubbed in place: the request body and query,
-/// contexts, `extra`, the message, every exception value and every
-/// breadcrumb. An event that cannot be scrubbed is dropped, never sent as it
+/// contexts, `extra`, the message, every exception value (reduced to its type
+/// and code) and every breadcrumb. An event that cannot be scrubbed is dropped, never sent as it
 /// was.
 SentryEvent? scrubEvent(SentryEvent event, Hint hint) {
   try {
@@ -163,7 +217,7 @@ SentryEvent? scrubEvent(SentryEvent event, Hint hint) {
     if (request != null) {
       // Cookies, headers, the query and the fragment never travel.
       event.request = SentryRequest(
-        url: request.url == null ? null : _stripQuery(request.url!),
+        url: request.url == null ? null : templateUrl(request.url!),
         method: request.method,
         data: scrubValue(request.data),
       );
@@ -185,9 +239,14 @@ SentryEvent? scrubEvent(SentryEvent event, Hint hint) {
     if (message != null) {
       event.message = SentryMessage(scrubText(message.formatted));
     }
+    // An exception's text can hold a row, a filename or model prose, however
+    // it is pattern-scrubbed, so only its type and code travel.
+    final thrown = event.throwable;
     for (final exception in event.exceptions ?? const <SentryException>[]) {
-      final value = exception.value;
-      if (value != null) exception.value = scrubText(value);
+      exception.value =
+          thrown != null && exception.type == '${thrown.runtimeType}'
+          ? _failureLabel(thrown)
+          : null;
     }
     final breadcrumbs = event.breadcrumbs;
     if (breadcrumbs != null) {

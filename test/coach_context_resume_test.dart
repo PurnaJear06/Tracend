@@ -11,10 +11,12 @@ class _Repository
     implements CoachRepository, CoachChatRepository, CoachContextRepository {
   bool planApproved = false;
   int contextLoads = 0;
+  bool failLoads = false;
 
   @override
   Future<List<CoachContextSource>> loadContextStatus() async {
     contextLoads++;
+    if (failLoads) throw StateError('offline');
     return [
       CoachContextSource(
         key: 'approved_plan',
@@ -121,5 +123,22 @@ void main() {
 
     expect(find.text(noPlan), findsNothing);
     expect(repository.contextLoads, 2);
+  });
+
+  testWidgets('a context status that failed to load is asked again on the '
+      'next resume, not kept as fresh', (tester) async {
+    repository.failLoads = true;
+    await pumpCoach(tester);
+    expect(repository.contextLoads, 1);
+
+    repository.failLoads = false;
+    repository.planApproved = true;
+    now = now.add(const Duration(minutes: 1));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+
+    expect(repository.contextLoads, 2);
+    expect(find.text(noPlan), findsNothing);
+    expect(find.text('What is my next meal?'), findsOneWidget);
   });
 }

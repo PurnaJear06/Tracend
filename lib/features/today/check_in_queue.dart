@@ -192,22 +192,28 @@ class CheckInQueue {
   /// format, is discarded as stale.
   Future<Map<String, Map<String, dynamic>>> _read() async {
     final entries = _decodeList(_preferences.getString(_key));
-    var moved = false;
+    final stored = <String>[];
     for (final oldKey in _singleSlotKeys) {
-      final stored = _preferences.getString(oldKey);
-      if (stored == null) continue;
-      final entry = _decodeEnvelope(stored);
+      final value = _preferences.getString(oldKey);
+      if (value == null) continue;
+      stored.add(oldKey);
+      final entry = _decodeEnvelope(value);
       if (entry != null) {
         entries.putIfAbsent(entry['local_date'] as String, () => entry);
       }
-      await _preferences.remove(oldKey);
-      moved = true;
     }
-    if (moved) await _write(entries);
+    if (stored.isEmpty) return entries;
+    // The keyed list is written first, and the old keys go only once that
+    // write succeeded: a failure or an interruption leaves them to be read
+    // again, and the move is repeatable.
+    if (!await _write(entries)) return entries;
+    for (final oldKey in stored) {
+      await _preferences.remove(oldKey);
+    }
     return entries;
   }
 
-  Future<void> _write(Map<String, Map<String, dynamic>> entries) =>
+  Future<bool> _write(Map<String, Map<String, dynamic>> entries) =>
       entries.isEmpty
       ? _preferences.remove(_key)
       : _preferences.setString(_key, jsonEncode(entries));

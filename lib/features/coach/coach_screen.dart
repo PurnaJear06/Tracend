@@ -221,8 +221,14 @@ class _CoachScreenState extends State<CoachScreen> {
   void _loadContextStatus() {
     final repository = widget.repository;
     if (repository is! CoachContextRepository) return;
-    _contextLoaded.mark();
-    _contextStatus = (repository as CoachContextRepository).loadContextStatus();
+    // Fresh only once the status arrived, for the day it was asked on: a
+    // failed load is asked again on the next resume or tab open.
+    final day = localDayKey(widget.now());
+    final status = (repository as CoachContextRepository).loadContextStatus();
+    _contextStatus = status;
+    status.then((_) {
+      if (identical(_contextStatus, status)) _contextLoaded.mark(day: day);
+    }, onError: (Object _) {});
   }
 
   void _reloadContextStatus({Duration? within}) {

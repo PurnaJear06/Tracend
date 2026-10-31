@@ -15,6 +15,7 @@ import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/shell/app_shell.dart';
 import 'package:tracend/shared/brand/tracend_intro.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
 import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
@@ -210,9 +211,11 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       unawaited(_widgetEraser.retryPending());
       // Travel changes the device's zone while the app sleeps: the server's
-      // local dates follow the stored zone, so it is stored again now.
+      // local dates follow the stored zone, so it is stored again now. The
+      // screens refresh after it (this observer runs before theirs), or they
+      // would read the old local date and mark it fresh.
       if (_authenticated && widget.environment.hasSupabaseConfiguration) {
-        unawaited(AccountTimeZone.supabase(_client).sync());
+        ResumeGate.hold(AccountTimeZone.supabase(_client).sync());
       }
     }
   }

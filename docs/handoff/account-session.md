@@ -131,14 +131,20 @@ From the pre-beta QA audit (groups B and C; app only, no migration, needs a rein
   selects today; "This week" counts the current week whichever week the strip shows.
 - **Meals** follow today across midnight unless a day was picked; a reply for a day no longer
   shown is dropped. **Progress** reloads its brief and goal with the measurements (refresh,
-  weigh-in, resume, tab). **Coach** reloads its context status and starter questions.
+  weigh-in, resume, tab). **Coach** reloads its context status and starter questions, marking it fresh only once the load
+  succeeded.
 - **Today** resume: Apple Health auto-sync (30-minute throttle) and health history reload, and
   the check-in replay. The queue (`check_in_queue.dart`) is a list keyed by answer day; the old
   single entry (`daily_check_in_pending[.uid]`) is moved into it on first read. A final refusal
   (22023, 22P02, 23514, P0001) drops that day, shows a note and reports to Sentry by code; other
-  failures keep the day and stop the replay. The gate stores the device time zone on resume.
+  failures keep the day and stop the replay. The old single entry is moved only after the keyed list
+  was written; its keys are removed after that write succeeded, so an interruption repeats safely.
+  The gate stores the device time zone on resume and holds the screens' resume refresh
+  (`ResumeGate`, 5 s timeout) until the sync ended, so they never read the old `local_today`.
 - **Sentry** (`lib/app/sentry_scrubber.dart`, `lib/shared/diagnostics.dart`): see SECURITY_PRIVACY
-  §Telemetry. 153 `debugPrint('Non-critical error: $e')` calls now use `logNonCritical`; gate
+  §Telemetry: request and breadcrumb URLs keep an origin and a route template only (no Storage
+  path, id or filename), and an exception value is its type and code (`network` for a lost
+  connection), never free text. 153 `debugPrint('Non-critical error: $e')` calls now use `logNonCritical`; gate
   refresh failures reach Sentry through `reportNonCritical`.
 - **Edge:** the meal-vision providers and the handler throw or log a fixed code, never a parser
   message that quotes the model. The legacy Groq and Gemini paths stay: the gateway path shares
