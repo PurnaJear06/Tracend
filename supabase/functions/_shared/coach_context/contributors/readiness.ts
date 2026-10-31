@@ -13,11 +13,11 @@
 // "could not be read" block instead of nothing, so the model never reads silence as "nothing to
 // worry about".
 //
-// Seam for the deload signal and the cardio week (B5-3 and B5-4, `get_training_guidance_for_v1`):
-// they join in `readinessLines` as a further list of lines from a second source read in parallel
-// with this one under the same deadline, with their own trace key.
+// The deload signal and the cardio week are their own contributor (`training_guidance.ts`), read in
+// parallel with this one under its own deadline, so a slow guidance read costs only its own block.
 import { blockOf, type CoachContextContributor, type RenderedBlock } from "../host.ts";
 import { record } from "../../recorded_text.ts";
+import { readWithin } from "../read_within.ts";
 import { coachServiceRpc, type ServiceRpc } from "../service_source.ts";
 import {
   type ContextJointArea,
@@ -33,9 +33,6 @@ export const readinessBudgetChars = 2_400;
 
 /** How long the turn waits for the card before it goes on without it. */
 export const readinessDeadlineMs = 1_500;
-
-/** Who answered the card's read: the trace reports it, never a value. */
-export type ReadinessReadStatus = "ok" | "unavailable" | "failed" | "timeout";
 
 /** The athlete's card for a coaching date; null when it cannot be read as exactly that shape. */
 export type ReadinessSource = (
@@ -192,33 +189,6 @@ export function readinessUnknownText(): string {
   ].join("\n");
 }
 
-type Read = Readonly<{ card: ReadinessContext | null; status: ReadinessReadStatus }>;
-
-/** Reads the card within the deadline; never rejects. */
-async function readCard(
-  source: ReadinessSource,
-  userId: string,
-  localDate: string,
-  deadlineMs: number,
-): Promise<Read> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<"timeout">((resolve) => {
-    timer = setTimeout(() => resolve("timeout"), deadlineMs);
-  });
-  try {
-    const value = await Promise.race([
-      Promise.resolve().then(() => source(userId, localDate)),
-      late,
-    ]);
-    if (value === "timeout") return { card: null, status: "timeout" };
-    return { card: value, status: value === null ? "unavailable" : "ok" };
-  } catch {
-    return { card: null, status: "failed" };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 export function createReadinessContributor(
   source: ReadinessSource,
   deadlineMs: number = readinessDeadlineMs,
@@ -228,7 +198,10 @@ export function createReadinessContributor(
     slot: "volatile",
     budgetChars: readinessBudgetChars,
     async render(input): Promise<RenderedBlock> {
-      const { card, status } = await readCard(source, input.userId, input.localDate, deadlineMs);
+      const { value: card, status } = await readWithin(
+        () => source(input.userId, input.localDate),
+        deadlineMs,
+      );
       const trace = { readiness: status };
       return card === null
         ? blockOf(readinessUnknownText(), { trace })
