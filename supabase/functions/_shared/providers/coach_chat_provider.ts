@@ -40,7 +40,6 @@ import {
   maxScheduleAheadDays,
 } from "../coach_lookups/catalogue.ts";
 import type { LookupCount } from "../coach_lookups/runner.ts";
-import { maxBlockStartLeadDays } from "../coach_proposals/training.ts";
 import {
   blockSettings,
   goalPhases,
@@ -1565,9 +1564,7 @@ const proposalContract = "\n# Proposing a change\n" +
   "Kinds:\n" +
   "- temporary_block: a spell away from the gym or the usual setup. setting (" +
   blockSettings.join(" | ") +
-  "), start_date, end_date. For a range of days use the longer end. It starts on approval, so start_date is at most " +
-  maxBlockStartLeadDays +
-  " days ahead; for a later spell, propose nothing yet and say when to ask.\n" +
+  "), start_date, end_date. For a range of days use the longer end.\n" +
   "- training_schedule: a new week for some weeks. weeks (1 to 12; 8 when the athlete gives no length), and any of days_per_week (1 to 6), weekdays (ISO, 1 is Monday), session_minutes (30 to 120). Only days, session length and weeks: the plan's own week is refused.\n" +
   "- exercise_swap: from_exercise (an exercise name from the plan) and, only if the athlete named one, to_exercise.\n" +
   "- intensity_or_phase: exactly one of level (" + intensityLevels.join(" | ") +

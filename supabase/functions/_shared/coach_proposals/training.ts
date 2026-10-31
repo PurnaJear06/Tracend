@@ -144,7 +144,8 @@ export function buildTemporaryBlock(
   const today = state.today;
   if (intent.endDate < intent.startDate || intent.endDate < today) return refusals.datesInvalid();
   if (daysBetween(today, intent.startDate) > maxBlockStartLeadDays) {
-    return refusals.blockStartTooFar();
+    // The first day a block that starts on the athlete's date can be asked for.
+    return refusals.blockStartTooFar(addDays(intent.startDate, -maxBlockStartLeadDays));
   }
   const days = daysBetween(intent.startDate < today ? today : intent.startDate, intent.endDate) + 1;
   if (days > maxBlockDays) return refusals.blockTooLong(maxBlockDays);

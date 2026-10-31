@@ -1908,6 +1908,49 @@ pattern matches the new codes. Budget: a retry follows an unbilled failure, so a
 per run. The root cause of the 400 ms rejections is not known from the code: a fast, repeated failure points at
 a request the provider rejects (a 4xx) rather than a busy provider, and the new code will say which status.
 
+## Coach simulation fixes (2026-10-31, branch `claude/coach-sim-fixes`)
+
+From the first simulator run on the production Coach model (`claude-haiku-5-5` on Anthropic,
+production gateway path; #154, report `docs/reviews/2026-10-31-coach-simulation.md` on that
+branch). No migration, no schema change (0 optional, 0 unions), no new model call.
+
+1. **A load the athlete writes in rep notation grounds the reply** (`coach_safety/numbers_check.ts`).
+   "My old bench was 115 for 5" and "so RDL is 112.5 x 6" gave those figures the unit "other", so
+   the reply's "115 kg x 5" and "112.5 kg x 6" were `numbers_not_grounded` twice and two turns ended
+   in the data summary. A figure followed by `x N` or `for N` (a bare count, not a duration or
+   another measurement) is now a load and matches the same figure in kg or lb, in either direction;
+   never minutes, kcal or a percentage.
+2. **A half-minute rest is advice** (same file). "Take 2 to 2.5 min between sets" was refused for
+   "2.5". A rest of up to five minutes in whole or half minutes is exempt unless the wording gives it
+   to the athlete's past or records ("your rest was 2.5 min" is still checked); hours are unchanged.
+3. **ISSN names a sentence-case title** (`library/mentions.ts`). "The ISSN position stand (Guest et
+   al. 2021)" was `citation_not_retrieved` although `guest_2021_caffeine` was shown: its title is
+   "International society of sports nutrition position stand: ...", whose capitalised runs give no
+   initials. Initials now also come from every run of three to six words before the title's colon,
+   in any case (connector words left out).
+4. **A block asked for too early says when to ask** (`coach_proposals/refusals.ts`, `training.ts`). A
+   travel block asked for on a Friday for Monday is refused (`block_start_too_far`: a block starts
+   on approval, at most 2 days ahead). The reason now names the first day it can be asked for ("Ask
+   for it again from 17 Oct.") instead of "closer to the start date". An instruction telling the
+   model the 2-day limit was tried and dropped: Haiku still sent the intent in 4 of 4 turns.
+5. **Which kind changes what the plan trains** (proposal rules in `coach_chat_provider.ts`).
+   "Change my plan so the bench moves" became a `training_schedule` with the plan's own week
+   (`no_change`). The rules now say `training_schedule` changes only days, session length and weeks
+   (the plan's own week is refused) and that `focus` is the kind for a stalled lift, more strength or
+   size. Instructions stay under `instructionsMaxChars`.
+
+Confirmed by a re-run of the 8 affected conversations with these changes applied locally (USD
+0.74): data summaries 3 of 24 turns before, 0 of 24 after; the supplement conversations now cite.
+
+Not fixed here (in the report): a model `proposal_intent` with two items (a focus and a swap in
+one) is `invalid_intent` and the reply keeps only its last sentence; replies over the bank's
+length (21 of 43); Haiku misreading which lift a target belongs to (front squat target given to the
+back squat); the expert judge's mean of about 2.7 of 5, mostly for no concrete change when asked.
+
+Tests: `numbers_check_test.ts` (three), `mentions_test.ts` (one), `build_test.ts` (the reason and
+the 2-day edge), `coach_chat_provider_gateway_test.ts` (the kinds rule). The pgTAP suite is
+untouched.
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in
