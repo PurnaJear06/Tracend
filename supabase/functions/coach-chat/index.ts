@@ -47,6 +47,7 @@ import { prefetchLibraryEmbedding } from "../_shared/library/live.ts";
 import { libraryContributorId } from "../_shared/library/retrieval.ts";
 import { trainingPlanContributorId } from "../_shared/coach_context/contributors/training_plan.ts";
 import { readinessContributorId } from "../_shared/coach_context/contributors/readiness.ts";
+import { trainingGuidanceContributorId } from "../_shared/coach_context/contributors/training_guidance.ts";
 import { loadMemoryContext, recordMemoryAfterTurn } from "../_shared/coach_memory/store.ts";
 import {
   noSuggestions,
@@ -774,6 +775,9 @@ export async function handleCoachChat(
     // Whether today's readiness card was read, late or not at all: a word, never what it shows.
     const readinessTrace = contributions.traces?.[readinessContributorId];
     if (readinessTrace) log.info("readiness_context", { ...readinessTrace });
+    // The same for the training guidance (a lighter week, the week's cardio): a word, never a value.
+    const guidanceTrace = contributions.traces?.[trainingGuidanceContributorId];
+    if (guidanceTrace) log.info("training_guidance_context", { ...guidanceTrace });
     const generation = redFlag
       ? deterministicSafetyGeneration(redFlag)
       : coachRoute

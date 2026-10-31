@@ -168,11 +168,20 @@ lock in `persist_coach_proposal_v1`): install the app only after it has deployed
 **Coach knows today's readiness card (2026-10-24, branch `claude/coach-readiness-context`, PR open):** a `readiness`
 Coach context block (band, the card's answer state, safety route and strictness, held/limited/watched joints, fixed
 rules; no red-flag code or severity) read from `get_readiness_context_v1` with a 1.5 s deadline and an
-ok/unavailable/failed/timeout trace; the deload and cardio-week reader (`get_training_guidance_for_v1`) is not wired yet: it needs a cost measurement first. Today's meals
+ok/unavailable/failed/timeout trace; the deload and cardio-week reader (`get_training_guidance_for_v1`) is wired by `claude/guidance-perf-coach` (below) after its cost was cut. Today's meals
 and the Coach decision's freshness follow the server day on Today, not the phone date. Daily coaching retries a
 busy or failing provider once and names a rejection by its HTTP status (`anthropic_request_failed_status_<n>`,
 `anthropic_overloaded`). Details: "Coach knows today's readiness card" in [`ai-gateway.md`](./handoff/ai-gateway.md).
 Still open: the reply guard and the A9 screen do not read pain reports (contract requests 2 and 3).
+
+**Guidance performance and Coach guidance (2026-10-31, branch `claude/guidance-perf-coach`, PR open):** the guidance read took 250 ms warm and
+1.7 to 2.9 s cold because every time-zone check read the whole `pg_timezone_names` view (about 56 ms a call, four or five
+a read); migration `20261031110000` answers it from a table of the names (the view for any other name), expected 85 to
+100 ms warm. Coach gets a `training_guidance` context block (a lighter week, the week's cardio; read-only, own 1.5 s
+deadline, nothing on a safety-route day). The calorie guard flags a below-floor daily figure in other languages and no
+longer trusts a limit that is a question or is turned round. Details: "Guidance performance" in
+[`training-engine.md`](./handoff/training-engine.md) and "Coach knows the training guidance" in [`ai-gateway.md`](./handoff/ai-gateway.md).
+Deploy the migration before measuring; no app reinstall.
 
 **Unfinished workouts (2026-10-24, branch `claude/unfinished-workout`, PR open):** the owner's Legs B (23 sets logged,
 never finished) was closed by the stale rule and Coach then called it "not done". A stale-closed session with logged sets
