@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
+import 'package:tracend/features/train/active_workout_screen.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/muscle_groups.dart';
 import 'package:tracend/features/train/train_screen.dart';
@@ -19,6 +20,7 @@ import 'package:tracend/features/train/widgets/training_load_sheet.dart';
 import 'package:tracend/features/train/widgets/workout_hero.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
 import 'package:tracend/shared/widgets/tracend_skeleton.dart';
@@ -389,6 +391,155 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Lower body B'), findsOneWidget);
       expect(find.text('Sunday'), findsOneWidget);
+    });
+
+    testWidgets('a coming day previews its workout and never starts it', (
+      tester,
+    ) async {
+      await _pumpTrain(tester, repository: TrainFixtureRepository());
+      await _tapDay(tester, '2026-10-04');
+      expect(find.text('Lower body B'), findsOneWidget);
+      expect(find.text('Preview workout'), findsOneWidget);
+      expect(find.text('Start workout'), findsNothing);
+      expect(find.text('Log this workout'), findsNothing);
+      await tester.tap(find.text('Preview workout'));
+      await tester.pumpAndSettle();
+      expect(find.byType(WorkoutOverviewBody), findsOneWidget);
+      expect(find.text('Start workout'), findsNothing);
+    });
+
+    testWidgets(
+      'Do it today starts a coming day\'s workout with today\'s date',
+      (tester) async {
+        await _pumpTrain(tester, repository: TrainFixtureRepository());
+        await _tapDay(tester, '2026-10-04');
+        await tester.tap(find.text('Do it today'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 600));
+        final screen = tester.widget<ActiveWorkoutScreen>(
+          find.byType(ActiveWorkoutScreen),
+        );
+        expect(screen.workout.id, lowerB.id);
+        expect(screen.sessionDate, trainToday);
+      },
+    );
+
+    testWidgets('the preview offers Do it today and nothing else', (
+      tester,
+    ) async {
+      await _pumpTrain(tester, repository: TrainFixtureRepository());
+      await _tapDay(tester, '2026-10-04');
+      await tester.tap(find.text('Preview workout'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(FilledButton, 'Start workout'), findsNothing);
+      await tester.tap(find.widgetWithText(FilledButton, 'Do it today'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      final screen = tester.widget<ActiveWorkoutScreen>(
+        find.byType(ActiveWorkoutScreen),
+      );
+      expect(screen.workout.id, lowerB.id);
+      expect(screen.sessionDate, trainToday);
+    });
+
+    testWidgets('today still starts, and its overview starts too', (
+      tester,
+    ) async {
+      await _pumpTrain(tester, repository: TrainFixtureRepository());
+      expect(find.text('Start workout'), findsOneWidget);
+      expect(find.text('Preview workout'), findsNothing);
+      expect(find.text('Do it today'), findsNothing);
+      await tester.tap(find.text('6 exercises, about 48 min'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(FilledButton, 'Start workout'), findsWidgets);
+      expect(find.text('Do it today'), findsNothing);
+    });
+
+    testWidgets('a day done under an earlier plan version shows its session', (
+      tester,
+    ) async {
+      // A Coach change copied the plan under new ids: the session names the
+      // old workout and, when the active plan has a copy, that copy.
+      await _pumpTrain(
+        tester,
+        repository: TrainFixtureRepository(
+          hub: trainHub(
+            sessions: [
+              TrainingSessionSummary(
+                name: 'Lower body A',
+                date: DateTime(2026, 9, 30),
+                durationSeconds: 3120,
+                workoutId: 'w-lower-a-v1',
+                currentWorkoutId: lowerA.id,
+                completionSource: CompletionSource.manual,
+                effortSource: EffortSource.athlete,
+              ),
+            ],
+          ),
+        ),
+      );
+      await _tapDay(tester, '2026-09-30');
+      expect(find.text('Done on Wednesday'), findsOneWidget);
+      expect(find.text('52 min, 2 exercises'), findsOneWidget);
+      expect(
+        find.widgetWithText(OutlinedButton, 'View summary'),
+        findsOneWidget,
+      );
+      expect(find.text('Log this workout'), findsNothing);
+    });
+
+    testWidgets(
+      'a day stays done when the plan has no copy of its workout, and View '
+      'summary opens that session',
+      (tester) async {
+        final repository = TrainFixtureRepository(
+          hub: trainHub(
+            sessions: [
+              TrainingSessionSummary(
+                name: 'Old lower body',
+                date: DateTime(2026, 9, 30),
+                durationSeconds: 3120,
+                workoutId: 'w-retired',
+              ),
+            ],
+          ),
+        );
+        await _pumpTrain(tester, repository: repository);
+        await _tapDay(tester, '2026-09-30');
+        expect(find.text('Done on Wednesday'), findsOneWidget);
+        // The session was another workout: its minutes are not shown as this
+        // workout's.
+        expect(find.text('52 min, 2 exercises'), findsNothing);
+        expect(find.text('Log this workout'), findsNothing);
+        await tester.tap(find.widgetWithText(OutlinedButton, 'View summary'));
+        await tester.pumpAndSettle();
+        // The summary reads the session through its own workout, never the
+        // shown one, which would find nothing.
+        expect(repository.sessionRequests.single.$1, 'w-retired');
+        expect(find.text('Old lower body'), findsOneWidget);
+      },
+    );
+
+    testWidgets("View summary of this workout's own session reads it through "
+        'the shown workout', (tester) async {
+      final repository = TrainFixtureRepository(
+        hub: trainHub(
+          sessions: [
+            TrainingSessionSummary(
+              name: 'Lower body A',
+              date: DateTime(2026, 9, 30),
+              durationSeconds: 3120,
+              workoutId: 'w-lower-a-v1',
+              currentWorkoutId: lowerA.id,
+            ),
+          ],
+        ),
+      );
+      await _pumpTrain(tester, repository: repository);
+      await _tapDay(tester, '2026-09-30');
+      await tester.tap(find.widgetWithText(OutlinedButton, 'View summary'));
+      await tester.pumpAndSettle();
+      expect(repository.sessionRequests.single.$1, lowerA.id);
     });
 
     testWidgets('a past rest day reads as rest without a jump', (tester) async {
@@ -883,6 +1034,72 @@ void main() {
         find.text('Tue 29 Sep, 46 min, from Apple Health'),
         findsOneWidget,
       );
+    });
+  });
+
+  group('History across plan versions', () {
+    testWidgets('a session of an earlier version opens through its copy', (
+      tester,
+    ) async {
+      await _pumpTrain(
+        tester,
+        repository: TrainFixtureRepository(
+          hub: trainHub(
+            sessions: [
+              TrainingSessionSummary(
+                name: 'Lower body A',
+                date: DateTime(2026, 9, 30),
+                durationSeconds: 3120,
+                workoutId: 'w-lower-a-v1',
+                currentWorkoutId: lowerA.id,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.tap(find.text('1 workout in 4 weeks'));
+      await tester.pumpAndSettle();
+      final row = tester.widget<TracendListRow>(
+        find.widgetWithText(TracendListRow, 'Lower body A'),
+      );
+      expect(row.onTap, isNotNull);
+    });
+  });
+
+  group('A plan with no weekdays', () {
+    PlannedWorkout unscheduled(PlannedWorkout workout) => PlannedWorkout(
+      id: workout.id,
+      name: workout.name,
+      objective: workout.objective,
+      estimatedMinutes: workout.estimatedMinutes,
+      exercises: workout.exercises,
+      warmUp: workout.warmUp,
+      cooldownCardio: workout.cooldownCardio,
+    );
+
+    // The server gives every workout of a plan a weekday, so what it says is
+    // what Train shows; only a plan with no backend can have none.
+    test('a lone workout with no weekday is available on any day', () {
+      final hub = trainHub(workouts: [unscheduled(upperA)]);
+      for (var day = 1; day <= 7; day++) {
+        expect(hub.workoutForWeekday(day)?.name, 'Upper body A');
+      }
+      expect(trainHub(workouts: const []).workoutForWeekday(1), isNull);
+    });
+
+    test('several workouts with no weekday are not guessed at', () {
+      final hub = trainHub(
+        workouts: [upperA, upperB, lowerA].map(unscheduled).toList(),
+      );
+      for (var day = 1; day <= 7; day++) {
+        expect(hub.workoutForWeekday(day), isNull);
+      }
+    });
+
+    test('a plan with some weekdays keeps them, and no day is invented', () {
+      final hub = trainHub(workouts: [upperA, unscheduled(upperB)]);
+      expect(hub.workoutForWeekday(5)?.name, 'Upper body A');
+      expect(hub.workoutForWeekday(1), isNull);
     });
   });
 

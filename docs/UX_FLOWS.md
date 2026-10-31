@@ -336,6 +336,17 @@ request."); it needs a note, which is sent with the next build. **Reject proposa
 destructive confirm, **Reject this plan?** (**Reject plan** / **Keep reviewing**); answers stay
 saved and are edited from Review.
 
+If an answer to the proposal fails (a lost reply, a retry refused as stale), the app asks the
+server what it holds before saying anything. A plan that was accepted shows **You're set.**; a
+proposal the server holds as expired, rejected or revision-requested, or a refusal as stale (the
+server's own final answer, even when its status cannot be read), offers the rebuild; one still
+waiting says "Your response was not saved. Nothing has changed; try again."; and when the server
+cannot be read after a plain network error, the app says it could not confirm the response and
+keeps the plan on screen. An accepted plan is **You're set.** whichever answer failed, so the app
+never claims a change that happened is missing and never offers a rebuild that would spend another
+generation. A rejection or
+change request that is recorded goes back to Review even when saving the draft's place fails.
+
 Approval activates exactly those workouts, then shows **You're set.** once: "Your plan is active.
 Nothing else changes without your approval.", the plan, the next session ("Next session: ‹day› ·
 ‹name› · about N min"), the daily calories and protein, and the Apple Health status, with **Go to
@@ -597,6 +608,20 @@ three separate autonomous chatbots.
   late content (a proposal card, a long reply) lays out, until the athlete touches the screen.
   The same 6-hour check runs when the athlete returns to the Coach tab or the app resumes on it,
   unless a reply is on its way or a draft is typed; a chat opened on purpose stays for that visit.
+- **Switching conversations.** Opening a saved conversation clears the messages on screen and
+  shows the loading state; only the latest open applies its result, so tapping B then C shows C,
+  and tapping B then **New conversation** shows an empty new chat, whichever load finishes last. If
+  the conversation cannot be opened, the chat that was open comes back with its messages and its
+  thread, with "Conversation could not be opened." **New conversation** on a chat that is already
+  new keeps offering the same **Continue last chat**. A saved conversation cannot be opened while a
+  reply is on its way ("Coach is still answering. Open another conversation when it’s done."), so a
+  failed open can never lose that reply. A conversation loads its newest 200 messages, starting at
+  a question (an answer whose question was cut is dropped).
+- **A follow-up while Coach is busy.** A suggested next action or **Change it** tapped while a
+  reply is on its way, or during a retry countdown, is not dropped: it shows as "Sends when Coach is
+  ready: ‹text›" with **Cancel**, and goes out when Coach is free. In every other case (Cancel, a
+  failed reply, a newer follow-up, a switch of conversation, AI coaching turned off) the text is put
+  in the composer instead, never lost, and no consent sheet opens by itself.
 - **AI label.** A reply a model wrote carries the small label **AI answer · checked by Tracend**,
   with no provider name (D11). A reply no model wrote (the deterministic safety boundary, stored
   with provider `mock`) reads **Tracend safety answer · not AI** and never carries the AI badge. A
@@ -908,6 +933,31 @@ confirmation actions. The tab reads top to bottom:
   and read as "2 sets of 6 to 8 reps, down from 3 sets"), the hero and list count the lighter total,
   and the workout overview says "Lighter today: 12 of 16 sets" (or "Weights held today"). Starting the
   workout uses those sets and held weights; an easy-cardio answer leaves the strength sets as planned.
+- **A lighter week (B5-3).** Under the readiness card, when the rules suggest one (`suggested`) or an open
+  proposal waits (`pending`): a card "A lighter week could help" with the chip "Suggested by Tracend", the
+  reasons in words (two or more lifts stalled or slipped; readiness low on four or more of the days checked in this
+  past week; most of a block trained), what a lighter week is (the same sessions on the same days, half the
+  sets, weights held, effort 7 or lower, the regular plan back after the week), "Calculated by Tracend from your
+  logged sessions and check-ins. No AI." and "Nothing changes until you approve it." One button, **See what
+  changes**, prepares the proposal (nothing is applied) and opens it in a sheet as the Coach proposal card of
+  §10.1 with **Approve** (confirm sheet, "You can undo it for 7 days"), **Not now** and, after approval,
+  **Undo**; there is no **Change it** here. A running lighter week stays as a quiet card, "A lighter week is on
+  until Sat 31 Oct", with **Details and undo**. Only the rules' own suggestion says "Suggested by Tracend" and
+  gives reasons; a lighter week the athlete asked Coach for shows "Proposed by Coach" with no rule reasons, on
+  the card and in its sheet. While another change waits in Coach, the button answers "You have a change waiting
+  in Coach. Answer it first." and stores nothing. After **Undo** the week is gone and no new one is suggested for
+  14 days. No card on a day with a safety route, under a health check that says to see a
+  professional, within 28 days of the last deload, for 14 days after a declined one, or for a status this
+  version cannot read. Heart rate decides nothing; the words name no condition.
+- **Cardio this week (B5-4).** A row in "This week" after Training load: "85 of 150 min", or "Not enough Apple
+  Health data" when fewer than 5 of the last 7 days have data (never a 0). It opens a sheet: the minutes against
+  150 with a bar and "N min to go" or "You have reached the weekly guideline.", the note that every minute counts
+  as moderate (a workout record has no intensity), up to 300 for fat loss and recomposition, whether hard cardio
+  is open today (up to 2 sessions, each hard minute counts double, about 3 hours from lifting) or "Easy cardio
+  only today" with the four conditions that open it, the talk test ("Easy means you can talk in full sentences")
+  with the heart-rate-reserve share as a guide only, a note that a denied Apple Health workout permission can
+  read as 0 minutes, and "Calculated by Tracend from your Apple Health workouts. No AI." The row is absent on a
+  safety-route day and under `see_professional`.
   Joint changes (B5-2) show on the exercise: the swap's name in place of the original, the
   pain-free range cue under the line, or "Left out today" (read by VoiceOver as "left out today
   because of a sore joint").
@@ -939,7 +989,15 @@ confirmation actions. The tab reads top to bottom:
     muscles selecting each other, and a note that muscles come from the exercise catalog or
     Tracend's reviewed exercise list.
   - The one action is **Start workout** (heavy haptic), **Log this workout** for a past day with
-    nothing logged, or **View summary** for a done day. The summary sheet shows "Done on ‹date›",
+    nothing logged, **Preview workout** for a day that has not begun (it opens the overview, whose one
+    action is **Do it today**, as does a link under the preview: it starts that workout with today's
+    date; the server refuses a start for a future date), or **View summary** for a
+    done day. A day done under an earlier plan version (a Coach change, a block or a deload copies the
+    workouts) shows as done, with its session. Train shows the weekdays the server holds. A Coach proposal that carries no
+    weekday gets the athlete's training days when they are as many as the workouts, else a spread
+    (two: Monday, Thursday; three: Monday, Wednesday, Friday; four: Monday, Tuesday, Thursday, Friday;
+    one, or five or more, from Monday), so every server reader agrees on the same days. Only a plan
+    with no backend can lack weekdays; its lone workout shows on every day. The summary sheet shows "Done on ‹date›",
     time, sets logged of planned, the athlete's own effort ("N of 10", or "Not rated" for app
     defaults) and **What you logged** per exercise. "Auto-completed from Apple Health. Sets were not
     logged in Tracend." shows only when `completion_source` is `healthkit`.
@@ -1035,7 +1093,10 @@ and a state word, so color is never the only signal:
   sheet holding **Delete meal**. Deletion then requires a destructive confirmation (**Delete this
   meal?**, Cancel as the default) explaining that the meal leaves the day's totals.
 - A draft shows **Needs review** and a **Review foods** action that restores its candidates; users
-  never need to create a second analysis to resume unfinished review.
+  never need to create a second analysis to resume unfinished review. A draft with no estimates (its
+  photo analysis failed earlier) opens a sheet that says there is nothing to review and offers
+  **Delete draft**, instead of a Confirm button that never enables. A draft under 10 minutes old
+  may still be analyzing, so its sheet says to check again and offers no delete.
 - Unlogged slots show **Due now**, **Planned**, **Optional**, or **Not logged** with their planned
   foods and a **Log** action.
 - With nothing logged or planned the timeline reads "Nothing logged yet".
@@ -1046,6 +1107,12 @@ Breakfast before 10:30, Lunch before 15:00, Snack before 17:30, then Dinner) and
 a photo**, **Choose from Photo Library**, or **Enter manually** as one grouped list. A photo meal is
 saved under the chosen type. The coach's nutrition guidance sits at the end of the screen under a
 sentence-case **Coach** label, with its confidence in words.
+
+**Enter manually** keeps its sheet open until the meal is saved. If the save fails, the sheet says
+so and keeps what was typed; **Confirm meal** again repeats the same request key, so a save whose
+reply was lost adds nothing twice, while a changed meal is a new save. After a failure the app asks
+the server whether it wrote the meal: if it did, the sheet closes as saved; if it cannot find out,
+the sheet says the meal "may not have been saved". The day reloads after a failure too.
 
 Feedback: confirming a meal (manual entry or reviewed candidates) plays the `success` haptic and
 shows a **Meal logged** toast; a deleted meal shows **Meal deleted**. Failures stay on the page in
@@ -1100,7 +1167,8 @@ AI observation                 Confirmed meal
   diagnostic · analysis: 503 meal_analysis_unavailable`. No message names a provider.
 - Failure offers **Retry**, **Enter manually**, and **Delete photo**. **Not built yet:** a photo
   failure is a notice in words with its diagnostic; a draft that cannot open says to retry or
-  delete it and enter the meal manually.
+  delete it and enter the meal manually. A failed analysis (503, 429, 422) removes the photo and
+  the draft with it, so no **Needs review** row is left behind.
 
 ## 9. Progress Review
 
@@ -1226,6 +1294,9 @@ it does not use this flow: it is a one-tap, same-day, reversible choice shown on
 Train (§7), with Undo until the workout starts and no confirm sheet. Its server side is built
 (B4-1) and so is the app side (B4-2). The joint changes and the pain check (B5) use the same card
 and the same one tap (B5-2).
+A lighter week the rules suggest (§7) is a persistent change, so it does
+use this flow: the Train card opens the §10.1 proposal card ("Suggested by Tracend" in place of "Proposed by
+Coach"), created by the `training-proposals` function only when the athlete taps **See what changes**.
 
 ### 10.1 Coach proposal card (A8)
 
@@ -1247,6 +1318,11 @@ place a Coach suggestion can be applied, and only the athlete's tap applies it:
   it can no longer be undone from here.
 - A proposal that expired, or whose plan, targets or goal changed meanwhile, is never applied: the
   card says what happened and to ask Coach again.
+- After any error (offline, a timeout, a refused retry) the card reads the proposal again. If the
+  answer had been recorded and only the reply was lost, the card shows what the server holds
+  (**Applied**, **Not now**, **Change requested**, **Undone**) and the plan screens reload when it
+  was applied or restored; otherwise it says "Could not reach Tracend. Check your connection and
+  try again." and the buttons stay usable.
 - A request the rules refuse (a calorie target under the floor, too little logging, a screening cap)
   gets no card; Coach replies with the plain reason.
 - The card carries no model or company name (D11). It renders from a proposal the caller has or
@@ -1292,6 +1368,8 @@ plan. **Not built yet:** links to source data, charts, and a proposed-adjustment
   (and once in onboarding).
 - Revocation keeps manual features usable and explains iOS settings.
 - Sync shows date range and last success instead of an indefinite spinner.
+- A sync that is retried repeats one request key, so an attempt whose reply was lost is not applied
+  twice.
 - **Heart-rate zones (C3).** The Apple Health sheet in Account, once Apple Health is connected, ends
   with a small "Heart-rate zones" section under the signals: one line with resting heart rate and the
   maximum ("Resting 59 bpm · Max 183 bpm, estimated from your age", or "from your workouts" once a

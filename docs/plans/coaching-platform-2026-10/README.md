@@ -788,8 +788,8 @@ Open, from B4/B5 (none of these files are built in B4-1):
    card.
 6. **research-library (E):** update `bell_2023_deloading` from its CC BY full text; add
    summary-only entries for Finucane 2020, Stiell 1997 and NICE NG59 (B5).
-7. **lead:** if B5-3 uses a `training-proposals` Edge Function, `supabase/config.toml` and the
-   deploy list. B5-3 did not build it (it needs those files): the rules-originated card therefore
+7. **lead (done in the Train-card branch `claude/train-deload-cardio-ui`):** `training-proposals` is in
+   `supabase/config.toml`, `deploy.yml` and `hotfix.yml`. B5-3 did not build it (it needs those files): the rules-originated card therefore
    still has no creator. Until it lands, an athlete gets a deload by asking Coach (the A8 path, now
    limited to one week with loads held), and `get_my_training_guidance_v1` reports `deload.status`
    `suggested` with its reasons for the app to show.
@@ -804,7 +804,7 @@ Open, from B4/B5 (none of these files are built in B4-1):
    false) and are missing when `done_min` is null. The `intensity_or_phase` tool text in
    `coach_chat_provider.ts` still says "weeks (1 to 8)": for `level: deload` the builder uses exactly
    one week, so say so there.
-9. **app (B5-3, B5-4, not built):** a Train card "A lighter week could help" shown when
+9. **app (B5-3, B5-4, built in `claude/train-deload-cardio-ui`; the bpm line is not shown):** a Train card "A lighter week could help" shown when
    `deload.status` is `suggested` (reasons in words; "Suggested by Tracend"), a "Cardio this week" row
    from `cardio_week` with its sheet (a missing `done_min` reads "Connect Apple Health to count your
    cardio"; the easy-cardio heart-rate line comes from the C3 profile using `easy_hr_reserve_max`).

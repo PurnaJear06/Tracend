@@ -89,6 +89,21 @@ class _Server extends FixtureWorkoutRepository {
   /// The next sync is refused with 22023, as for a set number with no row.
   var refuseNext = false;
 
+  /// `start_workout` answers with this code (22023: the day has not begun,
+  /// 55000: the day is already logged), or fails as offline for 'offline'.
+  String? startRefusal;
+
+  /// What the session read returns once the start was refused with 55000: the
+  /// finished session of an earlier plan version.
+  Map<String, dynamic>? loggedSession;
+
+  /// The exercise names the session on the server was begun with, by order;
+  /// the plan's own when not set (an earlier plan version may have had others).
+  Map<int, String> sessionNames = const {};
+
+  /// Orders the session on the server made as a substitution (for pain).
+  Set<int> substituted = const {};
+
   /// Exercises the server made as a swap for a sore joint, by order: the
   /// name of the gentler exercise and its catalog slug.
   final swaps = <int, ({String name, String slug})>{};
@@ -111,8 +126,12 @@ class _Server extends FixtureWorkoutRepository {
             'performed_name': swap.name,
             'exercise_slug': swap.slug,
             'substitution_reason': 'pain',
-          } else
-            'performance_kind': 'prescribed',
+          } else ...{
+            'performance_kind': substituted.contains(exercise.order)
+                ? 'substituted'
+                : 'prescribed',
+            'performed_name': sessionNames[exercise.order] ?? exercise.name,
+          },
           'sets': [
             for (var n = 1; n <= (rows[exercise.order] ?? 0); n++)
               {'number': n, 'completed': false},
@@ -128,6 +147,11 @@ class _Server extends FixtureWorkoutRepository {
     DateTime? localDate,
   }) async {
     if (failStart) throw Exception('offline');
+    final refusal = startRefusal;
+    if (refusal == 'offline') throw Exception('offline');
+    if (refusal != null) {
+      throw PostgrestException(message: 'refused', code: refusal);
+    }
     started = true;
     return 'srv-1';
   }
@@ -156,6 +180,7 @@ class _Server extends FixtureWorkoutRepository {
     DateTime? localDate,
   }) async {
     if (started && failReads) throw Exception('offline');
+    if (loggedSession != null && startRefusal == '55000') return loggedSession;
     return started || alreadyStarted ? _session() : null;
   }
 
@@ -228,7 +253,169 @@ Future<void> _mount(
   await tester.pumpAndSettle();
 }
 
+/// Opens the workout from a button, so closing it has a screen to return to.
+Future<void> _openPushed(WidgetTester tester, _Server server) async {
+  SharedPreferences.setMockInitialValues({});
+  tester.view.physicalSize = const Size(390, 844);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: TracendTheme.dark,
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: FilledButton(
+            onPressed: () => Navigator.of(context).push<bool>(
+              MaterialPageRoute(
+                builder: (_) => ActiveWorkoutScreen(
+                  workout: _plan,
+                  repository: server,
+                  restAlerts: _Alerts(),
+                  notifications: _Notifications(),
+                  activity: FakeWorkoutActivityBridge(),
+                  lockScreenNumbers: () async => false,
+                  clock: () => DateTime(2026, 10, 3, 9),
+                ),
+              ),
+            ),
+            child: const Text('Open workout'),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('Open workout'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
+  group('a start the server refuses for good', () {
+    testWidgets('a day that has not begun (22023) closes with a message, '
+        'not as offline', (tester) async {
+      final server = _Server({1: 3, 2: 3})..startRefusal = '22023';
+      await _openPushed(tester, server);
+      expect(find.byType(ActiveWorkoutScreen), findsNothing);
+      expect(
+        find.text('This day has not started yet. Open the workout on the day.'),
+        findsOneWidget,
+      );
+      expect(server.syncs, isEmpty);
+    });
+
+    testWidgets('a day already logged (55000) opens the finished session, '
+        'with the exercises as they were logged', (tester) async {
+      final server = _Server({1: 3, 2: 3})
+        ..startRefusal = '55000'
+        ..loggedSession = {
+          'session_id': 'done-1',
+          'state': 'completed',
+          'duration_seconds': 3000,
+          'exercises': [
+            {
+              'order': 1,
+              'status': 'performed',
+              'performed_name': 'Incline press',
+              'sets': [
+                {
+                  'number': 1,
+                  'completed': true,
+                  'repetitions': 8,
+                  'load_kg': 50,
+                },
+              ],
+            },
+          ],
+        };
+      await _openPushed(tester, server);
+      expect(find.byType(ActiveWorkoutScreen), findsOneWidget);
+      expect(find.text('Incline press'), findsWidgets);
+      expect(find.text('Bench press'), findsNothing);
+      expect(find.text('Done set 1'), findsNothing);
+      expect(server.syncs, isEmpty);
+    });
+
+    testWidgets('55000 with nothing to show closes with a message', (
+      tester,
+    ) async {
+      final server = _Server({1: 3, 2: 3})..startRefusal = '55000';
+      await _openPushed(tester, server);
+      expect(find.byType(ActiveWorkoutScreen), findsNothing);
+      expect(
+        find.text('This workout is already logged for the day.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a network failure still waits as offline', (tester) async {
+      final server = _Server({1: 3, 2: 3})..startRefusal = 'offline';
+      await _openPushed(tester, server);
+      expect(find.byType(ActiveWorkoutScreen), findsOneWidget);
+    });
+  });
+
+  group('a session in progress under another plan version', () {
+    testWidgets('begun on the same exercises is resumed', (tester) async {
+      final server = _Server({1: 2, 2: 3}, alreadyStarted: true);
+      await _open(tester, server);
+      expect(server.started, isFalse, reason: 'resumed, not started again');
+      expect(find.text('Set 1 of 2'), findsOneWidget);
+    });
+
+    testWidgets('begun on other exercises is never this workout\'s: its sets '
+        'would be logged under the wrong names', (tester) async {
+      final server = _Server({1: 2, 2: 3}, alreadyStarted: true)
+        ..sessionNames = {1: 'Overhead press'};
+      await _open(tester, server);
+      expect(server.started, isTrue, reason: 'started as its own session');
+      expect(find.text('Bench press'), findsWidgets);
+    });
+
+    testWidgets('a substitution made for pain is not a different workout', (
+      tester,
+    ) async {
+      final server = _Server({1: 2, 2: 3}, alreadyStarted: true)
+        ..sessionNames = {1: 'Machine chest press'}
+        ..substituted = {1};
+      await _open(tester, server);
+      expect(server.started, isFalse);
+    });
+  });
+
+  group('a start refused after sets were logged here', () {
+    testWidgets('the finished session opens, the draft goes, and the athlete '
+        'is told what was not added', (tester) async {
+      final handle = tester.ensureSemantics();
+      final server = _Server({1: 3, 2: 3})..startRefusal = 'offline';
+      await _open(tester, server);
+      await _doneSet(tester, 1);
+      expect(await server.loadDraft('upper-a'), isNotNull);
+      server
+        ..startRefusal = '55000'
+        ..loggedSession = {
+          'session_id': 'done-1',
+          'state': 'completed',
+          'duration_seconds': 3000,
+          'exercises': const [],
+        };
+      await tester.tap(find.text('Done set 2'));
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pumpAndSettle();
+      expect(find.text('Completed · 50 min'), findsOneWidget);
+      expect(
+        find.text(
+          'Sets you logged here were not added to the finished workout.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        await server.loadDraft('upper-a'),
+        isNull,
+        reason: 'a later occurrence of this workout must not restore it',
+      );
+      handle.dispose();
+    });
+  });
+
   testWidgets('a fresh start takes the set rows the server made', (
     tester,
   ) async {

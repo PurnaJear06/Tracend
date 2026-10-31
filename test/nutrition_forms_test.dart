@@ -48,7 +48,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: TracendTheme.light,
-          home: const Scaffold(body: ManualMealSheet()),
+          home: Scaffold(body: ManualMealSheet(onSave: (_) async {})),
         ),
       );
       final fields = tester
@@ -70,12 +70,15 @@ void main() {
           home: Scaffold(
             body: Builder(
               builder: (context) => TextButton(
-                onPressed: () async =>
-                    result = await Navigator.of(context).push<ManualMealResult>(
-                      MaterialPageRoute(
-                        builder: (_) => const Scaffold(body: ManualMealSheet()),
+                onPressed: () async => await Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => Scaffold(
+                      body: ManualMealSheet(
+                        onSave: (saved) async => result = saved,
                       ),
                     ),
+                  ),
+                ),
                 child: const Text('open'),
               ),
             ),
@@ -118,8 +121,11 @@ void main() {
                 onPressed: () async => confirmed = await Navigator.of(context)
                     .push<List<MealCandidate>>(
                       MaterialPageRoute(
-                        builder: (_) => const Scaffold(
-                          body: CandidateSheet(candidates: [_candidate]),
+                        builder: (_) => Scaffold(
+                          body: CandidateSheet(
+                            candidates: const [_candidate],
+                            onDiscard: () async {},
+                          ),
                         ),
                       ),
                     ),
@@ -192,8 +198,11 @@ void main() {
                   onPressed: () async => confirmed = await Navigator.of(context)
                       .push<List<MealCandidate>>(
                         MaterialPageRoute(
-                          builder: (_) => const Scaffold(
-                            body: CandidateSheet(candidates: [_candidate]),
+                          builder: (_) => Scaffold(
+                            body: CandidateSheet(
+                              candidates: const [_candidate],
+                              onDiscard: () async {},
+                            ),
                           ),
                         ),
                       ),

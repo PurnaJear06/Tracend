@@ -220,7 +220,9 @@ physique check answer within the request.
     until the deploy workflow stores that URL after the migrations, via
     `private.library_set_embed_url`, executable by `service_role` only); and
   - the daily `meal-media-retention` worker, which authenticates with `RETENTION_WORKER_SECRET`
-    read from Vault. The same worker removes expired export packages and orphaned Storage objects;
+    read from Vault (job `meal-media-retention-daily`, created by migration; it posts only to the
+    URL in the Vault secret `meal_media_retention_url`, set by the deploy workflow via
+    `private.meal_media_retention_set_url`). The same worker removes expired export packages and orphaned Storage objects;
     a failed Storage deletion keeps the object reference for retry.
 
 The weekly-review worker is database-native. Daily Cron deduplicates one job per active user and
@@ -380,7 +382,7 @@ history.
 
 ### Edge Functions
 
-Fourteen functions, each in its own directory under `supabase/functions/` (`_shared`, `_tests` and
+Fifteen functions, each in its own directory under `supabase/functions/` (`_shared`, `_tests` and
 `_evals` hold shared code, tests and evals):
 
 ```text
@@ -394,6 +396,7 @@ onboarding-plan          JWT    starting plan and follow-up questions
 physique-check           JWT    owner-only physique check
 privacy-delete-account   JWT    account deletion
 privacy-export           JWT    encrypted export
+training-proposals       JWT    the deload the rules suggest, stored for the athlete to answer
 waitlist-confirm         none   website double opt-in
 waitlist-join            none   website signup
 waitlist-unsubscribe     none   website unsubscribe

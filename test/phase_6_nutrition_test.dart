@@ -404,7 +404,10 @@ class _NutritionRepository implements NutritionRepository {
     required DateTime date,
     required String mealType,
     required ManualFoodInput food,
+    required String idempotencyKey,
   }) async {}
+  @override
+  Future<bool> isMealSaved(String idempotencyKey) async => false;
   @override
   Future<List<MealCandidate>> loadCandidates(String mealId) async => const [
     MealCandidate(

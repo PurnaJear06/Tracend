@@ -36,7 +36,7 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   `20261023140024`): `day_adjustments`, `get_my_day_adjustment_v1` / `respond_to_day_adjustment_v1`
   (hold loads, one set fewer or easy cardio for today only; one tap and Undo; the recovery score never
   adjusts a session alone, the athlete may choose), `start_workout` building the adjusted sets and B3
-  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). B5-1 (pain check and joint rules) merged as #172; B5-2 (the pain check in the app) in review as #176; B5-3 and B5-4 (deloads and cardio dosing, server) in review. Handoff:
+  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). B5-1 (pain check and joint rules) merged as #172; B5-2 (the pain check in the app) in review as #176; B5-3 and B5-4 (deloads and cardio dosing, server) in review. Training-day integrity (QA group A, branch `claude/training-day-integrity`, migration `20261024090000`, hub 1.9): sessions logged under an earlier plan version stay done in Train and cannot be logged twice, a start for a future day is refused (the app previews it), and the hub uses the athlete's local date. Handoff:
   [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping
@@ -90,6 +90,15 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 
+**Lost replies and thread switching (2026-10-24, branch `claude/lost-replies-thread-switch`, PR open):** QA audit groups E
+and F, app only. Coach: the latest conversation open wins and a failed open restores the previous chat; New conversation
+keeps the Continue row; a conversation loads its newest 200 messages; a follow-up tapped while Coach is busy waits
+visibly instead of being dropped. A Coach proposal, the onboarding plan approval, a manual meal and an Apple Health
+sync no longer treat a lost reply as a failure: they re-read the server, repeat one idempotency key, or keep what was
+typed; a failed meal photo deletes its draft and an empty draft can be deleted. Needs `./scripts/install-device.sh`
+from the merged commit. Workout finish (M-E3) is left to the open workout PRs. Details: "Lost replies, idempotent
+writes and thread switching" in [`ai-gateway.md`](./handoff/ai-gateway.md).
+
 **Query order fix (2026-10-24, branch `claude/explicit-query-order`, PR open):** saved Coach conversations loaded
 newest-first (postgrest-dart's `order()` defaults to descending, and `loadMessages` left the direction out), so a
 reply sat above its question and the screen opened on the oldest message. Fixed with an explicit ascending order;
@@ -142,8 +151,15 @@ one week, half the sets, loads held, effort 7 or lower. Nothing is applied by ru
 nothing. Review round 1 (migration `20261024060325`): B3 holds instead of stepping up during a deload week
 and ignores deload sessions as stall evidence, a pending deload is withheld and unapprovable on a safety-route
 day, 14 days of quiet after a declined or expired proposal, and the cardio gates (unavailable today, a cleared
-screening row). Not built yet: the `training-proposals` Edge Function (lead: config and deploy list), the Train
-card and Cardio row (app), the Coach contributor. Details: "B5-3 and B5-4" in
+screening row). **App and function (2026-10-24, branch `claude/train-deload-cardio-ui`, PR open):** Train shows
+"A lighter week could help" ("Suggested by Tracend": the reasons in words, one tap to **See what changes**,
+then Approve or Not now through the Coach proposal card, Undo for 7 days; a running week keeps a
+**Details and undo** card) and a **Cardio this week** row with a sheet (minutes against 150, hard cardio
+open or easy only, "Not enough Apple Health data" when `done_min` is null, never 0). The new JWT function
+`training-proposals` stores the pending deload for a `suggested` status (same one-week builder as Coach,
+no model); it is in `config.toml`, `deploy.yml` and `hotfix.yml`, so it deploys with the merge. Review added
+migration `20261024060425` (guidance 1.2: `proposal_origin`, `ends_on`; an undone deload waits 14 days; a per-athlete
+lock in `persist_coach_proposal_v1`): install the app only after it has deployed. Not built yet: the Coach contributor. Details: "B5-3 and B5-4" in
 [`training-engine.md`](./handoff/training-engine.md).
 
 **Coach knows today's readiness card (2026-10-24, branch `claude/coach-readiness-context`, PR open):** a `readiness`
@@ -229,7 +245,6 @@ Decided by the owner on 2026-10-16:
   leave the phone.
 
 Known gaps found:
-- `privacy-export` leaves out several tables (SECURITY_PRIVACY §15).
 - The app's terms and privacy checkboxes don't link to the site pages.
 
 **Website and waitlist (2026-10-13):** the public website (`site/`, Astro, Cloudflare Pages at
@@ -262,6 +277,17 @@ failed-call cost, list-price defaults) and PR 4b (meal-photo AI notice enforced 
 AI notice v5; needs the new build) and PR 5 (Keychain session storage, SHA-pinned actions,
 read-only workflow tokens) are in review. Workstream state:
 [`docs/handoff/security-hardening.md`](./handoff/security-hardening.md).
+
+**Privacy export, deletion and retention fixes (2026-10-24, QA audit group D):** the export now
+carries every table with a `user_id` (Coach threads and messages included) in pages of 1000, with a
+test that fails on a table that is neither exported nor excluded; account deletion pages its file
+lists; an export stuck in `processing` is claimed again after 15 minutes and a dead `ready` export is
+replaced on the next request; the retention worker survives a failing row or stage, reclaims photo
+claims older than 30 minutes, reports codes to Sentry and compares its secret in constant time.
+Migration `20261024070000_privacy_retention_recovery.sql`, which also creates the
+`meal-media-retention-daily` cron job (02:15 UTC; it was made by hand in production) behind Vault.
+Review round 1: keyset paging, no Coach snapshot bodies, linked invite and waitlist rows, a memory
+guard (`export_too_large`).
 
 **Current priority (2026-10-03):** the app-wide graphite + lime redesign. The owner chose palette
 A and the round 3 signature picks (focus logging, muscle map on, big new-best moment, day boxes,

@@ -768,6 +768,204 @@ void main() {
     expect(repository.savedPayload!['revision_note'], 'No deadlifts');
   });
 
+  group('an answer to the plan whose reply is lost', () {
+    Future<_FakeOnboardingRepository> atProposal(WidgetTester tester) async {
+      final repository = _FakeOnboardingRepository(
+        draft: _draft('proposal'),
+        generations: [_succeeded],
+      );
+      await _pump(tester, repository);
+      await tester.pumpAndSettle();
+      return repository;
+    }
+
+    Future<void> tapApprove(WidgetTester tester) async {
+      final approve = find.widgetWithText(FilledButton, 'Approve plan');
+      await tester.ensureVisible(approve);
+      await tester.pumpAndSettle();
+      await tester.tap(approve);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('an approval that was recorded shows You are set, with no '
+        'rebuild', (tester) async {
+      final repository = await atProposal(tester);
+      repository
+        ..respondFailure = Exception('offline')
+        ..lostReplyStatus = 'accepted';
+
+      await tapApprove(tester);
+
+      expect(find.text("You're set."), findsOneWidget);
+      expect(find.textContaining('Nothing has changed'), findsNothing);
+      expect(repository.startCalls, 0);
+    });
+
+    testWidgets('a retry refused as stale on an accepted plan shows You are '
+        'set, not an expired plan', (tester) async {
+      final repository = await atProposal(tester);
+      repository
+        ..respondFailure = const OnboardingProposalStale()
+        ..lostReplyStatus = 'accepted';
+
+      await tapApprove(tester);
+
+      expect(find.text("You're set."), findsOneWidget);
+      expect(find.text('This plan proposal expired.'), findsNothing);
+    });
+
+    testWidgets('an approval that did not reach the server says nothing '
+        'changed and can be repeated', (tester) async {
+      final repository = await atProposal(tester);
+      repository.respondFailure = Exception('offline');
+
+      await tapApprove(tester);
+
+      expect(
+        find.textContaining('Your response was not saved. Nothing has changed'),
+        findsOneWidget,
+      );
+      expect(find.widgetWithText(FilledButton, 'Approve plan'), findsOneWidget);
+
+      repository.respondFailure = null;
+      await tapApprove(tester);
+      expect(find.text("You're set."), findsOneWidget);
+    });
+
+    testWidgets('offline, the outcome is not claimed either way and no '
+        'rebuild is offered', (tester) async {
+      final repository = await atProposal(tester);
+      repository
+        ..respondFailure = Exception('offline')
+        ..generationReadsFail = true;
+
+      await tapApprove(tester);
+
+      expect(find.textContaining('could not confirm'), findsOneWidget);
+      expect(find.textContaining('Nothing has changed'), findsNothing);
+      expect(find.text('This plan proposal expired.'), findsNothing);
+      expect(find.widgetWithText(FilledButton, 'Approve plan'), findsOneWidget);
+      expect(repository.startCalls, 0);
+
+      repository
+        ..respondFailure = null
+        ..generationReadsFail = false;
+      await tapApprove(tester);
+      expect(find.text("You're set."), findsOneWidget);
+    });
+
+    testWidgets('a stale answer is final even when the status cannot be read: '
+        'the expired screen, not a stuck message', (tester) async {
+      final repository = await atProposal(tester);
+      repository
+        ..respondFailure = const OnboardingProposalStale()
+        ..generationReadsFail = true;
+
+      await tapApprove(tester);
+
+      expect(find.text('This plan proposal expired.'), findsOneWidget);
+      expect(find.textContaining('could not confirm'), findsNothing);
+    });
+
+    testWidgets('a stale answer with another proposal\'s status is the '
+        'expired screen', (tester) async {
+      final repository = await atProposal(tester);
+      repository
+        ..respondFailure = const OnboardingProposalStale()
+        ..lostReplyStatus = 'accepted'
+        ..lostReplyProposalId = 'someone-elses';
+
+      await tapApprove(tester);
+
+      expect(find.text('This plan proposal expired.'), findsOneWidget);
+      expect(find.text("You're set."), findsNothing);
+    });
+
+    testWidgets('a plain network error on an approval of a plan the server '
+        'holds as rejected is the expired screen, not "nothing has '
+        'changed"', (tester) async {
+      final repository = await atProposal(tester);
+      repository
+        ..respondFailure = Exception('offline')
+        ..lostReplyStatus = 'rejected';
+
+      await tapApprove(tester);
+
+      expect(find.text('This plan proposal expired.'), findsOneWidget);
+      expect(find.textContaining('Nothing has changed'), findsNothing);
+    });
+
+    testWidgets('an accepted plan is You are set whatever answer failed', (
+      tester,
+    ) async {
+      final repository = await atProposal(tester);
+      repository
+        ..respondFailure = Exception('offline')
+        ..lostReplyStatus = 'accepted';
+      final reject = find.widgetWithText(TextButton, 'Reject proposal');
+      await tester.ensureVisible(reject);
+      await tester.tap(reject);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Reject plan'));
+      await tester.pumpAndSettle();
+
+      expect(find.text("You're set."), findsOneWidget);
+      expect(find.text('This plan proposal expired.'), findsNothing);
+    });
+
+    testWidgets('a proposal the server holds as expired still offers a '
+        'rebuild', (tester) async {
+      final repository = await atProposal(tester);
+      repository
+        ..respondFailure = const OnboardingProposalStale()
+        ..lostReplyStatus = 'expired';
+
+      await tapApprove(tester);
+
+      expect(find.text('This plan proposal expired.'), findsOneWidget);
+    });
+
+    testWidgets('a rejection whose follow-up draft save fails is not '
+        'reported as a failure', (tester) async {
+      final repository = await atProposal(tester);
+      repository.failSaveDraft = true;
+      final reject = find.widgetWithText(TextButton, 'Reject proposal');
+      await tester.ensureVisible(reject);
+      await tester.tap(reject);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Reject plan'));
+      await tester.pumpAndSettle();
+
+      expect(repository.responses, ['reject']);
+      expect(find.text('Review before building.'), findsOneWidget);
+      expect(
+        find.textContaining('Proposal rejected. Your answers are unchanged.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('not saved'), findsNothing);
+    });
+
+    testWidgets('a change request whose reply was lost goes back to Review', (
+      tester,
+    ) async {
+      final repository = await atProposal(tester);
+      repository
+        ..respondFailure = Exception('offline')
+        ..lostReplyStatus = 'revision_requested';
+      final revise = find.widgetWithText(OutlinedButton, 'Request changes');
+      await tester.ensureVisible(revise);
+      await tester.pumpAndSettle();
+      await tester.tap(revise);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'No deadlifts');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Request changes'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Review before building.'), findsOneWidget);
+    });
+  });
+
   testWidgets('missing answers reported by the server open their step', (
     tester,
   ) async {
@@ -2009,6 +2207,20 @@ class _FakeOnboardingRepository implements OnboardingRepository {
 
   /// How many responses fail as stale before they succeed.
   int staleResponses;
+
+  /// The next response fails with this. With [lostReplyStatus] the server
+  /// recorded the answer first and only its reply was lost.
+  Object? respondFailure;
+  String? lostReplyStatus;
+
+  /// The proposal the server's status belongs to; the answered one by default.
+  String? lostReplyProposalId;
+
+  /// Saving the draft fails (the connection dropped after the answer).
+  bool failSaveDraft = false;
+
+  /// Reading the plan generation fails (the phone is offline).
+  bool generationReadsFail = false;
   Map<String, dynamic>? savedPayload;
   int startCalls = 0;
   final responses = <String>[];
@@ -2045,6 +2257,7 @@ class _FakeOnboardingRepository implements OnboardingRepository {
     required Map<String, dynamic> payload,
   }) async {
     saveCalls++;
+    if (failSaveDraft) throw Exception('offline');
     savedPayload = payload;
   }
 
@@ -2136,7 +2349,10 @@ class _FakeOnboardingRepository implements OnboardingRepository {
   bool citedSources = false;
 
   @override
-  Future<OnboardingGeneration?> loadGeneration() async => _next();
+  Future<OnboardingGeneration?> loadGeneration() async {
+    if (generationReadsFail) throw Exception('offline');
+    return _next();
+  }
 
   @override
   Future<OnboardingProposal> loadProposal(String proposalId) async =>
@@ -2230,6 +2446,21 @@ class _FakeOnboardingRepository implements OnboardingRepository {
 
   @override
   Future<void> respond(String proposalId, String action, {String? note}) async {
+    if (respondFailure != null) {
+      if (lostReplyStatus != null) {
+        _generations
+          ..clear()
+          ..add(
+            OnboardingGeneration(
+              id: 'gen-1',
+              status: 'succeeded',
+              proposalId: lostReplyProposalId ?? proposalId,
+              proposalStatus: lostReplyStatus,
+            ),
+          );
+      }
+      throw respondFailure!;
+    }
     if (staleResponses > 0) {
       staleResponses--;
       throw const OnboardingProposalStale();
