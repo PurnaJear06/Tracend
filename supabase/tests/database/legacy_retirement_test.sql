@@ -43,13 +43,14 @@ select ok(has_function_privilege('service_role',
 select ok(has_function_privilege('authenticated', 'public.confirm_analyzed_meal(uuid, jsonb)', 'execute'),
   'meal confirmation stays open through confirm_analyzed_meal');
 
--- The app role can no longer write the onboarding state; other account columns are unchanged.
+-- The app role can no longer write the onboarding state; other account columns are unchanged
+-- (the time zone is written through a function, not a column grant).
 select ok(not has_column_privilege('authenticated', 'public.user_accounts', 'onboarding_state', 'update'),
   'the app cannot update onboarding_state');
 select ok(not has_column_privilege('authenticated', 'public.user_accounts', 'onboarding_state', 'insert'),
   'or insert it');
-select ok(has_column_privilege('authenticated', 'public.user_accounts', 'timezone', 'update'),
-  'but still updates the time zone');
+select ok(has_column_privilege('authenticated', 'public.user_accounts', 'unit_system', 'update'),
+  'but still updates the unit system');
 select ok(has_column_privilege('authenticated', 'public.user_accounts', 'onboarding_state', 'select'),
   'and reads the onboarding state');
 
