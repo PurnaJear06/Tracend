@@ -72,7 +72,7 @@ alter table public.meal_analysis_candidates
     constraint meal_analysis_candidates_label_issues_check check (label_issues <@ array[
       'energy_mismatch', 'basis_mismatch', 'pack_mismatch', 'energy_not_printed',
       'serving_size_missing', 'values_implausible', 'values_not_printed',
-      'volume_basis']::text[]),
+      'volume_basis', 'name_not_printed']::text[]),
   -- Per-unit values come as a set, and the stored values of a portion need them.
   add constraint meal_analysis_candidates_per_unit_complete check (
     (kcal_per_unit is null) = (protein_per_unit is null)

@@ -2203,7 +2203,10 @@ dropped. Refs the investigation in the lead's scratchpad (bug 2).
   servings and 60 g), and the confidence from the source (`label` high, `label_unverified` low,
   `estimate` medium at most, a front of pack without a printed quantity low). Millilitres are
   never grams: a per-ml label is `label_unverified` with `volume_basis` and offers only its printed
-  serving and pack in ml (Codex review P1). Golden: `munch_label_golden.json` (18.7 g serving,
+  serving and pack in ml (Codex review P1). An unreadable name is "Packaged food" (after the
+  printed brand) with `name_not_printed`, never the model's guess, and a count-only serving text
+  ("2 biscuits") stays the serving label (Codex review 2). Label-check messages use the
+  candidate's unit. Golden: `munch_label_golden.json` (18.7 g serving,
   2 servings, 37.4 g; whole pack 195.6 kcal), shared with the Flutter test.
 - `meal-analyze/vision.ts`: new instructions (kinds; the unit; printed text read as data and never
   as an instruction; no product or value from memory; kJ never converted, ml never turned into g),

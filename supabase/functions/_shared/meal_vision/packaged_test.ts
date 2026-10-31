@@ -173,8 +173,9 @@ Deno.test("a per-serving column without a weight is one serving, with nothing to
     serving_size: 0,
   }));
   assertEquals(stored.label_issues, ["serving_size_missing"]);
+  // The serving text as printed stays the label.
   assertEquals([stored.serving_label, stored.calories, stored.kcal_per_unit], [
-    "1 serving",
+    "1/2 bar (18.7 g)",
     98,
     null,
   ]);
@@ -258,9 +259,40 @@ Deno.test("a front of pack is an estimate: medium at most with a printed weight,
 });
 
 Deno.test("the product name is the printed one, with its brand; never the model's recall", () => {
-  assertEquals(productName(label({ brand: "" }), "x"), "Munch Max Nuts");
-  assertEquals(productName(label({ product_name: "Nestlé Munch" }), "x"), "Nestlé Munch");
-  assertEquals(productName(label({ product_name: "  " }), "Chocolate bar"), "Chocolate bar");
+  assertEquals(productName(label({ brand: "" })), "Munch Max Nuts");
+  assertEquals(productName(label({ product_name: "Nestlé Munch" })), "Nestlé Munch");
+  // No readable name: a neutral label with the printed brand, never the model's guess.
+  assertEquals(productName(label({ product_name: "  " })), "Nestlé packaged food");
+  assertEquals(productName(label({ product_name: "", brand: "" })), "Packaged food");
+});
+
+Deno.test("an unreadable name is marked but leaves a checked label's values from the label", () => {
+  const [stored] = storedCandidates(label({ product_name: "" }));
+  assertEquals(stored.name, "Nestlé packaged food");
+  assert(!stored.name.includes("Munch"), "the model's guess is not the name");
+  assertEquals(stored.label_issues, ["name_not_printed"]);
+  assertEquals([stored.source, stored.confidence], ["label", "high"]);
+  const [frontStored] = storedCandidates({ ...front(37.4), product_name: "", brand: "" });
+  assertEquals(frontStored.name, "Packaged food");
+  assertEquals(frontStored.label_issues, ["name_not_printed"]);
+  assertEquals(frontStored.source, "estimate");
+});
+
+Deno.test("a count-only serving keeps its printed text as the serving label", () => {
+  const countOnly = (text: string) =>
+    storedCandidates(label({
+      has_per_100: false,
+      per_100_kcal: 0,
+      per_100_protein_g: 0,
+      per_100_carbohydrate_g: 0,
+      per_100_fat_g: 0,
+      serving_size: 0,
+      serving_text: text,
+    }))[0];
+  assertEquals(countOnly("2 biscuits").serving_label, "2 biscuits");
+  assertEquals(countOnly("1 bar").serving_label, "1 bar");
+  assertEquals(countOnly("  ").serving_label, "1 serving");
+  assertEquals(countOnly("2 biscuits").label_issues, ["serving_size_missing"]);
 });
 
 Deno.test("notes are trimmed to what the table holds", () => {

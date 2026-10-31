@@ -842,7 +842,7 @@ All the columns are additive; rows from before have nulls and empty defaults.
 | `serving_size`, `servings_per_pack`, `pack_size` | Printed serving size, servings and net quantity (or servings x serving size), in `quantity_unit`. |
 | `portion_size` | The amount the values are for (needs per-unit values): the default portion, then, after `confirm_analyzed_meal`, the portion the athlete confirmed, or null when they typed the values. The app's portion chooser recalculates from the per-unit values. |
 | `assumptions`, `question` | The model's notes (at most 8, and 500 characters), shown on the review sheet. |
-| `label_issues` | Issues: `energy_mismatch`, `basis_mismatch`, `pack_mismatch`, `energy_not_printed`, `serving_size_missing`, `values_implausible`, `values_not_printed`, `volume_basis`. |
+| `label_issues` | Issues: `energy_mismatch`, `basis_mismatch`, `pack_mismatch`, `energy_not_printed`, `serving_size_missing`, `values_implausible`, `values_not_printed`, `volume_basis`, `name_not_printed` (no readable product name: the row is named "Packaged food", after the printed brand if any, never the model's guess; it does not change the source). |
 
 The app reads the rows directly under the owner-read policy (no RPC returns them, so no RPC
 `schema_version` changed). The `meal.photo.candidates_created` audit event adds `schema_version` 2

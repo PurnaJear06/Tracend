@@ -417,13 +417,66 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('These are estimates'), findsNothing);
-      expect(
-        find.text('Check these numbers against the pack:'),
-        findsOneWidget,
-      );
+      expect(find.text('Check this against the pack:'), findsOneWidget);
       expect(
         find.text(
           "• The calories don't match the protein, carbs and fat on the label.",
+        ),
+        findsOneWidget,
+      );
+    });
+
+    test('label-check messages use the candidate\'s own unit', () {
+      String text(String issue, QuantityUnit unit) =>
+          LabelIssuesNote.message(issue, unit);
+      const g = QuantityUnit.grams;
+      const ml = QuantityUnit.millilitres;
+      expect(text('basis_mismatch', g), contains('per-100 g columns'));
+      expect(text('basis_mismatch', ml), contains('per-100 ml columns'));
+      expect(text('pack_mismatch', g), contains('pack weight'));
+      expect(text('pack_mismatch', ml), contains('pack volume'));
+      expect(text('serving_size_missing', ml), contains('serving volume'));
+      for (final issue in ['basis_mismatch', 'pack_mismatch']) {
+        expect(text(issue, ml), isNot(contains(' g ')));
+        expect(text(issue, ml), isNot(contains('weight')));
+      }
+    });
+
+    testWidgets('a per-ml label shows its checks in ml', (tester) async {
+      final milk = MealCandidate.fromRow(
+        _row({
+          ...(_golden['stored'] as Map<String, dynamic>),
+          'source': 'label_unverified',
+          'confidence': 'low',
+          'quantity_unit': 'ml',
+          'serving_label': '1 serving (200 ml)',
+          'serving_size': 200,
+          'pack_size': 250,
+          'portion_size': 200,
+          'label_issues': ['basis_mismatch', 'volume_basis'],
+        }),
+      );
+      await _openSheet(tester, [milk]);
+      expect(
+        find.text("• The per-serving and per-100 ml columns don't agree."),
+        findsOneWidget,
+      );
+      expect(find.textContaining('per-100 g'), findsNothing);
+    });
+
+    testWidgets('an unreadable name is said so', (tester) async {
+      final unnamed = MealCandidate.fromRow(
+        _row({
+          ...(_golden['stored'] as Map<String, dynamic>),
+          'name': 'Nestlé packaged food',
+          'label_issues': ['name_not_printed'],
+        }),
+      );
+      await _openSheet(tester, [unnamed]);
+      expect(find.text('Nestlé packaged food'), findsOneWidget);
+      expect(
+        find.text(
+          '• No product name could be read. Enter the name from the pack.',
         ),
         findsOneWidget,
       );

@@ -775,7 +775,10 @@ class _CandidateEditorState extends State<CandidateEditor> {
           ),
         if (widget.candidate.labelIssues.isNotEmpty) ...[
           const SizedBox(height: TracendSpacing.xs),
-          LabelIssuesNote(issues: widget.candidate.labelIssues),
+          LabelIssuesNote(
+            issues: widget.candidate.labelIssues,
+            unit: widget.candidate.unit ?? QuantityUnit.grams,
+          ),
         ],
         if (widget.selected && _offersPortions) ...[
           const SizedBox(height: TracendSpacing.sm),
@@ -973,31 +976,46 @@ class MealSourceBadge extends StatelessWidget {
   }
 }
 
-/// Why a label's numbers were not trusted, one line per failed check.
+/// What on a pack or label could not be trusted, one line per issue, in the
+/// candidate's own unit (g, or ml for a drink).
 class LabelIssuesNote extends StatelessWidget {
-  const LabelIssuesNote({required this.issues, super.key});
+  const LabelIssuesNote({
+    required this.issues,
+    this.unit = QuantityUnit.grams,
+    super.key,
+  });
 
   final List<String> issues;
+  final QuantityUnit unit;
 
-  static String message(String issue) => switch (issue) {
-    'energy_mismatch' =>
-      "The calories don't match the protein, carbs and fat on the label.",
-    'basis_mismatch' => "The per-serving and per-100 g columns don't agree.",
-    'pack_mismatch' =>
-      "Servings times serving size doesn't match the pack weight.",
-    'energy_not_printed' =>
-      'No calories were read, so they were calculated from protein, carbs '
-          'and fat.',
-    'serving_size_missing' =>
-      'No serving weight was read, so other portions cannot be calculated.',
-    'values_implausible' => 'Some values read from the label look impossible.',
-    'volume_basis' =>
-      'The label gives values per ml, so only its printed serving and pack '
-          'can be chosen, and they were not checked against a weight.',
-    'values_not_printed' =>
-      'No nutrition values could be read, so these are estimates.',
-    _ => 'Something on the label could not be checked.',
-  };
+  static String message(String issue, QuantityUnit unit) {
+    final byVolume = unit == QuantityUnit.millilitres;
+    final measure = byVolume ? 'volume' : 'weight';
+    return switch (issue) {
+      'energy_mismatch' =>
+        "The calories don't match the protein, carbs and fat on the label.",
+      'basis_mismatch' =>
+        "The per-serving and per-100 ${unit.symbol} columns don't agree.",
+      'pack_mismatch' =>
+        "Servings times serving size doesn't match the pack $measure.",
+      'energy_not_printed' =>
+        'No calories were read, so they were calculated from protein, carbs '
+            'and fat.',
+      'serving_size_missing' =>
+        'No serving $measure was read, so other portions cannot be '
+            'calculated.',
+      'values_implausible' =>
+        'Some values read from the label look impossible.',
+      'volume_basis' =>
+        'The label gives values per ml, so only its printed serving and pack '
+            'can be chosen, and they were not checked against a weight.',
+      'values_not_printed' =>
+        'No nutrition values could be read, so these are estimates.',
+      'name_not_printed' =>
+        'No product name could be read. Enter the name from the pack.',
+      _ => 'Something on the label could not be checked.',
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1007,8 +1025,9 @@ class LabelIssuesNote extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Check these numbers against the pack:', style: style),
-        for (final issue in issues) Text('• ${message(issue)}', style: style),
+        Text('Check this against the pack:', style: style),
+        for (final issue in issues)
+          Text('• ${message(issue, unit)}', style: style),
       ],
     );
   }

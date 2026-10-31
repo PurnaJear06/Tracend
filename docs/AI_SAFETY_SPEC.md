@@ -581,9 +581,15 @@ Deterministic code (`_shared/meal_vision/packaged.ts`), never the model, then:
   each issue named); a front of pack is an `estimate`, medium at most and low without a printed net
   quantity; a plate is an `estimate`, medium at most. The model's own confidence is only an upper
   bound for an estimate. The table refuses `label` for a per-ml label.
+- names the row from the printed name and brand only. With no readable name it is "Packaged
+  food" (after the printed brand) with the issue `name_not_printed`, never the model's guess; the
+  issue says nothing about the values, so it does not change the source;
+- keeps a count-only printed serving ("2 biscuits", "1 bar") as the serving label when no size is
+  printed;
 - stores the model's assumptions and question with the candidate (they were dropped before).
 
-The review sheet shows **From label**, **Label unclear** or **Estimated**, the issues, the notes,
+The review sheet shows **From label**, **Label unclear** or **Estimated**, the issues (in the
+candidate's own unit, g or ml), the notes,
 and for a pack or label a portion chooser that recalculates from the stored per-unit values. A
 portion one meal row cannot hold (more than 5,000 kcal, 500 g of protein, 1,000 g of carbohydrate
 or 500 g of fat) is disabled with the reason shown, and the chooser selects a portion only once its

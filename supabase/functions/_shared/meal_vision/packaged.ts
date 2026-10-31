@@ -37,6 +37,11 @@ export const labelIssues = [
   "values_not_printed",
   /** The label prints per ml: not checked against a weight; only printed portions are offered. */
   "volume_basis",
+  /**
+   * No product name was readable: the row is named "Packaged food" (with the printed brand), never
+   * the model's guess. It says nothing about the values, so it does not lower their source.
+   */
+  "name_not_printed",
 ] as const;
 export type LabelIssue = typeof labelIssues[number];
 
@@ -340,16 +345,29 @@ export function readLabel(answer: MealAnswer): LabelReading {
   };
 }
 
-/** The product's name as printed, with its brand when the name leaves it out. */
-export function productName(answer: MealAnswer, fallback: string): string {
+/** The neutral name of a pack whose name is not readable. */
+export const unreadableProductName = "Packaged food";
+
+/**
+ * The product's name as printed, with its brand when the name leaves it out. With no readable name
+ * it is "Packaged food", after the brand when one is printed: never the model's guess.
+ */
+export function productName(answer: MealAnswer): string {
   const name = answer.product_name.trim();
   const brand = answer.brand.trim();
-  if (!name) return fallback;
+  if (!name) {
+    return (brand ? `${brand} ${unreadableProductName.toLowerCase()}` : unreadableProductName)
+      .slice(0, 120);
+  }
   const full = brand && !name.toLowerCase().includes(brand.toLowerCase())
     ? `${brand} ${name}`
     : name;
   return full.slice(0, 120);
 }
+
+/** name_not_printed when no product name was readable. */
+const nameIssues = (answer: MealAnswer): LabelIssue[] =>
+  answer.product_name.trim() ? [] : ["name_not_printed"];
 
 const notes = (candidate: MealCandidate) => ({
   assumptions: candidate.assumptions.map((entry) => entry.trim().slice(0, 200))
@@ -415,12 +433,12 @@ function packFrontCandidate(answer: MealAnswer, candidate: MealCandidate): Store
   const usable = perUnitValues !== null && plausiblePerUnit(perUnitValues) &&
     storable(scale(perUnitValues, netSize!));
   const base = {
-    name: productName(answer, candidate.name),
+    name: productName(answer),
     source: "estimate" as const,
     image_kind: "pack_front" as const,
     brand: answer.brand.trim().slice(0, 80),
     ...notes(candidate),
-    label_issues: [],
+    label_issues: nameIssues(answer),
   };
   if (!usable) {
     return {
@@ -450,11 +468,11 @@ function packFrontCandidate(answer: MealAnswer, candidate: MealCandidate): Store
 function labelCandidate(answer: MealAnswer, candidate: MealCandidate): StoredMealCandidate {
   const reading = readLabel(answer);
   const base = {
-    name: productName(answer, candidate.name),
+    name: productName(answer),
     image_kind: "nutrition_label" as const,
     brand: answer.brand.trim().slice(0, 80),
     ...notes(candidate),
-    label_issues: reading.issues,
+    label_issues: [...reading.issues, ...nameIssues(answer)],
   };
   const sizes = {
     quantity_unit: reading.unit,
@@ -470,6 +488,7 @@ function labelCandidate(answer: MealAnswer, candidate: MealCandidate): StoredMea
       reading.servingsPerPack,
       reading.unit,
     );
+    // The name says nothing about the values: only the value checks set the source.
     const checked = reading.issues.length === 0;
     return {
       ...base,
@@ -484,10 +503,10 @@ function labelCandidate(answer: MealAnswer, candidate: MealCandidate): StoredMea
     };
   }
   if (reading.perServing && storable(reading.perServing)) {
-    // A serving with no weight: one serving as printed, and nothing to scale.
+    // A serving with no size: one serving as printed ("2 biscuits", "1 bar"), nothing to scale.
     return {
       ...base,
-      serving_label: "1 serving",
+      serving_label: answer.serving_text.trim().slice(0, 80) || "1 serving",
       ...values(reading.perServing),
       confidence: "low",
       source: "label_unverified",
