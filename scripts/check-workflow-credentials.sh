@@ -3,12 +3,14 @@
 #
 #   scripts/check-workflow-credentials.sh [workflow-dir]   (default: .github/workflows)
 #
-# A pull request, a comment or a run of another workflow can carry the branch's own code or text,
+# A pull request, an issue, a discussion, a comment or a run of another workflow can carry an
+# outsider's code or text,
 # so anything that code can reach it can leak. A workflow with an untrusted trigger may therefore
 # not mention `secrets` at all, apart from the exact token `secrets.GITHUB_TOKEN` (which
 # `permissions:` already limits), and may not call a local reusable workflow (which could receive
 # secrets). Untrusted triggers: every `pull_request*` event (pull_request, pull_request_target,
-# pull_request_review, pull_request_review_comment), `issue_comment` and `workflow_run`. One
+# pull_request_review, pull_request_review_comment), `issues`, `issue_comment`, `discussion`,
+# `discussion_comment`, `fork`, `watch`, `gollum` and `workflow_run`. One
 # `workflow_run` is trusted: the one limited to `branches: [main]`, because it then runs main's
 # code (deploy.yml). Live model evaluations run from `workflow_dispatch`, which only an account
 # with write access can start.
@@ -37,7 +39,9 @@ untrusted_events() {
              elif type == "object" then keys
              else [] end) as $events
     | $events[]
-    | select(test("^pull_request") or . == "issue_comment" or . == "workflow_run")
+    | select(test("^pull_request") or
+             IN("issues", "issue_comment", "discussion", "discussion_comment",
+                "fork", "watch", "gollum", "workflow_run"))
     | if . == "workflow_run" and
          (($on | type) == "object") and
          (($on.workflow_run.branches // null) as $b

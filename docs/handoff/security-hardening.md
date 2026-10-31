@@ -275,7 +275,8 @@ again), and run a physique check (its notice is unchanged).
   no secret, moved to its own `library-eval.yml` and keeps running on library pull requests.
   `scripts/check-workflow-credentials.sh` (tested by `scripts/test-check-workflow-credentials.sh`, run in the
   `Deno` job of `ci.yml` and by `pre-deploy.sh`) reads the trigger with `yq` and fails any workflow started by a `pull_request*`,
-  `issue_comment` or `workflow_run` event (except the `branches: [main]` one in `deploy.yml`) whose raw
+  `issues`, `issue_comment`, `discussion`, `discussion_comment`, `fork`, `watch`, `gollum` or
+  `workflow_run` event (except the `branches: [main]` one in `deploy.yml`) whose raw
   text, comments included, mentions `secrets` other than `secrets.GITHUB_TOKEN`, or that calls a
   local workflow. The scripts are named `*-credentials` so their own names pass the check. Owner effect: the `coach-eval` and `onboarding-eval` labels no longer do anything.
 - **Edge Sentry fails closed** (`_shared/sentry.ts`). Event value = the call site's failure code (the

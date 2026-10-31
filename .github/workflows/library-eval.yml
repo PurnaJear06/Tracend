@@ -60,11 +60,11 @@ jobs:
           library=false
           # Everything the retrieval score depends on: the library content, its shared code, the
           # embedding function, the evaluation and its question files, the few shared modules
-          # the evaluation imports (query building, red flags, the RPC caller, logging), the
-          # local stack's configuration and this workflow.
+          # the evaluation imports (query building, red flags, the RPC caller, logging, the
+          # Supabase key reader), the local stack's configuration and this workflow.
           paths='^supabase/(library|functions/(_shared/library|library-embed))/'
           paths="$paths|^supabase/functions/_evals/library_[^/]+$"
-          paths="$paths|^supabase/functions/_shared/(coach_context/(host|service_source)|coach_safety/red_flags|logger|sentry)\.ts$"
+          paths="$paths|^supabase/functions/_shared/(coach_context/(host|service_source)|coach_safety/red_flags|logger|sentry|supabase_keys)\.ts$"
           paths="$paths|^supabase/config\.toml$|^\.github/workflows/library-eval\.yml$"
           if printf '%s\n' "$changed" | grep -Eq "$paths"; then
             library=true

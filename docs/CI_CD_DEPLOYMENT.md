@@ -253,8 +253,8 @@ single-owner repository cannot be permanently deadlocked.
   checkouts that keep credentials (`persist-credentials: false` everywhere else).
 - No event a stranger can influence starts a job with a repository secret (2026-10-31). A pull
   request runs the branch's own code, so a workflow that any `pull_request*` event (including
-  `pull_request_target`, `pull_request_review` and its comments), `issue_comment` or `workflow_run`
-  triggers may not mention `secrets` anywhere (the raw file, comments included) except the exact
+  `pull_request_target`, `pull_request_review` and its comments), `issues`, `issue_comment`,
+  `discussion`, `discussion_comment`, `fork`, `watch`, `gollum` or `workflow_run` triggers may not mention `secrets` anywhere (the raw file, comments included) except the exact
   token `secrets.GITHUB_TOKEN`, and may not call a local reusable workflow. The one allowed
   `workflow_run` is the one limited to `branches: [main]` (`deploy.yml`). The trigger is read with
   `yq`, which GitHub's ubuntu runners have; `scripts/check-workflow-credentials.sh` enforces it in

@@ -194,7 +194,8 @@ jobs:
       - run: echo ok
 YML
 
-for event in pull_request_review pull_request_review_comment issue_comment; do
+for event in pull_request_review pull_request_review_comment issues issue_comment \
+  discussion discussion_comment fork watch gollum; do
   run_case "event-$event" 1 <<YML
 on:
   $event:
