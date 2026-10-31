@@ -392,10 +392,16 @@ builder.
   production grants read-only (all five were executable by `authenticated`, none by `anon`).
   Deleted: `createFixtureMeal` and the Log a meal "Review sample analysis" path, and the
   `onboarding-propose-plan` Edge Function (directory, `config.toml`, `deploy.yml`,
-  `hotfix.yml`; `verify-live-function.sh` enumerates directories, so it needed no edit). The
+  `hotfix.yml`). The
   SQL function `persist_mock_onboarding_proposal` stays (service role only; the still-deployed old
-  function calls it). **Owner step after merge:** delete the deployed function, then a later
-  cleanup migration can drop that SQL function.
+  function calls it). **No owner step:** the deploy now has a `Retire Removed Functions` job (in
+  `deploy.yml` and `hotfix.yml`, after the functions deploy and before the live check) that runs
+  `scripts/retire-functions.sh`. It deletes, only while still deployed, the names in
+  `scripts/retired-functions.txt` (just `onboarding-propose-plan`), reads `supabase functions list`
+  first and verifies afterwards, so a rerun is a no-op and nothing outside the list is ever deleted.
+  `verify-live-function.sh --all` also fails when production has a function that has no directory and
+  is not in that list (`retire-functions.sh --check`, read-only), so a leftover is caught. A later
+  cleanup migration can drop the SQL function.
 - **M-G4:** a session that ends anywhere (remote sign-out, password change, deleted account) pops
   every pushed route back to the gate (`popUntil(isFirst)` in the gate's signed-out handler).
 - **G LOWs:** a double tap on Sign out signs out once, and Account pops only if the gate has not
@@ -404,8 +410,10 @@ builder.
   (`SupabaseOnboardingRepository.callTimeout`; the plan builder keeps its own); Sign out stays
   available while an answer is saving; the daily and weekly reminders and the rest alert are removed
   from the phone on every signed-out transition (sign-out, remote end, deletion) and the next
-  sign-in puts the athlete's saved choices back (`NotificationRepository.load` re-applies them); the
-  misplaced doc comment in `onboarding_repository.dart` is fixed. `respond` (approve) deliberately
+  sign-in puts the athlete's saved choices back (`NotificationRepository.load` re-applies them). A
+  restore whose server read is still in flight when the session ends configures nothing: its
+  changes go through the gate's reminder queue (the same queue as the cancel) and check the
+  session counter first. The misplaced doc comment in `onboarding_repository.dart` is fixed. `respond` (approve) deliberately
   has no timeout here: a timeout would report "not saved" for a write that may have committed (M-E2).
 
 **Meals and Progress forms**
@@ -419,7 +427,9 @@ builder.
   refuses it (22023). Fixtures and pgTAP updated. Coach proposals carry no body-fat target.
 - **Progress photos:** the storage question is asked once (the newest `progress_photo_storage` record
   is read first) and inserts one record; the copy says photos go to an AI model only if the athlete
-  chooses a physique check, which asks for its own permission, on accounts that have it. The photo
+  chooses a physique check, which asks for its own permission, on accounts that have it. The word "never" appears only when
+  the physique-check lookup succeeded and the account has none; when the lookup fails the copy uses
+  the conditional wording, so no consent record carries a claim that could be untrue. The photo
   sets read is capped at the newest 100 sets and reads photos for those sets only.
   `deletePhotoSet` deletes the rows first; a file that fails to go is removed by the retention
   worker's orphan sweep (it covers `progress-photos`).

@@ -10,8 +10,11 @@ Usage: verify-live-function.sh <function_name|--all>
 Confirm that production runs this checkout's code for one Edge Function. The
 deployed source is downloaded (read-only) and every file is compared byte for
 byte with supabase/functions/ in this checkout. --all checks every function
-directory in the checkout. A new version can take a moment
-to become live, so a mismatch is retried before it fails.
+directory in the checkout, then fails if production has a deployed function
+that is neither a directory here nor in scripts/retired-functions.txt (a
+leftover from a removed function; scripts/retire-functions.sh deletes the
+retired ones). A new version can take a moment to become live, so a mismatch
+is retried before it fails.
 
 A successful deploy command is not proof: on 2026-09-28 Supabase reported
 success for all nine functions but kept the previous version of four.
@@ -47,6 +50,7 @@ if [[ "$1" == "--all" ]]; then
     echo "No Edge Function directories found in this checkout." >&2
     exit 1
   fi
+  "$repo_root/scripts/retire-functions.sh" --check || failed=1
   exit "$failed"
 fi
 

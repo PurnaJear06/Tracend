@@ -76,6 +76,10 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   /// belongs to a session that is gone and commits nothing.
   int _sessionsEnded = 0;
 
+  /// Every change to this phone's reminders runs in turn, so a restore can
+  /// never land after the cancel that ended its session.
+  Future<void> _reminderQueue = Future<void>.value();
+
   SupabaseClient get _client => widget.client ?? Supabase.instance.client;
   late final LocalAccountData _localData =
       widget.localData ?? LocalAccountData();
@@ -217,10 +221,17 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     unawaited(_cancelReminders());
   }
 
+  /// Runs [task] after every reminder change queued before it.
+  Future<T> _inReminderOrder<T>(Future<T> Function() task) {
+    final run = _reminderQueue.then((_) => task());
+    _reminderQueue = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
   /// Removes the daily and weekly reminders and the rest alert from this
   /// phone. The athlete's choices stay on the server, and the next sign-in
   /// puts them back (`_restoreReminders`).
-  Future<void> _cancelReminders() async {
+  Future<void> _cancelReminders() => _inReminderOrder(() async {
     try {
       await widget.notifications.configure(
         dailyCheckIn: false,
@@ -230,14 +241,21 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('Non-critical error: reminders not cancelled: $e');
     }
-  }
+  });
 
   /// Puts the signed-in athlete's saved reminder choices back on the phone.
+  /// The choices are read from the server first, so the session can end
+  /// while they are in flight: nothing is then configured for it.
   Future<void> _restoreReminders(SupabaseClient client) async {
+    final sessionsEnded = _sessionsEnded;
     try {
       await SupabaseNotificationRepository(
         client,
-        device: widget.notifications,
+        device: _SessionReminders(
+          widget.notifications,
+          inSession: () => mounted && sessionsEnded == _sessionsEnded,
+          inOrder: _inReminderOrder,
+        ),
       ).load();
     } catch (e) {
       debugPrint('Non-critical error: reminders not restored: $e');
@@ -407,4 +425,36 @@ class _GateMessage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The phone's reminders as seen by one session's restore: a change is made
+/// only while that session is still the current one, and after any cancel
+/// queued before it.
+class _SessionReminders implements NotificationRepository {
+  const _SessionReminders(
+    this._device, {
+    required this.inSession,
+    required this.inOrder,
+  });
+
+  final NotificationRepository _device;
+  final bool Function() inSession;
+  final Future<T> Function<T>(Future<T> Function() task) inOrder;
+
+  @override
+  Future<NotificationPreferences> load() => _device.load();
+
+  @override
+  Future<NotificationPreferences> configure({
+    required bool dailyCheckIn,
+    required bool weeklyReview,
+    required bool restTimerAlertsEnabled,
+  }) => inOrder(() async {
+    if (!inSession()) return _device.load();
+    return _device.configure(
+      dailyCheckIn: dailyCheckIn,
+      weeklyReview: weeklyReview,
+      restTimerAlertsEnabled: restTimerAlertsEnabled,
+    );
+  });
 }

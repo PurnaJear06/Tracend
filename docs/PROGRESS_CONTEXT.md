@@ -80,7 +80,7 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   retrieval gate also scores 12 plan questions. Handoff: [`research-library.md`](./handoff/research-library.md).
 - qa-audit groups G and H (2026-10-31, branch `claude/onboarding-legacy-forms`, migration
   `20261031100000`, in review): legacy onboarding and fixture-meal RPCs closed and `onboarding-propose-plan`
-  removed (owner deletes the deployed function), Account › Health check reopens the screening,
+  removed (the deploy deletes the deployed function: `scripts/retire-functions.sh`), Account › Health check reopens the screening,
   remote sign-out returns to the gate, reminders leave the phone on sign-out, body-fat target floor
   (5% men, 12% women or unknown), Progress and Meals form fixes. Handoff:
   [`onboarding.md`](./handoff/onboarding.md).

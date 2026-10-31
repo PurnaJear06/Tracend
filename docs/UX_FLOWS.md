@@ -1102,8 +1102,11 @@ detail sheet is read-only, with no protocol and no correction path.
 Guide distance, pose, framing, lighting, clothing consistency, and timing. Retake remains available.
 Physique photos never appear in general dashboard surfaces or notifications.
 
-Capture requires explicit storage consent: an alert, **Save private progress photos?** ("They are
-never sent to an AI model."), with **I agree and continue** and Cancel. It then opens a capture
+Capture requires explicit storage consent: an alert, **Save private progress photos?** (photos are
+stored privately and only the athlete can open them; the text says they are "never sent to an AI
+model" only when the account is known to have no physique check, and otherwise that they are sent
+to an AI model only if the athlete chooses a physique check, which asks for permission first,
+including when the lookup failed), with **I agree and continue** and Cancel. It then opens a capture
 sheet that lists front, side, back, and lower body with framing guidance, a check per finished
 pose, and how many are done. The user explicitly opens the camera or library for a pose; the native
 camera is never launched without this in-app context. Each pose uploads as soon as it is picked.

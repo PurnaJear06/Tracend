@@ -97,7 +97,13 @@ typedef _ProgressData = ({
 });
 
 /// Whether this account may run physique checks, and its newest result.
-typedef _PhysiqueState = ({String? provider, PhysiqueAnalysis? latest});
+/// [providerKnown] is false when the provider lookup failed; [provider] is
+/// then null without meaning that physique checks are off.
+typedef _PhysiqueState = ({
+  String? provider,
+  bool providerKnown,
+  PhysiqueAnalysis? latest,
+});
 
 class _ProgressScreenState extends State<ProgressScreen> {
   late Future<_ProgressData> _future;
@@ -203,14 +209,21 @@ class _ProgressScreenState extends State<ProgressScreen> {
   /// apart: a check run earlier stays visible, and disclosed, after the
   /// feature is switched off for this account.
   Future<_PhysiqueState> _loadPhysique() async {
-    final provider = widget.physique.loadProvider();
+    final provider = widget.physique.loadProvider().then<(String?, bool)>(
+      (value) => (value, true),
+      onError: (Object e) {
+        debugPrint('Non-critical error: $e');
+        return (null, false);
+      },
+    );
     PhysiqueAnalysis? latest;
     try {
       latest = await widget.physique.loadLatestAnalysis();
     } catch (e) {
       debugPrint('Non-critical error: $e');
     }
-    return (provider: await provider, latest: latest);
+    final (name, known) = await provider;
+    return (provider: name, providerKnown: known, latest: latest);
   }
 
   @override
@@ -482,14 +495,11 @@ class _ProgressScreenState extends State<ProgressScreen> {
   }
 
   /// Whether this account can run physique checks, which send photos to an
-  /// AI model once the athlete agrees to that separately.
-  Future<bool> _hasPhysiqueCheck() async {
-    try {
-      return (await _physique).provider != null;
-    } catch (e) {
-      debugPrint('Non-critical error: $e');
-      return false;
-    }
+  /// AI model once the athlete agrees to that separately; null when that
+  /// could not be looked up.
+  Future<bool?> _hasPhysiqueCheck() async {
+    final physique = await _physique;
+    return physique.providerKnown ? physique.provider != null : null;
   }
 
   Future<void> _ensureConsent() async {
@@ -515,7 +525,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     final accepted = await showTracendConfirm(
       context,
       title: 'Save private progress photos?',
-      message: physique
+      message: physique != false
           ? 'Your photos are stored privately and only you can open them. '
                 'They are sent to an AI model only if you choose a physique '
                 'check, which asks for your permission first.'

@@ -17,6 +17,12 @@ class _Physique extends FixturePhysiqueCheckRepository {
   Future<String?> loadProvider() async => provider;
 }
 
+class _FailingPhysique extends FixturePhysiqueCheckRepository {
+  const _FailingPhysique();
+  @override
+  Future<String?> loadProvider() async => throw Exception('offline');
+}
+
 class _Progress implements ProgressRepository {
   _Progress({
     this.consented = false,
@@ -225,6 +231,22 @@ void main() {
       );
       expect(
         find.textContaining('asks for your permission first'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('when physique checks cannot be looked up, never says never', (
+      tester,
+    ) async {
+      await _pump(tester, _Progress(), physique: const _FailingPhysique());
+      await _reveal(tester, find.text('Take progress photos'));
+      await tester.tap(find.text('Take progress photos'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('never sent to an AI model'), findsNothing);
+      expect(
+        find.textContaining(
+          'sent to an AI model only if you choose a physique check',
+        ),
         findsOneWidget,
       );
     });

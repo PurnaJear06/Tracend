@@ -579,6 +579,43 @@ void main() {
       ]);
     });
 
+    testWidgets('a sign-out while the saved reminders load restores nothing', (
+      tester,
+    ) async {
+      server.answer('POST /rest/v1/rpc/get_current_ai_notice', 200, {
+        'version': 'ai-coaching-v6',
+        'provider_label': 'Anthropic',
+        'body': 'One.',
+      });
+      final saved = Completer<http.Response>();
+      server.routes['GET /rest/v1/notification_preferences'] = () =>
+          saved.future;
+      await openGate(tester);
+      expect(notifications.configured, isEmpty);
+
+      await tester.runAsync(
+        () => server.client.auth.signOut(scope: SignOutScope.local),
+      );
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      saved.complete(
+        _json(200, {
+          'daily_check_in': true,
+          'weekly_review': true,
+          'authorization_status': 'authorized',
+        }),
+      );
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(notifications.configured, [
+        (daily: false, weekly: false, rest: false),
+      ]);
+    });
+
     testWidgets('a failure restoring them never blocks the gate', (
       tester,
     ) async {
