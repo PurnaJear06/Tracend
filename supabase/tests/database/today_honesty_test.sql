@@ -101,8 +101,8 @@ set local "request.jwt.claim.sub" =
 --    bumped 1.4 -> 1.5 with additive per-metric staleness fields.
 select is(
   public.get_my_daily_brief(current_date)->>'schema_version',
-  '1.8',
-  'brief schema_version is 1.8'
+  '1.9',
+  'brief schema_version is 1.9'
 );
 
 -- 2. today_raw passes today's measured HRV through verbatim.

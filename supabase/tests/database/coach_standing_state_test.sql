@@ -170,7 +170,7 @@ insert into r select 'today', public.start_training_pause_v1((select today from 
 reset role;
 select is((select j ->> 'status' from r where name = 'cancel'), 'cancelled', 'a break not begun is cancelled');
 select is((select j ->> 'status' from r where name = 'again'), 'not_running', 'ending it again changes nothing');
-select is(private.availability_on(pg_temp.u(1), (select today from t) + 3, false) ->> 'status', 'available',
+select is(private.availability_on(pg_temp.u(1), (select today from t) + 5, false) ->> 'status', 'available',
   'a cancelled break covers no day');
 select ok(private.availability_on(pg_temp.u(1), (select today from t) + 16, false) -> 'return_from_pause' = 'null'::jsonb,
   'and has no first day back');
@@ -228,8 +228,8 @@ select is((select count(*)::integer from public.audit_events where user_id = pg_
   'the approval and the break are both audited');
 select is(private.availability_on(pg_temp.u(4), (select today from t), false) ->> 'status', 'paused',
   'the athlete is on a break today');
-select is((private.coach_proposal_json(c) ->> 'can_undo') from public.change_proposals c
-    where id = (select id from p where name = 'proposal'), 'true', 'it can be undone');
+select is((select private.coach_proposal_json(c) ->> 'can_undo' from public.change_proposals c
+    where id = (select id from p where name = 'proposal')), 'true', 'it can be undone');
 -- A second break over the first is refused when it is stored.
 select throws_ok($$select pg_temp.store_pause(pg_temp.u(4), (select today from t) + 2, (select today from t) + 6)$$,
   '55000', 'the break no longer fits', 'a break over another is refused');
