@@ -92,13 +92,16 @@ export function parsePhysiqueResult(content: string): PhysiqueParse {
   if (keys.join(",") !== "development_priorities,limitations,observations,photo_issues") {
     return { ok: false, rule: "unexpected_keys" };
   }
-  const issues = reply.photo_issues;
+  const listed = reply.photo_issues;
   if (
-    !Array.isArray(issues) || issues.length > 3 || new Set(issues).size !== issues.length ||
-    !issues.every((issue) => photoIssues.includes(issue as PhotoIssue))
+    !Array.isArray(listed) ||
+    !listed.every((issue) => photoIssues.includes(issue as PhotoIssue))
   ) {
     return { ok: false, rule: "photo_issues" };
   }
+  // A dark or blurred set can draw every issue at once, some repeated: the first three distinct
+  // ones are kept, and two or more already cap every confidence at low.
+  const issues = [...new Set(listed as PhotoIssue[])].slice(0, 3);
   const priorities = reply.development_priorities;
   // No muscle to suggest is the model saying the photos show no physique it
   // can judge (an unrelated picture, the body out of frame): an answer about
@@ -156,7 +159,7 @@ export function parsePhysiqueResult(content: string): PhysiqueParse {
       schema_version: "1.0",
       development_priorities: parsed,
       observations: (observations as string[]).map((observation) => observation.trim()),
-      photo_issues: issues as PhotoIssue[],
+      photo_issues: issues,
       limitations: reply.limitations.trim(),
     },
   };

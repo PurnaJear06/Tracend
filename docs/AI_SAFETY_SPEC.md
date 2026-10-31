@@ -707,8 +707,8 @@ The check is hidden when the athlete's own notes mention an eating concern.
 **Output** (`_shared/physique/contract.ts`, `private.is_valid_physique_result`): 1–3
 `development_priorities` from the catalog's primary muscles, each with confidence and a reason of at
 most 120 characters, relative to the athlete's own build; up to three neutral observations; photo
-issues from a fixed list (lighting, pose, clothing, framing, blur, mismatch), which cap confidence
-(one at medium, two or more at low); and limitations. Any unexpected key, unknown muscle, or a
+issues from a fixed list (lighting, pose, clothing, framing, blur, mismatch; the first three distinct
+ones are kept), which cap confidence (one at medium, two or more at low); and limitations. Any unexpected key, unknown muscle, or a
 percentage, body-fat, score or rating, appearance judgement, sexual, medical, sensitive-trait or
 eating wording rejects the whole reply. A reply that suggests no muscle at all means the photos
 show no physique to judge (an unrelated picture, the body out of frame): nothing is stored, no
