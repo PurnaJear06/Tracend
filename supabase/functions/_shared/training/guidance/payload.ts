@@ -3,7 +3,8 @@
 // (Coach context) must parse before it uses a field: a payload that is not exactly this shape
 // yields null, never a half-read object. Keys added in a later schema version are ignored; a
 // missing or mistyped key is not. Schema 1.1 (B5-4) adds the cardio week and the reason it is
-// withheld; a 1.0 payload parses with both empty.
+// withheld; a 1.0 payload parses with both empty. Schema 1.2 adds who made the proposal and the last
+// day of a running deload to the deload part; an earlier payload parses with both empty.
 import { type SafetyRoute, safetyRoutes } from "../readiness/payload.ts";
 
 export const deloadStatuses = ["not_due", "suggested", "pending", "running"] as const;
@@ -23,6 +24,10 @@ export const deloadSuppressions = [
 ] as const;
 export type DeloadSuppression = typeof deloadSuppressions[number];
 
+/** `tracend`: the rules' own suggestion (training-proposals); `coach`: the athlete asked Coach for it. */
+export const deloadOrigins = ["tracend", "coach"] as const;
+export type DeloadOrigin = typeof deloadOrigins[number];
+
 export const cardioWithheldReasons = ["safety_route", "screening"] as const;
 export type CardioWithheld = typeof cardioWithheldReasons[number];
 
@@ -32,6 +37,10 @@ export type DeloadGuidance = Readonly<{
   lastEndedOn: string | null;
   weeksSince: number | null;
   proposalId: string | null;
+  /** Who made the open or running proposal; null when there is none (and before 1.2). */
+  proposalOrigin: DeloadOrigin | null;
+  /** The last day of a running deload; null otherwise (and before 1.2). */
+  endsOn: string | null;
   suppressedBy: DeloadSuppression | null;
 }>;
 
@@ -53,7 +62,7 @@ export type CardioWeek = Readonly<{
 }>;
 
 export type TrainingGuidance = Readonly<{
-  schemaVersion: "1.0" | "1.1";
+  schemaVersion: "1.0" | "1.1" | "1.2";
   localDate: string;
   safetyRoute: SafetyRoute | null;
   deload: DeloadGuidance;
@@ -97,9 +106,15 @@ function parseDeload(raw: unknown): DeloadGuidance | null {
   const weeksSince = nullable(row.weeks_since, whole);
   const proposalId = nullable(row.proposal_id, uuid);
   const suppressedBy = nullable(row.suppressed_by, (v) => oneOf(deloadSuppressions, v));
+  // Added in 1.2: a payload from before it has neither key.
+  const proposalOrigin = row.proposal_origin === undefined
+    ? null
+    : nullable(row.proposal_origin, (v) => oneOf(deloadOrigins, v));
+  const endsOn = row.ends_on === undefined ? null : nullable(row.ends_on, date);
   if (
     !status || !reasons || reasons.includes(null) || lastEndedOn === undefined ||
-    weeksSince === undefined || proposalId === undefined || suppressedBy === undefined
+    weeksSince === undefined || proposalId === undefined || suppressedBy === undefined ||
+    proposalOrigin === undefined || endsOn === undefined
   ) return null;
   const named = reasons as DeloadReason[];
   // The status and its parts must agree: a suggestion has reasons and nothing in its way, a
@@ -110,9 +125,21 @@ function parseDeload(raw: unknown): DeloadGuidance | null {
     ((status === "running" || status === "pending") && proposalId === null) ||
     (status === "running" && (named.length > 0 || suppressedBy !== null)) ||
     (suppressedBy !== null && named.length > 0) ||
-    (status === "not_due" && named.length > 0)
+    (status === "not_due" && named.length > 0) ||
+    // Only an open or running proposal has an origin, and only a running one an end date.
+    (proposalOrigin !== null && proposalId === null) ||
+    (endsOn !== null && status !== "running")
   ) return null;
-  return { status, reasons: named, lastEndedOn, weeksSince, proposalId, suppressedBy };
+  return {
+    status,
+    reasons: named,
+    lastEndedOn,
+    weeksSince,
+    proposalId,
+    proposalOrigin,
+    endsOn,
+    suppressedBy,
+  };
 }
 
 function parseCardioWeek(raw: unknown): CardioWeek | null {
@@ -151,10 +178,13 @@ function parseCardioWeek(raw: unknown): CardioWeek | null {
   };
 }
 
-/** Parses a guidance payload (schema 1.0 or 1.1). Null for anything that is not exactly that shape. */
+/** Parses a guidance payload (schema 1.0, 1.1 or 1.2). Null for anything that is not exactly that shape. */
 export function parseTrainingGuidance(raw: unknown): TrainingGuidance | null {
   const row = record(raw);
-  if (!row || (row.schema_version !== "1.0" && row.schema_version !== "1.1")) return null;
+  if (
+    !row ||
+    (row.schema_version !== "1.0" && row.schema_version !== "1.1" && row.schema_version !== "1.2")
+  ) return null;
   const localDate = date(row.local_date);
   const route = nullable(row.safety_route, (v) => oneOf(safetyRoutes, v));
   const deload = parseDeload(row.deload);
@@ -178,7 +208,7 @@ export function parseTrainingGuidance(raw: unknown): TrainingGuidance | null {
   if ((withheld === null) !== (week !== null)) return null;
   if (route !== null && withheld !== "safety_route") return null;
   return {
-    schemaVersion: "1.1",
+    schemaVersion: row.schema_version,
     localDate,
     safetyRoute: route,
     deload,

@@ -340,6 +340,7 @@ jobs:
           - physique-check
           - privacy-delete-account
           - privacy-export
+          - training-proposals
           - waitlist-confirm
           - waitlist-join
           - waitlist-unsubscribe
