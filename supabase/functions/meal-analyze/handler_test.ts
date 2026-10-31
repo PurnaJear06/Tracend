@@ -1,4 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
+import { plateCandidate, type StoredMealCandidate } from "../_shared/meal_vision/packaged.ts";
 import { MealVisionBilledError } from "../_shared/providers/gemini_meal_vision_provider.ts";
 import { handleMealAnalyze, type MealAnalyzeStore, type MealVisionResult } from "./handler.ts";
 
@@ -11,17 +12,17 @@ const usage = {
   outputUnits: 200,
   estimatedCostUsd: 0.0015,
 };
-const dal = {
+const dal = plateCandidate({
   name: "Dal",
   serving_label: "1 bowl",
   calories: 180,
   protein_g: 9,
   carbohydrate_g: 24,
   fat_g: 5,
-  confidence: "low" as const,
+  confidence: "low",
   assumptions: ["Oil is uncertain"],
   question: "Was ghee added?",
-};
+});
 
 function harness(overrides: Partial<MealAnalyzeStore> = {}) {
   const events: string[] = [];
@@ -70,6 +71,47 @@ Deno.test("a stored answer records usage before persisting", async () => {
   const response = await run(() => Promise.resolve({ ...usage, candidates: [dal] }));
   assertEquals(response.status, 200);
   assertEquals(events, ["reserve", "usage:200", "persist:1"]);
+});
+
+Deno.test("the model's notes and the source are stored, and the answer repeats them", async () => {
+  const stored: StoredMealCandidate[][] = [];
+  const logged: Record<string, unknown>[] = [];
+  const response = await handleMealAnalyze(body, {
+    userId: user,
+    provider: "groq",
+    analyze: () => Promise.resolve({ ...usage, candidates: [dal] }),
+    store: {
+      consent: () => Promise.resolve({ granted: true, provider: "groq" }),
+      reserveBudget: () => Promise.resolve(true),
+      keepBudget: () => {},
+      loadDraft: () =>
+        Promise.resolve({ objectKey: `${user}/meal/${mealId}.jpg`, contentType: "image/jpeg" }),
+      download: () => Promise.resolve(new Uint8Array([1])),
+      recordUsage: () => Promise.resolve(),
+      persistCandidates: (_meal, candidates) => {
+        stored.push([...candidates]);
+        return Promise.resolve(true);
+      },
+      discardDraft: () => Promise.resolve(true),
+    },
+    log: { info: (_event, fields) => logged.push(fields ?? {}), warn: () => {}, error: () => {} },
+    report: () => {},
+    now: () => 0,
+  });
+  assertEquals(response.status, 200);
+  assertEquals(stored, [[dal]]);
+  assertEquals(stored[0][0].assumptions, ["Oil is uncertain"]);
+  assertEquals(stored[0][0].question, "Was ghee added?");
+  assertEquals(await response.json(), {
+    schema_version: "1.1",
+    meal_id: mealId,
+    candidates: [dal],
+  });
+  // The log names the kind and source, never a food or a note.
+  assertEquals(logged[0].image_kind, "plate");
+  assertEquals(logged[0].sources, ["estimate"]);
+  assertEquals(JSON.stringify(logged).includes("Dal"), false);
+  assertEquals(JSON.stringify(logged).includes("ghee"), false);
 });
 
 Deno.test("a rejected store still counts the call", async () => {

@@ -557,6 +557,9 @@ Required groups cover:
 - pain and red-flag escalation;
 - missing, stale, contradictory, and adversarial text;
 - mixed meals, hidden ingredients, and uncertain portions;
+- packaged foods: a nutrition label read as printed and checked by code (the Munch golden,
+  `_shared/meal_vision/munch_label_golden.json`, shared by the Deno and Flutter tests), a front of
+  pack never above medium, and a written instruction on a label ignored;
 - inconsistent progress photos and prohibited body-composition certainty;
 - prompt injection in notes/imports;
 - schema failure, timeout, outage, and fallback; and

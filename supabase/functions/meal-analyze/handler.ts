@@ -1,6 +1,6 @@
 import { reply } from "../_shared/auth.ts";
+import type { StoredMealCandidate } from "../_shared/meal_vision/packaged.ts";
 import {
-  type MealCandidate,
   MealVisionBilledError,
   type MealVisionUsage,
 } from "../_shared/providers/gemini_meal_vision_provider.ts";
@@ -8,19 +8,19 @@ import { isUserStorageKey } from "../_shared/storage_keys.ts";
 
 // POST meal-analyze {"schema_version":"1.0","meal_id":…}: sends the photo of
 // one of the athlete's meal drafts to the meal vision provider and stores the
-// candidates for review. Nothing is sent without the athlete's grant of the
-// current meal photo notice, and never to a provider that notice does not
-// name. The call's usage is recorded whenever the provider answered, before
-// anything else can fail, so every billed call counts.
+// candidates for review, with the model's assumptions and question and, for a
+// pack or a nutrition label, the source, sizes and per-gram values code worked
+// out (_shared/meal_vision/packaged.ts). Nothing is sent without the athlete's
+// grant of the current meal photo notice, and never to a provider that notice
+// does not name. The call's usage is recorded whenever the provider answered,
+// before anything else can fail, so every billed call counts. The answer
+// (schema 1.1) repeats what was stored; the app reads the stored rows.
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export type MealVisionResult = MealVisionUsage & Readonly<{ candidates: MealCandidate[] }>;
+export type MealVisionResult = MealVisionUsage & Readonly<{ candidates: StoredMealCandidate[] }>;
 
 export type MealDraft = Readonly<{ objectKey: unknown; contentType: string }>;
-
-/** What is stored for review: the candidate without the model's notes. */
-export type StoredMealCandidate = Omit<MealCandidate, "assumptions" | "question">;
 
 export type MealPhotoConsent = Readonly<{ granted: boolean; provider: string | null }>;
 
@@ -151,16 +151,16 @@ export async function handleMealAnalyze(
     });
     return reply(422, { error: "meal_no_food_found" });
   }
-  const persistenceCandidates = result.candidates.map((
-    { assumptions: _assumptions, question: _question, ...candidate },
-  ) => candidate);
-  if (!await store.persistCandidates(mealId, persistenceCandidates, result.model)) {
+  if (!await store.persistCandidates(mealId, result.candidates, result.model)) {
     return reply(422, { error: "meal_analysis_rejected" });
   }
+  // Kinds and sources only: no food name, value or note reaches the logs.
   log.info("meal_analysis_complete", {
     latency_ms: latencyMs,
     provider: dependencies.provider,
     model: result.model,
+    image_kind: result.candidates[0].image_kind,
+    sources: [...new Set(result.candidates.map((candidate) => candidate.source))],
   });
-  return reply(200, { schema_version: "1.0", meal_id: mealId, candidates: result.candidates });
+  return reply(200, { schema_version: "1.1", meal_id: mealId, candidates: result.candidates });
 }
