@@ -242,9 +242,13 @@ class _AppShellState extends State<AppShell> {
   /// Train can still say it with no connection.
   void _keepSafetyNotes(DayAdjustment adjustment) {
     final workouts = _workouts;
-    if (workouts is SavedSafetyNotesRepository) {
+    final owner = _signedInAtStart;
+    if (workouts is SavedSafetyNotesRepository && owner != null) {
       unawaited(
-        (workouts as SavedSafetyNotesRepository).saveSafetyNotes(adjustment),
+        (workouts as SavedSafetyNotesRepository).saveSafetyNotes(
+          adjustment,
+          userId: owner,
+        ),
       );
     }
   }
@@ -265,9 +269,14 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
+  /// The athlete this shell opened for. A day adjustment that answers after
+  /// another athlete signed in is kept for this one or not at all.
+  late final String? _signedInAtStart;
+
   @override
   void initState() {
     super.initState();
+    _signedInAtStart = widget.userId;
     widget.homeWidgets.listenForTab(_openRequestedTab);
     unawaited(_openRequestedTab());
     final injected = widget.repositories;

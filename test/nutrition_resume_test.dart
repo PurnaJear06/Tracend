@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_screen.dart';
+import 'package:tracend/features/nutrition/widgets/nutrition_sheets.dart';
 import 'package:tracend/shared/widgets/date_pill_strip.dart';
 
 /// Meals across a night and a quick tap through the days: the screen follows
@@ -159,5 +160,26 @@ void main() {
 
     expect(find.text('Yesterday curry'), findsNothing);
     expect(find.textContaining('Yesterday curry'), findsNothing);
+  });
+
+  testWidgets('the manual meal sheet opens on the meal of the app\'s clock', (
+    tester,
+  ) async {
+    // An hour whose meal differs from the wall clock's, so only the app's
+    // clock can give the right answer.
+    now = DateTime(
+      2026,
+      10,
+      2,
+      defaultMealType(DateTime.now()) == 'breakfast' ? 20 : 8,
+    );
+    await pumpMeals(tester);
+
+    await tester.tap(find.text('Log meal').first);
+    await tester.pumpAndSettle();
+
+    final sheet = tester.widget<ManualMealSheet>(find.byType(ManualMealSheet));
+    expect(sheet.initialMealType, defaultMealType(now));
+    expect(sheet.initialMealType, isNot(defaultMealType(DateTime.now())));
   });
 }

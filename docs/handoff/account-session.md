@@ -232,3 +232,22 @@ which is updated). App only, no migration, needs a reinstall.
   checked right before the write, and the copy is cleared if they left during it); the gate's
   signed-out listener also clears the copy.
 - **Progress** never shows the phone's copy: a cached hub is treated as unavailable there.
+
+### Offline cold start, round 2 review fixes (PR #185)
+
+- **Account switch during a hung start.** `moveToCurrentPlan` takes the draft owner's id
+  (`ownerId`) and returns null when another athlete is signed in after the live plan was read;
+  `sendLeftOverDraft` captures the signed-in athlete before the first start (`signedInUserId` on
+  `WorkoutPlanRemapper`) and checks it again right before the retry start, and the logger does the
+  same. Nothing of athlete A's is moved or started in B's account; the draft stays under A's keys.
+- **55000 from a sync.** A refusal "not taking sets" now takes the existing completed path
+  (`_showCompletedAlready`): the logger opens as the completed workout and the draft goes, instead of
+  "could not save your sets". Opening the logger first waits for any send of waiting workouts already
+  running for this athlete (`WorkoutSendInFlight.sendInFlight`), so it reads the server after it.
+- **Finish with no match in the plan.** The finish effort is kept on the phone with the draft
+  (`savePendingFinish`, the same write `completeWithEffort` makes), so `sendWaiting` sends it once a
+  match exists. The no-match is reported to Sentry as "workout not in current plan" (type only).
+- **Sore-area notes** are saved under the athlete the shell opened for, and dropped if another
+  athlete is signed in when the answer arrives (`saveSafetyNotes(adjustment, userId:)`).
+- **Manual meal sheet** uses the app's clock again (`widget.clock()`), lost in a merge.
+- #181's app-side identity logic is not on main yet: `WorkoutIdentity` stays until it is.

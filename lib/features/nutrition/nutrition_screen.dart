@@ -328,7 +328,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
         subtitle: 'It counts toward your totals as soon as you confirm it.',
         scrollable: false,
         builder: (_) => ManualMealSheet(
-          initialMealType: mealType ?? defaultMealType(DateTime.now()),
+          initialMealType: mealType ?? defaultMealType(widget.clock()),
           onSave: (input) => _saveManualMeal(scheduled, input),
         ),
       );

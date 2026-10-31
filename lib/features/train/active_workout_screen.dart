@@ -320,6 +320,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   Future<void> _restore() async {
     unawaited(_loadAlertPreference());
+    // A send of waiting workouts that started before this logger opened may be
+    // finishing this very workout: read the server after it is over.
+    final repository = widget.repository;
+    if (repository is WorkoutSendInFlight) {
+      await (repository as WorkoutSendInFlight).sendInFlight();
+    }
     Map<String, dynamic>? server;
     try {
       server = await widget.repository.loadSession(
@@ -447,6 +453,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _sync = _Sync.attention;
       return null;
     }
+    final repository = widget.repository;
+    final owner = repository is WorkoutPlanRemapper
+        ? (repository as WorkoutPlanRemapper).signedInUserId
+        : null;
     try {
       return await widget.repository.start(
         _workout,
@@ -460,8 +470,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         return null;
       }
       if (e.code == 'P0002' && !moved) {
-        switch (await _moveToCurrentPlan()) {
+        switch (await _moveToCurrentPlan(owner)) {
           case _Moved.yes:
+            if ((repository as WorkoutPlanRemapper).signedInUserId != owner) {
+              _sync = _Sync.offline;
+              return null;
+            }
             return _startSession(moved: true);
           case _Moved.unreadable:
             _sync = _Sync.offline;
@@ -480,14 +494,19 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 
   /// Finds this workout again in the current plan and moves the draft to it.
-  Future<_Moved> _moveToCurrentPlan() async {
+  Future<_Moved> _moveToCurrentPlan(String? owner) async {
     final repository = widget.repository;
     if (repository is! WorkoutPlanRemapper) return _Moved.no;
     try {
       final current = await (repository as WorkoutPlanRemapper)
-          .moveToCurrentPlan(_workout.id, _workout.identity);
+          .moveToCurrentPlan(_workout.id, _workout.identity, ownerId: owner);
       if (current == null) {
         _unmatched = true;
+        reportNonCritical(
+          StateError('workout not in current plan'),
+          null,
+          'workout not in current plan',
+        );
         return _Moved.no;
       }
       _workout = current;
@@ -945,6 +964,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     } on PostgrestException catch (e) {
       logNonCritical(e, 'workout sync refused');
       _refusalCode = e.code;
+      if (e.code == '55000') {
+        // Not taking sets any more: finished already, say by the send of
+        // waiting workouts. It opens as the completed workout.
+        await _showCompletedAlready();
+        return _Sync.attention;
+      }
       return e.code == '22023' && !_timingRefused ? null : _Sync.attention;
     } catch (e) {
       logNonCritical(e, 'workout sync waits');
@@ -1671,12 +1696,17 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       // The server holds older sets than this phone: finishing now would
       // finish from those, and clear the phone's copy.
       if (!mounted) return;
+      final finish = PendingWorkoutFinish(
+        sessionEffort: effort,
+        durationSeconds: durationSeconds,
+      );
+      // Kept on the phone with the draft, so it is sent once the workout and
+      // its sets can be, even after the app is closed.
+      await widget.repository.savePendingFinish(_workout.id, finish);
+      if (!mounted) return;
       setState(() {
         _finishing = false;
-        _pendingFinish = PendingWorkoutFinish(
-          sessionEffort: effort,
-          durationSeconds: durationSeconds,
-        );
+        _pendingFinish = finish;
         _finishError = _unmatched
             ? _unmatchedFinishLine
             : 'Tracend could not save your sets, so the workout is not '

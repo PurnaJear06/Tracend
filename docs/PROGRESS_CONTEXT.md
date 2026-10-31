@@ -383,6 +383,10 @@ workout ids) moves to its copy and is sent, or is kept with a clear message; wai
 sent by the app when it reconnects, without opening the workout; Train offline says what was last
 known about sore areas, or that holds cannot be checked offline; a sign-out during a hub load can
 no longer bring the saved plan back; Progress never shows the saved copy.
+Round 2 review fixes: an account switch during a hung workout start never moves or sends the
+earlier athlete's workout in the new account; a sync refused because the workout was finished
+meanwhile opens it as completed; a finish with no match in the plan is kept on the phone and reported;
+sore-area notes are saved only for the athlete they came for.
 
 ## Shipped baseline
 

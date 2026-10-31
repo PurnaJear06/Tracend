@@ -839,21 +839,39 @@ abstract interface class SavedTrainingHubRepository {
 /// A repository that can find a workout again after the plan was copied with
 /// new ids (a lighter week starting or a temporary block ending).
 abstract interface class WorkoutPlanRemapper {
+  /// The athlete signed in now, or null.
+  String? get signedInUserId;
+
   /// The workout of the current plan that [identity] names, with the phone's
   /// draft and saved finish of the workout [staleId] moved to it. Null when
-  /// the current plan has no such workout (or [identity] is unknown): the
-  /// draft then stays where it is. Throws when the plan cannot be read.
+  /// the current plan has no such workout (or [identity] is unknown), or when
+  /// [ownerId], the athlete the draft belongs to, is no longer the one signed
+  /// in: the draft then stays where it is. Throws when the plan cannot be
+  /// read.
   Future<PlannedWorkout?> moveToCurrentPlan(
     String staleId,
-    WorkoutIdentity? identity,
-  );
+    WorkoutIdentity? identity, {
+    required String? ownerId,
+  });
+}
+
+/// A repository that can say when the workouts it is sending have gone out.
+abstract interface class WorkoutSendInFlight {
+  /// Completes once the send of waiting workouts running now for the
+  /// signed-in athlete (if any) is over. Never throws.
+  Future<void> sendInFlight();
 }
 
 /// A repository that keeps the athlete's last sore-area notes beside the
 /// saved plan.
 abstract interface class SavedSafetyNotesRepository {
-  /// Keeps what [adjustment] says about sore areas for the signed-in athlete.
-  Future<void> saveSafetyNotes(DayAdjustment adjustment);
+  /// Keeps what [adjustment] says about sore areas for [userId], and only
+  /// while [userId] is the athlete signed in: an answer that arrives after
+  /// another athlete signed in is dropped.
+  Future<void> saveSafetyNotes(
+    DayAdjustment adjustment, {
+    required String userId,
+  });
 
   /// The notes kept for the signed-in athlete, or null.
   Future<OfflineSafetyNotes?> loadSavedSafetyNotes();
@@ -943,6 +961,10 @@ abstract interface class WorkoutRepository {
     Map<String, dynamic> draft, {
     required int sessionEffort,
   });
+
+  /// Keeps the athlete's finish for [workoutId] on the phone, so it can be
+  /// sent from [loadPendingFinish] once the workout and its sets can be.
+  Future<void> savePendingFinish(String workoutId, PendingWorkoutFinish finish);
 
   /// The finish request saved for [workoutId] that has not reached the
   /// server yet, or null.
@@ -1054,6 +1076,7 @@ class SupabaseWorkoutRepository
         SavedTrainingHubRepository,
         SavedSafetyNotesRepository,
         WorkoutPlanRemapper,
+        WorkoutSendInFlight,
         WorkoutRepairRepository,
         WorkoutReconciliationRepository,
         HealthkitCandidateRepository,
@@ -1138,9 +1161,11 @@ class SupabaseWorkoutRepository
   }
 
   @override
-  Future<void> saveSafetyNotes(DayAdjustment adjustment) async {
-    final userId = _client.auth.currentUser?.id;
-    if (userId == null) return;
+  Future<void> saveSafetyNotes(
+    DayAdjustment adjustment, {
+    required String userId,
+  }) async {
+    if (_client.auth.currentUser?.id != userId) return;
     await _hubCache.saveSafety(userId, OfflineSafetyNotes.from(adjustment));
     if (_client.auth.currentUser?.id != userId) await _hubCache.clear(userId);
   }
@@ -1154,14 +1179,20 @@ class SupabaseWorkoutRepository
   // A workout the plan no longer knows by its id ---------------------------
 
   @override
+  String? get signedInUserId => _client.auth.currentUser?.id;
+
+  @override
   Future<PlannedWorkout?> moveToCurrentPlan(
     String staleId,
-    WorkoutIdentity? identity,
-  ) async {
-    if (identity == null) return null;
-    final userId = _client.auth.currentUser?.id;
+    WorkoutIdentity? identity, {
+    required String? ownerId,
+  }) async {
+    if (identity == null || ownerId == null) return null;
     final hub = await _fetchHub(_cachedHubDays);
-    if (userId != null) await _saveHub(userId, hub);
+    // The draft is ownerId's: if another athlete signed in while the plan was
+    // read, that plan is not where it goes.
+    if (_client.auth.currentUser?.id != ownerId) return null;
+    await _saveHub(ownerId, hub);
     PlannedWorkout? current;
     for (final workout in TrainingHubData.fromHubJson(hub).workouts) {
       if (workout.id != staleId && identity.matches(workout)) {
@@ -1213,6 +1244,14 @@ class SupabaseWorkoutRepository
   /// Forgets sends that never finished (a test that ended inside one).
   @visibleForTesting
   static void forgetSending() => _sending.clear();
+
+  @override
+  Future<void> sendInFlight() {
+    final userId = _client.auth.currentUser?.id;
+    return userId == null
+        ? Future<void>.value()
+        : _sending[userId] ?? Future<void>.value();
+  }
 
   /// Sends every workout of this athlete that is finished, or was left on an
   /// earlier day, and has not reached the server: its start, its sets and its
@@ -1615,12 +1654,7 @@ class SupabaseWorkoutRepository
       durationSeconds: durationSeconds,
     );
     final workoutId = draft['workout_id'] as String?;
-    if (workoutId != null) {
-      await _preferences.setString(
-        _finishKey(workoutId),
-        jsonEncode(finish.toJson()),
-      );
-    }
+    if (workoutId != null) await savePendingFinish(workoutId, finish);
     if (sessionId.startsWith('pending-')) {
       throw const WorkoutSessionPendingException();
     }
@@ -1644,6 +1678,15 @@ class SupabaseWorkoutRepository
     );
     return completion;
   }
+
+  @override
+  Future<void> savePendingFinish(
+    String workoutId,
+    PendingWorkoutFinish finish,
+  ) => _preferences.setString(
+    _finishKey(workoutId),
+    jsonEncode(finish.toJson()),
+  );
 
   @override
   Future<PendingWorkoutFinish?> loadPendingFinish(String workoutId) async {
@@ -1900,6 +1943,12 @@ class FixtureWorkoutRepository
   }
 
   @override
+  Future<void> savePendingFinish(
+    String workoutId,
+    PendingWorkoutFinish finish,
+  ) async {}
+
+  @override
   Future<PendingWorkoutFinish?> loadPendingFinish(String workoutId) async =>
       null;
 
@@ -1991,6 +2040,11 @@ Future<LeftOverResult> sendLeftOverDraft(
   PlannedWorkout workout,
   Map<String, dynamic> draft,
 ) async {
+  // Whose draft this is: the athlete signed in now. A start that hangs while
+  // another athlete signs in must not move or send this draft under theirs.
+  final owner = repository is WorkoutPlanRemapper
+      ? (repository as WorkoutPlanRemapper).signedInUserId
+      : null;
   var current = workout;
   var data = draft;
   try {
@@ -2013,9 +2067,13 @@ Future<LeftOverResult> sendLeftOverDraft(
                 current.id,
                 WorkoutIdentity.fromJson(data['workout_identity']) ??
                     current.identity,
+                ownerId: owner,
               )
             : null;
         if (moved == null) rethrow;
+        if ((repository as WorkoutPlanRemapper).signedInUserId != owner) {
+          return (settled: false, workoutId: current.id);
+        }
         current = moved;
         data = {...data, 'workout_id': moved.id};
         id = await repository.start(current, key, localDate: started.toLocal());
