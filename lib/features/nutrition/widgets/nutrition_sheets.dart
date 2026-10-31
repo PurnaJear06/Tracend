@@ -8,6 +8,7 @@ import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
 import 'package:uuid/uuid.dart';
 import 'package:tracend/shared/diagnostics.dart';
 
@@ -508,8 +509,17 @@ class _CandidateSheetState extends State<CandidateSheet> {
             child: HideKeyboardButton(),
           ),
           Text(
-            'These are estimates from your photo. Check portions, oil, '
-            'sauces, and hidden ingredients, then confirm only what you ate.',
+            widget.candidates.any(
+                  (candidate) =>
+                      candidate.source == MealSource.label ||
+                      candidate.source == MealSource.labelUnverified,
+                )
+                ? 'Values read from a label can still be misread. Compare the '
+                      'name and the numbers with the pack, choose how much you '
+                      'ate, then confirm only what you ate.'
+                : 'These are estimates from your photo. Check portions, oil, '
+                      'sauces, and hidden ingredients, then confirm only what '
+                      'you ate.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: TracendSpacing.md),
@@ -571,6 +581,23 @@ class _CandidateEditorState extends State<CandidateEditor> {
     text: _shown(widget.candidate.carbohydrate),
   );
   late final _fat = TextEditingController(text: _shown(widget.candidate.fat));
+
+  /// The chosen portion and its size. Both clear when the athlete types a
+  /// value, so the chooser never shows a portion the values are not.
+  late PortionKind? _portion = widget.candidate.unit == null
+      ? null
+      : initialPortionKind(
+          portionSize: widget.candidate.portionSize,
+          servingSize: widget.candidate.servingSize,
+          packSize: widget.candidate.packSize,
+          unit: widget.candidate.unit!,
+        );
+  late double? _portionSize = _portion == null
+      ? null
+      : widget.candidate.portionSize;
+  late final _amount = TextEditingController(
+    text: amountText(widget.candidate.portionSize ?? 100),
+  );
   bool _expanded = false;
 
   /// A value as the field shows it: whole, or to one decimal.
@@ -594,6 +621,7 @@ class _CandidateEditorState extends State<CandidateEditor> {
       _protein,
       _carbs,
       _fat,
+      _amount,
     ]) {
       controller.dispose();
     }
@@ -635,8 +663,84 @@ class _CandidateEditorState extends State<CandidateEditor> {
         protein: values[1],
         carbohydrate: values[2],
         fat: values[3],
+        portionSize: _portionSize,
       ),
     );
+  }
+
+  /// A value typed by hand is no longer a portion of the chooser.
+  void _typed() {
+    setState(() {
+      _portion = null;
+      _portionSize = null;
+    });
+    _notify();
+  }
+
+  /// The largest typed amount: the most one meal row's portion holds.
+  static const _maxAmount = 5000.0;
+
+  /// The values of [size] units, or null when one meal row cannot hold them.
+  PortionNutrients? _storable(double size) {
+    final values = widget.candidate.perUnit?.scale(size);
+    return values != null && values.storable ? values : null;
+  }
+
+  String? _amountError(String? value) {
+    final grams = parseDecimal(value);
+    if (grams == null || grams <= 0 || grams > _maxAmount) {
+      return 'Enter 1 to 5000 g';
+    }
+    return _storable(grams) == null
+        ? 'That is more than one meal can hold'
+        : null;
+  }
+
+  /// Recalculates every value from the stored per-unit values for a portion
+  /// one meal row can hold, and only then selects it. The fields stay
+  /// editable afterwards.
+  void _applyPortion(PortionKind kind, double size) {
+    final values = _storable(size);
+    if (values == null) return;
+    setState(() {
+      _portion = kind;
+      _portionSize = size;
+    });
+    _serving.text = portionLabel(kind, size, widget.candidate.unit!);
+    _calories.text = _shown(values.calories);
+    _protein.text = _shown(values.protein);
+    _carbs.text = _shown(values.carbohydrate);
+    _fat.text = _shown(values.fat);
+    _notify();
+  }
+
+  void _choosePortion(PortionKind kind) {
+    switch (kind) {
+      case PortionKind.serving:
+        _applyPortion(kind, widget.candidate.servingSize!);
+      case PortionKind.pack:
+        _applyPortion(kind, widget.candidate.packSize!);
+      case PortionKind.amount:
+        // Start from an amount that can be confirmed, never from a refused one.
+        if (_amountError(_amount.text) != null) {
+          _amount.text = amountText(
+            _portionSize ?? widget.candidate.servingSize ?? 100,
+          );
+        }
+        final typed = parseDecimal(_amount.text);
+        if (typed != null) _applyPortion(kind, typed);
+    }
+  }
+
+  /// A typed amount recalculates while it can be confirmed. While it cannot,
+  /// its message shows and the sheet refuses to confirm.
+  void _typedAmount(String value) {
+    final grams = parseDecimal(value);
+    if (grams != null && _amountError(value) == null) {
+      _applyPortion(PortionKind.amount, grams);
+    } else {
+      setState(() {});
+    }
   }
 
   /// Closing the editor hides its fields, and hidden fields are not checked
@@ -664,6 +768,30 @@ class _CandidateEditorState extends State<CandidateEditor> {
           ),
           onChanged: (value) => widget.onSelected(value ?? false),
         ),
+        if (widget.candidate.source case final source?)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: MealSourceBadge(source: source),
+          ),
+        if (widget.candidate.labelIssues.isNotEmpty) ...[
+          const SizedBox(height: TracendSpacing.xs),
+          LabelIssuesNote(
+            issues: widget.candidate.labelIssues,
+            unit: widget.candidate.unit ?? QuantityUnit.grams,
+          ),
+        ],
+        if (widget.selected && _offersPortions) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          _portionChooser(context),
+        ],
+        if (widget.candidate.assumptions.isNotEmpty ||
+            widget.candidate.question.isNotEmpty) ...[
+          const SizedBox(height: TracendSpacing.xs),
+          MealModelNotes(
+            assumptions: widget.candidate.assumptions,
+            question: widget.candidate.question,
+          ),
+        ],
         Align(
           alignment: Alignment.centerLeft,
           child: TextButton.icon(
@@ -718,6 +846,80 @@ class _CandidateEditorState extends State<CandidateEditor> {
     ),
   );
 
+  /// Whether the chooser has anything to offer: a printed serving or pack,
+  /// or (by weight) a typed amount. Millilitres never become grams.
+  bool get _offersPortions {
+    final unit = widget.candidate.unit;
+    if (widget.candidate.perUnit == null || unit == null) return false;
+    return unit == QuantityUnit.grams ||
+        portionOptions(
+          servingSize: widget.candidate.servingSize,
+          packSize: widget.candidate.packSize,
+          unit: unit,
+        ).isNotEmpty;
+  }
+
+  Widget _portionChooser(BuildContext context) {
+    final unit = widget.candidate.unit!;
+    final options = portionOptions(
+      servingSize: widget.candidate.servingSize,
+      packSize: widget.candidate.packSize,
+      unit: unit,
+    );
+    final tooLarge = [
+      for (final option in options)
+        if (_storable(option.size) == null) option,
+    ];
+    final errorStyle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: context.tracendColors.stateDanger);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'How much did you eat?',
+          style: Theme.of(context).textTheme.labelLarge,
+        ),
+        const SizedBox(height: TracendSpacing.xs),
+        TracendSegmentedControl<PortionKind>(
+          segments: [
+            for (final option in options)
+              (
+                option.kind,
+                option.kind == PortionKind.serving ? '1 serving' : 'Whole pack',
+              ),
+            if (unit == QuantityUnit.grams) (PortionKind.amount, 'Grams'),
+          ],
+          selected: _portion,
+          disabled: {for (final option in tooLarge) option.kind},
+          onChanged: _choosePortion,
+        ),
+        for (final option in tooLarge)
+          Padding(
+            padding: const EdgeInsets.only(top: TracendSpacing.xxs),
+            child: Text(
+              '${option.label} is more than one meal can hold. Log part of '
+              'it instead.',
+              style: errorStyle,
+            ),
+          ),
+        if (_portion == PortionKind.amount) ...[
+          const SizedBox(height: TracendSpacing.xs),
+          TextFormField(
+            key: const ValueKey('portion-amount'),
+            controller: _amount,
+            decoration: const InputDecoration(labelText: 'Grams eaten'),
+            keyboardType: decimalKeyboard,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+            validator: _amountError,
+            onTapOutside: dismissKeyboard,
+            onChanged: _typedAmount,
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _numberField(TextEditingController controller, String label) =>
       TextFormField(
         controller: controller,
@@ -725,9 +927,135 @@ class _CandidateEditorState extends State<CandidateEditor> {
         keyboardType: decimalKeyboard,
         validator: widget.selected ? _number : null,
         onTapOutside: dismissKeyboard,
-        onChanged: (_) {
-          _notify();
-          setState(() {});
-        },
+        onChanged: (_) => _typed(),
       );
+}
+
+/// "From label", "Label unclear" or "Estimated": where a candidate's values
+/// came from, as the server worked it out.
+class MealSourceBadge extends StatelessWidget {
+  const MealSourceBadge({required this.source, super.key});
+
+  final MealSource source;
+
+  static String label(MealSource source) => switch (source) {
+    MealSource.label => 'From label',
+    MealSource.labelUnverified => 'Label unclear',
+    MealSource.estimate => 'Estimated',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    final (background, foreground) = switch (source) {
+      MealSource.label => (colors.accentSignalTint, colors.accentSignalInk),
+      MealSource.labelUnverified => (
+        colors.surfaceRaised,
+        colors.stateAttention,
+      ),
+      MealSource.estimate => (colors.surfaceRaised, colors.textSecondary),
+    };
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(TracendRadii.pill),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: TracendSpacing.xs,
+          vertical: TracendSpacing.xxs,
+        ),
+        child: Text(
+          label(source),
+          style: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(color: foreground),
+        ),
+      ),
+    );
+  }
+}
+
+/// What on a pack or label could not be trusted, one line per issue, in the
+/// candidate's own unit (g, or ml for a drink).
+class LabelIssuesNote extends StatelessWidget {
+  const LabelIssuesNote({
+    required this.issues,
+    this.unit = QuantityUnit.grams,
+    super.key,
+  });
+
+  final List<String> issues;
+  final QuantityUnit unit;
+
+  static String message(String issue, QuantityUnit unit) {
+    final byVolume = unit == QuantityUnit.millilitres;
+    final measure = byVolume ? 'volume' : 'weight';
+    return switch (issue) {
+      'energy_mismatch' =>
+        "The calories don't match the protein, carbs and fat on the label.",
+      'basis_mismatch' =>
+        "The per-serving and per-100 ${unit.symbol} columns don't agree.",
+      'pack_mismatch' =>
+        "Servings times serving size doesn't match the pack $measure.",
+      'energy_not_printed' =>
+        'No calories were read, so they were calculated from protein, carbs '
+            'and fat.',
+      'serving_size_missing' =>
+        'No serving $measure was read, so other portions cannot be '
+            'calculated.',
+      'values_implausible' =>
+        'Some values read from the label look impossible.',
+      'volume_basis' =>
+        'The label gives values per ml, so only its printed serving and pack '
+            'can be chosen, and they were not checked against a weight.',
+      'values_not_printed' =>
+        'No nutrition values could be read, so these are estimates.',
+      'name_not_printed' =>
+        'No product name could be read. Enter the name from the pack.',
+      _ => 'Something on the label could not be checked.',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodySmall?.copyWith(
+      color: context.tracendColors.stateAttention,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Check this against the pack:', style: style),
+        for (final issue in issues)
+          Text('• ${message(issue, unit)}', style: style),
+      ],
+    );
+  }
+}
+
+/// What the model assumed and what it asks, shown as it wrote them.
+class MealModelNotes extends StatelessWidget {
+  const MealModelNotes({
+    required this.assumptions,
+    required this.question,
+    super.key,
+  });
+
+  final List<String> assumptions;
+  final String question;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: context.tracendColors.textSecondary);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (assumptions.isNotEmpty)
+          Text('Assumed: ${assumptions.join('; ')}', style: style),
+        if (question.isNotEmpty) Text('Question: $question', style: style),
+      ],
+    );
+  }
 }

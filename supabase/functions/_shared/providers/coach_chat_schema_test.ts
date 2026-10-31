@@ -11,6 +11,7 @@
 import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1.0.14";
 import { captureLogs, claudeMessage, fakeFetch, jsonResponse, routeFor } from "../ai/fakes.ts";
 import { anthropicSchema } from "../ai/adapters/anthropic.ts";
+import { optionalProperties, unions } from "../ai/schema_guards.ts";
 import { evalProfiles } from "../../_evals/fixtures.ts";
 import {
   coachChatGatewaySchema,
@@ -26,49 +27,6 @@ const isNode = (value: unknown): value is Node =>
 
 /** The schema as sent to Claude. */
 const converted = () => anthropicSchema(coachChatGatewaySchema())!;
-
-/** Every property of every object that its `required` list does not name. */
-function optionalProperties(node: unknown, path = "$"): string[] {
-  if (Array.isArray(node)) {
-    return node.flatMap((item, i) => optionalProperties(item, `${path}[${i}]`));
-  }
-  if (!isNode(node)) return [];
-  const found: string[] = [];
-  if (isNode(node.properties)) {
-    const required = new Set(Array.isArray(node.required) ? node.required : []);
-    for (const name of Object.keys(node.properties)) {
-      if (!required.has(name)) found.push(`${path}.${name}`);
-    }
-  }
-  for (const [key, value] of Object.entries(node)) {
-    found.push(...optionalProperties(value, `${path}.${key}`));
-  }
-  return found;
-}
-
-/**
- * Every union: `anyOf`, `oneOf`, a `type` list (such as ["string", "null"]) and `nullable`. A
- * property named `anyOf` is not a keyword, so only schema positions count.
- */
-function unions(node: unknown, path = "$"): string[] {
-  if (Array.isArray(node)) return node.flatMap((item, i) => unions(item, `${path}[${i}]`));
-  if (!isNode(node)) return [];
-  const found: string[] = [];
-  for (const keyword of ["anyOf", "oneOf", "allOf"]) {
-    if (keyword in node) found.push(`${path}.${keyword}`);
-  }
-  if (Array.isArray(node.type) || node.nullable !== undefined) found.push(`${path}.type`);
-  for (const [key, value] of Object.entries(node)) {
-    if (key === "properties" && isNode(value)) {
-      for (const [name, item] of Object.entries(value)) {
-        found.push(...unions(item, `${path}.${name}`));
-      }
-    } else {
-      found.push(...unions(value, `${path}.${key}`));
-    }
-  }
-  return found;
-}
 
 Deno.test("the answer schema has no optional property", () => {
   assertEquals(optionalProperties(converted()), []);

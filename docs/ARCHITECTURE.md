@@ -560,9 +560,14 @@ prompt never appears when a session is already completed.
    notice grant (`get_meal_photo_ai_consent`) and the AI budget, checks the stored key, downloads
    the image, and sends a minimized image with a fixed instruction to the provider.
 4. Structured candidates are validated and stored as unconfirmed `meal_analysis_candidates`
-   (`persist_meal_photo_candidates`), with usage in `ai_usage_events`.
-5. The athlete edits candidates; `confirm_analyzed_meal` snapshots the corrections into confirmed
-   meal items in one transaction.
+   (`persist_meal_photo_candidates`), with usage in `ai_usage_events`. On the Claude path the
+   answer also says whether the photo is a plate, a pack front or a nutrition label and copies what
+   is printed; deterministic code (`_shared/meal_vision/packaged.ts`) checks the label arithmetic,
+   derives per-unit values (per gram, or per ml, never mixed) and portions, and sets the source and confidence before storage
+   (AI_SAFETY_SPEC §8). The model's assumptions and question are stored with the candidate.
+5. The athlete edits candidates (for a pack or label, a portion chooser recalculates from the
+   stored per-unit values); `confirm_analyzed_meal` snapshots the corrections into confirmed meal
+   items in one transaction.
 6. The daily retention worker deletes the image at its deadline.
 
 If any step after the upload fails, the app removes the uploaded object.

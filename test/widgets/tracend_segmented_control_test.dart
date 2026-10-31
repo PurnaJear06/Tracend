@@ -31,6 +31,34 @@ void main() {
     expect(haptics, hasLength(1));
   });
 
+  testWidgets('a disabled segment cannot be chosen; none may be selected', (
+    tester,
+  ) async {
+    final haptics = recordHaptics(tester);
+    int? selected;
+    await tester.pumpWidget(
+      widgetHost(
+        StatefulBuilder(
+          builder: (context, setState) => TracendSegmentedControl<int>(
+            segments: const [(7, '7 days'), (30, '30 days')],
+            selected: selected,
+            disabled: const {30},
+            onChanged: (value) => setState(() => selected = value),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('30 days'));
+    await tester.pump();
+    expect(selected, isNull);
+    expect(haptics, isEmpty);
+
+    await tester.tap(find.text('7 days'));
+    await tester.pump();
+    expect(selected, 7);
+  });
+
   testWidgets('is at least 44pt tall and marks the selected segment', (
     tester,
   ) async {

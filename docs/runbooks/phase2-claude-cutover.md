@@ -36,6 +36,46 @@ Other properties:
   `./scripts/verify-live-function.sh --all` and wait for it to pass before the next change.
 - Never type a key into a command. Load it from `.env` into a shell variable (step 3.0).
 
+## State on 2026-11-01 (read first)
+
+Checked read-only against production on 2026-11-01:
+- **Done:** Coach chat and the daily decision run on Anthropic (`AI_COACH_CHAT_*`,
+  `AI_DAILY_DECISION_*` set); `ai-coaching-v6` (Anthropic) is the current coaching notice for
+  `coach_chat`, `daily_coaching` and `onboarding_plan`. `ANTHROPIC_API_KEY` is set. Budget:
+  USD 3 per athlete a month, USD 50 for all accounts (`private.ai_budget_limits`).
+- **Still on Groq:** meal photos (`MEAL_VISION_*`, notice `meal-photo-ai-v1` naming Groq) and the
+  physique check (notice `progress-photo-ai-v1` naming Groq; no `AI_PHYSIQUE_VISION_*`).
+- **Onboarding:** no `AI_ONBOARDING_*` route. Because v6 names Anthropic for `onboarding_plan`,
+  the old DeepSeek onboarding path refuses and new athletes get the rules plan with no follow-up
+  questions. B2 merged (#127), so onboarding now waits only for its eval (below).
+- **Code readiness (2026-11-01 review):** every remaining feature's gateway path works with
+  provider `anthropic`. The SQL whitelists already take `anthropic`
+  (`persist_meal_photo_candidates`, `record_ai_usage_event` for `meal_vision`, `progress_vision`,
+  `onboarding_plan`, `onboarding_questions`; `physique_analyses.provider` is free text;
+  `get_ai_consent_v2` maps every feature to its notice; `reserve_ai_budget_v2` maps every feature
+  to its stored purpose). Each route's worst case fits one reservation (USD 0.50): meal Haiku at
+  2,000 output tokens USD 0.002, physique Sonnet at 800 about USD 0.071, onboarding plan and
+  questions on Sonnet below the cap (`gateway_test.ts`). Meal photos read packs and nutrition
+  labels on the Claude path only (AI_SAFETY_SPEC §8); the Groq path has no label reading.
+
+**What each remaining feature needs, in order.**
+
+| Feature | Eval before `EVALUATED=true` | New notice the athlete accepts? |
+| --- | --- | --- |
+| Meal photo | `meal_vision_eval.ts` (synthetic, gates) and your own-photo check `owner_photo_check.ts meal` (plates and packs), both local with `ANTHROPIC_API_KEY` | **Yes**: `meal-photo-ai-v2` (Anthropic). The current v1 names Groq, so the route sends nothing until v2 is published and accepted. |
+| Physique check | `physique_eval.ts` (synthetic, gates) and your own-photo check `owner_photo_check.ts physique`, local with `ANTHROPIC_API_KEY`; the route stays limited to `PHYSIQUE_VISION_ALLOWED_USERS` | **Yes**: `progress-photo-ai-v2` (Anthropic). |
+| Onboarding plan and questions | `onboarding_plan_eval.ts` with `EVAL_PROVIDER=anthropic` (at most USD 1.40 a run by its cap), local with `ANTHROPIC_API_KEY`, until it passes the 90% bar on repeated runs | **No**: v6 already names Anthropic for `onboarding_plan`, and `onboarding_questions` maps to it. |
+
+**Why these evals run on your Mac, not in a workflow.** The repository's rule is that live evals
+use the eval router (`EVAL_API_KEY`, `EVAL_BASE_URL`) from GitHub Actions, and no Anthropic key is
+stored in the repository. None of the workflows (`coach-eval.yml`, `onboarding-eval.yml`,
+`library-eval.yml`) can prove these three routes: the router is OpenAI-compatible and does not
+carry the Claude request these features send (structured output, image blocks), the onboarding
+workflow's router mode runs the old settings path rather than the gateway, and your own photos
+must never go to CI. So each eval runs locally on the production code path with the key from
+`.env`, read into the environment and never printed, as the coach simulation's production-model run
+did (`docs/reviews/2026-10-31-coach-simulation.md`). Each script stops before its spend cap.
+
 ## What moves
 
 | Feature | `AI_<FEATURE>_*` prefix | Model id | `MAX_OUTPUT_TOKENS` | `TIMEOUT_MS` | At this cutover |
@@ -43,10 +83,10 @@ Other properties:
 | Coach chat | `AI_COACH_CHAT_` | `claude-haiku-5-5` | 4096 | 30000 | yes |
 | Coach chat, stronger route (A9, optional) | `AI_COACH_CHAT_STRONG_` | `claude-sonnet-5-5` | 4096 | 30000 | optional, after 3.1 (step 3.1b) |
 | Daily decision | `AI_DAILY_DECISION_` | `claude-sonnet-5-5` | 1800 | 25000 | yes |
-| Meal photo | `AI_MEAL_VISION_` | `claude-haiku-5-5` | 1500 | 30000 | yes, after your own-photo check passes (3.3) |
+| Meal photo | `AI_MEAL_VISION_` | `claude-haiku-5-5` | 2000 | 30000 | yes, after your own-photo check passes (3.3) |
 | Physique check | `AI_PHYSIQUE_VISION_` | `claude-sonnet-5-5` | 800 | 60000 | yes, after your own-photo check passes (3.4), limited to you |
-| Onboarding plan | `AI_ONBOARDING_PLAN_` | `claude-sonnet-5-5` | 8000 | 90000 | **no, later, after B2** |
-| Onboarding questions | `AI_ONBOARDING_QUESTIONS_` | `claude-sonnet-5-5` | 1500 | 30000 | **no, later, after B2** |
+| Onboarding plan | `AI_ONBOARDING_PLAN_` | `claude-sonnet-5-5` | 8000 | 90000 | after its eval passes ("Later" below; B2 merged) |
+| Onboarding questions | `AI_ONBOARDING_QUESTIONS_` | `claude-sonnet-5-5` | 1500 | 30000 | after its eval passes ("Later" below; B2 merged) |
 
 Every route also sets `<prefix>PROVIDER=anthropic` and `<prefix>EVALUATED=true`. `THINKING` and
 `EFFORT` stay unset (thinking off, the model's default effort). A route needs `ANTHROPIC_API_KEY`.
@@ -154,9 +194,20 @@ route is evaluated, every athlete who accepts the notice can use it. So your own
 (AI_SAFETY_SPEC §8) comes **first**; the synthetic drawings used in the evals test the contract and
 refusals, not recognition of real food. The check runs on your Mac and touches nothing in
 production: no route, no database, no Storage.
-1. Put about ten of your own typical meals in a local folder (not in the repo), including a mixed
-   home dish and one photo that is not a meal.
-2. Run it (the key is read from `.env` and never printed; the photos go only to Anthropic; it
+1. Run the synthetic eval first (drawings only: plates, no food, written instructions, and a drawn
+   nutrition table that must be read, pass the label checks and come out as the whole pack at
+   192 kcal; 16 calls, a few cents):
+   ```sh
+   set -a; . ./.env; set +a
+   ./scripts/deno.sh run --allow-env --allow-net=api.anthropic.com \
+     --allow-read=supabase/functions/_evals --allow-write=.tooling \
+     supabase/functions/_evals/meal_vision_eval.ts
+   ```
+   It exits non-zero when a gate fails; the report is in `.tooling/meal-vision-evals/`.
+2. Put about ten of your own typical meals in a local folder (not in the repo), including a mixed
+   home dish, one photo that is not a meal, and at least two packaged foods photographed twice:
+   the front of the pack and its nutrition table (the Munch Max Nuts bar of 31 Oct is a good one).
+3. Run it (the key is read from `.env` and never printed; the photos go only to Anthropic; it
    stops before a call that could pass its cap, 1 USD unless you pass `--cap-usd`):
    ```sh
    set -a; . ./.env; set +a
@@ -164,28 +215,48 @@ production: no route, no database, no Storage.
      supabase/functions/_evals/owner_photo_check.ts meal "$PHOTOS"
    ```
    It sends each photo through the same request meal-analyze sends (same instructions, schema,
-   model and settings, imported from `meal-analyze/vision.ts`) and prints the foods it would offer.
-3. Judge the output: the foods named are the foods on the plate, portions are sensible, nothing is
+   model and settings, imported from `meal-analyze/vision.ts`), runs the same label checks, and
+   prints what would be stored: each food with its portion, kind (`plate`, `pack_front`,
+   `nutrition_label`) and source (`label`, `label_unverified`, `estimate`), unit, per-unit values and
+   sizes, and any failed label check.
+4. Judge the output: the foods named are the foods on the plate, portions are sensible, nothing is
    invented, the mixed dish asks about its recipe, and the non-meal photo returns "no food found".
-4. **Only if it passes,** set the production route (`EVALUATED=true` last). If it does not, set
-   nothing and report what was wrong.
+   For each pack: the nutrition-table photo gives the printed name and brand, the printed serving,
+   servings and net quantity, source `label` (or `label_unverified` with a check that really fails
+   on that label; a drink printed per ml is always `label_unverified` with `volume_basis` and shows
+   ml, never g), and the whole-pack line matches the pack; the front photo is `estimate` and never
+   high confidence.
+5. **Only if both pass,** set the production route (`EVALUATED=true` last). If either does not,
+   set nothing and report what was wrong.
 ```sh
 ./scripts/supabase.sh secrets set \
   AI_MEAL_VISION_PROVIDER=anthropic AI_MEAL_VISION_MODEL=claude-haiku-5-5 \
-  AI_MEAL_VISION_MAX_OUTPUT_TOKENS=1500 AI_MEAL_VISION_TIMEOUT_MS=30000 \
+  AI_MEAL_VISION_MAX_OUTPUT_TOKENS=2000 AI_MEAL_VISION_TIMEOUT_MS=30000 \
   AI_MEAL_VISION_EVALUATED=true --project-ref qsfzzsjenopqqqhvpyaw
 ./scripts/verify-live-function.sh --all
 ```
-After you accept the meal photo notice (step 4): photograph a meal or two in the app and confirm the
-candidates look like the check's. Nothing is logged until you confirm the foods. If it is poor,
-unset the five settings (section 6) and report it.
+After you accept the meal photo notice (step 4): photograph a meal or two and a pack's nutrition
+table in the app (this needs the app build from this change, `./scripts/install-device.sh`, after
+its migration deployed) and confirm the candidates look like the check's: the review sheet shows
+**From label**, **Label unclear** or **Estimated**, and for a pack a portion chooser (1 serving,
+whole pack, grams). Nothing is logged until you confirm the foods. If it is poor, unset the five
+settings (section 6) and report it.
 
 **3.4 Physique check (your own-photo check first, then a route limited to you, then widen later).**
 The route refuses with 403 `physique_vision_not_evaluated` until `AI_PHYSIQUE_VISION_EVALUATED=true`,
 and AI_SAFETY_SPEC §9 requires your own-photo check before that. It comes **first** and runs on your
 Mac only; nothing in production is touched.
-1. Put a few of your own photo sets in a local folder (not in the repo): one sub-folder per set,
-   each holding `front.jpg`, `side.jpg` and `back.jpg`.
+1. Run the synthetic eval first (drawn figures only, never a person):
+   ```sh
+   set -a; . ./.env; set +a
+   ./scripts/deno.sh run --allow-env --allow-net=api.anthropic.com \
+     --allow-read=supabase/functions/_evals --allow-write=.tooling \
+     supabase/functions/_evals/physique_eval.ts
+   ```
+   It exits non-zero when a gate fails (a reply refused by the contract after its correction, an
+   unrelated picture not "nothing to assess", a dark set neither "nothing to assess" nor flagged).
+   Then put a few of your own photo sets in a local folder (not in the repo): one sub-folder per
+   set, each holding `front.jpg`, `side.jpg` and `back.jpg`.
 2. Run it (the key is read from `.env` and never printed; the photos go only to Anthropic; it
    stops before a call that could pass its cap, 1 USD unless you pass `--cap-usd`):
    ```sh
@@ -316,10 +387,18 @@ to the next group.
 
 ## Later: onboarding, after B2 (OWNER)
 
-Not part of this cutover; until then onboarding uses its rules plan (see 4a). A4's eval passes the 90%
-bar on only about half of the runs; the failures are weekly-volume rules that chunk B2 fixes. After B2 merges, re-run the onboarding eval
-(`supabase/functions/_evals/onboarding_plan_eval.ts`, `EVAL_PROVIDER=anthropic`, at most USD 2) until
-it passes the bar on repeated runs, then set both routes. The coaching notice v6 already names
+Until then onboarding uses its rules plan (see 4a). A4's eval passed the 90% bar on only about half
+of the runs; the failures were weekly-volume rules that chunk B2 fixed, and B2 has merged (#127). Run
+the onboarding eval on the gateway path until it passes the bar on repeated runs (three in a row is
+a fair bar), then set both routes:
+```sh
+set -a; . ./.env; set +a
+EVAL_PROVIDER=anthropic ./scripts/deno.sh run --allow-env --allow-net=api.anthropic.com \
+  --allow-write=.tooling supabase/functions/_evals/onboarding_plan_eval.ts
+```
+It uses Sonnet 5.5 at 8,000 and 1,500 output tokens and 90 s, stops before an athlete whose worst
+case could pass `EVAL_MAX_USD` (default 1.4), exits non-zero when the gate fails, and writes its
+report to `.tooling/onboarding-evals/`. The coaching notice v6 already names
 Anthropic for the `onboarding_plan` purpose, so no new notice is needed and the routes serve every
 athlete who accepted v6:
 ```sh

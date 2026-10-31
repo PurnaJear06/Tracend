@@ -153,7 +153,7 @@ chunk B2. The old routes stay available by settings for two weeks after the cuto
 | --- | --- | --- | ---: |
 | Coach chat question | Haiku 5.5 | USD 0.00045 (97.6% of prompt tokens read from cache) | up to 0.014 |
 | Daily decision | Sonnet 5.5 | about USD 0.009 | about 0.06 |
-| Meal photo | Haiku 5.5 | about USD 0.0002 | 0.00175 |
+| Meal photo | Haiku 5.5 | about USD 0.0002 (before the label fields; a label answer adds about 150 output tokens, under USD 0.0001) | 0.002 (2,000 output tokens) |
 | Physique check (one correction at most) | Sonnet 5.5 | about USD 0.01 a set | 0.071 |
 | Onboarding plan (later) | Sonnet 5.5 | USD 0.02-0.08 | 0.24-0.27 |
 | Onboarding questions (later) | Sonnet 5.5 | about USD 0.003 | 0.023 |
