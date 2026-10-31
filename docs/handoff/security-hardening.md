@@ -265,3 +265,27 @@ again), and run a physique check (its notice is unchanged).
   its own message (`PrivacyExportTooLarge`), the cron guard checks `username = current_user`, the
   hotfix workflow sets the library and retention URLs like the deploy workflow, and
   `meal_media_retention_set_url` fails when `retention_worker_secret` is not in Vault.
+
+## Round 2 hardening (2026-10-31, branch `claude/security-hardening-license`)
+
+- **No pull request runs with a provider secret.** `onboarding-eval.yml` lost its `pull_request:
+  labeled` trigger and `coach-eval.yml` lost every pull request path: both are `workflow_dispatch`
+  only (Actions, the workflow, Run workflow on `main`). The library retrieval evaluation, which uses
+  no secret, moved to its own `library-eval.yml` and keeps running on library pull requests.
+  `scripts/check-workflow-secrets.sh` (tested by `scripts/test-check-workflow-secrets.sh`, run in the
+  `Deno` job of `ci.yml` and by `pre-deploy.sh`) fails any workflow with a `pull_request*` trigger that
+  reads a secret other than `GITHUB_TOKEN` or calls a local workflow. `ci.yml` and `site-deploy.yml`
+  pass. Owner effect: the `coach-eval` and `onboarding-eval` labels no longer do anything.
+- **Edge Sentry fails closed** (`_shared/sentry.ts`). Event value = the call site's failure code (the
+  class name when it is not a short code), type = class name; no `error.message`, cause, response body,
+  parse error text or stack source; tags and extra fields are short codes or numbers; frames keep
+  function, file and line (30 at most). `captureException` now requires a `failureCode` (compile
+  error otherwise), and `SentryContext` gained `errorCode` (database or provider code), `httpStatus`,
+  `latencyMs` and `count`. Pinned by `sentry_test.ts` (provider error with a body, JSON parse error
+  quoting model text, plain `Error` with user text, thrown non-errors, stack source).
+- **Proprietary license.** `LICENSE` is now all rights reserved (view only, GitHub's terms for viewing
+  and forking), README badge and text, `site/package.json` `"license": "UNLICENSED"`. Third-party
+  material (fonts, dependencies, cited library summaries) stays under its own license.
+- **Supabase key migration prep.** Helper `_shared/supabase_keys.ts` (new secret first, legacy key as
+  fallback; no behavior change today) and the owner's runbook:
+  [`supabase-key-migration.md`](./supabase-key-migration.md).

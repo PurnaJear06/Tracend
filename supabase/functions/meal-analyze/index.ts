@@ -35,7 +35,14 @@ Deno.serve(async (request) => {
       analyze: path.analyze,
       log,
       report: (error, mealId) =>
-        captureException(error, { userId, functionName: "meal-analyze", correlationId, mealId }),
+        captureException(error, {
+          userId,
+          functionName: "meal-analyze",
+          correlationId,
+          mealId,
+          provider,
+          failureCode: "meal_analysis_unavailable",
+        }),
       store: {
         consent: () =>
           readMealConsent((fn, args) => serviceClient.rpc(fn, args), userId, path, log),
@@ -75,7 +82,8 @@ Deno.serve(async (request) => {
               userId,
               functionName: "meal-analyze",
               correlationId,
-              failureCode: error.code ?? "unknown",
+              failureCode: "meal_usage_not_recorded",
+              errorCode: error.code ?? "unknown",
             });
           }
         },

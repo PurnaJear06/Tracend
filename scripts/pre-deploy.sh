@@ -201,6 +201,16 @@ if echo "$STEPS" | grep -q "deno"; then
     die "retire functions tests failed"
   fi
 
+  info "workflow secret guard ..."
+  if { bash "$repo_root/scripts/test-check-workflow-secrets.sh" &&
+    bash "$repo_root/scripts/check-workflow-secrets.sh"; } 2>&1 | while IFS= read -r line; do
+    echo "    $line"
+  done; then
+    pass "workflow secret guard passed"
+  else
+    die "workflow secret guard failed"
+  fi
+
   if [[ "$FAILURES" -gt 0 ]]; then
     echo ""
     fail "$FAILURES Deno step(s) failed"

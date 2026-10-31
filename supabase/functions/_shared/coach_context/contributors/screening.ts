@@ -10,6 +10,7 @@
 import { type ScreeningOutcome, screeningOutcomes } from "../../training/screening/outcome.ts";
 import { blockOf, type CoachContextContributor, type CoachContributions } from "../host.ts";
 import { plain, record as recorded } from "../../recorded_text.ts";
+import { supabaseSecretKey } from "../../supabase_keys.ts";
 
 export const screeningContributorId = "screening";
 export const screeningBudgetChars = 900;
@@ -57,7 +58,7 @@ export function serviceRoleScreeningSource(): ScreeningSource {
   return async (userId) => {
     if (!source) {
       const url = Deno.env.get("SUPABASE_URL");
-      const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      const key = supabaseSecretKey();
       if (!url || !key) throw new Error("service role is not configured");
       const { createClient } = await import("npm:@supabase/supabase-js@2.49.8");
       const client = createClient(url, key, { auth: { persistSession: false } });

@@ -1,6 +1,7 @@
 {
   "name": "tracend-site",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "scripts": {
     "dev": "astro dev --host 127.0.0.1",

@@ -2,8 +2,9 @@ name: Onboarding Eval
 
 # Live onboarding plan evaluation with 13 synthetic athletes. On demand only and
 # not a required check. Run it before setting ONBOARDING_PLAN_MODEL_EVALUATED=true
-# for a provider or model: add the `onboarding-eval` label to a pull request or
-# use Run workflow on main.
+# for a provider or model: Actions > Onboarding Eval > Run workflow, on main. It never
+# runs for a pull request, because a pull request runs its own code and this job holds
+# provider keys (scripts/check-workflow-secrets.sh, run in ci.yml, enforces that).
 #
 # route=router (the default) sends the requests through the OpenAI-compatible
 # router in the `EVAL_BASE_URL` variable with `EVAL_API_KEY`; the owner keeps
@@ -38,8 +39,6 @@ on:
         default: "on"
         type: choice
         options: ["on", "off"]
-  pull_request:
-    types: [labeled]
 
 permissions:
   contents: read
@@ -51,7 +50,6 @@ concurrency:
 jobs:
   onboarding-eval:
     name: Onboarding plan live evaluation
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'onboarding-eval'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

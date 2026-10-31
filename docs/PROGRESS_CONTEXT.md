@@ -278,6 +278,13 @@ AI notice v5; needs the new build) and PR 5 (Keychain session storage, SHA-pinne
 read-only workflow tokens) are in review. Workstream state:
 [`docs/handoff/security-hardening.md`](./handoff/security-hardening.md).
 
+**Security hardening round 2 (2026-10-31, branch `claude/security-hardening-license`, in review):** no
+pull request runs with a provider secret any more (live evals are Run workflow on `main` only, a CI
+guard enforces it; the `coach-eval` and `onboarding-eval` labels are gone), Edge Sentry events carry
+codes and numbers only, the repository license is proprietary (view only), and the Supabase key
+migration is prepared with a no-change helper and an owner runbook:
+[`docs/handoff/supabase-key-migration.md`](./handoff/supabase-key-migration.md).
+
 **Privacy export, deletion and retention fixes (2026-10-24, QA audit group D):** the export now
 carries every table with a `user_id` (Coach threads and messages included) in pages of 1000, with a
 test that fails on a table that is neither exported nor excluded; account deletion pages its file

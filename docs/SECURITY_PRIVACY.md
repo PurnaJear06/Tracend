@@ -461,8 +461,14 @@ General logs and third-party analytics must not contain:
 
 Mobile analytics are minimized and disabled for sensitive-screen content. Crash reporting scrubs
 navigation parameters, text fields, and network bodies. Sentry is active in Flutter and Edge
-Functions with a `beforeSend` scrubber that redacts health values, meal content, photo URLs and
-prompts; a report may carry the account ID and device and app details, never name or email.
+Functions. The app scrubs events with `beforeSend` (health values, meal content, photo URLs, prompts).
+The Edge Function reporter (`_shared/sentry.ts`) fails closed instead: an event carries finite codes
+and numbers only. The exception value is the call site's failure code (every `captureException` must
+pass one; the class name stands in when it is not a short code), the type is the error's class name,
+and `error.message`, causes, provider response bodies, parse errors quoting model text and stack
+source text are never sent. Tags and extra fields are short codes (letters, digits, `_ . : / -`, no
+spaces) or numbers (HTTP status, latency, counts), and the stack keeps function, file and line of
+at most 30 frames. A report may carry the account ID and device and app details, never name or email.
 
 Audit events record access and changes using opaque IDs and action codes, not copies of sensitive
 content.

@@ -177,7 +177,11 @@ Deno.serve(async (request) => {
     log.error("physique_check_failed", {
       error: error instanceof Error ? error.message.slice(0, 80) : "unknown",
     });
-    captureException(error, { functionName: "physique-check", correlationId });
+    captureException(error, {
+      functionName: "physique-check",
+      correlationId,
+      failureCode: "physique_check_failed",
+    });
     return reply(503, { error: "physique_check_failed" });
   } finally {
     await budget.release();

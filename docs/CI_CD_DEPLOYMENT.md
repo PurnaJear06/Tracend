@@ -251,6 +251,15 @@ single-owner repository cannot be permanently deadlocked.
 - Each workflow's default token is read-only (`permissions: contents: read`). Only the
   `tag-release` jobs, which push the release tag, get `contents: write`, and they are the only
   checkouts that keep credentials (`persist-credentials: false` everywhere else).
+- No pull request runs with a repository secret (2026-10-31). A pull request runs the branch's own
+  code, so a workflow that a `pull_request` or `pull_request_target` event triggers may not read any
+  secret except `GITHUB_TOKEN`, and may not call a local reusable workflow.
+  `scripts/check-workflow-secrets.sh` enforces it in the `Deno` job of `ci.yml` (its fixtures are in
+  `scripts/test-check-workflow-secrets.sh`, and `pre-deploy.sh` runs both). The live AI evaluations
+  (`coach-eval.yml`, `onboarding-eval.yml`) are `workflow_dispatch` only: Actions, pick the
+  workflow, Run workflow on `main`. They no longer start from a pull request label, so a Coach or
+  onboarding change is evaluated after it merges, or locally. The library retrieval evaluation
+  (`library-eval.yml`) holds no secret and still runs on library pull requests.
 - Jobs that use production secrets run in the `production` environment, and a hotfix runs only
   from `main`. Once the secrets move into that environment, a workflow on another branch cannot
   read them.
