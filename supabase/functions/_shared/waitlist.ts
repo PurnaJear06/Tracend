@@ -5,6 +5,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.8";
 import { captureException } from "./sentry.ts";
 import { type Mail, sendMail, type SmtpConfig } from "./smtp.ts";
+import { supabaseSecretKey } from "./supabase_keys.ts";
 
 /** Must match CONSENT_VERSION in site/src/config.ts (a test checks). */
 export const CONSENT_VERSION = "waitlist-2026-10-13";
@@ -24,7 +25,6 @@ export function readSettings(
 ): WaitlistSettings | { missing: string[] } {
   const names = [
     "SUPABASE_URL",
-    "SUPABASE_SERVICE_ROLE_KEY",
     "WAITLIST_SITE_URL",
     "TURNSTILE_SECRET_KEY",
     "SMTP_HOST",
@@ -33,11 +33,13 @@ export function readSettings(
     "WAITLIST_EMAIL_FROM",
   ];
   const values = Object.fromEntries(names.map((name) => [name, get(name)?.trim() ?? ""]));
+  const serviceRoleKey = supabaseSecretKey(get);
   const missing = names.filter((name) => !values[name]);
-  if (missing.length) return { missing };
+  if (!serviceRoleKey) missing.push("SUPABASE_SERVICE_ROLE_KEY");
+  if (missing.length || !serviceRoleKey) return { missing };
   return {
     supabaseUrl: values.SUPABASE_URL.replace(/\/+$/, ""),
-    serviceRoleKey: values.SUPABASE_SERVICE_ROLE_KEY,
+    serviceRoleKey,
     siteUrl: values.WAITLIST_SITE_URL.replace(/\/+$/, ""),
     turnstileSecret: values.TURNSTILE_SECRET_KEY,
     smtp: { host: values.SMTP_HOST, user: values.SMTP_USER, password: values.SMTP_PASSWORD },

@@ -10,6 +10,7 @@ import {
 import { createReportGate, createWorkerAuthorizer } from "../_shared/library/embed_service.ts";
 import { createLogger } from "../_shared/logger.ts";
 import { captureException } from "../_shared/sentry.ts";
+import { supabaseSecretKey } from "../_shared/supabase_keys.ts";
 
 // Fills missing library embeddings with the built-in gte-small model. A database cron job
 // (private.library_embed_kick) calls it every minute while any chunk lacks an embedding; each call
@@ -50,7 +51,7 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return response(405, { error: "method_not_allowed" });
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const serviceRoleKey = supabaseSecretKey();
   const authorization = request.headers.get("Authorization") ?? "";
   const bearer = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
   if (!supabaseUrl || !serviceRoleKey || bearer === "") {
@@ -126,9 +127,10 @@ Deno.serve(async (request) => {
     // Once per chunk, not every minute: only when a chunk has just been given up on.
     if (result.abandoned > 0) {
       console.error(`library-embed: gave up on ${result.abandoned} chunks after repeated failures`);
-      captureException(new Error(`library_embed_abandoned_${result.abandoned}`), {
+      captureException(new Error("library_embed_abandoned"), {
         functionName: "library-embed",
         failureCode: "embedding_abandoned",
+        count: result.abandoned,
       });
     }
     return response(200, {

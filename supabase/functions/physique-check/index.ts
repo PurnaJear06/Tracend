@@ -8,7 +8,7 @@ import {
   type PhysiqueVisionResolution,
   resolvePhysiqueVision,
 } from "../_shared/providers/physique_vision_provider.ts";
-import { captureException } from "../_shared/sentry.ts";
+import { captureException, providerFailure } from "../_shared/sentry.ts";
 import { isUserStorageKey } from "../_shared/storage_keys.ts";
 import { billingSettled, handlePhysiqueCheck, type PhysiqueStore } from "./handler.ts";
 
@@ -177,7 +177,12 @@ Deno.serve(async (request) => {
     log.error("physique_check_failed", {
       error: error instanceof Error ? error.message.slice(0, 80) : "unknown",
     });
-    captureException(error, { functionName: "physique-check", correlationId });
+    captureException(error, {
+      functionName: "physique-check",
+      correlationId,
+      failureCode: "physique_check_failed",
+      ...providerFailure(error),
+    });
     return reply(503, { error: "physique_check_failed" });
   } finally {
     await budget.release();

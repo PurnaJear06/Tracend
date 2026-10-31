@@ -1017,7 +1017,7 @@ in `supabase/functions/_evals/`.
   multi-source recall 0.7, MRR 0.5, no-answer precision 0.7, and for the word-search fallback recall
   0.55 and no-answer precision 0.7, all after the relevance floors.
 - **Run it**: `./scripts/deno.sh test --allow-env --allow-net --allow-read=supabase/migrations,site/src/config.ts supabase/functions/_evals`
-  (deterministic, no key). Live: the `Coach Eval` workflow (label `coach-eval` or Run workflow) or
+  (deterministic, no key). Live: the `Coach Eval` workflow (Run workflow on the branch; no label any more) or
   locally `AI_COACH_CHAT_PROVIDER=anthropic AI_COACH_CHAT_MODEL=claude-haiku-5-5
   AI_COACH_CHAT_MAX_OUTPUT_TOKENS=4096 AI_COACH_CHAT_TIMEOUT_MS=30000 ANTHROPIC_API_KEY=...
   ./scripts/deno.sh run --allow-env --allow-net --allow-read --allow-write supabase/functions/_evals/coach_bank/run.ts`

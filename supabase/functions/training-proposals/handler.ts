@@ -26,7 +26,11 @@ export type TrainingProposalsDeps = Readonly<{
 export const unexpectedEvent = "training_proposals_unexpected";
 
 const sentry = (event: string) =>
-  captureException(new Error(event), { functionName: "training-proposals", runtime: "edge" });
+  captureException(new Error(event), {
+    functionName: "training-proposals",
+    runtime: "edge",
+    failureCode: event,
+  });
 
 export const trainingProposalsSchemaVersion = "1.0";
 

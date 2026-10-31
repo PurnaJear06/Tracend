@@ -317,7 +317,11 @@ Deno.serve(async (request) => {
     log.error("onboarding_plan_request_failed", {
       error: error instanceof Error ? error.name : "unknown",
     });
-    captureException(error, { functionName: "onboarding-plan", correlationId });
+    captureException(error, {
+      functionName: "onboarding-plan",
+      correlationId,
+      failureCode: "onboarding_plan_request_failed",
+    });
     return reply(503, { error: "onboarding_plan_unavailable" });
   } finally {
     if (!backgrounded) await budget.release();

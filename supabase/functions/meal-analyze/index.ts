@@ -1,7 +1,7 @@
 import { AiBudget } from "../_shared/ai_budget.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { createLogger, extractCorrelationId } from "../_shared/logger.ts";
-import { captureException } from "../_shared/sentry.ts";
+import { captureException, providerFailure } from "../_shared/sentry.ts";
 import { handleMealAnalyze } from "./handler.ts";
 import { mealVisionPath, readMealConsent, reserveMealBudget } from "./vision.ts";
 
@@ -35,7 +35,15 @@ Deno.serve(async (request) => {
       analyze: path.analyze,
       log,
       report: (error, mealId) =>
-        captureException(error, { userId, functionName: "meal-analyze", correlationId, mealId }),
+        captureException(error, {
+          userId,
+          functionName: "meal-analyze",
+          correlationId,
+          mealId,
+          provider,
+          failureCode: "meal_analysis_unavailable",
+          ...providerFailure(error),
+        }),
       store: {
         consent: () =>
           readMealConsent((fn, args) => serviceClient.rpc(fn, args), userId, path, log),
@@ -75,7 +83,8 @@ Deno.serve(async (request) => {
               userId,
               functionName: "meal-analyze",
               correlationId,
-              failureCode: error.code ?? "unknown",
+              failureCode: "meal_usage_not_recorded",
+              errorCode: error.code ?? "unknown",
             });
           }
         },

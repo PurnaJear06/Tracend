@@ -265,3 +265,32 @@ again), and run a physique check (its notice is unchanged).
   its own message (`PrivacyExportTooLarge`), the cron guard checks `username = current_user`, the
   hotfix workflow sets the library and retention URLs like the deploy workflow, and
   `meal_media_retention_set_url` fails when `retention_worker_secret` is not in Vault.
+
+## Round 2 hardening (2026-10-31, branch `claude/security-hardening-license`)
+
+- **No pull request runs with a provider secret.** `onboarding-eval.yml` lost its `pull_request:
+  labeled` trigger and `coach-eval.yml` lost every pull request path: both are `workflow_dispatch`
+  only (Actions, the workflow, Run workflow on the branch to evaluate; write access needed, so only
+  the owner; a fork's pull request never gets secrets). The library retrieval evaluation, which uses
+  no secret, moved to its own `library-eval.yml` and keeps running on library pull requests.
+  `scripts/check-workflow-credentials.sh` (tested by `scripts/test-check-workflow-credentials.sh`, run in the
+  `Deno` job of `ci.yml` and by `pre-deploy.sh`) reads the trigger with `yq` and fails any workflow started by a `pull_request*`,
+  `issues`, `issue_comment`, `discussion`, `discussion_comment`, `fork`, `watch`, `gollum` or
+  `workflow_run` event (except the `branches: [main]` one in `deploy.yml`) whose raw
+  text, comments included, mentions `secrets` other than `secrets.GITHUB_TOKEN`, or that calls a
+  local workflow. The scripts are named `*-credentials` so their own names pass the check. Owner effect: the `coach-eval` and `onboarding-eval` labels no longer do anything.
+- **Edge Sentry fails closed** (`_shared/sentry.ts`). Event value = the call site's failure code (the
+  class name when it is not a short code), type = class name; no `error.message`, cause, response body,
+  parse error text or stack source; tags and extra fields are short codes or numbers; frames keep
+  function, file and line (30 at most; the message header, which can span lines that look like frames, is
+  cut off first, and only loaded-module URLs and space-free function names are kept; a provider
+  failure's code and status reach Sentry again through `providerFailure()`). `captureException` now requires a `failureCode` (compile
+  error otherwise), and `SentryContext` gained `errorCode` (database or provider code), `httpStatus`,
+  `latencyMs` and `count`. Pinned by `sentry_test.ts` (provider error with a body, JSON parse error
+  quoting model text, plain `Error` with user text, thrown non-errors, stack source).
+- **Proprietary license.** `LICENSE` is now all rights reserved (view only, GitHub's terms for viewing
+  and forking), README badge and text, `site/package.json` `"license": "UNLICENSED"`. Third-party
+  material (fonts, dependencies, cited library summaries) stays under its own license.
+- **Supabase key migration prep.** Helper `_shared/supabase_keys.ts` (new secret first, legacy key as
+  fallback; no behavior change today) and the owner's runbook:
+  [`supabase-key-migration.md`](./supabase-key-migration.md).
