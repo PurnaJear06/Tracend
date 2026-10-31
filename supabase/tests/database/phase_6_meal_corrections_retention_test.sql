@@ -1,5 +1,5 @@
 begin;
-select plan(19);
+select plan(20);
 
 insert into auth.users(id, role) values
   ('61111111-bbbb-4111-8111-111111111111', 'authenticated'),
@@ -8,10 +8,18 @@ insert into auth.users(id, role) values
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.confirm_fixture_meal_v2(uuid,jsonb)',
+    'public.confirm_analyzed_meal(uuid,jsonb)',
     'execute'
   ),
   'authenticated user can confirm corrected candidates'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.confirm_fixture_meal_v2(uuid,jsonb)',
+    'execute'
+  ),
+  'the retired fixture confirmation is closed to the app'
 );
 select ok(
   has_function_privilege('authenticated', 'public.delete_my_meal(uuid)', 'execute'),
@@ -34,13 +42,23 @@ select ok(
   'service role can claim retention work'
 );
 
+insert into public.meals(id, user_id, local_date, timezone, meal_type, source, status, idempotency_key)
+values (
+  '61111111-cccc-4111-8111-111111111111', '61111111-bbbb-4111-8111-111111111111',
+  '2026-07-02', 'Asia/Kolkata', 'lunch', 'fixture_analysis', 'draft',
+  '61111111-cccc-4111-8111-111111111111'
+);
+insert into public.meal_analysis_candidates(
+  user_id, meal_id, candidate_order, food_label, serving_label, calories, protein_g,
+  carbohydrate_g, fat_g, confidence
+) values
+  ('61111111-bbbb-4111-8111-111111111111', '61111111-cccc-4111-8111-111111111111',
+   1, 'Rice bowl', '1 bowl', 520, 24, 72, 14, 'medium'),
+  ('61111111-bbbb-4111-8111-111111111111', '61111111-cccc-4111-8111-111111111111',
+   2, 'Greek yogurt', '150 g', 130, 15, 8, 4, 'high');
+
 set local role authenticated;
 set local "request.jwt.claim.sub" = '61111111-bbbb-4111-8111-111111111111';
-create temporary table correction_meal as
-select public.create_fixture_meal(
-  '2026-07-02', 'Asia/Kolkata', 'lunch',
-  '61111111-cccc-4111-8111-111111111111'
-) id;
 
 select is(
   (public.get_my_daily_nutrition('2026-07-02') ->> 'calories')::numeric,
@@ -49,11 +67,11 @@ select is(
 );
 
 select lives_ok(
-  $$select public.confirm_fixture_meal_v2(
-    (select id from correction_meal),
+  $$select public.confirm_analyzed_meal(
+    '61111111-cccc-4111-8111-111111111111',
     jsonb_build_array(jsonb_build_object(
       'id', (select id from public.meal_analysis_candidates
-        where meal_id = (select id from correction_meal)
+        where meal_id = '61111111-cccc-4111-8111-111111111111'
         order by candidate_order limit 1),
       'name', 'Chicken rice bowl',
       'serving_label', '420 g',
@@ -67,7 +85,7 @@ select lives_ok(
 );
 select is(
   (select name_snapshot from public.meal_items
-    where meal_id = (select id from correction_meal)),
+    where meal_id = '61111111-cccc-4111-8111-111111111111'),
   'Chicken rice bowl',
   'confirmed item stores the corrected name snapshot'
 );
@@ -79,19 +97,19 @@ select is(
 
 set local "request.jwt.claim.sub" = '62222222-bbbb-4222-8222-222222222222';
 select is(
-  public.delete_my_meal((select id from correction_meal)),
+  public.delete_my_meal('61111111-cccc-4111-8111-111111111111'),
   true,
   'cross-user deletion returns an idempotent non-disclosing result'
 );
 
 set local "request.jwt.claim.sub" = '61111111-bbbb-4111-8111-111111111111';
 select is(
-  (select count(*) from public.meals where id = (select id from correction_meal)),
+  (select count(*) from public.meals where id = '61111111-cccc-4111-8111-111111111111'),
   1::bigint,
   'cross-user deletion does not remove the meal'
 );
 select is(
-  public.delete_my_meal((select id from correction_meal)),
+  public.delete_my_meal('61111111-cccc-4111-8111-111111111111'),
   true,
   'owner deletion succeeds'
 );

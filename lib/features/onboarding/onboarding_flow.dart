@@ -7,10 +7,12 @@ import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
+import 'package:tracend/features/onboarding/choice_widgets.dart';
 import 'package:tracend/features/onboarding/health_activity.dart';
 import 'package:tracend/features/onboarding/onboarding_proposal_view.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_screening.dart';
+import 'package:tracend/features/onboarding/screening_form.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
@@ -407,24 +409,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   static double _half(double kg) => (kg * 2).round() / 2;
 
-  /// Asked only with a known condition and no current symptom; with a symptom
-  /// the outcome is already settled.
-  bool get _asksClearance => _knownCondition == true && _symptoms == false;
-
   /// The four answers once every question shown has been answered.
-  ScreeningAnswers? get _screeningAnswers {
-    final exercises = _exercisesRegularly;
-    final condition = _knownCondition;
-    final symptoms = _symptoms;
-    if (exercises == null || condition == null || symptoms == null) return null;
-    if (_asksClearance && _clearedByProfessional == null) return null;
-    return ScreeningAnswers(
-      exercisesRegularly: exercises,
-      knownCondition: condition,
-      symptoms: symptoms,
-      clearedByProfessional: _asksClearance && _clearedByProfessional == true,
-    );
-  }
+  ScreeningAnswers? get _screeningAnswers => ScreeningAnswers.fromChoices(
+    exercisesRegularly: _exercisesRegularly,
+    knownCondition: _knownCondition,
+    symptoms: _symptoms,
+    clearedByProfessional: _clearedByProfessional,
+  );
 
   /// Advanced is the athlete's own choice and only stands with years behind it.
   String get _experienceAnswer =>
@@ -937,6 +928,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           _saving = false;
           _error =
               'Your plan could not be started. Check the connection and try again.';
+          // The Plan step has no error line: it shows the retry card, which
+          // carries this message. Anywhere else the bottom bar shows it.
+          _generationFailed = _step == _proposalStep;
         });
       }
     }
@@ -1374,7 +1368,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   List<Widget> _signOutAction() => [
     if (widget.onSignOut != null)
       TextButton(
-        onPressed: _saving || _signingOut ? null : _signOut,
+        onPressed: _signingOut ? null : _signOut,
         child: const Text('Sign out'),
       ),
   ];
@@ -1569,7 +1563,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       ),
       TracendGroupedList(
         children: [
-          _CheckRow(
+          CheckRow(
             title: 'I am 18 or older',
             checked: _adult,
             onChanged: (value) => setState(() => _adult = value),
@@ -1608,12 +1602,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       const SizedBox(height: TracendSpacing.lg),
       TracendGroupedList(
         children: [
-          _CheckRow(
+          CheckRow(
             title: 'I accept the private-beta terms',
             checked: _terms,
             onChanged: (value) => setState(() => _terms = value),
           ),
-          _CheckRow(
+          CheckRow(
             title: 'I have read the privacy notice',
             checked: _privacy,
             onChanged: (value) => setState(() => _privacy = value),
@@ -1628,7 +1622,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   void _answerScreening(VoidCallback change) {
     // Locked while an answer is being recorded, so the response always belongs
     // to the answers on screen (this also stops VoiceOver actions, which skip
-    // the pointer lock below).
+    // the pointer lock in the form).
     if (_saving) return;
     setState(() {
       change();
@@ -1637,33 +1631,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     });
   }
 
-  Widget _screeningQuestion({
-    required String label,
-    required String hint,
-    required bool? value,
-    required ValueChanged<bool> onChanged,
-  }) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _label(label),
-      Padding(
-        padding: const EdgeInsets.only(bottom: TracendSpacing.xs),
-        child: Text(hint, style: Theme.of(context).textTheme.bodySmall),
-      ),
-      // Locked while the answers are being recorded, so the response always
-      // belongs to the answers on screen.
-      IgnorePointer(
-        ignoring: _saving,
-        child: _SingleChoice<bool>(
-          label: label,
-          options: const [(true, 'Yes'), (false, 'No')],
-          selected: value,
-          onChanged: onChanged,
-        ),
-      ),
-    ],
-  );
-
   Widget _screening() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -1671,83 +1638,21 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         'A quick health check.',
         'Four short questions so your first plan starts at a sensible level. This is not a medical check and Tracend does not diagnose anything.',
       ),
-      _screeningQuestion(
-        label: 'Do you exercise regularly now?',
-        hint:
-            'Planned exercise of about 30 minutes or more, on at least 3 days a week, for the last 3 months.',
-        value: _exercisesRegularly,
-        onChanged: (value) =>
+      ScreeningForm(
+        exercisesRegularly: _exercisesRegularly,
+        knownCondition: _knownCondition,
+        symptoms: _symptoms,
+        clearedByProfessional: _clearedByProfessional,
+        outcome: _screeningOutcome,
+        locked: _saving,
+        onExercisesRegularly: (value) =>
             _answerScreening(() => _exercisesRegularly = value),
+        onKnownCondition: (value) =>
+            _answerScreening(() => _knownCondition = value),
+        onSymptoms: (value) => _answerScreening(() => _symptoms = value),
+        onClearedByProfessional: (value) =>
+            _answerScreening(() => _clearedByProfessional = value),
       ),
-      _screeningQuestion(
-        label:
-            'Do you know you have a heart, diabetes or other metabolic, or kidney condition?',
-        hint:
-            'One that a doctor or another health professional has told you about.',
-        value: _knownCondition,
-        onChanged: (value) => _answerScreening(() => _knownCondition = value),
-      ),
-      _screeningQuestion(
-        label: 'Do you notice any of these right now?',
-        hint:
-            'Chest pain or pressure, breathlessness at rest or with light effort, dizziness or fainting, swollen ankles, a racing or skipping heartbeat, or cramping leg pain when you walk.',
-        value: _symptoms,
-        onChanged: (value) => _answerScreening(() => _symptoms = value),
-      ),
-      if (_asksClearance)
-        _screeningQuestion(
-          label: 'Has a health professional said you are fine to exercise?',
-          hint: 'A doctor, nurse or other qualified professional.',
-          value: _clearedByProfessional,
-          onChanged: (value) =>
-              _answerScreening(() => _clearedByProfessional = value),
-        ),
-      if (_screeningOutcome == ScreeningOutcome.seeProfessional) ...[
-        const SizedBox(height: TracendSpacing.lg),
-        Semantics(
-          liveRegion: true,
-          child: TracendCard(
-            raised: true,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Please see a health professional first.',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: TracendSpacing.xs),
-                Text(
-                  'From your answers, it is best to check with a doctor or another health professional before you start exercising. Tracend cannot build a plan until then. Come back and answer again once you have been cleared. If you have chest pain, severe breathlessness or fainting now, get medical help straight away.',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-      if (_screeningOutcome == ScreeningOutcome.moderateUntilCleared) ...[
-        const SizedBox(height: TracendSpacing.lg),
-        Semantics(
-          liveRegion: true,
-          child: TracendCard(
-            raised: true,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Your plan will stay at moderate effort.',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: TracendSpacing.xs),
-                Text(
-                  'Until a health professional has said you are fine to exercise, Tracend keeps every session at a comfortable effort, with no all-out sets. Talk to your doctor when you can, then update this answer.',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
     ],
   );
 
@@ -1987,7 +1892,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         'Your calorie and protein targets are calculated from these.',
       ),
       _label('Sex'),
-      _SingleChoice<String>(
+      SingleChoice<String>(
         label: 'Sex',
         options: [for (final entry in _sexes.entries) (entry.key, entry.value)],
         // Nothing is selected until the athlete answers.
@@ -2684,7 +2589,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         children: [
           _heading(
             'Your plan was not built.',
-            'Something went wrong while building it. Your answers are saved.',
+            _error ??
+                'Something went wrong while building it. Your answers are saved.',
           ),
           FilledButton(
             onPressed: _saving ? null : _buildPlan,
@@ -2904,145 +2810,13 @@ class _ChoiceCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: TracendSpacing.sm),
-              _CheckMark(checked: selected),
+              CheckMark(checked: selected),
             ],
           ),
         ),
       ),
     );
   }
-}
-
-/// The round check used by choice cards and check rows: a filled lime disc
-/// with a check when on, an empty ring when off.
-class _CheckMark extends StatelessWidget {
-  const _CheckMark({required this.checked});
-
-  final bool checked;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tracendColors;
-    return ExcludeSemantics(
-      child: AnimatedContainer(
-        duration: TracendMotionScope.movement(context, TracendMotion.quick),
-        width: 24,
-        height: 24,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: checked ? colors.accentSignal : Colors.transparent,
-          border: checked
-              ? null
-              : Border.all(color: colors.textTertiary, width: 1.5),
-        ),
-        child: checked
-            ? Icon(
-                CupertinoIcons.checkmark_alt,
-                size: 16,
-                color: colors.onAccentSignal,
-              )
-            : null,
-      ),
-    );
-  }
-}
-
-/// One answer from a few short options: a segmented control, or a list of
-/// rows once large text would squeeze the segments.
-class _SingleChoice<T extends Object> extends StatelessWidget {
-  const _SingleChoice({
-    required this.label,
-    required this.options,
-    required this.selected,
-    required this.onChanged,
-  });
-
-  final String label;
-  final List<(T, String)> options;
-  final T? selected;
-  final ValueChanged<T> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    if (MediaQuery.textScalerOf(context).scale(1) <= 1.3) {
-      return Semantics(
-        label: label,
-        container: true,
-        child: TracendSegmentedControl<Object>(
-          segments: [for (final (value, text) in options) (value, text)],
-          // An unanswered question selects no segment.
-          selected: selected ?? const Object(),
-          onChanged: (value) => onChanged(value as T),
-        ),
-      );
-    }
-    return TracendGroupedList(
-      children: [
-        for (final (value, text) in options)
-          _CheckRow(
-            title: text,
-            checked: value == selected,
-            exclusive: true,
-            onChanged: (_) => onChanged(value),
-          ),
-      ],
-    );
-  }
-}
-
-/// A grouped-list row the athlete checks. The whole row is the target, and
-/// VoiceOver reads it as a checkbox with its state.
-class _CheckRow extends StatelessWidget {
-  const _CheckRow({
-    required this.title,
-    required this.checked,
-    required this.onChanged,
-    this.exclusive = false,
-  });
-
-  final String title;
-  final bool checked;
-  final ValueChanged<bool> onChanged;
-
-  /// One of a set where only one can be chosen (read as selected, not
-  /// checked).
-  final bool exclusive;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    container: true,
-    checked: exclusive ? null : checked,
-    selected: exclusive ? checked : null,
-    inMutuallyExclusiveGroup: exclusive ? true : null,
-    button: true,
-    label: title,
-    excludeSemantics: true,
-    child: InkWell(
-      onTap: () => onChanged(!checked),
-      highlightColor: context.tracendColors.surfaceRaised,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: TracendListRow.minHeight),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: TracendListRow.horizontalPadding,
-            vertical: 10,
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.bodyLarge,
-                ),
-              ),
-              const SizedBox(width: TracendSpacing.sm),
-              _CheckMark(checked: checked),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
 }
 
 /// Onboarding progress as a thin segmented line: one segment per visible

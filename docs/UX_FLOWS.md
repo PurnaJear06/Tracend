@@ -190,6 +190,13 @@ sign-in**.
    server refuses for a malformed or professional-first screening sends the athlete back to it (the
    latter with the same guidance and Continue closed). Builds from before the
    health check never send answers; the server reads that as cleared.
+   After onboarding the same four questions reopen from **Account › Plan › Health check**
+   (`record_screening_v1` again). The saved answers show first, with the moderate-effort note when
+   it applies; changing an answer clears the result until **Save answers**. Only the athlete's own
+   updated answers lift the cap or a see-a-professional result, and the outcome is worked out from
+   the current answers exactly as in onboarding (AI_SAFETY_SPEC §7): Tracend never lifts either for
+   them. A plan already approved keeps
+   its effort until it is next changed; new plans and Coach proposals use the new outcome.
 7. Choose whether to allow AI coaching. **Allow AI coaching** and **Not now** are both valid
    answers.
    - The text is the server's current notice (`get_current_ai_notice`). The app records that
@@ -1226,8 +1233,11 @@ detail sheet is read-only, with no protocol and no correction path.
 Guide distance, pose, framing, lighting, clothing consistency, and timing. Retake remains available.
 Physique photos never appear in general dashboard surfaces or notifications.
 
-Capture requires explicit storage consent: an alert, **Save private progress photos?** ("They are
-never sent to an AI model."), with **I agree and continue** and Cancel. It then opens a capture
+Capture requires explicit storage consent: an alert, **Save private progress photos?** (photos are
+stored privately and only the athlete can open them; the text says they are "never sent to an AI
+model" only when the account is known to have no physique check, and otherwise that they are sent
+to an AI model only if the athlete chooses a physique check, which asks for permission first,
+including when the lookup failed), with **I agree and continue** and Cancel. It then opens a capture
 sheet that lists front, side, back, and lower body with framing guidance, a check per finished
 pose, and how many are done. The user explicitly opens the camera or library for a pose; the native
 camera is never launched without this in-app context. Each pose uploads as soon as it is picked.
@@ -1379,7 +1389,11 @@ Account is one iOS inset-grouped settings page:
 - **Identity:** the name from the email local-part, a **Private beta** chip and **Current goal**
   when the active-goal query returns one. There is no separate Edit control; **Profile and goals**
   is the edit entry.
-- **Plan:** **Profile and goals** opens the read-only screen of that title (§4.4).
+- **Plan:** **Profile and goals** opens the read-only screen of that title (§4.4). **Health check**
+  reopens the four health-check questions (§4.1, step 6). Signing out, and a session that ends on
+  another device, return to sign-in from any screen; a double tap on **Sign out** signs out once.
+  Signing out or deleting the account also removes the reminders from the phone; signing in puts the
+  athlete's saved reminder choices back.
 - **Health:** **Apple Health** with its status in plain words ("Updated today at 14:05",
   "· needs a refresh", "· some signals missing", or "Not connected · manual logging works"). It
   opens a sheet with the full status card and **Connect** or **Refresh Apple Health**.

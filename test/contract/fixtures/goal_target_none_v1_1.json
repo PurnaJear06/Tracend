@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.1",
+  "has_goal": true,
+  "has_target": false,
+  "goal_type": "fat_loss",
+  "target": {
+    "weight_kg": null,
+    "body_fat_pct_min": null,
+    "body_fat_pct_max": null,
+    "physique": null,
+    "physique_note": null,
+    "date": null,
+    "set_at": null
+  },
+  "min_target_weight_kg": 59.9,
+  "min_target_body_fat_pct": 12
+}

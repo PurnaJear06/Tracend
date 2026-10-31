@@ -516,6 +516,9 @@ dry-run and a backup.
   with the state the migrations create. Any difference stops the deploy. CI runs
   `scripts/test-restore-privileges.sh` for the parsing, history and report logic.
 - **Backup storage:** `scripts/test-store-backup.sh` covers `scripts/store-backup.sh` in CI.
+- **Retired functions:** `scripts/test-retire-functions.sh` covers `scripts/retire-functions.sh` in
+  CI with a stub CLI (deletes only listed names, idempotent, refuses a listed name that has a
+  directory, `--check` flags an unknown deployed function).
 - **App bundle:** CI runs `scripts/verify-app-bundle.sh` on its unsigned iOS build.
 
 ## 3. AI Evaluation

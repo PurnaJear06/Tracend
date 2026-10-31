@@ -59,7 +59,7 @@ String defaultMealType(DateTime now) {
   return 'dinner';
 }
 
-enum LogMealMethod { camera, library, manual, sample, turnOffPhotoAi }
+enum LogMealMethod { camera, library, manual, turnOffPhotoAi }
 
 class LogMealChoice {
   const LogMealChoice(this.mealType, this.method);
@@ -80,8 +80,7 @@ class LogMealSheet extends StatefulWidget {
 
   final String initialMealType;
 
-  /// False on the fixture repository, which offers a sample analysis
-  /// instead of the camera.
+  /// False on the fixture repository, which offers manual entry only.
   final bool photosAvailable;
 
   /// The athlete granted the meal photo AI notice, so the sheet offers to
@@ -124,15 +123,7 @@ class _LogMealSheetState extends State<LogMealSheet> {
               subtitle: 'Use a photo you already took.',
               onTap: () => _choose(LogMealMethod.library),
             ),
-          ] else
-            TracendListRow(
-              leading: const TracendRowIcon(
-                icon: CupertinoIcons.camera_viewfinder,
-              ),
-              title: 'Review sample analysis',
-              subtitle: 'A built-in example. Nothing counts until you confirm.',
-              onTap: () => _choose(LogMealMethod.sample),
-            ),
+          ],
           TracendListRow(
             leading: const TracendRowIcon(icon: CupertinoIcons.pencil),
             title: 'Enter manually',
@@ -196,6 +187,14 @@ class MealTypeChips extends StatelessWidget {
   );
 }
 
+/// The keyboard for a nutrition value: iOS's plain number pad has no decimal
+/// point, so 12.5 g could not be typed.
+const decimalKeyboard = TextInputType.numberWithOptions(decimal: true);
+
+/// A typed number, accepting a decimal comma; null when it is not one.
+double? parseDecimal(String? text) =>
+    double.tryParse((text ?? '').trim().replaceAll(',', '.'));
+
 class ManualMealSheet extends StatefulWidget {
   const ManualMealSheet({
     required this.onSave,
@@ -251,8 +250,10 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
 
   String? _required(String? value) =>
       value == null || value.trim().isEmpty ? 'Required' : null;
-  String? _number(String? value) =>
-      double.tryParse(value ?? '') == null ? 'Enter a valid number' : null;
+  String? _number(String? value) {
+    final parsed = parseDecimal(value);
+    return parsed == null || parsed < 0 ? 'Enter a valid number' : null;
+  }
 
   Future<void> _submit() async {
     if (_saving || !_formKey.currentState!.validate()) return;
@@ -261,10 +262,10 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
       ManualFoodInput(
         name: _name.text.trim(),
         servingLabel: _serving.text.trim(),
-        calories: double.parse(_calories.text),
-        protein: double.parse(_protein.text),
-        carbohydrate: double.parse(_carbs.text),
-        fat: double.parse(_fat.text),
+        calories: parseDecimal(_calories.text)!,
+        protein: parseDecimal(_protein.text)!,
+        carbohydrate: parseDecimal(_carbs.text)!,
+        fat: parseDecimal(_fat.text)!,
       ),
       const Uuid().v4(),
     );
@@ -329,7 +330,7 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
           TextFormField(
             controller: _calories,
             decoration: const InputDecoration(labelText: 'Calories'),
-            keyboardType: TextInputType.number,
+            keyboardType: decimalKeyboard,
             validator: _number,
             onTapOutside: dismissKeyboard,
           ),
@@ -337,7 +338,7 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
           TextFormField(
             controller: _protein,
             decoration: const InputDecoration(labelText: 'Protein (g)'),
-            keyboardType: TextInputType.number,
+            keyboardType: decimalKeyboard,
             validator: _number,
             onTapOutside: dismissKeyboard,
           ),
@@ -345,7 +346,7 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
           TextFormField(
             controller: _carbs,
             decoration: const InputDecoration(labelText: 'Carbohydrate (g)'),
-            keyboardType: TextInputType.number,
+            keyboardType: decimalKeyboard,
             validator: _number,
             onTapOutside: dismissKeyboard,
           ),
@@ -353,7 +354,7 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
           TextFormField(
             controller: _fat,
             decoration: const InputDecoration(labelText: 'Fat (g)'),
-            keyboardType: TextInputType.number,
+            keyboardType: decimalKeyboard,
             validator: _number,
             onTapOutside: dismissKeyboard,
           ),
@@ -560,18 +561,28 @@ class _CandidateEditorState extends State<CandidateEditor> {
     text: widget.candidate.servingLabel,
   );
   late final _calories = TextEditingController(
-    text: widget.candidate.calories.toStringAsFixed(0),
+    text: _shown(widget.candidate.calories),
   );
   late final _protein = TextEditingController(
-    text: widget.candidate.protein.toStringAsFixed(0),
+    text: _shown(widget.candidate.protein),
   );
   late final _carbs = TextEditingController(
-    text: widget.candidate.carbohydrate.toStringAsFixed(0),
+    text: _shown(widget.candidate.carbohydrate),
   );
-  late final _fat = TextEditingController(
-    text: widget.candidate.fat.toStringAsFixed(0),
-  );
+  late final _fat = TextEditingController(text: _shown(widget.candidate.fat));
   bool _expanded = false;
+
+  /// A value as the field shows it: whole, or to one decimal.
+  static String _shown(double value) => value == value.roundToDouble()
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
+
+  @override
+  void initState() {
+    super.initState();
+    // What is confirmed is what the fields show, rounded values included.
+    _notify();
+  }
 
   @override
   void dispose() {
@@ -592,9 +603,20 @@ class _CandidateEditorState extends State<CandidateEditor> {
       value == null || value.trim().isEmpty ? 'Enter a value' : null;
 
   String? _number(String? value) {
-    final parsed = double.tryParse(value ?? '');
+    final parsed = parseDecimal(value);
     return parsed == null || parsed < 0 ? 'Enter zero or more' : null;
   }
+
+  /// Whether every field holds a value that can be confirmed.
+  bool get _valid =>
+      _required(_name.text) == null &&
+      _required(_serving.text) == null &&
+      [
+        _calories,
+        _protein,
+        _carbs,
+        _fat,
+      ].every((controller) => _number(controller.text) == null);
 
   void _notify() {
     final values = [
@@ -602,7 +624,7 @@ class _CandidateEditorState extends State<CandidateEditor> {
       _protein,
       _carbs,
       _fat,
-    ].map((controller) => double.tryParse(controller.text)).toList();
+    ].map((controller) => parseDecimal(controller.text)).toList();
     if (values.any((value) => value == null)) return;
     widget.onChanged(
       widget.candidate.copyWith(
@@ -614,6 +636,17 @@ class _CandidateEditorState extends State<CandidateEditor> {
         fat: values[3],
       ),
     );
+  }
+
+  /// Closing the editor hides its fields, and hidden fields are not checked
+  /// when the sheet confirms; so a value that cannot be confirmed keeps the
+  /// editor open, with its message.
+  void _toggleEditing() {
+    if (_expanded && !_valid) {
+      Form.of(context).validate();
+      return;
+    }
+    setState(() => _expanded = !_expanded);
   }
 
   @override
@@ -633,9 +666,7 @@ class _CandidateEditorState extends State<CandidateEditor> {
         Align(
           alignment: Alignment.centerLeft,
           child: TextButton.icon(
-            onPressed: widget.selected
-                ? () => setState(() => _expanded = !_expanded)
-                : null,
+            onPressed: widget.selected ? _toggleEditing : null,
             icon: Icon(
               _expanded ? CupertinoIcons.chevron_up : CupertinoIcons.pencil,
             ),
@@ -690,7 +721,7 @@ class _CandidateEditorState extends State<CandidateEditor> {
       TextFormField(
         controller: controller,
         decoration: InputDecoration(labelText: label),
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        keyboardType: decimalKeyboard,
         validator: widget.selected ? _number : null,
         onTapOutside: dismissKeyboard,
         onChanged: (_) {

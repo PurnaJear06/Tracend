@@ -1,5 +1,5 @@
 begin;
-select plan(49);
+select plan(54);
 
 -- A has a 180 cm profile and a fat-loss goal that began on 1 June, with a stale weight in its
 -- details; B has no height; C has no goal. 
@@ -8,9 +8,9 @@ insert into auth.users(id, role) values
   ('c2700000-0000-4000-8000-000000000002', 'authenticated'),
   ('c2700000-0000-4000-8000-000000000003', 'authenticated');
 
-insert into public.user_profiles(user_id, height_cm) values
-  ('c2700000-0000-4000-8000-000000000001', 180),
-  ('c2700000-0000-4000-8000-000000000002', null);
+insert into public.user_profiles(user_id, height_cm, sex) values
+  ('c2700000-0000-4000-8000-000000000001', 180, 'male'),
+  ('c2700000-0000-4000-8000-000000000002', null, null);
 
 insert into public.user_goals(id, user_id, goal_type, priority, status, details, activated_at) values
   ('c2710000-0000-4000-8000-000000000001', 'c2700000-0000-4000-8000-000000000001', 'fat_loss', 1,
@@ -58,6 +58,8 @@ select ok(not has_function_privilege('authenticated', 'private.healthy_floor_wei
   'the floor calculation is private');
 select ok(not has_function_privilege('authenticated', 'private.goal_target_keys()', 'execute'),
   'the key list is private');
+select ok(not has_function_privilege('authenticated', 'private.body_fat_floor_pct(uuid)', 'execute'),
+  'the body-fat floor is private');
 select ok((select prosecdef from pg_proc
     where oid = 'public.set_goal_target_v1(numeric, numeric, numeric, text, text, date)'::regprocedure),
   'setting is security definer');
@@ -95,12 +97,15 @@ set local "request.jwt.claim.sub" = 'c2700000-0000-4000-8000-000000000001';
 
 select is(public.get_goal_target_v1() ->> 'has_target', 'false', 'no target is set at first');
 select is((select array_agg(k order by k) from jsonb_object_keys(public.get_goal_target_v1()) k),
-  array['goal_type', 'has_goal', 'has_target', 'min_target_weight_kg', 'schema_version', 'target'],
+  array['goal_type', 'has_goal', 'has_target', 'min_target_body_fat_pct', 'min_target_weight_kg',
+    'schema_version', 'target'],
   'the read returns exactly the keys the app parses (add keys, never remove)');
 select is((select array_agg(k order by k) from jsonb_object_keys(public.get_goal_target_v1() -> 'target') k),
   array['body_fat_pct_max', 'body_fat_pct_min', 'date', 'physique', 'physique_note', 'set_at', 'weight_kg'],
   'and exactly these target keys');
-select is(public.get_goal_target_v1() ->> 'schema_version', '1.0', 'the read carries a schema version');
+select is(public.get_goal_target_v1() ->> 'schema_version', '1.1', 'the read carries a schema version');
+select is((public.get_goal_target_v1() ->> 'min_target_body_fat_pct')::numeric, 5::numeric,
+  'the lowest accepted body fat is 5% for a man');
 select is((public.get_goal_target_v1() ->> 'min_target_weight_kg')::numeric, 59.9::numeric,
   'the lowest accepted weight is BMI 18.5 at 180 cm');
 
@@ -114,6 +119,9 @@ select throws_ok($$select public.set_goal_target_v1(p_target_weight_kg => 20)$$,
   'an out-of-range weight is refused');
 select throws_ok($$select public.set_goal_target_v1(p_body_fat_pct_min => 20, p_body_fat_pct_max => 12)$$,
   '22023', null, 'a reversed body-fat range is refused');
+select throws_ok($$select public.set_goal_target_v1(p_body_fat_pct_min => 4.9, p_body_fat_pct_max => 10)$$,
+  '22023', 'body-fat target is below the healthy range for you',
+  'a body-fat target below the floor for a man is refused');
 select throws_ok($$select public.set_goal_target_v1(p_physique => 'six_pack_by_friday')$$, '22023', null,
   'an unknown physique goal is refused');
 select throws_ok($$select public.set_goal_target_v1(p_physique_note => 'abs')$$, '22023', null,
@@ -160,6 +168,11 @@ select is(public.get_goal_target_v1() -> 'min_target_weight_kg', 'null'::jsonb,
   'without a height there is no floor');
 select is(public.set_goal_target_v1(p_target_weight_kg => 55) -> 'target' ->> 'weight_kg', '55',
   'and no floor check');
+select is((public.get_goal_target_v1() ->> 'min_target_body_fat_pct')::numeric, 12::numeric,
+  'with no sex on record the more conservative body-fat floor applies');
+select throws_ok($$select public.set_goal_target_v1(p_body_fat_pct_min => 11, p_body_fat_pct_max => 15)$$,
+  '22023', 'body-fat target is below the healthy range for you',
+  'and a body-fat target below it is refused');
 
 reset role;
 select is((select details ->> 'target_weight_kg' from public.user_goals
