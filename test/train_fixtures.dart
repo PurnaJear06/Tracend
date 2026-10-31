@@ -283,6 +283,9 @@ class TrainFixtureRepository extends FixtureWorkoutRepository
   int hubLoads = 0;
   final List<List<String>> historyRequests = [];
 
+  /// The workout ids [loadSession] was asked about, with the date.
+  final List<(String, DateTime?)> sessionRequests = [];
+
   @override
   Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async {
     hubLoads++;
@@ -304,7 +307,10 @@ class TrainFixtureRepository extends FixtureWorkoutRepository
   Future<Map<String, dynamic>?> loadSession(
     PlannedWorkout workout, {
     DateTime? localDate,
-  }) async => session;
+  }) async {
+    sessionRequests.add((workout.id, localDate));
+    return session;
+  }
 
   @override
   Future<HealthkitCompletionCandidate?> getHealthkitCandidate(

@@ -101,10 +101,21 @@ class _Backend {
   /// Runs while a hub request is being answered, before it is.
   Future<void> Function()? duringHub;
 
+  /// The reminder choices saved on the server, when set.
+  Map<String, dynamic>? reminders;
+
+  /// The read of [reminders] waits for this before it answers, when set.
+  Completer<void>? holdReminders;
+
   Future<http.Response> handle(http.Request request) async {
     final route = '${request.method} ${request.url.path}';
     attempts.add(route);
     if (!online) throw http.ClientException('offline');
+    final saved = reminders;
+    if (route == 'GET /rest/v1/notification_preferences' && saved != null) {
+      await holdReminders?.future;
+      return _ok(saved);
+    }
     switch (route) {
       case 'GET /auth/v1/user':
         return _ok(_user());
@@ -257,6 +268,37 @@ class _Notifications implements NotificationRepository {
     required bool weeklyReview,
     required bool restTimerAlertsEnabled,
   }) => load();
+}
+
+/// The phone's reminders as the gate changes them: every change is recorded.
+class _GateReminders implements NotificationRepository {
+  final configured = <({bool daily, bool weekly, bool rest})>[];
+
+  @override
+  Future<NotificationPreferences> load() async => const NotificationPreferences(
+    authorizationStatus: 'authorized',
+    dailyCheckIn: false,
+    weeklyReview: false,
+  );
+
+  @override
+  Future<NotificationPreferences> configure({
+    required bool dailyCheckIn,
+    required bool weeklyReview,
+    required bool restTimerAlertsEnabled,
+  }) async {
+    configured.add((
+      daily: dailyCheckIn,
+      weekly: weeklyReview,
+      rest: restTimerAlertsEnabled,
+    ));
+    return NotificationPreferences(
+      authorizationStatus: 'authorized',
+      dailyCheckIn: dailyCheckIn,
+      weeklyReview: weeklyReview,
+      restTimerAlertsEnabled: restTimerAlertsEnabled,
+    );
+  }
 }
 
 /// The fixture hub with one workout of one exercise, whose id is [workoutId].
@@ -419,7 +461,10 @@ void main() {
     return client;
   }
 
-  Future<void> pumpGate(WidgetTester tester) async {
+  Future<void> pumpGate(
+    WidgetTester tester, {
+    NotificationRepository? notifications,
+  }) async {
     tester.view.physicalSize = const Size(390, 2600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -430,6 +475,7 @@ void main() {
           environment: _environment,
           liveActivity: FakeWorkoutActivityBridge(),
           homeWidgets: FakeHomeWidgetBridge(),
+          notifications: notifications ?? _GateReminders(),
         ),
       ),
     );
@@ -578,6 +624,59 @@ void main() {
       // The fresh hub replaced the saved copy.
       final saved = await cache.load(_userId);
       expect(saved!.savedAt.isAfter(savedThreeDaysAgo), isTrue);
+    });
+
+    testWidgets('the saved reminders come back once the account check '
+        'succeeds, not with the saved plan', (tester) async {
+      final reminders = _GateReminders();
+      await startSupabase(tester);
+      await cache.save(_userId, _hubJson(), savedThreeDaysAgo);
+      backend.reminders = {
+        'daily_check_in': true,
+        'weekly_review': false,
+        'authorization_status': 'authorized',
+      };
+      await pumpGate(tester, notifications: reminders);
+      expect(reminders.configured, isEmpty);
+
+      backend.online = true;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(reminders.configured, [(daily: true, weekly: false, rest: false)]);
+    });
+
+    testWidgets('a sign-out while the check behind the saved plan reads the '
+        'reminders restores nothing after the cancel', (tester) async {
+      final reminders = _GateReminders();
+      final client = await startSupabase(tester);
+      await cache.save(_userId, _hubJson(), savedThreeDaysAgo);
+      final held = Completer<void>();
+      backend
+        ..reminders = {
+          'daily_check_in': true,
+          'weekly_review': true,
+          'authorization_status': 'authorized',
+        }
+        ..holdReminders = held;
+      await pumpGate(tester, notifications: reminders);
+
+      backend.online = true;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(reminders.configured, isEmpty);
+
+      await tester.runAsync(
+        () => client.auth.signOut(scope: SignOutScope.local),
+      );
+      await tester.pumpAndSettle();
+      held.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
+      expect(reminders.configured, [
+        (daily: false, weekly: false, rest: false),
+      ]);
     });
 
     testWidgets('Try again on the note checks the connection', (tester) async {

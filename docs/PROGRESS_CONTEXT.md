@@ -36,7 +36,7 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   `20261023140024`): `day_adjustments`, `get_my_day_adjustment_v1` / `respond_to_day_adjustment_v1`
   (hold loads, one set fewer or easy cardio for today only; one tap and Undo; the recovery score never
   adjusts a session alone, the athlete may choose), `start_workout` building the adjusted sets and B3
-  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). B5-1 (pain check and joint rules) merged as #172; B5-2 (the pain check in the app) in review as #176; B5-3 and B5-4 (deloads and cardio dosing, server) in review. Handoff:
+  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). B5-1 (pain check and joint rules) merged as #172; B5-2 (the pain check in the app) in review as #176; B5-3 and B5-4 (deloads and cardio dosing, server) in review. Training-day integrity (QA group A, branch `claude/training-day-integrity`, migration `20261024090000`, hub 1.9): sessions logged under an earlier plan version stay done in Train and cannot be logged twice, a start for a future day is refused (the app previews it), and the hub uses the athlete's local date. Handoff:
   [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping
@@ -76,8 +76,14 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   were shown, and stores each as a `library` evidence item that the app lists under "Why this plan"
   ("Research behind this plan"; needs a reinstall). A plan with no source to cite says so in "Not
   known yet", and one whose search found nothing or failed is low confidence; the rules plan and the
-  settings path use no library. `onboarding-propose-plan` is the old mock and is unchanged. The CI
+  settings path use no library. The old mock `onboarding-propose-plan` was removed on 2026-10-31. The CI
   retrieval gate also scores 12 plan questions. Handoff: [`research-library.md`](./handoff/research-library.md).
+- qa-audit groups G and H (2026-10-31, branch `claude/onboarding-legacy-forms`, migration
+  `20261031100000`, in review): legacy onboarding and fixture-meal RPCs closed and `onboarding-propose-plan`
+  removed (the deploy deletes the deployed function: `scripts/retire-functions.sh`), Account › Health check reopens the screening,
+  remote sign-out returns to the gate, reminders leave the phone on sign-out, body-fat target floor
+  (5% men, 12% women or unknown), Progress and Meals form fixes. Handoff:
+  [`onboarding.md`](./handoff/onboarding.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.
@@ -159,11 +165,20 @@ lock in `persist_coach_proposal_v1`): install the app only after it has deployed
 **Coach knows today's readiness card (2026-10-24, branch `claude/coach-readiness-context`, PR open):** a `readiness`
 Coach context block (band, the card's answer state, safety route and strictness, held/limited/watched joints, fixed
 rules; no red-flag code or severity) read from `get_readiness_context_v1` with a 1.5 s deadline and an
-ok/unavailable/failed/timeout trace; the deload and cardio-week reader (`get_training_guidance_for_v1`) is not wired yet: it needs a cost measurement first. Today's meals
+ok/unavailable/failed/timeout trace; the deload and cardio-week reader (`get_training_guidance_for_v1`) is wired by `claude/guidance-perf-coach` (below) after its cost was cut. Today's meals
 and the Coach decision's freshness follow the server day on Today, not the phone date. Daily coaching retries a
 busy or failing provider once and names a rejection by its HTTP status (`anthropic_request_failed_status_<n>`,
 `anthropic_overloaded`). Details: "Coach knows today's readiness card" in [`ai-gateway.md`](./handoff/ai-gateway.md).
 Still open: the reply guard and the A9 screen do not read pain reports (contract requests 2 and 3).
+
+**Guidance performance and Coach guidance (2026-10-31, branch `claude/guidance-perf-coach`, PR open):** the guidance read took 250 ms warm and
+1.7 to 2.9 s cold because every time-zone check read the whole `pg_timezone_names` view (about 56 ms a call, four or five
+a read); migration `20261031110000` answers it from a table of the names (the view for any other name), expected 85 to
+100 ms warm. Coach gets a `training_guidance` context block (a lighter week, the week's cardio; read-only, own 1.5 s
+deadline, nothing on a safety-route day). The calorie guard flags a below-floor daily figure in other languages and no
+longer trusts a limit that is a question or is turned round. Details: "Guidance performance" in
+[`training-engine.md`](./handoff/training-engine.md) and "Coach knows the training guidance" in [`ai-gateway.md`](./handoff/ai-gateway.md).
+Deploy the migration before measuring; no app reinstall.
 
 **Unfinished workouts (2026-10-24, branch `claude/unfinished-workout`, PR open):** the owner's Legs B (23 sets logged,
 never finished) was closed by the stale rule and Coach then called it "not done". A stale-closed session with logged sets

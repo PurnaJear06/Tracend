@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/features/account/account_time_zone.dart';
+import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/auth/account_session.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
@@ -31,6 +32,7 @@ class Phase2Gate extends StatefulWidget {
     this.localData,
     this.liveActivity = const MethodChannelWorkoutActivityBridge(),
     this.homeWidgets = const MethodChannelHomeWidgetBridge(),
+    this.notifications = const MethodChannelNotificationRepository(),
     super.key,
   });
 
@@ -46,6 +48,10 @@ class Phase2Gate extends StatefulWidget {
   /// The Home Screen and Lock Screen widgets, emptied on every signed-out
   /// transition so no widget keeps a signed-out athlete's day.
   final HomeWidgetBridge homeWidgets;
+
+  /// The reminders on this phone, removed on every signed-out transition so
+  /// a signed-out phone, or the next athlete's, gets none of them.
+  final NotificationRepository notifications;
   final LocalAccountData? localData;
 
   @override
@@ -87,6 +93,10 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   /// saved plan, when it has one.
   static const _waitForNetwork = Duration(seconds: 6);
 
+  /// Every change to this phone's reminders runs in turn, so a restore can
+  /// never land after the cancel that ended its session.
+  Future<void> _reminderQueue = Future<void>.value();
+
   SupabaseClient get _client => widget.client ?? Supabase.instance.client;
   late final TrainingHubCache _savedPlan = TrainingHubCache(
     SharedPreferencesAsync(),
@@ -117,6 +127,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
             state.signOutReason != SignOutReason.userInitiated &&
             _authenticated;
         _showSignedOut();
+        _closePushedRoutes();
         // A refresh token Auth refuses while the app is open (the account
         // was deleted elsewhere) removes the session.
         if (refused) {
@@ -233,8 +244,12 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     // Workouts finished or logged with no signal go to the server now,
     // whichever screen is open.
     unawaited(_workouts().sendWaiting());
-    // The usual months a later plan review compares with; never blocks.
-    if (complete) unawaited(_baselineSource().refreshIfDue());
+    // The usual months a later plan review compares with, and the saved
+    // reminder choices back on this phone; neither blocks.
+    if (complete) {
+      unawaited(_baselineSource().refreshIfDue());
+      unawaited(_restoreReminders(client));
+    }
     setState(() {
       _authenticated = true;
       _onboardingComplete = complete;
@@ -278,6 +293,14 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     });
   }
 
+  /// Pops every route pushed above the gate (Account, a workout, a sheet):
+  /// a session that ended elsewhere would otherwise leave them on top of
+  /// sign-in.
+  void _closePushedRoutes() {
+    if (!mounted) return;
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
   /// Ends the rest's Live Activity and empties the widgets. Runs on every
   /// signed-out transition, whichever screen ended the session. (The shell's
   /// publisher also clears the snapshot as it goes away; both go through the
@@ -285,6 +308,53 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   void _clearSessionOutputs() {
     unawaited(widget.liveActivity.end());
     unawaited(_emptyWidgets());
+    unawaited(_cancelReminders());
+  }
+
+  /// Runs [task] after every reminder change queued before it.
+  Future<T> _inReminderOrder<T>(Future<T> Function() task) {
+    final run = _reminderQueue.then((_) => task());
+    _reminderQueue = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  /// Removes the daily and weekly reminders from this phone. The athlete's
+  /// choices stay on the server, and the next sign-in puts them back
+  /// (`_restoreReminders`). The rest-timer choice is kept: it lives only on
+  /// this phone, so turning it off here would lose it for good.
+  Future<void> _cancelReminders() => _inReminderOrder(() async {
+    try {
+      var rest = false;
+      try {
+        rest = (await widget.notifications.load()).restTimerAlertsEnabled;
+      } catch (_) {}
+      await widget.notifications.configure(
+        dailyCheckIn: false,
+        weeklyReview: false,
+        restTimerAlertsEnabled: rest,
+      );
+    } catch (e) {
+      logNonCritical(e, 'Reminders not cancelled');
+    }
+  });
+
+  /// Puts the signed-in athlete's saved reminder choices back on the phone.
+  /// The choices are read from the server first, so the session can end
+  /// while they are in flight: nothing is then configured for it.
+  Future<void> _restoreReminders(SupabaseClient client) async {
+    final sessionsEnded = _sessionsEnded;
+    try {
+      await SupabaseNotificationRepository(
+        client,
+        device: _SessionReminders(
+          widget.notifications,
+          inSession: () => mounted && sessionsEnded == _sessionsEnded,
+          inOrder: _inReminderOrder,
+        ),
+      ).load();
+    } catch (e) {
+      logNonCritical(e, 'Reminders not restored');
+    }
   }
 
   /// Empties the widgets; a clear that fails for good is kept and retried
@@ -468,4 +538,36 @@ class _GateMessage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The phone's reminders as seen by one session's restore: a change is made
+/// only while that session is still the current one, and after any cancel
+/// queued before it.
+class _SessionReminders implements NotificationRepository {
+  const _SessionReminders(
+    this._device, {
+    required this.inSession,
+    required this.inOrder,
+  });
+
+  final NotificationRepository _device;
+  final bool Function() inSession;
+  final Future<T> Function<T>(Future<T> Function() task) inOrder;
+
+  @override
+  Future<NotificationPreferences> load() => _device.load();
+
+  @override
+  Future<NotificationPreferences> configure({
+    required bool dailyCheckIn,
+    required bool weeklyReview,
+    required bool restTimerAlertsEnabled,
+  }) => inOrder(() async {
+    if (!inSession()) return _device.load();
+    return _device.configure(
+      dailyCheckIn: dailyCheckIn,
+      weeklyReview: weeklyReview,
+      restTimerAlertsEnabled: restTimerAlertsEnabled,
+    );
+  });
 }

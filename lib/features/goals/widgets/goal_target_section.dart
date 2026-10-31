@@ -52,6 +52,7 @@ class _GoalTargetSectionState extends State<GoalTargetSection> {
       builder: (_) => GoalTargetSheet(
         initial: state.target,
         minWeightKg: state.minTargetWeightKg,
+        minBodyFatPct: state.minTargetBodyFatPct,
         onSave: widget.repository.save,
       ),
     );

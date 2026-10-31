@@ -51,6 +51,9 @@ jobs:
       - name: Restore privilege check script tests
         run: bash scripts/test-restore-privileges.sh
 
+      - name: Retire functions script tests
+        run: bash scripts/test-retire-functions.sh
+
   flutter-analyze:
     name: Flutter Analyze
     runs-on: ubuntu-latest

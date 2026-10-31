@@ -112,6 +112,7 @@ class GoalTargetState {
     required this.target,
     this.goalType,
     this.minTargetWeightKg,
+    this.minTargetBodyFatPct,
   });
 
   final bool hasGoal;
@@ -121,6 +122,11 @@ class GoalTargetState {
   /// The lowest target weight accepted: BMI 18.5 at the athlete's height.
   /// Null when no height is known.
   final double? minTargetWeightKg;
+
+  /// The lowest body-fat percentage accepted: about 5 for men, and 12 for
+  /// women and when sex is not known (the more conservative figure). Null
+  /// from a server that does not send it (schema 1.0).
+  final double? minTargetBodyFatPct;
 
   /// True only for an active goal with a weight, body-fat range or physique
   /// goal set.
@@ -137,6 +143,7 @@ class GoalTargetState {
       target: GoalTarget.fromJson(value['target']),
       goalType: goalType is String ? goalType : null,
       minTargetWeightKg: GoalTarget._number(value['min_target_weight_kg']),
+      minTargetBodyFatPct: GoalTarget._number(value['min_target_body_fat_pct']),
     );
   }
 }

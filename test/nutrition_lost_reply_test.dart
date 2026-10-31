@@ -85,12 +85,6 @@ class _Repository implements NutritionRepository {
   }
 
   @override
-  Future<String> createFixtureMeal({
-    required DateTime date,
-    required String mealType,
-  }) => throw UnimplementedError();
-
-  @override
   Future<List<MealCandidate>> loadCandidates(String mealId) async => const [];
 
   @override

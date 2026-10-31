@@ -197,7 +197,10 @@ on the active goal, requires a weight, a body-fat range or a physique goal (a da
 target), refuses a weight outside 30 to 300 kg or below BMI 18.5 at `user_profiles.height_cm`, a
 reversed or out-of-range body-fat range, and a date that is not within the next three years, and
 writes a `goal_target_set` audit event naming only the kinds of target set. `get_goal_target_v1()`
-returns the target and `min_target_weight_kg`; both return `schema_version "1.0"`.
+returns the target, `min_target_weight_kg` and (since 1.1) `min_target_body_fat_pct`; both return
+`schema_version "1.1"`. A body-fat target below `min_target_body_fat_pct` is refused (22023): 5 for
+men, 12 for women and for anyone whose sex is not on record (the more conservative figure), the
+essential-fat figures widely cited in sports medicine.
 `get_goal_phase_inputs_v1(uuid)` is service role only and feeds the Coach goal phase review. Only
 the athlete sets a target; the model has no path to these functions.
 
@@ -219,15 +222,14 @@ optional expiry. Today equipment, movements to avoid, limitations and diet notes
 ### `user_preferences` (superseded by `coach_facts`)
 
 Since A10 part 2 nothing in Coach chat reads or writes this table (the confirmed preferences were
-copied into `coach_facts` when that table was created). Older app builds can still write it through
-`persist_coach_preference`; "Forget everything" empties it. Kept until the frozen `prepare_coach_chat_v8`
-is retired. Confirmed food, training, schedule, communication, notification and lifestyle preferences. Each row
+copied into `coach_facts` when that table was created). `persist_coach_preference` is closed to the
+app roles (2026-10-31, nothing calls it); the service role keeps it. "Forget everything" empties
+the table. Kept until the frozen `prepare_coach_chat_v8` is retired. Confirmed food, training, schedule, communication, notification and lifestyle preferences. Each row
 stores `category`, `key` (1–120 characters), `value` (1–200 characters), `provenance`
 (`onboarding`, `chat_statement`, `repeated_signal`, `manual`), `confirmed_at` and `superseded_at`.
 Only one active row per user and key; a new value supersedes the old one. Model-inferred
-preferences cannot become confirmed automatically. Forced RLS, read-only for authenticated. The app
-confirms a preference through `persist_coach_preference`, which refuses any athlete but the caller
-unless the caller is the service role.
+preferences cannot become confirmed automatically. Forced RLS, read-only for authenticated.
+`persist_coach_preference` writes it for the service role only.
 
 ### `notification_preferences`
 
@@ -470,6 +472,39 @@ Executions of a planned workout: plan version, planned workout, local date and t
 idempotency key and client revision, start and completion times, duration, session energy (1–5),
 session effort (1–10), notes, actual start and end, logging completeness (0–1), and correction
 status (`none`, `needs_review`, `corrected`). One open session per planned workout.
+
+**A workout's identity across plan versions.** A Coach change, a block restore, a deload or a cardio
+block copies the plan's workouts under new ids (`private.clone_plan_version`,
+`private.coach_insert_workouts`), so a session keeps pointing at the workout of the version it was
+logged under. No lineage is recorded. A workout is the same workout in another version when it has
+the same name (case and outer spaces ignored) and the same `workout_order`, the match Coach's
+context already makes (`completed_this_week`): `private.workout_identity_ids(user, workout)` returns
+every such id of the athlete. Everything that asks whether a day is already logged uses it, not the
+bare id: `start_workout` (a second start for the same workout and day raises `55000`; a session in
+progress under an earlier version is the one a start of the copy returns, so no second one opens, but
+only when the copy holds the same exercises in the same order, `private.workout_resumable_ids`: the
+logger's rows are the session's own exercises matched by order, so a copy whose exercises changed
+starts its own session and never receives the older one's sets under other names),
+`get_my_workout_session` (finds the day's finished session of an earlier version, and a session in
+progress under a copy with the same exercises),
+`get_healthkit_completion_candidate`, `healthkit_auto_complete_workout`, `day_adjustment_compute`
+(`session_started` and `session_done`) and `private.unfinished_workouts`. The hub's history does not need it: it counts
+every completed session of the athlete by date. There is no unique index on (athlete, day, workout):
+the identity lives in `planned_workouts`, which an index on `workout_sessions` cannot read, and
+production already holds one athlete-day with the same workout logged twice. A workout renamed or
+reordered by a Coach change is a different workout to these checks. `start_workout` raises `22023`
+for a `p_local_date` after the athlete's local today (`private.local_date_for`), after the replay
+of an idempotent start. A workout started on the athlete's own today that is not the day's scheduled one
+(`planned_workout_for_date`) has no card and no stored answer, so the joint rules still take out or swap
+what a held or limited joint asks for it; readiness answers belong to the scheduled workout.
+
+**Weekdays.** `preferred_weekday` is read by every server reader of the day's workout
+(`planned_workout_for_date`, the readiness card, Apple Health completion, Coach context), so a plan
+version must not lack them. `private.fill_workout_weekdays(version)` gives a version whose workouts have
+none their weekdays in plan order (`private.default_workout_weekdays`: the profile's `training_days`
+when they are as many as the workouts, else a spread: two Monday and Thursday, three Monday, Wednesday and
+Friday, four Monday, Tuesday, Thursday and Friday, otherwise from Monday); `private.coach_insert_workouts`
+calls it, and the migration filled the versions that existed.
 
 `state` is `in_progress`, `completed` or `abandoned`. `abandon_workout` discards an open session
 (audited as `workout.abandoned`); the rows stay, and every history, load and hub read counts
@@ -1310,8 +1345,13 @@ Sleep quality:
   workout; returns `{schema_version, id, outcome, area_state}`. `get_readiness_context_v1(p_user_id,
   p_local_date)` 1.0 (service role only): the band, kind, status, safety route, reason codes (never a
   red-flag code) and each joint's area, state and lasting flag for Coach context. `previous_answer` carries `kind`, `status`, `answered_at` and
-  `reason` (`check_in` or `new_data`). The training hub is 1.8 (B4; every 1.7 key is unchanged, the
-  sessions inside a target's `basis.recent` gain two keys); the daily brief does not change.
+  `reason` (`check_in` or `new_data`). The training hub is 1.9 (every 1.8 key is unchanged;
+  B4's 1.8 added two keys to the sessions inside a target's `basis.recent`, and 1.9 adds
+  `recent_sessions[].current_workout_id`, the active version's workout with the session's
+  workout's name and order, null when there is none); the daily brief does not change. From 1.9 the hub's
+  `completed` list (history, the week's count, `completed_day_set`) is every completed session of the athlete in the window, joined to
+  its own planned workout in whichever version, and every date it uses is the athlete's local date
+  (`local_today`, the 28-day windows, `today_workout`, `computed`), not the database's `current_date`.
   `private.day_adjustment_metric_attempts` (private, one row per athlete and day, deleted with the
   account) records the last attempt to make the day's scores, so a failure is not retried on every
   read.

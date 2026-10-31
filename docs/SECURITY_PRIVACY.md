@@ -429,7 +429,12 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
 - Storage paths and policies are user/purpose bound.
 - Edge Functions validate the JWT and requested resource even when using secret/service-role access.
 - An RPC granted to `authenticated` that takes a target user id refuses any id but the caller's
-  unless the caller is the service role (`persist_coach_preference`).
+  unless the caller is the service role. None remains: `persist_coach_preference` is service role
+  only since 2026-10-31.
+- The first-generation onboarding approval and the fixture-meal functions are closed to the app
+  roles, and `user_accounts.onboarding_state` cannot be written by the signed-in role: approval
+  sets `completed` inside `respond_to_onboarding_proposal_v2` (which enforces the health check) and
+  the database moves `not_started` to `in_progress` with the first draft.
 - Tables in the `private` schema (invites, waitlist, AI budget limits, research library) are not
   exposed by the Data API and have no client grants.
 - Queue messages carry opaque resource IDs and workers reauthorize ownership and consent at

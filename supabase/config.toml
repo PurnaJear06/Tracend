@@ -179,9 +179,6 @@ minimum_password_length = 8
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
 password_requirements = "lower_upper_letters_digits"
 
-[functions.onboarding-propose-plan]
-verify_jwt = true
-
 [functions.onboarding-plan]
 verify_jwt = true
 

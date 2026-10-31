@@ -161,7 +161,14 @@ class _Repository implements WorkoutRepository {
   Future<Map<String, dynamic>?> loadSession(
     PlannedWorkout workout, {
     DateTime? localDate,
-  }) async => serverSession ?? (started ? _startedSession(workout) : null);
+  }) async =>
+      (refusals > 0 ? finishedOnServer : null) ??
+      serverSession ??
+      (started ? _startedSession(workout) : null);
+
+  /// What the server holds once it has refused a sync because the session was
+  /// finished (a finish whose answer was lost).
+  Map<String, dynamic>? finishedOnServer;
 
   /// Set once the server created the session, and when (the tests' clock).
   bool started = false;
@@ -2046,6 +2053,33 @@ void main() {
     await _tapText(tester, 'Send finish');
     expect(h.repository.efforts, [6]);
     expect(find.text('Workout complete'), findsOneWidget);
+  });
+
+  testWidgets('a finish whose answer was lost opens the finished session '
+      'instead of failing to send', (tester) async {
+    final h = _Harness();
+    await _open(tester, h);
+    await _tapText(tester, 'Done set 1');
+    await _tapLabel(tester, 'Skip rest');
+    await _flushSave(tester);
+    // The server finished the session on the earlier try; it now refuses
+    // every sync (55000) and would refuse a finish's first save forever.
+    h.repository
+      ..refuseCode = '55000'
+      ..finishedOnServer = {
+        'session_id': 'server-session',
+        'state': 'completed',
+        'duration_seconds': 1800,
+        'exercises': const [],
+      };
+    await _tapLabel(tester, 'Finish workout');
+    await _tapLabel(tester, '6, Moderate');
+    await _tap(tester, _finishButton);
+
+    expect(find.text('Finish not sent yet'), findsNothing);
+    expect(find.text('Completed · 30 min'), findsOneWidget);
+    expect(h.repository.saved, isNull, reason: 'the draft is cleared');
+    expect(h.repository.completeCalls, 0);
   });
 
   testWidgets('a finish saved on the phone is offered on reopening', (

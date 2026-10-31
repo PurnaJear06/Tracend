@@ -41,11 +41,52 @@ void main() {
         'weight_kg',
       ];
 
+      // 1.1 adds the lowest accepted body-fat percentage.
+      const responseKeysV1_1 = [
+        'goal_type',
+        'has_goal',
+        'has_target',
+        'min_target_body_fat_pct',
+        'min_target_weight_kg',
+        'schema_version',
+        'target',
+      ];
+
+      for (final name in const [
+        'goal_target_v1_1.json',
+        'goal_target_none_v1_1.json',
+      ]) {
+        test('$name carries exactly the 1.1 contract keys', () {
+          final fixture = _loadFixtureJson(name);
+          expect(fixture['schema_version'], '1.1');
+          expect(fixture.keys.toList()..sort(), responseKeysV1_1);
+          expect(
+            (fixture['target'] as Map<String, dynamic>).keys.toList()..sort(),
+            targetKeys,
+          );
+        });
+      }
+
+      test('the body-fat floor is read from 1.1 and absent in 1.0', () {
+        expect(
+          GoalTargetState.fromJson(
+            _loadFixtureJson('goal_target_v1_1.json'),
+          )!.minTargetBodyFatPct,
+          12,
+        );
+        expect(
+          GoalTargetState.fromJson(
+            _loadFixtureJson('goal_target_v1_0.json'),
+          )!.minTargetBodyFatPct,
+          isNull,
+        );
+      });
+
       for (final name in const [
         'goal_target_v1_0.json',
         'goal_target_none_v1_0.json',
       ]) {
-        test('$name carries exactly the contract keys', () {
+        test('$name (the earlier shape) carries exactly its keys', () {
           final fixture = _loadFixtureJson(name);
           expect(fixture['schema_version'], '1.0');
           expect(fixture.keys.toList()..sort(), responseKeys);

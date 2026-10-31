@@ -1,6 +1,6 @@
 begin;
 
-select plan(31);
+select plan(19);
 
 insert into auth.users (id, role)
 values
@@ -50,9 +50,17 @@ select ok(
   'mobile clients cannot create provider proposals directly'
 );
 select ok(
-  has_function_privilege(
+  not has_function_privilege(
     'authenticated',
     'public.respond_to_onboarding_proposal(uuid, public.proposal_response_action)',
+    'execute'
+  ),
+  'the retired first-generation approval RPC is closed to the app'
+);
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.respond_to_onboarding_proposal_v2(uuid, public.proposal_response_action, text)',
     'execute'
   ),
   'authenticated users can invoke the narrow proposal response RPC'
@@ -204,97 +212,6 @@ select results_eq(
   'select id from public.change_proposals order by id',
   $$values ('30000000-0000-4000-8000-000000000003'::uuid)$$,
   'a user sees only their proposal'
-);
-
-select throws_ok(
-  $$select public.respond_to_onboarding_proposal(
-    '40000000-0000-4000-8000-000000000004', 'accept'
-  )$$,
-  'P0002', null,
-  'a cross-user proposal cannot be resolved'
-);
-
-select lives_ok(
-  $$select public.respond_to_onboarding_proposal(
-    '30000000-0000-4000-8000-000000000003', 'accept'
-  )$$,
-  'the owner can accept a current valid proposal transactionally'
-);
-
-select is(
-  (select count(*) from public.training_plan_versions where status = 'active'),
-  1::bigint,
-  'acceptance creates exactly one active training version'
-);
-
-select is(
-  (select count(*) from public.nutrition_target_sets where status = 'active'),
-  1::bigint,
-  'acceptance creates exactly one active nutrition target set'
-);
-
-select is(
-  (select status::text from public.change_proposals
-   where id = '30000000-0000-4000-8000-000000000003'),
-  'accepted',
-  'accepted proposal is no longer pending'
-);
-
-select is(
-  (select onboarding_state::text from public.user_accounts
-   where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
-  'completed',
-  'acceptance marks onboarding complete'
-);
-
-select is(
-  (select count(*) from public.change_responses
-   where proposal_id = '30000000-0000-4000-8000-000000000003'),
-  1::bigint,
-  'acceptance records one immutable response'
-);
-
-select is(
-  (select count(*) from public.audit_events
-   where target_id = '30000000-0000-4000-8000-000000000003'),
-  1::bigint,
-  'acceptance records one sanitized audit event'
-);
-
-select throws_ok(
-  $$select public.respond_to_onboarding_proposal(
-    '30000000-0000-4000-8000-000000000003', 'accept'
-  )$$,
-  '55000', null,
-  'replaying an accepted proposal cannot create another version'
-);
-
-set local "request.jwt.claim.sub" = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-
-select lives_ok(
-  $$select public.respond_to_onboarding_proposal(
-    '40000000-0000-4000-8000-000000000004', 'accept'
-  )$$,
-  'the experienced user can independently approve their proposal'
-);
-
-select is(
-  (select count(*) from public.training_plan_versions where status = 'active'),
-  1::bigint,
-  'the experienced user sees exactly one active training version'
-);
-
-select is(
-  (select count(*) from public.nutrition_target_sets where status = 'active'),
-  1::bigint,
-  'the experienced user sees exactly one active nutrition target set'
-);
-
-select is(
-  (select onboarding_state::text from public.user_accounts
-   where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
-  'completed',
-  'the experienced onboarding path completes independently'
 );
 
 reset role;

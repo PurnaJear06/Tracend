@@ -40,6 +40,7 @@ const _noTarget = GoalTargetState(
   goalType: 'fat_loss',
   target: GoalTarget(),
   minTargetWeightKg: 59.9,
+  minTargetBodyFatPct: 12,
 );
 
 Widget _app(GoalTargetRepository repository) => MaterialApp(
@@ -95,6 +96,108 @@ void main() {
       findsOneWidget,
     );
     expect(repository.saved, isEmpty);
+  });
+
+  testWidgets('a body-fat target below the floor is stopped on the form', (
+    tester,
+  ) async {
+    final repository = _Repository(_noTarget);
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('goal-target-set')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Body fat'));
+    await tester.pumpAndSettle();
+    expect(find.text('Lowest healthy target for you: 12%'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('goal-target-fat-min')),
+      '8',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('goal-target-fat-max')),
+      '14',
+    );
+    await tester.tap(find.byKey(const ValueKey('goal-target-save')));
+    await tester.pumpAndSettle();
+    expect(find.text('Lowest healthy target for you is 12%'), findsOneWidget);
+    expect(repository.saved, isEmpty);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('goal-target-fat-min')),
+      '12',
+    );
+    await tester.tap(find.byKey(const ValueKey('goal-target-save')));
+    await tester.pumpAndSettle();
+    expect(repository.saved.single.bodyFatMinPct, 12);
+    expect(repository.saved.single.bodyFatMaxPct, 14);
+  });
+
+  testWidgets('a lower floor for a man is respected as the server sends it', (
+    tester,
+  ) async {
+    final repository = _Repository(
+      const GoalTargetState(
+        hasGoal: true,
+        goalType: 'fat_loss',
+        target: GoalTarget(),
+        minTargetBodyFatPct: 5,
+      ),
+    );
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('goal-target-set')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Body fat'));
+    await tester.pumpAndSettle();
+    expect(find.text('Lowest healthy target for you: 5%'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('goal-target-fat-min')),
+      '4',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('goal-target-fat-max')),
+      '10',
+    );
+    await tester.tap(find.byKey(const ValueKey('goal-target-save')));
+    await tester.pumpAndSettle();
+    expect(find.text('Lowest healthy target for you is 5%'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('goal-target-fat-min')),
+      '6',
+    );
+    await tester.tap(find.byKey(const ValueKey('goal-target-save')));
+    await tester.pumpAndSettle();
+    expect(repository.saved.single.bodyFatMinPct, 6);
+  });
+
+  testWidgets('an older server without a floor still checks the range', (
+    tester,
+  ) async {
+    final repository = _Repository(
+      const GoalTargetState(
+        hasGoal: true,
+        goalType: 'fat_loss',
+        target: GoalTarget(),
+      ),
+    );
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('goal-target-set')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Body fat'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Lowest healthy target for you'), findsNothing);
+    await tester.enterText(
+      find.byKey(const ValueKey('goal-target-fat-min')),
+      '2',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('goal-target-fat-max')),
+      '10',
+    );
+    await tester.tap(find.byKey(const ValueKey('goal-target-save')));
+    await tester.pumpAndSettle();
+    expect(find.text('Between 3 and 60'), findsOneWidget);
   });
 
   testWidgets('saving a weight target replaces the card with the target', (

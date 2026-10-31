@@ -665,31 +665,59 @@ class _TrainScreenState extends State<TrainScreen> {
         progressionRule: _hub?.plan?.progressionRule,
       );
 
-  void _viewSummary(PlannedWorkout workout, DateTime date) =>
-      showWorkoutSummarySheet(
-        context,
-        workout: workout,
-        repository: _source,
-        date: date,
-      );
+  /// Opens the summary of the day's session. A session of [workout] under any
+  /// plan version opens through [workout]; a [session] of another workout, one
+  /// the active plan has no copy of, opens through its own workout id and
+  /// name, so the summary finds the session the day holds.
+  void _viewSummary(
+    PlannedWorkout workout,
+    DateTime date, {
+    TrainingSessionSummary? session,
+  }) {
+    final id = session?.workoutId;
+    final own =
+        session == null ||
+        id == null ||
+        id == workout.id ||
+        session.currentWorkoutId == workout.id;
+    showWorkoutSummarySheet(
+      context,
+      workout: own
+          ? workout
+          : PlannedWorkout(
+              id: id,
+              name: session.name,
+              objective: '',
+              estimatedMinutes: 0,
+              exercises: const [],
+            ),
+      repository: _source,
+      date: date,
+    );
+  }
 
   Future<void> _openOverview(
     PlannedWorkout workout,
     DateTime date, {
     required bool done,
+    required bool canStart,
+    TrainingSessionSummary? session,
   }) async {
     final action = await showWorkoutOverviewSheet(
       context,
       workout: workout,
       isCompleted: done,
+      canStart: canStart,
       onExerciseTap: (exercise) => _openExercise(workout, exercise),
     );
     if (!mounted || action == null) return;
     switch (action) {
       case WorkoutOverviewAction.start:
         await _startChosen(_planned(workout), date);
+      case WorkoutOverviewAction.doToday:
+        await _startChosen(_planned(workout), _today);
       case WorkoutOverviewAction.viewSummary:
-        _viewSummary(workout, date);
+        _viewSummary(workout, date, session: session);
     }
   }
 
@@ -1051,21 +1079,35 @@ class _TrainScreenState extends State<TrainScreen> {
       );
     }
     final done = hub.isDayCompleted(date);
+    // A day that has not begun is previewed, never started: the server
+    // refuses a start for it.
+    final upcoming = date.isAfter(today);
     final state = done
         ? HeroDayState.done
+        : upcoming
+        ? HeroDayState.upcoming
         : date.isBefore(today)
         ? HeroDayState.notLogged
         : HeroDayState.planned;
     TrainingSessionSummary? doneSession;
+    TrainingSessionSummary? daySession;
     if (done) {
+      // The session of this workout, under any plan version: the hub names
+      // the active copy as currentWorkoutId. A day done as another workout
+      // shows no session of its own (its minutes are not this workout's),
+      // but View summary still opens that session.
       for (final session in hub.recentSessions) {
-        if (sameDay(session.date, date) &&
-            (session.workoutId == null || session.workoutId == workout.id)) {
+        if (!sameDay(session.date, date)) continue;
+        daySession ??= session;
+        if (session.workoutId == null ||
+            session.workoutId == workout.id ||
+            session.currentWorkoutId == workout.id) {
           doneSession = session;
           break;
         }
       }
     }
+    final summarySession = doneSession ?? daySession;
     final candidate = _candidate;
     final canAutoComplete = _source is SupabaseWorkoutRepository;
     return Column(
@@ -1079,11 +1121,21 @@ class _TrainScreenState extends State<TrainScreen> {
           doneSession: doneSession,
           side: _side,
           onSideChanged: (side) => setState(() => _side = side),
-          onOpenOverview: () => _openOverview(workout, date, done: done),
+          onOpenOverview: () => _openOverview(
+            workout,
+            date,
+            done: done,
+            canStart: !upcoming,
+            session: summarySession,
+          ),
           onStart: widget.dayAdjustment?.busy ?? false
               ? null
               : () => _startChosen(_planned(workout), date),
-          onViewSummary: () => _viewSummary(workout, date),
+          onViewSummary: () =>
+              _viewSummary(workout, date, session: summarySession),
+          onDoToday: upcoming
+              ? () => _startChosen(_planned(workout), _today)
+              : null,
           onOpenMuscles: () => showMusclesSheet(context, workout: workout),
           healthkitCandidate: candidate,
           healthkitBusy: _healthkitBusy,

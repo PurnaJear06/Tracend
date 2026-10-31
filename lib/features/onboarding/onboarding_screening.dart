@@ -66,6 +66,36 @@ class ScreeningAnswers {
     clearedByProfessional,
   );
 
+  /// The clearance question is asked only with a known condition and no
+  /// current symptom; with a symptom the outcome is already settled.
+  static bool asksClearance({bool? knownCondition, bool? symptoms}) =>
+      knownCondition == true && symptoms == false;
+
+  /// The answers once every question shown has been answered; null before.
+  static ScreeningAnswers? fromChoices({
+    bool? exercisesRegularly,
+    bool? knownCondition,
+    bool? symptoms,
+    bool? clearedByProfessional,
+  }) {
+    if (exercisesRegularly == null ||
+        knownCondition == null ||
+        symptoms == null) {
+      return null;
+    }
+    final asked = asksClearance(
+      knownCondition: knownCondition,
+      symptoms: symptoms,
+    );
+    if (asked && clearedByProfessional == null) return null;
+    return ScreeningAnswers(
+      exercisesRegularly: exercisesRegularly,
+      knownCondition: knownCondition,
+      symptoms: symptoms,
+      clearedByProfessional: asked && clearedByProfessional == true,
+    );
+  }
+
   /// The answers saved in a draft, or null when the draft has none (an older
   /// build) or they are incomplete.
   static ScreeningAnswers? fromJson(Object? json) {

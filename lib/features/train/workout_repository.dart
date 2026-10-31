@@ -218,6 +218,10 @@ class PlannedExercise {
     loadHeld: hold || loadHeld,
   );
 
+  /// This exercise under another [name]: what a finished session was
+  /// logged as, when the plan has since changed.
+  PlannedExercise renamed(String name) => _copy(name: name);
+
   /// This exercise swapped for the gentler [name] (catalog [slug]) the
   /// accepted adjustment chose. The swap keeps the sets, reps and effort and
   /// carries no starting load: the athlete picks it.
@@ -415,7 +419,11 @@ class WorkoutIdentity {
   /// The plan's exercise name by exercise order.
   final Map<int, String> exercises;
 
-  static String _normalized(String name) => name.trim().toLowerCase();
+  /// Whether [a] and [b] name the same exercise. One rule for every match by
+  /// name: a plan copy, and a session's rows against the plan, may differ in
+  /// case and surrounding spaces only.
+  static bool sameName(String a, String b) =>
+      a.trim().toLowerCase() == b.trim().toLowerCase();
 
   /// [workout] is this workout in another copy of the plan.
   bool matches(PlannedWorkout workout) {
@@ -425,8 +433,7 @@ class WorkoutIdentity {
     }
     for (final exercise in workout.exercises) {
       final name = exercises[exercise.order];
-      if (name == null ||
-          _normalized(name) != _normalized(exercise.asPlanned.name)) {
+      if (name == null || !sameName(name, exercise.asPlanned.name)) {
         return false;
       }
     }
@@ -494,6 +501,7 @@ class TrainingSessionSummary {
     required this.date,
     this.durationSeconds,
     this.workoutId,
+    this.currentWorkoutId,
     this.id,
     this.effort,
     this.completionSource,
@@ -506,6 +514,13 @@ class TrainingSessionSummary {
   /// Planned workout id from the hub (`recent_sessions[].workout_id`).
   /// Null on older payloads; the session row is then display-only.
   final String? workoutId;
+
+  /// The active plan version's copy of that workout, matched by name and
+  /// order (`recent_sessions[].current_workout_id`, hub 1.9); null when the
+  /// active plan has none, and on older payloads. A Coach change, a block or
+  /// a deload copies the workouts under new ids, so [workoutId] may belong to
+  /// an earlier version.
+  final String? currentWorkoutId;
 
   /// The session id (`recent_sessions[].id`).
   final String? id;
@@ -711,6 +726,7 @@ class TrainingHubData {
           date: DateTime.parse(row['local_date'] as String),
           durationSeconds: (row['duration_seconds'] as num?)?.toInt(),
           workoutId: row['workout_id'] as String?,
+          currentWorkoutId: row['current_workout_id'] as String?,
           id: row['id'] as String?,
           effort: row['effort'] as num?,
           completionSource: CompletionSource.fromKey(row['completion_source']),
@@ -813,6 +829,10 @@ class TrainingHubData {
     (d) => d.year == date.year && d.month == date.month && d.day == date.day,
   );
 
+  /// The workout planned for an ISO [weekday] (1 Monday to 7 Sunday), as the
+  /// server names it: a plan the server holds always has a weekday on every
+  /// workout. Only a plan with no backend (the fixture) can have none; its
+  /// lone workout is then available on any day.
   PlannedWorkout? workoutForWeekday(int weekday) {
     for (final workout in workouts) {
       if (workout.weekday == weekday) return workout;
@@ -820,8 +840,8 @@ class TrainingHubData {
     final hasAssignedWeekdays = workouts.any(
       (workout) => workout.weekday != null,
     );
-    if (!hasAssignedWeekdays) return workouts.isEmpty ? null : workouts.first;
-    return null;
+    if (hasAssignedWeekdays || workouts.length != 1) return null;
+    return workouts.first;
   }
 }
 
