@@ -164,14 +164,21 @@ function tokensOf(text: string): Token[] {
     if (!Number.isFinite(value)) continue;
     const end = match.index + match[0].length;
     const before = text.slice(Math.max(0, match.index - 28), match.index).toLowerCase();
-    const after = text.slice(end, end + 28).toLowerCase();
+    // What follows is read to the end of the figure's line only.
+    const after = text.slice(end, end + 28).toLowerCase().split("\n")[0];
+    // The unit is read within the figure's own line: "BMI" ending the line before ("Latest
+    // reading and BMI" then "74.8 kg") is not this figure's unit. A figure alone on its line takes
+    // the label that ends the line before ("Your BMI:" then "35").
+    const line = before.slice(before.lastIndexOf("\n") + 1);
+    const alone = line.trim() === "" && /^[\s.,;:!?)]*$/.test(after) &&
+      labelEndsLine.test(before);
     found.push({
       value,
       decimals: fraction.length,
       raw: match[0],
       before,
       after,
-      unit: unitOf(before, rangeEnd.exec(after)?.[1] ?? after),
+      unit: unitOf(alone ? before : line, rangeEnd.exec(after)?.[1] ?? after),
     });
   }
   return found;
@@ -246,7 +253,10 @@ const measuredBefore = /\b(?:bmi|rhr|hrv)\s*(?:of|is|was|at|about|around|~|:)?\s
 const scaleBefore = /\b(?:rpe|rir)\s*(?:of|is|was|at|about|around|~|:)?\s*$/;
 const timesAfter = /^\s*[x×]\s*\d/;
 const timesBefore = /\d\s*[x×]\s*$/;
-const rangeEnd = /^\s*(?:-|–|—|to)\s*\d[\d,]*(?:\.\d+)?(.*)$/;
+// The rest of the line after a range's second figure ("1.4 to 2.0 g per kg a day" is in grams);
+// the next line never gives a range its unit ("25-28" then "Reps: 8-10").
+const rangeEnd = /^\s*(?:-|–|—|to)\s*\d[\d,]*(?:\.\d+)?([^\n]*)$/;
+const labelEndsLine = /\b(?:bmi|rhr|hrv)\b[^\n\d]{0,6}\n\s*$/;
 
 /** Whether a figure of minutes states how long to do a named activity, not a fact about the athlete. */
 function isSessionItemLength(token: Token, after: string): boolean {
