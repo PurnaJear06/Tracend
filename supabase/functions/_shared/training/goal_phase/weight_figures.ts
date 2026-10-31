@@ -164,6 +164,9 @@ const liftWords = new Set([
   ],
 ]);
 
+/** Whether a word is an exercise name word or catalog slug word (a lift a load belongs to). */
+export const isLiftWord = (word: string): boolean => liftWords.has(word);
+
 // Function words that do not count toward the distance between the exercise and the figure.
 const skipWord = new Set([
   "a",

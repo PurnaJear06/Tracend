@@ -264,3 +264,31 @@ Deno.test("a rest of up to five minutes in half minutes is advice; the athlete's
   assertEquals(missing("Rest 5.5 min between sets."), ["5.5"]);
   assertEquals(missing("You slept 4.5 hours on Tuesday."), ["4.5"]);
 });
+
+// Review of #187: each exemption fails closed.
+Deno.test("a half-minute duration is advice only with rest wording beside it", () => {
+  assertEquals(missing("Do 2.5 minutes of sprints."), ["2.5"]);
+  assertEquals(missing("The protocol lasts 2.5 minutes."), ["2.5"]);
+  assertEquals(missing("Do 2.5 minutes of sprints, then rest."), ["2.5"]);
+  assertEquals(missing("Rest 2.5 min."), []);
+  assertEquals(missing("Take 1.5 to 2.5 minutes of rest."), []);
+});
+
+Deno.test("multiplication that is not rep notation on a lift is not a load", () => {
+  const given = (text: string) => numberGroundOf([text]);
+  assertEquals(
+    ungroundedNumbers("You weigh 120 kg.", given("Blood pressure was 120 x 80 mmHg")),
+    ["120"],
+  );
+  assertEquals(ungroundedNumbers("bench 115 kg x 5", given("The mat is 115 x 30 cm")), ["115"]);
+  // No exercise beside it: the figure is not read as a load.
+  assertEquals(ungroundedNumbers("You weigh 115 kg", given("I did 115 for 5")), ["115"]);
+  assertEquals(ungroundedNumbers("bench 115 kg x 5", given("bench 115 x 50")), ["115"]);
+});
+
+Deno.test("a load matches only a load, kg or lb, never a figure with some other word", () => {
+  const given = (text: string) => numberGroundOf([text]);
+  assertEquals(ungroundedNumbers("bench 115 for 5", given("The score was 115 points")), ["115"]);
+  assertEquals(ungroundedNumbers("bench 115 x 5", given("The score was 115 points")), ["115"]);
+  assertEquals(ungroundedNumbers("bench 115 x 5", given("bench 115 kg x 4")), []);
+});

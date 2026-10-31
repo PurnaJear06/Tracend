@@ -231,22 +231,24 @@ function acronymsOf(title: string): string[] {
 /** Words an organisation's initials leave out ("International Society of Sports Nutrition"). */
 const connectorWords = new Set(["of", "the", "and", "for", "on", "in", "a", "an", "to"]);
 
+// The kinds of document an organisation publishes, at the end of a title's name part.
+const documentKind =
+  /\s+(?:joint\s+)?(?:position\s+(?:stands?|statements?|papers?)|consensus\s+(?:statements?|papers?)|(?:dietary\s+|physical activity\s+)?guidelines?|recommendations?|fact\s*sheets?|pronouncements?|statements?)\s*$/i;
+
 /**
- * The initials of every run of three to six words in a title's name (before its colon), in any
- * case: a title written in sentence case ("International society of sports nutrition position
- * stand: caffeine ...") still answers to "the ISSN position stand".
+ * The initials of the organisation that publishes a document, from a title in any case: the
+ * words before the document kind in the title's name part (before its colon), when there are two
+ * to six of them. "International society of sports nutrition position stand: caffeine ..." gives
+ * ISSN, and nothing else; a title that names no document kind gives nothing.
  */
-function wordRunInitials(title: string): string[] {
-  const significant = words(title.split(":")[0]).filter((word) =>
+function organisationInitials(title: string): string[] {
+  const name = title.split(":")[0];
+  if (!documentKind.test(name)) return [];
+  const organisation = words(name.replace(documentKind, "")).filter((word) =>
     !connectorWords.has(word) && !/^\d/.test(word)
   );
-  const found: string[] = [];
-  for (let start = 0; start < significant.length; start++) {
-    for (let size = 3; size <= 6 && start + size <= significant.length; size++) {
-      found.push(significant.slice(start, start + size).map((word) => word[0]).join(""));
-    }
-  }
-  return found;
+  if (organisation.length < 2 || organisation.length > 6) return [];
+  return [organisation.map((word) => word[0]).join("")];
 }
 
 function identityOf(id: string, source: ShownSources[string]): Identity {
@@ -260,7 +262,7 @@ function identityOf(id: string, source: ShownSources[string]): Identity {
     // Case matters here: "WHO" is an acronym in a title, "who" is a word in an excerpt.
     acronyms: new Set([
       ...acronymsOf(label),
-      ...wordRunInitials(label),
+      ...organisationInitials(label),
       ...(label.match(/\b\p{Lu}{2,6}\b/gu) ?? []).map((word) => word.toLowerCase()),
     ]),
     year: at !== -1 ? Number(parts[at]) : labelYear ? Number(labelYear) : null,
@@ -284,14 +286,30 @@ function names(mention: StudyMention, source: Identity): boolean {
   );
 }
 
+/**
+ * Which shown sources each mention names. An institution's initials alone that match more than one
+ * shown source name none of them: "the ISSN position stand (Guest et al. 2021)" names the source
+ * its author and year pick, never every ISSN stand shown, so no other stand's figures ground it.
+ */
+function namedBy(
+  mentions: readonly StudyMention[],
+  identities: readonly Readonly<{ id: string; identity: Identity }>[],
+): string[][] {
+  return mentions.map((mention) => {
+    const ids = identities.filter(({ identity }) => names(mention, identity)).map(({ id }) => id);
+    return mention.initials && ids.length > 1 ? [] : ids;
+  });
+}
+
+const identitiesOf = (shown: ShownSources) =>
+  Object.entries(shown).map(([id, source]) => ({ id, identity: identityOf(id, source) }));
+
 /** The ids of the shown sources the text names, in the order the sources were shown. */
 export function namedShownSources(text: string, shown: ShownSources): string[] {
   const mentions = studyMentions(text);
   if (mentions.length === 0) return [];
-  return Object.entries(shown).filter(([id, source]) => {
-    const identity = identityOf(id, source);
-    return mentions.some((mention) => names(mention, identity));
-  }).map(([id]) => id);
+  const named = new Set(namedBy(mentions, identitiesOf(shown)).flat());
+  return Object.keys(shown).filter((id) => named.has(id));
 }
 
 /** The shown sources the text names, each with the words of the text that name it. */
@@ -299,15 +317,10 @@ export function namedShownPhrases(
   text: string,
   shown: ShownSources,
 ): { id: string; phrase: string }[] {
-  const identities = Object.entries(shown).map(([id, source]) => ({
-    id,
-    identity: identityOf(id, source),
-  }));
-  return scan(text).flatMap((entry) =>
-    identities.filter(({ identity }) => names(entry.mention, identity)).map(({ id }) => ({
-      id,
-      phrase: entry.phrase,
-    }))
+  const scanned = scan(text);
+  const named = namedBy(scanned.map((entry) => entry.mention), identitiesOf(shown));
+  return scanned.flatMap((entry, index) =>
+    named[index].map((id) => ({ id, phrase: entry.phrase }))
   );
 }
 

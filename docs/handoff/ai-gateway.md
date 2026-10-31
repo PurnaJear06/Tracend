@@ -1962,17 +1962,21 @@ branch). No migration, no schema change (0 optional, 0 unions), no new model cal
 1. **A load the athlete writes in rep notation grounds the reply** (`coach_safety/numbers_check.ts`).
    "My old bench was 115 for 5" and "so RDL is 112.5 x 6" gave those figures the unit "other", so
    the reply's "115 kg x 5" and "112.5 kg x 6" were `numbers_not_grounded` twice and two turns ended
-   in the data summary. A figure followed by `x N` or `for N` (a bare count, not a duration or
-   another measurement) is now a load and matches the same figure in kg or lb, in either direction;
-   never minutes, kcal or a percentage.
+   in the data summary. A figure is now a load when an exercise is within two words before it and
+   `x N` or `for N` follows (a count of 1 to 30 with no unit of its own); it matches the same figure
+   in kg or lb, in either direction, and nothing else (review fix: no match with "115 points", no
+   "120 x 80 mmHg" or "115 x 30 cm", no load without an exercise beside it).
 2. **A half-minute rest is advice** (same file). "Take 2 to 2.5 min between sets" was refused for
-   "2.5". A rest of up to five minutes in whole or half minutes is exempt unless the wording gives it
-   to the athlete's past or records ("your rest was 2.5 min" is still checked); hours are unchanged.
+   "2.5". A rest of up to five minutes in whole or half minutes is exempt only with rest wording
+   right beside it ("rest 2.5 min", "min between sets"; review fix: "2.5 minutes of sprints" is
+   checked) and never when the wording gives it to the athlete's past ("your rest was 2.5 min").
 3. **ISSN names a sentence-case title** (`library/mentions.ts`). "The ISSN position stand (Guest et
    al. 2021)" was `citation_not_retrieved` although `guest_2021_caffeine` was shown: its title is
    "International society of sports nutrition position stand: ...", whose capitalised runs give no
-   initials. Initials now also come from every run of three to six words before the title's colon,
-   in any case (connector words left out).
+   initials. The organisation's initials now come from the two to six words before the document kind
+   ("position stand") in the title's name part, in any case, and nothing else. Review fix: initials
+   that match several shown sources name none, so "the ISSN position stand (Guest et al. 2021)"
+   names only the stand its author and year pick and no other stand's figures ground it.
 4. **A block asked for too early says when to ask** (`coach_proposals/refusals.ts`, `training.ts`). A
    travel block asked for on a Friday for Monday is refused (`block_start_too_far`: a block starts
    on approval, at most 2 days ahead). The reason now names the first day it can be asked for ("Ask
