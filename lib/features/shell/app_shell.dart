@@ -23,6 +23,8 @@ import 'package:tracend/features/goals/goal_target_repository.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/readiness/day_adjustment_repository.dart';
+import 'package:tracend/features/readiness/pain_check.dart';
+import 'package:tracend/features/readiness/pain_reporting.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/features/progress/progress_screen.dart';
 import 'package:tracend/features/shell/floating_tab_bar.dart';
@@ -99,6 +101,7 @@ class AppShellRepositories {
     this.proposals,
     this.memory,
     this.dayAdjustment,
+    this.painCheck,
   });
 
   final WorkoutRepository? workouts;
@@ -121,6 +124,10 @@ class AppShellRepositories {
   /// Today's same-day readiness adjustment; built from the environment (and
   /// absent without a backend) when not given.
   final DayAdjustmentRepository? dayAdjustment;
+
+  /// Sends the pain check made during a workout; built from the environment
+  /// (nothing can be sent without a backend) when not given.
+  final PainCheckRepository? painCheck;
 }
 
 class _AppShellState extends State<AppShell> {
@@ -144,6 +151,10 @@ class _AppShellState extends State<AppShell> {
   /// Today's same-day readiness adjustment, shared by Today and Train. Null
   /// without a backend, where there is no readiness to read.
   late final DayAdjustmentController? _dayAdjustment;
+
+  /// Sends the pain reports made during a workout and keeps the ones that
+  /// cannot go yet.
+  late final PainReporting _pain;
 
   /// Questions left for the Coach composer by other screens.
   final _coachDrafts = CoachDraftRequests();
@@ -269,6 +280,19 @@ class _AppShellState extends State<AppShell> {
             repository: dayAdjustments,
             serverToday: _serverToday,
           );
+    _pain = PainReporting(
+      repository:
+          injected?.painCheck ??
+          (live
+              ? SupabasePainCheckRepository(Supabase.instance.client)
+              : const OfflinePainCheckRepository()),
+      readiness: _dayAdjustment,
+      userId: widget.userId,
+      // Queued reports go only while their own athlete is signed in.
+      signedInUser: live
+          ? () => Supabase.instance.client.auth.currentUser?.id
+          : null,
+    );
     _brief = SharedDailyBriefRepository(
       injected?.brief ??
           (live
@@ -360,6 +384,8 @@ class _AppShellState extends State<AppShell> {
         widgetTaps: _widgetTaps,
         dayAdjustment: _dayAdjustment,
         onTalkToCoach: _talkToCoach,
+        pain: _pain,
+        userId: widget.userId,
       ),
       () => TrainScreen(
         key: const ValueKey('tab_train'),
@@ -373,6 +399,7 @@ class _AppShellState extends State<AppShell> {
         dayAdjustment: _dayAdjustment,
         onTalkToCoach: _talkToCoach,
         onCheckIn: _openCheckIn,
+        pain: _pain,
       ),
       () => CoachScreen(
         key: const ValueKey('tab_coach'),
