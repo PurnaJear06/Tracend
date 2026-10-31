@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/features/train/widgets/muscle_map.dart';
 import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/features/train/workout_repository.dart';
@@ -144,6 +145,7 @@ String? nextTargetWhy(NextTarget target, {bool assisted = false}) {
 /// "3 × 8 to 10 at 72.5 kg", or without a load when the plan sets none. With
 /// a next target from the sets logged: "3 × 8 to 10 · next 75 kg × 8".
 String exerciseLine(PlannedExercise exercise) {
+  if (exercise.leftOut) return leftOutLine;
   final base = '${exercise.setCount} × ${repRange(exercise)}';
   final next = exercise.nextTarget;
   if (next != null) {
@@ -156,11 +158,19 @@ String exerciseLine(PlannedExercise exercise) {
   return load == null ? base : '$base at ${formatKg(load)} kg';
 }
 
+/// The line under an exercise: [exerciseLine], then the pain-free range cues
+/// of a joint that limits it, each on its own line.
+String exerciseSubtitle(PlannedExercise exercise) => [
+  exerciseLine(exercise),
+  ...rangeNoteLines(exercise.rangeNoteCodes),
+].join('\n');
+
 int totalSets(PlannedWorkout workout) =>
     workout.exercises.fold<int>(0, (sum, item) => sum + item.setCount);
 
 /// What today's accepted same-day adjustment did to [workout]: "Lighter
-/// today: 12 of 15 sets" or "Weights held today". Null when it did nothing.
+/// today: 12 of 15 sets", "Weights held today" or "Changed for your joints
+/// today". Null when it did nothing.
 String? dayAdjustmentNote(PlannedWorkout workout) {
   final planned = workout.exercises.fold<int>(
     0,
@@ -168,8 +178,13 @@ String? dayAdjustmentNote(PlannedWorkout workout) {
   );
   final now = totalSets(workout);
   if (now < planned) return 'Lighter today: $now of $planned sets';
-  return workout.exercises.any((item) => item.loadHeld)
-      ? 'Weights held today'
+  if (workout.exercises.any((item) => item.loadHeld)) {
+    return 'Weights held today';
+  }
+  return workout.exercises.any(
+        (item) => item.swappedFrom != null || item.rangeNoteCodes.isNotEmpty,
+      )
+      ? 'Changed for your joints today'
       : null;
 }
 

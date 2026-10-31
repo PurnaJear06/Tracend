@@ -6,53 +6,9 @@ import 'package:flutter/widgets.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/keychain_session_storage.dart';
+import 'package:tracend/app/sentry_scrubber.dart';
 import 'package:tracend/app/app.dart';
 import 'package:tracend/app/environment.dart';
-
-const _sensitiveKeys = {
-  'answer_payload',
-  'answer_text',
-  'blood_pressure',
-  'food_items',
-  'heart_rate',
-  'image_url',
-  'ingredients',
-  'meal_content',
-  'meal_description',
-  'object_key',
-  'photo_url',
-  'prompt',
-  'prompt_text',
-  'question',
-  'resting_heart_rate_bpm',
-  'signed_url',
-  'sleep_minutes',
-  'step_count',
-  'weight_kg',
-};
-
-void _redactSensitiveData(Map<String, dynamic> map) {
-  for (final key in _sensitiveKeys) {
-    if (map.containsKey(key)) {
-      map[key] = '[redacted]';
-    }
-  }
-}
-
-SentryEvent? _sentryBeforeSend(SentryEvent event, Hint hint) {
-  final requestData = event.request?.data;
-  if (requestData is Map<String, dynamic>) {
-    _redactSensitiveData(requestData);
-  }
-  final contexts = event.contexts;
-  for (final key in contexts.keys) {
-    final ctx = contexts[key];
-    if (ctx is Map<String, dynamic>) {
-      _redactSensitiveData(ctx);
-    }
-  }
-  return event;
-}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -71,7 +27,8 @@ Future<void> main() async {
           options.dsn = environment.sentryDsn;
           options.tracesSampleRate = 0.1;
           options.attachStacktrace = true;
-          options.beforeSend = _sentryBeforeSend;
+          options.beforeSend = scrubSentryEvent;
+          options.beforeBreadcrumb = scrubSentryBreadcrumb;
         },
         appRunner: () async {
           if (environment.hasSupabaseConfiguration) {
