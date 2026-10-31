@@ -4,6 +4,7 @@ import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
+import 'package:tracend/features/train/training_hub_cache.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
@@ -36,14 +37,15 @@ bool isDeletedUser(Object error) =>
 
 /// What this device keeps for one athlete: Apple Health sync state, the
 /// month the usual months were sent, a check-in waiting to sync, the Lock
-/// Screen widget choice (all kept per athlete), and the Coach thread last
-/// open.
+/// Screen widget choice (all kept per athlete), the Coach thread last open,
+/// and the last loaded plan that opens the app with no connection.
 ///
 /// A deleted account takes all of it. A refused session takes the Coach
-/// thread and the Lock Screen choice, and signing out takes the Lock Screen
-/// choice: the account may still exist (signed out on another device, say),
-/// and its athlete gets their unsent check-in and sync state back on signing
-/// in, but health numbers on the Lock Screen are chosen again. Nothing kept
+/// thread, the saved plan and the Lock Screen choice, and signing out takes
+/// the saved plan and the Lock Screen choice: the account may still exist
+/// (signed out on another device, say), and its athlete gets their unsent
+/// check-in and sync state back on signing in, but health numbers on the
+/// Lock Screen are chosen again and the plan is loaded again. Nothing kept
 /// is readable by another account.
 class LocalAccountData {
   LocalAccountData({
@@ -94,7 +96,15 @@ class LocalAccountData {
   /// Coach thread and the Lock Screen choice. Never throws.
   Future<void> forgetSession(String? userId) async {
     await forgetWidgetChoice(userId);
+    await forgetSavedPlan(userId);
     await _removeLegacy({SharedPreferencesCoachThreadMemory.storageKey});
+  }
+
+  /// Forgets the plan this phone saved for [userId], so no one signed in
+  /// afterwards can open it offline. Never throws.
+  Future<void> forgetSavedPlan(String? userId) async {
+    if (userId == null) return;
+    await TrainingHubCache(_preferences).clear(userId);
   }
 
   /// Forgets [userId]'s choice to show health numbers on the Lock Screen,
@@ -149,8 +159,8 @@ Future<void> endRejectedSession(
 }
 
 /// Signs the athlete out, the end of an account deletion included. The Lock
-/// Screen choice is forgotten first, so the next athlete on this phone never
-/// inherits it. When Auth cannot be reached, the session is removed from
+/// Screen choice and the saved plan are forgotten first, so the next athlete
+/// on this phone never inherits either. When Auth cannot be reached, the session is removed from
 /// this device alone.
 Future<void> signOutAthlete(
   SupabaseClient client,
@@ -158,6 +168,7 @@ Future<void> signOutAthlete(
   String? userId,
 ) async {
   await localData.forgetWidgetChoice(userId);
+  await localData.forgetSavedPlan(userId);
   try {
     await client.auth.signOut();
   } catch (e) {

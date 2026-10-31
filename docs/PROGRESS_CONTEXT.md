@@ -334,6 +334,15 @@ exception values, extra and breadcrumbs and the app no longer logs exception tex
 paths throw fixed codes. App only, needs a reinstall. See
 [`docs/handoff/account-session.md`](./handoff/account-session.md).
 
+Offline cold start (2026-10-31, branch `claude/offline-cold-start`, stacked on #184, in review):
+QA finding M-G5, resolved by the owner in favour of ARCHITECTURE (cache for offline). The last
+loaded training hub is kept per athlete on the phone; a launch with a stored session and no
+connection opens the app from it, on Train, with an "Offline. Showing your saved plan from <date>"
+note, and the workout can be started, logged and finished from it (the start and finish wait on the
+phone and are sent when the connection returns). Today, Coach, Meals and Progress say they need a
+connection. No session means sign-in; a session with no saved plan still shows "Connection
+needed". App only, needs a reinstall. See [`docs/handoff/account-session.md`](./handoff/account-session.md).
+
 ## Shipped baseline
 
 - iOS-only Flutter app backed by Supabase Auth, PostgreSQL/RLS, Storage, and nine Edge Functions.

@@ -6,7 +6,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/muscle_groups.dart';
+import 'package:tracend/features/train/training_hub_cache.dart';
 import 'package:tracend/features/train/unfinished_workout.dart';
+import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/diagnostics.dart';
 
 /// What the next session's target does with last time's result.
@@ -478,11 +480,33 @@ class TrainingHubData {
     this.todayWorkout,
     this.dailyLoad = const [],
     this.load,
+    this.cachedAt,
   });
+
+  /// The hub this phone saved at [CachedTrainingHub.savedAt], for a launch
+  /// or a load with no connection. The day is [now]'s: the plan's weekdays
+  /// still say which workout is today's, but the load numbers and today's
+  /// workout the server worked out belong to the day the copy was saved, so
+  /// when that is another day they are left out rather than shown for today.
+  factory TrainingHubData.fromCache(CachedTrainingHub cached, DateTime now) {
+    final json = Map<String, dynamic>.of(cached.hub);
+    final today = localDayKey(now);
+    if (json['local_today'] != today) {
+      json
+        ..['local_today'] = today
+        ..remove('daily_load')
+        ..remove('computed')
+        ..remove('today_workout');
+    }
+    return TrainingHubData.fromHubJson(json, cachedAt: cached.savedAt);
+  }
 
   /// Parses `get_my_training_hub`. A cached 1.5 payload parses too: every
   /// 1.6 and 1.7 field is optional and reads as absent.
-  factory TrainingHubData.fromHubJson(Map<String, dynamic> value) {
+  factory TrainingHubData.fromHubJson(
+    Map<String, dynamic> value, {
+    DateTime? cachedAt,
+  }) {
     final targets = _nextTargets(value['next_targets']);
     final active = _map(value['active_plan']);
     final adherence = _map(value['adherence']);
@@ -564,6 +588,7 @@ class TrainingHubData {
                   ?.toDouble(),
               todayStrain: (computed['today_strain'] as num?)?.toDouble(),
             ),
+      cachedAt: cachedAt,
     );
   }
 
@@ -612,6 +637,10 @@ class TrainingHubData {
   /// The hub's computed load numbers for today; null when absent.
   final HubLoadMetrics? load;
 
+  /// When this phone saved the hub it shows, when the server could not be
+  /// reached and this is the last copy; null for a hub just loaded.
+  final DateTime? cachedAt;
+
   bool isDayCompleted(DateTime date) => completedDays.any(
     (d) => d.year == date.year && d.month == date.month && d.day == date.day,
   );
@@ -630,6 +659,13 @@ class TrainingHubData {
 
 abstract interface class TrainingHubRepository {
   Future<TrainingHubData> loadTrainingHub({int periodDays = 28});
+}
+
+/// A repository that keeps the last hub that loaded on the phone.
+abstract interface class SavedTrainingHubRepository {
+  /// That copy, marked with [TrainingHubData.cachedAt]; null when there is
+  /// none for the signed-in athlete.
+  Future<TrainingHubData?> loadSavedTrainingHub();
 }
 
 class WorkoutRepairCandidate {
@@ -824,13 +860,21 @@ class SupabaseWorkoutRepository
     implements
         WorkoutRepository,
         TrainingHubRepository,
+        SavedTrainingHubRepository,
         WorkoutRepairRepository,
         WorkoutReconciliationRepository,
         HealthkitCandidateRepository,
         UnfinishedWorkoutRepository {
-  SupabaseWorkoutRepository(this._client, this._preferences);
+  SupabaseWorkoutRepository(
+    this._client,
+    this._preferences, {
+    DateTime Function()? clock,
+  }) : _clock = clock ?? DateTime.now,
+       _hubCache = TrainingHubCache(_preferences);
   final SupabaseClient _client;
   final SharedPreferencesAsync _preferences;
+  final DateTime Function() _clock;
+  final TrainingHubCache _hubCache;
   String get _userId => _client.auth.currentUser!.id;
   String _draftKey(String workoutId) =>
       '${WorkoutLocalKeys.draftPrefix(_userId)}$workoutId';
@@ -839,17 +883,47 @@ class SupabaseWorkoutRepository
   String get _discardKey => WorkoutLocalKeys.discards(_userId);
   String get _historyKey => WorkoutLocalKeys.exerciseHistory(_userId);
 
+  /// The window the offline copy is kept for; a hub for another window (the
+  /// Progress tab's) is never saved or served from it.
+  static const _cachedHubDays = 28;
+
+  /// How long a hub request may take before the saved copy is used.
+  static const _hubWait = Duration(seconds: 10);
+
+  /// The hub from the server. When the server cannot be reached, this
+  /// phone's last copy for this athlete answers instead, marked with
+  /// [TrainingHubData.cachedAt]; with no copy the failure is rethrown.
   @override
-  Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async =>
-      TrainingHubData.fromHubJson(
-        Map<String, dynamic>.from(
-          await _client.rpc(
-                'get_my_training_hub',
-                params: {'period_days': periodDays},
-              )
-              as Map,
-        ),
+  Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async {
+    final userId = _client.auth.currentUser?.id;
+    final Map<String, dynamic> hub;
+    try {
+      hub = Map<String, dynamic>.from(
+        await _client
+                .rpc('get_my_training_hub', params: {'period_days': periodDays})
+                .timeout(_hubWait)
+            as Map,
       );
+    } catch (error) {
+      if (userId == null || periodDays != _cachedHubDays) rethrow;
+      final cached = await _hubCache.load(userId);
+      if (cached == null) rethrow;
+      logNonCritical(error, 'training hub from device');
+      return TrainingHubData.fromCache(cached, _clock());
+    }
+    if (userId != null && periodDays == _cachedHubDays) {
+      await _hubCache.save(userId, hub, _clock());
+    }
+    return TrainingHubData.fromHubJson(hub);
+  }
+
+  @override
+  Future<TrainingHubData?> loadSavedTrainingHub() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return null;
+    final cached = await _hubCache.load(userId);
+    return cached == null ? null : TrainingHubData.fromCache(cached, _clock());
+  }
 
   HealthkitCompletionCandidate _parseHealthkitCandidate(
     Map<String, dynamic> row,
@@ -1500,7 +1574,8 @@ abstract final class WorkoutLocalKeys {
       key.startsWith(draftPrefix(userId)) ||
       key.startsWith(finishPrefix(userId)) ||
       key == discards(userId) ||
-      key == exerciseHistory(userId);
+      key == exerciseHistory(userId) ||
+      key == TrainingHubCache.keyFor(userId);
 }
 
 Map<String, dynamic> decodeDraft(String value) =>

@@ -214,7 +214,9 @@ TrainingHubData trainHub({
   bool withPlan = true,
   List<PlannedWorkout>? workouts,
   DateTime? localToday,
+  DateTime? cachedAt,
 }) => TrainingHubData(
+  cachedAt: cachedAt,
   planTitle: 'Strength foundation',
   plan: withPlan
       ? ActivePlanSummary(

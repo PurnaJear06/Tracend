@@ -23,6 +23,7 @@ import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/features/workout_hr/set_heart_rate_recorder.dart';
 import 'package:tracend/features/workout_hr/watch_workout_prompt.dart';
+import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/home_widgets/lock_screen_numbers.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
@@ -219,6 +220,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   Timer? _saveTimer;
   Timer? _ticker;
 
+  /// Sends what waited for a connection when the app comes back to the
+  /// front.
+  late final ResumeObserver _resume = ResumeObserver(_sendWaiting);
+
   /// The elapsed seconds and rest seconds on screen at the last tick.
   (int, int?)? _shownSeconds;
 
@@ -242,11 +247,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         (repository is SupabaseWorkoutRepository
             ? SupabaseWatchWorkoutPromptSource(Supabase.instance.client)
             : null);
+    _resume.attach();
     _restore();
   }
 
   @override
   void dispose() {
+    _resume.detach();
     ActiveWorkoutScreen._open--;
     // Finish, discard and save-and-leave stop the rest before the screen
     // goes; anything else (the app returning to sign-in) leaves the rest in
@@ -260,6 +267,21 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     _events.close();
     _pages.dispose();
     super.dispose();
+  }
+
+  /// Back at the front: a finish the athlete confirmed offline is sent
+  /// again, and so are the sets and the start that did not reach the server.
+  /// Still offline, each leaves the workout on the phone as it was.
+  void _sendWaiting() {
+    if (!mounted || !_ready || _closed || _finishing || _viewingCompleted) {
+      return;
+    }
+    final pending = _pendingFinish;
+    if (pending != null) {
+      unawaited(_finishWith(pending.sessionEffort, pending.durationSeconds));
+    } else if (_sync == _Sync.offline) {
+      unawaited(_save());
+    }
   }
 
   // Restore and start ---------------------------------------------------------

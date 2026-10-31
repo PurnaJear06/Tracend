@@ -28,6 +28,7 @@ import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/diagnostics.dart';
+import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
@@ -57,6 +58,7 @@ class TrainScreen extends StatefulWidget {
     this.active = true,
     this.workoutLogs,
     this.showToday,
+    this.onRetryConnection,
     super.key,
   });
 
@@ -70,6 +72,11 @@ class TrainScreen extends StatefulWidget {
 
   /// Counts the taps on Today's session card: Train then selects today.
   final ValueListenable<int>? showToday;
+
+  /// Asks the app to check the connection again while it is open on the
+  /// saved plan; the shell's way out of its offline mode. Null where the app
+  /// is never offline.
+  final Future<void> Function()? onRetryConnection;
 
   /// Today's same-day readiness adjustment, shared with Today. Null without a
   /// backend, where there is none.
@@ -217,7 +224,10 @@ class _TrainScreenState extends State<TrainScreen> {
   /// unless the athlete picked another day.
   void _reloadIfStale({Duration? within}) {
     if (!mounted || _hubLoading && _hub == null) return;
-    if (_loaded.isStale(within: within)) unawaited(_refresh());
+    // A saved plan shown for want of a connection is tried again every time.
+    if (_hub?.cachedAt != null || _loaded.isStale(within: within)) {
+      unawaited(_refresh());
+    }
   }
 
   /// The hub on screen was loaded on an earlier day than the phone's today.
@@ -267,6 +277,13 @@ class _TrainScreenState extends State<TrainScreen> {
     if (mounted) unawaited(_refresh());
   }
 
+  /// "Try again" on the offline note: the plan is read again, and the app is
+  /// asked to check the connection so it can leave its offline mode.
+  Future<void> _retryConnection() async {
+    final reconnect = widget.onRetryConnection;
+    await Future.wait<void>([_refresh(), ?reconnect?.call()]);
+  }
+
   // ---------------------------------------------------------------------------
   // Loading
   // ---------------------------------------------------------------------------
@@ -275,68 +292,118 @@ class _TrainScreenState extends State<TrainScreen> {
     final load = ++_hubLoads;
     if (mounted) setState(() => _hubLoading = true);
     final source = _source;
-    List<WorkoutRepairCandidate>? repairs;
-    List<WorkoutReconciliation>? reconciliations;
-    if (source is WorkoutRepairRepository) {
-      try {
-        repairs =
-            (await (source as WorkoutRepairRepository).loadRepairCandidates())
-                .where((c) => !_respondedRepairSessionIds.contains(c.sessionId))
-                .toList();
-      } catch (error) {
-        logNonCritical(error, 'repair candidates');
-      }
+    // Opened on the saved plan because the account could not be checked: the
+    // phone's copy shows at once, and the load below replaces it when the
+    // server answers. Without this an expired session waits for its refresh
+    // to fail before anything shows.
+    if (_hub == null && widget.onRetryConnection != null) {
+      unawaited(_showSaved(load));
     }
-    if (source is WorkoutReconciliationRepository) {
-      try {
-        reconciliations =
-            (await (source as WorkoutReconciliationRepository)
-                    .loadReconciliations())
-                .where((r) => !_respondedReconciliationIds.contains(r.id))
-                .toList();
-      } catch (error) {
-        logNonCritical(error, 'workout matches');
-      }
-    }
+    // Read beside the hub, so a connection too slow for them does not hold
+    // the plan back; they are given a few seconds once the hub is in.
+    final repairsLoad = source is WorkoutRepairRepository
+        ? _optional(
+            (source as WorkoutRepairRepository).loadRepairCandidates(),
+            'repair candidates',
+          )
+        : Future<List<WorkoutRepairCandidate>?>.value();
+    final reconciliationsLoad = source is WorkoutReconciliationRepository
+        ? _optional(
+            (source as WorkoutReconciliationRepository).loadReconciliations(),
+            'workout matches',
+          )
+        : Future<List<WorkoutReconciliation>?>.value();
+    TrainingHubData? loadedHub;
+    Object? failure;
     try {
-      final hub = await _loadHubData();
-      if (!mounted || load != _hubLoads) return;
-      _loaded.mark();
-      setState(() {
-        _hub = hub;
-        _hubError = null;
-        _hubLoading = false;
-        if (repairs != null) _repairs = repairs;
-        if (reconciliations != null) _reconciliations = reconciliations;
-        if (_followsToday && hub.localToday != null) {
-          final today = normalizedDate(hub.localToday!);
-          if (!sameDay(today, _selected)) _candidate = null;
-          _selected = today;
-          _weekStart = mondayOf(today);
-        }
-        // The readiness numbers were read for the phone's day: read them
-        // again for the server's when the two differ.
-        if (hub.localToday != null &&
-            !sameDay(hub.localToday!, _readinessDay)) {
-          _computed = null;
-          _readiness = _loadReadiness()..ignore();
-        }
-      });
-      unawaited(_resumeWorkout());
-      // The hub names the athlete's own today: the day readiness is read for.
-      if (hub.localToday != null) {
-        unawaited(widget.dayAdjustment?.load(localToday: hub.localToday));
-      }
+      loadedHub = await _loadHubData();
     } catch (error) {
-      logNonCritical(error, 'Train: training hub failed');
+      failure = error;
+    }
+    final repairs = (await repairsLoad)
+        ?.where((c) => !_respondedRepairSessionIds.contains(c.sessionId))
+        .toList();
+    final reconciliations = (await reconciliationsLoad)
+        ?.where((r) => !_respondedReconciliationIds.contains(r.id))
+        .toList();
+    if (loadedHub == null) {
+      logNonCritical(failure!, 'Train: training hub failed');
       _resumePending = false;
       if (!mounted || load != _hubLoads) return;
       setState(() {
-        _hubError = error;
+        _hubError = failure;
         _hubLoading = false;
         if (repairs != null) _repairs = repairs;
         if (reconciliations != null) _reconciliations = reconciliations;
       });
+      return;
+    }
+    final hub = loadedHub;
+    if (!mounted || load != _hubLoads) return;
+    _loaded.mark();
+    setState(() {
+      _show(hub);
+      _hubLoading = false;
+      if (repairs != null) _repairs = repairs;
+      if (reconciliations != null) _reconciliations = reconciliations;
+    });
+    unawaited(_resumeWorkout());
+    // The hub names the athlete's own today: the day readiness is read for.
+    // A saved copy names the phone's day, which is not the server's to teach.
+    if (hub.localToday != null && hub.cachedAt == null) {
+      unawaited(widget.dayAdjustment?.load(localToday: hub.localToday));
+    }
+  }
+
+  /// Puts [hub] on screen: the selection follows its today, and the
+  /// readiness numbers are read again when they were read for another day.
+  /// Called inside `setState`.
+  void _show(TrainingHubData hub) {
+    _hub = hub;
+    _hubError = null;
+    if (_followsToday && hub.localToday != null) {
+      final today = normalizedDate(hub.localToday!);
+      if (!sameDay(today, _selected)) _candidate = null;
+      _selected = today;
+      _weekStart = mondayOf(today);
+    }
+    // The readiness numbers were read for the phone's day: read them again
+    // for the server's when the two differ.
+    if (hub.localToday != null && !sameDay(hub.localToday!, _readinessDay)) {
+      _computed = null;
+      _readiness = _loadReadiness()..ignore();
+    }
+  }
+
+  /// The phone's copy of the plan, on screen while the server is tried. A
+  /// load that already finished (or a newer one) is not overwritten.
+  Future<void> _showSaved(int load) async {
+    final source = _source;
+    if (source is! SavedTrainingHubRepository) return;
+    TrainingHubData? saved;
+    try {
+      saved = await (source as SavedTrainingHubRepository)
+          .loadSavedTrainingHub();
+    } catch (error) {
+      logNonCritical(error, 'Train: saved plan not read');
+    }
+    if (saved == null || !mounted || load != _hubLoads || _hub != null) return;
+    final hub = saved;
+    setState(() {
+      _show(hub);
+      _hubLoading = false;
+    });
+    unawaited(_resumeWorkout());
+  }
+
+  /// [read], or null when it fails or takes longer than a few seconds: the
+  /// lists beside the hub are a convenience, never a reason to wait.
+  Future<List<T>?> _optional<T>(Future<List<T>> read, String what) async {
+    try {
+      return await read.timeout(const Duration(seconds: 5));
+    } catch (error) {
+      logNonCritical(error, what);
+      return null;
     }
   }
 
@@ -757,8 +824,13 @@ class _TrainScreenState extends State<TrainScreen> {
           Align(alignment: Alignment.centerLeft, child: pill),
           const SizedBox(height: TracendSpacing.xs),
         ],
-        if (_hubError != null) ...[
-          _StaleNote(error: _hubError!),
+        if (hub.cachedAt != null || _hubError != null) ...[
+          _OfflineNote(
+            savedAt: hub.cachedAt,
+            error: _hubError,
+            now: _clock(),
+            onRetry: _retryConnection,
+          ),
           const SizedBox(height: TracendSpacing.sm),
         ],
         if (hub.plan == null && hub.workouts.isEmpty)
@@ -788,6 +860,7 @@ class _TrainScreenState extends State<TrainScreen> {
               .length
         : hub.plan?.sessionsPerWeek ?? hub.workouts.length;
     final attention = _repairs.isNotEmpty || _reconciliations.isNotEmpty;
+    final offline = hub.cachedAt != null;
     return [
       if (!sameDay(_weekStart, _currentWeek))
         _WeekCaption(
@@ -812,13 +885,19 @@ class _TrainScreenState extends State<TrainScreen> {
         onNextWeek: _canShift(1) ? () => _shiftWeek(1) : null,
       ),
       const SizedBox(height: 14),
-      _ReadinessSlot(
-        readiness: _readiness,
-        load: load,
-        onOpenAccount: widget.onOpenAccount,
-      ),
-      const SizedBox(height: TracendSpacing.sm),
-      if (widget.dayAdjustment != null && sameDay(_selected, _today))
+      // Recovery and the day's adjustment come from the server: a saved plan
+      // has neither.
+      if (!offline) ...[
+        _ReadinessSlot(
+          readiness: _readiness,
+          load: load,
+          onOpenAccount: widget.onOpenAccount,
+        ),
+        const SizedBox(height: TracendSpacing.sm),
+      ],
+      if (!offline &&
+          widget.dayAdjustment != null &&
+          sameDay(_selected, _today))
         DayAdjustmentCard(
           controller: widget.dayAdjustment!,
           forDate: DayBoxesStrip.iso(_today),
@@ -1271,27 +1350,70 @@ class _LoadError extends StatelessWidget {
   }
 }
 
-class _StaleNote extends StatelessWidget {
-  const _StaleNote({required this.error});
+/// Said above the plan when it is not fresh: the server could not be reached.
+/// A copy this phone saved says from when; a plan already on screen that
+/// could not be reloaded says "from earlier".
+class _OfflineNote extends StatelessWidget {
+  const _OfflineNote({
+    required this.savedAt,
+    required this.error,
+    required this.now,
+    required this.onRetry,
+  });
 
-  final Object error;
+  /// When the phone saved the plan on screen; null for a plan loaded in this
+  /// run that could not be reloaded.
+  final DateTime? savedAt;
+  final Object? error;
+  final DateTime now;
+  final Future<void> Function() onRetry;
+
+  /// A saved plan older than this says how old it is.
+  static const _oldAfterDays = 14;
+
+  static String label(DateTime? savedAt, DateTime now) {
+    if (savedAt == null) return 'Offline. Showing your plan from earlier.';
+    final days = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).difference(DateTime(savedAt.year, savedAt.month, savedAt.day)).inDays;
+    final from =
+        'Offline. Showing your saved plan from '
+        '${shortDate(savedAt, now: now)}';
+    return days >= _oldAfterDays
+        ? '$from, $days days ago. It may have changed.'
+        : '$from.';
+  }
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const StatusChip(
-        label: 'Offline. Showing your plan from earlier.',
-        icon: CupertinoIcons.wifi_slash,
-        tone: StatusTone.caution,
-      ),
-      const SizedBox(height: TracendSpacing.xxs),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: BetaDiagnostic(error),
-      ),
-    ],
-  );
+  Widget build(BuildContext context) {
+    final error = this.error;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: TracendSpacing.xs,
+          children: [
+            StatusChip(
+              label: label(savedAt, now),
+              icon: CupertinoIcons.wifi_slash,
+              tone: StatusTone.caution,
+            ),
+            TextButton(onPressed: onRetry, child: const Text('Try again')),
+          ],
+        ),
+        if (error != null) ...[
+          const SizedBox(height: TracendSpacing.xxs),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: BetaDiagnostic(error),
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 class _NoPlan extends StatelessWidget {

@@ -153,8 +153,22 @@ sign-in**.
   athlete is told), and the device time zone is stored again. Coach's starter questions reload.
   Today's session card opens Train on today.
 - If Auth refuses the session (deleted account, revoked session, or a refused refresh token), the
-  app signs out on this device and shows sign-in, never a connection error. A lost connection
-  keeps the session and shows **Connection needed** with **Retry**.
+  app signs out on this device and shows sign-in, never a connection error.
+- **A launch with no connection (the gym with no signal).** A lost connection keeps the session.
+  When this phone holds the plan it last loaded for that athlete (kept after every successful
+  Train load, per athlete), the app opens from it instead of waiting: it stops waiting for the
+  account check after six seconds, needs no token refresh, and opens on **Train**, which shows
+  the plan with the note **Offline. Showing your saved plan from <date>.** (a copy older than two
+  weeks adds how many days old it is and that it may have changed) and **Try again**. The athlete
+  can start and log the workout from it: the start waits on the phone under its own key (no server
+  id is invented), sets are saved on the phone, and the finish waits as **Finish not sent yet**.
+  Today, Coach, Meals and Progress each say they need a connection and point to Train; recovery
+  and the day's adjustment are not shown. Coming back to the front or **Try again** checks the
+  account again; when that works the app leaves offline mode, Train reloads, and the waiting start,
+  sets and finish are sent (the server's state wins). With a stored session but no saved plan the
+  gate shows **Connection needed** with **Retry**; with no stored session it shows sign-in. Signing
+  out, a refused session and account deletion remove the saved plan, and another athlete's copy is
+  never read.
 - A refused session for an account that may still exist keeps that athlete's unsent check-in and
   Apple Health sync state, stored per athlete so no other account can read them, for their next
   sign-in. When Auth says the account no longer exists, its local data is removed.

@@ -145,3 +145,44 @@ From the pre-beta QA audit (groups B and C; app only, no migration, needs a rein
   their candidate validation and they are the fallback when no route is set.
 - Device check: background on Meals and Train overnight, resume: both show the new day; check in
   offline on two days, resume online: both arrive.
+
+## Offline cold start (2026-10-31, branch `claude/offline-cold-start`, stacked on #184)
+
+QA finding M-G5. Owner decision (final): a launch with no connection opens the cached approved plan
+and the in-progress workout (ARCHITECTURE wins over the old "Connection needed" line in UX_FLOWS,
+which is updated). App only, no migration, needs a reinstall.
+
+- **Saved plan.** `lib/features/train/training_hub_cache.dart` keeps the last
+  `get_my_training_hub` (28-day window only) as `training_hub_cache_<uid>`: version, athlete id,
+  save time and the RPC's own JSON. `SupabaseWorkoutRepository.loadTrainingHub` saves it after each
+  success; on any failure (or 10 s without an answer) for the default window it returns the copy as
+  `TrainingHubData.cachedAt`, with the phone's today in place of the server's (and without the
+  load numbers and today's workout when the copy is from another day). No copy: the failure is
+  rethrown. `loadSavedTrainingHub` reads it directly. `LocalAccountData` removes it on sign-out
+  (`signOutAthlete`), a refused session (`forgetSession`) and deletion (`clear`, via
+  `WorkoutLocalKeys.owns`). A copy tagged with another athlete is ignored.
+- **Gate.** `Phase2Gate._refresh` splits the account check into `_checkAccount`. With a session, if
+  the check throws (not a refusal) or takes longer than six seconds, and a copy exists for that
+  athlete, `_openSaved` opens `AppShell(offline: true)` (onboarding is taken as complete; AI
+  consent is left undecided, so AI stays off). The check keeps running behind it. Resume and
+  **Try again** run a quiet check (`_refresh(quiet: true)`: no loader, a failure changes nothing);
+  success sets `_offline = false` and the shell announces `PlanChanges` so Train reloads. No copy
+  means **Connection needed** + Retry as before; no session means sign-in. Sentry gets one
+  `Account state not loaded` when the app goes offline, not one per retry.
+- **Shell.** `AppShell.offline` opens on Train; Today shows `OfflineToday` (account button stays
+  for sign-out), Coach, Meals and Progress show `OfflineTab` (`lib/features/shell/offline_tabs.dart`).
+- **Train.** The copy shows at once while the server is tried (`_showSaved`), under the note
+  `_OfflineNote` ("Offline. Showing your saved plan from 28 Oct." plus ", N days ago. It may have
+  changed." from 14 days) with **Try again**; recovery and the day-adjustment card are hidden for a
+  copy, and a copy is reloaded on every resume or tab return. The repair/reconciliation lists load
+  beside the hub with a 5 s cap, so a bad connection does not hold the plan back.
+- **Workout.** The start/log/finish queue already existed (`pending-<key>` session id, replay with
+  the same idempotency key, saved finish). New: the logger sends what waited (a saved finish, else
+  unsent sets and the start) when the app comes back to the front.
+- **Not made offline:** Coach and AI, meals and photos, Progress, Today's brief, check-in (it
+  already queues), recovery, the day adjustment, Apple Health sync. A finish whose logger was left
+  by force-quit is sent from the logger (resume) or **Send finish**; nothing sends it from Train
+  while the logger is closed. Cross-version day identity stays with #181.
+- Device check: airplane mode, force-quit, reopen: Train opens on the saved plan with the note;
+  start a workout, log a set, Finish: "Finish not sent yet"; turn the network on and come back to
+  the app: the workout is saved. An expired-token launch shows the loader up to six seconds first.

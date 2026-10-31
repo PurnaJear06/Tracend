@@ -928,7 +928,7 @@ class _TodayScreenState extends State<TodayScreen> {
             ? '${_greeting(now)}, ${_formattedDate(now)}'
             : _formattedDate(now),
         onRefresh: _syncEverything,
-        trailing: _AccountButton(onPressed: _openAccount),
+        trailing: AccountButton(onPressed: _openAccount),
         children: [
           FutureBuilder<DailyBrief>(
             future: _brief,
@@ -1029,8 +1029,8 @@ class _TodayScreenState extends State<TodayScreen> {
 
 /// The account control in the large title: a round avatar in a 44pt
 /// target, named "Open account" for VoiceOver and as its tooltip.
-class _AccountButton extends StatelessWidget {
-  const _AccountButton({required this.onPressed});
+class AccountButton extends StatelessWidget {
+  const AccountButton({required this.onPressed, super.key});
 
   final VoidCallback onPressed;
 

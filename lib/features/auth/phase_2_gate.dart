@@ -13,6 +13,7 @@ import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/shell/app_shell.dart';
+import 'package:tracend/features/train/training_hub_cache.dart';
 import 'package:tracend/shared/brand/tracend_intro.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/diagnostics.dart';
@@ -52,6 +53,14 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   bool _loading = true;
   bool _authenticated = false;
   bool _onboardingComplete = false;
+
+  /// The app is open from the plan this phone saved, because the account
+  /// could not be checked: no connection, or one too slow to wait for. Only
+  /// the plan and the workout work; leaving it takes a successful check.
+  bool _offline = false;
+
+  /// An account check is running.
+  bool _checking = false;
   AiCoachingConsentController? _aiConsent;
 
   /// One Apple Health repository for onboarding and the app; its state is
@@ -71,7 +80,14 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   /// belongs to a session that is gone and commits nothing.
   int _sessionsEnded = 0;
 
+  /// How long a cold start waits for the account check before it opens the
+  /// saved plan, when it has one.
+  static const _waitForNetwork = Duration(seconds: 6);
+
   SupabaseClient get _client => widget.client ?? Supabase.instance.client;
+  late final TrainingHubCache _savedPlan = TrainingHubCache(
+    SharedPreferencesAsync(),
+  );
   late final LocalAccountData _localData =
       widget.localData ?? LocalAccountData();
   late final HomeWidgetEraser _widgetEraser = HomeWidgetEraser(
@@ -108,13 +124,22 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _refresh() async {
+  /// Checks the stored session and the account, then opens the app. With
+  /// [quiet] (a retry from the offline app) nothing is replaced by the
+  /// loader and a failure changes nothing: the app stays open on the saved
+  /// plan.
+  Future<void> _refresh({bool quiet = false}) async {
+    if (quiet && _checking) return;
     final sessionsEnded = _sessionsEnded;
     bool ended() => !mounted || sessionsEnded != _sessionsEnded;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    _checking = true;
+    if (!quiet) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    String? userId;
     try {
       final client = _client;
       final session = client.auth.currentSession;
@@ -124,57 +149,109 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
         setState(() {
           _authenticated = false;
           _onboardingComplete = false;
+          _offline = false;
         });
       } else {
-        final userId = session.user.id;
-        try {
-          if (session.isExpired) await client.auth.refreshSession();
-          // An access token stays valid for up to an hour after its user is
-          // deleted, and the database checks only its signature. Auth says
-          // whether the account and this session still exist.
-          await client.auth.getUser();
-        } on AuthException catch (error) {
-          if (!isRejectedSession(error)) rethrow;
-          await _endRejectedSession(
-            userId,
-            accountDeleted: isDeletedUser(error),
-          );
-          return;
+        userId = session.user.id;
+        final check = _checkAccount(client, session, ended);
+        if (_offline) {
+          await check;
+        } else {
+          try {
+            await check.timeout(_waitForNetwork);
+          } on TimeoutException {
+            // A connection too slow to wait for: the saved plan opens now
+            // and the check finishes behind it.
+            if (ended()) return;
+            if (!await _openSaved(userId, ended)) await check;
+          }
         }
-        if (ended()) return;
-        // Local dates on the server follow the device's time zone.
-        await AccountTimeZone.supabase(client).sync();
-        if (ended()) return;
-        final repository = SupabaseOnboardingRepository(client);
-        final complete = await repository.isOnboardingComplete();
-        if (ended()) return;
-        final aiConsent = _aiConsent ??= AiCoachingConsentController(
-          SupabaseAiCoachingConsentRepository(client),
-        );
-        // A notice that cannot be loaded turns AI coaching off here and
-        // leaves the app open; the screens that ask retry it themselves.
-        await aiConsent.load();
-        if (ended()) return;
-        _userId = userId;
-        // The usual months a later plan review compares with; never blocks.
-        if (complete) unawaited(_baselineSource().refreshIfDue());
-        setState(() {
-          _authenticated = true;
-          _onboardingComplete = complete;
-        });
       }
     } catch (e, stackTrace) {
       // Seen in Sentry by type and code: a gate that cannot load the account
-      // leaves the athlete on "Connection needed".
-      reportNonCritical(e, stackTrace, 'Account state not loaded');
-      if (ended()) return;
-      setState(() {
-        _error =
-            'The account state could not be loaded. Check the connection and retry.';
-      });
+      // leaves the athlete on "Connection needed", or on the saved plan.
+      if (_offline) {
+        logNonCritical(e, 'Account state not loaded');
+      } else {
+        reportNonCritical(e, stackTrace, 'Account state not loaded');
+      }
+      if (!ended() && !_offline && userId != null) {
+        await _openSaved(userId, ended);
+      }
+      if (!ended() && !_offline && !quiet) {
+        setState(() {
+          _error =
+              'The account state could not be loaded. Check the connection and retry.';
+        });
+      }
     } finally {
-      if (!ended()) setState(() => _loading = false);
+      _checking = false;
+      if (!ended() && !quiet) setState(() => _loading = false);
     }
+  }
+
+  /// Asks Auth whether the account and session still exist, then opens the
+  /// app on the account's state. Throws when that cannot be done; a session
+  /// Auth refused is ended here.
+  Future<void> _checkAccount(
+    SupabaseClient client,
+    Session session,
+    bool Function() ended,
+  ) async {
+    final userId = session.user.id;
+    try {
+      if (session.isExpired) await client.auth.refreshSession();
+      // An access token stays valid for up to an hour after its user is
+      // deleted, and the database checks only its signature. Auth says
+      // whether the account and this session still exist.
+      await client.auth.getUser();
+    } on AuthException catch (error) {
+      if (!isRejectedSession(error)) rethrow;
+      await _endRejectedSession(userId, accountDeleted: isDeletedUser(error));
+      return;
+    }
+    if (ended()) return;
+    // Local dates on the server follow the device's time zone.
+    await AccountTimeZone.supabase(client).sync();
+    if (ended()) return;
+    final repository = SupabaseOnboardingRepository(client);
+    final complete = await repository.isOnboardingComplete();
+    if (ended()) return;
+    final aiConsent = _aiConsent ??= AiCoachingConsentController(
+      SupabaseAiCoachingConsentRepository(client),
+    );
+    // A notice that cannot be loaded turns AI coaching off here and
+    // leaves the app open; the screens that ask retry it themselves.
+    await aiConsent.load();
+    if (ended()) return;
+    _userId = userId;
+    // The usual months a later plan review compares with; never blocks.
+    if (complete) unawaited(_baselineSource().refreshIfDue());
+    setState(() {
+      _authenticated = true;
+      _onboardingComplete = complete;
+      _offline = false;
+    });
+  }
+
+  /// Opens the app on the plan this phone saved for [userId], when it has
+  /// one: an athlete who had a plan has finished onboarding. False when
+  /// there is none, so the gate says a connection is needed.
+  Future<bool> _openSaved(String userId, bool Function() ended) async {
+    final saved = await _savedPlan.load(userId);
+    if (saved == null || ended()) return false;
+    _aiConsent ??= AiCoachingConsentController(
+      SupabaseAiCoachingConsentRepository(_client),
+    );
+    _userId = userId;
+    setState(() {
+      _authenticated = true;
+      _onboardingComplete = true;
+      _offline = true;
+      _error = null;
+      _loading = false;
+    });
+    return true;
   }
 
   /// Leaves the app for sign-in: a refresh still running is dropped, and
@@ -186,6 +263,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     setState(() {
       _authenticated = false;
       _onboardingComplete = false;
+      _offline = false;
       _userId = null;
       _error = null;
       _loading = false;
@@ -213,6 +291,9 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
       // local dates follow the stored zone, so it is stored again now.
       if (_authenticated && widget.environment.hasSupabaseConfiguration) {
         unawaited(AccountTimeZone.supabase(_client).sync());
+        // Back at the front with the saved plan open: the connection may be
+        // back too.
+        if (_offline) unawaited(_refresh(quiet: true));
       }
     }
   }
@@ -317,6 +398,8 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
       homeWidgets: widget.homeWidgets,
       widgetEraser: _widgetEraser,
       userId: _userId,
+      offline: _offline,
+      onRetryConnection: () => _refresh(quiet: true),
     );
   }
 }

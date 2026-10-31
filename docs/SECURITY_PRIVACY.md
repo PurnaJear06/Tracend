@@ -656,7 +656,9 @@ history.
   deletion cascades through user-owned PostgreSQL records and removes the invite and waitlist rows
   (section 7); a content-free completion receipt remains for 180 days.
 - Deleting from the app removes that athlete's local data (Apple Health sync state, an unsent
-  check-in, the open Coach thread) once the server confirms. Any device still holding a deleted
+  check-in, the open Coach thread, the saved plan) once the server confirms. The saved plan (the
+  last training hub, so the app opens with no connection) is tagged with the athlete's id, is
+  never read for another account, and is also removed on sign-out and when a session is refused. Any device still holding a deleted
   account's session signs out at its next launch or refresh. Within the access token's hour Auth
   reports `user_not_found` and the local data goes too; after it only a refused refresh token is
   known, so the per-athlete data stays on the device, readable by no other account.
