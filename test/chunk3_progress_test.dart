@@ -189,6 +189,25 @@ void main() {
     expect(find.textContaining('display-only'), findsNothing);
   });
 
+  testWidgets(
+    'the phone\'s saved plan is never shown as the period\'s numbers',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          _Repository(withTrend: true),
+          training: _TrainingHub(cachedAt: DateTime(2026, 8, 20)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _reveal(tester, find.textContaining('Workout data is unavailable'));
+      expect(
+        find.textContaining('Workout data is unavailable'),
+        findsOneWidget,
+      );
+      expect(find.text('Bench press'), findsNothing);
+    },
+  );
+
   testWidgets('the hero shows the weekly rate in plain words', (tester) async {
     await tester.pumpWidget(
       _app(_Repository(withTrend: true), brief: _Brief(withTrends: true)),
@@ -725,6 +744,10 @@ class _Brief implements DailyBriefRepository {
 }
 
 class _TrainingHub implements TrainingHubRepository {
+  _TrainingHub({this.cachedAt});
+
+  final DateTime? cachedAt;
+
   @override
   Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async =>
       TrainingHubData(
@@ -741,6 +764,7 @@ class _TrainingHub implements TrainingHubRepository {
             bestRepetitions: 8,
           ),
         ],
+        cachedAt: cachedAt,
       );
 }
 

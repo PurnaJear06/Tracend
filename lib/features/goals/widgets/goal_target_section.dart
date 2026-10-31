@@ -6,6 +6,7 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/goals/goal_target.dart';
 import 'package:tracend/features/goals/goal_target_repository.dart';
 import 'package:tracend/features/goals/widgets/goal_target_sheet.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_sheet.dart';
@@ -39,7 +40,7 @@ class _GoalTargetSectionState extends State<GoalTargetSection> {
       final state = await widget.repository.load();
       if (mounted) setState(() => _state = state);
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
     }
   }
 

@@ -1,6 +1,6 @@
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/coach/proposals/coach_proposal.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// A proposal answer the server refused, with a message that can be shown as
 /// is.
@@ -88,11 +88,11 @@ class SupabaseCoachProposalRepository implements CoachProposalRepository {
         params: {'p_proposal_id': ?id},
       );
     } on PostgrestException catch (error) {
-      debugPrint('Non-critical error: $error');
+      logNonCritical(error);
       throw _failure(error);
     } on Exception catch (error) {
       // A lost connection or a timeout is a connection message too.
-      debugPrint('Non-critical error: $error');
+      logNonCritical(error);
       throw const CoachProposalException(_connectionMessage);
     }
     return CoachProposal.listFromJson(value);
@@ -121,12 +121,12 @@ class SupabaseCoachProposalRepository implements CoachProposalRepository {
     try {
       value = await _client.rpc(function, params: params);
     } on PostgrestException catch (error) {
-      debugPrint('Non-critical error: $error');
+      logNonCritical(error);
       throw _failure(error);
     } on Exception catch (error) {
       // The answer may still have been written: the card reads the proposal
       // again after any error.
-      debugPrint('Non-critical error: $error');
+      logNonCritical(error);
       throw const CoachProposalException(_connectionMessage);
     }
     final answer = CoachProposalAnswer.fromJson(value);

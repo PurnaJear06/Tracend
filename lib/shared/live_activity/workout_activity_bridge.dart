@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:tracend/app/breadcrumbs.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// The native channel for the workout Live Activity
 /// (`ios/Runner/Native/WorkoutActivityBridge.swift`). The app calls
@@ -280,7 +281,7 @@ class MethodChannelWorkoutActivityBridge implements WorkoutActivityBridge {
       try {
         taken = await onPress(button);
       } catch (e) {
-        debugPrint('Non-critical error: live activity press failed: $e');
+        logNonCritical(e, 'live activity press failed');
       }
     }
     AppBreadcrumbs.workout(
@@ -301,7 +302,7 @@ class MethodChannelWorkoutActivityBridge implements WorkoutActivityBridge {
           await liveActivityChannel.invokeMethod<bool>(method, arguments) ==
           true;
     } on PlatformException catch (e) {
-      debugPrint('Non-critical error: live activity $method failed: ${e.code}');
+      logNonCritical(e, 'live activity $method failed');
     } on MissingPluginException {
       debugPrint('Non-critical error: live activity $method unavailable');
     }

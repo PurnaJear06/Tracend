@@ -1,6 +1,7 @@
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 class BodyMeasurement {
   const BodyMeasurement({
@@ -324,7 +325,7 @@ class SupabaseProgressRepository
         },
       );
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       await _client.storage.from('progress-photos').remove([key]);
       rethrow;
     }
@@ -349,7 +350,7 @@ class SupabaseProgressRepository
     try {
       await _client.storage.from('progress-photos').remove(set.objectKeys);
     } catch (e) {
-      debugPrint('Non-critical error: photo files not removed: $e');
+      logNonCritical(e, 'photo files not removed');
     }
   }
 

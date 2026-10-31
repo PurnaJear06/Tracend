@@ -1,5 +1,5 @@
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// Code the database stores for "another country": no national guidance
 /// applies, and the time zone is not used to guess one (`set_my_country_v1`).
@@ -101,7 +101,7 @@ class SupabaseRegionRepository implements RegionRepository {
         ),
       );
     } on PostgrestException catch (error) {
-      debugPrint('Non-critical error: country not saved: $error');
+      logNonCritical(error, 'country not saved');
       rethrow;
     }
   }

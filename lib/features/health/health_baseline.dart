@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/health/health_data_source.dart';
 import 'package:tracend/features/health/health_models.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// The athlete's usual months from Apple Health: monthly totals for the 11
 /// completed calendar months before this one, computed on the device and sent
@@ -309,7 +310,7 @@ class SupabaseHealthBaselineSource implements HealthBaselineSource {
     try {
       await load();
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
     }
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'package:tracend/features/account/notification_repository.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 
 /// A running rest between sets. The end time, not the remaining seconds, is
@@ -134,7 +135,7 @@ class RestTimerController {
     late final Future<void> tracked;
     tracked = call
         .catchError((Object e) {
-          debugPrint('Non-critical error: live activity update failed: $e');
+          logNonCritical(e, 'live activity update failed');
         })
         .whenComplete(() => _pending.remove(tracked));
     _pending.add(tracked);

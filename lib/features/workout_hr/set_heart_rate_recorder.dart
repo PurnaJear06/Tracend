@@ -9,6 +9,7 @@ import 'package:tracend/features/train/workout_events.dart';
 import 'package:tracend/features/workout_hr/heart_rate_reader.dart';
 import 'package:tracend/features/workout_hr/set_heart_rate_repository.dart';
 import 'package:tracend/features/workout_hr/set_heart_rate_summary.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// Turns a finished workout's heart-rate samples into one summary per set and
 /// saves the summaries (coaching platform Contract 4).
@@ -128,9 +129,7 @@ class SetHeartRateRecorder with WidgetsBindingObserver {
     try {
       session = await loadSession();
     } catch (e) {
-      debugPrint(
-        'Non-critical error: heart rate could not read the workout: $e',
-      );
+      logNonCritical(e, 'heart rate could not read the workout');
       return;
     }
     final job = session == null ? null : _Job.fromSession(session, _clock());
@@ -156,7 +155,7 @@ class SetHeartRateRecorder with WidgetsBindingObserver {
         job.lastEnd.add(setHeartRateTail + heartRatePointTolerance),
       );
     } catch (e) {
-      debugPrint('Non-critical error: heart rate could not be read: $e');
+      logNonCritical(e, 'heart rate could not be read');
       return job.tried(now, best: job.best);
     }
     final summaries = [
@@ -187,10 +186,10 @@ class SetHeartRateRecorder with WidgetsBindingObserver {
         );
       } catch (e) {
         if (e is PostgrestException && _refusedForGood(e)) {
-          debugPrint('Non-critical error: heart rate was refused: ${e.code}');
+          logNonCritical(e, 'heart rate was refused');
           return null;
         }
-        debugPrint('Non-critical error: heart rate waits to be sent: $e');
+        logNonCritical(e, 'heart rate waits to be sent');
         return now.isAfter(job.expiresAt)
             ? null
             : job.waiting(now.add(retryAfter));

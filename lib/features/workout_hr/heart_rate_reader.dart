@@ -1,6 +1,6 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:tracend/features/workout_hr/set_heart_rate_summary.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// The channel to `ios/Runner/Native/HeartRateReader.swift`. The app calls
 /// `requestAccess` and `readSamples`; the samples stay on the phone.
@@ -27,9 +27,9 @@ class MethodChannelHeartRateReader implements HeartRateReader {
     try {
       await heartRateChannel.invokeMethod<bool>('requestAccess');
     } on PlatformException catch (e) {
-      debugPrint('Non-critical error: heart-rate access request failed: $e');
+      logNonCritical(e, 'heart-rate access request failed');
     } on MissingPluginException catch (e) {
-      debugPrint('Non-critical error: heart-rate access request failed: $e');
+      logNonCritical(e, 'heart-rate access request failed');
     }
   }
 

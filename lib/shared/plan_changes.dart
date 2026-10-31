@@ -7,3 +7,9 @@ import 'package:flutter/foundation.dart';
 class PlanChanges extends ChangeNotifier {
   void announce() => notifyListeners();
 }
+
+/// Announces that a workout was logged outside Train (Today's "Save workout"
+/// on a session left unfinished), so Train reloads its week and history.
+class WorkoutLogChanges extends ChangeNotifier {
+  void announce() => notifyListeners();
+}

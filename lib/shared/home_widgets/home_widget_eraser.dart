@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
 
 /// Empties the widgets' snapshot and does not forget a failure.
@@ -40,7 +41,7 @@ class HomeWidgetEraser extends ChangeNotifier {
     try {
       return await _store.getBool(pendingKey) ?? false;
     } catch (e) {
-      debugPrint('Non-critical error: widget clear flag not read: $e');
+      logNonCritical(e, 'widget clear flag not read');
       return false;
     }
   }
@@ -57,7 +58,7 @@ class HomeWidgetEraser extends ChangeNotifier {
         await _store.setBool(pendingKey, true);
       }
     } catch (e) {
-      debugPrint('Non-critical error: widget clear flag not saved: $e');
+      logNonCritical(e, 'widget clear flag not saved');
     }
     return cleared;
   }
@@ -78,7 +79,7 @@ class HomeWidgetEraser extends ChangeNotifier {
     try {
       await _store.remove(pendingKey);
     } catch (e) {
-      debugPrint('Non-critical error: widget clear flag not saved: $e');
+      logNonCritical(e, 'widget clear flag not saved');
     }
   }
 }

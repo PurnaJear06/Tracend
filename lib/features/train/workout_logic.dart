@@ -37,6 +37,9 @@ class LoggedExercise {
   final bool assisted;
 }
 
+/// The longest workout the server records (3 hours).
+const maxWorkoutSeconds = 10800;
+
 /// Whether a workout that began at [startedAt] was left open from a day
 /// before [sessionDate]: it began on an earlier calendar day and more than
 /// [maxSeconds] ago. The server closes such a session as discarded

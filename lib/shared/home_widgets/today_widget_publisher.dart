@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
 import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
 import 'package:tracend/shared/home_widgets/today_widget_snapshot.dart';
@@ -81,7 +81,7 @@ class TodayWidgetPublisher {
           await (_preferences ?? SharedPreferencesAsync()).getBool(_key) ??
           false;
     } catch (e) {
-      debugPrint('Non-critical error: widget setting not read: $e');
+      logNonCritical(e, 'widget setting not read');
     }
     return _lockScreenNumbers ??= stored;
   }
@@ -98,7 +98,7 @@ class TodayWidgetPublisher {
     try {
       await (_preferences ?? SharedPreferencesAsync()).setBool(_key, shown);
     } catch (e) {
-      debugPrint('Non-critical error: widget setting not saved: $e');
+      logNonCritical(e, 'widget setting not saved');
     }
     if (!shown) unawaited(_activity.hideNumbers());
     final latest = _latest;

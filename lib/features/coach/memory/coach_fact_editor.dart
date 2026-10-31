@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/memory/coach_memory.dart';
 import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// The body of the add and edit sheet on the memory screen: a kind from the
 /// closed list and the athlete's own words. [save] runs when Save is tapped;
@@ -57,7 +58,7 @@ class _CoachFactEditorState extends State<CoachFactEditor> {
       await widget.save(_kind, _statement);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(() {
           _saving = false;

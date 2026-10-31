@@ -473,6 +473,15 @@ has no spaces except a leading `async ` or `new `, and a frame whose file is not
 module (`file:`, `ext:`, `https:`, `node:`, `jsr:`, `npm:`) is dropped; if the header cannot be
 located no frame is sent. A provider failure keeps its short code and HTTP status (for example
 `meal_vision_request_failed:503:overloaded`) only when the text is a code. Reporting never throws. A report may carry the account ID and device and app details, never name or email.
+In Flutter (`lib/app/sentry_scrubber.dart`) the scrubber also covers exception values, `extra`,
+contexts and breadcrumbs; the app's prints are not breadcrumbs (`enablePrintBreadcrumbs` is off);
+a `beforeBreadcrumb` drops console crumbs and cuts HTTP crumbs to method, status and address
+with the URL reduced to its origin and a route template (ids, numbers, filenames and everything
+after `/object/` are placeholders); an exception value is reduced to its type and code
+(`network` for a lost connection), never forwarded as text; an event that cannot be scrubbed is dropped. The app logs a handled failure
+with `logNonCritical` (type and code only, never `$e`: a Postgres error carries the failing row),
+and `reportNonCritical` sends such a failure to Sentry by type and code. A test forbids
+interpolating an exception into `debugPrint`.
 
 Audit events record access and changes using opaque IDs and action codes, not copies of sensitive
 content.
@@ -712,7 +721,9 @@ history.
   deletion cascades through user-owned PostgreSQL records and removes the invite and waitlist rows
   (section 7); a content-free completion receipt remains for 180 days.
 - Deleting from the app removes that athlete's local data (Apple Health sync state, an unsent
-  check-in, the open Coach thread) once the server confirms. Any device still holding a deleted
+  check-in, the open Coach thread, the saved plan) once the server confirms. The saved plan (the
+  last training hub, so the app opens with no connection) is tagged with the athlete's id, is
+  never read for another account, and is also removed on sign-out and when a session is refused. Any device still holding a deleted
   account's session signs out at its next launch or refresh. Within the access token's hour Auth
   reports `user_not_found` and the local data goes too; after it only a refused refresh token is
   known, so the per-athlete data stays on the device, readable by no other account.

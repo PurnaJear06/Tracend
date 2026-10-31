@@ -9,6 +9,7 @@ import 'package:tracend/features/coach/memory/coach_fact_editor.dart';
 import 'package:tracend/features/coach/memory/coach_memory.dart';
 import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
@@ -52,7 +53,7 @@ class _CoachMemoryScreenState extends State<CoachMemoryScreen> {
         });
       }
     } catch (e, stackTrace) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       unawaited(Sentry.captureException(e, stackTrace: stackTrace));
       if (mounted && _memory == null) setState(() => _failed = true);
     }
@@ -352,7 +353,7 @@ class _CoachMemoryScreenState extends State<CoachMemoryScreen> {
   }
 
   void _failure(String message, Object error, StackTrace stackTrace) {
-    debugPrint('Non-critical error: $error');
+    logNonCritical(error);
     unawaited(Sentry.captureException(error, stackTrace: stackTrace));
     if (!mounted) return;
     TracendToast.show(

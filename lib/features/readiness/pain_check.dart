@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/readiness/day_adjustment.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// The pain check (B5): where it hurts, how strong, and the red-flag
 /// questions. The outcome of a report is worked out by deterministic rules,
@@ -289,7 +290,7 @@ class SupabasePainCheckRepository implements PainCheckRepository {
         'idempotency_key': report.idempotencyKey,
       });
     } on PostgrestException catch (error) {
-      debugPrint('Non-critical error: pain check: ${error.code}');
+      logNonCritical(error, 'pain check');
       throw PainCheckException(
         error.code == '22023'
             ? PainCheckFailure.refused

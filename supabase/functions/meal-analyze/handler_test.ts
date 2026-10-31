@@ -175,3 +175,44 @@ Deno.test("an unknown consent state sends nothing", async () => {
   assertEquals(response.status, 503);
   assertEquals(events, []);
 });
+
+Deno.test("an error that quotes the answer reaches the logs and Sentry as a fixed code", async () => {
+  const reported: string[] = [];
+  const logged: Record<string, unknown>[] = [];
+  const store: MealAnalyzeStore = {
+    consent: () => Promise.resolve({ granted: true, provider: "groq" }),
+    reserveBudget: () => Promise.resolve(true),
+    keepBudget: () => {},
+    loadDraft: () =>
+      Promise.resolve({ objectKey: `${user}/meal/${mealId}.jpg`, contentType: "image/jpeg" }),
+    download: () => Promise.resolve(new Uint8Array([1])),
+    recordUsage: () => Promise.resolve(),
+    persistCandidates: () => Promise.resolve(true),
+    discardDraft: () => Promise.resolve(true),
+  };
+  const response = await handleMealAnalyze(body, {
+    userId: user,
+    provider: "groq",
+    analyze: () =>
+      Promise.reject(
+        new SyntaxError(`Unexpected token 'S', "Sorry, SECRET-DISH" is not valid JSON`),
+      ),
+    store,
+    log: { info: () => {}, warn: () => {}, error: (_event, fields) => logged.push(fields ?? {}) },
+    report: (error) => reported.push(error instanceof Error ? error.message : String(error)),
+    now: () => 0,
+  });
+  assertEquals(response.status, 503);
+  assertEquals(reported, ["meal_vision_unexpected_error"]);
+  assertEquals(logged[0].detail, "meal_vision_unexpected_error");
+  assertEquals(JSON.stringify(logged).includes("SECRET"), false);
+});
+
+Deno.test("a billed failure still records its usage when its code is fixed", async () => {
+  const { events, run } = harness();
+  const response = await run(() =>
+    Promise.reject(new MealVisionBilledError("meal_vision_response_invalid", usage))
+  );
+  assertEquals(response.status, 503);
+  assertEquals(events, ["reserve", "usage:200", "report"]);
+});

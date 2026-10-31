@@ -6,6 +6,7 @@ import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/readiness/pain_check.dart';
 import 'package:tracend/features/readiness/pain_report_queue.dart';
 import 'package:tracend/features/readiness/safety_acknowledgements.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// How a report the athlete just made fared on its way to Tracend.
 @immutable
@@ -130,7 +131,7 @@ class PainReporting {
       );
     } on Object catch (error) {
       // Whatever went wrong, the report is kept and the answer stands.
-      debugPrint('Non-critical error: pain report waits: $error');
+      logNonCritical(error, 'pain report waits');
       await _keep(report);
       return PainDelivery(outcome: local, sent: false);
     }
@@ -149,7 +150,7 @@ class PainReporting {
       await (await _queue()).remove(report.idempotencyKey);
       unawaited(readiness?.load());
     } on Exception catch (error) {
-      debugPrint('Non-critical error: sent pain report kept: $error');
+      logNonCritical(error, 'sent pain report kept');
     }
   }
 
@@ -161,7 +162,7 @@ class PainReporting {
     try {
       await (await _queue()).add(report, refused: refused, tooOld: tooOld);
     } on Exception catch (error) {
-      debugPrint('Non-critical error: pain report not kept: $error');
+      logNonCritical(error, 'pain report not kept');
     }
   }
 
@@ -173,7 +174,7 @@ class PainReporting {
       if (state.sent > 0) unawaited(readiness?.load());
       return state;
     } on Exception catch (error) {
-      debugPrint('Non-critical error: pain reports not drained: $error');
+      logNonCritical(error, 'pain reports not drained');
       return const PainQueueState();
     }
   }
@@ -200,7 +201,7 @@ class PainReporting {
         userId: userId,
       ).acknowledge(SafetyAcknowledgements.keyOf(localDate, route));
     } on Exception catch (error) {
-      debugPrint('Non-critical error: referral not remembered: $error');
+      logNonCritical(error, 'referral not remembered');
     }
   }
 }

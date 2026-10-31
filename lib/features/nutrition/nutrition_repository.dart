@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/consent/photo_ai_notice.dart';
 import 'package:tracend/shared/shared_reads.dart';
 import 'package:uuid/uuid.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 export 'package:tracend/features/consent/photo_ai_notice.dart';
 
@@ -475,7 +476,7 @@ class SupabaseNutritionRepository
         await _client.rpc('delete_my_meal', params: {'target_meal_id': id});
       }
     } catch (error) {
-      debugPrint('Non-critical error: $error');
+      logNonCritical(error);
     }
   }
 

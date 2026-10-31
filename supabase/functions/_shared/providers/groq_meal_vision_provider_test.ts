@@ -218,3 +218,24 @@ Deno.test("an unusable Groq answer still reports its usage", async () => {
   assertEquals(error.usage.inputUnits, 1200);
   assertEquals(error.usage.outputUnits, 300);
 });
+
+Deno.test("Groq meal adapter never carries the model's text in a parse failure", async () => {
+  const error = await assertRejects(
+    () =>
+      analyzeGroqMealImage(
+        new Uint8Array([1, 2, 3]),
+        "image/jpeg",
+        () =>
+          Promise.resolve(
+            new Response(JSON.stringify({
+              choices: [{ message: { content: "Sorry, SECRET-DISH-TEXT is not JSON" } }],
+              usage: { prompt_tokens: 12, completion_tokens: 20 },
+            })),
+          ),
+        environment({}),
+      ),
+    MealVisionBilledError,
+  );
+  assertEquals(error.message, "meal_vision_response_invalid");
+  assertEquals(error.usage.outputUnits, 20);
+});

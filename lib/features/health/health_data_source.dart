@@ -1,8 +1,8 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:health/health.dart';
 import 'package:tracend/features/health/health_models.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 abstract interface class HealthDataSource {
   Future<bool> requestReadAccess();
@@ -69,7 +69,7 @@ class HealthKitDataSource implements HealthDataSource {
     try {
       await _configure();
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       _lastConfigureError = e.toString();
       return false;
     }
@@ -79,7 +79,7 @@ class HealthKitDataSource implements HealthDataSource {
         permissions: List.filled(_types.length, HealthDataAccess.READ),
       );
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       return false;
     }
   }
@@ -150,7 +150,7 @@ class HealthKitDataSource implements HealthDataSource {
             ),
           );
         } catch (e) {
-          debugPrint('Non-critical error: $e');
+          logNonCritical(e);
         }
       }
       if (successfulQueries == 0) {
@@ -168,7 +168,7 @@ class HealthKitDataSource implements HealthDataSource {
         samples: samples,
       );
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       return HealthReadResult(
         requestedMetrics: metrics,
         returnedMetrics: {},

@@ -38,6 +38,8 @@ import 'package:tracend/features/today/widgets/today_session_card.dart';
 import 'package:tracend/features/today/widgets/today_tiles.dart';
 import 'package:tracend/features/today/widgets/unfinished_workout_card.dart';
 import 'package:tracend/features/today/widgets/your_week_card.dart';
+import 'package:tracend/shared/app_lifecycle.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 import 'package:tracend/shared/plan_changes.dart';
@@ -71,6 +73,7 @@ class TodayScreen extends StatefulWidget {
     this.widgetTaps,
     this.dayAdjustment,
     this.onTalkToCoach,
+    this.workoutLogs,
     this.pain,
     this.userId,
     this.clock = DateTime.now,
@@ -130,6 +133,10 @@ class TodayScreen extends StatefulWidget {
   /// the readiness card).
   final ValueChanged<String>? onTalkToCoach;
 
+  /// Told when Today saves a workout the athlete left unfinished, so Train
+  /// reloads its week.
+  final WorkoutLogChanges? workoutLogs;
+
   /// Sends the pain reports made during a workout and keeps the ones that
   /// cannot go yet. Today sends them again whenever it comes forward and says
   /// so when one is waiting or was refused.
@@ -146,7 +153,7 @@ class TodayScreen extends StatefulWidget {
   State<TodayScreen> createState() => _TodayScreenState();
 }
 
-class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
+class _TodayScreenState extends State<TodayScreen> {
   late Future<HealthHistory> _healthHistory;
   late Future<DailyBrief> _brief;
   late Future<NutritionTargets?> _targets;
@@ -214,11 +221,16 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     }
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) return;
+  late final ResumeObserver _resume = ResumeObserver(_onResume);
+
+  /// Back at the front: reload what is old, pull the night's Apple Health
+  /// data if the last sync was a while ago, and deliver check-ins that waited
+  /// for a connection. A pain report must reach Tracend within a day, so they
+  /// are tried again at once.
+  void _onResume() {
+    if (!mounted) return;
     _reloadIfStale();
-    // A pain report must reach Tracend within a day: try again at once.
+    unawaited(_autoSyncHealthIfNeeded());
     unawaited(_replayPendingCheckIn());
   }
 
@@ -245,6 +257,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         now.difference(loadedAt) > _staleBriefAfter ||
         brief.localDate != _dateKey(_briefDay());
     if (!stale) return;
+    _reloadHealth();
     setState(() {
       _targets = widget.nutrition.loadTargets();
       _meals = _loadMeals();
@@ -255,7 +268,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    _resume.detach();
     widget.widgetTaps?.removeListener(_reloadIfStale);
     widget.aiConsent?.removeListener(_consentChanged);
     widget.planChanges?.removeListener(_planChanged);
@@ -275,7 +288,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
+    _resume.attach();
     widget.widgetTaps?.addListener(_reloadIfStale);
     widget.aiConsent?.addListener(_consentChanged);
     widget.planChanges?.addListener(_planChanged);
@@ -311,7 +324,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         setState(() => _unfinished = workout);
       }
     } catch (error) {
-      debugPrint('Non-critical error: unfinished workout: $error');
+      logNonCritical(error, 'unfinished workout');
     }
   }
 
@@ -336,6 +349,8 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         _unfinished = null;
         _brief = _loadBrief();
       });
+      // Train counts the saved workout in its week and its history.
+      widget.workoutLogs?.announce();
       TracendToast.show(
         context,
         '${workout.name} saved to ${dayAndDate(workout.localDate)}.',
@@ -349,7 +364,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         icon: CupertinoIcons.exclamationmark_triangle,
       );
     } catch (error) {
-      debugPrint('Non-critical error: unfinished workout not saved: $error');
+      logNonCritical(error, 'unfinished workout not saved');
       if (!mounted) return;
       TracendToast.show(
         context,
@@ -394,9 +409,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         icon: CupertinoIcons.exclamationmark_triangle,
       );
     } catch (error) {
-      debugPrint(
-        'Non-critical error: unfinished workout not discarded: $error',
-      );
+      logNonCritical(error, 'unfinished workout not discarded');
       if (!mounted) return;
       TracendToast.show(
         context,
@@ -412,42 +425,67 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     unawaited(widget.dayAdjustment?.load());
   }
 
+  bool _replaying = false;
+
   /// Deliver any check-in queued while offline: the sheet persists the
-  /// envelope before its RPC, and this replays it with the same idempotency
+  /// envelope before its RPC, and this replays each with the same idempotency
   /// key (the server deduplicates). The stored answer day's date is sent as
   /// recorded — a check-in belongs to the day it was answered, never
-  /// re-dated to today. Silent by design: on failure the envelope stays
-  /// stored and the next launch retries; on success the brief reloads
-  /// because the check-in now colors today's coaching context.
+  /// re-dated to today. It runs at launch and each time the app comes back
+  /// to the front. Silent while offline: the envelope stays stored and the
+  /// next resume or launch retries. A check-in the server refuses for good is
+  /// dropped, reported by its code, and the athlete is told. On success the
+  /// brief reloads because the check-in now colors today's coaching context.
   Future<void> _replayPendingCheckIn() async {
-    if (!widget.environment.hasSupabaseConfiguration) return;
+    if (!widget.environment.hasSupabaseConfiguration || _replaying) return;
+    _replaying = true;
     try {
       final queue = await _resolveQueue();
-      if (queue != null) {
-        final outcome = await queue.replay(_replaySender);
-        if (outcome == CheckInReplayOutcome.delivered && mounted) {
-          setState(() {
-            _brief = _loadBrief();
-          });
-          // The replayed check-in is what today's call rests on, and it may
-          // send the athlete to a professional: read it and say so, as after
-          // an online save.
-          final readiness = widget.dayAdjustment;
-          if (readiness != null) {
-            await readiness.load();
-            if (mounted) await _showSafetyOnce();
-          }
-          // The replayed check-in is new evidence: today's decision may have
-          // been generated without it and must be refreshed.
-          await _refreshDecisionAfterEvidence();
-        }
-      }
+      if (queue != null) await _replayQueue(queue);
     } on Exception {
-      // Keep the envelope; retried on next launch.
+      // Keep the envelopes; retried on the next resume or launch.
+    } finally {
+      _replaying = false;
     }
     // Pain reports made in a workout while offline go the same way.
     await widget.pain?.drain();
     await _refreshPainNotice();
+  }
+
+  /// Sends what [queue] holds, tells the athlete of a check-in dropped for
+  /// good, and takes the delivered ones into today's call.
+  Future<void> _replayQueue(CheckInQueue queue) async {
+    final replay = await queue.replay(_replaySender);
+    for (final refusal in replay.refused) {
+      reportNonCritical(refusal.error, null, 'Queued check-in refused');
+    }
+    if (replay.refused.isNotEmpty && mounted) {
+      TracendToast.show(
+        context,
+        replay.refused.length == 1
+            ? 'The check-in from ${_refusedDay(replay.refused.single)} '
+                  'could not be saved and was dropped.'
+            : '${replay.refused.length} earlier check-ins could not be saved '
+                  'and were dropped.',
+        icon: CupertinoIcons.exclamationmark_triangle,
+      );
+    }
+    if (replay.deliveredAny && mounted) {
+      setState(() {
+        _brief = _loadBrief();
+      });
+      // The replayed check-in is what today's call rests on, and it may send
+      // the athlete to a professional: read it and say so, as after an
+      // online save.
+      final readiness = widget.dayAdjustment;
+      if (readiness != null) {
+        await readiness.load();
+        if (mounted) await _showSafetyOnce();
+      }
+      // The replayed check-in is new evidence: today's decision may have
+      // been generated without it and must be refreshed.
+      await _refreshDecisionAfterEvidence();
+    }
   }
 
   /// Reads what is waiting or refused, in the check-in queue and among the
@@ -471,7 +509,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         }
       }
     } on Exception catch (error) {
-      debugPrint('Non-critical error: pain notice not read: $error');
+      logNonCritical(error, 'pain notice not read');
     }
     if (!mounted) return;
     if (waiting != _painWaiting ||
@@ -494,7 +532,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       await (await _resolveQueue())?.acknowledgeRefusedPain(_replaySender);
       await widget.pain?.dismissRefused();
     } on Exception catch (error) {
-      debugPrint('Non-critical error: refused pain report kept: $error');
+      logNonCritical(error, 'refused pain report kept');
     }
     if (mounted) setState(() => _painBusy = false);
     await _refreshPainNotice();
@@ -505,6 +543,11 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     setState(() => _painBusy = true);
     await _replayPendingCheckIn();
     if (mounted) setState(() => _painBusy = false);
+  }
+
+  String _refusedDay(CheckInRefusal refusal) {
+    final day = DateTime.tryParse(refusal.localDate);
+    return day == null ? refusal.localDate : dayAndDate(day);
   }
 
   Future<bool> _replaySender(
@@ -557,7 +600,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
           : const NutritionSchedule(title: '', items: []);
       return (schedule: schedule, meals: meals);
     } catch (error) {
-      debugPrint('Today: meals failed: $error');
+      logNonCritical(error, 'Today: meals failed');
       return (schedule: null, meals: const <MealEntry>[]);
     }
   }
@@ -726,17 +769,22 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     unawaited(_loadUnfinished());
   }
 
+  bool _autoSyncing = false;
+
   Future<void> _autoSyncHealthIfNeeded() async {
-    if (!widget.environment.hasSupabaseConfiguration) return;
+    if (!widget.environment.hasSupabaseConfiguration || _autoSyncing) return;
+    _autoSyncing = true;
     try {
       final status = await widget.health.loadStatus();
       final last = status.lastSuccessfulSync;
       if (last == null) return; // never connected -> manual via profile only
-      if (DateTime.now().difference(last) < _autoSyncInterval) return;
+      if (widget.clock().difference(last) < _autoSyncInterval) return;
       await widget.health.sync();
       if (mounted) _reloadBriefAndHealth();
     } catch (_) {
       // Silent: the hero sync button stays available for an explicit retry.
+    } finally {
+      _autoSyncing = false;
     }
   }
 
@@ -908,7 +956,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     try {
       delivered = await pending;
     } on Exception catch (error) {
-      debugPrint('Non-critical error: check-in send ended badly: $error');
+      logNonCritical(error, 'check-in send ended badly');
       delivered = false;
     }
     if (!mounted) return;
@@ -934,7 +982,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       final preferences = await SharedPreferences.getInstance();
       return SafetyAcknowledgements(preferences, userId: widget.userId);
     } on Exception catch (error) {
-      debugPrint('Non-critical error: referrals not remembered: $error');
+      logNonCritical(error, 'referrals not remembered');
       return null;
     }
   }
@@ -998,7 +1046,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       try {
         opening = await widget.brief.load(DateTime.parse(serverDay));
       } catch (e) {
-        debugPrint('Non-critical error: the server day brief not loaded: $e');
+        logNonCritical(e, 'the server day brief not loaded');
         if (mounted) {
           TracendToast.show(
             context,
@@ -1018,7 +1066,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       try {
         workout = await widget.workouts?.loadTodayWorkout();
       } catch (e) {
-        debugPrint('Non-critical error: $e');
+        logNonCritical(e);
       }
     }
     if (workout == null || !mounted) return;
@@ -1090,7 +1138,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
             ? '${_greeting(now)}, ${_formattedDate(now)}'
             : _formattedDate(now),
         onRefresh: _syncEverything,
-        trailing: _AccountButton(onPressed: _openAccount),
+        trailing: AccountButton(onPressed: _openAccount),
         children: [
           PainNoticeCard(
             waiting: _painWaiting,
@@ -1200,8 +1248,8 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
 
 /// The account control in the large title: a round avatar in a 44pt
 /// target, named "Open account" for VoiceOver and as its tooltip.
-class _AccountButton extends StatelessWidget {
-  const _AccountButton({required this.onPressed});
+class AccountButton extends StatelessWidget {
+  const AccountButton({required this.onPressed, super.key});
 
   final VoidCallback onPressed;
 

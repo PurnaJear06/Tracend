@@ -384,6 +384,36 @@ on any refusal, bounds the deletion wait with server confirmation and **Check ag
 pending check-in per athlete, and lets a stopped deletion be claimed again (additive migration).
 Needs a reinstall. See [`docs/handoff/account-session.md`](./handoff/account-session.md).
 
+Resume and day rollover, Sentry privacy (2026-10-31, branch `claude/resume-rollover-sentry`, in
+review): QA audit groups B and C. Train, Meals, Progress, Coach and Today refresh on resume and
+when their tab is opened again, follow a new day, and Train's Start never sends an old day; the
+check-in queue is keyed by day and replays on resume; the Flutter Sentry scrubber now covers
+exception values, extra and breadcrumbs and the app no longer logs exception text; the meal-vision
+paths throw fixed codes. App only, needs a reinstall. See
+[`docs/handoff/account-session.md`](./handoff/account-session.md).
+
+Offline cold start (2026-10-31, branch `claude/offline-cold-start`, stacked on #184, in review):
+QA finding M-G5, resolved by the owner in favour of ARCHITECTURE (cache for offline). The last
+loaded training hub is kept per athlete on the phone; a launch with a stored session and no
+connection opens the app from it, on Train, with an "Offline. Showing your saved plan from <date>"
+note, and the workout can be started, logged and finished from it (the start and finish wait on the
+phone and are sent when the connection returns). Today, Coach, Meals and Progress say they need a
+connection. No session means sign-in; a session with no saved plan still shows "Connection
+needed". App only, needs a reinstall. See [`docs/handoff/account-session.md`](./handoff/account-session.md).
+Round 1 review fixes: a workout started offline against a plan that was copied meanwhile (new
+workout ids) moves to its copy and is sent, or is kept with a clear message; waiting finishes are
+sent by the app when it reconnects, without opening the workout; Train offline says what was last
+known about sore areas, or that holds cannot be checked offline; a sign-out during a hub load can
+no longer bring the saved plan back; Progress never shows the saved copy.
+Round 2 review fixes: an account switch during a hung workout start never moves or sends the
+earlier athlete's workout in the new account; a sync refused because the workout was finished
+meanwhile opens it as completed; a finish with no match in the plan is kept on the phone and reported;
+sore-area notes are saved only for the athlete they came for.
+Round 3 review fixes (after merging #181 to #183): an earlier day's unfinished sets are sent on that
+day, never today's; a stalled send no longer holds the workout screen (bounded wait, no second
+writer); Train on a saved plan hides the lighter-week card and cardio row; an interrupted plan-copy
+move keeps the saved finish.
+
 ## Shipped baseline
 
 - iOS-only Flutter app backed by Supabase Auth, PostgreSQL/RLS, Storage, and nine Edge Functions.

@@ -711,7 +711,8 @@ every breadcrumb: any key starting `pain_`, `joint_` or `red_flag`, and `area`, 
 `severity`, `safety_route`, `hold_outcome`, `red_flags`, `followups`, `cleared_by_clinician`,
 `range_note_code(s)`, `swap_to_name`, `swap_to_slug`. The same words, the ten red-flag codes and the
 database's "Failing row contains (...)" text are replaced inside messages, exception messages and
-strings (`test/sentry_scrubber_test.dart`).
+strings (`test/sentry_scrubber_test.dart`). A value after a sensitive or pain key in text goes whole:
+an unquoted multi-word value to the end of the line, a quoted one up to its unescaped closing quote.
 
 Edge Functions report exceptions through `captureException` in `coach-chat`, `meal-analyze`,
 `meal-media-retention`, `onboarding-plan`, `physique-check` and `privacy-delete-account`. Coach
