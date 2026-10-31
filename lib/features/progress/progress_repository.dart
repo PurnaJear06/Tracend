@@ -109,7 +109,12 @@ abstract interface class ProgressRepository {
 
   /// Whether the athlete already agreed to private photo storage.
   Future<bool> hasPhotoStorageConsent();
-  Future<void> grantPhotoStorageConsent();
+
+  /// Records the athlete's agreement to private photo storage. [aiOnRequest]
+  /// is the notice that says photos reach an AI model only through a
+  /// physique check they choose; without it, the notice that they never do.
+  /// Each notice has its own version, so the record shows which one was agreed.
+  Future<void> grantPhotoStorageConsent({bool aiOnRequest = false});
   Future<String> beginPhotoSet();
   Future<void> uploadPhoto({
     required String setId,
@@ -259,13 +264,15 @@ class SupabaseProgressRepository
   }
 
   @override
-  Future<void> grantPhotoStorageConsent() async {
+  Future<void> grantPhotoStorageConsent({bool aiOnRequest = false}) async {
     final user = _client.auth.currentUser;
     if (user == null) throw StateError('Authentication required.');
     await _client.from('consent_records').insert({
       'user_id': user.id,
       'consent_type': 'progress_photo_storage',
-      'notice_version': 'progress-storage-v1',
+      'notice_version': aiOnRequest
+          ? 'progress-storage-v2-ai-on-request'
+          : 'progress-storage-v1',
       'action': 'granted',
       'source': 'ios_app',
     });
@@ -450,7 +457,7 @@ class FixtureProgressRepository implements ProgressRepository {
   @override
   Future<bool> hasPhotoStorageConsent() async => false;
   @override
-  Future<void> grantPhotoStorageConsent() =>
+  Future<void> grantPhotoStorageConsent({bool aiOnRequest = false}) =>
       throw StateError('Configure Supabase.');
   @override
   Future<String> beginPhotoSet() => throw StateError('Configure Supabase.');

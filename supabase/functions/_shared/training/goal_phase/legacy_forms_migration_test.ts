@@ -33,11 +33,8 @@ Deno.test("nothing in the migration grants a function to anyone", () => {
   assert(!/grant\s+execute/i.test(sql), "the migration grants no function");
 });
 
-Deno.test("the app role loses both writes to onboarding_state, and only that column", () => {
-  assertStringIncludes(
-    sql.replace(/\s+/g, " "),
-    "revoke insert (onboarding_state), update (onboarding_state) on public.user_accounts from authenticated;",
-  );
+Deno.test("the app role keeps its onboarding_state grant while older builds still write it", () => {
+  assert(!/revoke[^;]*\(onboarding_state\)/.test(sql), "no column revoke in this migration");
 });
 
 Deno.test("the trigger moves only a not_started account, as a private security definer", () => {

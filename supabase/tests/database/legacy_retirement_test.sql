@@ -1,5 +1,5 @@
 begin;
-select plan(23);
+select plan(22);
 
 insert into auth.users(id, role) values
   ('c3100000-0000-4000-8000-000000000001', 'authenticated'),
@@ -43,12 +43,11 @@ select ok(has_function_privilege('service_role',
 select ok(has_function_privilege('authenticated', 'public.confirm_analyzed_meal(uuid, jsonb)', 'execute'),
   'meal confirmation stays open through confirm_analyzed_meal');
 
--- The app role can no longer write the onboarding state; other account columns are unchanged
--- (the time zone is written through a function, not a column grant).
-select ok(not has_column_privilege('authenticated', 'public.user_accounts', 'onboarding_state', 'update'),
-  'the app cannot update onboarding_state');
-select ok(not has_column_privilege('authenticated', 'public.user_accounts', 'onboarding_state', 'insert'),
-  'or insert it');
+-- The app role keeps its write to the onboarding state until no installed build writes it (a later
+-- cleanup migration revokes it); other account columns are unchanged (the time zone is written
+-- through a function, not a column grant).
+select ok(has_column_privilege('authenticated', 'public.user_accounts', 'onboarding_state', 'update'),
+  'older builds can still mark onboarding started');
 select ok(has_column_privilege('authenticated', 'public.user_accounts', 'unit_system', 'update'),
   'but still updates the unit system');
 select ok(has_column_privilege('authenticated', 'public.user_accounts', 'onboarding_state', 'select'),

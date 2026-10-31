@@ -799,7 +799,7 @@ class _Repository implements ProgressRepository {
   @override
   Future<bool> hasPhotoStorageConsent() async => photoConsentGranted;
   @override
-  Future<void> grantPhotoStorageConsent() async {
+  Future<void> grantPhotoStorageConsent({bool aiOnRequest = false}) async {
     consentGrants++;
     photoConsentGranted = true;
   }

@@ -6,9 +6,12 @@
 --    check) and confirms meals with confirm_analyzed_meal; nothing calls the old ones.
 --    persist_coach_preference has no caller in the app or any Edge Function (the service role keeps
 --    its own grant).
--- 2. user_accounts.onboarding_state can no longer be written by the signed-in role. Approval sets
---    `completed` inside respond_to_onboarding_proposal_v2, and saving the first onboarding draft now
---    moves `not_started` to `in_progress` in the database, so the app's second write goes away.
+-- 2. Saving the first onboarding draft now moves `not_started` to `in_progress` in the database, so
+--    the app's second write goes away (approval already sets `completed` inside
+--    respond_to_onboarding_proposal_v2). The signed-in role keeps its column grant on
+--    onboarding_state for now: builds from before this change still write it on every draft save,
+--    so revoking it here would stop an athlete onboarding on such a build. A later cleanup migration
+--    revokes it once no installed build writes the column.
 -- 3. Body-fat targets get a sex-aware floor, the same style as the weight floor: 5% for men, and
 --    12% for women and for anyone whose sex is not known (the more conservative figure). Both goal
 --    target functions return it as min_target_body_fat_pct (schema_version 1.1).
@@ -27,10 +30,7 @@ revoke all on function public.confirm_fixture_meal_v2(uuid, jsonb)
 revoke all on function public.persist_coach_preference(uuid, text, text, text, text)
   from public, anon, authenticated;
 
--- 2. onboarding_state is the database's to set --------------------------------------------------
-
-revoke insert (onboarding_state), update (onboarding_state) on public.user_accounts
-  from authenticated;
+-- 2. The database marks onboarding started ---------------------------------------------------
 
 create function private.mark_onboarding_started()
 returns trigger language plpgsql security definer set search_path = '' as $$

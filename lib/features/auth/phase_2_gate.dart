@@ -228,15 +228,20 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     return run;
   }
 
-  /// Removes the daily and weekly reminders and the rest alert from this
-  /// phone. The athlete's choices stay on the server, and the next sign-in
-  /// puts them back (`_restoreReminders`).
+  /// Removes the daily and weekly reminders from this phone. The athlete's
+  /// choices stay on the server, and the next sign-in puts them back
+  /// (`_restoreReminders`). The rest-timer choice is kept: it lives only on
+  /// this phone, so turning it off here would lose it for good.
   Future<void> _cancelReminders() => _inReminderOrder(() async {
     try {
+      var rest = false;
+      try {
+        rest = (await widget.notifications.load()).restTimerAlertsEnabled;
+      } catch (_) {}
       await widget.notifications.configure(
         dailyCheckIn: false,
         weeklyReview: false,
-        restTimerAlertsEnabled: false,
+        restTimerAlertsEnabled: rest,
       );
     } catch (e) {
       debugPrint('Non-critical error: reminders not cancelled: $e');

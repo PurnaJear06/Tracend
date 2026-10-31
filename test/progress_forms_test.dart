@@ -36,6 +36,7 @@ class _Progress implements ProgressRepository {
   final bool failConsentRead;
   final bool failSave;
   int grants = 0;
+  final grantedAiOnRequest = <bool>[];
   int consentReads = 0;
   int acknowledged = 0;
   BodyMeasurement? saved;
@@ -73,8 +74,9 @@ class _Progress implements ProgressRepository {
   }
 
   @override
-  Future<void> grantPhotoStorageConsent() async {
+  Future<void> grantPhotoStorageConsent({bool aiOnRequest = false}) async {
     grants++;
+    grantedAiOnRequest.add(aiOnRequest);
     consented = true;
   }
 
@@ -214,6 +216,32 @@ void main() {
         );
       },
     );
+
+    for (final (label, physique, aiOnRequest) in [
+      (
+        'without physique checks',
+        const FixturePhysiqueCheckRepository(),
+        false,
+      ),
+      (
+        'with physique checks',
+        const _Physique('Anthropic') as PhysiqueCheckRepository,
+        true,
+      ),
+    ]) {
+      testWidgets('the notice agreed $label is recorded under its version', (
+        tester,
+      ) async {
+        final repository = _Progress();
+        await _pump(tester, repository, physique: physique);
+        await _reveal(tester, find.text('Take progress photos'));
+        await tester.tap(find.text('Take progress photos'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('I agree and continue'));
+        await tester.pumpAndSettle();
+        expect(repository.grantedAiOnRequest, [aiOnRequest]);
+      });
+    }
 
     testWidgets('a physique-check account is told the truth about AI', (
       tester,

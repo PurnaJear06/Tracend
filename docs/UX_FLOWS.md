@@ -193,8 +193,9 @@ sign-in**.
    After onboarding the same four questions reopen from **Account › Plan › Health check**
    (`record_screening_v1` again). The saved answers show first, with the moderate-effort note when
    it applies; changing an answer clears the result until **Save answers**. Only the athlete's own
-   updated answers lift the cap: Tracend never lifts it for them, and a see-a-professional result
-   holds until their own answers say a professional has cleared them. A plan already approved keeps
+   updated answers lift the cap or a see-a-professional result, and the outcome is worked out from
+   the current answers exactly as in onboarding (AI_SAFETY_SPEC §7): Tracend never lifts either for
+   them. A plan already approved keeps
    its effort until it is next changed; new plans and Coach proposals use the new outcome.
 7. Choose whether to allow AI coaching. **Allow AI coaching** and **Not now** are both valid
    answers.

@@ -535,7 +535,9 @@ class _ProgressScreenState extends State<ProgressScreen> {
     );
     if (!accepted || !mounted) return;
     try {
-      await widget.repository.grantPhotoStorageConsent();
+      await widget.repository.grantPhotoStorageConsent(
+        aiOnRequest: physique != false,
+      );
       _hasConsent = true;
     } catch (e) {
       debugPrint('Non-critical error: $e');

@@ -75,11 +75,15 @@ class _Server {
 class _FakeNotifications implements NotificationRepository {
   final configured = <({bool daily, bool weekly, bool rest})>[];
 
+  /// The rest-timer choice this phone holds.
+  var rest = false;
+
   @override
-  Future<NotificationPreferences> load() async => const NotificationPreferences(
+  Future<NotificationPreferences> load() async => NotificationPreferences(
     authorizationStatus: 'authorized',
     dailyCheckIn: false,
     weeklyReview: false,
+    restTimerAlertsEnabled: rest,
   );
 
   @override
@@ -88,6 +92,7 @@ class _FakeNotifications implements NotificationRepository {
     required bool weeklyReview,
     required bool restTimerAlertsEnabled,
   }) async {
+    rest = restTimerAlertsEnabled;
     configured.add((
       daily: dailyCheckIn,
       weekly: weeklyReview,
@@ -720,6 +725,20 @@ void main() {
 
       expect(notifications.configured, [
         (daily: false, weekly: false, rest: false),
+      ]);
+    });
+
+    testWidgets('signing out keeps the rest-timer choice, which lives only '
+        'on this phone', (tester) async {
+      await openSignedIn(tester);
+      notifications.rest = true;
+      notifications.configured.clear();
+
+      await tester.tap(find.text('Sign out'));
+      await settle(tester);
+
+      expect(notifications.configured, [
+        (daily: false, weekly: false, rest: true),
       ]);
     });
 
