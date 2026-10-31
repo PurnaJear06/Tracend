@@ -43,7 +43,14 @@ cutover runbook (checked 2026-11-01). One line per stream; the lead updates thes
   until the cutover. Cutover readiness checked: Coach chat and daily decision are on Anthropic;
   meal photos, the physique check and onboarding need only the owner's evals, secrets and (for the
   two photo features) new notices, as the runbook's "State on 2026-11-01" lists. Barcode lookup is a
-  later step. Handoff:
+  later step. Coach standing state (2026-11-01, branch `claude/coach-standing-state`, migration `20261101200000`, in review): a
+  training break is approved state (`training_pauses`, an overlay; a Coach `training_pause` card or
+  "Taking a break" on Today and Train; End break early; undo), one availability helper read by
+  Today, Train, the readiness card ("Rest day: you said you can't train today"), the daily decision
+  (`rest_as_chosen`, never PROCEED_AS_PLANNED on such a day) and a provider-neutral `standing_state`
+  block always in the Coach's context; the gateway file now shows 3 check-ins and the last 2 exchanges
+  of other chats, so a turn is smaller. Brief 1.9, hub 1.10. The dead `coach_session_summaries`
+  writer is gone (table kept for a two-step drop). Handoff:
   [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
   sources; nothing reads it until B2). Phase 3 round 1 merged (2026-10-17): B2 templates and

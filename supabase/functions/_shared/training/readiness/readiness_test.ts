@@ -79,7 +79,7 @@ Deno.test("the words the athlete reads never diagnose or name a condition", () =
   );
 });
 
-Deno.test("every trigger has words, and the table accepts exactly the codes the rules produce", () => {
+Deno.test("every trigger has words, and the table accepts exactly the codes the rules produce", async () => {
   const table = migration.match(
     /triggers text\[\] not null check \(triggers <@ array\[([^\]]*)\]/s,
   );
@@ -95,7 +95,20 @@ Deno.test("every trigger has words, and the table accepts exactly the codes the 
   // cannot train, a pain of 1 to 3, and the safety route.
   const own = ["not_available", "no_check_in", "pain_mild"];
   assertEquals([...withWords, ...own].sort(), [...stored].sort());
-  assertEquals([...stored, "pain_severe"].sort(), [...readinessTriggers].sort());
+  // The coach-standing-state migration widens the answers' list by exactly the break day's trigger,
+  // which has its own sentence in the explanation and no points.
+  const standing = await Deno.readTextFile(
+    new URL("../../../../migrations/20261101200000_coach_standing_state.sql", import.meta.url),
+  );
+  const widened = standing.match(
+    /add constraint day_adjustments_triggers_check check \(triggers <@ array\[([^\]]*)\]/s,
+  );
+  assert(widened);
+  assertEquals(
+    [...widened[1].matchAll(/'([a-z_]+)'/g)].map((match) => match[1]),
+    [...stored, "paused"],
+  );
+  assertEquals([...stored, "pain_severe", "paused"].sort(), [...readinessTriggers].sort());
   const rules = readinessRulesJson().points as Record<string, number>;
   assertEquals(Object.keys(rules).sort(), [...withWords, "pain_mild"].sort());
 });

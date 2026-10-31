@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:tracend/shared/training_availability.dart';
+
 import 'computed_metrics.dart';
 
 class DailyBrief {
@@ -16,6 +18,7 @@ class DailyBrief {
     this.plan,
     this.week = const [],
     this.todaySession,
+    this.availability = TrainingAvailability.available,
   });
   final String localDate;
   final Map<String, dynamic>? workout;
@@ -37,6 +40,10 @@ class DailyBrief {
 
   /// Today's latest kept workout session; null when none was started.
   final TodaySession? todaySession;
+
+  /// Whether today is a training day for the athlete: a break, or a check-in
+  /// that said they can't train (brief 1.9). Older briefs read as available.
+  final TrainingAvailability availability;
 
   /// Maps a `get_my_daily_brief` payload. Fields a brief's schema version
   /// does not carry stay null or empty.
@@ -65,6 +72,7 @@ class DailyBrief {
       todaySession: object('today_session') == null
           ? null
           : TodaySession.fromJson(object('today_session')!),
+      availability: TrainingAvailability.fromJson(value['availability']),
     );
   }
 }
@@ -98,6 +106,7 @@ class TodayWeekDay {
     required this.planned,
     this.recovery,
     this.strain,
+    this.paused = false,
   });
 
   factory TodayWeekDay.fromJson(Map<String, dynamic> json) => TodayWeekDay(
@@ -106,6 +115,7 @@ class TodayWeekDay {
     strain: (json['strain'] as num?)?.toDouble(),
     trained: json['trained'] as bool? ?? false,
     planned: json['planned'] as bool? ?? false,
+    paused: json['paused'] as bool? ?? false,
   );
 
   final DateTime date;
@@ -119,8 +129,12 @@ class TodayWeekDay {
   /// A session was completed that day.
   final bool trained;
 
-  /// The active plan has a workout on that weekday.
+  /// The active plan has a workout on that weekday that is due: a day a break
+  /// covers is not planned unless a session was logged on it (brief 1.9).
   final bool planned;
+
+  /// A break the athlete approved covers the day (brief 1.9); false before.
+  final bool paused;
 }
 
 /// Today's latest kept session (brief 1.7 `today_session`).

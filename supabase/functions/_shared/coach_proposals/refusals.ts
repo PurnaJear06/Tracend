@@ -124,6 +124,30 @@ export const refusals = {
         shortDate(endsOn)
       }. Let it end first, or undo it.`,
     ),
+  pauseTooLong: (days: number) =>
+    refuse(
+      "pause_too_long",
+      `A break can last up to ${days} days. Set one for up to ${days} days, and ask again near its end if you need longer.`,
+    ),
+  pauseStartTooFar: (askFrom: string) =>
+    refuse(
+      "pause_start_too_far",
+      `A break can start today or in the next two days. Ask for it again from ${
+        shortDate(askFrom)
+      }.`,
+    ),
+  pauseStartPast: (today: string) =>
+    refuse(
+      "pause_start_past",
+      `A break can't start on a day that has passed. It can start today, ${shortDate(today)}.`,
+    ),
+  pauseOverlaps: (startDate: string, lastDay: string) =>
+    refuse(
+      "pause_overlaps",
+      `You already have a break from ${shortDate(startDate)} to ${
+        shortDate(lastDay)
+      }. End it on Today first if you want different dates.`,
+    ),
   infeasible: (detail: string) =>
     refuse("plan_infeasible", `I can't build a full session within your limits: ${detail}`),
   notInPlan: () => refuse("exercise_not_in_plan", "That exercise isn't in your active plan."),
@@ -153,6 +177,11 @@ export const refusals = {
       "profile_incomplete",
       "I don't have enough of your profile (sex, birth year, height, equipment) to size a " +
         "change. Finish your profile and ask again.",
+    ),
+  pauseNoLongerFits: () =>
+    refuse(
+      "pause_overlaps",
+      "Those dates no longer fit next to your other breaks. Check the break on Today and ask again.",
     ),
   planChanged: () =>
     refuse(

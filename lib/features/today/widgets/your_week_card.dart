@@ -8,7 +8,9 @@ import 'package:tracend/shared/widgets/tracend_motion.dart';
 /// stack of ten ticks lit to its recovery score (lime from 50, amber below),
 /// with a mark under it: a filled dot when a session was completed, a ring
 /// when one is planned and still ahead, a hollow grey ring when a planned
-/// session was not done, and a dash on rest days. A day without a score
+/// session was not done, a pause mark on a day of a break (nothing is due
+/// then, so it is never counted as missed), and a dash on rest days. A day
+/// without a score
 /// says "no data"; later days stay empty. Tapping a day names it below.
 ///
 /// The headline counts sessions against the plan's week and the average of
@@ -101,6 +103,7 @@ class _YourWeekCardState extends State<YourWeekCard> {
                     day: week[i],
                     today: i == todayIndex,
                     future: i > todayIndex,
+                    paused: week[i].paused,
                     selected: i == selected,
                     semanticLabel: _dayLine(i),
                     onTap: () => setState(() => _selected = i),
@@ -135,7 +138,9 @@ class _YourWeekCardState extends State<YourWeekCard> {
     final day = widget.week[index];
     final todayIndex = _todayIndex;
     final name = index == todayIndex ? 'Today' : _names[index];
+    final paused = day.paused && !day.trained;
     if (index > todayIndex) {
+      if (paused) return '$name · on a break';
       return '$name · ${day.planned ? 'session planned' : 'rest day'}';
     }
     final recovery = day.recovery == null
@@ -143,6 +148,8 @@ class _YourWeekCardState extends State<YourWeekCard> {
         : 'recovery ${day.recovery}';
     final session = day.trained
         ? 'trained'
+        : paused
+        ? 'on a break'
         : day.planned
         ? (index == todayIndex ? 'session planned' : 'planned, not logged')
         : 'rest day';
@@ -156,6 +163,7 @@ class _DayColumn extends StatelessWidget {
     required this.day,
     required this.today,
     required this.future,
+    required this.paused,
     required this.selected,
     required this.semanticLabel,
     required this.onTap,
@@ -165,6 +173,9 @@ class _DayColumn extends StatelessWidget {
   final TodayWeekDay day;
   final bool today;
   final bool future;
+
+  /// The day falls inside a break: nothing is due.
+  final bool paused;
   final bool selected;
   final String semanticLabel;
   final VoidCallback onTap;
@@ -226,6 +237,23 @@ class _DayColumn extends StatelessWidget {
     final Widget mark;
     if (day.trained) {
       mark = _Mark(fill: colors.accentSignalRing);
+    } else if (paused) {
+      mark = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var bar = 0; bar < 2; bar++) ...[
+            if (bar > 0) const SizedBox(width: 2),
+            Container(
+              width: 2,
+              height: 8,
+              decoration: BoxDecoration(
+                color: colors.textTertiary,
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ],
+        ],
+      );
     } else if (day.planned && (future || today)) {
       mark = _Mark(ring: colors.accentSignalRing);
     } else if (day.planned) {

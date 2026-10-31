@@ -24,7 +24,9 @@ import 'package:tracend/features/readiness/safety_acknowledgements.dart';
 import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/features/readiness/safety_referral_sheet.dart';
 import 'package:tracend/features/train/open_workout.dart';
+import 'package:tracend/features/train/training_pause_repository.dart';
 import 'package:tracend/features/train/unfinished_workout.dart';
+import 'package:tracend/features/train/widgets/break_widgets.dart';
 import 'package:tracend/features/train/widgets/open_workout_card.dart';
 import 'package:tracend/features/train/widgets/workout_finish_sheet.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
@@ -36,6 +38,7 @@ import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/widgets/fuel_rail_card.dart';
 import 'package:tracend/features/today/widgets/plan_progress_line.dart';
 import 'package:tracend/features/today/widgets/today_hero.dart';
+import 'package:tracend/features/readiness/day_adjustment_card.dart';
 import 'package:tracend/features/today/widgets/today_session_card.dart';
 import 'package:tracend/features/today/widgets/today_tiles.dart';
 import 'package:tracend/features/today/widgets/unfinished_workout_card.dart';
@@ -45,6 +48,7 @@ import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 import 'package:tracend/shared/plan_changes.dart';
+import 'package:tracend/shared/training_availability.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
@@ -78,6 +82,7 @@ class TodayScreen extends StatefulWidget {
     this.workoutLogs,
     this.pain,
     this.userId,
+    this.pauses = const FixtureTrainingPauseRepository(),
     this.onResumeWorkout,
     this.active = true,
     this.clock = DateTime.now,
@@ -150,6 +155,9 @@ class TodayScreen extends StatefulWidget {
   /// remembered apart from anyone else's.
   final String? userId;
 
+  /// Sets and ends breaks ("Taking a break", "End break early").
+  final TrainingPauseRepository pauses;
+
   /// Shell wiring: reopens a workout left open on this phone, in Train. The
   /// Resume card shows only when this is wired.
   final ValueChanged<OpenWorkout>? onResumeWorkout;
@@ -207,6 +215,11 @@ class _TodayScreenState extends State<TodayScreen> {
   bool _painRefused = false;
   bool _painRefusedTooOld = true;
   bool _painBusy = false;
+
+  /// A break call is on its way, and the break set a moment ago on Today
+  /// (its card offers Undo until Today is opened again).
+  bool _pauseBusy = false;
+  String? _justSetPauseId;
   DailyBrief? _lastBrief;
   static const _checkedInKey = 'today_check_in_saved_on';
   static const _skippedKey = 'today_check_in_skipped_on';
@@ -276,6 +289,7 @@ class _TodayScreenState extends State<TodayScreen> {
     if (!stale) return;
     _reloadHealth();
     setState(() {
+      _justSetPauseId = null;
       _targets = widget.nutrition.loadTargets();
       _meals = _loadMeals();
       _brief = _loadBrief();
@@ -1068,6 +1082,53 @@ class _TodayScreenState extends State<TodayScreen> {
   /// The brief for the server's day is loaded first when they differ. A
   /// fixture brief carries no workout id, so its repository's workout opens
   /// instead.
+  /// The brief's day as a date.
+  DateTime _briefDate(DailyBrief brief) {
+    final day = DateTime.tryParse(brief.localDate) ?? DateTime.now();
+    return DateTime(day.year, day.month, day.day);
+  }
+
+  /// Reloads Today and tells Train and Coach the plan's days changed.
+  void _breakChanged() {
+    if (!mounted) return;
+    if (widget.planChanges != null) {
+      widget.planChanges!.announce();
+    } else {
+      setState(() {
+        _brief = _loadBrief();
+      });
+    }
+  }
+
+  Future<void> _takeBreak(DailyBrief brief) async {
+    final id = await takeBreak(
+      context,
+      today: _briefDate(brief),
+      repository: widget.pauses,
+    );
+    if (id == null || !mounted) return;
+    setState(() => _justSetPauseId = id);
+    _breakChanged();
+  }
+
+  Future<void> _endBreak(DailyBrief brief, TrainingPause pause) async {
+    setState(() => _pauseBusy = true);
+    try {
+      final changed = await endBreak(
+        context,
+        pause: pause,
+        today: _briefDate(brief),
+        repository: widget.pauses,
+        justSet: pause.id == _justSetPauseId,
+      );
+      if (!changed || !mounted) return;
+      setState(() => _justSetPauseId = null);
+      _breakChanged();
+    } finally {
+      if (mounted) setState(() => _pauseBusy = false);
+    }
+  }
+
   Future<void> _openWorkout(DailyBrief brief) async {
     final readiness = widget.dayAdjustment;
     if (readiness != null && readiness.serverDay == null) {
@@ -1218,6 +1279,10 @@ class _TodayScreenState extends State<TodayScreen> {
                   answeringUnfinished: _answeringUnfinished,
                   onSaveUnfinished: _saveUnfinished,
                   onDiscardUnfinished: _discardUnfinished,
+                  pauseBusy: _pauseBusy,
+                  justSetPauseId: _justSetPauseId,
+                  onTakeBreak: () => _takeBreak(brief),
+                  onEndBreak: (pause) => _endBreak(brief, pause),
                 );
               }
               if (snapshot.connectionState == ConnectionState.waiting) {
@@ -1402,6 +1467,10 @@ class _BriefContent extends StatelessWidget {
     required this.answeringUnfinished,
     required this.onSaveUnfinished,
     required this.onDiscardUnfinished,
+    required this.pauseBusy,
+    required this.justSetPauseId,
+    required this.onTakeBreak,
+    required this.onEndBreak,
   });
 
   final DailyBrief brief;
@@ -1427,14 +1496,38 @@ class _BriefContent extends StatelessWidget {
   final ValueChanged<UnfinishedWorkout> onSaveUnfinished;
   final ValueChanged<UnfinishedWorkout> onDiscardUnfinished;
 
+  /// Breaks: a call on its way, the break set a moment ago (its card offers
+  /// Undo), "Taking a break" and "End break early".
+  final bool pauseBusy;
+  final String? justSetPauseId;
+  final VoidCallback onTakeBreak;
+  final ValueChanged<TrainingPause> onEndBreak;
+
   /// Workouts left open on this phone, offered back right under the hero.
   final List<OpenWorkout> open;
   final ValueChanged<OpenWorkout>? onResumeWorkout;
+
+  /// Today's session card, with the latest decision.
+  Widget _sessionCard() => FutureBuilder<CoachDecision?>(
+    future: latestDecision,
+    builder: (context, snapshot) => TodaySessionCard(
+      brief: brief,
+      decision: snapshot.data,
+      aiAllowed: aiAllowed,
+      onOpen: onOpenWorkout,
+      dayAdjustment: dayAdjustment,
+      onTalkToCoach: onTalkToCoach,
+      onCheckIn: onCheckIn,
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
     final unfinished = this.unfinished;
+    final availability = brief.availability;
+    final running = availability.runningPause;
+    final upcoming = availability.upcomingPause;
     final onResumeWorkout = this.onResumeWorkout;
     final today = DateTime.tryParse(brief.localDate) ?? DateTime.now();
     final plan = brief.plan;
@@ -1516,21 +1609,64 @@ class _BriefContent extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: TracendSpacing.md),
-        enter(
-          FutureBuilder<CoachDecision?>(
-            future: latestDecision,
-            builder: (context, snapshot) => TodaySessionCard(
-              brief: brief,
-              decision: snapshot.data,
-              aiAllowed: aiAllowed,
-              onOpen: onOpenWorkout,
-              dayAdjustment: dayAdjustment,
-              onTalkToCoach: onTalkToCoach,
-              onCheckIn: onCheckIn,
+        if (availability.returnFromPause != null && running == null) ...[
+          const SizedBox(height: TracendSpacing.md),
+          enter(const FirstDayBackNote()),
+        ],
+        if (availability.offerBreak && running == null && upcoming == null) ...[
+          const SizedBox(height: TracendSpacing.md),
+          enter(BreakOfferCard(onSetBreak: onTakeBreak)),
+        ],
+        if (upcoming != null) ...[
+          const SizedBox(height: TracendSpacing.md),
+          enter(
+            BreakCard(
+              pause: upcoming,
+              today: today,
+              busy: pauseBusy,
+              justSet: upcoming.id == justSetPauseId,
+              onEnd: () => onEndBreak(upcoming),
             ),
           ),
-        ),
+        ],
+        const SizedBox(height: TracendSpacing.md),
+        // A break replaces today's session: nothing is due on its days. A safety referral on today's
+        // card still comes first, and a session the athlete started or logged today stays visible.
+        if (running != null) ...[
+          if (dayAdjustment case final readiness?)
+            ListenableBuilder(
+              listenable: readiness,
+              builder: (context, _) => readiness.current?.hasSafetyRoute == true
+                  ? Padding(
+                      padding: const EdgeInsets.only(bottom: TracendSpacing.md),
+                      child: DayAdjustmentCard(
+                        controller: readiness,
+                        forDate: brief.localDate,
+                        computed: brief.computed,
+                        onCheckIn: onCheckIn,
+                        onTalkToCoach: onTalkToCoach ?? (_) {},
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          enter(
+            BreakCard(
+              pause: running,
+              today: today,
+              busy: pauseBusy,
+              justSet: running.id == justSetPauseId,
+              onEnd: () => onEndBreak(running),
+            ),
+          ),
+          if (brief.todaySession != null) ...[
+            const SizedBox(height: TracendSpacing.md),
+            enter(_sessionCard()),
+          ],
+        ] else ...[
+          enter(_sessionCard()),
+          if (upcoming == null)
+            TakeBreakButton(onPressed: pauseBusy ? null : onTakeBreak),
+        ],
         if (brief.week.isNotEmpty) ...[
           const SizedBox(height: TracendSpacing.md),
           enter(YourWeekCard(week: brief.week, today: today)),

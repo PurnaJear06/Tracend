@@ -1298,3 +1298,52 @@ Deno.test("the largest plan fits its budget with the longest sentence on every s
     `${full.length} + ${room} characters`,
   );
 });
+
+// ---- rest the athlete chose ----------------------------------------------------------------------
+
+const restOf = (
+  today: "paused" | "unavailable" | null,
+  days: string[],
+  pauseEnds: string | null = null,
+) => ({
+  days: new Set(days),
+  today,
+  pauseEnds,
+});
+
+Deno.test("on a break, today's session is not prescribed and the days of the break are never due", () => {
+  const state = parsePlanState(ownersPlanPayload())!;
+  const ahead = ["2026-10-17", "2026-10-18", "2026-10-19", "2026-10-20"];
+  const text = renderTrainingPlan({ ...state, rest: restOf("paused", ahead, "2026-10-20") })!;
+  assert(!text.includes("Today's planned session:"), text);
+  assertStringIncludes(
+    text,
+    "Not prescribed today: the athlete is on a break until 2026-10-20 and no session is due. For reference only, the plan's session for today: Push day",
+  );
+  assertStringIncludes(text, "on a break: no session is due");
+  const week = weekAheadOf({ ...state, rest: restOf("paused", ahead, "2026-10-20") });
+  for (const day of week.days.filter((item) => ahead.includes(item.date))) {
+    assertEquals(day.sessions.filter((session) => session.kind !== "done"), [], day.date);
+  }
+});
+
+Deno.test("a can't-train check-in makes today a rest day without touching tomorrow", () => {
+  const state = parsePlanState(ownersPlanPayload())!;
+  const text = renderTrainingPlan({ ...state, rest: restOf("unavailable", [ownersCaseDate]) })!;
+  assertStringIncludes(
+    text,
+    "Not prescribed today: the athlete said they cannot train today. For reference only, the plan's session for today: Push day",
+  );
+  assertStringIncludes(text, "rest day: the athlete said they cannot train today");
+  assertEquals(
+    renderTrainingPlan(state)!.includes("Today's planned session: Push day"),
+    true,
+  );
+});
+
+Deno.test("a session on a day the athlete chose to rest is never undone or made up", () => {
+  const behind = parsePlanState(splitPlanPayload(3, ["w-chest-a"]))!;
+  assertEquals(pickFocusSession(behind).undone.map((session) => session.name), ["Legs A"]);
+  const rested = { ...behind, rest: restOf(null, [splitWeekDate(2)]) };
+  assertEquals(pickFocusSession(rested).undone, []);
+});

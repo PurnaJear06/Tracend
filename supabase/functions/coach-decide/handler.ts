@@ -1,4 +1,9 @@
-import { parseCoachDecision, type PolicyOutcome } from "../_shared/contracts/coach_decision_v1.ts";
+import {
+  type CoachDecisionV1,
+  parseCoachDecision,
+  type PolicyOutcome,
+} from "../_shared/contracts/coach_decision_v1.ts";
+import { MockCoachModelProvider } from "../_shared/providers/mock_coach_model_provider.ts";
 import { parseCoachRequest } from "../_shared/contracts/coach_request_v1.ts";
 import type { CoachModelGeneration } from "../_shared/providers/coach_model_provider.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
@@ -157,12 +162,29 @@ async function handleCoachDecide(
       useModel ? consent : "not_granted",
       deps.provider,
     ).generateDecision(decisionRequest);
-    const decision = parseCoachDecision(generated.decision, evidence, outcome);
-    // A gateway model's text is also checked against the request's data (numbers, names, gaps).
-    // Today's path is unchanged and has the same gap (A5 handoff).
-    if (path.kind === "gateway" && useModel) {
-      const fault = groundingFault(decision, decisionRequest);
-      if (fault) throw new Error(fault);
+    let decision: CoachDecisionV1;
+    try {
+      decision = parseCoachDecision(generated.decision, evidence, outcome);
+      // A gateway model's text is also checked against the request's data (numbers, names, gaps).
+      // Today's path is unchanged and has the same gap (A5 handoff).
+      if (path.kind === "gateway" && useModel) {
+        const fault = groundingFault(decision, decisionRequest);
+        if (fault) throw new Error(fault);
+      }
+    } catch (error) {
+      // A rest the athlete chose (a break, a can't-train check-in) is the policy's, not the model's:
+      // an answer that does not rest, or does not pass, never leaves the day without a decision. The
+      // deterministic rest decision stands in its place, and the override is logged.
+      if (outcome !== "rest_as_chosen") throw error;
+      console.warn(JSON.stringify({
+        level: "warn",
+        msg: "daily_decision_policy_override",
+        policy_outcome: outcome,
+        reason: error instanceof Error ? error.message : "invalid",
+        provider: generated.provider,
+      }));
+      const rest = await new MockCoachModelProvider().generateDecision(decisionRequest);
+      decision = parseCoachDecision(rest.decision, evidence, outcome);
     }
     const persistedPayload = { ...decision, local_date: input.local_date };
     const { data: persisted, error } = await auth.serviceClient.rpc(

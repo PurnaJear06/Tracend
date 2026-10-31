@@ -24,6 +24,8 @@ import 'package:tracend/shared/widgets/tracend_motion.dart';
 /// - in progress: "6 of 14 sets logged"
 /// - completed: "Done · 14 sets logged"
 /// - rest day: "Rest day", and the next planned day when the week has one
+/// - can't train: "Rest day" when today's check-in said the athlete can't
+///   train and no session was started (a break replaces the card on Today)
 /// - coach note: today's adjustment, else today's training summary; a
 ///   decision from another day is not shown; with AI coaching off it says
 ///   so; without a decision it says how to get one
@@ -110,8 +112,31 @@ class TodaySessionCard extends StatelessWidget {
       );
     }
 
-    final progress = TodaySessionProgress.of(brief, adjustment: adjustment);
     final session = brief.todaySession;
+    // The athlete said they can't train today: the session is not due. A
+    // session they started anyway still shows as logged.
+    if (session == null && brief.availability.unavailableToday) {
+      return _Frame(
+        kicker: "Today's session",
+        title: 'Rest day',
+        semanticLabel: "Rest day. You said you can't train today.",
+        onOpen: null,
+        children: [
+          Text(
+            "You said you can't train today, so today's session isn't due.",
+            key: const ValueKey('today-unavailable'),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: context.tracendColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: TracendSpacing.sm),
+          readiness,
+          note,
+        ],
+      );
+    }
+
+    final progress = TodaySessionProgress.of(brief, adjustment: adjustment);
     final total = progress.total;
     final logged = progress.logged;
     final name = workout['name'] as String? ?? 'Workout';

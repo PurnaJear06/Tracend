@@ -487,7 +487,7 @@ insert into r select 'cannot_train', public.get_my_day_adjustment_v1((select tod
 select is((select array[j ->> 'band', j ->> 'kind', (j -> 'triggers')::text, j ->> 'explanation']
     from r where name = 'cannot_train'),
   array['amber', 'none', '["not_available", "sleep_very_poor"]',
-    'You said you can''t train today. Nothing in your plan changes.'],
+    'Rest day: you said you can''t train today.'],
   'an athlete who cannot train gets no adjustment');
 select is((select jsonb_array_length(j -> 'options') from r where name = 'cannot_train'), 0,
   'and no choices');

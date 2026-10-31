@@ -156,6 +156,9 @@ function requestFor(day: Day): CoachModelRequest {
     policy = "maintain_only";
   }
   if (!day.health) missing.push("health_context");
+  // prepare_daily_coaching_core (20261101200000): a can't-train check-in rests as chosen.
+  const unavailable = policy !== "escalate" && day.checkIn?.available_to_train === false;
+  if (unavailable) policy = "rest_as_chosen";
   const metrics = day.scores
     ? {
       baselines: day.baselines,
@@ -169,7 +172,9 @@ function requestFor(day: Day): CoachModelRequest {
     featureSnapshotId: "00000000-0000-4000-8000-00000000a501",
     policyEvaluationId: "00000000-0000-4000-8000-00000000a502",
     policyOutcome: policy,
-    permittedEvidence: evidenceFor(day),
+    permittedEvidence: unavailable
+      ? [...evidenceFor(day), "ATHLETE_UNAVAILABLE_TODAY"]
+      : evidenceFor(day),
     featureContext: {
       local_date: metricsFixture.local_date,
       timezone: "Asia/Kolkata",

@@ -110,6 +110,10 @@ function readinessLines(card: ReadinessContext): string[] {
     lines.push(
       `Safety route: ${card.safetyRoute}. The card shows a referral and no training change.`,
     );
+  } else if (card.athleteUnavailable === true) {
+    lines.push(
+      "Rest day: the athlete said they cannot train today. Do not offer today's session.",
+    );
   } else if (card.status === "none") {
     lines.push("Adjustment: none; the card changes nothing in today's session.");
   } else if (card.status === "proposed") {

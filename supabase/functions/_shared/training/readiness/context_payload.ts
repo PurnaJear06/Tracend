@@ -43,6 +43,11 @@ export type ReadinessContext = Readonly<{
   safetyRoute: SafetyRoute | null;
   confidence: "high" | "medium" | "low" | null;
   jointStates: readonly ContextJoint[];
+  /**
+   * Today's check-in says the athlete cannot train (the reader's `athlete_unavailable`, added
+   * 2026-11-01; false from a reader that does not send it). A closed flag, never the trigger list.
+   */
+  athleteUnavailable?: boolean;
 }>;
 
 type Json = Record<string, unknown>;
@@ -90,6 +95,8 @@ export function parseReadinessContext(raw: unknown, localDate: string): Readines
   const route = nullable(row.safety_route, (v) => oneOf(safetyRoutes, v));
   const confidence = nullable(row.confidence, (v) => oneOf(["high", "medium", "low"] as const, v));
   const states = joints(row.joint_states);
+  const unavailable = row.athlete_unavailable === undefined ? false : row.athlete_unavailable;
+  if (typeof unavailable !== "boolean") return null;
   if (
     !band || !status || !kind || reason === undefined || route === undefined ||
     confidence === undefined || !states || typeof row.available !== "boolean" ||
@@ -106,5 +113,6 @@ export function parseReadinessContext(raw: unknown, localDate: string): Readines
     safetyRoute: route,
     confidence,
     jointStates: states,
+    athleteUnavailable: unavailable,
   };
 }

@@ -38,6 +38,7 @@ import 'package:tracend/features/train/guidance/training_guidance_controller.dar
 import 'package:tracend/features/train/guidance/training_guidance_repository.dart';
 import 'package:tracend/features/train/open_workout.dart';
 import 'package:tracend/features/train/train_screen.dart';
+import 'package:tracend/features/train/training_pause_repository.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
 import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
@@ -120,6 +121,7 @@ class AppShellRepositories {
     this.dayAdjustment,
     this.guidance,
     this.painCheck,
+    this.pauses,
   });
 
   final WorkoutRepository? workouts;
@@ -150,6 +152,9 @@ class AppShellRepositories {
   /// Sends the pain check made during a workout; built from the environment
   /// (nothing can be sent without a backend) when not given.
   final PainCheckRepository? painCheck;
+
+  /// Sets and ends breaks; built from the environment when not given.
+  final TrainingPauseRepository? pauses;
 }
 
 class _AppShellState extends State<AppShell> {
@@ -170,6 +175,7 @@ class _AppShellState extends State<AppShell> {
   late final DailyBriefRepository _brief;
   late final CoachProposalRepository? _proposals;
   late final CoachMemoryRepository _memory;
+  late final TrainingPauseRepository _pauses;
 
   /// Today's same-day readiness adjustment, shared by Today and Train. Null
   /// without a backend, where there is no readiness to read.
@@ -313,6 +319,11 @@ class _AppShellState extends State<AppShell> {
         (live
             ? SupabaseCoachProposalRepository(Supabase.instance.client)
             : null);
+    _pauses =
+        injected?.pauses ??
+        (live
+            ? SupabaseTrainingPauseRepository(Supabase.instance.client)
+            : const FixtureTrainingPauseRepository());
     _memory =
         injected?.memory ??
         (live
@@ -498,6 +509,7 @@ class _AppShellState extends State<AppShell> {
               onTalkToCoach: _talkToCoach,
               pain: _pain,
               userId: widget.userId,
+              pauses: _pauses,
               onResumeWorkout: _resumeInTrain,
               active: _selectedIndex == 0,
             ),
@@ -521,6 +533,7 @@ class _AppShellState extends State<AppShell> {
         showToday: _showTrainToday,
         onRetryConnection: widget.offline ? _retryConnection : null,
         pain: _pain,
+        pauses: _pauses,
       ),
       () => widget.offline
           ? _offlineTab('tab_coach_offline', 'Coach', 'Coach')

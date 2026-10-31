@@ -39,7 +39,7 @@ import { inspectAnswers, type Rejection } from "./rejections.ts";
 import { personaById } from "./personas.ts";
 import { proposalStateOf, recordsRpc } from "./records.ts";
 import type { RouterChat } from "./router_client.ts";
-import { type Conversation, openingFor } from "./scenarios.ts";
+import { athleteFor, type Conversation, openingFor } from "./scenarios.ts";
 
 /** Most athlete messages in one conversation, whatever the scenario plans. */
 export const maxTurnsLimit = 10;
@@ -173,7 +173,7 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
   const converse = async (conversation: Conversation, turns: TurnRun[]): Promise<Ending> => {
     const { scenario } = conversation;
     const persona = personaById(conversation.persona);
-    const base = persona.athlete();
+    const base = athleteFor(scenario, persona.athlete());
     const search = wordSearch(persona.region);
     const runner = createLookupRunner(recordsRpc(persona.records, persona.extras), "sim-athlete");
     const proposalState = proposalStateOf(persona.records, stateFixture(), persona.profile);

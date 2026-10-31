@@ -566,6 +566,47 @@ void main() {
     });
   });
 
+  group('Training Hub contract — get_my_training_hub v1.10', () {
+    test('v1.10 keeps every v1.9 key and adds the break fields', () {
+      final v19 = _loadFixtureJson('training_hub_v1_9.json');
+      final v110 = _loadFixtureJson('training_hub_v1_10.json');
+      expect(v110['schema_version'], '1.10');
+      expect(v110.keys.toSet(), {...v19.keys, 'availability', 'paused_days'});
+      for (final key in v19.keys.where(
+        (k) => k != 'schema_version' && k != 'adherence',
+      )) {
+        expect(v110[key], v19[key], reason: '$key is unchanged');
+      }
+      final adherence = v110['adherence'] as Map<String, dynamic>;
+      expect(adherence.keys.toSet(), {
+        ...(v19['adherence'] as Map).keys.cast<String>(),
+        'paused_sessions',
+      });
+      expect(adherence['paused_sessions'], isA<int>());
+    });
+
+    test('paused days and the running break parse', () {
+      final hub = TrainingHubData.fromHubJson(
+        _loadFixtureJson('training_hub_v1_10.json'),
+      );
+      expect(hub.availability.paused, isTrue);
+      expect(hub.availability.runningPause!.endDate, DateTime(2026, 10, 15));
+      expect(hub.isDayPaused(DateTime(2026, 10, 2)), isTrue);
+      expect(hub.isDayPaused(DateTime(2026, 10, 16)), isFalse);
+      expect(hub.pausedSessions, 1);
+      expect(hub.plannedSessions, 15);
+    });
+
+    test('a 1.9 hub has no break and no paused days', () {
+      final hub = TrainingHubData.fromHubJson(
+        _loadFixtureJson('training_hub_v1_9.json'),
+      );
+      expect(hub.availability.pause, isNull);
+      expect(hub.pausedDays, isEmpty);
+      expect(hub.pausedSessions, 0);
+    });
+  });
+
   group('Training Hub parser — TrainingHubData.fromHubJson', () {
     test('a 1.6 hub keeps the plan dates, links, provenance and day load', () {
       final hub = TrainingHubData.fromHubJson(

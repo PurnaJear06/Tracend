@@ -149,11 +149,13 @@ Deno.test("a changed schema changes the hash", async () => {
   );
 });
 
-Deno.test("the investigate-first change added no schema bytes: the new kinds of record are filters on existing lookups", async () => {
+Deno.test("the schema is pinned: only the break kind and its reason were added since 2026-10-20", async () => {
   // 2,818 bytes, sha 274ee4fafead, before and after the Coverage Brief, the watch-outs, the eight
-  // requests a round and the new filters (2026-10-20). A new lookup name would change both; if one
-  // is added on purpose, check the compile cost first (see the header of this file).
+  // requests a round and the new filters (2026-10-20). The break (2026-11-01) added two enum values,
+  // the kind "training_pause" and the reason "rest": 24 bytes, still 0 optional properties and 0
+  // unions, and the same schema for every athlete and day. A new lookup name or kind changes both;
+  // if one is added on purpose, check the compile cost first (see the header of this file).
   const identity = await identifySchema(coachChatGatewaySchema());
-  assertEquals(identity.bytes, 2_818);
-  assertEquals(identity.sha, "274ee4fafead");
+  assertEquals(identity.bytes, 2_842);
+  assertEquals(identity.sha, "353191c1149c");
 });

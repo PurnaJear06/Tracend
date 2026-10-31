@@ -36,6 +36,8 @@ export const readinessTriggers = [
   "pain_mild",
   "recovery_low",
   "pain_severe",
+  /** A day a break the athlete approved covers (20261101200000). */
+  "paused",
 ] as const;
 /** A trigger code, or red_flag:<code> for a red flag behind a safety route (schema 1.1). */
 export type ReadinessTrigger = typeof readinessTriggers[number] | `red_flag:${RedFlagCode}`;

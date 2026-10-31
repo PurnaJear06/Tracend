@@ -25,6 +25,7 @@ export const decisionSchema = {
             "GATHER_DATA",
             "REVIEW_PROPOSAL",
             "ESCALATE",
+            "REST_AS_CHOSEN",
           ],
         },
         summary: { type: "string" },

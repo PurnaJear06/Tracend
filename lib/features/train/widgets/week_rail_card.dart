@@ -18,6 +18,9 @@ enum DayBoxStatus {
   /// A planned workout not yet done: a dot.
   planned,
 
+  /// A day of a break: a pause mark. Nothing is due, so it is never missed.
+  paused,
+
   /// Nothing planned: the number dims.
   rest,
 }
@@ -88,6 +91,7 @@ class DayBoxesStrip extends StatelessWidget {
     final state = switch (status) {
       DayBoxStatus.done => name == null ? 'done' : '$name, done',
       DayBoxStatus.planned => name == null ? 'planned' : '$name, planned',
+      DayBoxStatus.paused => 'on a break',
       DayBoxStatus.rest => 'rest day',
     };
     final day =
@@ -191,6 +195,11 @@ class _DayBox extends StatelessWidget {
         ),
         child: const SizedBox.square(dimension: 5),
       ),
+      DayBoxStatus.paused => Icon(
+        CupertinoIcons.pause_fill,
+        size: 10,
+        color: colors.textTertiary,
+      ),
       DayBoxStatus.rest => const SizedBox.shrink(),
     };
     return Semantics(
@@ -237,7 +246,9 @@ class _DayBox extends StatelessWidget {
                   height: 1,
                   fontWeight: FontWeight.w700,
                   fontFeatures: const [FontFeature.tabularFigures()],
-                  color: status == DayBoxStatus.rest
+                  color:
+                      status == DayBoxStatus.rest ||
+                          status == DayBoxStatus.paused
                       ? colors.textTertiary
                       : colors.textPrimary,
                 ),

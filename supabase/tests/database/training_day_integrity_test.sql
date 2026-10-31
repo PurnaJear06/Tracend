@@ -138,7 +138,7 @@ set local role authenticated;
 set local "request.jwt.claim.sub" = 'e1000000-0000-4000-8000-000000000001';
 insert into hub select 'a1', public.get_my_training_hub(28);
 
-select is((select j->>'schema_version' from hub where who = 'a1'), '1.9', 'hub schema 1.9');
+select is((select j->>'schema_version' from hub where who = 'a1'), '1.10', 'hub schema 1.10');
 select is((select j->'completed_day_set' from hub where who = 'a1'), to_jsonb(array[(select today from t)]),
   'the day logged under version 1 is done under version 2');
 select is((select jsonb_array_length(j->'recent_sessions') from hub where who = 'a1'), 1,

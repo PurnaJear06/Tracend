@@ -16,6 +16,7 @@ import 'package:tracend/features/train/unfinished_workout.dart';
 import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/diagnostics.dart';
+import 'package:tracend/shared/training_availability.dart';
 
 /// What the next session's target does with last time's result.
 enum NextTargetAction {
@@ -662,6 +663,11 @@ class TrainingHubData {
     this.dailyLoad = const [],
     this.load,
     this.cachedAt,
+    this.availability = TrainingAvailability.available,
+    this.pausedDays = const {},
+    this.pausedSessions = 0,
+    this.unavailableDays = const {},
+    this.unavailableSessions = 0,
   });
 
   /// The hub this phone saved at [CachedTrainingHub.savedAt], for a launch
@@ -680,7 +686,8 @@ class TrainingHubData {
         ..remove('daily_load')
         ..remove('computed')
         ..remove('today_workout')
-        ..remove('next_targets');
+        ..remove('next_targets')
+        ..remove('availability');
     }
     return TrainingHubData.fromHubJson(json, cachedAt: cached.savedAt);
   }
@@ -774,6 +781,18 @@ class TrainingHubData {
               todayStrain: (computed['today_strain'] as num?)?.toDouble(),
             ),
       cachedAt: cachedAt,
+      availability: TrainingAvailability.fromJson(value['availability']),
+      pausedDays: {
+        for (final day in (value['paused_days'] as List? ?? const []))
+          ?availabilityDate(day),
+      },
+      pausedSessions: (adherence['paused_sessions'] as num? ?? 0).toInt(),
+      unavailableDays: {
+        for (final day in (value['unavailable_days'] as List? ?? const []))
+          ?availabilityDate(day),
+      },
+      unavailableSessions: (adherence['unavailable_sessions'] as num? ?? 0)
+          .toInt(),
     );
   }
 
@@ -825,6 +844,35 @@ class TrainingHubData {
   /// When this phone saved the hub it shows, when the server could not be
   /// reached and this is the last copy; null for a hub just loaded.
   final DateTime? cachedAt;
+
+  /// Today's training availability: a break running or set to start, or a
+  /// check-in that said the athlete can't train (hub 1.10).
+  final TrainingAvailability availability;
+
+  /// The days of the window and the next two weeks that fall inside a break
+  /// (hub 1.10): nothing is due on them, and they are never missed.
+  final Set<DateTime> pausedDays;
+
+  /// Sessions of the window that fell on a break; the server leaves them out
+  /// of [plannedSessions].
+  final int pausedSessions;
+
+  /// The days of the window whose check-in said the athlete can't train (hub
+  /// 1.10): not due and never missed, though a workout can still be started.
+  final Set<DateTime> unavailableDays;
+
+  /// Sessions of the window on a can't-train day with nothing logged; the
+  /// server leaves them out of [plannedSessions].
+  final int unavailableSessions;
+
+  bool isDayPaused(DateTime date) =>
+      pausedDays.contains(DateTime(date.year, date.month, date.day));
+
+  /// A day the athlete chose not to train: a break, or a can't-train check-in.
+  /// It is never due or missed, unless a session was logged on it.
+  bool isRestChosen(DateTime date) =>
+      isDayPaused(date) ||
+      unavailableDays.contains(DateTime(date.year, date.month, date.day));
 
   bool isDayCompleted(DateTime date) => completedDays.any(
     (d) => d.year == date.year && d.month == date.month && d.day == date.day,

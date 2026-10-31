@@ -70,6 +70,7 @@ const reasonSentences: Readonly<Record<ProposalReason, string>> = {
   diet_fatigue: "Dieting has been wearing on you.",
   injury_caution: "You want to be careful with an area that bothers you.",
   athlete_request: "You asked for this change.",
+  rest: "You want a rest from training.",
 };
 
 /** The reason in the card's words, plus the athlete's own note when it has no figures in it. */

@@ -60,6 +60,13 @@ Deno.test("eval days follow the SQL rules and the deterministic decision accepts
     "health_context",
   ]);
   assertEquals(byName["pain-escalation"].policyOutcome, "escalate");
+  // A can't-train check-in rests as chosen: the decision can never proceed as planned on it.
+  assertEquals(byName["not-available-to-train"].policyOutcome, "rest_as_chosen");
+  assert(byName["not-available-to-train"].permittedEvidence.includes("ATHLETE_UNAVAILABLE_TODAY"));
+  const { decision: rest } = await new MockCoachModelProvider().generateDecision(
+    byName["not-available-to-train"],
+  );
+  assertEquals(rest.training.action, "REST_AS_CHOSEN");
   assert(byName["elevated-load"].permittedEvidence.includes("TRAINING_LOAD_ELEVATED"));
   assertEquals(byName["scores-unavailable"].featureContext.scores_unavailable, true);
   for (const item of cases) {

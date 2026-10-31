@@ -74,6 +74,45 @@ function mockDecision(request: CoachModelRequest): CoachDecisionV1 {
   });
 
   const candidates: CoachDecisionV1[] = [];
+  if (request.policyOutcome === "rest_as_chosen") {
+    const paused = has("TRAINING_PAUSED");
+    candidates.push(decision({
+      training: {
+        action: "REST_AS_CHOSEN",
+        summary: paused
+          ? "You're on a break, so no session is due today."
+          : "You said you can't train today, so today is a rest day.",
+        today_adjustments: [],
+      },
+      nutrition: {
+        action: "MAINTAIN_TARGETS",
+        summary: "Keep the approved nutrition targets.",
+        today_adjustments: [],
+      },
+      head_coach: {
+        final_decision: paused ? "Rest: you're on a break." : "Rest today, as you chose.",
+        reason: paused
+          ? "You approved a break that covers today; your plan resumes after it."
+          : "Your check-in says you can't train today; your plan continues on your next training day.",
+      },
+      evidence: paused
+        ? [{
+          code: "TRAINING_PAUSED",
+          label: "You're on a break you approved",
+          source: "policy_evaluation",
+        }]
+        : has("ATHLETE_UNAVAILABLE_TODAY")
+        ? [{
+          code: "ATHLETE_UNAVAILABLE_TODAY",
+          label: "Your check-in says you can't train today",
+          source: "policy_evaluation",
+        }]
+        : [],
+      confidence: "high",
+      missing_data: [],
+      risk_flags: [],
+    }));
+  }
   if (request.policyOutcome === "escalate") {
     candidates.push(decision({
       training: {

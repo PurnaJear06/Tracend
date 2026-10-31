@@ -85,3 +85,41 @@ Deno.test("policy prevents a same-day adjustment in maintain-only mode", async (
   }
   if (!rejected) throw new Error("Policy widening must be rejected.");
 });
+
+const restRequest = (code: string) => ({
+  decisionKind: "daily" as const,
+  featureSnapshotId: "snapshot-1",
+  policyEvaluationId: "policy-1",
+  policyOutcome: "rest_as_chosen" as const,
+  permittedEvidence: ["APPROVED_PLAN_ACTIVE", "RECOVERY_WITHIN_BASELINE", code],
+  featureContext: {},
+  missingData: [],
+});
+
+Deno.test("a rest the athlete chose can never proceed as planned, and a rest is never declared otherwise", async () => {
+  for (const code of ["ATHLETE_UNAVAILABLE_TODAY", "TRAINING_PAUSED"]) {
+    const request = restRequest(code);
+    const { decision } = await new MockCoachModelProvider().generateDecision(request);
+    const parsed = parseCoachDecision(decision, request.permittedEvidence, "rest_as_chosen");
+    if (parsed.training.action !== "REST_AS_CHOSEN") throw new Error("expected a rest");
+    if (parsed.evidence[0]?.code !== code) throw new Error(`expected ${code} cited`);
+    const proceeding = {
+      ...decision,
+      training: { ...decision.training, action: "PROCEED_AS_PLANNED" },
+    };
+    let refused = "";
+    try {
+      parseCoachDecision(proceeding, request.permittedEvidence, "rest_as_chosen");
+    } catch (error) {
+      refused = (error as Error).message;
+    }
+    if (refused !== "policy_requires_rest_as_chosen") throw new Error(refused || "accepted");
+    let outside = "";
+    try {
+      parseCoachDecision(decision, request.permittedEvidence, "maintain_only");
+    } catch (error) {
+      outside = (error as Error).message;
+    }
+    if (outside !== "rest_not_chosen") throw new Error(outside || "accepted");
+  }
+});

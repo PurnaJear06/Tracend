@@ -16,6 +16,10 @@ String proposalStaleNotice(
       'This proposal expired before it was approved, so nothing changed.',
     'block_over' || 'block_running' =>
       'Your plan moved on while this was open, so nothing changed. Ask Coach again.',
+    'pause_overlaps' =>
+      'A break already covers some of those days, so nothing changed.',
+    'dates_passed' =>
+      'The first day of this break has passed, so nothing changed. Ask Coach again or set a break on Today.',
     _ =>
       'Your plan changed since Coach proposed this, so nothing was applied. Ask Coach again.',
   },

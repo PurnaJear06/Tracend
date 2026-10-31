@@ -66,6 +66,8 @@ const evidenceLabels: Readonly<Record<string, string>> = {
   RECOVERY_WITHIN_BASELINE: "Recovery is within your baseline",
   CHECK_IN_RECOVERY_MIXED: "Recovery signals are mixed",
   CHECK_IN_SAFETY_ESCALATION: "Check-in reported high pain",
+  ATHLETE_UNAVAILABLE_TODAY: "You said you can't train today",
+  TRAINING_PAUSED: "You're on a break",
 };
 
 function obj(value: unknown): Record<string, unknown> {

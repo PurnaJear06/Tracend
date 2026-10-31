@@ -3,7 +3,9 @@ import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 import { capShare, estimateRun, fewestTurns, fitRun } from "./run.ts";
 import { conversations } from "./scenarios.ts";
 
-const all = conversations();
+// The sizes below are pinned on the run before the standing-state scenarios (2026-11-01), which
+// change the athlete's records in a setup; a run that includes them is sized by the same rules.
+const all = conversations().filter((conversation) => conversation.scenario.setup === undefined);
 const base = {
   conversations: all,
   athleteModel: "deepseek-v4-flash",

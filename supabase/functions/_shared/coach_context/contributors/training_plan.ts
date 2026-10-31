@@ -49,6 +49,13 @@ import {
   sharedRead,
 } from "../host.ts";
 import { coachServiceRpc, type StateSource, stateSourceFromRpc } from "../service_source.ts";
+import {
+  readStandingState,
+  restDaysOf,
+  type StandingState,
+  standingStateFromService,
+  type StandingStateSource,
+} from "./standing_state.ts";
 
 export const trainingPlanContributorId = "training_plan";
 /** The key under which the turn's plan state is read once for every contributor that needs it. */
@@ -129,7 +136,37 @@ export type PlanState = Readonly<{
    */
   unfinished: readonly UnfinishedWorkout[];
   targets: readonly ProgressionTarget[];
+  /**
+   * The days no session is due (a break the athlete approved, a check-in saying they cannot train),
+   * from the standing state; absent when it could not be read, and the plan then reads as planned.
+   */
+  rest?: PlanRest;
 }>;
+
+/** Rest the athlete chose, as the plan reads it. */
+export type PlanRest = Readonly<{
+  /** Days a break covers or a check-in said the athlete cannot train: never due, never missed. */
+  days: ReadonlySet<string>;
+  /** Why today is a rest day, or null. */
+  today: "paused" | "unavailable" | null;
+  /** The last day of the break covering today, when one does. */
+  pauseEnds: string | null;
+}>;
+
+/** The plan's view of the standing state; undefined when it could not be read. */
+export function planRestOf(standing: StandingState | null): PlanRest | undefined {
+  if (standing === null) return undefined;
+  return {
+    days: restDaysOf(standing),
+    today: standing.paused ? "paused" : standing.unavailableToday ? "unavailable" : null,
+    pauseEnds: standing.paused ? standing.pause?.endDate ?? null : null,
+  };
+}
+
+const isRestDay = (state: PlanState, date: string) => state.rest?.days.has(date) ?? false;
+/** The date this ISO week of a session's weekday. */
+const dateThisWeek = (state: PlanState, weekday: number) =>
+  addDays(state.localDate, weekday - state.weekday);
 
 export type UnfinishedWorkout = Readonly<{
   id: string;
@@ -390,9 +427,10 @@ export function sessionsOn(state: PlanState, offset: number): Readonly<{
   doneEarly: readonly Readonly<{ session: PlanSession; doneOn: string }>[];
 }> {
   const weekday = ((state.weekday - 1 + offset) % 7) + 1;
-  const onDay = poolOn(state, addDays(state.localDate, offset)).filter((session) =>
-    session.weekday === weekday
-  );
+  const date = addDays(state.localDate, offset);
+  const onDay = poolOn(state, date).filter((session) => session.weekday === weekday);
+  // A day in a break is never due: nothing on it is planned.
+  if (offset >= 1 && isRestDay(state, date)) return { planned: [], doneEarly: [] };
   if (offset > 7 - state.weekday) return { planned: onDay, doneEarly: [] };
   return {
     planned: onDay.filter((session) => finishedOn(state, session) === null),
@@ -449,9 +487,11 @@ export function pickFocusSession(state: PlanState): FocusSession {
   const inForceToday = new Set(poolOn(state, state.localDate).map((session) => session.id));
   // A session the athlete logged sets in and left unfinished is neither undone nor made up: it is
   // theirs to save or discard, and the plan block says so.
+  // A session on a day the athlete chose to rest (a break, a can't-train check-in) was never due.
   const undone = dated.filter((session) =>
     session.weekday! < state.weekday && unfinished(session) && inForceToday.has(session.id) &&
-    unfinishedFor(state, session) === undefined
+    unfinishedFor(state, session) === undefined &&
+    !isRestDay(state, dateThisWeek(state, session.weekday!))
   );
   const base = {
     doneToday: slotDone,
@@ -462,7 +502,10 @@ export function pickFocusSession(state: PlanState): FocusSession {
   if (todays && !slotDone) {
     return { ...base, session: todays, isToday: true, missed: false, nextWeek: false };
   }
-  const later = dated.find((session) => session.weekday! > state.weekday && unfinished(session));
+  const later = dated.find((session) =>
+    session.weekday! > state.weekday && unfinished(session) &&
+    !isRestDay(state, dateThisWeek(state, session.weekday!))
+  );
   if (later) return { ...base, session: later, isToday: false, missed: false, nextWeek: false };
   const tomorrow = sessionsOn(state, 1).planned;
   const candidate = undone.find((session) => !tomorrow.some((item) => item.id === session.id));
@@ -597,7 +640,15 @@ export function resolveSchedule(
       exercises: row.exercises.length > 0 ? row.exercises : planned ? exercisesOf(planned) : [],
     });
   }
-  if (focus.session && focus.isToday) {
+  const restToday = state.rest?.today ?? null;
+  if (restToday !== null) {
+    notes.push({
+      date: state.localDate,
+      text: restToday === "paused"
+        ? "on a break: no session is due"
+        : "rest day: the athlete said they cannot train today",
+    });
+  } else if (focus.session && focus.isToday) {
     points.push({
       date: state.localDate,
       kind: "planned",
@@ -632,6 +683,7 @@ export function resolveSchedule(
   for (let offset = 1; offset < weekAheadDays; offset += 1) {
     const date = addDays(state.localDate, offset);
     const { planned, doneEarly } = sessionsOn(state, offset);
+    if (isRestDay(state, date)) notes.push({ date, text: "on a break: no session is due" });
     for (const session of planned) {
       points.push({ date, kind: "planned", name: session.name, exercises: exercisesOf(session) });
     }
@@ -749,7 +801,14 @@ function trainingPlanMarked(
   );
   lines.push(...renderWeekAheadMarked(weekAheadOf(state, focus)));
   if (focus.session) {
-    const label = focus.isToday
+    const restToday = state.rest?.today ?? null;
+    const label = restToday !== null && (focus.isToday || focus.missed)
+      ? restToday === "paused"
+        ? `Not prescribed today: the athlete is on a break until ${
+          record(state.rest?.pauseEnds ?? "")
+        } and no session is due. For reference only, the plan's session for today`
+        : "Not prescribed today: the athlete said they cannot train today. For reference only, the plan's session for today"
+      : focus.isToday
       ? "Today's planned session"
       : focus.missed
       ? "A session from earlier this week is still undone"
@@ -870,6 +929,7 @@ export function createTrainingPlanContributor(
   source: StateSource,
   signals?: LoadSignalsSource,
   signalsDeadlineMs: number = loadSignalsDeadlineMs,
+  standing?: StandingStateSource,
 ): CoachContextContributor {
   return {
     id: trainingPlanContributorId,
@@ -879,11 +939,14 @@ export function createTrainingPlanContributor(
       // The signals read starts with the plan read, so the plan waits for the slower of the two,
       // never for both, and for the signals no longer than their own deadline.
       const reading = signals === undefined ? null : readSignals(signals, input, signalsDeadlineMs);
+      const standingRead = standing === undefined ? null : readStandingState(input, standing);
       try {
-        const state = parsePlanState(
+        const parsed = parsePlanState(
           await sharedRead(input, planStateReadKey, () => source(input.userId, input.localDate)),
         );
-        if (state === null) return null;
+        if (parsed === null) return null;
+        const rest = standingRead === null ? undefined : planRestOf((await standingRead).value);
+        const state: PlanState = rest === undefined ? parsed : { ...parsed, rest };
         const read = reading === null ? null : await reading.result;
         const marked = trainingPlanMarked(state, read?.signals ?? null);
         return marked === null
@@ -905,4 +968,6 @@ export const planStateFromService: StateSource = stateSourceFromRpc(
 export const trainingPlanContributor: CoachContextContributor = createTrainingPlanContributor(
   planStateFromService,
   loadSignalsFromService,
+  loadSignalsDeadlineMs,
+  standingStateFromService,
 );

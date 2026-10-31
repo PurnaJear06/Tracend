@@ -75,6 +75,11 @@ export type Contributors = Readonly<{
   /** A plan_history "schedule" payload for the last four weeks (repeated misses), or none. */
   schedule?: unknown;
   /**
+   * A get_coach_standing_state_v1 payload (a break, a can't-train check-in, held areas, the goal,
+   * recent decisions) for the standing_state contributor, the plan and the watch-outs; or none.
+   */
+  standingState?: unknown;
+  /**
    * The library sources (manifest keys, best first) whose chunks retrieval returned for the
    * question, rendered from the real library content as the library contributor renders them. An
    * empty list is a search that found nothing. Absent: the turn has no library block.

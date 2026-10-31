@@ -289,6 +289,18 @@ and per-user rate and cost gates. Provider output never directly writes canonica
 validation and approval remain in deterministic code and PostgreSQL transactions. The
 deterministic path stays available when a model is unavailable.
 
+**Provider-neutral memory (owner rule, 2026-11-01).** What Coach remembers about an athlete never
+depends on a model or a vendor. Breaks (`training_pauses`), approved and declined proposals,
+check-ins, joint states, confirmed facts and Coach notes live in our own Postgres tables, and our own
+deterministic code turns them into plain text (the `standing_state`, `confirmed_facts` and
+`coach_notes` contributors, the athlete file, the lookups). No vendor memory or session feature
+(Anthropic's memory tool or context editing, an assistant thread, a stored conversation) and no
+third-party memory service (Mem0, Zep, Letta) is used. Prompt caching is an optional optimisation
+inside the gateway's adapters: the standing-state block's words and place are the same on an
+Anthropic route, an OpenAI-compatible route or the rollback path, cached or not
+(`standing_state_test.ts` builds both requests and compares them), so moving to another provider
+keeps every athlete's memory.
+
 > **Cutover to Claude (Phase 2, D1): code merged, not yet switched on.** Production keeps today's
 > providers until the owner runs the cutover runbook
 > ([`docs/runbooks/phase2-claude-cutover.md`](./runbooks/phase2-claude-cutover.md)): Coach chat and

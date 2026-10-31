@@ -25,7 +25,13 @@ const prepared = {
   missing_data: [],
 };
 
-function fakeAuth(options: { consentVendor?: string | null; snapshot?: boolean } = {}) {
+function fakeAuth(
+  options: {
+    consentVendor?: string | null;
+    snapshot?: boolean;
+    prepared?: Record<string, unknown>;
+  } = {},
+) {
   const calls: Call[] = [];
   const answers: Record<string, unknown> = {
     has_ai_coaching_consent: true,
@@ -35,7 +41,7 @@ function fakeAuth(options: { consentVendor?: string | null; snapshot?: boolean }
       provider: options.consentVendor === undefined ? "anthropic" : options.consentVendor,
       notice_version: "ai-coaching-v6",
     },
-    prepare_daily_coaching: prepared,
+    prepare_daily_coaching: options.prepared ?? prepared,
     reserve_ai_budget: "reservation-legacy",
     reserve_ai_budget_v2: "reservation-gateway",
     settle_ai_budget: null,
@@ -115,6 +121,7 @@ async function run(
     snapshot?: boolean;
     /** Today's provider settings (COACH_MODEL_PROVIDER and the rest). */
     settings?: Record<string, string>;
+    prepared?: Record<string, unknown>;
   },
 ) {
   const { auth, calls } = fakeAuth(options);
@@ -319,4 +326,37 @@ Deno.test("no route: a notice naming DeepSeek (or none) keeps today's path", asy
     assertEquals(result.named("reserve_ai_budget")[0].params.run_purpose, "daily_coaching");
     assertEquals(result.sent, 0);
   }
+});
+
+Deno.test("a rest the athlete chose stands whatever the model says: the deterministic rest is stored, not a 503", async () => {
+  const rest = {
+    ...prepared,
+    policy_outcome: "rest_as_chosen",
+    permitted_evidence: ["APPROVED_PLAN_ACTIVE", "RECOVERY_WITHIN_BASELINE", "TRAINING_PAUSED"],
+  };
+  // The model proceeds as planned, which the rest policy refuses.
+  const result = await run({ path: gateway, prepared: rest });
+  assertEquals(result.status, 200);
+  const persisted = result.named("persist_daily_coaching_result_v2")[0].params;
+  const payload = persisted.decision_payload as CoachDecisionV1;
+  assertEquals(payload.training.action, "REST_AS_CHOSEN");
+  assertEquals(payload.evidence.map((item) => item.code), ["TRAINING_PAUSED"]);
+  // The call that was made is still the run's provenance and cost.
+  assertEquals(persisted.run_provider, "anthropic");
+  assertEquals(result.named("persist_failed_coaching_run_v2").length, 0);
+  // Without a rest policy the same refusal still fails as before.
+  const other = await run({
+    path: gateway,
+    respond: () =>
+      jsonResponse(claudeMessage({
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            ...decision("x"),
+            training: { ...decision("x").training, action: "REST_AS_CHOSEN" },
+          }),
+        }],
+      })),
+  });
+  assertEquals(other.status, 503);
 });

@@ -5,6 +5,7 @@
 import type { DeloadReason } from "../training/guidance/payload.ts";
 import { buildCoachProposal } from "./build.ts";
 import { parseCoachProposalIntent } from "./intent.ts";
+import { buildTrainingPause, parsePauseInputs } from "./pause.ts";
 import { refusals } from "./refusals.ts";
 import { parseAthleteState } from "./state.ts";
 import { buildSuggestedDeload } from "./training.ts";
@@ -66,6 +67,7 @@ function storeRefusal(message: string): ProposeResult {
   if (message.includes("health professional")) return refusals.seeProfessional();
   if (message.includes("health check")) return refusals.screeningChanged();
   if (message.includes("logged data")) return refusals.evidenceChanged();
+  if (message.includes("break")) return refusals.pauseNoLongerFits();
   return refusals.planChanged();
 }
 
@@ -157,6 +159,24 @@ export async function proposeCoachChange(
 ): Promise<ProposeResult> {
   const parsed = parseCoachProposalIntent(request.intent);
   if (!parsed.ok) return refusals.invalidIntent();
+
+  // A break computes no number, so it reads only the athlete's date and their breaks: an incomplete
+  // profile never stops it.
+  if (parsed.intent.kind === "training_pause") {
+    const read = await rpc("get_training_pause_inputs_v1", { p_user_id: request.userId });
+    const inputs = read.error ? null : parsePauseInputs(read.data);
+    if (inputs === null) return unavailable;
+    const intent = keepAthletesNote(parsed.intent, request.athleteMessage);
+    if (intent.kind !== "training_pause") return refusals.invalidIntent();
+    const built = buildTrainingPause(intent, inputs);
+    if (!built.ok) return built;
+    return await storeProposal(
+      rpc,
+      request.userId,
+      built.proposal,
+      request.sourceMessageId ?? null,
+    );
+  }
 
   const state = await readState(rpc, request.userId, request.athleteMessage);
   if (!isState(state)) return state;

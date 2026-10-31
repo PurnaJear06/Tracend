@@ -67,7 +67,7 @@ import {
   routerChat,
   structuredMode,
 } from "./router_client.ts";
-import { type Conversation, openingFor, selectConversations } from "./scenarios.ts";
+import { athleteFor, type Conversation, openingFor, selectConversations } from "./scenarios.ts";
 import { maxTurnsLimit, simulate, spentUsd } from "./simulate.ts";
 import { harnessFailures } from "./verdict.ts";
 import { wordSearch } from "./library_search.ts";
@@ -180,7 +180,7 @@ export async function promptTokensByPersona(
   for (const conversation of conversations) {
     if (sizes.has(conversation.persona)) continue;
     const persona = personaById(conversation.persona);
-    const athlete = persona.athlete();
+    const athlete = athleteFor(conversation.scenario, persona.athlete());
     const question = openingFor(conversation.scenario, persona.id);
     const contributions = await renderTurn(athlete, question, [], {
       librarySearch: wordSearch(persona.region),

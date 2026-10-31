@@ -43,6 +43,7 @@ Deno.test("every kind has a valid intent and the parser reads it into camel case
     },
     { kind: "nutrition_targets", reason: "plateau", direction: "lower", requested_calories: 2100 },
     { kind: "next_session_adjustment", reason: "fatigue", direction: "lighter", session: "next" },
+    { kind: "training_pause", reason: "rest", start_date: "2026-11-01", end_date: "2026-11-15" },
   ];
   assertEquals(new Set(valid.map((item) => item.kind)).size, proposalKinds.length);
   for (const raw of valid) {
@@ -179,6 +180,10 @@ Deno.test("every kind round-trips: the model's list form gives the same intent a
         session: "next",
       },
     ],
+    [
+      one("training_pause", "rest", { start_date: "2026-11-01", end_date: "2026-11-15" }),
+      { kind: "training_pause", reason: "rest", start_date: "2026-11-01", end_date: "2026-11-15" },
+    ],
   ];
   const kinds = new Set<string>();
   for (const [modelForm, objectForm] of pairs) {
@@ -291,4 +296,28 @@ Deno.test("a new week with no length the athlete gave gets the rules' default le
       false,
     );
   }
+});
+
+Deno.test("a break needs two real dates and takes no setting", () => {
+  assert(
+    !parseCoachProposalIntent({ kind: "training_pause", reason: "rest", start_date: "2026-11-01" })
+      .ok,
+  );
+  assert(
+    !parseCoachProposalIntent({
+      kind: "training_pause",
+      reason: "rest",
+      start_date: "2026-11-01",
+      end_date: "2026-02-30",
+    }).ok,
+  );
+  assert(
+    !parseCoachProposalIntent({
+      kind: "training_pause",
+      reason: "rest",
+      setting: "bodyweight",
+      start_date: "2026-11-01",
+      end_date: "2026-11-15",
+    }).ok,
+  );
 });

@@ -756,6 +756,16 @@ export function renderPlanStatus(status: Record<string, unknown>): string | null
   return lines.join("\n") + "\n";
 }
 
+/**
+ * What the gateway's athlete file shows of two long lists (2026-11-01). The standing state (a
+ * contributor) now carries what must be remembered, so the raw lists shrink to what a turn needs at
+ * a glance, and the rest is a lookup away: the newest 3 check-ins (the check_ins lookup has the rest)
+ * and the last 2 exchanges of other conversations (past_messages has the rest). Today's DeepSeek path
+ * has no lookups and keeps its lists, so its request is byte-for-byte as before.
+ */
+export const gatewayCheckInsShown = 3;
+export const gatewayOtherMessagesShown = 4;
+
 export function renderCoachContextParts(
   ctx: Record<string, unknown>,
   maxLength: number,
@@ -953,16 +963,22 @@ export function renderCoachContextParts(
   // 4b. Check-ins, last 14 days
   const checkIns = arr(ctx.check_ins_14d);
   if (checkIns.length) {
-    let s = "## Check-ins (last 14 days, scales 1-5, pain 0-10)\n";
+    const shown = gateway ? checkIns.slice(0, gatewayCheckInsShown) : checkIns;
+    let s = gateway
+      ? `## Check-ins (newest ${shown.length}, scales 1-5, pain 0-10)\n`
+      : "## Check-ins (last 14 days, scales 1-5, pain 0-10)\n";
     s += "| Date | Sleep | Energy | Soreness | Hunger | Mood | Pain | Can train |\n";
     s += "|------|-------|--------|----------|--------|------|------|-----------|\n";
-    for (const entry of checkIns) {
+    for (const entry of shown) {
       const c = obj(entry);
       s += `| ${str(c.local_date)} | ${str(c.sleep_quality)} | ${str(c.energy)} | ${
         str(c.soreness)
       } | ${str(c.hunger)} | ${str(c.mood)} | ${str(c.pain_severity)} | ${
         str(c.available_to_train)
       } |\n`;
+    }
+    if (shown.length < checkIns.length) {
+      s += "Older check-ins: the check_ins lookup.\n";
     }
     push(s);
   }
@@ -1181,7 +1197,13 @@ export function renderCoachContextParts(
   };
   const otherMessages = arr(ctx.recent_other_conversations);
   if (otherMessages.length) {
-    deferredHistory.push(renderMessages("Other Recent Conversations", otherMessages, 6));
+    const limit = gateway ? gatewayOtherMessagesShown : 6;
+    deferredHistory.push(
+      renderMessages("Other Recent Conversations", otherMessages, limit) +
+        (gateway && otherMessages.length > limit
+          ? "Earlier messages of other conversations: the past_messages lookup.\n"
+          : ""),
+    );
   }
   const threadMessages = arr(ctx.recent_messages);
   if (threadMessages.length) {
@@ -1562,7 +1584,7 @@ const proposalContract = "\n# Proposing a change\n" +
   'When the athlete asks for a change that fits one of the kinds below, or agrees to one you suggested, put one item in proposal_intent next to the answer. Tracend then checks it against its own limits, works out every number itself and shows the athlete a proposal they approve with one tap, or says why it cannot be done. In answer, say in one short sentence, in words like "Here\'s a proposal you can approve below", what you are putting forward and why. Never promise the result or state the numbers the proposal will hold.\n' +
   'proposal_intent is [] when no change is being asked for, otherwise a list of exactly one item {"kind": ..., "reason": ..., "note": ..., "params": [...]}. params holds the fields of the kind below as {"name": ..., "value": ...} pairs, with every value written as text: dates as YYYY-MM-DD, counted from the context date; figures as plain numbers ("8"); weekdays as a comma list ("1,3,5"). Send only the fields the kind needs.\n' +
   "Kinds:\n" +
-  "- temporary_block: a spell away from the gym or the usual setup. setting (" +
+  "- temporary_block: training away from the gym or the usual setup. setting (" +
   blockSettings.join(" | ") +
   "), start_date, end_date. For a range of days use the longer end.\n" +
   "- training_schedule: a new week for some weeks. weeks (1 to 12; 8 when the athlete gives no length), and any of days_per_week (1 to 6), weekdays (ISO, 1 is Monday), session_minutes (30 to 120). Only days, session length and weeks: the plan's own week is refused.\n" +
@@ -1577,6 +1599,7 @@ const proposalContract = "\n# Proposing a change\n" +
   "), and requested_calories only if the athlete wrote that exact figure.\n" +
   "- next_session_adjustment: direction (" + sessionDirections.join(" | ") +
   "), session (today | next).\n" +
+  "- training_pause: no training at all for a while. start_date (today to 2 days ahead), end_date (its last day). The plan resumes by itself after it.\n" +
   "reason is one of: " + proposalReasons.join(", ") +
   '. note holds a few plain words from the athlete and no digits, or is "".\n' +
   "Rules:\n" +

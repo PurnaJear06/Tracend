@@ -37,11 +37,17 @@ import {
 import {
   parsePlanState,
   pickFocusSession,
+  planRestOf,
   type PlanState,
   planStateReadKey,
   sessionsOn,
   weekAheadOf,
 } from "./training_plan.ts";
+import {
+  readStandingState,
+  standingStateFromService,
+  type StandingStateSource,
+} from "./standing_state.ts";
 
 export const watchOutsContributorId = "watch_outs";
 export const watchOutsBudgetChars = 1_200;
@@ -318,6 +324,9 @@ function missedSessions(schedule: ScheduleBody, plan: PlanState | null): string 
   for (const row of schedule.days) {
     if (row.versionId !== schedule.planId) continue;
     if (dayOf(row.date) >= dayOf(schedule.today)) continue;
+    // A day the athlete chose to rest (a break, a can't-train check-in) was never due: it neither
+    // continues nor ends a streak.
+    if (plan?.rest?.days.has(row.date)) continue;
     // A day the athlete logged sets and left unfinished (not yet saved or discarded) was trained:
     // it is not "not logged", and it ends a streak like a finished day.
     const trained = (id: string) =>
@@ -482,6 +491,8 @@ export type WatchOutSources = Readonly<{
   planState: StateSource;
   facts: StateSource;
   schedule: StateSource;
+  /** The standing state (breaks, can't-train days); without it every planned day counts. */
+  standing?: StandingStateSource;
 }>;
 
 /**
@@ -509,15 +520,22 @@ export function createWatchOutsContributor(
     slot: "volatile",
     budgetChars: watchOutsBudgetChars,
     async render(input) {
-      const [plan, facts, schedule] = await Promise.allSettled([
+      const [plan, facts, schedule, standing] = await Promise.allSettled([
         sharedRead(input, planStateReadKey, () => sources.planState(input.userId, input.localDate)),
         within(sources.facts(input.userId, input.localDate), secondaryTimeoutMs),
         within(sources.schedule(input.userId, input.localDate), secondaryTimeoutMs),
+        sources.standing === undefined
+          ? Promise.resolve(null)
+          : readStandingState(input, sources.standing),
       ]);
       const ok = <T>(result: PromiseSettledResult<unknown>, parse: (value: unknown) => T | null) =>
         result.status === "fulfilled" ? parse(result.value) : null;
+      const rest = standing.status === "fulfilled" && standing.value !== null
+        ? planRestOf(standing.value.value)
+        : undefined;
+      const parsedPlan = ok(plan, parsePlanState);
       const inputs: WatchOutInputs = {
-        plan: ok(plan, parsePlanState),
+        plan: parsedPlan === null || rest === undefined ? parsedPlan : { ...parsedPlan, rest },
         facts: ok(facts, parseWatchFacts),
         schedule: ok(
           schedule,
@@ -559,4 +577,5 @@ export const watchOutsContributor: CoachContextContributor = createWatchOutsCont
   planState: stateSourceFromRpc(coachServiceRpc, "get_coach_plan_state_v1"),
   facts: stateSourceFromRpc(coachServiceRpc, "get_coach_watch_outs_v1"),
   schedule: scheduleSourceFromRpc(coachServiceRpc),
+  standing: standingStateFromService,
 });
