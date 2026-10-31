@@ -23,7 +23,9 @@ import 'package:tracend/features/readiness/pain_reporting.dart';
 import 'package:tracend/features/readiness/safety_acknowledgements.dart';
 import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/features/readiness/safety_referral_sheet.dart';
+import 'package:tracend/features/train/open_workout.dart';
 import 'package:tracend/features/train/unfinished_workout.dart';
+import 'package:tracend/features/train/widgets/open_workout_card.dart';
 import 'package:tracend/features/train/widgets/workout_finish_sheet.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
@@ -76,6 +78,8 @@ class TodayScreen extends StatefulWidget {
     this.workoutLogs,
     this.pain,
     this.userId,
+    this.onResumeWorkout,
+    this.active = true,
     this.clock = DateTime.now,
     super.key,
   });
@@ -146,6 +150,14 @@ class TodayScreen extends StatefulWidget {
   /// remembered apart from anyone else's.
   final String? userId;
 
+  /// Shell wiring: reopens a workout left open on this phone, in Train. The
+  /// Resume card shows only when this is wired.
+  final ValueChanged<OpenWorkout>? onResumeWorkout;
+
+  /// Whether this tab is the one on screen. Coming back to it reads the open
+  /// workouts again, since a workout may have been finished in Train.
+  final bool active;
+
   /// The time Today measures the age of its brief by.
   final DateTime Function() clock;
 
@@ -165,6 +177,9 @@ class _TodayScreenState extends State<TodayScreen> {
   /// whether an answer to it is on its way.
   UnfinishedWorkout? _unfinished;
   bool _answeringUnfinished = false;
+
+  /// The workouts left open on this phone, newest first, whatever their day.
+  List<OpenWorkout> _open = const [];
 
   /// Which read of the offer started last, and which answer came last. A
   /// read that finishes after a newer read started or an answer was given
@@ -219,6 +234,7 @@ class _TodayScreenState extends State<TodayScreen> {
       oldWidget.aiConsent?.removeListener(_consentChanged);
       widget.aiConsent?.addListener(_consentChanged);
     }
+    if (!oldWidget.active && widget.active) unawaited(_loadOpenWorkouts());
   }
 
   late final ResumeObserver _resume = ResumeObserver(_onResume);
@@ -230,6 +246,7 @@ class _TodayScreenState extends State<TodayScreen> {
   void _onResume() {
     if (!mounted) return;
     _reloadIfStale();
+    unawaited(_loadOpenWorkouts());
     unawaited(_autoSyncHealthIfNeeded());
     unawaited(_replayPendingCheckIn());
   }
@@ -312,9 +329,26 @@ class _TodayScreenState extends State<TodayScreen> {
         : null;
   }
 
-  /// Asks which workout, if any, was logged and left unfinished. A failed
-  /// read keeps what is shown: the offer is a convenience, never a gate.
+  /// Reads the workouts left open on this phone for the Resume card. A
+  /// failed read keeps what is shown.
+  Future<void> _loadOpenWorkouts() async {
+    final source = widget.workouts;
+    if (widget.onResumeWorkout == null || source is! OpenWorkoutRepository) {
+      return;
+    }
+    try {
+      final open = await (source as OpenWorkoutRepository).loadOpenWorkouts();
+      if (mounted) setState(() => _open = open);
+    } catch (error) {
+      logNonCritical(error, 'open workouts not read');
+    }
+  }
+
+  /// Asks which workout, if any, was logged and left unfinished, and reads
+  /// the open workouts beside it. A failed read keeps what is shown: the
+  /// offer is a convenience, never a gate.
   Future<void> _loadUnfinished() async {
+    unawaited(_loadOpenWorkouts());
     final source = _unfinishedSource;
     if (source == null) return;
     final load = ++_unfinishedLoads;
@@ -1179,6 +1213,8 @@ class _TodayScreenState extends State<TodayScreen> {
                       widget.checkInGate == null ||
                       _skippedOn == brief.localDate,
                   unfinished: _unfinished,
+                  open: _openBeside(_unfinished),
+                  onResumeWorkout: widget.onResumeWorkout,
                   answeringUnfinished: _answeringUnfinished,
                   onSaveUnfinished: _saveUnfinished,
                   onDiscardUnfinished: _discardUnfinished,
@@ -1209,6 +1245,15 @@ class _TodayScreenState extends State<TodayScreen> {
       ),
     );
   }
+
+  /// The open workouts the Resume card offers: one the server already offers
+  /// back as [unfinished] is answered on that card, whose Save sends its
+  /// draft first, so it is not offered twice.
+  List<OpenWorkout> _openBeside(UnfinishedWorkout? unfinished) => [
+    for (final workout in _open)
+      if (unfinished == null || workout.sessionId != unfinished.sessionId)
+        workout,
+  ];
 
   /// A plain greeting by the time of day; no name is invented.
   String _greeting(DateTime now) {
@@ -1335,6 +1380,8 @@ class _BriefContent extends StatelessWidget {
     required this.dayAdjustment,
     required this.onTalkToCoach,
     required this.unfinished,
+    required this.open,
+    required this.onResumeWorkout,
     required this.answeringUnfinished,
     required this.onSaveUnfinished,
     required this.onDiscardUnfinished,
@@ -1363,10 +1410,15 @@ class _BriefContent extends StatelessWidget {
   final ValueChanged<UnfinishedWorkout> onSaveUnfinished;
   final ValueChanged<UnfinishedWorkout> onDiscardUnfinished;
 
+  /// Workouts left open on this phone, offered back right under the hero.
+  final List<OpenWorkout> open;
+  final ValueChanged<OpenWorkout>? onResumeWorkout;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
     final unfinished = this.unfinished;
+    final onResumeWorkout = this.onResumeWorkout;
     final today = DateTime.tryParse(brief.localDate) ?? DateTime.now();
     final plan = brief.plan;
     var index = 0;
@@ -1386,6 +1438,16 @@ class _BriefContent extends StatelessWidget {
             onCheckIn: onCheckIn,
           ),
         ),
+        if (open.isNotEmpty && onResumeWorkout != null) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          enter(
+            OpenWorkoutCard(
+              workouts: open,
+              now: today,
+              onResume: onResumeWorkout,
+            ),
+          ),
+        ],
         if (unfinished != null) ...[
           const SizedBox(height: TracendSpacing.sm),
           enter(

@@ -215,7 +215,11 @@ void main() {
       mealPhotoFailureMessage(
         const MealPhotoFailure('analysis', '429 ai_usage_limit'),
       ),
-      contains(r'$2'),
+      allOf(
+        startsWith('You have reached your AI limit'),
+        isNot(contains(r'$')),
+        isNot(contains('30 requests')),
+      ),
     );
     expect(
       mealPhotoFailureMessage(

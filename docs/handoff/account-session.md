@@ -274,3 +274,54 @@ which is updated). App only, no migration, needs a reinstall.
 - **A move cut short keeps its finish.** When the new id already holds the same session's draft (an
   earlier move stopped after writing it), the saved finish is copied over before the old id is
   cleared.
+
+## Resume any open workout (2026-10-31, branch `claude/workout-resume`)
+
+Owner report (build 902): sets "vanished" after airplane mode, a swipe-kill and an offline reopen.
+Nothing was deleted. While tapping through days, the owner started **Friday's** Legs B from a past
+"Not logged" day. After the offline relaunch Train opened on **today's** workout, which had no
+draft, and no screen led back to the open Friday workout. App only, no migration, needs a reinstall.
+Refs FLUTTER-N.
+
+- **Lookup** (`lib/features/train/open_workout.dart`): `openWorkoutsFrom` reads the athlete's
+  drafts (a done set, no finish waiting) whatever their day, newest first by the last set done, with
+  a fixed tie order. `SupabaseWorkoutRepository.loadOpenWorkouts` scans the draft prefix, so it works
+  offline. Train's Resume card, the day hero, the Live Activity link and Today's card all use it.
+- **Train**: the `OpenWorkoutCard` at the top ("Legs B · Fri 30 Oct · 2 sets logged" with
+  **Resume**; others under "Also in progress"). A day with an open workout reads "In progress" with
+  **Resume**. Before opening, Resume waits for a send of waiting workouts that has that workout and
+  reads the drafts again, so a workout the send filed on its day is never started again (toast to
+  answer it on Today).
+- **Today**: the same card under the hero; **Resume** goes to Train through `ResumeRequests`. A
+  workout the server already offers back as unfinished shows only on that card. Today reads the
+  drafts again when its tab is shown and on resume.
+- **Missed day** (owner decision 2026-10-31, replaces the old "Log this workout"): a past day with
+  nothing logged reads "Tuesday, missed" with **Do it today** as its action and a quiet "I did it,
+  log it for Tue 29 Sep" that confirms and logs under that day. Its overview offers **Do it today**.
+  Today and future days are unchanged.
+- **One workout at a time**: a start while another workout has done sets asks in an action sheet
+  ("Legs B (Fri) has 2 sets logged." with **Resume it** / **Start this one anyway**); starting anyway
+  leaves that draft alone. The same workout open on another day shares its draft key, so only
+  **Resume it** is offered.
+- **Session date in the draft**: the logger writes `session_local_date` and `workout_name` to its
+  local draft (not sent to the server). The logger's `_sessionDate`, `sendLeftOverDraft` (start and
+  rows read) and `sendWaiting`'s left-over test use the stored day; drafts without it keep the old
+  rule (the day the workout began). `workoutLeftOnEarlierDay(loggedOn:)` now matches the server's
+  stale rule (session date before today, begun more than 3 hours ago), so a past day's draft is sent
+  that evening rather than the next day.
+- **Gate**: `isNetworkFailure` (`lib/shared/diagnostics.dart`) covers `AuthRetryableFetchException`
+  with no status code, `SocketException`, `HandshakeException`, `TimeoutException` and
+  `http.ClientException`. A failed account check of that kind is logged, never reported, whatever
+  `_offline` says; a 5xx from Auth and every other error are still reported.
+- **Meal photo AI limit** copy no longer names an amount ("You have reached your AI limit for now…
+  Account › AI usage this month shows your limits."); the real cap lives on the server.
+- Tests: `test/open_workout_test.dart`, `test/train_open_workout_test.dart`,
+  `test/today_open_workout_test.dart`, `test/network_failure_test.dart`,
+  `test/live_activity/workout_resume_test.dart` (now through the lookup), and in
+  `test/offline_cold_start_test.dart` the owner's sequence (past day started, a set online and one
+  offline, relaunch through the gate with the account check failing, Resume opens Friday with both
+  sets, back online the sets sync to Friday's session with one start), the stored-date start and the
+  repository's stored-date send.
+- Device check: start a past day's workout with "I did it", log a set, airplane mode, log a set,
+  kill, reopen offline: Train shows the Resume card; Resume opens that day with both sets; back
+  online the workout saves on that day.

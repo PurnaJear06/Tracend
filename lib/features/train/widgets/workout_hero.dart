@@ -5,6 +5,7 @@ import 'package:tracend/features/train/train_view_models.dart';
 import 'package:tracend/features/train/widgets/muscle_map.dart';
 import 'package:tracend/features/train/widgets/train_parts.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
 
@@ -16,8 +17,12 @@ enum HeroDayState {
   /// A day that has not begun: its workout can be previewed, never started.
   upcoming,
 
-  /// A past day with nothing logged; it can still be logged.
-  notLogged,
+  /// A past day with nothing logged: missed. It is done today instead, or,
+  /// for a workout trained and not logged, logged for its own day.
+  missed,
+
+  /// A workout left open on this phone for this day: it resumes.
+  inProgress,
 
   /// A completed session exists for the day.
   done,
@@ -42,6 +47,7 @@ class WorkoutHero extends StatelessWidget {
     required this.onOpenMuscles,
     this.doneSession,
     this.onDoToday,
+    this.onLogMissed,
     this.healthkitCandidate,
     this.onHealthkitComplete,
     this.onHealthkitManual,
@@ -61,14 +67,20 @@ class WorkoutHero extends StatelessWidget {
   final ValueChanged<BodySide> onSideChanged;
   final VoidCallback onOpenOverview;
 
-  /// Null while Start must wait (an answer to today's readiness card is on its
+  /// Starts today's workout, or resumes the day's workout in progress. Null
+  /// while Start must wait (an answer to today's readiness card is on its
   /// way): the button is dimmed.
   final VoidCallback? onStart;
   final VoidCallback onViewSummary;
   final VoidCallback onOpenMuscles;
 
-  /// Starts a coming day's workout today; shown with the preview.
+  /// Starts a coming or missed day's workout today: beside the preview for a
+  /// coming day, the main action for a missed one.
   final VoidCallback? onDoToday;
+
+  /// Logs a missed day's workout for that day, for one trained and not
+  /// logged; a quiet action under "Do it today".
+  final VoidCallback? onLogMissed;
 
   final HealthkitCompletionCandidate? healthkitCandidate;
   final VoidCallback? onHealthkitComplete;
@@ -178,13 +190,27 @@ class WorkoutHero extends StatelessWidget {
                     onPressed: onDoToday,
                     child: const Text('Do it today'),
                   ),
+              ] else if (state == HeroDayState.missed) ...[
+                FilledButton.icon(
+                  onPressed: onDoToday,
+                  icon: const Icon(CupertinoIcons.play_fill, size: 18),
+                  label: const Text('Do it today'),
+                ),
+                if (onLogMissed != null)
+                  TextButton(
+                    onPressed: onLogMissed,
+                    child: Text(
+                      'I did it, log it for '
+                      '${dayAndDate(date, now: today)}',
+                    ),
+                  ),
               ] else
                 FilledButton.icon(
                   onPressed: onStart,
                   icon: const Icon(CupertinoIcons.play_fill, size: 18),
                   label: Text(
-                    state == HeroDayState.notLogged
-                        ? 'Log this workout'
+                    state == HeroDayState.inProgress
+                        ? 'Resume'
                         : 'Start workout',
                   ),
                 ),
@@ -213,10 +239,15 @@ class WorkoutHero extends StatelessWidget {
         text: _isToday ? 'Done today' : 'Done on ${weekdayName(date)}',
         color: colors.stateStable,
       ),
-      HeroDayState.notLogged => _Kicker(
+      HeroDayState.missed => _Kicker(
         icon: CupertinoIcons.calendar,
-        text: '${weekdayName(date)}, not logged',
+        text: '${weekdayName(date)}, missed',
         color: colors.textSecondary,
+      ),
+      HeroDayState.inProgress => _Kicker(
+        icon: CupertinoIcons.play_circle_fill,
+        text: 'In progress',
+        color: colors.accentSignalInk,
       ),
       HeroDayState.planned when _isToday => _Kicker(
         icon: CupertinoIcons.bolt_fill,

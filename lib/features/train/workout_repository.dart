@@ -10,6 +10,7 @@ import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/muscle_groups.dart';
 import 'package:tracend/features/train/offline_safety_notes.dart';
+import 'package:tracend/features/train/open_workout.dart';
 import 'package:tracend/features/train/training_hub_cache.dart';
 import 'package:tracend/features/train/unfinished_workout.dart';
 import 'package:tracend/features/train/workout_logic.dart';
@@ -1101,7 +1102,8 @@ class SupabaseWorkoutRepository
         WorkoutRepairRepository,
         WorkoutReconciliationRepository,
         HealthkitCandidateRepository,
-        UnfinishedWorkoutRepository {
+        UnfinishedWorkoutRepository,
+        OpenWorkoutRepository {
   /// With [loggerOpen] the repository leaves the sending of waiting workouts
   /// to the open logger, which sends its own workout itself.
   SupabaseWorkoutRepository(
@@ -1378,16 +1380,39 @@ class SupabaseWorkoutRepository
     await clearDraft(workoutId);
   }
 
+  /// The draft is logged under a day before today and began more than three
+  /// hours ago: the server closes its session as stale by the same rule.
   bool _leftOnEarlierDay(Map<String, dynamic> draft) {
     final started = DateTime.tryParse('${draft['actual_started_at'] ?? ''}');
     if (started == null) return false;
     final now = _clock();
     return workoutLeftOnEarlierDay(
       startedAt: started,
+      loggedOn: draftSessionDate(draft),
       now: now,
       sessionDate: now,
       maxSeconds: maxWorkoutSeconds,
     );
+  }
+
+  @override
+  Future<List<OpenWorkout>> loadOpenWorkouts() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return const [];
+    final prefix = WorkoutLocalKeys.draftPrefix(userId);
+    final finishPrefix = WorkoutLocalKeys.finishPrefix(userId);
+    final keys = await _preferences.getKeys();
+    final drafts = <String, String>{};
+    final finished = <String>{};
+    for (final key in keys) {
+      if (key.startsWith(prefix)) {
+        final saved = await _preferences.getString(key);
+        if (saved != null) drafts[key.substring(prefix.length)] = saved;
+      } else if (key.startsWith(finishPrefix)) {
+        finished.add(key.substring(finishPrefix.length));
+      }
+    }
+    return openWorkoutsFrom(drafts, finished: finished);
   }
 
   HealthkitCompletionCandidate _parseHealthkitCandidate(
@@ -2095,10 +2120,11 @@ typedef LeftOverResult = ({bool settled, String workoutId});
 /// have: its sets, and its finish when one was saved. [LeftOverResult.settled]
 /// is true when nothing is left on this phone that the server lacks, so the
 /// draft may go: no set was done and no finish waits, or everything reached
-/// the server. False keeps the draft (offline, or a draft with no key or start
-/// time to start its session under). A session the server never created is
-/// started on the day the draft was started, never on the day it is sent, so
-/// an earlier day's sets stay on that day. A session that no longer takes
+/// the server. False keeps the draft (offline, or a draft with no key or day
+/// to start its session under). A session the server never created is started
+/// on the day the draft stored as its session's (the day it was started, for a
+/// draft saved before that was kept), never on the day it is sent, so an
+/// earlier day's sets stay on that day. A session that no longer takes
 /// sets or a finish (55000: it was saved or discarded already, say by an
 /// earlier try whose answer was lost) is settled: nothing of the draft can
 /// reach it, so it goes and never opens as a workout.
@@ -2126,14 +2152,17 @@ Future<LeftOverResult> sendLeftOverDraft(
       return (settled: true, workoutId: current.id);
     }
     var id = data['session_id'] as String?;
+    // The day the athlete chose, as the draft stored it; a draft saved before
+    // the date was kept goes on the day it was started.
     final started = DateTime.tryParse('${data['actual_started_at'] ?? ''}');
+    final day = draftSessionDate(data) ?? started?.toLocal();
     if (id == null || id.startsWith('pending-')) {
       final key = data['idempotency_key'] as String?;
-      if (key == null || started == null) {
+      if (key == null || day == null) {
         return (settled: false, workoutId: current.id);
       }
       try {
-        id = await repository.start(current, key, localDate: started.toLocal());
+        id = await repository.start(current, key, localDate: day);
       } on PostgrestException catch (e) {
         final moved = e.code == 'P0002' && repository is WorkoutPlanRemapper
             ? await (repository as WorkoutPlanRemapper).moveToCurrentPlan(
@@ -2149,7 +2178,7 @@ Future<LeftOverResult> sendLeftOverDraft(
         }
         current = moved;
         data = {...data, 'workout_id': moved.id};
-        id = await repository.start(current, key, localDate: started.toLocal());
+        id = await repository.start(current, key, localDate: day);
       }
     }
     final revision = (data['revision'] as num?)?.toInt() ?? 0;
@@ -2160,11 +2189,8 @@ Future<LeftOverResult> sendLeftOverDraft(
       revision,
       serverDraftPayload(data, sessionId),
       readRows: () async {
-        // The session of the day the draft was made on, not today's.
-        final session = await repository.loadSession(
-          current,
-          localDate: started?.toLocal(),
-        );
+        // The session of the draft's own day, not today's.
+        final session = await repository.loadSession(current, localDate: day);
         return session != null && session['session_id'] == sessionId
             ? session['exercises']
             : null;
