@@ -12,11 +12,13 @@
 -- a small table of the names (private.timezone_names, filled here from the view) first. A name not in the
 -- table (a new zone after a tz update, a case variant, an abbreviation) still goes to the view, so the
 -- answer is the view's answer in every case, only fast for every name an athlete can store (set_my_timezone
--- stores nothing else). Nothing else changes: each function below is its latest earlier definition with the
--- join replaced by private.known_timezone (pinned by guidance_perf_test.ts), and the results are the same.
+-- stores nothing else). The answer is also false for a name the server can no longer use (a tz update that
+-- removed it), so a reader falls back to UTC instead of raising. Nothing else changes: each function below
+-- is its latest earlier definition with the join replaced by private.known_timezone (pinned by
+-- guidance_perf_test.ts), and the results are the same.
 --
 --   private.timezone_names   new table: the zone names, one row each
---   private.known_timezone   new: true when the name is a zone the server knows
+--   private.known_timezone   new: true when the name is a zone the server knows and can use
 --   private.local_date_for   private.local_day_of   private.local_day   private.user_timezone
 --   private.deload_signals   the join becomes private.known_timezone
 --
@@ -36,13 +38,26 @@ revoke all on private.timezone_names from public, anon, authenticated;
 insert into private.timezone_names (name)
 select z.name from pg_catalog.pg_timezone_names z;
 
--- A name in the table is a name in the view. Any other name is asked of the view itself, so the answer
--- never differs from the view's; the CASE keeps the slow read to the names the table does not hold.
+-- A name is a known zone when the view lists it, and the readers can then use it: `at time zone` has to
+-- accept it on this server too. The table answers the first question fast; a name the table does not hold
+-- is asked of the view itself, so the answer never differs from the view's. The second is asked of the
+-- server (about 1.4 microseconds, measured on production with a read-only EXPLAIN ANALYZE of 2,000 calls
+-- at 2.8 ms): a name the table holds but a later tz database no longer knows would make `at time zone`
+-- raise inside the reader, so it is answered false and the reader falls back to UTC.
 create function private.known_timezone(zone text)
-returns boolean language sql stable security definer set search_path = '' as $$
-  select case
-    when exists (select 1 from private.timezone_names t where t.name = zone) then true
-    else exists (select 1 from pg_catalog.pg_timezone_names z where z.name = zone) end;
+returns boolean language plpgsql stable security definer set search_path = '' as $$
+begin
+  if not (
+    exists (select 1 from private.timezone_names t where t.name = zone)
+    or exists (select 1 from pg_catalog.pg_timezone_names z where z.name = zone)
+  ) then
+    return false;
+  end if;
+  perform pg_catalog.now() at time zone zone;
+  return true;
+exception when others then
+  return false;
+end;
 $$;
 revoke all on function private.known_timezone(text) from public, anon, authenticated;
 

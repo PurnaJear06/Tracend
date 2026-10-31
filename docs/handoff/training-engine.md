@@ -1043,7 +1043,9 @@ check cost about 56 ms (the first on a connection, much more). One guidance read
 **Fix (no change of result).** `private.timezone_names` (the view's names, copied in the migration) and
 `private.known_timezone(zone)`: a name in the table is known; any other name is asked of the view itself, so the
 answer is the view's answer for every input (a new zone after a tz update, a case variant, an abbreviation) and only
-fast for the names an athlete can store (`set_my_timezone` stores nothing else). The join is replaced by
+fast for the names an athlete can store (`set_my_timezone` stores nothing else). It then confirms the server can use the
+name (`now() at time zone zone` in a guarded block, about 1.4 microseconds a call, measured read-only on production),
+so a name a later tz database drops answers false and the readers fall back to UTC instead of raising. The join is replaced by
 `private.known_timezone(a.timezone)` in `local_date_for`, `local_day_of`, `local_day`, `user_timezone` and
 `deload_signals`, each its latest earlier definition plus that one hunk (`guidance_perf_test.ts`). `next_session_targets`
 needed no change: it reads today through `local_date_for`. No signature, grant or result changes. pgTAP

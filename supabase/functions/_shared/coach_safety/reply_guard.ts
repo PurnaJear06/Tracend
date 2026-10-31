@@ -106,7 +106,7 @@ const prohibitedBefore = (before: string) => prohibitionWord.test(windowBefore(b
 // A thousands separator is a comma or, as in Spanish, German and Portuguese, a point: "2.000 kcal" is 2000.
 const kcalFigure = new RegExp(
   String
-    .raw`(\d{1,2}[,.]\d{3}|\d{3,4})(?:\s*(?:-|–|to)\s*(\d{1,2}[,.]\d{3}|\d{3,4}))?\s*(?:(?:kcal|kkal|calories|cals?)\b|(?:(?:kilo)?calor[ií]as?|(?:kilo)?calorie[ns]?|(?:kilo)?kalori(?:en|er|e|s|a)?|ккал|калори\p{L}*|कैलोरी|किलोकैलोरी|कैलरी|कैल)(?![\p{L}\p{M}])|卡路里|大卡|千卡|キロカロリー|カロリー|칼로리|킬로칼로리|แคลอรี่|سعر(?:ة|ات)|كالوري)`,
+    .raw`(\d{1,2}[,.]\d{3}|\d{3,4})(?:\s*(?:-|–|to)\s*(\d{1,2}[,.]\d{3}|\d{3,4}))?[\s-]*(?:(?:kcals?|kkals?|calories|cals?)\b|(?:(?:kilo)?calor[ií]as?|(?:kilo)?calorie[ns]?|(?:kilo)?kalori(?:en|er|e|s|a)?|ккал|калори\p{L}*|कैलोरी|किलोकैलोरी|कैलरी|कैल)(?![\p{L}\p{M}])|卡路里|大卡|千卡|キロカロリー|カロリー|칼로리|킬로칼로리|แคลอรี่|سعر(?:ة|ات)|كالوري)`,
   "giu",
 );
 const intakeVerb =
@@ -168,21 +168,28 @@ const foreignDailyCue = new RegExp(
 // Words that make a figure something other than the day's total: a meal, or energy burned.
 const notADailyTotal =
   /\b(?:breakfast|lunch|dinner|snack|snacks|meal|meals|serving|portion|bar|per meal|with each|post-workout|pre-workout|shake|drink|slice|piece|cup|bowl|burn|burned|burning|expend\w*|tdee|maintenance|cardio|treadmill|session|workout|walk|run)\b/i;
+const dietAfterFigure =
+  /^\s*(?:diet|plan|intake|target|goal|budget|allowance|regimen|protocol|limit|cap)\b/i;
 const mealAfterFigure =
   /^\s*(?:(?:as|for|at|per|in|with|before|after|a|an|the|each|every|your|pre-workout|post-workout)\s+){0,3}(?:snacks?|meals?|dinners?|lunch|breakfast|servings?|portions?|bars?|shakes?|drinks?|slices?|pieces?|cups?|bowls?)\b/i;
-// A limit word directly governing the figure: "don't go below 1,500 kcal", "never under 1,200",
-// "don't drop to 1,500 calories". It is read in the figure's own clause, so a negation earlier in
-// the sentence ("don't skip meals, drop to 900") does not govern it.
+// A prohibition directly governing the figure as the thing not to do: "don't drop to 1,500
+// calories", "never eat 900 kcal a day". It is read in the figure's own clause, so a negation earlier
+// in the sentence ("don't skip meals, drop to 900") does not govern it. A limit that sets a minimum
+// ("don't go below 800 kcal", "never under 1,200", "not less than 1,000") is not here: it tells the
+// athlete anything between that figure and the floor is fine, so it is flagged (belowBeforeFigure).
 const negator = String.raw`(?:never|not|no|avoid\w*|\w+n't|cannot|mustn't)`;
 const limitBeforeFigure = new RegExp(
   String
-    .raw`\b${negator}\b[^.;,]{0,30}?\b(?:below|under|beneath|less than|lower than|fewer than)\s*(?:about |around |roughly |approximately |~)?(?:between |from )?$|\b${negator}\s+(?:(?:ever|even|really|to|go|get|let|your|calories|intake|yourself|be|you)\s+){0,3}(?:eat|go|drop|dip|fall|have|consume|reduce|cut|aim|stay|take|plan|limit|restrict|diet|run|lower)\b[^.;,]{0,25}$`,
+    .raw`\b${negator}\s+(?:(?:ever|even|really|to|go|get|let|your|calories|intake|yourself|be|you)\s+){0,3}(?:eat|go|drop|dip|fall|have|consume|reduce|cut|aim|stay|take|plan|limit|restrict|diet|run|lower)\b(?:(?!\b(?:below|under|beneath|less|lower|fewer|beyond|past|than|minimum|least)\b)[^.;,]){0,25}$`,
   "i",
 );
-// What may follow a limit's figure in its clause: the day, "for you", an "even ..." aside. Anything
-// else ("... unless you feel fine", "... if you want") may turn the limit into permission.
+// A figure stated as a lower bound: "below 800 kcal", "under 1,200", "less than 1,000 calories".
+const belowBeforeFigure =
+  /\b(?:below|under|beneath|less than|lower than|fewer than)\s*(?:about |around |roughly |approximately |~)?(?:between |from )?$/i;
+// What may follow a limit's figure in its clause: the day, "for you", a limiting "even ..." aside.
+// Anything else ("... unless you feel fine", "... if you want") may turn the limit into permission.
 const limitTail =
-  /^\s*(?:(?:a|per|each|every) day|daily|on a (?:normal|training|rest) day)?\s*(?:for you|even\b[^;:]*|for (?:one|a) week)?\s*[.!]?\s*$/i;
+  /^\s*(?:(?:a|per|each|every) day|daily|on a (?:normal|training|rest) day)?\s*(?:for you|even (?:for|on|in|once|briefly|temporarily|short[- ]term)\b[^;:]*|for (?:one|a) week)?\s*[.!]?\s*$/i;
 // A judgement of the figure itself: "1,200 kcal a day is too low", "... is below your floor",
 // "... isn't safe". A negated warning is approval ("isn't below your floor", "is not too low"), and
 // "safe" alone is approval too.
@@ -197,7 +204,7 @@ const judgementAfterFigure =
 const declineBeforeFigure =
   /^\s*(?:no,?\s+)?i\s+(?:can'?t|cannot|won'?t|will not|wouldn'?t|would not|don'?t|do not)\s+(?:(?:support|recommend|advise|endorse|approve|prescribe|set|plan)\s+(?:you to eat\s+|eating\s+|(?:going|dropping|cutting)(?: down)? to\s+|a plan of\s+)?|tell you to eat\s+|help (?:you )?(?:eat|plan)\s+)$/i;
 const declineAfterFigure =
-  /^\s*(?:a day|per day|daily)?\s*(?:even\b[^;:]*|for (?:one|a) week|for you)?\s*[.!]?\s*$/i;
+  /^\s*(?:a day|per day|daily)?\s*(?:even (?:for|on|in|once|briefly|temporarily|short[- ]term)\b[^;:]*|for (?:one|a) week|for you)?\s*[.!]?\s*$/i;
 /**
  * Whether nothing follows the clause in its sentence but an "even ..." aside: a refusal followed by
  * anything else ("; set it yourself in Progress", ", but you can") is not trusted.
@@ -206,9 +213,11 @@ function endsTheSentence(sentence: string, clause: string): boolean {
   if (sentence.includes("?")) return false;
   const at = sentence.indexOf(clause);
   const rest = at === -1 ? sentence : sentence.slice(at + clause.length);
-  return /^\s*(?:,\s*even\b[^,;:]*)?\s*[.!]?\s*$/i.test(rest);
+  return /^\s*(?:,\s*even (?:for|on|in|once|briefly|temporarily|short[- ]term)\b[^,;:]*)?\s*[.!]?\s*$/i
+    .test(rest);
 }
-const declineVeto = /\b(?:enough|lightly|unless|most|every|other people|others|anyone else)\b/i;
+const declineVeto =
+  /\b(?:enough|lightly|unless|most|every|other people|others|anyone else|though|if|safe|fine|ok|okay|works?|can(?!['’]t)|could(?!n['’]t))\b/i;
 
 const changeByAmount =
   /\b(?:cut|reduce|trim|shave|remove|subtract|save|drop|lower|add|increase|extra|another|an additional)\s+(?:about |around |roughly |another |an extra |an additional |just |only |~)?$/i;
@@ -217,20 +226,33 @@ const describesIntake =
   /\b(?:you'?ve been|you have been|you'?re (?:eating|having|on|at)|you are (?:eating|having|on|at)|you were|you ate|you averaged|you logged|your (?:intake|average|logged|current|usual|typical)|averag\w+|logged|so far|last (?:week|month)|yesterday|currently|recently)\b/i;
 
 const kcalNumber = (raw: string) => Number(raw.replace(/[,.]/g, ""));
+/**
+ * The figures a written number may be. "2,800" is 2800. "2.800" is 2800 in Spanish, German and
+ * Portuguese, but in a sentence with no cue in one of those languages it may be "Week 2.800 kcal a
+ * day", a figure of 800: the smaller reading is checked too, and the smaller one wins.
+ */
+function kcalReadings(raw: string, pointIsThousands: boolean): number[] {
+  const whole = kcalNumber(raw);
+  const point = raw.indexOf(".");
+  return point === -1 || pointIsThousands ? [whole] : [whole, Number(raw.slice(point + 1))];
+}
 
 function belowCalorieFloor(sentence: string, floor: number): boolean {
   for (const clause of clausesOf(sentence)) {
     for (const match of clause.matchAll(kcalFigure)) {
-      const low = Math.min(
-        kcalNumber(match[1]),
-        match[2] === undefined ? Infinity : kcalNumber(match[2]),
-      );
-      if (low >= floor) continue;
       const before = clause.slice(0, match.index);
       const after = clause.slice(match.index + match[0].length);
-      if (limitBeforeFigure.test(before) && limitTail.test(after) && settledIn(sentence, clause)) {
-        continue;
-      }
+      const pointIsThousands = foreignDailyCue.test(after) ||
+        foreignDailyCue.test(windowBefore(before));
+      const low = Math.min(
+        ...kcalReadings(match[1], pointIsThousands),
+        ...(match[2] === undefined ? [] : kcalReadings(match[2], pointIsThousands)),
+      );
+      if (low >= floor) continue;
+      if (
+        limitBeforeFigure.test(before) && limitTail.test(after) && settledIn(sentence, clause) &&
+        !declineVeto.test(sentence)
+      ) continue;
       if (judgementAfterFigure.test(after) && settledIn(sentence, clause)) continue;
       if (
         declineBeforeFigure.test(before) && declineAfterFigure.test(after) &&
@@ -239,6 +261,11 @@ function belowCalorieFloor(sentence: string, floor: number): boolean {
       if (mealAfterFigure.test(after) || describesIntake.test(windowBefore(before))) continue;
       // A change by an amount ("cut 300 kcal from your day"), not a target.
       if (changeByAmount.test(before)) continue;
+      // A figure under the floor stated as a lower bound ("not less than 800 kcal") tells the athlete
+      // that everything between it and the floor is fine.
+      if (belowBeforeFigure.test(before)) return true;
+      // "an 800-calorie diet": a plan or target named by the figure is a daily total.
+      if (dietAfterFigure.test(after) && !notADailyTotal.test(before.slice(-20))) return true;
       const reduce = reduceVerb.exec(before);
       if (reduce) {
         if (!notADailyTotal.test(before.slice(reduce.index))) return true;

@@ -1895,12 +1895,24 @@ Chinese, Japanese, Korean and Thai, with the calorie word of those languages (`c
 `卡路里`, `カロリー`, `칼로리`, `kkal`, ...). No English exemption applies to text in another language, so such a reply is
 flagged for the repair (validity cost accepted; safety first). A point as thousands separator ("2.000 kcal") is read as
 2000, which also stops "2.000" being read as 0. The Devanagari danda ends a sentence and a clause. (b) "I wouldn't
-advise less than 800 kcal a day" already passed (the limit exemption); what was a false flag was the same refusal with
+advise less than 800 kcal a day" passed in this round (it flags after the review round below); what was a false flag was the same refusal with
 "dropping to", "cutting to" or "going down to", now accepted in the same exact shape as "going to". The limit exemption
 was too wide in the other direction: it no longer applies in a question, after a turn-round ("but you can", "so aim
 for", "unless", "for you it's fine") or with anything after the figure but the day, "for you" or an "even ..." aside.
 `exemptions_adversarial_test.ts` gains 49 rows (the refusal and its variants, then each language and the cases that must
-not flag). Not done: English "daily" before the figure ("your daily target is 800 kcal") is still a miss, as before.
+not flag. Not done: English "daily" before the figure ("your daily target is 800 kcal") is still a miss, as before.
+
+**Calorie guard, adversarial review round (Opus).** (1) An "even ..." aside passes only when it limits the refusal
+("even for a week", "even briefly"); "even though you could do it for a week" and "even if it's fine for a few days" are
+approval and flag, and `though|if|safe|fine|ok|okay|can|could|works` veto a refusal (the same veto now covers the
+limit path). (2) A point read as a thousands separator is also tried as the smaller figure ("Week 2.800 kcal a day"
+reads 800) unless the clause has a daily cue in a language that writes a point that way; the smaller reading wins.
+(3) A limit set below the floor ("don't go below 800 kcal", "never eat less than 1,000", "I wouldn't advise less than
+800 kcal a day") now flags: it tells the athlete that everything between that figure and the floor is fine. Refusing
+the figure itself ("don't drop to 1,500 kcal", "I wouldn't advise dropping to 800 kcal a day") still passes. (4) "kcals"
+and a hyphenated unit ("an 800-calorie diet") are read; a figure followed by diet, plan, target, goal or intake is a
+daily total. (5) The cardio minutes done now read "85 minutes done of 150 minutes ...", so 85 grounds as minutes only
+("resting heart rate 85 bpm" no longer passes on it). The context budget grows by 13 characters.
 
 ## Next agent starts here
 

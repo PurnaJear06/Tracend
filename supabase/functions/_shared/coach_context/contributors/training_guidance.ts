@@ -140,7 +140,7 @@ function cardioLines(guidance: TrainingGuidance): string[] {
       ? ""
       : ` (up to ${record(week.stretchMax)} minutes for the athlete's goal)`;
     lines.push(
-      `Cardio this week (${window}): ${record(week.doneMin)} of ${
+      `Cardio this week (${window}): ${record(week.doneMin)} minutes done of ${
         record(week.targetMin)
       } minutes of moderate cardio${upper}, counted from Apple Health workouts${
         week.intensityKnown

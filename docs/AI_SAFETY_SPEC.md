@@ -1107,8 +1107,9 @@ routes stay available by settings alone for two weeks after the cutover.
   `moderate_until_cleared` restrictions, and the guard enforces them (a host report of a failed or
   timed-out screening contributor does the same). The reply guard (`_shared/coach_safety/reply_guard.ts`)
   then reads every answer, with a finite validation rule and a specific repair instruction for
-  each: `calories_below_floor` (advice to eat under the floor; only a limit word governing the figure,
-  such as "don't go below 1,500 kcal", or a judgement of it, such as "1,200 kcal is too low",
+  each: `calories_below_floor` (advice to eat under the floor; only a prohibition governing the figure,
+  such as "don't drop to 1,500 kcal" ("don't go below 1,500 kcal" sets a minimum under the floor and is
+  flagged), or a judgement of it, such as "1,200 kcal is too low",
   exempts it, and a meal or burn word exempts it only when it governs that figure; a below-floor
   daily figure after an intake verb is flagged with or without a day word. A limit counts only when
   it ends its clause with the day or "for you", is not a question and no later clause turns it round

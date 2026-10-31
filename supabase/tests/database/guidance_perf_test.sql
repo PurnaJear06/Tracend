@@ -1,5 +1,5 @@
 begin;
-select plan(26);
+select plan(29);
 
 -- Guidance performance: the zone check no longer reads the whole pg_timezone_names view on every call.
 -- The new check must answer exactly as the view does, for every name and for the names the table lacks.
@@ -45,6 +45,18 @@ select is(private.known_timezone('EST5EDT'),
 delete from private.timezone_names where name = 'Europe/Paris';
 select is(private.known_timezone('Europe/Paris'), true,
   'a name missing from the table is still known through the view');
+
+-- A name the table holds but the server can no longer use (a tz update removed it) is not known, and
+-- the check does not raise: the readers fall back to UTC.
+insert into private.timezone_names (name) values ('Mars/Olympus');
+select lives_ok($$select private.known_timezone('Mars/Olympus')$$,
+  'a table name the server cannot use does not raise');
+select is(private.known_timezone('Mars/Olympus'), false,
+  'a table name the server cannot use is not known');
+update public.user_accounts set timezone = 'Mars/Olympus' where id = 'b5500000-0000-4000-8000-000000000001';
+select is(private.local_day_of('b5500000-0000-4000-8000-000000000001', timestamptz '2026-10-30 23:30+00'),
+  date '2026-10-30', 'a table name the server cannot use reads as UTC for a moment');
+delete from private.timezone_names where name = 'Mars/Olympus';
 
 -- 3. The readers give what they gave ----------------------------------------------------------------------
 update public.user_accounts set timezone = 'Pacific/Kiritimati' where id = 'b5500000-0000-4000-8000-000000000001';

@@ -92,15 +92,16 @@ Deno.test("deload_signals is its latest earlier definition with the zone join sw
   );
 });
 
-Deno.test("known_timezone answers from the table first and from the view only for a name the table lacks", () => {
+Deno.test("known_timezone answers from the table or the view, then confirms the server can use the name", () => {
   const fn = definitionIn(perf, "private.known_timezone", perfName);
   assert(fn !== null);
-  assert(fn.includes("security definer set search_path = ''"));
-  // The table is asked first and the view only in the else branch, so a known name never reads the view.
-  const body = fn.slice(fn.indexOf("select case"));
+  assert(fn.includes("language plpgsql stable security definer set search_path = ''"));
+  // The table or, for a name it lacks, the view; then the server itself, so a name a later tz database
+  // no longer knows answers false (the readers fall back to UTC) instead of raising.
+  const body = fn.slice(fn.indexOf("begin"));
   assertEquals(
     body.replace(/\s+/g, " ").trim(),
-    "select case when exists (select 1 from private.timezone_names t where t.name = zone) then true else exists (select 1 from pg_catalog.pg_timezone_names z where z.name = zone) end; $$;",
+    "begin if not ( exists (select 1 from private.timezone_names t where t.name = zone) or exists (select 1 from pg_catalog.pg_timezone_names z where z.name = zone) ) then return false; end if; perform pg_catalog.now() at time zone zone; return true; exception when others then return false; end; $$;",
   );
   assert(
     perf.includes(

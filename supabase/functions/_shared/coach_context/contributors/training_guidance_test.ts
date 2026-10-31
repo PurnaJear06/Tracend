@@ -13,6 +13,7 @@ import { parseReadinessContext } from "../../training/readiness/context_payload.
 import { createReadinessContributor } from "./readiness.ts";
 import { coachContextContributors, coachContextContributorsFor } from "../registry.ts";
 import { renderCoachContext } from "../host.ts";
+import { numberGroundOf, ungroundedNumbers } from "../../coach_safety/numbers_check.ts";
 import {
   createTrainingGuidanceContributor,
   trainingGuidanceBudgetChars,
@@ -119,12 +120,26 @@ Deno.test("a suggestion tells the reasons in words, leaves the decision to the a
   assertStringIncludes(result.text, "You never start one.");
   assertStringIncludes(result.text, "never start, accept, decline or change a lighter week");
   assertStringIncludes(result.text, "a widely used coaching practice, not a proven requirement");
-  // 85 of 150 minutes, the upper figure for the goal, and hard cardio open.
-  assertStringIncludes(result.text, "85 of 150 minutes of moderate cardio (up to 300 minutes for");
+  // 85 of 150 minutes, the upper figure for the goal, and hard cardio open. Each figure has its own unit.
+  assertStringIncludes(
+    result.text,
+    "85 minutes done of 150 minutes of moderate cardio (up to 300 minutes for",
+  );
   assertStringIncludes(result.text, "every counted minute is read as moderate");
   assertStringIncludes(result.text, "Hard cardio is open today, up to 2 sessions a week");
   assertStringIncludes(result.text, "at least 3 hours from lifting");
   assert(!result.text.includes("weeks_since"));
+});
+
+Deno.test("the cardio minutes done carry their own minute unit in the numbers ground", async () => {
+  const result = await rendered(suggestedFixture);
+  const ground = numberGroundOf([result.text]);
+  // 85 minutes of cardio is grounded as minutes, and as nothing else.
+  assertEquals(ungroundedNumbers("You did 85 minutes of cardio this week.", ground), []);
+  assertEquals(ungroundedNumbers("You did 85 min of cardio this week.", ground), []);
+  assert(ungroundedNumbers("Your resting heart rate is 85 beats a minute.", ground).length > 0);
+  assert(ungroundedNumbers("Your HRV is 85 ms.", ground).length > 0);
+  assert(ungroundedNumbers("Your resting heart rate was 85 bpm.", ground).length > 0);
 });
 
 Deno.test("a pending and a running week say who made it, whose answer it waits for and how to undo", async () => {
@@ -173,10 +188,10 @@ Deno.test("the cardio week reads as it is: not countable, zero and the hard or e
   const missing = await rendered(payload({ cardio_week: cardio({ done_min: null }) }));
   assertStringIncludes(missing.text, "not countable yet");
   assertStringIncludes(missing.text, "Do not state minutes done");
-  assert(!missing.text.includes("0 of 150"));
+  assert(!missing.text.includes("minutes done of"));
 
   const zero = await rendered(payload({ cardio_week: cardio({ done_min: 0 }) }));
-  assertStringIncludes(zero.text, "0 of 150 minutes");
+  assertStringIncludes(zero.text, "0 minutes done of 150 minutes");
   assertStringIncludes(zero.text, "do not conclude they did no cardio");
 
   const easy = await rendered(payload());
