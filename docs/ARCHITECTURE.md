@@ -563,10 +563,10 @@ prompt never appears when a session is already completed.
    (`persist_meal_photo_candidates`), with usage in `ai_usage_events`. On the Claude path the
    answer also says whether the photo is a plate, a pack front or a nutrition label and copies what
    is printed; deterministic code (`_shared/meal_vision/packaged.ts`) checks the label arithmetic,
-   derives per-gram values and portions, and sets the source and confidence before storage
+   derives per-unit values (per gram, or per ml, never mixed) and portions, and sets the source and confidence before storage
    (AI_SAFETY_SPEC §8). The model's assumptions and question are stored with the candidate.
 5. The athlete edits candidates (for a pack or label, a portion chooser recalculates from the
-   stored per-gram values); `confirm_analyzed_meal` snapshots the corrections into confirmed meal
+   stored per-unit values); `confirm_analyzed_meal` snapshots the corrections into confirmed meal
    items in one transaction.
 6. The daily retention worker deletes the image at its deadline.
 

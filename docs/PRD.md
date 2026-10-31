@@ -234,18 +234,20 @@ user's confirmation. HealthKit data never silently changes adherence.
 1. The user uploads or captures a meal photo: a plate, the front of a packaged product, or a
    product's printed nutrition table.
 2. AI proposes visible foods, preparation assumptions, portion estimates, confidence, and questions.
-   For a pack or a nutrition table it copies what is printed (product name and brand, net weight,
-   serving size, servings per pack, and the per 100 g and per-serving values); it never names a
+   For a pack or a nutrition table it copies what is printed (product name and brand, net weight
+   or volume, serving size, servings per pack, and the per 100 g or 100 ml and per-serving
+   values, with the unit); it never names a
    product or a value from memory.
 3. Deterministic code, never the model, checks a label's arithmetic (energy against protein,
    carbohydrate and fat; the per-serving column against the per 100 g column; servings times
-   serving size against the net weight), works out the portions (one serving, the whole pack, or
-   any grams) from per-gram values, and sets the confidence from the source: **From label** when a
-   label passes its checks, **Label unclear** when it does not (each failed check is named),
+   serving size against the net quantity), works out the portions (one serving, the whole pack,
+   or, by weight only, any grams) from per-unit values, and sets the confidence from the source:
+   **From label** when a label by weight passes its checks, **Label unclear** when it does not or is
+   printed per ml (never shown as grams; only its printed serving and pack are offered),
    **Estimated** for a plate or the front of a pack (never high confidence). The model's
    assumptions and question are shown with each candidate.
 4. The user adds, removes, edits, or confirms foods and portions; for a pack or label a portion
-   chooser recalculates every value from the stored per-gram values. Nothing counts until the
+   chooser recalculates every value from the stored per-unit values. Nothing counts until the
    user confirms it.
 5. **Not built: the hybrid food catalog.** The intended step, matching confirmed items to a food
    catalog and calculating macros from catalog values, does not exist. Until it does, the confirmed

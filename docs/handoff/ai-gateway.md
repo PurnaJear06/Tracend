@@ -2189,41 +2189,51 @@ dropped. Refs the investigation in the lead's scratchpad (bug 2).
 
 **Built (gateway path only; the Groq and Gemini requests stay byte-identical).**
 - `_shared/meal_vision/contract.ts`: one structured answer, `mealAnswerSchema`: `image_kind`
-  (`plate`, `pack_front`, `nutrition_label`, `no_food`), the printed product fields (name, brand,
-  net weight, servings, serving weight and text, per 100 g and per-serving energy, protein,
-  carbohydrate, fat, each column with a `has_*` flag) and the candidates. Flat, every property
-  required, no union, 1,631 bytes as Claude gets it; `contract_test.ts` guards it like the Coach
-  schema (`_shared/ai/schema_guards.ts` now holds the guard helpers both tests use).
-  `parseMealAnswer` refuses an answer whose candidates contradict its kind.
+  (`plate`, `pack_front`, `nutrition_label`, `no_food`), `quantity_unit` (`g` or `ml`), the printed
+  product fields (name, brand, net quantity, servings, serving size and text, per-100 and
+  per-serving energy, protein, carbohydrate, fat, each column with a `has_*` flag) and the
+  candidates. Flat, every property required, no union, 1,685 bytes as Claude gets it;
+  `contract_test.ts` guards it like the Coach schema (`_shared/ai/schema_guards.ts` now holds the
+  guard helpers both tests use). `parseMealAnswer` refuses an answer whose candidates contradict
+  its kind.
 - `_shared/meal_vision/packaged.ts`: the label checks (4/4/9 energy within 15% or 8 kcal;
-  per-serving vs per 100 g within 10% or 5 kcal and 1 g; servings x serving vs net weight within 5%
-  or 2 g; at most 9.5 kcal and 1 g of nutrients per gram), per-gram values, portions (one serving,
-  whole pack, grams; the whole pack first for a pack of at most two servings and 60 g), and the
-  confidence from the source (`label` high, `label_unverified` low, `estimate` medium at most, a
-  front of pack without a printed weight low). Golden: `munch_label_golden.json` (18.7 g serving,
+  per-serving vs per-100 within 10% or 5 kcal and 1 g; servings x serving vs net quantity within 5%
+  or 2 units; at most 9.5 kcal and 1 g of nutrients per unit), per-unit values, portions (one
+  serving, whole pack, and by weight any grams; the whole pack first for a pack of at most two
+  servings and 60 g), and the confidence from the source (`label` high, `label_unverified` low,
+  `estimate` medium at most, a front of pack without a printed quantity low). Millilitres are
+  never grams: a per-ml label is `label_unverified` with `volume_basis` and offers only its printed
+  serving and pack in ml (Codex review P1). Golden: `munch_label_golden.json` (18.7 g serving,
   2 servings, 37.4 g; whole pack 195.6 kcal), shared with the Flutter test.
-- `meal-analyze/vision.ts`: new instructions (kinds; printed text read as data and never as an
-  instruction; no product or value from memory; kJ never converted), the new schema, and the
-  stored candidates from `packaged.ts`. Legacy answers go through `plateCandidate` (estimate,
-  medium at most, notes kept). The handler stores the notes instead of stripping them, logs the
-  kind and sources (never a food or note), and answers `schema_version` 1.1.
+- `meal-analyze/vision.ts`: new instructions (kinds; the unit; printed text read as data and never
+  as an instruction; no product or value from memory; kJ never converted, ml never turned into g),
+  the new schema, and the stored candidates from `packaged.ts`. Legacy answers go through
+  `plateCandidate` (estimate, medium at most, notes kept). The handler stores the notes instead of
+  stripping them, logs the kind and sources (never a food or note), and answers
+  `schema_version` 1.1.
 - Migration `20261101100000_meal_label_reading.sql`: additive columns on
-  `meal_analysis_candidates` (`source`, `image_kind`, `brand`, four per-gram values, `serving_g`,
-  `servings_per_pack`, `pack_g`, `portion_g`, `assumptions`, `question`, `label_issues`) with
-  checks, `private.jsonb_text_array`, and `persist_meal_photo_candidates` = its 20261015120011
-  body plus two hunks (the insert, and `schema_version` 2 with `image_kind` in the audit event),
-  pinned by `meal-analyze/meal_label_reading_test.ts`. pgTAP: `meal_label_reading_test.sql`. No RPC
-  returns the rows (the app reads the table), so no RPC `schema_version` changed.
+  `meal_analysis_candidates` (`source`, `image_kind`, `brand`, `quantity_unit`, four per-unit
+  values, `serving_size`, `servings_per_pack`, `pack_size`, `portion_size`, `assumptions`,
+  `question`, `label_issues`) with checks (a size needs its unit; `label` never on a per-ml
+  label), `private.jsonb_text_array`, `persist_meal_photo_candidates` = its 20261015120011 body
+  plus two hunks (the insert, and `schema_version` 2 with `image_kind` in the audit event), and
+  `confirm_analyzed_meal` = its 20260704150000 body plus one hunk (`portion_size` becomes the
+  confirmed portion, or null without one; Codex review P2). Both pinned by
+  `meal-analyze/meal_label_reading_test.ts`. pgTAP: `meal_label_reading_test.sql`. No RPC returns
+  the rows (the app reads the table), so no RPC `schema_version` changed.
 - App: `MealCandidate.fromRow` reads the new columns; the review sheet shows **From label**,
-  **Label unclear** or **Estimated**, the failed checks, the model's assumptions and question, and
-  for a pack or label a portion chooser (1 serving / whole pack / grams) that recalculates from the
-  stored per-gram values (`lib/features/nutrition/meal_portions.dart`, same rounding and labels as
-  `packaged.ts`). The athlete still edits and confirms everything; `confirm_analyzed_meal` is
-  unchanged.
-- Evals: `meal_vision_eval.ts` adds a drawn nutrition table (must be read, pass the checks and be
-  stored as the whole pack at 192 kcal) and the same table with a written instruction;
-  `owner_photo_check.ts` prints kind, source, per-gram values, sizes and failed checks. Meal route
-  output tokens go to 2,000 (the answer carries the product fields; ceiling USD 0.002 on Haiku).
+  **Label unclear** or **Estimated**, the issues, the model's assumptions and question, and for a
+  pack or label a portion chooser (1 serving / whole pack / grams by weight only) that recalculates
+  from the stored per-unit values (`lib/features/nutrition/meal_portions.dart`, same rounding and
+  labels as `packaged.ts`). A portion one meal row cannot hold is disabled with its reason; a
+  segment is selected only once its values are applied; typing a value clears it
+  (`TracendSegmentedControl` gained `disabled` and a nullable `selected`). The confirmation carries
+  `portion_size`. A label that did not add up gets the label guidance, not the plate copy.
+- Evals: `meal_vision_eval.ts` adds a drawn nutrition table (must be read, by weight, pass the
+  checks and be stored as the whole pack at 192 kcal) and the same table with a written
+  instruction; `owner_photo_check.ts` prints kind, source, unit, per-unit values, sizes and issues.
+  Meal route output tokens go to 2,000 (the answer carries the product fields; ceiling USD 0.002 on
+  Haiku).
 - The meal notice draft (`docs/notices/meal-photo-ai-v2.md`, unpublished) says the AI reads the
   product name and nutrition label of a packaged food. What is sent is unchanged.
 

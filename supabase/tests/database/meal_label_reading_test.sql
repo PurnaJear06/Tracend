@@ -1,9 +1,10 @@
 begin;
 
-select plan(30);
+select plan(38);
 
 -- Migration 20261101100000: meal photo candidates keep the source, the image kind, the printed
--- sizes, per-gram values and the model's notes; persist_meal_photo_candidates writes them.
+-- unit, sizes, per-unit values and the model's notes; persist_meal_photo_candidates writes them,
+-- and confirm_analyzed_meal keeps the portion the athlete confirmed.
 
 insert into auth.users (id, role) values
   ('c7c7c7c7-c7c7-4c7c-8c7c-c7c7c7c7c7c7', 'authenticated'),
@@ -17,21 +18,25 @@ values
    'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'),
   ('f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0', 'c7c7c7c7-c7c7-4c7c-8c7c-c7c7c7c7c7c7',
    current_date, 'Asia/Kolkata', 'lunch', 'photo_analysis', 'draft',
-   'b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2');
+   'b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2'),
+  ('a3a3a3a3-a3a3-4a3a-8a3a-a3a3a3a3a3a3', 'c7c7c7c7-c7c7-4c7c-8c7c-c7c7c7c7c7c7',
+   current_date, 'Asia/Kolkata', 'breakfast', 'photo_analysis', 'draft',
+   'b4b4b4b4-b4b4-4b4b-8b4b-b4b4b4b4b4b4');
 
 -- 1. Columns -----------------------------------------------------------------------------------
 
 select has_column('public'::name, 'meal_analysis_candidates'::name, 'source', 'source column exists');
 select has_column('public'::name, 'meal_analysis_candidates'::name, 'image_kind', 'image_kind column exists');
 select has_column('public'::name, 'meal_analysis_candidates'::name, 'brand', 'brand column exists');
-select has_column('public'::name, 'meal_analysis_candidates'::name, 'kcal_per_g', 'kcal_per_g column exists');
-select has_column('public'::name, 'meal_analysis_candidates'::name, 'protein_per_g', 'protein_per_g column exists');
-select has_column('public'::name, 'meal_analysis_candidates'::name, 'carbohydrate_per_g', 'carbohydrate_per_g column exists');
-select has_column('public'::name, 'meal_analysis_candidates'::name, 'fat_per_g', 'fat_per_g column exists');
-select has_column('public'::name, 'meal_analysis_candidates'::name, 'serving_g', 'serving_g column exists');
+select has_column('public'::name, 'meal_analysis_candidates'::name, 'quantity_unit', 'quantity_unit column exists');
+select has_column('public'::name, 'meal_analysis_candidates'::name, 'kcal_per_unit', 'kcal_per_unit column exists');
+select has_column('public'::name, 'meal_analysis_candidates'::name, 'protein_per_unit', 'protein_per_unit column exists');
+select has_column('public'::name, 'meal_analysis_candidates'::name, 'carbohydrate_per_unit', 'carbohydrate_per_unit column exists');
+select has_column('public'::name, 'meal_analysis_candidates'::name, 'fat_per_unit', 'fat_per_unit column exists');
+select has_column('public'::name, 'meal_analysis_candidates'::name, 'serving_size', 'serving_size column exists');
 select has_column('public'::name, 'meal_analysis_candidates'::name, 'servings_per_pack', 'servings_per_pack column exists');
-select has_column('public'::name, 'meal_analysis_candidates'::name, 'pack_g', 'pack_g column exists');
-select has_column('public'::name, 'meal_analysis_candidates'::name, 'portion_g', 'portion_g column exists');
+select has_column('public'::name, 'meal_analysis_candidates'::name, 'pack_size', 'pack_size column exists');
+select has_column('public'::name, 'meal_analysis_candidates'::name, 'portion_size', 'portion_size column exists');
 select has_column('public'::name, 'meal_analysis_candidates'::name, 'assumptions', 'assumptions column exists');
 select has_column('public'::name, 'meal_analysis_candidates'::name, 'question', 'question column exists');
 select has_column('public'::name, 'meal_analysis_candidates'::name, 'label_issues', 'label_issues column exists');
@@ -57,9 +62,9 @@ select is(
     'e9e9e9e9-e9e9-4e9e-8e9e-e9e9e9e9e9e9',
     '[{"name":"Nestlé Munch Max Nuts","serving_label":"Whole pack (37.4 g)","calories":195.6,
        "protein_g":3.1,"carbohydrate_g":21.5,"fat_g":10.8,"confidence":"high","source":"label",
-       "image_kind":"nutrition_label","brand":"Nestlé","kcal_per_g":5.23,"protein_per_g":0.082,
-       "carbohydrate_per_g":0.576,"fat_per_g":0.289,"serving_g":18.7,"servings_per_pack":2,
-       "pack_g":37.4,"portion_g":37.4,
+       "image_kind":"nutrition_label","brand":"Nestlé","quantity_unit":"g","kcal_per_unit":5.23,"protein_per_unit":0.082,
+       "carbohydrate_per_unit":0.576,"fat_per_unit":0.289,"serving_size":18.7,"servings_per_pack":2,
+       "pack_size":37.4,"portion_size":37.4,
        "assumptions":["Values copied from the printed nutrition table"],
        "question":"Did you eat the whole bar (2 servings) or half of it?","label_issues":[]}]'::jsonb,
     'anthropic', 'claude-haiku-5-5'),
@@ -68,14 +73,21 @@ select is(
 );
 
 select results_eq(
-  $$select source, image_kind, brand, kcal_per_g, fat_per_g, serving_g, servings_per_pack,
-      pack_g, portion_g, assumptions, question, label_issues
+  $$select source, image_kind, brand, kcal_per_unit, fat_per_unit, serving_size, servings_per_pack,
+      pack_size, portion_size, assumptions, question, label_issues
     from public.meal_analysis_candidates where meal_id = 'e9e9e9e9-e9e9-4e9e-8e9e-e9e9e9e9e9e9'$$,
   $$values ('label'::text, 'nutrition_label'::text, 'Nestlé'::text, 5.23::numeric,
       0.289::numeric, 18.7::numeric, 2::numeric, 37.4::numeric,
       37.4::numeric, array['Values copied from the printed nutrition table']::text[],
       'Did you eat the whole bar (2 servings) or half of it?'::text, '{}'::text[])$$,
   'the source, sizes, per-gram values and notes are stored'
+);
+
+select is(
+  (select quantity_unit from public.meal_analysis_candidates
+   where meal_id = 'e9e9e9e9-e9e9-4e9e-8e9e-e9e9e9e9e9e9'),
+  'g',
+  'the unit is stored'
 );
 
 select is(
@@ -99,7 +111,7 @@ select is(
 );
 
 select results_eq(
-  $$select source, image_kind, brand, kcal_per_g, assumptions, question, label_issues
+  $$select source, image_kind, brand, kcal_per_unit, assumptions, question, label_issues
     from public.meal_analysis_candidates where meal_id = 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0'$$,
   $$values (null::text, null::text, ''::text, null::numeric, '{}'::text[], ''::text,
       '{}'::text[])$$,
@@ -122,7 +134,7 @@ select throws_ok(
     'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0',
     '[{"name":"Bar","serving_label":"1 bar","calories":100,"protein_g":1,"carbohydrate_g":10,
        "fat_g":5,"confidence":"low","source":"estimate","image_kind":"pack_front",
-       "kcal_per_g":5.2}]'::jsonb,
+       "kcal_per_unit":5.2}]'::jsonb,
     'anthropic', 'claude-haiku-5-5')$$,
   '23514', null, 'per-gram values come as a set'
 );
@@ -142,9 +154,46 @@ select throws_ok(
     'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0',
     '[{"name":"Bar","serving_label":"1 bar","calories":100,"protein_g":1,"carbohydrate_g":10,
        "fat_g":5,"confidence":"low","source":"estimate","image_kind":"pack_front",
-       "kcal_per_g":12,"protein_per_g":0.1,"carbohydrate_per_g":0.5,"fat_per_g":0.3}]'::jsonb,
+       "kcal_per_unit":12,"protein_per_unit":0.1,"carbohydrate_per_unit":0.5,"fat_per_unit":0.3}]'::jsonb,
     'anthropic', 'claude-haiku-5-5')$$,
   '23514', null, 'more than 10 kcal per gram is refused'
+);
+
+select throws_ok(
+  $$select public.persist_meal_photo_candidates('c7c7c7c7-c7c7-4c7c-8c7c-c7c7c7c7c7c7',
+    'a3a3a3a3-a3a3-4a3a-8a3a-a3a3a3a3a3a3',
+    '[{"name":"Milk","serving_label":"1 serving (200 ml)","calories":150,"protein_g":6.4,
+       "carbohydrate_g":21,"fat_g":4.4,"confidence":"high","source":"label",
+       "image_kind":"nutrition_label","quantity_unit":"ml","kcal_per_unit":0.75,
+       "protein_per_unit":0.032,"carbohydrate_per_unit":0.105,"fat_per_unit":0.022,
+       "serving_size":200,"portion_size":200}]'::jsonb,
+    'anthropic', 'claude-haiku-5-5')$$,
+  '23514', null, '"From label" is refused for a label printed per ml'
+);
+
+select throws_ok(
+  $$select public.persist_meal_photo_candidates('c7c7c7c7-c7c7-4c7c-8c7c-c7c7c7c7c7c7',
+    'a3a3a3a3-a3a3-4a3a-8a3a-a3a3a3a3a3a3',
+    '[{"name":"Bar","serving_label":"Whole pack (40 g)","calories":190,"protein_g":3,
+       "carbohydrate_g":24,"fat_g":9,"confidence":"medium","source":"estimate",
+       "image_kind":"pack_front","kcal_per_unit":4.75,"protein_per_unit":0.075,
+       "carbohydrate_per_unit":0.6,"fat_per_unit":0.225,"pack_size":40,"portion_size":40}]'::jsonb,
+    'anthropic', 'claude-haiku-5-5')$$,
+  '23514', null, 'a size without its unit is refused'
+);
+
+select is(
+  public.persist_meal_photo_candidates('c7c7c7c7-c7c7-4c7c-8c7c-c7c7c7c7c7c7',
+    'a3a3a3a3-a3a3-4a3a-8a3a-a3a3a3a3a3a3',
+    '[{"name":"Milk","serving_label":"1 serving (200 ml)","calories":150,"protein_g":6.4,
+       "carbohydrate_g":21,"fat_g":4.4,"confidence":"low","source":"label_unverified",
+       "image_kind":"nutrition_label","quantity_unit":"ml","kcal_per_unit":0.75,
+       "protein_per_unit":0.032,"carbohydrate_per_unit":0.105,"fat_per_unit":0.022,
+       "serving_size":200,"pack_size":250,"portion_size":200,
+       "label_issues":["volume_basis"]}]'::jsonb,
+    'anthropic', 'claude-haiku-5-5'),
+  1,
+  'a per-ml label is saved as unclear, in ml'
 );
 
 select is(private.jsonb_text_array('["a", 1]'::jsonb), '{}'::text[],
@@ -156,10 +205,53 @@ set local role authenticated;
 set local "request.jwt.claim.sub" = 'c7c7c7c7-c7c7-4c7c-8c7c-c7c7c7c7c7c7';
 
 select is(
-  (select source || ':' || pack_g::text from public.meal_analysis_candidates
+  (select source || ':' || pack_size::text from public.meal_analysis_candidates
    where meal_id = 'e9e9e9e9-e9e9-4e9e-8e9e-e9e9e9e9e9e9'),
   'label:37.40',
   'the owner reads the new columns'
+);
+
+-- 7. Confirmation keeps the confirmed portion, or clears a stale one -----------------------------
+
+create temporary table confirmed_label as
+select public.confirm_analyzed_meal('e9e9e9e9-e9e9-4e9e-8e9e-e9e9e9e9e9e9', jsonb_build_array(
+  jsonb_build_object(
+    'id', (select id from public.meal_analysis_candidates
+           where meal_id = 'e9e9e9e9-e9e9-4e9e-8e9e-e9e9e9e9e9e9'),
+    'name', 'Nestlé Munch Max Nuts', 'serving_label', '1 serving (18.7 g)',
+    'calories', 97.8, 'protein_g', 1.5, 'carbohydrate_g', 10.8, 'fat_g', 5.4,
+    'portion_size', 18.7)));
+
+select is(
+  (select serving_label || ':' || portion_size::text from public.meal_analysis_candidates
+   where meal_id = 'e9e9e9e9-e9e9-4e9e-8e9e-e9e9e9e9e9e9'),
+  '1 serving (18.7 g):18.70',
+  'the confirmed portion replaces the stored default'
+);
+
+create temporary table confirmed_milk as
+select public.confirm_analyzed_meal('a3a3a3a3-a3a3-4a3a-8a3a-a3a3a3a3a3a3', jsonb_build_array(
+  jsonb_build_object(
+    'id', (select id from public.meal_analysis_candidates
+           where meal_id = 'a3a3a3a3-a3a3-4a3a-8a3a-a3a3a3a3a3a3'),
+    'name', 'Milk', 'serving_label', '1 glass', 'calories', 120, 'protein_g', 5,
+    'carbohydrate_g', 17, 'fat_g', 3.5)));
+
+select is(
+  (select portion_size from public.meal_analysis_candidates
+   where meal_id = 'a3a3a3a3-a3a3-4a3a-8a3a-a3a3a3a3a3a3'),
+  null::numeric,
+  'values confirmed without a portion (an older app, or typed values) clear the stale one'
+);
+
+select throws_ok(
+  $$select public.confirm_analyzed_meal('f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0', jsonb_build_array(
+    jsonb_build_object(
+      'id', (select id from public.meal_analysis_candidates
+             where meal_id = 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0'),
+      'name', 'Dal', 'serving_label', '1 bowl', 'calories', 180, 'protein_g', 9,
+      'carbohydrate_g', 24, 'fat_g', 5, 'portion_size', 100)))$$,
+  '23514', null, 'a portion for a candidate with no per-unit values is refused'
 );
 
 set local "request.jwt.claim.sub" = 'd8d8d8d8-d8d8-4d8d-8d8d-d8d8d8d8d8d8';

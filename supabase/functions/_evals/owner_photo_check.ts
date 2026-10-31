@@ -188,10 +188,13 @@ async function mealItems(folder: string, io: CheckIo): Promise<Item[] | string> 
               `P ${food.protein_g} g, C ${food.carbohydrate_g} g, F ${food.fat_g} g | ` +
               `confidence ${food.confidence} | ${food.image_kind}, ${food.source}`,
           );
-          if (food.kcal_per_g !== null) {
+          if (food.kcal_per_unit !== null) {
+            const unit = food.quantity_unit ?? "?";
             check.log(
-              `      per gram ${food.kcal_per_g} kcal; serving ${food.serving_g ?? "-"} g, ` +
-                `pack ${food.pack_g ?? "-"} g, ${food.servings_per_pack ?? "-"} servings`,
+              `      per ${unit} ${food.kcal_per_unit} kcal; serving ${
+                food.serving_size ?? "-"
+              } ${unit}, ` +
+                `pack ${food.pack_size ?? "-"} ${unit}, ${food.servings_per_pack ?? "-"} servings`,
             );
           }
           if (food.label_issues.length > 0) {

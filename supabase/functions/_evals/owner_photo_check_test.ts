@@ -121,7 +121,7 @@ Deno.test("meal: a nutrition label prints its source, sizes and per-gram values"
   const output = run.lines.join("\n");
   assertStringIncludes(output, "Nestlé Munch Max Nuts | Whole pack (37.4 g) | 195.6 kcal");
   assertStringIncludes(output, "confidence high | nutrition_label, label");
-  assertStringIncludes(output, "per gram 5.23 kcal; serving 18.7 g, pack 37.4 g, 2 servings");
+  assertStringIncludes(output, "per g 5.23 kcal; serving 18.7 g, pack 37.4 g, 2 servings");
 });
 
 Deno.test("meal: stops before a call that could pass the spend cap", async () => {

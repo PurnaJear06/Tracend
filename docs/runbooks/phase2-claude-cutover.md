@@ -217,13 +217,14 @@ production: no route, no database, no Storage.
    It sends each photo through the same request meal-analyze sends (same instructions, schema,
    model and settings, imported from `meal-analyze/vision.ts`), runs the same label checks, and
    prints what would be stored: each food with its portion, kind (`plate`, `pack_front`,
-   `nutrition_label`) and source (`label`, `label_unverified`, `estimate`), per-gram values and
+   `nutrition_label`) and source (`label`, `label_unverified`, `estimate`), unit, per-unit values and
    sizes, and any failed label check.
 4. Judge the output: the foods named are the foods on the plate, portions are sensible, nothing is
    invented, the mixed dish asks about its recipe, and the non-meal photo returns "no food found".
    For each pack: the nutrition-table photo gives the printed name and brand, the printed serving,
-   servings and net weight, source `label` (or `label_unverified` with a check that really fails on
-   that label), and the whole-pack line matches the pack; the front photo is `estimate` and never
+   servings and net quantity, source `label` (or `label_unverified` with a check that really fails
+   on that label; a drink printed per ml is always `label_unverified` with `volume_basis` and shows
+   ml, never g), and the whole-pack line matches the pack; the front photo is `estimate` and never
    high confidence.
 5. **Only if both pass,** set the production route (`EVALUATED=true` last). If either does not,
    set nothing and report what was wrong.

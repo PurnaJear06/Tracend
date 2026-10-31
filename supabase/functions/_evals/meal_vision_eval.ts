@@ -78,7 +78,7 @@ async function main() {
         // A label must be read, pass code's checks and give the whole pack.
         const labelRead = !item.label || (
           product?.image_kind === "nutrition_label" && product.source === "label" &&
-          product.portion_g === 40 &&
+          product.quantity_unit === "g" && product.portion_size === 40 &&
           Math.abs(product.calories - labelPackKcal) <= labelPackKcal * 0.02
         );
         const ok = found && labelRead;

@@ -23,14 +23,15 @@ Deno.test("the meal schema has no optional property and no union", () => {
   assertEquals(unions(converted()), []);
 });
 
-Deno.test("the meal schema's only enums are the image kind and the confidence", () => {
+Deno.test("the meal schema's only enums are the image kind, the unit and the confidence", () => {
   assertEquals(enums(converted()), [
     ["plate", "pack_front", "nutrition_label", "no_food"],
+    ["g", "ml"],
     ["low", "medium", "high"],
   ]);
 });
 
-// The converted schema is 1,631 bytes. If a field is added on purpose, check that it is required
+// The converted schema is 1,685 bytes. If a field is added on purpose, check that it is required
 // and union-free before raising the budget.
 const schemaByteBudget = 1_800;
 
@@ -75,12 +76,13 @@ Deno.test("the candidates must fit the kind: none, at least one, or exactly the 
 Deno.test("a field of the wrong type, out of range or missing is refused", () => {
   const changes: Record<string, unknown>[] = [
     { image_kind: "mixed" },
+    { quantity_unit: "l" },
     { product_name: 7 },
     { brand: "b".repeat(81) },
-    { net_weight_g: -1 },
-    { per_100g_kcal: Number.POSITIVE_INFINITY },
+    { net_quantity: -1 },
+    { per_100_kcal: Number.POSITIVE_INFINITY },
     { per_serving_kcal: "98" },
-    { has_per_100g: "true" },
+    { has_per_100: "true" },
     { servings_per_pack: 1e9 },
   ];
   for (const change of changes) {

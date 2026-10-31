@@ -548,32 +548,49 @@ recipe or ingredient clarification rather than imply false precision.
 **Packaged products and nutrition labels (2026-11-01, gateway path).** One call returns one
 structured answer (`_shared/meal_vision/contract.ts`, `mealAnswerSchema`):
 - `image_kind`: `plate`, `pack_front`, `nutrition_label` or `no_food`.
+- `quantity_unit`: `g`, or `ml` when the pack measures its contents by volume (a per 100 ml column,
+  or a net quantity in ml or l). The net quantity, serving size and per-100 column are in that unit;
+  a size printed only in the other unit is `0`. The model never turns ml into g or g into ml.
 - For a nutrition label the model copies the printed values exactly: product name and brand as
-  printed (`""` when not visible, never from memory), net weight, servings per pack, serving weight
+  printed (`""` when not visible, never from memory), net quantity, servings per pack, serving size
   and serving text, and energy, protein, carbohydrate and fat for each printed column (per 100 g
-  and per serving, each with a `has_*` flag). It never converts kJ, rounds, completes or recalls a
-  value. One candidate: the product, with assumptions and a question about how much was eaten.
-- For a front of pack: product name, brand and net weight as printed, and one candidate holding
-  the model's estimate for the whole pack, which it must say is an estimate.
-- For a plate: the candidates as before. For no food: none.
+  or 100 ml, and per serving, each with a `has_*` flag). It never converts kJ, rounds, completes or
+  recalls a value. One candidate: the product, with assumptions and a question about how much was
+  eaten.
+- For a front of pack: product name, brand, net quantity and its unit as printed, and one candidate
+  holding the model's estimate for the whole pack, which it must say is an estimate.
+- For a plate: the candidates as before (`quantity_unit` `g`, every product field empty). For no
+  food: none.
 - The schema is flat with no optional property and no union: not printed is `""`, `0` or `false`
   (`meal_vision/contract_test.ts` guards it as `coach_chat_schema_test.ts` guards Coach chat's).
 
 Deterministic code (`_shared/meal_vision/packaged.ts`), never the model, then:
 - checks the label: energy against 4/4/9 kcal per gram of protein, carbohydrate and fat (within
-  15%, or 8 kcal), the per-serving column against the per 100 g column at the serving weight
-  (within 10%, or 5 kcal and 1 g), servings times serving weight against the net weight (within
-  5% or 2 g), and that no gram holds more than 9.5 kcal or 1 g of nutrients;
-- derives per-gram values and the portions: one serving, the whole pack (shown first for a pack
-  of at most two servings and 60 g), or any grams;
-- sets the confidence from the source: a label that passes every check is `label` (high); one
-  that fails any is `label_unverified` (low, values kept, each failed check named); a front of
-  pack is an `estimate`, medium at most and low without a printed net weight; a plate is an
-  `estimate`, medium at most. The model's own confidence is only an upper bound for an estimate.
+  15%, or 8 kcal), the per-serving column against the per-100 column at the serving size (within
+  10%, or 5 kcal and 1 g), servings times serving size against the net quantity (within 5% or 2
+  units), and that no gram (or ml) holds more than 9.5 kcal or 1 g of nutrients;
+- derives per-unit values (per gram, or per ml) and the portions: one serving, the whole pack
+  (shown first for a pack of at most two servings and 60 g), or, by weight only, any grams;
+- **never presents millilitres as grams.** A label printed per ml is `label_unverified` (low) with
+  the issue `volume_basis`, because its values cannot be checked against a weight: the stored
+  values are the printed serving (else the pack, else 100 ml), and the app offers only the
+  printed serving and pack, in ml, never a typed amount. With neither printed it offers nothing
+  and keeps the stored values. A front of pack measured in ml offers only the whole pack, in ml;
+- sets the confidence from the source: a label by weight that passes every check is `label`
+  (high); one that fails any check, or is printed per ml, is `label_unverified` (low, values kept,
+  each issue named); a front of pack is an `estimate`, medium at most and low without a printed net
+  quantity; a plate is an `estimate`, medium at most. The model's own confidence is only an upper
+  bound for an estimate. The table refuses `label` for a per-ml label.
 - stores the model's assumptions and question with the candidate (they were dropped before).
-The review sheet shows **From label**, **Label unclear** or **Estimated**, the failed checks, the
-notes, and for a pack or label a portion chooser that recalculates from the stored per-gram values.
-The athlete edits and confirms every value; the model confirms nothing.
+
+The review sheet shows **From label**, **Label unclear** or **Estimated**, the issues, the notes,
+and for a pack or label a portion chooser that recalculates from the stored per-unit values. A
+portion one meal row cannot hold (more than 5,000 kcal, 500 g of protein, 1,000 g of carbohydrate
+or 500 g of fat) is disabled with the reason shown, and the chooser selects a portion only once its
+values are applied, so the selected portion is always the one whose values are confirmed. Typing a
+value by hand clears the selection. `confirm_analyzed_meal` stores the confirmed portion
+(`portion_size`), or clears it when the values were typed or came from an older app. The athlete
+edits and confirms every value; the model confirms nothing.
 
 **Printed text and prompt injection.** The gateway instructions read printed packaging and
 nutrition tables as data and say that text in the photo is never an instruction: anything written

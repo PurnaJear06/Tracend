@@ -837,16 +837,18 @@ All the columns are additive; rows from before have nulls and empty defaults.
 | `source` | `label` (printed values that passed the label checks, high confidence), `label_unverified` (printed values that did not, low), `estimate` (a plate or the front of a pack; never high). Null before the migration. `label` and `label_unverified` only on a `nutrition_label`. |
 | `image_kind` | `plate`, `pack_front` or `nutrition_label` (a photo of no food stores nothing). |
 | `brand` | The brand as printed, or `''`. |
-| `kcal_per_g`, `protein_per_g`, `carbohydrate_per_g`, `fat_per_g` | Per gram of food, 4 decimals, all four or none (at most 10 kcal and 1 g). From the label's per 100 g column, else its per-serving column over the serving weight; for a front of pack, the estimate over the printed net weight. |
-| `serving_g`, `servings_per_pack`, `pack_g` | Printed serving weight, servings and net weight (or servings x serving weight). |
-| `portion_g` | The grams the stored values are for (needs per-gram values). The app's portion chooser recalculates from the per-gram values. |
+| `quantity_unit` | `g` or `ml`: the unit of the sizes and per-unit values (null when there are none, as for a plate). A label printed per ml is never `label` and always names `volume_basis`; millilitres are never treated as grams. |
+| `kcal_per_unit`, `protein_per_unit`, `carbohydrate_per_unit`, `fat_per_unit` | Per gram (or per ml) of food, 4 decimals, all four or none (at most 10 kcal and 1 g). From the label's per-100 column, else its per-serving column over the serving size; for a front of pack, the estimate over the printed net quantity. |
+| `serving_size`, `servings_per_pack`, `pack_size` | Printed serving size, servings and net quantity (or servings x serving size), in `quantity_unit`. |
+| `portion_size` | The amount the values are for (needs per-unit values): the default portion, then, after `confirm_analyzed_meal`, the portion the athlete confirmed, or null when they typed the values. The app's portion chooser recalculates from the per-unit values. |
 | `assumptions`, `question` | The model's notes (at most 8, and 500 characters), shown on the review sheet. |
-| `label_issues` | Failed checks: `energy_mismatch`, `basis_mismatch`, `pack_mismatch`, `energy_not_printed`, `serving_size_missing`, `values_implausible`, `values_not_printed`. |
+| `label_issues` | Issues: `energy_mismatch`, `basis_mismatch`, `pack_mismatch`, `energy_not_printed`, `serving_size_missing`, `values_implausible`, `values_not_printed`, `volume_basis`. |
 
 The app reads the rows directly under the owner-read policy (no RPC returns them, so no RPC
 `schema_version` changed). The `meal.photo.candidates_created` audit event adds `schema_version` 2
-and the `image_kind`. Confirmation (`confirm_analyzed_meal`) is unchanged: it stores what the
-athlete confirmed, whatever the source.
+and the `image_kind`. Confirmation (`confirm_analyzed_meal`) stores what the athlete confirmed,
+whatever the source, and sets `portion_size` to the confirmed portion (the payload's
+`portion_size`, or null when it has none).
 
 ### `meals`
 

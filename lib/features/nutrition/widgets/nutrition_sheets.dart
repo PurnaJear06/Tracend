@@ -510,11 +510,13 @@ class _CandidateSheetState extends State<CandidateSheet> {
           ),
           Text(
             widget.candidates.any(
-                  (candidate) => candidate.source == MealSource.label,
+                  (candidate) =>
+                      candidate.source == MealSource.label ||
+                      candidate.source == MealSource.labelUnverified,
                 )
-                ? 'Values read from a label can still be misread. Check the '
-                      'name, the numbers and how much you ate, then confirm '
-                      'only what you ate.'
+                ? 'Values read from a label can still be misread. Compare the '
+                      'name and the numbers with the pack, choose how much you '
+                      'ate, then confirm only what you ate.'
                 : 'These are estimates from your photo. Check portions, oil, '
                       'sauces, and hidden ingredients, then confirm only what '
                       'you ate.',
@@ -579,13 +581,22 @@ class _CandidateEditorState extends State<CandidateEditor> {
     text: _shown(widget.candidate.carbohydrate),
   );
   late final _fat = TextEditingController(text: _shown(widget.candidate.fat));
-  late PortionKind _portion = initialPortionKind(
-    portionGrams: widget.candidate.portionGrams,
-    servingGrams: widget.candidate.servingGrams,
-    packGrams: widget.candidate.packGrams,
-  );
-  late final _grams = TextEditingController(
-    text: gramsText(widget.candidate.portionGrams ?? 100),
+
+  /// The chosen portion and its size. Both clear when the athlete types a
+  /// value, so the chooser never shows a portion the values are not.
+  late PortionKind? _portion = widget.candidate.unit == null
+      ? null
+      : initialPortionKind(
+          portionSize: widget.candidate.portionSize,
+          servingSize: widget.candidate.servingSize,
+          packSize: widget.candidate.packSize,
+          unit: widget.candidate.unit!,
+        );
+  late double? _portionSize = _portion == null
+      ? null
+      : widget.candidate.portionSize;
+  late final _amount = TextEditingController(
+    text: amountText(widget.candidate.portionSize ?? 100),
   );
   bool _expanded = false;
 
@@ -610,7 +621,7 @@ class _CandidateEditorState extends State<CandidateEditor> {
       _protein,
       _carbs,
       _fat,
-      _grams,
+      _amount,
     ]) {
       controller.dispose();
     }
@@ -652,43 +663,84 @@ class _CandidateEditorState extends State<CandidateEditor> {
         protein: values[1],
         carbohydrate: values[2],
         fat: values[3],
+        portionSize: _portionSize,
       ),
     );
   }
 
-  /// The largest portion the chooser recalculates: the most one meal row
-  /// holds.
-  static const _maxGrams = 5000.0;
-
-  String? _gramsError(String? value) {
-    final grams = parseDecimal(value);
-    if (grams == null || grams <= 0 || grams > _maxGrams) {
-      return 'Enter 1 to 5000 g';
-    }
-    final calories = widget.candidate.perGram?.scale(grams).calories ?? 0;
-    return calories > 5000 ? 'That is more than one meal can hold' : null;
+  /// A value typed by hand is no longer a portion of the chooser.
+  void _typed() {
+    setState(() {
+      _portion = null;
+      _portionSize = null;
+    });
+    _notify();
   }
 
-  /// Recalculates every value from the stored per-gram values for the chosen
-  /// portion. The fields stay editable afterwards.
-  void _choosePortion(PortionKind kind) {
-    final grams = switch (kind) {
-      PortionKind.serving => widget.candidate.servingGrams,
-      PortionKind.pack => widget.candidate.packGrams,
-      PortionKind.grams => parseDecimal(_grams.text),
-    };
-    setState(() => _portion = kind);
-    final perGram = widget.candidate.perGram;
-    if (grams == null || perGram == null || _gramsError('$grams') != null) {
-      return;
+  /// The largest typed amount: the most one meal row's portion holds.
+  static const _maxAmount = 5000.0;
+
+  /// The values of [size] units, or null when one meal row cannot hold them.
+  PortionNutrients? _storable(double size) {
+    final values = widget.candidate.perUnit?.scale(size);
+    return values != null && values.storable ? values : null;
+  }
+
+  String? _amountError(String? value) {
+    final grams = parseDecimal(value);
+    if (grams == null || grams <= 0 || grams > _maxAmount) {
+      return 'Enter 1 to 5000 g';
     }
-    final values = perGram.scale(grams);
-    _serving.text = portionLabel(kind, grams);
+    return _storable(grams) == null
+        ? 'That is more than one meal can hold'
+        : null;
+  }
+
+  /// Recalculates every value from the stored per-unit values for a portion
+  /// one meal row can hold, and only then selects it. The fields stay
+  /// editable afterwards.
+  void _applyPortion(PortionKind kind, double size) {
+    final values = _storable(size);
+    if (values == null) return;
+    setState(() {
+      _portion = kind;
+      _portionSize = size;
+    });
+    _serving.text = portionLabel(kind, size, widget.candidate.unit!);
     _calories.text = _shown(values.calories);
     _protein.text = _shown(values.protein);
     _carbs.text = _shown(values.carbohydrate);
     _fat.text = _shown(values.fat);
     _notify();
+  }
+
+  void _choosePortion(PortionKind kind) {
+    switch (kind) {
+      case PortionKind.serving:
+        _applyPortion(kind, widget.candidate.servingSize!);
+      case PortionKind.pack:
+        _applyPortion(kind, widget.candidate.packSize!);
+      case PortionKind.amount:
+        // Start from an amount that can be confirmed, never from a refused one.
+        if (_amountError(_amount.text) != null) {
+          _amount.text = amountText(
+            _portionSize ?? widget.candidate.servingSize ?? 100,
+          );
+        }
+        final typed = parseDecimal(_amount.text);
+        if (typed != null) _applyPortion(kind, typed);
+    }
+  }
+
+  /// A typed amount recalculates while it can be confirmed. While it cannot,
+  /// its message shows and the sheet refuses to confirm.
+  void _typedAmount(String value) {
+    final grams = parseDecimal(value);
+    if (grams != null && _amountError(value) == null) {
+      _applyPortion(PortionKind.amount, grams);
+    } else {
+      setState(() {});
+    }
   }
 
   /// Closing the editor hides its fields, and hidden fields are not checked
@@ -725,7 +777,7 @@ class _CandidateEditorState extends State<CandidateEditor> {
           const SizedBox(height: TracendSpacing.xs),
           LabelIssuesNote(issues: widget.candidate.labelIssues),
         ],
-        if (widget.selected && widget.candidate.perGram != null) ...[
+        if (widget.selected && _offersPortions) ...[
           const SizedBox(height: TracendSpacing.sm),
           _portionChooser(context),
         ],
@@ -791,11 +843,33 @@ class _CandidateEditorState extends State<CandidateEditor> {
     ),
   );
 
+  /// Whether the chooser has anything to offer: a printed serving or pack,
+  /// or (by weight) a typed amount. Millilitres never become grams.
+  bool get _offersPortions {
+    final unit = widget.candidate.unit;
+    if (widget.candidate.perUnit == null || unit == null) return false;
+    return unit == QuantityUnit.grams ||
+        portionOptions(
+          servingSize: widget.candidate.servingSize,
+          packSize: widget.candidate.packSize,
+          unit: unit,
+        ).isNotEmpty;
+  }
+
   Widget _portionChooser(BuildContext context) {
+    final unit = widget.candidate.unit!;
     final options = portionOptions(
-      servingGrams: widget.candidate.servingGrams,
-      packGrams: widget.candidate.packGrams,
+      servingSize: widget.candidate.servingSize,
+      packSize: widget.candidate.packSize,
+      unit: unit,
     );
+    final tooLarge = [
+      for (final option in options)
+        if (_storable(option.size) == null) option,
+    ];
+    final errorStyle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: context.tracendColors.stateDanger);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -811,22 +885,32 @@ class _CandidateEditorState extends State<CandidateEditor> {
                 option.kind,
                 option.kind == PortionKind.serving ? '1 serving' : 'Whole pack',
               ),
-            (PortionKind.grams, 'Grams'),
+            if (unit == QuantityUnit.grams) (PortionKind.amount, 'Grams'),
           ],
           selected: _portion,
+          disabled: {for (final option in tooLarge) option.kind},
           onChanged: _choosePortion,
         ),
-        if (_portion == PortionKind.grams) ...[
+        for (final option in tooLarge)
+          Padding(
+            padding: const EdgeInsets.only(top: TracendSpacing.xxs),
+            child: Text(
+              '${option.label} is more than one meal can hold. Log part of '
+              'it instead.',
+              style: errorStyle,
+            ),
+          ),
+        if (_portion == PortionKind.amount) ...[
           const SizedBox(height: TracendSpacing.xs),
           TextFormField(
-            key: const ValueKey('portion-grams'),
-            controller: _grams,
+            key: const ValueKey('portion-amount'),
+            controller: _amount,
             decoration: const InputDecoration(labelText: 'Grams eaten'),
             keyboardType: decimalKeyboard,
             autovalidateMode: AutovalidateMode.onUserInteraction,
-            validator: _gramsError,
+            validator: _amountError,
             onTapOutside: dismissKeyboard,
-            onChanged: (_) => _choosePortion(PortionKind.grams),
+            onChanged: _typedAmount,
           ),
         ],
       ],
@@ -840,10 +924,7 @@ class _CandidateEditorState extends State<CandidateEditor> {
         keyboardType: decimalKeyboard,
         validator: widget.selected ? _number : null,
         onTapOutside: dismissKeyboard,
-        onChanged: (_) {
-          _notify();
-          setState(() {});
-        },
+        onChanged: (_) => _typed(),
       );
 }
 
@@ -910,6 +991,9 @@ class LabelIssuesNote extends StatelessWidget {
     'serving_size_missing' =>
       'No serving weight was read, so other portions cannot be calculated.',
     'values_implausible' => 'Some values read from the label look impossible.',
+    'volume_basis' =>
+      'The label gives values per ml, so only its printed serving and pack '
+          'can be chosen, and they were not checked against a weight.',
     'values_not_printed' =>
       'No nutrition values could be read, so these are estimates.',
     _ => 'Something on the label could not be checked.',

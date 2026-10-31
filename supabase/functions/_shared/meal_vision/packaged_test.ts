@@ -11,7 +11,7 @@ import {
   type LabelIssue,
   packAgrees,
   plateCandidate,
-  plausiblePerGram,
+  plausiblePerUnit,
   portionLabel,
   portionOptions,
   productName,
@@ -58,9 +58,9 @@ Deno.test("servings x serving size must be the net weight, within 5% or 2 g", ()
 });
 
 Deno.test("no food has more than 9.5 kcal or 1 g of nutrients in a gram", () => {
-  assert(plausiblePerGram({ kcal: 9, protein_g: 0, carbohydrate_g: 0, fat_g: 1 }));
-  assertFalse(plausiblePerGram({ kcal: 25, protein_g: 0.1, carbohydrate_g: 0.5, fat_g: 0.3 }));
-  assertFalse(plausiblePerGram({ kcal: 5, protein_g: 0.5, carbohydrate_g: 0.5, fat_g: 0.3 }));
+  assert(plausiblePerUnit({ kcal: 9, protein_g: 0, carbohydrate_g: 0, fat_g: 1 }));
+  assertFalse(plausiblePerUnit({ kcal: 25, protein_g: 0.1, carbohydrate_g: 0.5, fat_g: 0.3 }));
+  assertFalse(plausiblePerUnit({ kcal: 5, protein_g: 0.5, carbohydrate_g: 0.5, fat_g: 0.3 }));
 });
 
 // Portions -------------------------------------------------------------------------------------
@@ -68,14 +68,14 @@ Deno.test("no food has more than 9.5 kcal or 1 g of nutrients in a gram", () => 
 Deno.test("golden: the Munch label gives one serving and the whole pack, both right", () => {
   const reading = readLabel(munch());
   assertEquals(reading.issues, []);
-  assertEquals(reading.perGram, {
+  assertEquals(reading.perUnit, {
     kcal: 5.23,
     protein_g: 0.082,
     carbohydrate_g: 0.576,
     fat_g: 0.289,
   });
   assertEquals(
-    portionOptions(reading.perGram!, reading.servingG, reading.packG),
+    portionOptions(reading.perUnit!, reading.servingSize, reading.packSize, "g"),
     golden.portion_options,
   );
   // The whole bar is twice the printed serving, not the serving the live path stored.
@@ -98,38 +98,38 @@ Deno.test("golden: the live answer's per-serving reading is kept, marked unclear
     [stored.calories, stored.protein_g, stored.carbohydrate_g, stored.fat_g],
     [85, 1.5, 8.7, 6.8],
   );
-  assertEquals([stored.serving_g, stored.pack_g, stored.portion_g], [18.7, null, 18.7]);
+  assertEquals([stored.serving_size, stored.pack_size, stored.portion_size], [18.7, null, 18.7]);
 });
 
 Deno.test("a small pack for one sitting starts at the whole pack; a big one at a serving", () => {
   const perGram = { kcal: 5, protein_g: 0.1, carbohydrate_g: 0.6, fat_g: 0.25 };
-  assertEquals(defaultPortion(perGram, 18.7, 37.4, 2).kind, "pack");
-  assertEquals(defaultPortion(perGram, 30, 200, 6.7).kind, "serving");
-  assertEquals(defaultPortion(perGram, 20, 80, 4).kind, "serving");
+  assertEquals(defaultPortion(perGram, 18.7, 37.4, 2, "g").kind, "pack");
+  assertEquals(defaultPortion(perGram, 30, 200, 6.7, "g").kind, "serving");
+  assertEquals(defaultPortion(perGram, 20, 80, 4, "g").kind, "serving");
   // Only a pack weight: the pack. Only a serving: the serving. Neither: 100 g.
-  assertEquals(defaultPortion(perGram, null, 500, null).kind, "pack");
-  assertEquals(defaultPortion(perGram, 30, null, null).kind, "serving");
-  assertEquals(defaultPortion(perGram, null, null, null), {
-    kind: "grams",
-    grams: 100,
+  assertEquals(defaultPortion(perGram, null, 500, null, "g").kind, "pack");
+  assertEquals(defaultPortion(perGram, 30, null, null, "g").kind, "serving");
+  assertEquals(defaultPortion(perGram, null, null, null, "g"), {
+    kind: "amount",
+    size: 100,
     label: "100 g",
     nutrients: { kcal: 500, protein_g: 10, carbohydrate_g: 60, fat_g: 25 },
   });
   // A pack the table cannot hold (over 5,000 kcal) is skipped for the serving.
-  assertEquals(defaultPortion({ ...perGram, kcal: 5.4 }, 30, 1000, 33).kind, "serving");
+  assertEquals(defaultPortion({ ...perGram, kcal: 5.4 }, 30, 1000, 33, "g").kind, "serving");
 });
 
 Deno.test("portion labels and scaling match the app's", () => {
-  assertEquals(portionLabel("serving", 18.7), "1 serving (18.7 g)");
-  assertEquals(portionLabel("pack", 40), "Whole pack (40 g)");
-  assertEquals(portionLabel("grams", 125.25), "125.3 g");
+  assertEquals(portionLabel("serving", 18.7, "g"), "1 serving (18.7 g)");
+  assertEquals(portionLabel("pack", 40, "g"), "Whole pack (40 g)");
+  assertEquals(portionLabel("amount", 125.25, "g"), "125.3 g");
   assertEquals(
     scale({ kcal: 5.23, protein_g: 0.082, carbohydrate_g: 0.576, fat_g: 0.289 }, 50),
     { kcal: 261.5, protein_g: 4.1, carbohydrate_g: 28.8, fat_g: 14.5 },
   );
   // A serving that is the whole pack is offered once.
   assertEquals(
-    portionOptions({ kcal: 5, protein_g: 0, carbohydrate_g: 1, fat_g: 0 }, 30, 30).length,
+    portionOptions({ kcal: 5, protein_g: 0, carbohydrate_g: 1, fat_g: 0 }, 30, 30, "g").length,
     1,
   );
 });
@@ -138,7 +138,7 @@ Deno.test("portion labels and scaling match the app's", () => {
 
 Deno.test("each failed check is named and makes the label unclear and low", () => {
   const cases: [Partial<MealAnswer>, LabelIssue[]][] = [
-    [{ per_100g_kcal: 400, per_serving_kcal: 75 }, ["energy_mismatch"]],
+    [{ per_100_kcal: 400, per_serving_kcal: 75 }, ["energy_mismatch"]],
     [{
       per_serving_protein_g: 8.2,
       per_serving_carbohydrate_g: 57.6,
@@ -148,7 +148,7 @@ Deno.test("each failed check is named and makes the label unclear and low", () =
       "basis_mismatch",
     ]],
     [{ servings_per_pack: 3 }, ["pack_mismatch"]],
-    [{ per_100g_kcal: 0 }, ["energy_not_printed"]],
+    [{ per_100_kcal: 0 }, ["energy_not_printed"]],
   ];
   for (const [overrides, issues] of cases) {
     const [stored] = storedCandidates(label(overrides));
@@ -158,25 +158,29 @@ Deno.test("each failed check is named and makes the label unclear and low", () =
 });
 
 Deno.test("energy that is not printed is calculated from the macronutrients and said so", () => {
-  const reading = readLabel(label({ per_100g_kcal: 0, per_serving_kcal: 0 }));
+  const reading = readLabel(label({ per_100_kcal: 0, per_serving_kcal: 0 }));
   assertEquals(reading.issues, ["energy_not_printed"]);
-  assertEquals(reading.perGram?.kcal, 5.233);
+  assertEquals(reading.perUnit?.kcal, 5.233);
 });
 
 Deno.test("a per-serving column without a weight is one serving, with nothing to scale", () => {
   const [stored] = storedCandidates(label({
-    has_per_100g: false,
-    per_100g_kcal: 0,
-    per_100g_protein_g: 0,
-    per_100g_carbohydrate_g: 0,
-    per_100g_fat_g: 0,
-    serving_size_g: 0,
+    has_per_100: false,
+    per_100_kcal: 0,
+    per_100_protein_g: 0,
+    per_100_carbohydrate_g: 0,
+    per_100_fat_g: 0,
+    serving_size: 0,
   }));
   assertEquals(stored.label_issues, ["serving_size_missing"]);
-  assertEquals([stored.serving_label, stored.calories, stored.kcal_per_g], ["1 serving", 98, null]);
+  assertEquals([stored.serving_label, stored.calories, stored.kcal_per_unit], [
+    "1 serving",
+    98,
+    null,
+  ]);
   assertEquals([stored.source, stored.confidence], ["label_unverified", "low"]);
   // Servings and net weight are still shown.
-  assertEquals([stored.servings_per_pack, stored.pack_g], [2, 37.4]);
+  assertEquals([stored.servings_per_pack, stored.pack_size], [2, 37.4]);
 });
 
 Deno.test("a label with no readable column falls back to the estimate, said to be one", () => {
@@ -186,12 +190,12 @@ Deno.test("a label with no readable column falls back to the estimate, said to b
 });
 
 Deno.test("impossible values and sizes are marked, never stored as per-gram values", () => {
-  const [dense] = storedCandidates(label({ per_100g_kcal: 2_300 }));
+  const [dense] = storedCandidates(label({ per_100_kcal: 2_300 }));
   assert(dense.label_issues.includes("values_implausible"));
-  assertEquals(dense.kcal_per_g, null);
-  const [huge] = storedCandidates(label({ net_weight_g: 50_000 }));
+  assertEquals(dense.kcal_per_unit, null);
+  const [huge] = storedCandidates(label({ net_quantity: 50_000 }));
   assert(huge.label_issues.includes("values_implausible"));
-  assertEquals(huge.pack_g, 37.4, "the pack weight comes from servings x serving size");
+  assertEquals(huge.pack_size, 37.4, "the pack weight comes from servings x serving size");
 });
 
 // Confidence from the source -------------------------------------------------------------------
@@ -205,7 +209,7 @@ Deno.test("a plate is an estimate and never high, whatever the model says", () =
     "plate",
     "medium",
   ]);
-  assertEquals([stored.kcal_per_g, stored.portion_g, stored.label_issues], [null, null, []]);
+  assertEquals([stored.kcal_per_unit, stored.portion_size, stored.label_issues], [null, null, []]);
   assertEquals(stored.assumptions, dal.assumptions);
   assertEquals(stored.question, dal.question);
   assertEquals(storedCandidates(plateAnswer([dal, { ...dal, name: "Rice" }])).length, 2);
@@ -217,7 +221,7 @@ const front = (net: number, confidence: "low" | "medium" | "high" = "high"): Mea
   ...noProduct,
   product_name: "Munch Max Nuts",
   brand: "Nestlé",
-  net_weight_g: net,
+  net_quantity: net,
   candidates: [{
     name: "Chocolate wafer bar",
     serving_label: "1 bar",
@@ -236,20 +240,20 @@ Deno.test("a front of pack is an estimate: medium at most with a printed weight,
   assertEquals([weighed.source, weighed.confidence], ["estimate", "medium"]);
   assertEquals(weighed.name, "Nestlé Munch Max Nuts");
   assertEquals(weighed.serving_label, "Whole pack (37.4 g)");
-  assertEquals([weighed.pack_g, weighed.portion_g, weighed.serving_g], [37.4, 37.4, null]);
+  assertEquals([weighed.pack_size, weighed.portion_size, weighed.serving_size], [37.4, 37.4, null]);
   // Rescaled from its per-gram values, as the app will.
-  assertEquals(weighed.kcal_per_g, 5.2139);
+  assertEquals(weighed.kcal_per_unit, 5.2139);
   assertEquals(weighed.calories, 195);
   const [unweighed] = storedCandidates(front(0));
   assertEquals([unweighed.source, unweighed.confidence], ["estimate", "low"]);
-  assertEquals([unweighed.kcal_per_g, unweighed.pack_g, unweighed.serving_label], [
+  assertEquals([unweighed.kcal_per_unit, unweighed.pack_size, unweighed.serving_label], [
     null,
     null,
     "1 bar",
   ]);
   // A weight that makes the estimate impossible keeps the estimate, low, with no per-gram values.
   const [tiny] = storedCandidates(front(5));
-  assertEquals([tiny.confidence, tiny.kcal_per_g, tiny.calories], ["low", null, 195]);
+  assertEquals([tiny.confidence, tiny.kcal_per_unit, tiny.calories], ["low", null, 195]);
   assertEquals(storedCandidates(front(37.4, "low"))[0].confidence, "low");
 });
 
@@ -269,4 +273,88 @@ Deno.test("notes are trimmed to what the table holds", () => {
   assertEquals(stored.assumptions[0], "a");
   assertEquals(stored.assumptions[1].length, 200);
   assertEquals(stored.question.length, 500);
+});
+
+// Labels printed per ml ----------------------------------------------------------------------------
+
+// A 250 ml carton of flavoured milk: per 100 ml 75 kcal, P 3.2, C 10.5, F 2.2; 1 serving of 200 ml.
+const milk = (): MealAnswer => ({
+  image_kind: "nutrition_label",
+  ...noProduct,
+  quantity_unit: "ml",
+  product_name: "Chocolate Milk",
+  brand: "Dairyfield",
+  net_quantity: 250,
+  servings_per_pack: 1.25,
+  serving_size: 200,
+  serving_text: "200 ml",
+  has_per_100: true,
+  per_100_kcal: 75,
+  per_100_protein_g: 3.2,
+  per_100_carbohydrate_g: 10.5,
+  per_100_fat_g: 2.2,
+  candidates: [{ ...dal, name: "Chocolate Milk", serving_label: "200 ml" }],
+});
+
+Deno.test("a label printed per ml is never read as grams: unclear, low, ml portions only", () => {
+  const [stored] = storedCandidates(milk());
+  assertEquals(stored.quantity_unit, "ml");
+  assertEquals(stored.label_issues, ["volume_basis"]);
+  assertEquals([stored.source, stored.confidence], ["label_unverified", "low"]);
+  // The printed serving in ml, from per-ml values, labelled in ml.
+  assertEquals(stored.serving_label, "1 serving (200 ml)");
+  assertEquals([stored.serving_size, stored.pack_size, stored.portion_size], [200, 250, 200]);
+  assertEquals(stored.calories, 150);
+  assertEquals(stored.kcal_per_unit, 0.75);
+  const options = portionOptions(
+    { kcal: 0.75, protein_g: 0.032, carbohydrate_g: 0.105, fat_g: 0.022 },
+    200,
+    250,
+    "ml",
+  );
+  assertEquals(options.map((option) => option.label), [
+    "1 serving (200 ml)",
+    "Whole pack (250 ml)",
+  ]);
+  assert(!JSON.stringify(stored).includes(" g)"), "no gram label");
+});
+
+Deno.test("a per-ml label with no printed serving or pack keeps 100 ml as stored and offers nothing else", () => {
+  const [stored] = storedCandidates({
+    ...milk(),
+    net_quantity: 0,
+    serving_size: 0,
+    servings_per_pack: 0,
+  });
+  assertEquals([stored.serving_label, stored.portion_size], ["100 ml", 100]);
+  assertEquals([stored.serving_size, stored.pack_size], [null, null]);
+  assertEquals(
+    portionOptions({ kcal: 0.75, protein_g: 0, carbohydrate_g: 0, fat_g: 0 }, null, null, "ml"),
+    [],
+  );
+});
+
+Deno.test("a single-sitting pack by volume does not jump to the whole pack", () => {
+  const perMl = { kcal: 0.4, protein_g: 0, carbohydrate_g: 0.1, fat_g: 0 };
+  assertEquals(defaultPortion(perMl, 30, 50, 1.7, "ml").kind, "serving");
+  assertEquals(defaultPortion(perMl, 30, 50, 1.7, "g").kind, "pack");
+});
+
+Deno.test("a front of pack measured in ml says ml", () => {
+  const [stored] = storedCandidates({
+    ...front(500),
+    quantity_unit: "ml",
+    candidates: [{
+      ...front(500).candidates[0],
+      calories: 210,
+      protein_g: 0,
+      carbohydrate_g: 53,
+      fat_g: 0,
+    }],
+  });
+  assertEquals([stored.quantity_unit, stored.serving_label, stored.source], [
+    "ml",
+    "Whole pack (500 ml)",
+    "estimate",
+  ]);
 });

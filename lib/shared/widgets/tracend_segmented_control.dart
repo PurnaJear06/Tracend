@@ -12,13 +12,19 @@ class TracendSegmentedControl<T extends Object> extends StatelessWidget {
     required this.segments,
     required this.selected,
     required this.onChanged,
+    this.disabled = const {},
     super.key,
   });
 
   /// Ordered value → label pairs.
   final List<(T, String)> segments;
-  final T selected;
+
+  /// The chosen segment; null shows none chosen.
+  final T? selected;
   final ValueChanged<T> onChanged;
+
+  /// Segments shown dimmed that cannot be chosen.
+  final Set<T> disabled;
 
   @override
   Widget build(BuildContext context) {
@@ -82,11 +88,14 @@ class TracendSegmentedControl<T extends Object> extends StatelessWidget {
                     child: Semantics(
                       button: true,
                       selected: value == selected,
+                      enabled: disabled.contains(value) ? false : null,
                       inMutuallyExclusiveGroup: true,
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () {
-                          if (value == selected) return;
+                          if (value == selected || disabled.contains(value)) {
+                            return;
+                          }
                           TracendHaptics.selection();
                           onChanged(value);
                         },
@@ -102,7 +111,9 @@ class TracendSegmentedControl<T extends Object> extends StatelessWidget {
                                 label,
                                 textAlign: TextAlign.center,
                                 style: style.copyWith(
-                                  color: value == selected
+                                  color: disabled.contains(value)
+                                      ? colors.textTertiary
+                                      : value == selected
                                       ? colors.textPrimary
                                       : colors.textSecondary,
                                 ),

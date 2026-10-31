@@ -275,11 +275,12 @@ class MealCandidate {
     required this.confidence,
     this.source,
     this.brand = '',
-    this.perGram,
-    this.servingGrams,
+    this.unit,
+    this.perUnit,
+    this.servingSize,
     this.servingsPerPack,
-    this.packGrams,
-    this.portionGrams,
+    this.packSize,
+    this.portionSize,
     this.assumptions = const [],
     this.question = '',
     this.labelIssues = const [],
@@ -288,10 +289,10 @@ class MealCandidate {
   /// Maps a `meal_analysis_candidates` row. Rows stored before the packaged
   /// food columns existed have no source and no notes.
   factory MealCandidate.fromRow(Map<String, dynamic> row) {
-    final kcal = _number(row['kcal_per_g']);
-    final protein = _number(row['protein_per_g']);
-    final carbohydrate = _number(row['carbohydrate_per_g']);
-    final fat = _number(row['fat_per_g']);
+    final kcal = _number(row['kcal_per_unit']);
+    final protein = _number(row['protein_per_unit']);
+    final carbohydrate = _number(row['carbohydrate_per_unit']);
+    final fat = _number(row['fat_per_unit']);
     return MealCandidate(
       id: row['id'] as String,
       name: row['food_label'] as String,
@@ -303,19 +304,20 @@ class MealCandidate {
       confidence: row['confidence'] as String,
       source: _mealSource(row['source']),
       brand: row['brand'] as String? ?? '',
-      perGram:
+      unit: QuantityUnit.parse(row['quantity_unit']),
+      perUnit:
           kcal == null || protein == null || carbohydrate == null || fat == null
           ? null
-          : PerGramNutrients(
+          : PerUnitNutrients(
               kcal: kcal,
               protein: protein,
               carbohydrate: carbohydrate,
               fat: fat,
             ),
-      servingGrams: _number(row['serving_g']),
+      servingSize: _number(row['serving_size']),
       servingsPerPack: _number(row['servings_per_pack']),
-      packGrams: _number(row['pack_g']),
-      portionGrams: _number(row['portion_g']),
+      packSize: _number(row['pack_size']),
+      portionSize: _number(row['portion_size']),
       assumptions: _strings(row['assumptions']),
       question: row['question'] as String? ?? '',
       labelIssues: _strings(row['label_issues']),
@@ -325,8 +327,8 @@ class MealCandidate {
   /// The columns [MealCandidate.fromRow] reads.
   static const columns =
       'id,food_label,serving_label,calories,protein_g,carbohydrate_g,fat_g,'
-      'confidence,source,brand,kcal_per_g,protein_per_g,carbohydrate_per_g,'
-      'fat_per_g,serving_g,servings_per_pack,pack_g,portion_g,assumptions,'
+      'confidence,source,brand,quantity_unit,kcal_per_unit,protein_per_unit,carbohydrate_per_unit,'
+      'fat_per_unit,serving_size,servings_per_pack,pack_size,portion_size,assumptions,'
       'question,label_issues';
 
   final String id;
@@ -342,15 +344,19 @@ class MealCandidate {
   final MealSource? source;
   final String brand;
 
-  /// Present when any portion can be recalculated (a label, or a pack whose
-  /// weight is printed).
-  final PerGramNutrients? perGram;
-  final double? servingGrams;
-  final double? servingsPerPack;
-  final double? packGrams;
+  /// The unit of [perUnit] and the sizes: grams, or millilitres for a drink.
+  final QuantityUnit? unit;
 
-  /// The grams the stored values are for.
-  final double? portionGrams;
+  /// Present when any portion can be recalculated (a label, or a pack whose
+  /// net quantity is printed), per gram or per millilitre ([unit]).
+  final PerUnitNutrients? perUnit;
+  final double? servingSize;
+  final double? servingsPerPack;
+  final double? packSize;
+
+  /// The amount (in [unit]) the values are for: the stored default, then
+  /// the portion the athlete chose; null once they type the values.
+  final double? portionSize;
 
   /// What the model assumed, and its question for the athlete.
   final List<String> assumptions;
@@ -359,6 +365,7 @@ class MealCandidate {
   /// The label checks that failed (`energy_mismatch`, …).
   final List<String> labelIssues;
 
+  /// [portionSize] is replaced only when given; pass null to clear it.
   MealCandidate copyWith({
     String? name,
     String? servingLabel,
@@ -366,6 +373,7 @@ class MealCandidate {
     double? protein,
     double? carbohydrate,
     double? fat,
+    Object? portionSize = _keep,
   }) => MealCandidate(
     id: id,
     name: name ?? this.name,
@@ -377,11 +385,14 @@ class MealCandidate {
     confidence: confidence,
     source: source,
     brand: brand,
-    perGram: perGram,
-    servingGrams: servingGrams,
+    unit: unit,
+    perUnit: perUnit,
+    servingSize: servingSize,
     servingsPerPack: servingsPerPack,
-    packGrams: packGrams,
-    portionGrams: portionGrams,
+    packSize: packSize,
+    portionSize: identical(portionSize, _keep)
+        ? this.portionSize
+        : portionSize as double?,
     assumptions: assumptions,
     question: question,
     labelIssues: labelIssues,
@@ -395,8 +406,11 @@ class MealCandidate {
     'protein_g': protein,
     'carbohydrate_g': carbohydrate,
     'fat_g': fat,
+    'portion_size': portionSize,
   };
 }
+
+const Object _keep = Object();
 
 class ManualFoodInput {
   const ManualFoodInput({
