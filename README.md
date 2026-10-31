@@ -16,7 +16,7 @@
 <p align="center">
   <a href="https://github.com/PurnaJear06/Tracend/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/PurnaJear06/Tracend/ci.yml?style=for-the-badge&label=CI&branch=main" alt="CI"/></a>
   <a href="https://github.com/PurnaJear06/Tracend/actions/workflows/deploy.yml"><img src="https://img.shields.io/github/actions/workflow/status/PurnaJear06/Tracend/deploy.yml?style=for-the-badge&label=Deploy&branch=main" alt="Deploy"/></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-4A57E8?style=for-the-badge&labelColor=0D1117" alt="MIT License"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-proprietary-4A57E8?style=for-the-badge&labelColor=0D1117" alt="Proprietary license"/></a>
   <img src="https://img.shields.io/badge/iOS-17%2B-4A57E8?style=for-the-badge&logo=apple&logoColor=white&labelColor=0D1117" alt="iOS 17+"/>
 </p>
 
@@ -160,7 +160,7 @@ cd Tracend
 
 ## License
 
-Released under the [MIT License](LICENSE).
+Copyright (c) 2026 Purna Jear. All rights reserved. The source is published for viewing only; see [LICENSE](LICENSE). Third-party material in the repository stays under its own license.
 
 ---
 

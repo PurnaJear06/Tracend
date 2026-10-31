@@ -5,7 +5,8 @@ The active workstreams are the app-wide graphite + lime redesign, [`redesign.md`
 [`backend.md`](./backend.md), the new-user onboarding plan, [`onboarding.md`](./onboarding.md),
 account session and deletion recovery, [`account-session.md`](./account-session.md), and the
 owner-only physique check, [`physique-check.md`](./physique-check.md), and the security hardening
-batch, [`security-hardening.md`](./security-hardening.md), and the website and its waitlist,
+batch, [`security-hardening.md`](./security-hardening.md), the Supabase API key migration,
+[`supabase-key-migration.md`](./supabase-key-migration.md), and the website and its waitlist,
 [`website.md`](./website.md). The coaching platform program
 ([`docs/plans/coaching-platform-2026-10/`](../plans/coaching-platform-2026-10/README.md)) has five
 streams: [`ai-gateway.md`](./ai-gateway.md), [`training-engine.md`](./training-engine.md),

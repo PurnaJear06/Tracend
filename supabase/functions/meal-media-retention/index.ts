@@ -10,6 +10,7 @@ import {
 import { cleanExpiredExports } from "../_shared/export_retention.ts";
 import { bearerMatches } from "../_shared/secret_compare.ts";
 import { captureException } from "../_shared/sentry.ts";
+import { supabaseSecretKey } from "../_shared/supabase_keys.ts";
 
 const jsonHeaders = { "Content-Type": "application/json" };
 
@@ -26,7 +27,7 @@ export async function handleMealMediaRetention(request: Request): Promise<Respon
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const serviceRoleKey = supabaseSecretKey();
   const workerSecret = Deno.env.get("RETENTION_WORKER_SECRET");
   if (
     !supabaseUrl || !serviceRoleKey || !workerSecret ||
