@@ -163,7 +163,11 @@ sign-in**.
   can start and log the workout from it: the start waits on the phone under its own key (no server
   id is invented), sets are saved on the phone, and the finish waits as **Finish not sent yet**.
   Today, Coach, Meals and Progress each say they need a connection and point to Train; recovery
-  and the day's adjustment are not shown. Coming back to the front or **Try again** checks the
+  and the day's adjustment are not shown. In their place Train says what was last known about
+  sore areas (the safety route and the areas on hold or eased, with the day they come from) or,
+  with nothing saved, **Pain holds can't be checked offline. Skip any area on hold.** A workout
+  whose plan was copied meanwhile (new workout ids) moves to its copy when the connection returns;
+  one with no copy in the current plan stays on the phone and says **Not in your current plan**. Coming back to the front or **Try again** checks the
   account again; when that works the app leaves offline mode, Train reloads, and the waiting start,
   sets and finish are sent (the server's state wins). With a stored session but no saved plan the
   gate shows **Connection needed** with **Retry**; with no stored session it shows sign-in. Signing

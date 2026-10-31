@@ -1,13 +1,18 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/breadcrumbs.dart';
+import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/muscle_groups.dart';
+import 'package:tracend/features/train/offline_safety_notes.dart';
 import 'package:tracend/features/train/training_hub_cache.dart';
 import 'package:tracend/features/train/unfinished_workout.dart';
+import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/diagnostics.dart';
 
@@ -254,18 +259,49 @@ class PlannedWorkout {
     required this.objective,
     required this.estimatedMinutes,
     required this.exercises,
+    this.order,
     this.weekday,
     this.warmUp = '',
     this.cooldownCardio = '',
   });
+
+  /// A workout known only by its id, for the calls that read nothing else
+  /// (`start_workout`, the session read).
+  const PlannedWorkout.byId(this.id)
+    : name = '',
+      objective = '',
+      estimatedMinutes = 0,
+      exercises = const [],
+      order = null,
+      weekday = null,
+      warmUp = '',
+      cooldownCardio = '';
+
   final String id;
   final String name;
   final String objective;
   final int estimatedMinutes;
   final List<PlannedExercise> exercises;
+
+  /// The workout's place in the plan (`workout_order`); null where the source
+  /// does not say.
+  final int? order;
   final int? weekday;
   final String warmUp;
   final String cooldownCardio;
+
+  /// Who this workout is when its id changes: the plan is copied with new ids
+  /// (a deload or a block ending), keeping each workout's place and its
+  /// exercises. Null when [order] is unknown.
+  WorkoutIdentity? get identity => order == null
+      ? null
+      : WorkoutIdentity(
+          order: order!,
+          exercises: {
+            for (final exercise in exercises)
+              exercise.order: exercise.asPlanned.name,
+          },
+        );
 
   /// This workout with [exercises] in place of its own.
   PlannedWorkout withExercises(List<PlannedExercise> exercises) =>
@@ -275,6 +311,7 @@ class PlannedWorkout {
         objective: objective,
         estimatedMinutes: estimatedMinutes,
         exercises: exercises,
+        order: order,
         weekday: weekday,
         warmUp: warmUp,
         cooldownCardio: cooldownCardio,
@@ -290,6 +327,7 @@ class PlannedWorkout {
     id: row['id'] as String,
     name: row['name'] as String,
     objective: row['objective'] as String,
+    order: (row['order'] as num?)?.toInt(),
     weekday: (row['weekday'] as num?)?.toInt(),
     estimatedMinutes: (row['estimated_minutes'] as num).toInt(),
     warmUp: row['warm_up'] as String? ?? '',
@@ -363,6 +401,60 @@ class PlannedWorkout {
       ),
     ],
   );
+}
+
+/// Who a planned workout is when its id is not: a plan copy keeps each
+/// workout's place in the plan (`workout_order`) and its exercises by
+/// `exercise_order` and name, and gives everything new ids.
+@immutable
+class WorkoutIdentity {
+  const WorkoutIdentity({required this.order, required this.exercises});
+
+  final int order;
+
+  /// The plan's exercise name by exercise order.
+  final Map<int, String> exercises;
+
+  static String _normalized(String name) => name.trim().toLowerCase();
+
+  /// [workout] is this workout in another copy of the plan.
+  bool matches(PlannedWorkout workout) {
+    if (workout.order != order ||
+        workout.exercises.length != exercises.length) {
+      return false;
+    }
+    for (final exercise in workout.exercises) {
+      final name = exercises[exercise.order];
+      if (name == null ||
+          _normalized(name) != _normalized(exercise.asPlanned.name)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Map<String, Object> toJson() => {
+    'order': order,
+    'exercises': {
+      for (final entry in exercises.entries) '${entry.key}': entry.value,
+    },
+  };
+
+  /// Null when [raw] is not what [toJson] wrote.
+  static WorkoutIdentity? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final order = raw['order'];
+    final exercises = raw['exercises'];
+    if (order is! int || exercises is! Map) return null;
+    final byOrder = <int, String>{};
+    for (final entry in exercises.entries) {
+      final key = int.tryParse('${entry.key}');
+      final name = entry.value;
+      if (key == null || name is! String) return null;
+      byOrder[key] = name;
+    }
+    return WorkoutIdentity(order: order, exercises: byOrder);
+  }
 }
 
 /// Where a completed session's completion came from (hub 1.6).
@@ -558,9 +650,11 @@ class TrainingHubData {
 
   /// The hub this phone saved at [CachedTrainingHub.savedAt], for a launch
   /// or a load with no connection. The day is [now]'s: the plan's weekdays
-  /// still say which workout is today's, but the load numbers and today's
-  /// workout the server worked out belong to the day the copy was saved, so
-  /// when that is another day they are left out rather than shown for today.
+  /// still say which workout is today's, but the load numbers, today's
+  /// workout and the next-session targets the server worked out (a lighter
+  /// week changes their loads by the day) belong to the day the copy was
+  /// saved, so when that is another day they are left out rather than shown
+  /// for today.
   factory TrainingHubData.fromCache(CachedTrainingHub cached, DateTime now) {
     final json = Map<String, dynamic>.of(cached.hub);
     final today = localDayKey(now);
@@ -569,7 +663,8 @@ class TrainingHubData {
         ..['local_today'] = today
         ..remove('daily_load')
         ..remove('computed')
-        ..remove('today_workout');
+        ..remove('today_workout')
+        ..remove('next_targets');
     }
     return TrainingHubData.fromHubJson(json, cachedAt: cached.savedAt);
   }
@@ -739,6 +834,29 @@ abstract interface class SavedTrainingHubRepository {
   /// That copy, marked with [TrainingHubData.cachedAt]; null when there is
   /// none for the signed-in athlete.
   Future<TrainingHubData?> loadSavedTrainingHub();
+}
+
+/// A repository that can find a workout again after the plan was copied with
+/// new ids (a lighter week starting or a temporary block ending).
+abstract interface class WorkoutPlanRemapper {
+  /// The workout of the current plan that [identity] names, with the phone's
+  /// draft and saved finish of the workout [staleId] moved to it. Null when
+  /// the current plan has no such workout (or [identity] is unknown): the
+  /// draft then stays where it is. Throws when the plan cannot be read.
+  Future<PlannedWorkout?> moveToCurrentPlan(
+    String staleId,
+    WorkoutIdentity? identity,
+  );
+}
+
+/// A repository that keeps the athlete's last sore-area notes beside the
+/// saved plan.
+abstract interface class SavedSafetyNotesRepository {
+  /// Keeps what [adjustment] says about sore areas for the signed-in athlete.
+  Future<void> saveSafetyNotes(DayAdjustment adjustment);
+
+  /// The notes kept for the signed-in athlete, or null.
+  Future<OfflineSafetyNotes?> loadSavedSafetyNotes();
 }
 
 class WorkoutRepairCandidate {
@@ -934,19 +1052,26 @@ class SupabaseWorkoutRepository
         WorkoutRepository,
         TrainingHubRepository,
         SavedTrainingHubRepository,
+        SavedSafetyNotesRepository,
+        WorkoutPlanRemapper,
         WorkoutRepairRepository,
         WorkoutReconciliationRepository,
         HealthkitCandidateRepository,
         UnfinishedWorkoutRepository {
+  /// With [loggerOpen] the repository leaves the sending of waiting workouts
+  /// to the open logger, which sends its own workout itself.
   SupabaseWorkoutRepository(
     this._client,
     this._preferences, {
     DateTime Function()? clock,
+    bool Function()? loggerOpen,
   }) : _clock = clock ?? DateTime.now,
+       _loggerOpen = loggerOpen,
        _hubCache = TrainingHubCache(_preferences);
   final SupabaseClient _client;
   final SharedPreferencesAsync _preferences;
   final DateTime Function() _clock;
+  final bool Function()? _loggerOpen;
   final TrainingHubCache _hubCache;
   String get _userId => _client.auth.currentUser!.id;
   String _draftKey(String workoutId) =>
@@ -965,18 +1090,14 @@ class SupabaseWorkoutRepository
 
   /// The hub from the server. When the server cannot be reached, this
   /// phone's last copy for this athlete answers instead, marked with
-  /// [TrainingHubData.cachedAt]; with no copy the failure is rethrown.
+  /// [TrainingHubData.cachedAt]; with no copy the failure is rethrown. A hub
+  /// that loads also sends the workouts that waited for a connection.
   @override
   Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async {
     final userId = _client.auth.currentUser?.id;
     final Map<String, dynamic> hub;
     try {
-      hub = Map<String, dynamic>.from(
-        await _client
-                .rpc('get_my_training_hub', params: {'period_days': periodDays})
-                .timeout(_hubWait)
-            as Map,
-      );
+      hub = await _fetchHub(periodDays);
     } catch (error) {
       if (userId == null || periodDays != _cachedHubDays) rethrow;
       final cached = await _hubCache.load(userId);
@@ -984,10 +1105,28 @@ class SupabaseWorkoutRepository
       logNonCritical(error, 'training hub from device');
       return TrainingHubData.fromCache(cached, _clock());
     }
-    if (userId != null && periodDays == _cachedHubDays) {
-      await _hubCache.save(userId, hub, _clock());
+    if (userId != null) {
+      if (periodDays == _cachedHubDays) await _saveHub(userId, hub);
+      unawaited(sendWaiting());
     }
     return TrainingHubData.fromHubJson(hub);
+  }
+
+  Future<Map<String, dynamic>> _fetchHub(int periodDays) async =>
+      Map<String, dynamic>.from(
+        await _client
+                .rpc('get_my_training_hub', params: {'period_days': periodDays})
+                .timeout(_hubWait)
+            as Map,
+      );
+
+  /// Keeps [hub] as [userId]'s copy, unless [userId] is no longer signed in:
+  /// a load still in flight when the athlete signed out must not write their
+  /// plan back after it was cleared.
+  Future<void> _saveHub(String userId, Map<String, dynamic> hub) async {
+    if (_client.auth.currentUser?.id != userId) return;
+    await _hubCache.save(userId, hub, _clock());
+    if (_client.auth.currentUser?.id != userId) await _hubCache.clear(userId);
   }
 
   @override
@@ -996,6 +1135,149 @@ class SupabaseWorkoutRepository
     if (userId == null) return null;
     final cached = await _hubCache.load(userId);
     return cached == null ? null : TrainingHubData.fromCache(cached, _clock());
+  }
+
+  @override
+  Future<void> saveSafetyNotes(DayAdjustment adjustment) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return;
+    await _hubCache.saveSafety(userId, OfflineSafetyNotes.from(adjustment));
+    if (_client.auth.currentUser?.id != userId) await _hubCache.clear(userId);
+  }
+
+  @override
+  Future<OfflineSafetyNotes?> loadSavedSafetyNotes() async {
+    final userId = _client.auth.currentUser?.id;
+    return userId == null ? null : _hubCache.loadSafety(userId);
+  }
+
+  // A workout the plan no longer knows by its id ---------------------------
+
+  @override
+  Future<PlannedWorkout?> moveToCurrentPlan(
+    String staleId,
+    WorkoutIdentity? identity,
+  ) async {
+    if (identity == null) return null;
+    final userId = _client.auth.currentUser?.id;
+    final hub = await _fetchHub(_cachedHubDays);
+    if (userId != null) await _saveHub(userId, hub);
+    PlannedWorkout? current;
+    for (final workout in TrainingHubData.fromHubJson(hub).workouts) {
+      if (workout.id != staleId && identity.matches(workout)) {
+        current = workout;
+        break;
+      }
+    }
+    if (current == null || !await _moveDraft(staleId, current.id)) return null;
+    AppBreadcrumbs.workout('Workout moved to the current plan');
+    return current;
+  }
+
+  /// Moves the phone's draft and saved finish of workout [from] to workout
+  /// [to]. False when [to] already holds a different draft: both stay.
+  Future<bool> _moveDraft(String from, String to) async {
+    final draft = await _preferences.getString(_draftKey(from));
+    if (draft == null) return true;
+    final existing = await _preferences.getString(_draftKey(to));
+    if (existing != null) {
+      final same = _sameSession(draft, existing);
+      if (same) await clearDraft(from);
+      return same;
+    }
+    final moved = decodeDraft(draft)..['workout_id'] = to;
+    await _preferences.setString(_draftKey(to), jsonEncode(moved));
+    final finish = await _preferences.getString(_finishKey(from));
+    if (finish != null) {
+      await _preferences.setString(_finishKey(to), finish);
+    }
+    await clearDraft(from);
+    return true;
+  }
+
+  static bool _sameSession(String a, String b) {
+    try {
+      final key = decodeDraft(a)['idempotency_key'];
+      return key != null && key == decodeDraft(b)['idempotency_key'];
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Workouts that waited for a connection ----------------------------------
+
+  /// The sends running now, by athlete: the gate and the Train tab each have
+  /// a repository, and both ask after a reconnect.
+  static final Map<String, Future<void>> _sending = {};
+
+  /// Forgets sends that never finished (a test that ended inside one).
+  @visibleForTesting
+  static void forgetSending() => _sending.clear();
+
+  /// Sends every workout of this athlete that is finished, or was left on an
+  /// earlier day, and has not reached the server: its start, its sets and its
+  /// finish, one workout at a time, under the keys it was saved with. A repeat
+  /// is harmless (the server answers `replayed`). Does nothing while a logger
+  /// is open (it sends its own workout) and never touches another athlete's
+  /// keys. Never throws; what cannot be sent stays on the phone.
+  Future<void> sendWaiting() {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return Future<void>.value();
+    return _sending[userId] ??= _sendAllWaiting(userId).whenComplete(() {
+      _sending.remove(userId);
+    });
+  }
+
+  Future<void> _sendAllWaiting(String userId) async {
+    try {
+      final prefix = WorkoutLocalKeys.draftPrefix(userId);
+      final ids = [
+        for (final key in await _preferences.getKeys())
+          if (key.startsWith(prefix)) key.substring(prefix.length),
+      ];
+      for (final id in ids) {
+        if (_client.auth.currentUser?.id != userId) return;
+        if (_loggerOpen?.call() ?? false) return;
+        await _sendWaitingWorkout(id);
+      }
+    } catch (e) {
+      logNonCritical(e, 'waiting workouts not sent');
+    }
+  }
+
+  Future<void> _sendWaitingWorkout(String workoutId) async {
+    final saved = await loadDraft(workoutId);
+    if (saved == null) return;
+    final Map<String, dynamic> draft;
+    try {
+      draft = decodeDraft(saved);
+    } catch (error) {
+      logNonCritical(error, 'workout draft not read');
+      return;
+    }
+    // A workout of today that is not finished belongs to its logger.
+    final finished = await loadPendingFinish(workoutId) != null;
+    if (!finished && !(draftHasDoneSet(draft) && _leftOnEarlierDay(draft))) {
+      return;
+    }
+    final result = await sendLeftOverDraft(
+      this,
+      PlannedWorkout.byId(workoutId),
+      draft,
+    );
+    if (result.settled) await clearDraft(result.workoutId);
+  }
+
+  bool _leftOnEarlierDay(Map<String, dynamic> draft) {
+    final started = DateTime.tryParse('${draft['actual_started_at'] ?? ''}');
+    if (started == null) return false;
+    final now = _clock();
+    return workoutLeftOnEarlierDay(
+      startedAt: started,
+      now: now,
+      sessionDate: now,
+      maxSeconds: maxWorkoutSeconds,
+    );
   }
 
   HealthkitCompletionCandidate _parseHealthkitCandidate(
@@ -1663,11 +1945,126 @@ abstract final class WorkoutLocalKeys {
       key.startsWith(finishPrefix(userId)) ||
       key == discards(userId) ||
       key == exerciseHistory(userId) ||
-      key == TrainingHubCache.keyFor(userId);
+      key == TrainingHubCache.keyFor(userId) ||
+      key == TrainingHubCache.safetyKeyFor(userId);
 }
 
 Map<String, dynamic> decodeDraft(String value) =>
     Map<String, dynamic>.from(jsonDecode(value) as Map);
+
+/// [draft] has a set marked done.
+bool draftHasDoneSet(Map<String, dynamic> draft) {
+  final exercises = draft['exercises'];
+  if (exercises is! List) return false;
+  return exercises.any(
+    (exercise) =>
+        exercise is Map &&
+        exercise['sets'] is List &&
+        (exercise['sets'] as List).any(
+          (set) => set is Map && set['completed'] == true,
+        ),
+  );
+}
+
+/// What [sendLeftOverDraft] did: [settled] when nothing is left on this phone
+/// that the server lacks, and the id of the planned workout the draft ended
+/// up under ([PlannedWorkout.id] unless the plan was copied meanwhile).
+typedef LeftOverResult = ({bool settled, String workoutId});
+
+/// Sends what the phone's [draft] of [workout] holds that the server may not
+/// have: its sets, and its finish when one was saved. [LeftOverResult.settled]
+/// is true when nothing is left on this phone that the server lacks, so the
+/// draft may go: no set was done and no finish waits, or everything reached
+/// the server. False keeps the draft (offline, or a draft whose session was
+/// never created and has no finish to send). A session that no longer takes
+/// sets or a finish (55000: it was saved or discarded already, say by an
+/// earlier try whose answer was lost) is settled: nothing of the draft can
+/// reach it, so it goes and never opens as a workout.
+///
+/// A start the server answers with "planned workout not found" (P0002) means
+/// the plan was copied with new ids since the draft was made: the workout is
+/// found again in the current plan by its place and exercises, the draft moves
+/// to it, and the start is made again under the same key. With no such
+/// workout the draft stays.
+Future<LeftOverResult> sendLeftOverDraft(
+  WorkoutRepository repository,
+  PlannedWorkout workout,
+  Map<String, dynamic> draft,
+) async {
+  var current = workout;
+  var data = draft;
+  try {
+    final finish = await repository.loadPendingFinish(current.id);
+    if (finish == null && !draftHasDoneSet(data)) {
+      return (settled: true, workoutId: current.id);
+    }
+    var id = data['session_id'] as String?;
+    final started = DateTime.tryParse('${data['actual_started_at'] ?? ''}');
+    if (id == null || id.startsWith('pending-')) {
+      final key = data['idempotency_key'] as String?;
+      if (finish == null || key == null || started == null) {
+        return (settled: false, workoutId: current.id);
+      }
+      try {
+        id = await repository.start(current, key, localDate: started.toLocal());
+      } on PostgrestException catch (e) {
+        final moved = e.code == 'P0002' && repository is WorkoutPlanRemapper
+            ? await (repository as WorkoutPlanRemapper).moveToCurrentPlan(
+                current.id,
+                WorkoutIdentity.fromJson(data['workout_identity']) ??
+                    current.identity,
+              )
+            : null;
+        if (moved == null) rethrow;
+        current = moved;
+        data = {...data, 'workout_id': moved.id};
+        id = await repository.start(current, key, localDate: started.toLocal());
+      }
+    }
+    final revision = (data['revision'] as num?)?.toInt() ?? 0;
+    final sessionId = id;
+    final sent = await syncDraft(
+      repository,
+      sessionId,
+      revision,
+      serverDraftPayload(data, sessionId),
+      readRows: () async {
+        // The session of the day the draft was made on, not today's.
+        final session = await repository.loadSession(
+          current,
+          localDate: started?.toLocal(),
+        );
+        return session != null && session['session_id'] == sessionId
+            ? session['exercises']
+            : null;
+      },
+    );
+    if (finish != null) {
+      await repository.completeWithEffort(
+        sessionId,
+        revision,
+        finish.durationSeconds,
+        sent,
+        sessionEffort: finish.sessionEffort,
+      );
+    }
+    AppBreadcrumbs.workout(
+      'Earlier workout sent',
+      data: {'finished': finish != null},
+    );
+    return (settled: true, workoutId: current.id);
+  } on PostgrestException catch (e) {
+    if (e.code == '55000') {
+      logNonCritical(e, 'earlier workout already settled');
+      return (settled: true, workoutId: current.id);
+    }
+    logNonCritical(e, 'earlier workout kept on the phone');
+    return (settled: false, workoutId: current.id);
+  } catch (e) {
+    logNonCritical(e, 'earlier workout kept on the phone');
+    return (settled: false, workoutId: current.id);
+  }
+}
 
 /// The keys of a saved draft that the server reads; the rest only this phone
 /// needs.

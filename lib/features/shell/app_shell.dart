@@ -21,6 +21,7 @@ import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_screen.dart';
 import 'package:tracend/features/goals/goal_target_repository.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
+import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/readiness/day_adjustment_repository.dart';
 import 'package:tracend/features/readiness/pain_check.dart';
@@ -237,6 +238,17 @@ class _AppShellState extends State<AppShell> {
     super.dispose();
   }
 
+  /// Keeps what the server says about sore areas beside the saved plan, so
+  /// Train can still say it with no connection.
+  void _keepSafetyNotes(DayAdjustment adjustment) {
+    final workouts = _workouts;
+    if (workouts is SavedSafetyNotesRepository) {
+      unawaited(
+        (workouts as SavedSafetyNotesRepository).saveSafetyNotes(adjustment),
+      );
+    }
+  }
+
   /// Opens what a tap asked for: the tab of a widget (`tracend://today`,
   /// `tracend://train`), or the workout in progress from its Live Activity
   /// (`tracend://workout`). With a workout screen already open the app coming
@@ -266,6 +278,7 @@ class _AppShellState extends State<AppShell> {
             ? SupabaseWorkoutRepository(
                 Supabase.instance.client,
                 SharedPreferencesAsync(),
+                loggerOpen: () => ActiveWorkoutScreen.isOpen,
               )
             : FixtureWorkoutRepository());
     _health =
@@ -321,6 +334,7 @@ class _AppShellState extends State<AppShell> {
         : DayAdjustmentController(
             repository: dayAdjustments,
             serverToday: _serverToday,
+            onAnswered: _keepSafetyNotes,
           );
     final guidance =
         injected?.guidance ??

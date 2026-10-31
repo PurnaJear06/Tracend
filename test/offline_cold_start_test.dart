@@ -17,8 +17,11 @@ import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/auth/account_session.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/auth/phase_2_gate.dart';
+import 'package:tracend/features/readiness/day_adjustment.dart';
+import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/shell/app_shell.dart';
 import 'package:tracend/features/train/active_workout_screen.dart';
+import 'package:tracend/features/train/offline_safety_notes.dart';
 import 'package:tracend/features/train/train_screen.dart';
 import 'package:tracend/features/train/training_hub_cache.dart';
 import 'package:tracend/features/train/workout_repository.dart';
@@ -26,6 +29,7 @@ import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
 
+import 'day_adjustment_fixtures.dart';
 import 'home_widgets/fake_home_widget_bridge.dart';
 import 'live_activity/fake_workout_activity_bridge.dart';
 import 'train_fixtures.dart';
@@ -69,6 +73,24 @@ class _Backend {
   final startKeys = <String>[];
   final efforts = <int>[];
 
+  /// The planned workout ids `start_workout` was asked for, in order.
+  final startedIds = <String>[];
+
+  /// The workout ids the draft payloads of `sync_workout_draft` named.
+  final syncedWorkoutIds = <String>[];
+
+  /// `start_workout` answers "planned workout not found" (P0002) for these.
+  final staleIds = <String>{};
+
+  /// The code every `start_workout` is refused with, when set.
+  String? startRefusal;
+
+  /// The state the server reports for the session it holds.
+  String sessionState = 'in_progress';
+
+  /// Runs while a hub request is being answered, before it is.
+  Future<void> Function()? duringHub;
+
   Future<http.Response> handle(http.Request request) async {
     final route = '${request.method} ${request.url.path}';
     attempts.add(route);
@@ -76,19 +98,32 @@ class _Backend {
     switch (route) {
       case 'GET /auth/v1/user':
         return _ok(_user());
+      case 'POST /auth/v1/logout':
+        return http.Response('', 204, headers: _headers);
       case 'GET /rest/v1/user_accounts':
         return _ok({'onboarding_state': 'completed'});
       case 'POST /rest/v1/rpc/get_my_training_hub':
+        await duringHub?.call();
         return _ok(hub);
       case 'POST /rest/v1/rpc/start_workout':
+        final params = jsonDecode(request.body) as Map;
+        final id = params['p_planned_workout_id'] as String;
+        startedIds.add(id);
+        if (staleIds.contains(id)) return _error('P0002', 'not found');
+        final refusal = startRefusal;
+        if (refusal != null) return _error(refusal, 'refused');
         sessionStarted = true;
-        startKeys.add(
-          (jsonDecode(request.body) as Map)['p_idempotency_key'] as String,
-        );
+        startKeys.add(params['p_idempotency_key'] as String);
         return _ok('server-session');
       case 'POST /rest/v1/rpc/get_my_workout_session':
-        return _ok(sessionStarted ? _serverSession() : null);
+        return _ok(
+          sessionStarted || sessionState == 'completed'
+              ? _serverSession()
+              : null,
+        );
       case 'POST /rest/v1/rpc/sync_workout_draft':
+        final draft = (jsonDecode(request.body) as Map)['draft'] as Map;
+        syncedWorkoutIds.add(draft['workout_id'] as String);
         return _ok(null);
       case 'POST /rest/v1/rpc/complete_workout_v2':
         efforts.add((jsonDecode(request.body) as Map)['session_effort'] as int);
@@ -107,11 +142,17 @@ class _Backend {
   http.Response _ok(Object? body) =>
       http.Response(jsonEncode(body), 200, headers: _headers);
 
+  http.Response _error(String code, String message) => http.Response(
+    jsonEncode({'code': code, 'message': message}),
+    400,
+    headers: _headers,
+  );
+
   Map<String, dynamic> _serverSession() => {
     'session_id': 'server-session',
-    'state': 'in_progress',
+    'state': sessionState,
     'revision': 0,
-    'idempotency_key': startKeys.last,
+    'idempotency_key': startKeys.isEmpty ? '' : startKeys.last,
     'local_date': localDayKey(DateTime.now()),
     'actual_started_at': DateTime.now().toUtc().toIso8601String(),
     'exercises': [
@@ -203,6 +244,70 @@ class _Notifications implements NotificationRepository {
   }) => load();
 }
 
+/// The fixture hub with one workout of one exercise, whose id is [workoutId].
+Map<String, dynamic> _singleHub(
+  String workoutId, {
+  int order = 1,
+  DateTime? now,
+}) {
+  final hub = _hubJson(now: now);
+  final workout = (hub['workouts'] as List).first as Map<String, dynamic>;
+  workout
+    ..['id'] = workoutId
+    ..['order'] = order
+    ..['exercises'] = [(workout['exercises'] as List).first];
+  hub
+    ..['workouts'] = [workout]
+    ..['today_workout'] = workout;
+  return hub;
+}
+
+/// The workout the athlete logs, as a hub with [workoutId] names it.
+PlannedWorkout _workoutOf(String workoutId) =>
+    TrainingHubData.fromHubJson(_singleHub(workoutId)).workouts.single;
+
+/// A draft as the logger saves it, with one set done.
+Map<String, dynamic> _draftOf(
+  PlannedWorkout workout, {
+  required String key,
+  bool withIdentity = true,
+  DateTime? startedAt,
+}) => {
+  'workout_id': workout.id,
+  'session_id': 'pending-$key',
+  'idempotency_key': key,
+  'revision': 3,
+  'actual_started_at': (startedAt ?? DateTime.now()).toUtc().toIso8601String(),
+  if (withIdentity) 'workout_identity': workout.identity!.toJson(),
+  'exercises': [
+    {
+      'order': 1,
+      'status': 'completed',
+      'pain_flag': false,
+      'rest_seconds': 60,
+      'sets': [
+        {'number': 1, 'completed': true, 'load_kg': '55', 'repetitions': '8'},
+        {'number': 2, 'completed': false},
+        {'number': 3, 'completed': false},
+      ],
+    },
+  ],
+};
+
+/// A repository that has a saved plan and sore-area notes on the phone.
+class _WithNotes extends TrainFixtureRepository
+    implements SavedSafetyNotesRepository {
+  _WithNotes(this.notes, {super.hub});
+
+  final OfflineSafetyNotes? notes;
+
+  @override
+  Future<void> saveSafetyNotes(DayAdjustment adjustment) async {}
+
+  @override
+  Future<OfflineSafetyNotes?> loadSavedSafetyNotes() async => notes;
+}
+
 void main() {
   late _Backend backend;
   late SharedPreferencesAsync preferences;
@@ -215,6 +320,7 @@ void main() {
     preferences = SharedPreferencesAsync();
     cache = TrainingHubCache(preferences);
     backend = _Backend();
+    SupabaseWorkoutRepository.forgetSending();
     // The device time zone is not available under test.
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -713,6 +819,540 @@ void main() {
       );
       expect(find.text('Workout complete'), findsOneWidget);
       expect(await source.loadPendingFinish(workout.id), isNull);
+    });
+  });
+
+  group('a plan copied while the workout waited', () {
+    const oldId = 'old-workout';
+    const newId = 'new-workout';
+
+    Future<SupabaseWorkoutRepository> pumpLogger(
+      WidgetTester tester,
+      PlannedWorkout workout,
+    ) async {
+      final client = await startSupabase(tester);
+      final source = SupabaseWorkoutRepository(client, preferences);
+      tester.view.physicalSize = const Size(390, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: ActiveWorkoutScreen(
+            workout: workout,
+            repository: source,
+            restAlerts: _Alerts(),
+            notifications: _Notifications(),
+            activity: FakeWorkoutActivityBridge(),
+            lockScreenNumbers: () async => false,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return source;
+    }
+
+    Future<void> tapText(WidgetTester tester, Finder finder) async {
+      await tester.ensureVisible(finder.first);
+      await tester.pumpAndSettle();
+      await tester.tap(finder.first);
+      await tester.pumpAndSettle();
+    }
+
+    /// Logs one set and finishes with effort 6, all with no signal.
+    Future<void> finishOffline(WidgetTester tester) async {
+      await tapText(tester, find.text('Done set 1'));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+      await tapText(tester, find.bySemanticsLabel('Skip rest'));
+      await tapText(tester, find.bySemanticsLabel('Finish workout'));
+      await tapText(tester, find.bySemanticsLabel('6, Moderate'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Finish workout'));
+      await tester.pumpAndSettle();
+      expect(find.text('Finish not sent yet'), findsOneWidget);
+    }
+
+    Iterable<String> draftKeys(Set<String> keys) =>
+        keys.where((k) => k.startsWith(WorkoutLocalKeys.draftPrefix(_userId)));
+
+    testWidgets('a start the server does not know moves the draft to the '
+        'plan\'s copy and the sets and finish are sent', (tester) async {
+      final source = await pumpLogger(tester, _workoutOf(oldId));
+      await finishOffline(tester);
+      final key =
+          decodeDraft(
+                (await preferences.getString(
+                  '${WorkoutLocalKeys.draftPrefix(_userId)}$oldId',
+                ))!,
+              )['idempotency_key']
+              as String;
+
+      backend
+        ..online = true
+        ..hub = _singleHub(newId)
+        ..staleIds.add(oldId);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(backend.startedIds, [oldId, newId]);
+      expect(backend.startKeys, [key], reason: 'the same key is reused');
+      expect(backend.syncedWorkoutIds, everyElement(newId));
+      expect(backend.efforts, [6]);
+      expect(find.text('Workout complete'), findsOneWidget);
+      expect(draftKeys(await preferences.getKeys()), isEmpty);
+      expect(await source.loadPendingFinish(newId), isNull);
+      expect(await source.loadPendingFinish(oldId), isNull);
+    });
+
+    testWidgets('with no copy in the current plan the sets stay and the '
+        'workout says so', (tester) async {
+      final source = await pumpLogger(tester, _workoutOf(oldId));
+      await finishOffline(tester);
+
+      backend
+        ..online = true
+        ..hub = _singleHub(newId, order: 2)
+        ..staleIds.add(oldId);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Not in your current plan'), findsOneWidget);
+      expect(find.textContaining('cannot be finished yet'), findsOneWidget);
+      expect(backend.efforts, isEmpty);
+      expect(backend.startedIds, [oldId]);
+      final kept = await source.loadDraft(oldId);
+      expect(kept, isNotNull, reason: 'the sets are never dropped');
+      final draft = decodeDraft(kept!);
+      expect(
+        ((draft['exercises'] as List).first as Map)['sets'],
+        contains(containsPair('completed', true)),
+      );
+      expect(find.text('Offline'), findsNothing);
+    });
+
+    testWidgets('a workout the server holds as completed opens as completed '
+        'and the draft goes', (tester) async {
+      final source = await pumpLogger(tester, _workoutOf(oldId));
+      await finishOffline(tester);
+
+      backend
+        ..online = true
+        ..startRefusal = '55000'
+        ..sessionState = 'completed';
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Finish not sent yet'), findsNothing);
+      expect(backend.efforts, isEmpty);
+      expect(backend.syncedWorkoutIds, isEmpty);
+      expect(await source.loadDraft(oldId), isNull);
+      expect(await source.loadPendingFinish(oldId), isNull);
+    });
+
+    testWidgets('a server error is not read as being offline', (tester) async {
+      await pumpLogger(tester, _workoutOf(oldId));
+      backend.online = true;
+      backend.startRefusal = '42501';
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      await tapText(tester, find.text('Done set 1'));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Needs attention'), findsOneWidget);
+      expect(find.text('Offline'), findsNothing);
+    });
+  });
+
+  group('waiting workouts without the logger', () {
+    const oldId = 'old-workout';
+    const newId = 'new-workout';
+    const key = '33333333-3333-4333-8333-333333333333';
+
+    Future<SupabaseWorkoutRepository> repo(
+      WidgetTester tester, {
+      bool Function()? loggerOpen,
+    }) async {
+      final client = await startSupabase(tester);
+      return SupabaseWorkoutRepository(
+        client,
+        preferences,
+        loggerOpen: loggerOpen,
+      );
+    }
+
+    /// A finished workout on the phone: draft and finish, never sent.
+    Future<void> finished(
+      SupabaseWorkoutRepository source,
+      PlannedWorkout workout, {
+      bool withIdentity = true,
+    }) async {
+      final draft = _draftOf(workout, key: key, withIdentity: withIdentity);
+      await source.saveDraft(workout.id, jsonEncode(draft));
+      await expectLater(
+        source.completeWithEffort(
+          draft['session_id'] as String,
+          3,
+          1800,
+          draft,
+          sessionEffort: 6,
+        ),
+        throwsA(isA<WorkoutSessionPendingException>()),
+      );
+    }
+
+    testWidgets('a finish waiting on the phone is sent with no screen open', (
+      tester,
+    ) async {
+      final source = await repo(tester);
+      await finished(source, _workoutOf(oldId));
+      backend.online = true;
+
+      await source.sendWaiting();
+
+      expect(backend.startedIds, [oldId]);
+      expect(backend.startKeys, [key]);
+      expect(backend.efforts, [6]);
+      expect(await source.loadDraft(oldId), isNull);
+      expect(await source.loadPendingFinish(oldId), isNull);
+    });
+
+    testWidgets('offline it sends nothing and keeps everything', (
+      tester,
+    ) async {
+      final source = await repo(tester);
+      await finished(source, _workoutOf(oldId));
+
+      await source.sendWaiting();
+
+      expect(backend.efforts, isEmpty);
+      expect(await source.loadDraft(oldId), isNotNull);
+      expect(await source.loadPendingFinish(oldId), isNotNull);
+    });
+
+    testWidgets('the connection coming back sends it from the gate', (
+      tester,
+    ) async {
+      final source = await repo(tester);
+      await cache.save(_userId, _hubJson(), savedThreeDaysAgo);
+      await finished(source, _workoutOf(oldId));
+      await pumpGate(tester);
+      expect(tester.widget<AppShell>(find.byType(AppShell)).offline, isTrue);
+      expect(backend.efforts, isEmpty);
+
+      backend.online = true;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(backend.efforts, [6], reason: 'sent without opening the workout');
+      expect(await source.loadPendingFinish(oldId), isNull);
+    });
+
+    testWidgets('a hub that loads sends it too', (tester) async {
+      final source = await repo(tester);
+      await finished(source, _workoutOf(oldId));
+      backend.online = true;
+
+      await source.loadTrainingHub();
+      await tester.pumpAndSettle();
+
+      expect(backend.efforts, [6]);
+    });
+
+    testWidgets('a plan copied meanwhile gets the workout at its new id', (
+      tester,
+    ) async {
+      final source = await repo(tester);
+      await finished(source, _workoutOf(oldId));
+      backend
+        ..online = true
+        ..hub = _singleHub(newId)
+        ..staleIds.add(oldId);
+
+      await source.sendWaiting();
+
+      expect(backend.startedIds, [oldId, newId]);
+      expect(backend.startKeys, [key]);
+      expect(backend.efforts, [6]);
+      expect(await source.loadDraft(newId), isNull);
+      expect(await source.loadPendingFinish(newId), isNull);
+      expect(await source.loadDraft(oldId), isNull);
+    });
+
+    testWidgets('a copy with no such workout leaves the draft where it is', (
+      tester,
+    ) async {
+      final source = await repo(tester);
+      await finished(source, _workoutOf(oldId));
+      backend
+        ..online = true
+        ..hub = _singleHub(newId, order: 2)
+        ..staleIds.add(oldId);
+
+      await source.sendWaiting();
+
+      expect(backend.efforts, isEmpty);
+      expect(await source.loadDraft(oldId), isNotNull);
+      expect(await source.loadPendingFinish(oldId), isNotNull);
+    });
+
+    testWidgets('today\'s open workout belongs to its logger', (tester) async {
+      final source = await repo(tester);
+      final workout = _workoutOf(oldId);
+      await source.saveDraft(oldId, jsonEncode(_draftOf(workout, key: key)));
+      backend.online = true;
+
+      await source.sendWaiting();
+
+      expect(backend.startedIds, isEmpty);
+      expect(await source.loadDraft(oldId), isNotNull);
+    });
+
+    testWidgets('an open logger sends its own workout, not the repository', (
+      tester,
+    ) async {
+      final source = await repo(tester, loggerOpen: () => true);
+      await finished(source, _workoutOf(oldId));
+      backend.online = true;
+
+      await source.sendWaiting();
+
+      expect(backend.startedIds, isEmpty);
+      expect(await source.loadPendingFinish(oldId), isNotNull);
+    });
+
+    testWidgets('another athlete\'s workout is never sent', (tester) async {
+      final source = await repo(tester);
+      final other = '${WorkoutLocalKeys.draftPrefix(_otherUserId)}$oldId';
+      final otherFinish =
+          '${WorkoutLocalKeys.finishPrefix(_otherUserId)}$oldId';
+      await preferences.setString(
+        other,
+        jsonEncode(_draftOf(_workoutOf(oldId), key: key)),
+      );
+      await preferences.setString(
+        otherFinish,
+        jsonEncode({'session_effort': 6, 'duration_seconds': 600}),
+      );
+      backend.online = true;
+
+      await source.sendWaiting();
+
+      expect(backend.startedIds, isEmpty);
+      expect(await preferences.getString(other), isNotNull);
+      expect(await preferences.getString(otherFinish), isNotNull);
+    });
+  });
+
+  group('sore areas offline', () {
+    Map<String, dynamic> withAreas({String? route}) => {
+      ...adjustmentJson(kind: 'none', status: 'none', safetyRoute: route),
+      'joint_states': [
+        {
+          'area': 'knee',
+          'state': 'held',
+          'severity': 7,
+          'persistent': false,
+          'since': '2026-10-01',
+          'hold_outcome': 'clinician_today',
+        },
+        {
+          'area': 'back',
+          'state': 'held',
+          'severity': 5,
+          'persistent': false,
+          'since': '2026-10-01',
+          'hold_outcome': 'clinician',
+        },
+        {
+          'area': 'shoulder',
+          'state': 'limited',
+          'severity': 5,
+          'persistent': false,
+          'since': '2026-10-01',
+        },
+        {
+          'area': 'other',
+          'state': 'watch',
+          'severity': 2,
+          'persistent': false,
+          'since': '2026-10-01',
+        },
+      ],
+    };
+
+    test('the notes are the hold lines and the route, in fixed words', () {
+      final notes = OfflineSafetyNotes.from(
+        DayAdjustment.tryParse(withAreas(route: 'clinician_today'))!,
+      );
+      expect(notes.safetyRoute, 'clinician_today');
+      expect(notes.lines, [
+        'Your knee is resting until you have been seen.',
+        "Your lower back is on hold until you've had it checked.",
+        'Your shoulder needs a lighter touch this week.',
+      ]);
+      expect(OfflineSafetyNotes.fromJson(notes.toJson())!.lines, notes.lines);
+    });
+
+    test('the controller hands every server answer on', () async {
+      final seen = <DayAdjustment>[];
+      final controller = DayAdjustmentController(
+        repository: FakeDayAdjustmentRepository(withAreas()),
+        onAnswered: seen.add,
+      );
+      await controller.load(localToday: DateTime(2026, 10, 2));
+      expect(seen, hasLength(1));
+      expect(seen.single.jointStates, hasLength(4));
+    });
+
+    testWidgets('the notes live and go with the saved plan', (tester) async {
+      final client = await startSupabase(tester);
+      final source = SupabaseWorkoutRepository(client, preferences);
+      await source.saveSafetyNotes(DayAdjustment.tryParse(withAreas())!);
+
+      expect((await source.loadSavedSafetyNotes())!.lines, hasLength(3));
+      await cache.save(_userId, _hubJson(), DateTime.now());
+      await cache.save(_otherUserId, _hubJson(), DateTime.now());
+      await cache.saveSafety(
+        _otherUserId,
+        OfflineSafetyNotes.from(DayAdjustment.tryParse(withAreas())!),
+      );
+
+      await LocalAccountData().forgetSession(_userId);
+      expect(await source.loadSavedSafetyNotes(), isNull);
+      expect(await cache.loadSafety(_otherUserId), isNotNull);
+      expect(
+        WorkoutLocalKeys.owns(_userId, TrainingHubCache.safetyKeyFor(_userId)),
+        isTrue,
+      );
+    });
+
+    Future<void> pumpTrain(
+      WidgetTester tester,
+      TrainFixtureRepository repository,
+    ) async {
+      tester.view.physicalSize = const Size(390, 2600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        TracendMotionScope(
+          level: TracendMotionLevel.static,
+          child: MaterialApp(
+            theme: TracendTheme.dark,
+            home: Scaffold(
+              body: TrainScreen(
+                repository: repository,
+                brief: TrainBriefRepository(computed: trainComputed()),
+                coach: const TrainCoachRepository(),
+                now: trainNow,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a saved plan says the holds and the route that were saved', (
+      tester,
+    ) async {
+      final notes = OfflineSafetyNotes.from(
+        DayAdjustment.tryParse(withAreas(route: 'clinician_today'))!,
+      );
+      await pumpTrain(
+        tester,
+        _WithNotes(notes, hub: trainHub(cachedAt: DateTime(2026, 9, 30))),
+      );
+
+      expect(find.text('Get this checked today'), findsOneWidget);
+      expect(
+        find.text('Your knee is resting until you have been seen.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('From your last check on 2 Oct'), findsOne);
+      expect(find.text(offlinePainHoldsUnknown), findsNothing);
+    });
+
+    testWidgets('with nothing saved it says holds cannot be checked', (
+      tester,
+    ) async {
+      await pumpTrain(
+        tester,
+        TrainFixtureRepository(hub: trainHub(cachedAt: DateTime(2026, 9, 30))),
+      );
+      expect(
+        find.text(
+          "Pain holds can't be checked offline. Skip any area on hold.",
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a fresh plan shows neither', (tester) async {
+      await pumpTrain(tester, TrainFixtureRepository());
+      expect(find.text(offlinePainHoldsUnknown), findsNothing);
+    });
+
+    test('a copy from another day leaves out the day\'s targets', () {
+      final saved = DateTime(2026, 10, 2, 8);
+      final cached = CachedTrainingHub(savedAt: saved, hub: _hubJson());
+      final sameDay = TrainingHubData.fromCache(
+        CachedTrainingHub(
+          savedAt: saved,
+          hub: _hubJson(localToday: localDayKey(DateTime(2026, 10, 2))),
+        ),
+        DateTime(2026, 10, 2, 20),
+      );
+      final later = TrainingHubData.fromCache(cached, DateTime(2026, 10, 9));
+
+      expect(
+        sameDay.workouts.single.exercises.any((e) => e.nextTarget != null),
+        isTrue,
+      );
+      expect(
+        later.workouts.single.exercises.any((e) => e.nextTarget != null),
+        isFalse,
+      );
+    });
+  });
+
+  group('signing out while a hub loads', () {
+    testWidgets('a load in flight at sign-out does not save the plan again', (
+      tester,
+    ) async {
+      final client = await startSupabase(tester);
+      final source = SupabaseWorkoutRepository(client, preferences);
+      backend
+        ..online = true
+        // The athlete signs out while the answer is on its way.
+        ..duringHub = () => client.auth.signOut(scope: SignOutScope.local);
+
+      await tester.runAsync(source.loadTrainingHub);
+
+      expect(await cache.load(_userId), isNull);
+    });
+
+    testWidgets('the gate clears the athlete\'s saved plan when the session '
+        'ends', (tester) async {
+      final client = await startSupabase(tester);
+      await cache.save(_userId, _hubJson(), savedThreeDaysAgo);
+      await cache.saveSafety(
+        _userId,
+        OfflineSafetyNotes.from(
+          DayAdjustment.tryParse(adjustmentJson(kind: 'none', status: 'none'))!,
+        ),
+      );
+      await pumpGate(tester);
+      expect(await cache.load(_userId), isNotNull);
+
+      backend.online = true;
+      await tester.runAsync(
+        () => client.auth.signOut(scope: SignOutScope.local),
+      );
+      await tester.pumpAndSettle();
+
+      expect(await cache.load(_userId), isNull);
+      expect(await cache.loadSafety(_userId), isNull);
     });
   });
 

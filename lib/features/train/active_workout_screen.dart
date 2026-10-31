@@ -104,7 +104,7 @@ class ActiveWorkoutScreen extends StatefulWidget {
   static bool get isOpen => _open > 0;
 
   /// The longest workout the server records (3 hours).
-  static const maxSessionSeconds = 10800;
+  static const maxSessionSeconds = maxWorkoutSeconds;
 
   @override
   State<ActiveWorkoutScreen> createState() => _ActiveWorkoutScreenState();
@@ -112,7 +112,15 @@ class ActiveWorkoutScreen extends StatefulWidget {
 
 enum _Sync { saving, saved, offline, attention }
 
+const _unmatchedKept = 'Your sets are kept on this phone.';
+const _unmatchedFinishLine =
+    'This workout is no longer in your current plan, so it cannot be '
+    'finished yet. Your sets and effort are kept on this phone.';
+
 enum _Leave { save, discard }
+
+/// Whether a workout the server no longer knows was found in the current plan.
+enum _Moved { yes, no, unreadable }
 
 /// What a Done press from the Live Activity did.
 enum _Tick { ticked, stale, unsuggested }
@@ -166,7 +174,17 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   bool _watchSuggestionOver = false;
   final SetTimingRecorder _timing = SetTimingRecorder();
 
+  /// The planned workout being logged. It is [ActiveWorkoutScreen.workout]
+  /// until the plan is copied with new ids (a lighter week starting, a block
+  /// ending): the draft then moves to the copy of this workout in the current
+  /// plan, and this follows it.
+  late PlannedWorkout _workout = widget.workout;
+
   String? _sessionId;
+
+  /// The server no longer has this workout and the current plan has no copy
+  /// of it. The sets stay on the phone; nothing is started or finished.
+  bool _unmatched = false;
 
   /// The logger has taken the set rows the server holds for [_sessionId]. The
   /// server's `start_workout` decides how many sets a workout has, so nothing
@@ -252,10 +270,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (repository is SupabaseWorkoutRepository) {
       _heartRate = SetHeartRateRecorder.shared(Supabase.instance.client).listen(
         _events.events,
-        loadSession: () => repository.loadSession(
-          widget.workout,
-          localDate: widget.sessionDate,
-        ),
+        loadSession: () =>
+            repository.loadSession(_workout, localDate: widget.sessionDate),
       );
     }
     _watchPrompt =
@@ -307,7 +323,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     Map<String, dynamic>? server;
     try {
       server = await widget.repository.loadSession(
-        widget.workout,
+        _workout,
         localDate: widget.sessionDate,
       );
     } catch (e) {
@@ -315,17 +331,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _sync = _Sync.offline;
     }
     if (server != null && server['state'] == 'completed') {
-      _sessionId = server['session_id'] as String?;
-      _viewingCompleted = true;
-      _completedFromHealth = server['completion_source'] == 'healthkit';
-      _completedDuration = (server['duration_seconds'] as num?)?.toInt();
-      _hydrate(server['exercises']);
-      _ready = true;
-      if (mounted) setState(() {});
-      unawaited(_loadHistory());
+      _showCompleted(server);
       return;
     }
-    final saved = await widget.repository.loadDraft(widget.workout.id);
+    final saved = await widget.repository.loadDraft(_workout.id);
     var local = saved == null ? null : _decode(saved);
     if (local != null &&
         _leftOnEarlierDay(local) &&
@@ -336,7 +345,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       // so this phone's copy never opens today's workout or carries its sets
       // and start time into it. It is dropped only once everything in it has
       // reached the server; otherwise it stays and opens as it was saved.
-      await widget.repository.clearDraft(widget.workout.id);
+      await widget.repository.clearDraft(_workout.id);
       local = null;
     }
     final draft = _newer(server, local);
@@ -376,9 +385,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       // The rest ran out while the app was away: it ended at its end time.
       _timing.restEnded(storedRest.endsAt);
     }
-    _pendingFinish = await widget.repository.loadPendingFinish(
-      widget.workout.id,
-    );
+    _pendingFinish = await widget.repository.loadPendingFinish(_workout.id);
     await _loadLockScreenChoice();
     _ready = true;
     final first = _firstOpenExercise();
@@ -401,110 +408,125 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
     unawaited(_loadHistory());
     unawaited(_loadWatchSuggestion());
-    try {
-      if (_sessionId == null) {
-        final id = await widget.repository.start(
-          widget.workout,
-          _idempotencyKey,
-          localDate: widget.sessionDate,
-        );
+    if (_sessionId == null) {
+      final id = await _startSession();
+      if (_viewingCompleted) return;
+      if (id == null) {
+        _sessionId ??= 'pending-$_idempotencyKey';
+      } else {
         _sessionId = id;
         _rowsAligned = false;
         _serverStartedAt ??= await _serverStartOf(id);
       }
-    } catch (e) {
-      logNonCritical(e, 'workout start waits');
-      _sessionId ??= 'pending-$_idempotencyKey';
-      _sync = _Sync.offline;
     }
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     await _save();
   }
 
-  /// Sends what an earlier day's draft holds that the server may not have:
-  /// its sets, and its finish when one was saved. True when nothing is left
-  /// on this phone that the server lacks, so the draft may go: no set was
-  /// done and no finish waits, or everything reached the server. False
-  /// keeps the draft (offline, or a draft whose session was never created
-  /// and has no finish to send). A session that no longer takes sets or a
-  /// finish (55000: it was saved or discarded already, say by an earlier try
-  /// whose answer was lost) is settled: nothing of the draft can reach it, so
-  /// it goes and never opens as a workout.
-  Future<bool> _sendLeftOver(Map<String, dynamic> draft) async {
-    final repository = widget.repository;
+  /// Opens the workout the server holds as completed, read-only.
+  void _showCompleted(Map<String, dynamic> server) {
+    _sessionId = server['session_id'] as String?;
+    _viewingCompleted = true;
+    _completedFromHealth = server['completion_source'] == 'healthkit';
+    _completedDuration = (server['duration_seconds'] as num?)?.toInt();
+    _hydrate(server['exercises']);
+    _ready = true;
+    if (mounted) setState(() {});
+    unawaited(_loadHistory());
+  }
+
+  /// The server starts the session. Null when it cannot now: [_sync] then says
+  /// why, or the workout turned out to be completed already (55000), which
+  /// opens as the completed workout, as a workout finished on another phone
+  /// does. A server answer is never read as being offline: a plan copied with
+  /// new ids (P0002) moves the draft to this workout's copy in the current
+  /// plan and starts again under the same key; with no copy the sets stay on
+  /// the phone and the workout says so.
+  Future<String?> _startSession({bool moved = false}) async {
+    if (_unmatched) {
+      _sync = _Sync.attention;
+      return null;
+    }
     try {
-      final finish = await repository.loadPendingFinish(widget.workout.id);
-      if (finish == null && !_hasDoneSet(draft)) return true;
-      var id = draft['session_id'] as String?;
-      if (id == null || id.startsWith('pending-')) {
-        final key = draft['idempotency_key'] as String?;
-        final started = DateTime.tryParse(
-          '${draft['actual_started_at'] ?? ''}',
-        );
-        if (finish == null || key == null || started == null) return false;
-        id = await repository.start(
-          widget.workout,
-          key,
-          localDate: started.toLocal(),
-        );
-      }
-      final revision = (draft['revision'] as num?)?.toInt() ?? 0;
-      final sent = await syncDraft(
-        repository,
-        id,
-        revision,
-        serverDraftPayload(draft, id),
-        readRows: () async {
-          // The session of the day the draft was made on, not today's.
-          final session = await repository.loadSession(
-            widget.workout,
-            localDate: DateTime.tryParse(
-              '${draft['actual_started_at'] ?? ''}',
-            )?.toLocal(),
-          );
-          return session != null && session['session_id'] == id
-              ? session['exercises']
-              : null;
-        },
+      return await widget.repository.start(
+        _workout,
+        _idempotencyKey,
+        localDate: widget.sessionDate,
       );
-      if (finish != null) {
-        await repository.completeWithEffort(
-          id,
-          revision,
-          finish.durationSeconds,
-          sent,
-          sessionEffort: finish.sessionEffort,
-        );
-      }
-      AppBreadcrumbs.workout(
-        'Earlier workout sent',
-        data: {'finished': finish != null},
-      );
-      return true;
     } on PostgrestException catch (e) {
+      logNonCritical(e, 'workout start refused');
       if (e.code == '55000') {
-        logNonCritical(e, 'earlier workout already settled');
-        return true;
+        await _showCompletedAlready();
+        return null;
       }
-      logNonCritical(e, 'earlier workout kept on the phone');
-      return false;
+      if (e.code == 'P0002' && !moved) {
+        switch (await _moveToCurrentPlan()) {
+          case _Moved.yes:
+            return _startSession(moved: true);
+          case _Moved.unreadable:
+            _sync = _Sync.offline;
+            return null;
+          case _Moved.no:
+            break;
+        }
+      }
+      _sync = _Sync.attention;
+      return null;
     } catch (e) {
-      logNonCritical(e, 'earlier workout kept on the phone');
-      return false;
+      logNonCritical(e, 'workout start waits');
+      _sync = _Sync.offline;
+      return null;
     }
   }
 
-  static bool _hasDoneSet(Map<String, dynamic> draft) {
-    final exercises = draft['exercises'];
-    if (exercises is! List) return false;
-    return exercises.any(
-      (exercise) =>
-          exercise is Map &&
-          exercise['sets'] is List &&
-          (exercise['sets'] as List).any(
-            (set) => set is Map && set['completed'] == true,
-          ),
-    );
+  /// Finds this workout again in the current plan and moves the draft to it.
+  Future<_Moved> _moveToCurrentPlan() async {
+    final repository = widget.repository;
+    if (repository is! WorkoutPlanRemapper) return _Moved.no;
+    try {
+      final current = await (repository as WorkoutPlanRemapper)
+          .moveToCurrentPlan(_workout.id, _workout.identity);
+      if (current == null) {
+        _unmatched = true;
+        return _Moved.no;
+      }
+      _workout = current;
+      return _Moved.yes;
+    } catch (e) {
+      logNonCritical(e, 'current plan not read');
+      return _Moved.unreadable;
+    }
+  }
+
+  /// The server refused the start because this workout is completed for the
+  /// day: it opens as completed, and the draft, which can never be sent, goes.
+  Future<void> _showCompletedAlready() async {
+    Map<String, dynamic>? server;
+    try {
+      server = await widget.repository.loadSession(
+        _workout,
+        localDate: widget.sessionDate,
+      );
+    } catch (e) {
+      logNonCritical(e, 'completed workout not read');
+    }
+    if (server == null || server['state'] != 'completed') {
+      _sync = _Sync.attention;
+      return;
+    }
+    await widget.repository.clearDraft(_workout.id);
+    unawaited(_rest.stop());
+    _showCompleted(server);
+  }
+
+  /// Sends what an earlier day's draft holds that the server may not have
+  /// ([sendLeftOverDraft]). True when the draft may go.
+  Future<bool> _sendLeftOver(Map<String, dynamic> draft) async {
+    final result = await sendLeftOverDraft(widget.repository, _workout, draft);
+    if (result.settled && result.workoutId != _workout.id) {
+      await widget.repository.clearDraft(result.workoutId);
+    }
+    return result.settled;
   }
 
   bool _leftOnEarlierDay(Map<String, dynamic> draft) {
@@ -612,7 +634,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   Future<Map<String, dynamic>?> _readSession(String id) async {
     try {
       final session = await widget.repository.loadSession(
-        widget.workout,
+        _workout,
         localDate: widget.sessionDate,
       );
       return session != null && session['session_id'] == id ? session : null;
@@ -775,7 +797,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     bool timing = true,
     bool local = false,
   }) => {
-    'workout_id': widget.workout.id,
+    'workout_id': _workout.id,
     'session_id': _sessionId,
     'idempotency_key': _idempotencyKey,
     'revision': _revision,
@@ -809,6 +831,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// needs.
   Map<String, dynamic> _localDraft() => {
     ..._draft(local: true),
+    'workout_identity': ?_workout.identity?.toJson(),
     'actual_started_at': _startedAt.toUtc().toIso8601String(),
     _serverStartedKey: ?_serverStartedAt?.toUtc().toIso8601String(),
     if (_timingRefused) _timingRefusedKey: true,
@@ -837,27 +860,20 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// the send went, or null when nothing was sent (a closed workout).
   Future<_Sync?> _save() async {
     if (_closed || _viewingCompleted) return null;
-    await widget.repository.saveDraft(
-      widget.workout.id,
-      jsonEncode(_localDraft()),
-    );
+    await widget.repository.saveDraft(_workout.id, jsonEncode(_localDraft()));
     var id = _sessionId;
     if (id == null) return null;
     if (id.startsWith('pending-')) {
-      try {
-        id = await widget.repository.start(
-          widget.workout,
-          _idempotencyKey,
-          localDate: widget.sessionDate,
-        );
-        _sessionId = id;
-        _rowsAligned = false;
-        _serverStartedAt = await _serverStartOf(id);
-      } catch (e) {
-        logNonCritical(e, 'workout start still waits');
-        if (mounted) setState(() => _sync = _Sync.offline);
-        return _Sync.offline;
+      final started = await _startSession();
+      if (_viewingCompleted) return null;
+      if (started == null) {
+        if (mounted) setState(() {});
+        return _sync;
       }
+      id = started;
+      _sessionId = id;
+      _rowsAligned = false;
+      _serverStartedAt = await _serverStartOf(id);
     }
     if (!_rowsAligned || _rowsConflict) {
       final rows = await _readRows(id);
@@ -888,7 +904,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       }
       if (rows != null && rows.changed) {
         await widget.repository.saveDraft(
-          widget.workout.id,
+          _workout.id,
           jsonEncode(_localDraft()),
         );
         first = await _send(id);
@@ -902,10 +918,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       // again without the times, and so does every later sync.
       _timingRefused = true;
       AppBreadcrumbs.workout('Set times refused; syncing without them');
-      await widget.repository.saveDraft(
-        widget.workout.id,
-        jsonEncode(_localDraft()),
-      );
+      await widget.repository.saveDraft(_workout.id, jsonEncode(_localDraft()));
       result = await _send(id) ?? _Sync.attention;
     }
     if (mounted) setState(() => _sync = result);
@@ -1466,10 +1479,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   Future<void> _persistRest() async {
     if (!mounted || _closed) return;
     setState(() {});
-    await widget.repository.saveDraft(
-      widget.workout.id,
-      jsonEncode(_localDraft()),
-    );
+    await widget.repository.saveDraft(_workout.id, jsonEncode(_localDraft()));
   }
 
   Future<void> _adjustRest(Duration delta) async {
@@ -1581,7 +1591,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     try {
       await widget.repository.abandon(
         _sessionId ?? 'pending-$_idempotencyKey',
-        workoutId: widget.workout.id,
+        workoutId: _workout.id,
       );
     } catch (e) {
       logNonCritical(e, 'discard refused');
@@ -1642,6 +1652,17 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     await _rest.stop();
     _saveTimer?.cancel();
     final saved = await _save();
+    if (_viewingCompleted) {
+      // The server had this workout completed already: the screen shows it as
+      // completed, and there is nothing left to finish.
+      if (mounted) {
+        setState(() {
+          _finishing = false;
+          _pendingFinish = null;
+        });
+      }
+      return;
+    }
     final rowsPending =
         _sessionId != null &&
         !_sessionId!.startsWith('pending-') &&
@@ -1656,9 +1677,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           sessionEffort: effort,
           durationSeconds: durationSeconds,
         );
-        _finishError =
-            'Tracend could not save your sets, so the workout is not '
-            'finished yet. They are kept on this phone.';
+        _finishError = _unmatched
+            ? _unmatchedFinishLine
+            : 'Tracend could not save your sets, so the workout is not '
+                  'finished yet. They are kept on this phone.';
       });
       unawaited(TracendHaptics.warning());
       return;
@@ -1680,7 +1702,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           sessionEffort: effort,
           durationSeconds: durationSeconds,
         );
-        if (e is PostgrestException) {
+        if (_unmatched) {
+          _finishError = _unmatchedFinishLine;
+        } else if (e is PostgrestException) {
           _finishError = 'Tracend could not finish this workout. Try again.';
           _finishDiagnostic = e.message;
         } else {
@@ -2271,6 +2295,20 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             onPressed: () =>
                 _finishWith(pending.sessionEffort, pending.durationSeconds),
             child: const Text('Send finish'),
+          ),
+        ]),
+      if (!_viewingCompleted && _unmatched)
+        banner([
+          const StatusChip(
+            label: 'Not in your current plan',
+            icon: CupertinoIcons.exclamationmark_triangle,
+            tone: StatusTone.caution,
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+          Text(
+            'Your plan changed after this workout was planned, and it is no '
+            'longer in the plan. $_unmatchedKept',
+            style: text.bodyMedium,
           ),
         ]),
       if (!_viewingCompleted && _overCap)

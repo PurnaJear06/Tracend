@@ -359,6 +359,11 @@ note, and the workout can be started, logged and finished from it (the start and
 phone and are sent when the connection returns). Today, Coach, Meals and Progress say they need a
 connection. No session means sign-in; a session with no saved plan still shows "Connection
 needed". App only, needs a reinstall. See [`docs/handoff/account-session.md`](./handoff/account-session.md).
+Round 1 review fixes: a workout started offline against a plan that was copied meanwhile (new
+workout ids) moves to its copy and is sent, or is kept with a clear message; waiting finishes are
+sent by the app when it reconnects, without opening the workout; Train offline says what was last
+known about sore areas, or that holds cannot be checked offline; a sign-out during a hub load can
+no longer bring the saved plan back; Progress never shows the saved copy.
 
 ## Shipped baseline
 

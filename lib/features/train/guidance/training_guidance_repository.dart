@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/train/guidance/training_guidance.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// Why a read or a request did not go through.
 enum TrainingGuidanceFailure {
@@ -87,7 +88,7 @@ class SupabaseTrainingGuidanceRepository implements TrainingGuidanceRepository {
         'local_date': _date(localToday),
       });
     } on PostgrestException catch (error) {
-      debugPrint('Non-critical error: training guidance: $error');
+      logNonCritical(error, 'training guidance');
       throw TrainingGuidanceException(
         error.code == '22023'
             ? TrainingGuidanceFailure.wrongDate
@@ -111,7 +112,7 @@ class SupabaseTrainingGuidanceRepository implements TrainingGuidanceRepository {
         'local_date': _date(localToday),
       });
     } on FunctionException catch (error) {
-      debugPrint('Non-critical error: lighter week not prepared: $error');
+      logNonCritical(error, 'lighter week not prepared');
       final details = error.details;
       final code = details is Map ? details['error'] : null;
       throw switch ((error.status, code)) {

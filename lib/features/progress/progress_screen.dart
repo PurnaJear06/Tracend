@@ -189,7 +189,10 @@ class _ProgressScreenState extends State<ProgressScreen> {
           widget.training?.loadTrainingHub(periodDays: _periodDays) ??
               Future<TrainingHubData?>.value(),
         ]).then((v) async {
-          final training = v[5] as TrainingHubData?;
+          // The phone's saved plan is for opening Train with no connection;
+          // a period's numbers are shown only as the server counted them.
+          final hub = v[5] as TrainingHubData?;
+          final training = hub?.cachedAt == null ? hub : null;
           _loaded.mark();
           return (
             measurements: v[0] as List<BodyMeasurement>,

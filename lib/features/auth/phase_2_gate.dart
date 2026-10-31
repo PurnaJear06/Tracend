@@ -13,7 +13,9 @@ import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/shell/app_shell.dart';
+import 'package:tracend/features/train/active_workout_screen.dart';
 import 'package:tracend/features/train/training_hub_cache.dart';
+import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/brand/tracend_intro.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/app_lifecycle.dart';
@@ -109,6 +111,8 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
         // athlete lands on sign-in.
         _clearSessionOutputs();
         final userId = _userId;
+        // The plan this phone saved for the athlete goes with the session.
+        if (userId != null) unawaited(_savedPlan.clear(userId));
         final refused =
             state.signOutReason != SignOutReason.userInitiated &&
             _authenticated;
@@ -226,6 +230,9 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     await aiConsent.load();
     if (ended()) return;
     _userId = userId;
+    // Workouts finished or logged with no signal go to the server now,
+    // whichever screen is open.
+    unawaited(_workouts().sendWaiting());
     // The usual months a later plan review compares with; never blocks.
     if (complete) unawaited(_baselineSource().refreshIfDue());
     setState(() {
@@ -314,6 +321,12 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
       accountDeleted: accountDeleted,
     );
   }
+
+  SupabaseWorkoutRepository _workouts() => SupabaseWorkoutRepository(
+    _client,
+    SharedPreferencesAsync(),
+    loggerOpen: () => ActiveWorkoutScreen.isOpen,
+  );
 
   HealthBaselineSource _baselineSource() => _baseline ??=
       SupabaseHealthBaselineSource(_client, SharedPreferencesAsync());

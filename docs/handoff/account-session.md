@@ -197,9 +197,38 @@ which is updated). App only, no migration, needs a reinstall.
   the same idempotency key, saved finish). New: the logger sends what waited (a saved finish, else
   unsent sets and the start) when the app comes back to the front.
 - **Not made offline:** Coach and AI, meals and photos, Progress, Today's brief, check-in (it
-  already queues), recovery, the day adjustment, Apple Health sync. A finish whose logger was left
-  by force-quit is sent from the logger (resume) or **Send finish**; nothing sends it from Train
-  while the logger is closed. Cross-version day identity stays with #181.
+  already queues), recovery, the day adjustment, Apple Health sync.
 - Device check: airplane mode, force-quit, reopen: Train opens on the saved plan with the note;
   start a workout, log a set, Finish: "Finish not sent yet"; turn the network on and come back to
   the app: the workout is saved. An expired-token launch shows the loader up to six seconds first.
+
+### Offline cold start, round 1 review fixes (PR #185)
+
+- **A plan copied while a workout waited (HIGH).** The hourly block end and a lighter week copy the
+  plan with new workout ids, so an offline start against the saved id got P0002 and the session
+  stayed `pending-` for ever. A `PostgrestException` from `start_workout` is now a server answer,
+  never "offline". P0002: `SupabaseWorkoutRepository.moveToCurrentPlan` reads the live hub, finds
+  the workout with the same `order` and the same exercises (exercise order and plan name;
+  `WorkoutIdentity`, which the logger also writes into the local draft as `workout_identity`), moves
+  the draft and the saved finish to the new id and the logger starts again with the same key. No
+  match: the sets stay under the old id, the logger says "Not in your current plan", and finish says
+  it cannot be finished yet. 55000: the logger opens as the completed workout and the draft goes
+  (the existing completed path). Other codes: **Needs attention**, not Offline. The plan unreadable
+  at that moment stays offline. Identity rules from #181 are not on main yet; replace
+  `WorkoutIdentity.matches` with its helper when they are.
+- **Sending without the logger (MEDIUM).** `SupabaseWorkoutRepository.sendWaiting` sends this
+  athlete's finished workouts (draft + saved finish) and drafts with done sets left on an earlier
+  day, one at a time, through `sendLeftOverDraft` (the logger's earlier-day logic, now shared; it
+  also does the P0002 move). It runs when the gate finishes an account check (leaving offline
+  mode or a normal launch) and after each successful hub load; it does nothing while a logger is
+  open (`loggerOpen`) or for a workout of today that is not finished, and never reads another
+  athlete's keys. Repeats are harmless: the server replays.
+- **Sore areas offline (MEDIUM).** `OfflineSafetyNotes` (safety route and the lines for areas on
+  hold or eased, built from the day card's own wording) are saved beside the plan whenever the
+  server gives an adjustment (`DayAdjustmentController.onAnswered`), cleared with it, and shown on
+  an offline Train. With nothing saved Train says "Pain holds can't be checked offline. Skip any area
+  on hold." A copy from another day also drops `next_targets` (a lighter week changes their loads).
+- **Sign-out race (LOW).** A hub load that finishes after sign-out no longer saves (the athlete is
+  checked right before the write, and the copy is cleared if they left during it); the gate's
+  signed-out listener also clears the copy.
+- **Progress** never shows the phone's copy: a cached hub is treated as unavailable there.

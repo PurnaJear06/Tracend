@@ -10,6 +10,7 @@ import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/readiness/day_adjustment_card.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/readiness/pain_reporting.dart';
+import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/train/active_workout_screen.dart';
@@ -17,6 +18,7 @@ import 'package:tracend/features/train/guidance/cardio_week_sheet.dart';
 import 'package:tracend/features/train/guidance/deload_card.dart';
 import 'package:tracend/features/train/guidance/guidance_copy.dart';
 import 'package:tracend/features/train/guidance/training_guidance_controller.dart';
+import 'package:tracend/features/train/offline_safety_notes.dart';
 import 'package:tracend/features/train/train_view_models.dart';
 import 'package:tracend/features/train/widgets/action_cards.dart';
 import 'package:tracend/features/train/widgets/exercise_detail_sheet.dart';
@@ -154,6 +156,10 @@ class _TrainScreenState extends State<TrainScreen> {
   TrainingHubData? _hub;
   Object? _hubError;
   bool _hubLoading = true;
+
+  /// The sore-area notes the phone kept, read once a saved plan is on screen.
+  OfflineSafetyNotes? _safetyNotes;
+  bool _safetyNotesRead = false;
 
   late Future<_Readiness> _readiness;
 
@@ -368,6 +374,7 @@ class _TrainScreenState extends State<TrainScreen> {
       if (reconciliations != null) _reconciliations = reconciliations;
     });
     unawaited(_resumeWorkout());
+    if (hub.cachedAt != null) unawaited(_loadSafetyNotes());
     // The hub names the athlete's own today: the day readiness is read for.
     // A saved copy names the phone's day, which is not the server's to teach.
     if (hub.localToday != null && hub.cachedAt == null) {
@@ -415,6 +422,27 @@ class _TrainScreenState extends State<TrainScreen> {
       _hubLoading = false;
     });
     unawaited(_resumeWorkout());
+    unawaited(_loadSafetyNotes());
+  }
+
+  /// What the phone last kept about sore areas, said beside a saved plan: the
+  /// day card needs the server, but a hold is still a hold with no signal.
+  Future<void> _loadSafetyNotes() async {
+    final source = _source;
+    OfflineSafetyNotes? notes;
+    if (source is SavedSafetyNotesRepository) {
+      try {
+        notes = await (source as SavedSafetyNotesRepository)
+            .loadSavedSafetyNotes();
+      } catch (error) {
+        logNonCritical(error, 'Train: safety notes not read');
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _safetyNotes = notes;
+      _safetyNotesRead = true;
+    });
   }
 
   /// [read], or null when it fails or takes longer than a few seconds: the
@@ -913,7 +941,11 @@ class _TrainScreenState extends State<TrainScreen> {
       ),
       const SizedBox(height: 14),
       // Recovery and the day's adjustment come from the server: a saved plan
-      // has neither.
+      // has neither. What was last known about sore areas is said instead.
+      if (offline && _safetyNotesRead) ...[
+        _OfflineSafety(notes: _safetyNotes, now: _clock()),
+        const SizedBox(height: TracendSpacing.sm),
+      ],
       if (!offline) ...[
         _ReadinessSlot(
           readiness: _readiness,
@@ -1381,6 +1413,56 @@ class _LoadError extends StatelessWidget {
           BetaDiagnostic(error),
           const SizedBox(height: TracendSpacing.md),
           OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
+        ],
+      ),
+    );
+  }
+}
+
+/// Sore areas on a saved plan: the safety route and the areas on hold as
+/// Tracend last said them, or, with nothing saved, that holds cannot be
+/// checked offline. Fixed wording from the rules; it names no condition.
+class _OfflineSafety extends StatelessWidget {
+  const _OfflineSafety({required this.notes, required this.now});
+
+  final OfflineSafetyNotes? notes;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final colors = context.tracendColors;
+    final notes = this.notes;
+    final route = notes?.safetyRoute;
+    final words = route == null ? null : safetyWords(route);
+    final saved = notes == null ? null : DateTime.tryParse(notes.localDate);
+    final empty = notes == null || notes.isEmpty;
+    return TracendCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (words != null) ...[
+            Text(words.title, style: text.titleSmall),
+            const SizedBox(height: TracendSpacing.xxs),
+            Text(words.body, style: text.bodyMedium),
+            const SizedBox(height: TracendSpacing.xs),
+          ],
+          for (final line in notes?.lines ?? const <String>[])
+            Padding(
+              padding: const EdgeInsets.only(bottom: TracendSpacing.xxs),
+              child: Text(line, style: text.bodyMedium),
+            ),
+          if (empty)
+            Text(offlinePainHoldsUnknown, style: text.bodyMedium)
+          else
+            Text(
+              saved == null
+                  ? offlinePainHoldsUnknown
+                  : 'From your last check on ${shortDate(saved, now: now)}. '
+                        "A new pain report can't be checked offline. Skip any "
+                        'area on hold.',
+              style: text.bodySmall?.copyWith(color: colors.textSecondary),
+            ),
         ],
       ),
     );
