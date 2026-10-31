@@ -22,6 +22,7 @@ import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/shell/app_shell.dart';
 import 'package:tracend/features/train/active_workout_screen.dart';
 import 'package:tracend/features/train/offline_safety_notes.dart';
+import 'package:tracend/features/train/open_workout.dart';
 import 'package:tracend/features/train/train_screen.dart';
 import 'package:tracend/features/train/training_hub_cache.dart';
 import 'package:tracend/features/train/workout_repository.dart';
@@ -82,6 +83,12 @@ class _Backend {
 
   /// The workout ids the draft payloads of `sync_workout_draft` named.
   final syncedWorkoutIds = <String>[];
+
+  /// The sessions `sync_workout_draft` was sent to, in order.
+  final syncedSessionIds = <String>[];
+
+  /// The sets marked done in each `sync_workout_draft` payload, in order.
+  final syncedDoneSets = <int>[];
 
   /// `start_workout` answers "planned workout not found" (P0002) for these.
   final staleIds = <String>{};
@@ -148,8 +155,16 @@ class _Backend {
               : null,
         );
       case 'POST /rest/v1/rpc/sync_workout_draft':
-        final draft = (jsonDecode(request.body) as Map)['draft'] as Map;
+        final params = jsonDecode(request.body) as Map;
+        final draft = params['draft'] as Map;
         syncedWorkoutIds.add(draft['workout_id'] as String);
+        syncedSessionIds.add(params['session_id'] as String);
+        syncedDoneSets.add(
+          (draft['exercises'] as List)
+              .expand((e) => (e as Map)['sets'] as List)
+              .where((set) => (set as Map)['completed'] == true)
+              .length,
+        );
         final refusal = syncRefusal;
         return refusal == null ? _ok(null) : _error(refusal, 'refused');
       case 'POST /rest/v1/rpc/complete_workout_v2':
@@ -1262,6 +1277,43 @@ void main() {
       expect(await source.loadDraft(oldId), isNull);
     });
 
+    testWidgets('a workout the send files on its own day while the logger '
+        'opens is never started again', (tester) async {
+      final client = await startSupabase(tester);
+      final source = SupabaseWorkoutRepository(client, preferences);
+      final workout = _workoutOf(oldId);
+      await source.saveDraft(
+        oldId,
+        jsonEncode(
+          _draftOf(
+            workout,
+            key: '77777777-7777-4777-8777-777777777777',
+            startedAt: DateTime.now().subtract(const Duration(days: 2)),
+          ),
+        ),
+      );
+      final hold = Completer<void>();
+      backend
+        ..online = true
+        // The server closed the earlier day's session as stale: its read no
+        // longer offers it as in progress.
+        ..sessionState = 'abandoned'
+        ..holdStart = hold;
+      final sending = source.sendWaiting();
+      await tester.pump();
+
+      await pumpLogger(tester, workout, using: source);
+      hold.complete();
+      await sending;
+      await tester.pumpAndSettle();
+
+      expect(backend.startedIds, [oldId], reason: 'the workout starts once');
+      expect(backend.syncedWorkoutIds, [oldId]);
+      expect(find.byType(ActiveWorkoutScreen), findsNothing);
+      expect(find.text(workoutFiledMessage), findsOneWidget);
+      await tester.pump(const Duration(seconds: 3));
+    });
+
     testWidgets('a finish with no match in the plan stays on the phone and '
         'reaches Sentry without user data', (tester) async {
       final reported = <NonCriticalFailure>[];
@@ -1452,6 +1504,91 @@ void main() {
       expect(await source.loadDraft(oldId), isNull);
     });
 
+    testWidgets('a past day\'s workout started offline is filed on the day '
+        'the athlete chose, not the day it began', (tester) async {
+      final source = await repo(tester);
+      final chosen = DateTime.now().subtract(const Duration(days: 3));
+      final began = DateTime.now().subtract(const Duration(days: 1));
+      await source.saveDraft(
+        oldId,
+        jsonEncode({
+          ..._draftOf(_workoutOf(oldId), key: key, startedAt: began),
+          sessionDateDraftKey: localDayKey(chosen),
+        }),
+      );
+      backend.online = true;
+
+      await source.sendWaiting();
+
+      expect(backend.startDates, [localDayKey(chosen)]);
+      expect(backend.syncedWorkoutIds, [oldId]);
+      expect(await source.loadDraft(oldId), isNull);
+    });
+
+    testWidgets('a past day\'s workout begun within three hours stays with '
+        'its logger', (tester) async {
+      final source = await repo(tester);
+      final yesterday = DateTime.now().subtract(const Duration(days: 1));
+      await source.saveDraft(
+        oldId,
+        jsonEncode({
+          ..._draftOf(
+            _workoutOf(oldId),
+            key: key,
+            startedAt: DateTime.now().subtract(const Duration(hours: 1)),
+          ),
+          sessionDateDraftKey: localDayKey(yesterday),
+        }),
+      );
+      backend.online = true;
+
+      await source.sendWaiting();
+
+      expect(backend.startedIds, isEmpty);
+      expect(await source.loadDraft(oldId), isNotNull);
+    });
+
+    testWidgets('the open workouts are this athlete\'s drafts with a set '
+        'done and no finish waiting, newest first', (tester) async {
+      final source = await repo(tester);
+      final yesterday = DateTime.now().subtract(const Duration(days: 1));
+      final legs = {
+        ..._draftOf(
+          _workoutOf('legs-b'),
+          key: key,
+          startedAt: DateTime.now().subtract(const Duration(minutes: 30)),
+        ),
+        sessionDateDraftKey: localDayKey(yesterday),
+        workoutNameDraftKey: 'Legs B',
+      };
+      await source.saveDraft('legs-b', jsonEncode(legs));
+      await source.saveDraft(
+        'older',
+        jsonEncode(
+          _draftOf(
+            _workoutOf('older'),
+            key: key,
+            startedAt: DateTime.now().subtract(const Duration(days: 2)),
+          ),
+        ),
+      );
+      await finished(source, _workoutOf(oldId));
+      await preferences.setString(
+        '${WorkoutLocalKeys.draftPrefix(_otherUserId)}theirs',
+        jsonEncode(_draftOf(_workoutOf('theirs'), key: key)),
+      );
+
+      final open = await source.loadOpenWorkouts();
+
+      expect(open.map((o) => o.workoutId), ['legs-b', 'older']);
+      expect(open.first.name, 'Legs B');
+      expect(
+        open.first.date,
+        DateTime(yesterday.year, yesterday.month, yesterday.day),
+      );
+      expect(open.first.doneSets, 1);
+    });
+
     testWidgets('a copy with no such workout leaves the draft where it is', (
       tester,
     ) async {
@@ -1569,6 +1706,199 @@ void main() {
       expect(backend.startedIds, isEmpty);
       expect(await preferences.getString(other), isNotNull);
       expect(await preferences.getString(otherFinish), isNotNull);
+    });
+  });
+
+  group('a past day\'s workout across an offline relaunch', () {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final friday = today.subtract(const Duration(days: 1));
+
+    /// One workout of one exercise named [name], planned on [weekday].
+    Map<String, dynamic> workoutJson(
+      Map<String, dynamic> template, {
+      required String id,
+      required String name,
+      required int weekday,
+      required int order,
+    }) => {
+      ...template,
+      'id': id,
+      'name': name,
+      'weekday': weekday,
+      'order': order,
+      'exercises': [
+        {
+          ...(template['exercises'] as List).first as Map<String, dynamic>,
+          'set_count': 3,
+          'rest_seconds': 60,
+        },
+      ],
+    };
+
+    /// The plan: Legs B on the past day, Shoulder Width today.
+    Map<String, dynamic> planHub() {
+      final hub = _hubJson(now: now);
+      final template = (hub['workouts'] as List).first as Map<String, dynamic>;
+      final legs = workoutJson(
+        template,
+        id: 'legs-b',
+        name: 'Legs B',
+        weekday: friday.weekday,
+        order: 1,
+      );
+      final shoulder = workoutJson(
+        template,
+        id: 'shoulder',
+        name: 'Shoulder Width',
+        weekday: today.weekday,
+        order: 2,
+      );
+      return hub
+        ..['workouts'] = [legs, shoulder]
+        ..['today_workout'] = shoulder;
+    }
+
+    Future<void> tap(WidgetTester tester, Finder finder) async {
+      await tester.ensureVisible(finder.first);
+      await tester.pumpAndSettle();
+      await tester.tap(finder.first);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+    }
+
+    Future<Map<String, dynamic>> legsDraft() async => decodeDraft(
+      (await preferences.getString(
+        '${WorkoutLocalKeys.draftPrefix(_userId)}legs-b',
+      ))!,
+    );
+
+    testWidgets('the sets logged offline come back through Resume and sync to '
+        'the past day\'s session, once', (tester) async {
+      final reported = <NonCriticalFailure>[];
+      final previousSink = failureSink;
+      failureSink = (failure, _) => reported.add(failure);
+      addTearDown(() => failureSink = previousSink);
+      final client = await startSupabase(tester);
+      final hub = planHub();
+      backend
+        ..online = true
+        ..hub = hub;
+      await cache.save(_userId, hub, now);
+      final legs = TrainingHubData.fromHubJson(hub).workouts.first;
+
+      // 1. Online, the athlete starts the past day's Legs B and logs a set.
+      tester.view.physicalSize = const Size(390, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: ActiveWorkoutScreen(
+            workout: legs,
+            sessionDate: friday,
+            repository: SupabaseWorkoutRepository(client, preferences),
+            restAlerts: _Alerts(),
+            notifications: _Notifications(),
+            activity: FakeWorkoutActivityBridge(),
+            lockScreenNumbers: () async => false,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(backend.startDates, [localDayKey(friday)]);
+      await tap(tester, find.text('Done set 1'));
+      expect(backend.syncedSessionIds, everyElement('server-session'));
+
+      // ...goes offline and logs another.
+      backend.online = false;
+      await tap(tester, find.bySemanticsLabel('Skip rest'));
+      await tap(tester, find.text('Done set 2'));
+      final saved = await legsDraft();
+      expect(saved[sessionDateDraftKey], localDayKey(friday));
+      expect(saved[workoutNameDraftKey], 'Legs B');
+      expect(draftHasDoneSet(saved), isTrue);
+
+      // 2. The app is killed and opened again with no signal: the account
+      // check throws Auth's retryable failure, which is logged, not reported.
+      await tester.pumpWidget(const SizedBox());
+      final syncsBefore = backend.syncedSessionIds.length;
+      await pumpGate(tester);
+      expect(find.text('Connection needed'), findsNothing);
+      expect(reported, isEmpty);
+
+      // 3. Train opens on today's workout, and the Resume card leads back to
+      // the past day's with both sets.
+      expect(find.text('Shoulder Width'), findsWidgets);
+      final line = 'Legs B · ${dayAndDate(friday, now: today)} · 2 sets logged';
+      expect(find.text(line), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Resume').first);
+      for (var i = 0; i < 5; i++) {
+        await tester.pump();
+      }
+      await tester.pump(const Duration(seconds: 1));
+      final screen = tester.widget<ActiveWorkoutScreen>(
+        find.byType(ActiveWorkoutScreen),
+      );
+      expect(screen.workout.id, 'legs-b');
+      expect(screen.sessionDate, friday);
+      expect(find.text('Done set 3'), findsOneWidget);
+
+      // 4. Back online, the sets go to the past day's session; nothing is
+      // started again.
+      backend.online = true;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+      expect(backend.startKeys, hasLength(1));
+      expect(backend.startedIds, ['legs-b']);
+      expect(backend.startDates, [localDayKey(friday)]);
+      final later = backend.syncedSessionIds.sublist(syncsBefore);
+      expect(later, isNotEmpty);
+      expect(backend.syncedSessionIds, everyElement('server-session'));
+      expect(backend.syncedDoneSets.last, 2);
+      expect(backend.syncedWorkoutIds, everyElement('legs-b'));
+    });
+
+    testWidgets('a draft that stored its day starts there, whichever day the '
+        'logger was opened for', (tester) async {
+      final client = await startSupabase(tester);
+      final chosen = today.subtract(const Duration(days: 2));
+      final workout = _workoutOf('legs-b');
+      await preferences.setString(
+        '${WorkoutLocalKeys.draftPrefix(_userId)}legs-b',
+        jsonEncode({
+          ..._draftOf(
+            workout,
+            key: '55555555-5555-4555-8555-555555555555',
+            startedAt: now.subtract(const Duration(minutes: 40)),
+          ),
+          sessionDateDraftKey: localDayKey(chosen),
+        }),
+      );
+      backend.online = true;
+      tester.view.physicalSize = const Size(390, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: ActiveWorkoutScreen(
+            workout: workout,
+            sessionDate: today,
+            repository: SupabaseWorkoutRepository(client, preferences),
+            restAlerts: _Alerts(),
+            notifications: _Notifications(),
+            activity: FakeWorkoutActivityBridge(),
+            lockScreenNumbers: () async => false,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(backend.startDates, [localDayKey(chosen)]);
+      expect(find.text('Done set 2'), findsOneWidget);
     });
   });
 

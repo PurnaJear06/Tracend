@@ -19,12 +19,14 @@ import 'package:tracend/features/train/guidance/deload_card.dart';
 import 'package:tracend/features/train/guidance/guidance_copy.dart';
 import 'package:tracend/features/train/guidance/training_guidance_controller.dart';
 import 'package:tracend/features/train/offline_safety_notes.dart';
+import 'package:tracend/features/train/open_workout.dart';
 import 'package:tracend/features/train/train_view_models.dart';
 import 'package:tracend/features/train/widgets/action_cards.dart';
 import 'package:tracend/features/train/widgets/exercise_detail_sheet.dart';
 import 'package:tracend/features/train/widgets/exercise_list_card.dart';
 import 'package:tracend/features/train/widgets/muscle_map.dart';
 import 'package:tracend/features/train/widgets/muscles_sheet.dart';
+import 'package:tracend/features/train/widgets/open_workout_card.dart';
 import 'package:tracend/features/train/widgets/prescription_cards.dart';
 import 'package:tracend/features/train/widgets/readiness_line.dart';
 import 'package:tracend/features/train/widgets/train_parts.dart';
@@ -60,6 +62,7 @@ class TrainScreen extends StatefulWidget {
     this.now,
     this.planChanges,
     this.workoutRequests,
+    this.resumeRequests,
     this.dayAdjustment,
     this.guidance,
     this.proposals,
@@ -114,8 +117,11 @@ class TrainScreen extends StatefulWidget {
   final PlanChanges? planChanges;
 
   /// Counts the taps on the workout's Live Activity that ask for the workout
-  /// in progress. Today's workout reopens when it has a draft on this phone.
+  /// in progress. The newest workout left open on this phone reopens.
   final ValueListenable<int>? workoutRequests;
+
+  /// Today's Resume card: the open workout it names reopens here.
+  final ResumeRequests? resumeRequests;
   final WorkoutRepository? repository;
   final DailyBriefRepository? brief;
   final CoachRepository coach;
@@ -196,9 +202,16 @@ class _TrainScreenState extends State<TrainScreen> {
 
   BodySide _side = BodySide.front;
 
-  /// The Live Activity asked for the workout in progress and the hub that
-  /// says which workout is today's has not loaded yet.
+  /// The Live Activity or Today's Resume card asked for a workout in
+  /// progress and the hub that holds the workouts has not loaded yet.
   bool _resumePending = false;
+
+  /// The open workout Today's Resume card asked for; null for the Live
+  /// Activity, which asks for the newest.
+  OpenWorkout? _resumeTarget;
+
+  /// The workouts left open on this phone, newest first, whatever their day.
+  List<OpenWorkout> _open = const [];
 
   DateTime _clock() => (widget.now ?? DateTime.now)();
 
@@ -221,10 +234,10 @@ class _TrainScreenState extends State<TrainScreen> {
     widget.showToday?.addListener(_showToday);
     _resume.attach();
     final requests = widget.workoutRequests;
-    if (requests != null) {
-      _resumePending = requests.value > 0;
-      requests.addListener(_workoutRequested);
-    }
+    _resumeTarget = widget.resumeRequests?.take();
+    _resumePending = (requests?.value ?? 0) > 0 || _resumeTarget != null;
+    requests?.addListener(_workoutRequested);
+    widget.resumeRequests?.addListener(_resumeRequested);
   }
 
   @override
@@ -234,6 +247,7 @@ class _TrainScreenState extends State<TrainScreen> {
     widget.workoutLogs?.removeListener(_planChanged);
     widget.showToday?.removeListener(_showToday);
     widget.workoutRequests?.removeListener(_workoutRequested);
+    widget.resumeRequests?.removeListener(_resumeRequested);
     super.dispose();
   }
 
@@ -273,31 +287,163 @@ class _TrainScreenState extends State<TrainScreen> {
 
   void _workoutRequested() {
     _resumePending = true;
+    _resumeTarget = null;
     unawaited(_resumeWorkout());
   }
 
-  /// Reopens today's workout when it was started and left open: it has a
-  /// draft on this phone and is not done. Nothing opens over a workout that
-  /// is already on screen, and a request the hub could not answer is dropped,
-  /// so it never opens a workout later on its own.
-  Future<void> _resumeWorkout() async {
-    final hub = _hub;
-    if (!_resumePending || hub == null || _hubLoading) return;
-    _resumePending = false;
-    if (ActiveWorkoutScreen.isOpen) return;
-    final today = _today;
-    final workout = hub.workoutForWeekday(today.weekday);
-    if (workout == null || hub.isDayCompleted(today)) return;
-    String? draft;
-    try {
-      draft = await _source.loadDraft(workout.id);
-    } catch (error) {
-      logNonCritical(error, 'workout draft not read');
-    }
-    if (draft == null || !mounted || ActiveWorkoutScreen.isOpen) return;
-    _select(today);
-    await _start(workout, today);
+  void _resumeRequested() {
+    final target = widget.resumeRequests?.take();
+    if (target == null) return;
+    _resumePending = true;
+    _resumeTarget = target;
+    unawaited(_resumeWorkout());
   }
+
+  /// Reopens a workout left open on this phone, whatever its day: the one
+  /// Today's Resume card named, or the newest for the Live Activity. Nothing
+  /// opens over a workout that is already on screen, and a request the hub
+  /// could not answer is dropped, so it never opens a workout later on its
+  /// own.
+  Future<void> _resumeWorkout() async {
+    if (!_resumePending || _hub == null || _hubLoading) return;
+    _resumePending = false;
+    final target = _resumeTarget;
+    _resumeTarget = null;
+    if (ActiveWorkoutScreen.isOpen) return;
+    final open = await _readOpenWorkouts();
+    if (!mounted || ActiveWorkoutScreen.isOpen) return;
+    final chosen = target == null
+        ? open.firstOrNull
+        : open.where((o) => o.isOn(target.workoutId, target.date)).firstOrNull;
+    if (chosen != null) {
+      await _reopen(chosen);
+    } else if (target != null) {
+      _resumeGone();
+    }
+  }
+
+  /// This phone's open workouts, newest first; empty when they cannot be
+  /// read or the repository keeps none.
+  Future<List<OpenWorkout>> _readOpenWorkouts() async {
+    final source = _source;
+    if (source is! OpenWorkoutRepository) return const [];
+    try {
+      return await (source as OpenWorkoutRepository).loadOpenWorkouts();
+    } catch (error) {
+      logNonCritical(error, 'open workouts not read');
+      return const [];
+    }
+  }
+
+  Future<void> _loadOpenWorkouts() async {
+    final open = await _readOpenWorkouts();
+    if (mounted) setState(() => _open = open);
+  }
+
+  /// Opens [open] in the logger on the day it is logged under. The drafts
+  /// are read again first: a workout the send of waiting workouts already
+  /// filed on its day is answered on Today, never started again here. A send
+  /// still under way is the logger's to wait for, within its own bound. A
+  /// draft made before the plan was copied with new ids moves to its copy in
+  /// the current plan first.
+  Future<void> _reopen(OpenWorkout open) async {
+    final current = await _readOpenWorkouts();
+    if (!mounted) return;
+    setState(() => _open = current);
+    final still = current
+        .where((o) => o.isOn(open.workoutId, open.date))
+        .firstOrNull;
+    if (still == null) {
+      _resumeGone();
+      return;
+    }
+    var workout = _planWorkout(still.workoutId);
+    if (workout == null) {
+      workout = await _moveToCurrentPlan(still);
+      if (workout == null || !mounted) return;
+      // The hub on screen still names the old copy's ids.
+      unawaited(_refresh());
+    }
+    if (_reachable(still.date)) _select(still.date);
+    await _start(workout, still.date);
+  }
+
+  /// Moves [open]'s draft to its workout's copy in the current plan and
+  /// returns that copy, as the logger does when a start finds its workout gone
+  /// (P0002). Null when there is no copy, or when the plan cannot be read: the
+  /// athlete is told, and the sets stay on this phone.
+  Future<PlannedWorkout?> _moveToCurrentPlan(OpenWorkout open) async {
+    final source = _source;
+    final identity = WorkoutIdentity.fromJson(open.identityJson);
+    if (identity != null && source is WorkoutPlanRemapper) {
+      final remapper = source as WorkoutPlanRemapper;
+      try {
+        final current = await remapper.moveToCurrentPlan(
+          open.workoutId,
+          identity,
+          ownerId: remapper.signedInUserId,
+        );
+        if (current != null) return current;
+      } catch (error) {
+        logNonCritical(error, 'current plan not read');
+        if (mounted) {
+          TracendToast.show(
+            context,
+            'Your plan changed since this workout began. Connect to open it in '
+            'your current plan. Its sets are kept on this phone.',
+            icon: CupertinoIcons.wifi_slash,
+          );
+        }
+        return null;
+      }
+    }
+    if (mounted) {
+      TracendToast.show(
+        context,
+        'This workout is no longer in your plan. Its sets are kept on this '
+        'phone.',
+        icon: CupertinoIcons.exclamationmark_circle,
+      );
+    }
+    return null;
+  }
+
+  void _resumeGone() {
+    TracendToast.show(
+      context,
+      workoutFiledMessage,
+      icon: CupertinoIcons.checkmark_circle,
+    );
+  }
+
+  /// The plan's workout with [id], or null when the plan has none.
+  PlannedWorkout? _planWorkout(String id) {
+    for (final workout in _hub?.workouts ?? const <PlannedWorkout>[]) {
+      if (workout.id == id) return workout;
+    }
+    return null;
+  }
+
+  /// Whether [open] is a draft of [workout]: by its id, or, for a draft made
+  /// before the plan was copied with new ids, by the identity it stored.
+  bool _isDraftOf(OpenWorkout open, PlannedWorkout workout) {
+    if (open.workoutId == workout.id) return true;
+    if (_planWorkout(open.workoutId) != null) return false;
+    return WorkoutIdentity.fromJson(open.identityJson)?.matches(workout) ??
+        false;
+  }
+
+  /// The plan's workout [open] is a draft of, or null.
+  PlannedWorkout? _planWorkoutOf(OpenWorkout open) =>
+      _planWorkout(open.workoutId) ??
+      (_hub?.workouts ?? const <PlannedWorkout>[])
+          .where((workout) => _isDraftOf(open, workout))
+          .firstOrNull;
+
+  /// The workout left open for [workout] on [date], if any.
+  OpenWorkout? _openOn(PlannedWorkout workout, DateTime date) => _open
+      .where((o) => sameDay(o.date, date) && _isDraftOf(o, workout))
+      .firstOrNull;
 
   void _planChanged() {
     if (mounted) unawaited(_refresh());
@@ -317,6 +463,7 @@ class _TrainScreenState extends State<TrainScreen> {
   Future<void> _loadHub() async {
     final load = ++_hubLoads;
     if (mounted) setState(() => _hubLoading = true);
+    unawaited(_loadOpenWorkouts());
     final source = _source;
     // Opened on the saved plan because the account could not be checked: the
     // phone's copy shows at once, and the load below replaces it when the
@@ -355,6 +502,7 @@ class _TrainScreenState extends State<TrainScreen> {
     if (loadedHub == null) {
       logNonCritical(failure!, 'Train: training hub failed');
       _resumePending = false;
+      _resumeTarget = null;
       if (!mounted || load != _hubLoads) return;
       setState(() {
         _hubError = failure;
@@ -634,6 +782,7 @@ class _TrainScreenState extends State<TrainScreen> {
       pain: widget.pain,
     );
     if (readiness != null) unawaited(readiness.load());
+    await _loadOpenWorkouts();
     if (completed && mounted) {
       setState(() => _candidate = null);
       await _refresh();
@@ -642,7 +791,9 @@ class _TrainScreenState extends State<TrainScreen> {
 
   /// A start the athlete asked for on this screen. If the day changed since
   /// the hub loaded, the screen still believes the old day is today: it
-  /// reloads instead of sending that day's date.
+  /// reloads instead of sending that day's date. One workout runs at a time:
+  /// while another has sets logged the athlete is asked first, and starting
+  /// this one anyway leaves that one's draft as it is.
   Future<void> _startChosen(PlannedWorkout planned, DateTime date) async {
     if (_dayRolledOver) {
       TracendToast.show(
@@ -653,7 +804,65 @@ class _TrainScreenState extends State<TrainScreen> {
       await _refresh();
       return;
     }
+    final open = await _readOpenWorkouts();
+    if (!mounted) return;
+    // The same workout open on another day comes first, whatever else is
+    // newer: it shares this start's draft, so starting would open it.
+    final elsewhere = open.where(
+      (o) => !(sameDay(o.date, date) && _isDraftOf(o, planned)),
+    );
+    final other =
+        elsewhere.where((o) => _isDraftOf(o, planned)).firstOrNull ??
+        elsewhere.firstOrNull;
+    if (other != null) {
+      final name = other.nameOr(_planWorkoutOf(other)?.name);
+      final day = weekdayName(other.date).substring(0, 3);
+      final sets = other.doneSets == 1 ? 'set' : 'sets';
+      // The same workout on another day shares its draft on this phone, so it
+      // can only be resumed.
+      final sameWorkout = _isDraftOf(other, planned);
+      final choice = await showTracendActionSheet<bool>(
+        context,
+        title: '$name ($day) has ${other.doneSets} $sets logged.',
+        message: sameWorkout
+            ? 'Resume it, or finish it first, before you start it again.'
+            : null,
+        actions: [
+          const TracendSheetAction(
+            label: 'Resume it',
+            value: true,
+            isDefault: true,
+          ),
+          if (!sameWorkout)
+            const TracendSheetAction(
+              label: 'Start this one anyway',
+              value: false,
+            ),
+        ],
+      );
+      if (!mounted || choice == null) return;
+      if (choice) {
+        await _reopen(other);
+        return;
+      }
+    }
     await _start(planned, date);
+  }
+
+  /// "I did it, log it for Fri 30 Oct" on a missed day: for a workout trained
+  /// and not logged. It asks first, then the session is logged under that day.
+  Future<void> _logMissed(PlannedWorkout planned, DateTime date) async {
+    final day = weekdayName(date);
+    final logged = await showTracendConfirm(
+      context,
+      title: 'Log ${planned.name} for $day ${dayMonth(date)}?',
+      message:
+          'For a workout you did that day and did not log. Your sets are '
+          'saved on $day.',
+      confirmLabel: 'Log for $day',
+    );
+    if (!logged || !mounted) return;
+    await _startChosen(planned, date);
   }
 
   void _openExercise(PlannedWorkout workout, PlannedExercise exercise) =>
@@ -724,6 +933,27 @@ class _TrainScreenState extends State<TrainScreen> {
   Future<void> _autoComplete(HealthkitCompletionCandidate candidate) async {
     final source = _source;
     if (source is! SupabaseWorkoutRepository) return;
+    // A workout in progress on this phone is resumed, never completed from
+    // Apple Health: that would record a second session beside it.
+    final planned = _planWorkout(candidate.plannedWorkoutId);
+    final open = await _readOpenWorkouts();
+    if (!mounted) return;
+    final inProgress = open.any(
+      (o) =>
+          sameDay(o.date, candidate.localDate) &&
+          (planned == null
+              ? o.workoutId == candidate.plannedWorkoutId
+              : _isDraftOf(o, planned)),
+    );
+    if (inProgress) {
+      setState(() => _open = open);
+      TracendToast.show(
+        context,
+        'This workout is in progress on this phone. Resume it to finish it.',
+        icon: CupertinoIcons.play_circle,
+      );
+      return;
+    }
     setState(() => _healthkitBusy = true);
     try {
       await source.autoCompleteFromHealthKit(
@@ -931,6 +1161,7 @@ class _TrainScreenState extends State<TrainScreen> {
       for (var i = 0; i < 7; i++) _currentWeek.add(Duration(days: i)),
     ];
     final doneThisWeek = currentWeek.where(hub.isDayCompleted).length;
+    final open = _open;
     final assigned = hub.workouts.any((w) => w.weekday != null);
     final plannedThisWeek = assigned
         ? currentWeek
@@ -947,6 +1178,15 @@ class _TrainScreenState extends State<TrainScreen> {
         ? widget.guidance?.current?.cardioWeek
         : null;
     return [
+      if (open.isNotEmpty) ...[
+        OpenWorkoutCard(
+          workouts: open,
+          now: _today,
+          nameFor: (workout) => _planWorkoutOf(workout)?.name,
+          onResume: (workout) => unawaited(_reopen(workout)),
+        ),
+        const SizedBox(height: TracendSpacing.sm),
+      ],
       if (!sameDay(_weekStart, _currentWeek))
         _WeekCaption(
           weekStart: _weekStart,
@@ -1082,14 +1322,20 @@ class _TrainScreenState extends State<TrainScreen> {
     }
     final done = hub.isDayCompleted(date);
     // A day that has not begun is previewed, never started: the server
-    // refuses a start for it.
+    // refuses a start for it. A past day with nothing logged is missed: it is
+    // done today, or logged for its day only through the quiet action. A day
+    // with a workout left open on this phone resumes it.
     final upcoming = date.isAfter(today);
+    final open = done ? null : _openOn(workout, date);
+    final missed = !done && open == null && date.isBefore(today);
     final state = done
         ? HeroDayState.done
+        : open != null
+        ? HeroDayState.inProgress
         : upcoming
         ? HeroDayState.upcoming
-        : date.isBefore(today)
-        ? HeroDayState.notLogged
+        : missed
+        ? HeroDayState.missed
         : HeroDayState.planned;
     TrainingSessionSummary? doneSession;
     TrainingSessionSummary? daySession;
@@ -1127,16 +1373,21 @@ class _TrainScreenState extends State<TrainScreen> {
             workout,
             date,
             done: done,
-            canStart: !upcoming,
+            canStart: !upcoming && !missed,
             session: summarySession,
           ),
           onStart: widget.dayAdjustment?.busy ?? false
               ? null
+              : open != null
+              ? () => _reopen(open)
               : () => _startChosen(_planned(workout), date),
           onViewSummary: () =>
               _viewSummary(workout, date, session: summarySession),
-          onDoToday: upcoming
+          onDoToday: upcoming || missed
               ? () => _startChosen(_planned(workout), _today)
+              : null,
+          onLogMissed: missed
+              ? () => _logMissed(_planned(workout), date)
               : null,
           onOpenMuscles: () => showMusclesSheet(context, workout: workout),
           healthkitCandidate: candidate,

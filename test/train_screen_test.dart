@@ -363,9 +363,8 @@ void main() {
       expect(find.text('Not rated'), findsOneWidget);
     });
 
-    testWidgets('a past day with nothing logged can still be logged', (
-      tester,
-    ) async {
+    testWidgets('a past day with nothing logged is missed: Do it today, or '
+        'log it quietly for that day', (tester) async {
       await _pumpTrain(
         tester,
         repository: TrainFixtureRepository(
@@ -373,8 +372,13 @@ void main() {
         ),
       );
       await _tapDay(tester, '2026-09-29');
-      expect(find.text('Tuesday, not logged'), findsOneWidget);
-      expect(find.text('Log this workout'), findsOneWidget);
+      expect(find.text('Tuesday, missed'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Do it today'), findsOneWidget);
+      expect(
+        find.widgetWithText(TextButton, 'I did it, log it for Tue 29 Sep'),
+        findsOneWidget,
+      );
+      expect(find.text('Start workout'), findsNothing);
     });
 
     testWidgets('a coming rest day names the next workout and jumps to it', (
@@ -401,7 +405,7 @@ void main() {
       expect(find.text('Lower body B'), findsOneWidget);
       expect(find.text('Preview workout'), findsOneWidget);
       expect(find.text('Start workout'), findsNothing);
-      expect(find.text('Log this workout'), findsNothing);
+      expect(find.textContaining('I did it'), findsNothing);
       await tester.tap(find.text('Preview workout'));
       await tester.pumpAndSettle();
       expect(find.byType(WorkoutOverviewBody), findsOneWidget);
@@ -485,7 +489,7 @@ void main() {
         find.widgetWithText(OutlinedButton, 'View summary'),
         findsOneWidget,
       );
-      expect(find.text('Log this workout'), findsNothing);
+      expect(find.textContaining('I did it'), findsNothing);
     });
 
     testWidgets(
@@ -510,7 +514,7 @@ void main() {
         // The session was another workout: its minutes are not shown as this
         // workout's.
         expect(find.text('52 min, 2 exercises'), findsNothing);
-        expect(find.text('Log this workout'), findsNothing);
+        expect(find.textContaining('I did it'), findsNothing);
         await tester.tap(find.widgetWithText(OutlinedButton, 'View summary'));
         await tester.pumpAndSettle();
         // The summary reads the session through its own workout, never the

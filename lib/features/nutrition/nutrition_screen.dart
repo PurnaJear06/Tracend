@@ -64,8 +64,9 @@ String mealPhotoFailureMessage(
   // shows the new one.
   '403 meal_photo_ai_consent_required' =>
     'The meal photo notice has changed. Tap the photo button again to review it.',
+  // The caps are set on the server and change; Account shows the real ones.
   '429 ai_usage_limit' =>
-    'You have reached today’s AI limit (30 requests) or this month’s \$2 limit. Enter the meal manually.',
+    'You have reached your AI limit for now. Enter the meal manually. Account › AI usage this month shows your limits.',
   _ =>
     'Photo analysis did not work this time. Enter the meal manually; nothing was added to your totals.',
 };
