@@ -26,6 +26,9 @@ class CoachProposalException implements Exception {
   String toString() => 'CoachProposalException: $message';
 }
 
+const _connectionMessage =
+    'Could not reach Tracend. Check your connection and try again.';
+
 /// What to tell the athlete when the server refuses an answer. 55000 means
 /// the proposal can no longer be answered (it was answered already, or the
 /// health check changed), anything else is a connection or session problem.
@@ -35,7 +38,7 @@ String coachProposalErrorMessage(PostgrestException error) {
     return 'This change can no longer be applied. Ask Coach again and it '
         'will start from your latest plan.';
   }
-  return 'Could not reach Tracend. Check your connection and try again.';
+  return _connectionMessage;
 }
 
 /// The server refuses to approve a deload on a day with a safety route and
@@ -87,6 +90,10 @@ class SupabaseCoachProposalRepository implements CoachProposalRepository {
     } on PostgrestException catch (error) {
       debugPrint('Non-critical error: $error');
       throw _failure(error);
+    } on Exception catch (error) {
+      // A lost connection or a timeout is a connection message too.
+      debugPrint('Non-critical error: $error');
+      throw const CoachProposalException(_connectionMessage);
     }
     return CoachProposal.listFromJson(value);
   }
@@ -116,6 +123,11 @@ class SupabaseCoachProposalRepository implements CoachProposalRepository {
     } on PostgrestException catch (error) {
       debugPrint('Non-critical error: $error');
       throw _failure(error);
+    } on Exception catch (error) {
+      // The answer may still have been written: the card reads the proposal
+      // again after any error.
+      debugPrint('Non-critical error: $error');
+      throw const CoachProposalException(_connectionMessage);
     }
     final answer = CoachProposalAnswer.fromJson(value);
     if (answer == null) {
