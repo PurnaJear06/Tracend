@@ -1,6 +1,6 @@
 # Research Library Handoff
 
-**As of:** 2026-10-18
+**As of:** 2026-10-24
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -14,7 +14,7 @@ A hybrid (full-text plus gte-small vector) research library behind Coach answers
 
 E1 (Phase 1); E2, E3 (Phase 3); E4, E5 (Phase 4)
 
-E2 (Phase 3, round 2) merged (#135); E2.1, its follow-up with 14 more sources, is merged. E2.2 (57 more sources and machine-readable licences, 106 in all) is in review. E3 (the library in every Coach reply) is in review. See the sections below.
+E2 (Phase 3, round 2) merged (#135); E2.1, its follow-up with 14 more sources, is merged; E2.2 (57 more sources and machine-readable licences, 106 in all) is merged (#152). E3 (the library in every Coach reply) is merged (#150). E3.1, the engine's production pass (relevance floor, latency, telemetry, versioning), is in review. E4 (regional modules and the athlete's country, 114 sources) is in review (branch `claude/regional-modules`). E5 (plan explanations that cite sources, in Coach chat and in the onboarding plan) is in review (branch `claude/e5-plan-explanations`). See the sections below.
 
 ## State
 
@@ -591,8 +591,8 @@ not cite the new sources yet.
 - Region `GB` is new (UK CMOs). The account-region function already derives `GB` from an `en-GB`
   locale, so no SQL change was needed.
 - Not done here (other owners): retrieval does not yet read `supersededBy`, `verbatimAllowed` or
-  `lastReviewed` (they are not in the database), and `library_questions.json` has no questions for
-  the new sources, so recall on them is unmeasured.
+  `lastReviewed` (they are not in the database). Recall on the new sources is measured since E3.1
+  (below).
 
 ### Fact-check corrections (after review)
 
@@ -802,14 +802,594 @@ model changes.
   `select * from public.search_library_v2('protein per day', null, 3, null)` as `service_role` shows
   rows, and `coach_context_contributors` in the function log shows `library` rendered.
 
+## E3.1: the engine's production pass (in review)
+
+Branch `claude/rag-engine`, migration `20261018200044_library_search_v3.sql` (code 44, additive).
+The engine fixes from the 2026-10-18 RAG audit (P1-2, P2-1, P2-2, P2-3, P2-5, P2-6 and the P3 items).
+New sources, the licence field, new questions and the claim-support judge are other branches.
+
+### What shipped
+
+- **`search_library_v3`** (Contract 6 v3) beside v2, which stays for the Coach chat build deployed
+  now (drop it in a cleanup migration once this is live). Rows add `vector_distance` (cosine distance
+  to the question), `text_rank` (`ts_rank`, 0 when no term matched), `evidence_level`, `kind` and
+  `library_version`, with `schema_version` 3. Vector search compares only chunks whose
+  `embedding_model` equals the new `query_embedding_model` argument (required with an embedding).
+  Every TypeScript caller (`live.ts`, `library_eval.ts`, `library_head_to_head.ts`) uses v3 and
+  parses rows with one function, `libraryRowsOf`.
+- **Relevance floor** (`relevantRows` in `_shared/library/retrieval.ts`, calibrated below). Two
+  limits on the cosine distance: the turn shows excerpts only when its nearest chunk is within 0.15;
+  then every chunk within 0.19 is shown. One per-row limit could not separate the two sets: the
+  second or third source of a multi-topic question sits farther from it than the first, so a row
+  limit tight enough to drop the no-answer questions' chunks cost multi-source recall, while the
+  gate on the nearest chunk costs far less. A full-text rank is no part of this floor: on the
+  106-source library a strong word match (`ts_rank` at least 0.006, as first calibrated on 49
+  sources) let through as many out-of-library questions as it rescued answerable ones, so the first
+  version's text rule was removed.
+- **Word-search fallback floor** (`keywordRelevantRows`, `libraryKeywordFloor`). With no embedding
+  there is no distance, and a word match is a weak sign: the strongest chunk of an answerable
+  question and of an out-of-library one overlap in `ts_rank`. The fallback therefore shows rows
+  only when the best chunk has a rank of at least 0.0055 **and** holds at least 35% of the
+  question's distinct topic words (`termCoverage`: `topicTerms` of the query, matched on the first
+  five letters of each word, so "sleeping" meets "sleep"); then every chunk ranked at least 0.002.
+  No new SQL: the coverage is measured in TypeScript on the returned header and body.
+- **Exact vector scan** (review fix). v3 never uses the HNSW index: an index scan returns the nearest
+  vectors of every model and filters by `embedding_model`, region and topic afterwards, so vectors of
+  an older model kept during a re-embedding could fill the candidate list and leave too few, or not
+  the nearest, rows. Production calls always carried a region, which already took the exact path;
+  the no-filter branch is gone, so all calls do. Chosen over a partial HNSW index per model (a new
+  index and a changed query for every model, and it still needs the region and topic filters) and
+  over pgvector's iterative scan (needs 0.8 and still approximates). At 351 chunks of 384
+  dimensions the scan is about 135,000 multiply-adds, well under a millisecond; it is the right
+  call into the low thousands of chunks, and the index would be worth revisiting beyond that.
+  `library_search_v3_test.sql` forces index scans on and puts 40 nearer old-model chunks in the
+  library: the current model's nearest rows still come back.
+- **Loader and digest agree** (review fix). The digest includes each chunk's `token_count`, but the
+  loader compared only ordinal, section, header and body, so a re-load that changed only a token
+  count wrote nothing. Migration 44 redefines `private.library_replace_source` (same signature and
+  grants): a text change re-writes the chunks as before; a token-count-only change updates them in
+  place and keeps their embeddings. pgTAP covers it (the row, the digest, the version, the kept
+  embedding).
+- **Prefetch order** (review fix). Coach chat starts the question's embedding after the replay check
+  and the budget reservation, just before `prepare_coach_chat_v9` is awaited, so a replay or a
+  request at the usage limit never calls `library-embed` and the embedding still overlaps the context
+  preparation (the saving over starting it in the contributor is the context step, not the two
+  cheap reads before it). `handler_test.ts` checks the order and that a replay and a 429 start none.
+- **Nothing passes: an explicit line.** The block then says no excerpt matched, that Coach must cite
+  no library source and should say the evidence is not in Tracend's library rather than answering
+  from memory (`libraryNoMatchText`). When the search ran on words alone it says the library could
+  only be searched by keyword, and Coach must not claim the library lacks the topic
+  (`libraryWordsOnlyText`). The answer bank's `library-found-nothing` case now gets the same block
+  production gives.
+- **Marker line** (P2-2, P2-3): `[source: <id>] <Kind>, <year>. Evidence: <evidence level>.` before
+  the header. A "Practical reading" section, or any section whose title names Tracend's reading (for example "How it fits with other entries (Tracend's reading)"), is marked "Tracend's reading of this source (our
+  interpretation and its limits), not a finding the source reports."; a chunk elsewhere that points
+  to another entry ("see the ... entry", "in this library") is marked as holding Tracend's remark. 49
+  of the 169 chunks are Practical reading sections and 1 more carries a cross-reference. Done in
+  rendering, so nothing is re-embedded. The system prompt tells Coach to present a marked excerpt as
+  our reading.
+- **Latency** (P2-1). Coach chat starts the question's embedding after the replay check and the budget
+  reservation (`prefetchLibraryEmbedding` in `live.ts`), so it runs while `prepare_coach_chat_v10` runs; the contributor reuses it when its query is that text (every
+  question that is not a follow-up; a follow-up's query needs the prepared context, so it is
+  embedded then). The 1.5-second deadline counts from the start of the embedding, and the word
+  search fallback is unchanged (Contract 7 v1.2: `queryEmbedding` on the contributor input).
+  `library-embed` keeps its service client for the isolate and remembers the last accepted worker
+  secret by its SHA-256 for 5 minutes (`embed_service.ts`); a refused bearer always goes to the
+  database and never evicts the accepted one. Safe because the secret changes only when Vault loses
+  it (a restore), and the worst case is that a replaced secret works for 5 more minutes in a warm
+  isolate.
+- **Telemetry** (P2-1). One `library_retrieval` log line per turn, with the request's correlation
+  id: `embed_ms`, `degraded` (`none`, `embedding_unavailable`, `embedding_timeout`), `prefetched`,
+  `follow_up`, `candidates`, `shown` (source keys), `top_distance` and `library_version`. No question
+  text, chunk text or health value. It replaces `library_retrieval_degraded` (Contract 7 v1.2: a
+  contributor may return `trace`, which the host passes on as `traces[id]`).
+- **Versioning** (P2-5). `private.library_sources.content_sha256`, kept current by triggers on both
+  library tables (whatever writes the rows: the loader, a retire, the SQL editor) and back-filled by
+  the migration; `private.library_version()` digests every source's key and digest into 16 hex
+  characters; coach-chat stores it on the answer as `coach_messages.library_version` with the turn
+  trace (`recordTurnTrace`). The version does not count embedding state, so it is the same before
+  and after the worker embeds a chunk.
+- **Retiring a source** (P2-5). Deploys load content only through migrations (`supabase db push`
+  runs the generated `library_replace_source` blocks; no deploy step calls it), so retiring follows
+  the same path: `build_migration.ts --retire <key>` prints a block that calls
+  `private.library_retire_source(key)` (deletes the source and its chunks; false when no source has
+  the key). `library_content_test.ts` fails while a migration still loads a source that `index.ts`
+  no longer lists and no later retire block removes it, and when a retire follows a source's newest
+  load.
+- **P3 fixes.** A question with no ASCII word (Hindi in Devanagari, emoji) is never a follow-up, so
+  it is not searched with an earlier question's words. On a 401 from `library-embed`, the query
+  embedder reads the worker secret again and retries once. The search filters by `embedding_model`.
+  `library-embed`'s catch-all logs every failure (`library_embed_failed` with its code) and sends at
+  most one Sentry event per 30 minutes per isolate. The digest is shown to Coach without its source
+  ids (`withoutSourceIds`; the authored file keeps them, and the test still checks every id exists):
+  only retrieved excerpts are citable, so an id copied from the digest was a refused citation. That
+  was simpler than making the digest's 46 ids citable, which would have meant shown text and labels
+  for sources that were not retrieved. Digest version 3, 5,661 characters as shown.
+- **Deploy check** (P3). `deploy.yml` gains a read-only **Library Check** job after the functions
+  deploy (tag-release waits for it): through `supabase db query --linked` with the existing
+  `SUPABASE_ACCESS_TOKEN`, it waits up to 20 minutes for `library_status_v1()` to reach
+  embedded = chunks, then checks that a sample word search (`search_library_v3('protein per day',
+  null, null, 3, null)`) returns rows.
+- **The retrieval gate runs on library pull requests** (P2-6). `coach-eval.yml`'s
+  `library-retrieval` job also runs on a pull request (opened, pushed, reopened) that changes
+  `supabase/library/**`, `supabase/functions/_shared/library/**`, `library-embed/**`, the library
+  evaluation and question files (`_evals/library_*`), the few shared modules the evaluation imports,
+  `supabase/config.toml`, this workflow, or a migration that mentions the library (a small
+  `library-changes` job decides). It is not a required check. The model jobs keep
+  the label and manual runs; their concurrency group moved to the job.
+
+### Relevance floor: calibration
+
+Re-measured 2026-10-18 on the merged library, after the first calibration (49 sources, 92
+questions) turned out too small: **106 sources, 351 chunks, all embedded, real `gte-small`**, in CI
+(Coach Eval, `retrieval_only`; the pull request's own runs 39108987328, 39109648904 and 39110180961,
+and a manual hold-out run 39110194476). `library_eval.ts` prints the distances, the sweeps and the
+tables.
+
+**Questions.** `library_questions.json` (the calibration set, which chooses every threshold) holds
+219 questions: the 92 older ones (written against the first 49 sources) and 127 written blind for the
+rest, from each source's title and topic and a lifter's point of view, never from its chunk text.
+189 are answerable (147 single-source, 28 multi-source, 14 follow-ups; 28 are colloquial: gym slang,
+typos, Indian English such as "how much protein for gaining in veg diet") and 30 are no-answer
+questions near the library but outside it (medication, injury rehabilitation, specific diseases,
+sport technique, pregnancy and postpartum, minors, eating disorders, medical reports). Every one of
+the 106 sources is the expected answer of at least one calibration question.
+`library_questions_holdout.json` holds 55 more (34 single, 8 multi-source, 5 follow-ups, 8
+no-answer; 5 colloquial), written separately and phrased differently: 20% of the 274. It is run
+once, with `EVAL_QUESTION_SET=holdout` (workflow input `question_set: holdout`), which prints the
+tables and gates but none of the tuning output. It chose nothing.
+
+**Calibration set** (hybrid search with the chosen floor is what Coach chat shows):
+
+| | recall@8 | MRR | no-answer shown nothing | colloquial recall |
+|---|---|---|---|---|
+| Hybrid, no floor (v2 behaviour) | 0.890 | 0.801 to 0.802 | 0 of 30 | 0.810 |
+| Hybrid, the first calibration's floor (0.16 / 0.19 / text 0.006) | 0.879 | 0.802 | 16 of 30 (53%) | 0.756 |
+| **Hybrid, floor 0.15 / 0.19** | **0.855** | **0.774** | **27 of 30 (90%)** | 0.667 |
+| Word search alone, no floor (old fallback) | 0.795 | 0.683 | 1 of 30 (3%) | 0.625 |
+| Word search alone, the first calibration's floor (rank 0.006 per row) | 0.521 | 0.519 | 20 of 30 (67%) | 0.125 |
+| **Word search alone, new floor (rank 0.0055, 35% of topic words)** | **0.611** | **0.549** | **22 of 30 (73%)** | 0.304 |
+
+By kind with the chosen hybrid floor: single 0.859 (0.904 without), multi-source 0.780 (unchanged),
+follow-up 0.964 (unchanged). Eight answerable questions are shown nothing. The three no-answer
+questions still shown excerpts are metformin (nearest chunk 0.1475), ACL rehabilitation (0.1468) and
+steroid cycles (0.1468): they sit as close to training and recovery chunks as covered questions do,
+so no distance separates them; the prompt's precedence and medical-boundary rules still apply.
+**The floor costs colloquial questions most** (0.810 to 0.667): typos and slang sit farther from the
+chunks. 0.155 / 0.19 would give 0.756 for them and 0.869 overall, at 77% to 80% of the no-answer
+questions (one question moved between runs); it is a one-line change if the owner prefers recall.
+
+Distances: the nearest chunk of an expected source is at 0.074 to 0.187 (p50 0.106, p90 0.140); the
+nearest chunk among the rows returned for a no-answer question is at 0.147 to 0.245 (p50 0.177,
+p10 0.1475). The two groups overlap: three no-answer questions sit at 0.147 to 0.150, while
+answerable questions reach 0.187. The nearest distance among the eight returned rows moves a little
+between runs, because chunk ids (which break ties in the fused ranking) are new at every database
+reset; recall and MRR moved by 0.001 to 0.01.
+
+Hybrid sweep (calibration set, run 39110180961): nearest-chunk limit by row limit. The no-answer
+share and the number of answerable questions shown nothing depend only on the nearest-chunk limit.
+No text rule is part of it (see above).
+
+| nearest-chunk limit | no-answer shown nothing | answerable shown nothing | row 0.150 | row 0.160 | row 0.170 | row 0.180 | row 0.190 | row 0.200 | row 0.210 |
+|---|---|---|---|---|---|---|---|---|---|
+| 0.130 | 100% | 31 | 0.743 | 0.757 | 0.765 | 0.771 | 0.771 | 0.771 | 0.771 |
+| 0.135 | 100% | 25 | 0.755 | 0.770 | 0.778 | 0.785 | 0.785 | 0.785 | 0.785 |
+| 0.140 | 100% | 18 | 0.772 | 0.790 | 0.803 | 0.810 | 0.810 | 0.810 | 0.810 |
+| 0.145 | 100% | 12 | 0.795 | 0.817 | 0.832 | 0.840 | 0.840 | 0.842 | 0.842 |
+| **0.150** | 90% | 8 | 0.802 | 0.832 | 0.848 | 0.855 | **0.855** | 0.858 | 0.858 |
+| 0.155 | 77% | 5 | | 0.835 | 0.859 | 0.869 | 0.869 | 0.871 | 0.871 |
+| 0.160 | 63% | 3 | | 0.843 | 0.869 | 0.879 | 0.879 | 0.882 | 0.882 |
+| 0.165 | 63% | 3 | | | 0.869 | 0.879 | 0.879 | 0.882 | 0.882 |
+| 0.170 | 63% | 3 | | | | 0.879 | 0.879 | 0.882 | 0.882 |
+| 0.175 | 60% | 3 | | | | 0.879 | 0.879 | 0.882 | 0.882 |
+| 0.180 | 43% | 3 | | | | 0.879 | 0.879 | 0.882 | 0.882 |
+
+Why 0.15 / 0.19: the highest recall that left at least 90% of the no-answer questions with nothing
+in both calibration runs (0.155 gave 77% in two of three runs, 80% in one). Row limits 0.18 to 0.21
+give the same recall within 0.003; 0.19 keeps a margin for the second source of multi-topic
+questions. The strong-text-rank rule removed from the floor, measured at 0.16 / 0.19: with it at
+0.006 the no-answer share fell from 67% to 53% for no recall gain (0.879 either way); at 0.004 it
+fell to 30%.
+
+Word-search sweep (calibration set): recall / no-answer shown nothing, by the best chunk's `ts_rank`
+(rows) and the share of the question's topic words it must hold (columns), row rank 0.002.
+
+| best chunk's rank | coverage 0 | 0.20 | 0.25 | 0.30 | **0.35** | 0.40 | 0.45 | 0.50 |
+|---|---|---|---|---|---|---|---|---|
+| 0.0030 | 0.779 / 10% | 0.754 / 20% | 0.739 / 33% | 0.712 / 43% | 0.669 / 60% | 0.654 / 60% | 0.590 / 70% | 0.590 / 70% |
+| 0.0035 | 0.776 / 13% | 0.751 / 20% | 0.736 / 33% | 0.709 / 43% | 0.667 / 60% | 0.652 / 60% | 0.590 / 70% | 0.590 / 70% |
+| 0.0040 | 0.771 / 23% | 0.751 / 30% | 0.736 / 37% | 0.709 / 43% | 0.667 / 60% | 0.652 / 60% | 0.590 / 70% | 0.590 / 70% |
+| 0.0045 | 0.729 / 37% | 0.713 / 40% | 0.701 / 43% | 0.686 / 50% | 0.654 / 63% | 0.650 / 63% | 0.590 / 73% | 0.590 / 73% |
+| 0.0050 | 0.694 / 57% | 0.683 / 57% | 0.671 / 57% | 0.656 / 60% | 0.635 / 70% | 0.632 / 70% | 0.576 / 77% | 0.576 / 77% |
+| **0.0055** | 0.645 / 63% | 0.639 / 63% | 0.634 / 63% | 0.622 / 67% | **0.611 / 73%** | 0.611 / 73% | 0.571 / 80% | 0.571 / 80% |
+| 0.0060 | 0.597 / 67% | 0.592 / 67% | 0.586 / 67% | 0.581 / 70% | 0.571 / 77% | 0.571 / 77% | 0.547 / 80% | 0.547 / 80% |
+| 0.0065 | 0.544 / 77% | 0.539 / 77% | 0.534 / 77% | 0.528 / 77% | 0.523 / 80% | 0.523 / 80% | 0.504 / 83% | 0.504 / 83% |
+| 0.0070 | 0.484 / 80% | 0.479 / 80% | 0.474 / 80% | 0.468 / 80% | 0.463 / 80% | 0.463 / 80% | 0.455 / 83% | 0.455 / 83% |
+| 0.0075 | 0.429 / 93% | 0.423 / 93% | 0.418 / 93% | 0.413 / 93% | 0.407 / 93% | 0.407 / 93% | 0.399 / 93% | 0.399 / 93% |
+| 0.0080 | 0.331 / 93% | 0.331 / 93% | 0.331 / 93% | 0.325 / 93% | 0.320 / 93% | 0.320 / 93% | 0.320 / 93% | 0.320 / 93% |
+
+The row rank (at 0.0055 and 0.35) changes little: 0 gives 0.611, 0.002 0.611, 0.003 0.608, 0.004
+0.601, 0.005 0.571, all at 73%. **The word-search fallback cannot be brought back to its unfloored
+recall (0.795) while most out-of-library questions show nothing.** The ts_rank of an answerable
+question's best chunk (p10 0.004) overlaps the no-answer questions' (p50 0.005, p90 0.007), and
+topic-word coverage separates them only partly. Coverage buys about 0.09 recall at a similar
+no-answer share (0.635 at 70% against 0.544 at 77% by rank alone), and the two-part form (best
+chunk, then rows) adds about 0.08 over the first calibration's per-row rank at the same 67%
+(0.597), but the fallback stays far below the main path.
+That is accepted because the fallback runs only when the embedding is unavailable, and its
+block then says Coach must not claim the library lacks the topic. Rank 0.005 with the same coverage
+gives 0.635 at exactly 70%; 0.0055 was chosen for margin over the gate.
+
+**Hold-out set** (run 39110194476, 55 questions, chosen floors, run once, no retuning):
+
+| | recall@8 | MRR | no-answer shown nothing |
+|---|---|---|---|
+| Hybrid, no floor | 0.897 | 0.822 | 0 of 8 |
+| **Hybrid, floor 0.15 / 0.19** | **0.897** | **0.822** | **7 of 8 (88%)** |
+| Word search alone, no floor | 0.805 | 0.673 | 0 of 8 |
+| **Word search alone, new floor** | **0.613** | **0.542** | **5 of 8 (63%)** |
+
+By kind with the hybrid floor: single 0.941, multi-source 0.646 (8 questions; 0.646 without a floor
+too), follow-up 1.000, colloquial 1.000 (5 questions). The one no-answer question shown excerpts
+asks at what age children should start strength sessions (nearest 0.149). **Two gates are not met on
+the hold-out set**, and the run failed on them: multi-source recall 0.646 against 0.7, and
+word-search no-answer precision 0.625 against 0.7 (5 of 8; the calibration set gave 73%, 22 of 30).
+The floor did not cause the first (it equals the unfloored hybrid); the second is the fallback's
+limit described above, on only 8 questions. Neither gate was moved. Eight multi-source questions
+and eight no-answer questions are small samples, and the set was not tuned on; the calibration set
+passes every gate (recall 0.855, multi-source 0.780, MRR 0.774, no-answer 0.900, word-search recall
+0.611, word-search no-answer 0.733).
+
+`library_eval.ts` gates, all measured with the floors: recall 0.8, multi-source recall 0.7, MRR 0.5,
+no-answer precision 0.7 (`EVAL_MIN_NO_ANSWER_PRECISION`), and for the word-search fallback recall 0.55
+(`EVAL_MIN_KEYWORD_RECALL`) and no-answer precision 0.7 (`EVAL_MIN_KEYWORD_NO_ANSWER_PRECISION`).
+The workflow step now runs with `pipefail`, so a gate failure fails the job (it used to be hidden by
+`tee`). Thirty no-answer questions are still few: one question is 3.3 points. Re-run the sweep when
+the library or the question set grows, on the calibration set only, and keep the hold-out set for
+confirming the result once.
+
+### Not done, and why
+
+- **Follow-ups anchored on the Coach's previous reply** (P3, "if cheap and measurable"). Not
+  measurable here: no retrieval question carries a previous Coach reply, and the question file
+  belongs to another branch. A reply is model text that often spans several topics, so adding it to
+  the query could pull the search off the athlete's question; measure it with follow-up questions
+  that carry a reply before building it.
+- **The answer bank's fixed rows carry no scores, kind or evidence level**
+  (`_evals/coach_bank/harness.ts`, another branch's file). They are shown as given (unscored rows
+  pass the floor) and their marker line shows only the year; the bank's chunks therefore do not get
+  the Tracend's-reading mark from the section. `LibraryRow` takes `section`, `kind` and
+  `evidenceLevel` when the harness passes them.
+- **The digest's sources stay uncitable** rather than made citable (above).
+
+### Gates
+
+`./scripts/deno.sh fmt --check supabase/functions`, `lint` and `test --allow-env --allow-net
+--allow-read=supabase/migrations,site/src/config.ts supabase/functions` pass. pgTAP
+`library_search_v3_test.sql` (38 assertions: grants, the v3 keys and schema version, cosine
+distances, the model filter, text ranks, the embedding-model requirement, evidence level and kind,
+regions, the content digest and when it changes, the version, loading and retiring, and the
+library version on a Coach answer) runs in CI. The legacy DeepSeek request digests
+(`coach_chat_parity_test.ts`) were recorded again because the digest's persona line changed (the
+only prompt edits are the persona's digest line and two library-rule bullets; the structured-output
+schema is untouched, and `coach_chat_schema_test.ts` still passes: 0 optional keys, 0 unions, under
+3,100 bytes). The branch was rebased onto `main` after #151, #152 and #155; migration 44 still sorts
+after every migration there (`check-migration-order.sh origin/main`).
+
+### After the deploy
+
+- Run Coach Eval with `retrieval_only` on `main`.
+- In the function logs, `library_retrieval` lines should show `prefetched: true` on most turns and a
+  low `embed_ms`; `degraded` other than `none` points at `library-embed` (cold load or errors).
+- `select library_version, count(*) from public.coach_messages where library_version is not null
+  group by 1;` in the SQL editor shows which library content answers were given from.
+- Once no deployed code calls `search_library_v2`, drop it in a cleanup migration.
+
+## E4: regional modules (in review)
+
+Branch `claude/regional-modules`, migration `20261023120044_regional_modules.sql` (code 44, additive).
+Decision D5: a global audience, with nutrition and body-measure modules for India, the United
+States, the United Kingdom and Australia chosen by the athlete's region.
+
+### What shipped
+
+- **The athlete's country.** `user_accounts.country_code`, optional (null, or two capital letters).
+  The app reads and writes it only through `get_my_country_v1()` and `set_my_country_v1(p_country_code)`
+  (security definer, authenticated only, both `{schema_version: "1.1", country_code, effective_regions}`
+  built by `private.my_country_answer`; `effective_regions` is the sorted list the library search uses
+  for the athlete now, so "Not set" on an Indian time zone reads `["IN", "global"]`; a blank code clears
+  the choice; the set accepts only the codes the app offers, AU, IN, GB, US and ZZ, and raises `22023`
+  for anything else; a signed-out caller gets `42501`; an actual change writes an `account.country.changed`
+  audit event with the old and new code, a repeat writes none); clients cannot write the column. `private.library_regions_for_account` (the one function both searches call) is redefined
+  with the same signature and grants: a stored country gives `['global', <country>]`; with none it
+  behaves exactly as before (locale country, and `IN` for an Indian time zone). `ZZ` is the athlete's
+  answer "another country" (ISO's user-assigned code): it sees global sources only and is not
+  guessed back into India from the time zone. Export is automatic (`select *`) and deletion cascades.
+- **The app.** Account has a **Region** section with one optional row, **Country** (Australia, India,
+  United Kingdom, United States, Another country, Not set). It says what it does and reads the server's `effective_regions`
+  ("Not set · Coach uses guidance that applies everywhere" only when nothing but global is in effect;
+  "Not set · Coach goes by your time zone or language (India)" when the account's time zone or language
+  still selects a country; "India · Coach can cite India's national guidelines") and that no plan number
+  changes. Files: `lib/features/account/region_repository.dart`,
+  `lib/features/account/widgets/region_settings.dart`; `AccountScreen` takes a `region` repository
+  (fixture by default). With nothing chosen the app and the search behave as before. Needs a reinstall
+  of the app to show the row; the migration must deploy first (the row shows "Could not be read" until
+  the RPCs exist).
+- **Eight sources** in `supabase/library/sources/regional.ts` (114 in all). Each of the four regions
+  now has a nutrition source and a body-measure source (BMI and waist, including the points that differ
+  for people of Asian origin); a content test enforces it.
+
+| Key | Region | Citation | Link | Licence | Verbatim | Read from |
+|---|---|---|---|---|---|---|
+| nhs_2026_overweight_obesity_adults | GB | NHS, Overweight and obesity in adults (page reviewed 29 April 2026) | nhs.uk/conditions/obesity | proprietary (NHS terms of use not readable here; the OGL claim was not confirmed) | no | full page |
+| phe_2018_quick_guide_healthy_eating | GB | Public Health England 2018, A Quick Guide to the Government's Healthy Eating Recommendations | assets.publishing.service.gov.uk (PDF) | OGL-UK-3.0 (stated in the PDF) | yes | full document |
+| phe_2016_government_dietary_recommendations | GB | Public Health England 2016, Government Dietary Recommendations | assets.publishing.service.gov.uk (PDF) | OGL-UK-3.0 (stated in the PDF) | yes | full document |
+| nhlbi_2000_practical_guide_obesity | US | NHLBI and NAASO 2000, The Practical Guide (NIH 00-4084) | nhlbi.nih.gov/files/docs/guidelines/prctgd_c.pdf | proprietary (federal publication with a non-government co-sponsor and no rights notice in the text) | no | full document |
+| nhmrc_2013_australian_dietary_guidelines | AU | NHMRC 2013, Australian Dietary Guidelines | eatforhealth.gov.au/guidelines/australian-dietary-guidelines-1-5 | proprietary (the WHO-hosted copy read here allows personal and internal non-commercial use only) | no | full document (WHO-hosted copy) |
+| nhmrc_nz_2006_nrv_protein | AU | NHMRC, Australian Department of Health and NZ Ministry of Health 2006, Nutrient Reference Values: Protein (page updated 9 April 2014) | eatforhealth.gov.au/nutrient-reference-values/nutrients/protein | proprietary (no notice readable) | no | archived copy of 3 November 2022 |
+| au_health_2021_adult_activity_guidelines | AU | Australian Department of Health, Disability and Ageing, activity guidelines for adults 18 to 64 (updated 10 May 2021) | health.gov.au/topics/physical-activity-and-exercise/... | proprietary (no notice readable) | no | archived copy of March 2026 |
+| who_2011_waist_circumference_report | global | WHO 2011, Waist circumference and waist-hip ratio (consultation Dec 2008) | who.int/publications/i/item/9789241501491 | proprietary (copyright notice requires permission) | no | WHO library copy via the Internet Archive |
+
+Every summary is in Tracend's own words, with its own order and structure rather than the source's
+sentences (the first draft followed the NIH guide and the PHE documents too closely and was rewritten
+after review). The two UK documents allow short quotation (OGL); nothing is quoted from any source.
+Figures come only from what was read: the NHS page (BMI 23 to 27.4
+overweight and 27.5 or more obese for South Asian, Chinese, other Asian, Middle Eastern, Black African
+and African-Caribbean adults; waist under half of height when BMI is under 35), the NHLBI guide (waist
+lines of 40 and 35 inches), the ADG (serves, BMI bands, waist 80/88 cm and 94/102 cm, the notes on
+Asian and Polynesian origin), the NRV page (0.68 and 0.60 g/kg EAR, 0.84 and 0.75 g/kg RDI) and the
+UK tables (55.5 and 45 g protein a day, 30 g fibre).
+
+### Figures checked against the copy read
+
+Each number in the Australian and WHO entries was found again, by text search, in the copy that was read
+(2026-10-23):
+
+| Entry | Copy read | Figures confirmed |
+|---|---|---|
+| NHMRC and NZ MoH 2006, NRV protein | web.archive.org/web/20221103015557/https://www.nrv.gov.au/nutrients/protein | adults 19-70: average requirement 0.68 (men) and 0.60 (women) g/kg, recommended intake 0.84 and 0.75 g/kg, 64 and 46 g a day; over 70: 0.86 and 0.75, then 1.07 and 0.94 g/kg, the 25 percent rise and its limited evidence; no upper level in grams, 25 percent of energy; about 33 percent of intake from meat, poultry and fish, about 25 percent from cereals; page updated 9 April 2014 |
+| NHMRC 2013, Australian Dietary Guidelines | extranet.who.int/ncdccs/Data/AUS_B18_n55_australian_dietary_guidelines.pdf (WHO-hosted copy) | BMI bands 18.5, 25, 30; waist 80/88 cm (women) and 94/102 cm (men); the Asian-origin and Polynesian-origin notes; the over-70 note; check weight and waist every 2 to 3 months; serves table (3 and 2.5 at 19-50, 2.5 and 2 from 51); serve sizes 65 g, 80 g, 100 g, 2 eggs, 1 cup (150 g), 170 g |
+| Australian Dept of Health, adults 18-64 | web.archive.org/web/20260310033757/https://www.health.gov.au/topics/physical-activity-and-exercise/physical-activity-and-exercise-guidelines-for-all-australians/for-adults-18-to-64-years | 2.5 to 5 hours moderate, 1.25 to 2.5 hours vigorous, strength on at least 2 days, the named activities, page updated 10 May 2021 |
+| WHO 2011, waist circumference | web.archive.org/web/20150209033722/http://whqlibdoc.who.int:80/publications/2011/9789241501491_eng.pdf | Annex A cut-offs 94/80 and 102/88 cm and their Dutch-sample origin, IDF 94/80 and 90/80 cm, US cholesterol programme 102/88 cm, the STEPS and US measuring sites, more visceral fat in Asian populations, no universal cut-offs; the publication date (16 May 2011) is from the who.int item page |
+
+### Considered and left out
+
+- **NICE NG246 (UK obesity guideline, 2025).** The NICE site and its mirror returned 403 from here,
+  and the BMJ summary has no abstract in Europe PMC, so none of its numbers could be read. The NHS page
+  states the same lower BMI points for the same groups, so it covers the need. Add NICE when someone
+  can read it.
+- **CDC adult BMI categories page** (403 from here); the NIH guide covers the US bands.
+- **NHMRC 2013 obesity guidelines** are rescinded (2019); the ADG chapter, which carries the BMI and waist
+  lines, is used instead.
+- **AIHW "Overweight and obesity" pages**: only an archived 2020 copy could be read and it repeats the
+  ADG's waist table, so it adds nothing.
+- **Australian Dietary Guidelines licence.** A search result suggested a later reissue under CC BY 4.0, but
+  that was not read; the stricter notice on the copy that was read applies.
+- Canada, Singapore, Japan, Brazil and others: D5 names four regions; a new region is a source file and
+  a country entry in `regionalModuleCountries`.
+
+### Tests
+
+- `library_content_test.ts`: AU is a known region; each of IN, US, GB and AU has a nutrition and a
+  body-measure source; the migration carries every source's current content (it failed when a summary was
+  edited after the migration was generated, as designed).
+- `library_questions.json`: 17 questions asked from GB, US, AU (and two with no region), each
+  expecting its source; the existing content, region and no-athlete-data tests check them. The
+  regional-isolation gate in `library_eval.ts` fails if a regional source reaches an athlete outside its
+  region.
+- pgTAP `regional_modules_test.sql` (42 assertions: the regions in effect with and without a country, a
+  code the app does not offer is refused) and `library_ingestion_test.sql` (AU allowed); Flutter
+  `contract/region_contract_test.dart` (fixtures `my_country_v1_1.json`, `my_country_unset_v1_1.json`) and
+  `region_settings_test.dart` (a time-zone country is named, not hidden).
+- `library_full_test.ts`: before E4 the 106 sources render to 201,482 characters (57,566 tokens at 3.5
+  characters a token); with E4, 114 sources and 220,432 characters (62,981 tokens). The 60,000 line guards
+  only the shelved whole-library evaluation and is now 70,000 (owner decision below).
+
+### Measured in CI (PR #164)
+
+The library retrieval gate ran on the 236 calibration questions with 114 sources: mean recall in the
+top 8 with the floor 0.867 (206 scored questions; 0.855 before E4), multi-source 0.787, MRR 0.792,
+follow-ups 0.964, 27 of 30 no-answer questions shown nothing (90%), and no regional source reached an
+athlete outside its region (0 leaks). All 17 regional questions found their expected source. The
+pgTAP file `regional_modules_test.sql` (37 assertions) passes; on a scratch branch
+(`feature/e4-pgtap-before`, deleted) with the migration minus the regions function it failed exactly
+the four assertions about a stored country (30, 31, 32 and 35).
+
+### Decisions for the owner
+
+1. **Which regions ship first.** The four D5 names, all built. Canada, the EU and others wait for a
+   request; each is a source file and a line in `regionalModuleCountries`.
+2. **UK's NICE guideline is not in the library** (could not be read). The NHS page stands in.
+3. **Country is optional and the app does not ask in onboarding.** The row sits in Account. Asking in
+   onboarding needs `onboarding_flow.dart` (see "Follow-up after #162").
+4. **A country changes citations, not numbers.** No calorie, protein or safe-range rule reads it. A
+   regional BMI floor or a lower "high BMI" point for Asian-origin athletes in the plan's rules
+   (ALGORITHMS.md uses BMI 18.5 and 25 for everyone) would be a rule change and is not made here.
+5. **The 60,000-token line for the whole library is now 70,000.** Retrieval does not depend on it; the line guards only the shelved whole-library evaluation.
+6. **Summary-only licences.** Six of the eight are `proprietary` on purpose: where a notice could not be
+   read or was restrictive, the stricter reading applies, as in E2.2.
+7. **ADG and NRV are under NHMRC review** (the dietary guidelines were reported to be under revision
+   and a public consultation on the nutrient reference values was reported for early 2026; neither was
+   read here). Re-read both when NHMRC publishes.
+
+### Follow-up after #162
+
+PR #162 owns `onboarding_flow.dart`, the rules plan, `catalog.ts`, `answers.ts`, `prescription.ts`,
+`volume.ts`, `templates/*` and the redefinitions of `private.next_session_targets` and
+`get_coach_plan_state_v1`. After it merges:
+
+- Add an optional **Country** step to onboarding that calls `SupabaseRegionRepository.save` (the same
+  RPC; skipping leaves null). A draft needs no new key: the answer is stored by the RPC, not by the
+  onboarding answers.
+- If the rules plan should ever vary by region (for example protein basis or BMI points), read
+  `user_accounts.country_code` in `onboarding-plan`'s handler beside `timezone` (the handler already reads
+  `user_accounts`). Not needed for E4.
+- E5 (plan explanations citing sources) can pass the athlete's id to `search_library_v3` and the region
+  follows from the stored country.
+
+### After the deploy
+
+- `select country_code, count(*) from public.user_accounts group by 1;` (SQL editor, read-only) is all
+  null until athletes choose.
+- `select public.library_status_v1();` should reach `embedded_chunks = chunks` (the eight sources add
+  29 chunks, 380 in all) in about ten minutes, as in E2.
+- Install the app from the merged commit to get the Region row; the migration deploys first.
+
+## E5: plan explanations that cite sources (in review)
+
+Branch `claude/e5-plan-explanations`. No migration and no change to any RPC or table: the proposal's
+`evidence` column already takes any list of items, and the search is `search_library_v3` as E3.1 left
+it. Deterministic plan numbers stay authoritative; the library only supplies the reasons.
+
+### What shipped
+
+- **Coach chat, "why is my plan like this?"** `isPlanExplanationQuestion`
+  (`_shared/library/plan_explanation.ts`, deterministic: the question names the plan or a part of it,
+  and asks for a reason) marks the turn. "Why is my plan like this?" has no topic of its own for the
+  search (and "this" even reads as a follow-up), so the contributor makes a second search beside the
+  question as asked: `libraryRetrievalQuery` returns the question as `text` and, in `planText`, the
+  question with what a plan is made of added (`planTopicText`: training days, weekly sets per muscle,
+  rep ranges, rest, effort and reps in reserve, progression, and the goal's nutrition topic). The two
+  result lists are merged (`interleave`: a chunk once, the first search's first). The first CI run
+  showed why one enriched query is not enough: it found 0.54 of the expected sources against 0.29 for
+  the bare question, but missed questions about one part of the plan ("why do I rest so long?") that
+  the added topics diluted; the as-asked search keeps those. The plan facts (`planFactsFrom`,
+  `_shared/library/plan_facts.ts`: counts and enumerated values only, never an exercise name, a load,
+  a weight or a date) come from the plan state and the goal inputs, read once for the turn and shared
+  with the plan and goal-phase sections (`sharedRead`; the goal phase contributor now reads its inputs
+  under the key `goal_phase_inputs`). Both searches run for this athlete (their id, so the region
+  follows from the stored country, E4). Facts that fail or take over 0.8 s leave the general topics of
+  a plan in the second query; the turn is never held up. The first search reuses the embedding started
+  with the request (a question that reads as a follow-up, like "Why is my plan like this?", is embedded
+  when its context is known, as for any follow-up); the second embeds its own text in parallel.
+- **What Coach is told.** The library block of a plan turn adds a fixed note (no figure, grounds
+  nothing): explain from the plan's own numbers and Tracend's rules first, use the excerpts for the
+  reasoning behind them, cite the source of each, say plainly when a part of the plan has no excerpt
+  behind it, an excerpt never changes a number. With nothing close enough the block says the
+  explanation rests on the plan's rules and is less certain, cite no library source, no answer from
+  memory (`libraryPlanNoMatchText`; the words-only variant does not claim the library lacks the topic).
+  A plan turn's block is built when either of its two searches works; when both fail it renders
+  `libraryPlanUnavailableText` (say you could not check the research); on any other turn a failing
+  search still leaves the library out. Citing, the
+  `citation_not_retrieved` guard and figure grounding are E3's, unchanged.
+- **Onboarding plan.** `onboarding-plan` searches the library before it builds the gateway prompt
+  (`retrievePlanLibrary`, `_shared/library/plan_library.ts`): two searches in parallel, one for how
+  the training is built and one for what the nutrition targets rest on, from the enumerated answers
+  (goal, experience, training days, session length, focus muscles; the athlete's free text never
+  enters a query), each embedded by `library-embed` within 1.5 s and searched for the athlete's id with
+  the same relevance floor as Coach. The rows alternate between the two searches, a chunk once, whole
+  chunks only, within 6,000 characters (about 1,700 tokens); the whole retrieval has a 4 s deadline and
+  never throws. The rules about the excerpts go in the cached system prompt (one of three variants by
+  what was found), the excerpts in the user message, so the cost ceiling counts them. The model may
+  list source ids in a new `sources` field (the gateway's JSON schema gains it, required, a list of
+  strings; the settings path's prompt and shape are unchanged and `sources` is optional when parsed).
+  `validateOnboardingPlan` refuses an id the prompt did not show (`source_not_retrieved`, repaired by
+  name once like any rule), and so does the gateway when the plan's text prints an unshown id or names
+  a study or an institution's document that was not shown (`unshownKeysIn`, `unshownStudies`). The reverse is refused too (`source_not_listed`, repaired once, then the rules plan): prose that names a source the prompt showed (its id, or "Schoenfeld 2017") while `sources` leaves it out; naming a listed source is fine, and sources are never added from prose. A cited
+  source becomes an evidence item `{code: <id>, label: "<retrieved title> (<year>)", source: "library"}`
+  on the proposal, labelled from the retrieval, never from the model's words.
+- **Missing hits lower confidence and say so.** A plan from the model that cites nothing adds a line
+  to "Not known yet" ("No research source is cited for this plan; its numbers come from Tracend's safe
+  ranges and your answers", or "The research library could not be searched for this plan, so it cites
+  no source; ..."). When the search found nothing close enough, or failed, confidence also drops to
+  low (it was never above medium: first estimates). Excerpts shown but not cited leave confidence as
+  it was and only add the line. The rules plan and the settings path are built without the library
+  and are unchanged: the plan must stand when the library does not.
+- **The app.** The plan screen reads the proposal's `evidence` and, when the plan cites sources,
+  shows an `EvidenceAccordion` "Research behind this plan" under "Why this plan" listing the labels
+  (`OnboardingProposal.librarySources`). It cites nothing and shows nothing otherwise. Needs a reinstall
+  to show it; nothing breaks on older builds (they ignore `evidence`).
+
+### What `onboarding-propose-plan` is
+
+The task for E5 named `onboarding-propose-plan`, which is the Phase-2 mock kept for installed older
+builds (a fixed plan with fixed wording, no model). The onboarding plan the app now builds, the one
+whose explanation (`rationale`, `assessment`, ...) a model writes, is `onboarding-plan`; E5 is there.
+The mock keeps its fixed text and cites nothing.
+
+### Tests
+
+- Deno: `plan_explanation_test.ts` (the intent in both directions, the topics, the query, the
+  onboarding queries), `plan_facts_test.ts`, `plan_library_test.ts` (both searches for this
+  athlete's id, floor, one search failing, both failing, the deadline, embedding failure and lateness,
+  the budget, the merge, the rules), `retrieval_test.ts` (the contributor on plan turns:
+  the two searches, facts failing or late, the notes, one or both searches failing, budget, prefetch reuse),
+  `plan_contract_library_test.ts` (parsing, `source_not_retrieved`, evidence and labels,
+  confidence and the note, the rules plan unchanged), `onboarding-plan/gateway_test.ts` (the prompt,
+  the citation in the stored proposal, repair of an invented id or study, no excerpt, library
+  unavailable, no wiring, no route, provider failure), `goal_phase_test.ts` (shared read).
+- Retrieval gate (CI, `library_eval.ts`): a separate set, `library_questions_plan.json`, is scored with
+  the floor as it stands: 12 plan questions with their plan facts, once as the bare question and once
+  as Coach searches them (two searches merged), failing under `EVAL_MIN_PLAN_RECALL` (default 0.5); and
+  5 athletes' answers through the onboarding plan's two searches against the sources a good plan
+  prompt needs, failing under `EVAL_MIN_ONBOARDING_RECALL` (default 0.4). The calibration and
+  hold-out sets are untouched.
+- Flutter: `phase_2_flow_test.dart` ("Research behind the plan": listed, absent, parsing).
+
+### Measured in CI (PR #171)
+
+The retrieval gate ran with 114 sources (the calibration numbers are unchanged: hybrid with the floor
+0.867 recall, multi-source 0.787, follow-ups 0.964, 27 of 30 no-answer questions shown nothing, 0
+regional leaks). Plan explanations, 12 questions with the floor: **0.750** mean recall (every source
+found for 58%) when searched as Coach does (as asked and with the plan topics, merged), against 0.208
+for the bare question; the single enriched query of the first run scored 0.542 and missed questions
+about one part of the plan. Still missed: the weekly-volume source on the two generic questions
+("why is my plan like this?", "how was it decided?"), `lopez_2021_load_network` on rep ranges, and the
+effort pair (`robinson_2024_proximity_to_failure`, `zourdos_2016_rir_scale`) on "why does my program
+stop my sets short of failure?". The onboarding plan's two searches over five athletes: **0.733**
+(fat loss and recomposition found every source; the muscle-gain and aesthetic cases missed
+`schoenfeld_2017_weekly_volume`, the strength case `acsm_2026_resistance_prescription`). The gates
+(`EVAL_MIN_PLAN_RECALL` 0.5, `EVAL_MIN_ONBOARDING_RECALL` 0.4) leave headroom; the next tuning
+target is `planTopicText`'s wording for volume and for effort.
+
+**Codex review round 1 changes.** A search that failed with no excerpts left is "unavailable" ("could
+not be checked"), not "none"; "none" needs every search to succeed with nothing close enough (the
+onboarding `PlanLibrary` and the Coach plan turn). The eval now searches at the production counts
+(`libraryMatchCount` 8 for Coach plan questions, `planLibraryMatchCount` 6 for the onboarding cases);
+the numbers above were measured at 8 for both. At production counts: plan questions 0.750 (unchanged,
+count 8), onboarding plan searches **0.600** (count 6; 0.733 at 8): the strength athlete found none of
+its three sources, the others as before. The gate (0.4) still leaves 0.2 of headroom, so it is not
+changed; the strength case is the next tuning target for `onboardingLibraryQueries`.
+
+**Review round 2 changes.**
+- `mentions.ts` (shared with the Coach reply guard): a number with a unit (kcal, cal, calories, g, kg,
+  lb, steps, min, %) is masked before the scan and a year must end at a word boundary, so "BMR 1980
+  kcal", "Eat 2000 kcal", "TDEE (2010 kcal)" and "Target 1990 kcal" name no study; `notAnAuthor` gains
+  the calorie and plan words; "Grgic et al." without a year names a study; `unshownStudyPhrases` and
+  `namedShownPhrases` return the words of the text, and the plan's repair quotes them and says what to
+  change. `printedKeysIn` finds an id bare, in brackets or as `[source: id]`.
+- The plan library context carries each shown source's excerpt text, so a listed source named the way
+  its own excerpt names it ("Currier et al. 2026", "Bull et al. 2020", "Garber 2011") is accepted, and
+  shown but unlisted it is `source_not_listed`.
+- Coach plan turns start the question-as-asked search at once, beside the plan facts; only the
+  enriched search waits. The whole plan block is answered by `libraryPlanDeadlineMs` (3.2 s, inside
+  the host's 4 s) with what has finished; a search still out counts as failed, so the turn keeps its
+  "could not check" note. `retrievePlanLibrary` keeps the searches that finished at its 4 s limit.
+- The retrieval gate scores only the sources actually shown: the lists are merged and the block is
+  rendered at production's budgets (9,000 characters for Coach, 6,000 for onboarding). Measured that way: plan
+  questions **0.708** (every source found for 58%; the bare question 0.292), onboarding searches
+  **0.600** (the strength athlete still finds 0 of 3); calibration unchanged (0.867). Both are above
+  their gates (0.5 and 0.4), so no gate changed; the strength case remains the tuning target.
+
+### Decisions and limits
+
+1. **Region.** Nothing new: the search takes the athlete's id and `search_library_v3` applies
+   `private.library_regions_for_account` (stored country, E4). A pgTAP test is not added: no SQL changed.
+2. **The retrieval is for the gateway route only**, like E3. The settings (DeepSeek rollback) path
+   builds the plan as before, byte for byte (the golden requests still match).
+3. **The goal's nutrition topic is always added** to a plan question's search (when the athlete has
+   a goal), so a general "why is my plan like this?" also finds the protein and energy sources; a
+   question about one part of the plan carries its own topic as well.
+4. **No citation in the plan text.** The model puts ids in `sources` and never in prose; the app lists
+   the labels under "Why this plan", not inline.
+
 ## Next agent starts here
 
-E4 (regional modules) adds sources the same way as E2 (files plus a migration) and should store a
-country on the profile so `private.library_regions_for_account` stops guessing from the locale and
-time zone. E5 (plan explanations citing sources) can reuse `libraryRetrievalQuery`, the contributor
-and the `library` evidence source. Run `retrieval_only` after any library or search change.
-
-After E2.2: add retrieval questions for the 57 new sources and measure recall once production has
-embedded them; decide whether retrieval should skip or down-rank `supersededBy` sources (the field
-lives in the content files only); the full-library render is near the 60,000-token line, so the
-next expansion needs a size decision first.
+E5 (above) reused `libraryRetrievalQuery`, the contributor, `relevantRows` and the `library`
+evidence source; the athlete's region follows their stored country. The next step there is to read the
+CI plan-question recall and the `onboarding_library` log lines after the first athletes build plans,
+and to tune `planTopicText` (one fixed string) if a topic is missed. A source removed from `index.ts` needs a retire block in the same migration
+(`build_migration.ts --retire`). The retrieval gate runs by itself on library pull requests; re-run the
+floor sweep in its output when the question set or the library grows. Decide whether retrieval should
+skip or down-rank `supersededBy` sources (the field lives in the content files only). Add NICE NG246 for
+the UK when it can be read; re-read the NHMRC pages after its reviews.

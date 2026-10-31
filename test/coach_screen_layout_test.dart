@@ -88,7 +88,11 @@ final _conversation = [
 Widget _app(CoachRepository repository, {bool dark = true}) => MaterialApp(
   theme: dark ? TracendTheme.dark : TracendTheme.light,
   home: Scaffold(
-    body: CoachScreen(repository: repository, threadMemory: _Memory()),
+    body: CoachScreen(
+      repository: repository,
+      threadMemory: _Memory(),
+      now: () => _when.add(const Duration(hours: 1)),
+    ),
   ),
 );
 
@@ -315,7 +319,8 @@ class _Repository
   Future<CoachDecision?> loadLatest() async => null;
 
   @override
-  Future<CoachDecision> generate() => throw StateError('not needed');
+  Future<CoachDecision> generate({String? localDate}) =>
+      throw StateError('not needed');
 
   @override
   Future<Map<String, dynamic>> loadUsage() async => const {};

@@ -29,9 +29,16 @@ review. Tracend remains a working brand pending trademark and App Store clearanc
 
 - HealthKit summaries, workout references and source metadata;
 - workout performance, check-ins, pain, hunger, mood, and notes;
+- same-day readiness adjustments (`day_adjustments`: the answer, its reasons and the sleep and recovery
+  values the rules read);
+- pain checks (`pain_reports`: the area, severity, pattern, the red-flag answers and the outcome) and
+  the joint states and swaps computed from them;
 - nutrition logs, meal photos, allergies, and dietary constraints;
 - body measurements, progress photos, and physique analyses;
 - goals, limitations, plan decisions, and coaching history;
+- the account's optional country (`user_accounts.country_code`; set only through
+  `set_my_country_v1`, exported and deleted with the account; it picks the regional library sources
+  inside the database and is not sent to an AI provider, which receives only the chunks chosen);
 - authentication tokens and encrypted contact information; and
 - account exports.
 
@@ -52,15 +59,18 @@ purpose limitation, retention control, and audit coverage.
   stands and in-house summaries in our own words, with their embeddings. Paid course material is
   never stored. The library holds no user data, so it is outside export and account deletion. It
   still sits in the `private` schema with forced RLS and no API grants, and only the service-role
-  `search_library_v2` reads it.
+  search functions (`search_library_v3`, and `search_library_v2` until the deployed build moves to
+  v3) read it. A Coach answer records only the library version it was shown
+  (`coach_messages.library_version`, 16 hex characters, no content). library-embed remembers the last
+  accepted worker secret by its SHA-256 for 5 minutes per isolate, never a refused one.
 
 Classification is inherited by derived data. A summary of health data remains restricted. A Coach
 question used as a library search query (or its `gte-small` embedding, computed by the
 `library-embed` Edge Function, which Coach chat calls with the worker secret and the question only) keeps the question's classification: it is used for that request only and is never
 written to the library or logged. Coach chat searches with it on every turn (E3); the query may
 carry the athlete's previous question's topic, built in the function and not stored. The search
-reads the athlete's account locale and time zone to pick regional sources (inside the security
-definer function; nothing leaves the database), and the chunks it returns go to the AI provider
+reads the athlete's chosen country (or, with none, the account locale and time zone) to pick
+regional sources (inside the security definer function; nothing leaves the database), and the chunks it returns go to the AI provider
 the athlete's notice names, like the rest of the Coach context.
 
 ## 3. Consent and Transparency
@@ -181,6 +191,19 @@ AI consent is enforced on the server, per purpose:
   a pgTAP test proves the recovery score does not move when nights are stored. Using them in a
   score is a later reviewed change that must update this section. The heart-rate profile informs
   rest, cardio and recovery talk; it never sets a load or a prescription (D9).
+
+- **Watch-workout suggestion and load signals (C4, D9).** No new metric is collected and no table is
+  added. `get_my_watch_workout_status_v1` (own data) returns, for the last three finished workouts,
+  how many sets were finished and how many had Watch heart rate; the app uses it to decide whether to
+  suggest starting a Watch workout, and keeps the athlete's answer ("Not now", "I don't use a Watch") in
+  the phone's preferences only. `get_workout_load_inputs_v1` (service role only; revoked from `anon`
+  and `authenticated`, pgTAP-checked) gives the training engine the finished workouts of the last 28
+  days with the rest and the per-set heart-rate summary of each tracked set: no load, repetitions,
+  reps in reserve, effort, notes or raw samples. The load signals worked out from it are not stored
+  and read by the Coach's plan context only as fixed sentences with no figure (a step "less certain",
+  "rest a little longer"); no heart-rate value, set summary or signal number reaches the AI provider, only
+  the conclusion in fixed words. That conclusion is derived from the same heart-rate summaries the
+  registered `heart_rate_profile` contributor already sends, so it adds no data category. They lower confidence and suggest a longer rest; they never set a load or a prescription (D9).
 
 ## 5. Photos and Media
 
@@ -363,6 +386,17 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
 - `meal-media-retention` validates a dedicated `RETENTION_WORKER_SECRET` (not JWT). Store the same
   generated value in Edge Function secrets and Supabase Vault; Cron reads Vault. Never place it in
   Flutter, shell history, logs, or committed files.
+  The worker compares the bearer value in constant time. It runs its stages (meal photos, expired
+  exports, orphan sweep, deletion receipts) one by one, so a failing stage does not stop the next;
+  one row whose result cannot be written back does not strand the rest of its batch; and a photo
+  claimed by a worker that stopped before finishing (`pending_deletion` for 30 minutes) is handed out
+  again (photos pending at the migration count as claimed then). Failures reach Sentry as codes and
+  counts only, never a key, path, URL or user id. The daily job `meal-media-retention-daily` (02:15
+  UTC) is created by migration and calls `private.meal_media_retention_kick()`, which posts only when
+  Vault holds both `meal_media_retention_url` (set by the deploy and hotfix workflows after the migrations; the step fails when
+  `retention_worker_secret` is missing from Vault, so a deploy cannot leave the job doing nothing) and
+  `retention_worker_secret` (set by the owner, the same value as the Edge secret); a local, CI or
+  restored database sends nothing.
 - `library-embed` (research library embeddings) validates a bearer secret that the database
   generates itself in Vault (`library_worker_secret`, created by `private.library_worker_secret()`);
   there is no Edge Function secret. The cron job is inert until the deploy workflow stores the
@@ -395,7 +429,12 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
 - Storage paths and policies are user/purpose bound.
 - Edge Functions validate the JWT and requested resource even when using secret/service-role access.
 - An RPC granted to `authenticated` that takes a target user id refuses any id but the caller's
-  unless the caller is the service role (`persist_coach_preference`).
+  unless the caller is the service role. None remains: `persist_coach_preference` is service role
+  only since 2026-10-31.
+- The first-generation onboarding approval and the fixture-meal functions are closed to the app
+  roles, and `user_accounts.onboarding_state` cannot be written by the signed-in role: approval
+  sets `completed` inside `respond_to_onboarding_proposal_v2` (which enforces the health check) and
+  the database moves `not_started` to `in_progress` with the first draft.
 - Tables in the `private` schema (invites, waitlist, AI budget limits, research library) are not
   exposed by the Data API and have no client grants.
 - Queue messages carry opaque resource IDs and workers reauthorize ownership and consent at
@@ -427,10 +466,24 @@ prompts; a report may carry the account ID and device and app details, never nam
 
 Audit events record access and changes using opaque IDs and action codes, not copies of sensitive
 content.
+`day_adjustment_answered` carries the kind, whether it was accepted, the band, the origin and the rules
+version only; the check-in, sleep and recovery values stay in the Restricted `day_adjustments` row.
+`pain_check_recorded` carries the source, the area and the outcome only: never the severity, the
+pattern or a red-flag answer. Neither widgets nor the Live Activity show a readiness adjustment,
+a pain check or a joint state. Logs and Sentry carry codes and counts, never a pain severity, area
+or red-flag answer; the Edge Functions and the database write none of them to a log, and the app's
+`beforeSend` and `beforeBreadcrumb` scrubber drops the `pain_*` and `joint_*` keys, the red-flag codes, areas,
+severities and routes from events and breadcrumbs (built in B5-2, tested in `test/sentry_scrubber_test.dart`). On
+the phone a pain report that cannot be sent waits per athlete in local storage (kept apart from other athletes and removed with the
+other local data when the account is deleted) and is sent again for at most a day, because the server records a pain report
+only for today or yesterday; the referral acknowledgements are kept per athlete the same way.
+The Coach context view `get_readiness_context_v1` returns band, kind, status, route and each joint's
+area, state and lasting flag only (service role); the red-flag codes behind a route and the
+severity are not in it.
 
 Local reminders are scheduled by iOS and use only the generic title `Tracend reminder` and body
 `Open Tracend when convenient.` Lock-screen content never names health, nutrition, workouts,
-photos, measurements, or coaching decisions, with two exceptions below (the rest Live Activity, and
+photos, measurements, or coaching decisions, with two exceptions below (the workout Live Activity, and
 the Lock Screen widgets, which show nothing until the athlete turns them on).
 The server stores toggles and coarse permission state, not delivery history or notification
 content. iOS stores only the local boolean choices and repairs missing pending requests after
@@ -449,21 +502,40 @@ its row, and when iOS has not been asked yet, turning it on first shows that tex
 only **Continue** leads to the iOS permission request. Off, **Not now** or a denied permission
 keeps the rest timer in the app only.
 
-**Exception: the rest Live Activity (owner decision, 2026-10-15).** During a workout rest, the
-Lock Screen and Dynamic Island Live Activity may show the exercise name and the next-set label
-(for example "Bench press · Next: Set 3 of Bench press") next to the countdown. Nothing else from
-the workout appears in it: never a load, reps, effort, reps left, heart rate or any health value,
-and never the workout's name. It is local to the phone (ActivityKit started by the app; no push,
-the Live Activity itself uses no App Group, and nothing is sent to the server or to Apple's push service), and the athlete removes it
-with iOS **Settings › Tracend › Live Activities**. Finishing, discarding or leaving the workout removes it at once. A rest that
-ran out or was skipped shows "Rest done" with the next set and a Done button (D1), and the app ends
-it two minutes after the rest's end while the app is on screen. ActivityKit has no timer of its own
-and no push is used, so only app code can dismiss it: with the app away it stays on the Lock Screen
-until the app next runs (the first second on screen, or the launch sweep) or a button on the card
-is pressed after those two minutes, which removes it instead of acting; failing all of those, iOS
-ends it at its own limit (8 hours after it started). It carries nothing beyond the exercise name
-and next-set label above, plus the set's position in the workout (exercise order and set number)
-that the Done button sends back. Sign-out, account deletion and a session Auth refused end it, and the next launch ends any finished one left behind.
+**Exception: the workout Live Activity (owner decision, 2026-10-15; extended from the rest to the set
+in progress by the owner's set-logging request of 2026-10-23, owner to confirm the wording).** While a workout is open, the Lock Screen and Dynamic Island Live Activity may show
+the exercise name and the set's position ("Set 2 of 4") with a **Log set** button; during a rest it
+shows the countdown, the exercise name and the next-set label (for example "Bench press · Next: Set 3
+of Bench press"). Nothing else from the workout appears in it: never effort, reps left, heart rate or
+any health value, and never the workout's name.
+
+- **The set's kg and reps are the athlete's choice and start off.** The target the logger pre-fills for
+  the set ("82.5 kg × 8") is on the card only while **Account › Widgets › Health numbers on the Lock
+  Screen** (D2's setting below, per athlete, device-only) is on. Off, the numbers never leave the app:
+  the card carries the exercise, the set's position and nothing else, and **Log set** still logs
+  exactly what the logger pre-fills. Turning the choice off removes the numbers from a card that is
+  showing at once (`hideNumbers` on the channel). Anyone holding a locked phone can read what the
+  card shows; the Account row says so.
+- **Local only.** ActivityKit started by the app; no push, the Live Activity itself uses no App Group,
+  and nothing is sent to the server or to Apple's push service. The athlete removes it with iOS
+  **Settings › Tracend › Live Activities**.
+- **Lifetime.** It appears when the workout opens (or a set is logged) and stays through the whole
+  workout, however long a set takes: when a rest ends the card turns into the next set by itself
+  (the system re-draws it at the rest's end), and the next logged set starts the next rest in place.
+  Finishing, discarding and leaving the workout (Save and leave) remove it at once. After the last
+  set it says "All sets logged" with **Open**, for two minutes. ActivityKit has no timer of its own
+  and no push is used, so only app code can dismiss it: with the app away it stays until the app
+  next runs, and a launch or a button press removes a card that is over (the all-sets-logged card two
+  minutes after it appeared, or any card the app has not moved for four hours, since a workout lasts
+  three at most); failing all of those, iOS ends it at its own limit (8 hours after it started). It
+  carries nothing beyond the exercise name, the labels, the set's position (exercise order, set number
+  and how many sets), whether the app can log the set, and the target while numbers are on. Sign-out,
+  account deletion and a session Auth refused end it, and the next launch ends any card that is over.
+- **Buttons act through the workout.** **Log set**, Skip and +30s run in the app's process (iOS 17
+  App Intents) and go to the open workout screen's command sink: logging is the in-app "Done set"
+  code, with the same draft, sync, set-timing, heart-rate and audit paths. **Open** and a tap on the
+  card open `tracend://workout`, which only brings the workout in progress forward (no data in the
+  link; with no workout started it opens nothing).
 
 **Exception: Today and Lock Screen widgets (chunk D2; owner approved 2026-10-18).** This is the second
 exception to the rule above, made because the D2 brief asks for Lock Screen widgets, and bounded by an
@@ -521,7 +593,7 @@ phone; the widgets never call the network and hold no token.
 Initial private-beta defaults:
 
 - account/profile/plans/logs/measurements/decisions: retained until user deletion or explicit record
-  deletion where supported;
+  deletion where supported; same-day readiness answers are retained like check-ins;
 - confirmed meal records: retained until user deletion; source meal image deleted after 30 days
   unless explicitly saved (in practice the upload sets a 7-day deadline and confirmation never
   extends it, so images go about 7 days after upload);
@@ -571,11 +643,44 @@ history.
 - The package contains user-readable JSON/CSV and media organized by purpose, with units,
   provenance, and timestamps. It includes the onboarding profile fields, `onboarding_generations`,
   `onboarding_questions`, `onboarding_screenings` (the pre-plan health check answers),
-  `health_history_months`, `ai_usage_events`, physique analyses and every
+  `health_history_months`, `day_adjustments` (the athlete's readiness answers),
+  `pain_reports` (the athlete's pain checks),
+  `ai_usage_events`, physique analyses and every
   set-timing column. `coach_facts` (what the athlete confirmed for Coach) and `coach_notes` (Coach's own
-  notes) are included. Known gap: the table list in `privacy-export` does not yet include Coach
-  threads and messages, `user_preferences`, nutrition schedules, HealthKit
-  workout references and reconciliations, or the feature-engine tables.
+  notes) are included, and so are the Coach conversation (`coach_threads` and `coach_messages`,
+  including threads the athlete asked Coach not to remember: they are the athlete's own words),
+  `coach_narrative_entries`, `coach_session_summaries`, `coach_context_snapshots`, `user_preferences`,
+  the nutrition schedules, HealthKit workout references and reconciliations, the feature-engine
+  tables (`daily_computed_metrics`, `metric_baseline_history`, `user_baselines`), and the athlete's own
+  export and deletion request rows. Rows tied to the account without a `user_id` are included too:
+  the sign-up invite the account claimed (`signup_invites`: address and dates only; the owner's
+  private note about the invitee is not the athlete's data) and the waitlist signup under the
+  account email (`waitlist_signups`, without its token hashes and referral link), read through
+  `export_linked_account_rows_v1`. A table is read in keyset pages of 1000 (rows after the last key,
+  in key order), so rows that appear or go while the export runs neither repeat nor skip a row, and
+  a server cap below the page size does not end a table early.
+- Left out of the package, each with a reason in `omittedColumns` / `exportExclusions` in
+  `privacy-export`: the `context` body of Coach context snapshots (a derived copy of exported
+  tables, up to about 40 KB per Coach turn; the snapshot's id, thread, trigger, date and checksum
+  stay), Coach message diagnostics (`search_vector`, `guard_faults`, `lookups`, `lookup_rounds`,
+  `library_version`), internal Storage paths and queue numbers on export and deletion requests,
+  `ai_budget_reservations` (internal spend ledger; the settled cost of each call is in
+  `ai_usage_events`) and `private.day_adjustment_metric_attempts` (a rate-limit counter with no
+  athlete content). A JSON value over 2000 characters appears once, in `data/all-data.json`, and the
+  CSV points to it. The package is built in memory, so an account whose rows pass 16 MiB of JSON or
+  whose media passes 32 MiB fails with the code `export_too_large` (recorded on the request) instead
+  of running the function out of memory: the budget is counted page by page while the tables are
+  read, the function answers 413 `export_too_large`, and the app says the data is too large to
+  prepare in the app (the app has no support address; it points to whoever invited the athlete).
+  A table with omitted columns selects an explicit column list, so an omitted column such as a
+  snapshot's `context` is never downloaded; a test fails when the list drifts from the migrations. Meal photos that retention is deleting, or that are already
+  gone from Storage, are listed under `skipped_media`. A Deno test reads the migrations and fails
+  when a table with a `user_id` is in neither the export list nor the exclusion list, when a table
+  has no unique key to page by, or when a column that points at the account (or is named `*_by`)
+  has no line saying how its rows reach the export.
+- An export stuck in `processing` is claimed again after 15 minutes, so it never blocks the next
+  request. A `ready` export that has expired or used its three downloads is marked expired when the
+  athlete asks for a new one, and a fresh export is queued in its place.
 - It is encrypted, delivered through a short-lived authorization, and deleted within seven days.
 - Export jobs and downloads are audited without logging content.
 - The owner supplies an export-only password of at least 12 characters after reauthentication.
@@ -591,7 +696,9 @@ history.
 - Account deletion requires explicit confirmation and revokes active sessions promptly.
 - Meal images, progress photos, and export packages are removed before the Auth user: every object
   recorded for the account plus every object in the account's folders
-  (`list_account_storage_objects`), so an upload that never got a database row goes too. Auth
+  (`list_account_storage_objects`), so an upload that never got a database row goes too. Every list
+  is read in keyset pages of 1000 (after the last id, or name within a bucket), so an account with more files than the Data API returns at once leaves
+  none behind. Auth
   deletion cascades through user-owned PostgreSQL records and removes the invite and waitlist rows
   (section 7); a content-free completion receipt remains for 180 days.
 - Deleting from the app removes that athlete's local data (Apple Health sync state, an unsent

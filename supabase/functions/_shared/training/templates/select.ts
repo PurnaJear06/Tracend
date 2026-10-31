@@ -1,12 +1,14 @@
 // Chooses the week's template from the split the policy sets for the number of days, the goal,
 // the athlete's experience and the session length. Deterministic; no exercise is named here.
 import type { Goal } from "../../onboarding/answers.ts";
+import type { ExperienceLevel } from "../../onboarding/catalog.ts";
 import type { Split } from "../../onboarding/policy.ts";
 import { sourced } from "../standard/sources.ts";
+import { advancedDays } from "./advanced.ts";
 import { fullBodyDay, legsDay, lowerDay, pullDay, pushDay, upperDay } from "./days.ts";
 import type { LengthTier, Profile, TailProfile, TemplateDay, WeekTemplate } from "./types.ts";
 
-export type Experience = "beginner" | "intermediate";
+export type Experience = ExperienceLevel;
 
 export type TemplateInput = Readonly<{
   split: Split;
@@ -92,13 +94,14 @@ export function weekTemplate(input: TemplateInput, days: number): WeekTemplate {
   const profile: Profile = input.moderate && goalProfile === "strength" ? "general" : goalProfile;
   const lengthTier = lengthTierFor(input.sessionMinutes);
   // General fitness shares the compound-led accessories of the lean goals.
-  const built = daysFor(input.split, profile === "general" ? "lean" : profile, days);
+  const tail = profile === "general" ? "lean" : profile;
+  const built = daysFor(input.split, tail, days);
   return {
     id: `${input.split}-${days}-${profile}-${input.experience}-${lengthTier}`,
     split: input.split,
     profile,
     lengthTier,
-    days: built,
+    days: input.experience === "advanced" ? advancedDays(built, input.split, tail) : built,
     accessoryLimit: input.experience === "beginner" ? beginnerAccessoryLimit.value : null,
   };
 }

@@ -13,7 +13,7 @@ import { isSupportedSchema } from "../ai/json_schema.ts";
 import { anthropicSchema } from "../ai/adapters/anthropic.ts";
 import { evalProfiles } from "../../_evals/fixtures.ts";
 import { type CoachContributions, renderCoachContext } from "../coach_context/host.ts";
-import { createLibraryContributor } from "../library/retrieval.ts";
+import { createLibraryContributor, libraryNoMatchText } from "../library/retrieval.ts";
 import {
   buildCoachChatGatewayPrompt,
   chooseCoachChatRoute,
@@ -439,9 +439,11 @@ Deno.test("a DeepSeek route through the gateway restates the schema for JSON mod
 Deno.test("the first attempt's reservation is its own worst case, never clamped", () => {
   const haikuCeiling = coachChatReservationUsd(haiku(), [])!;
   const sonnetCeiling = coachChatReservationUsd(sonnet(), [])!;
-  // (128,000 + 16,000) / 1.5 = 96,000 prompt tokens written plus 4,096 output tokens, once.
-  assertEquals(haikuCeiling, 0.014048);
-  assertEquals(sonnetCeiling, 0.28096);
+  // (128,000 + 25,500) / 1.5 = 102,333 prompt tokens written plus 4,096 output tokens, once.
+  // Haiku's price card changes at 100,000 prompt tokens, so its ceiling steps up here (it is
+  // above that line with the contributors anyway: the registry's worst case is about 0.096).
+  assertEquals(haikuCeiling, 0.07419875);
+  assertEquals(sonnetCeiling, 0.296795);
   assert(sonnetCeiling <= coachChatReservationCapUsd);
 });
 
@@ -764,6 +766,12 @@ Deno.test("proposals are offered only when asked for, in the rules; the schema a
   assertStringIncludes(prompt(true), "# Proposing a change");
   assertStringIncludes(prompt(true), "proposal you can approve");
   assert(!prompt(false).includes("# Proposing a change"));
+  // A deload is one week whatever length is asked for (A8 builder, standard/deload.ts); the tool text says so.
+  assertStringIncludes(prompt(true), "A deload is always one week");
+  assert(
+    !prompt(true).includes("weeks (1 to 8) and exactly one of level"),
+    "no longer implies any length",
+  );
 });
 
 Deno.test("the model's intent is handed on in the engine's shape and is not part of the stored answer", async () => {
@@ -953,7 +961,8 @@ Deno.test("two bad citations in a row end in the data summary path", async () =>
 
 Deno.test("when retrieval found nothing no library citation is accepted", async () => {
   const none = await withLibrary("How many sets per week?", []);
-  assertEquals(none.volatile, "");
+  assertStringIncludes(none.volatile, libraryNoMatchText);
+  assertEquals(none.shown, {});
   const citing = answer({ evidence: [libraryEvidence("schoenfeld_2017_weekly_volume")] });
   const { result, sent } = await run((_, index) => claudeAnswer(index === 0 ? citing : answer()), {
     question: "How many sets per week?",

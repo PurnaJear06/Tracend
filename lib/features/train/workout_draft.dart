@@ -163,6 +163,10 @@ class WorkoutSetDraft {
     return effort == null ? null : (10 - effort).round().clamp(0, maxRir);
   }
 
+  /// Nothing was entered or done on this set.
+  bool get isUntouched =>
+      !completed && load.isEmpty && reps.isEmpty && rpe.isEmpty && !loadEdited;
+
   /// The athlete changed the load on this screen. An emptied load then stays
   /// empty (no added weight) instead of showing a suggestion again.
   bool loadEdited = false;
@@ -222,12 +226,119 @@ class ExerciseDraft {
   ExerciseDraft(this.exercise)
     : sets = [for (var i = 0; i < exercise.setCount; i++) WorkoutSetDraft()];
 
-  final PlannedExercise exercise;
+  /// The exercise the athlete is logging. It is the plan's, unless the
+  /// server's row says it was swapped for a gentler one for a sore joint (the
+  /// row's `performed_name` is then the swap's), or the athlete swapped it
+  /// during the workout.
+  PlannedExercise exercise;
   final List<WorkoutSetDraft> sets;
 
   /// `unknown`, `performed` or `skipped`, as the sync RPC accepts.
   String status = 'unknown';
   bool pain = false;
+
+  /// The server's id for this exercise's performance, once its row has been
+  /// read; a pain report can name it.
+  String? performanceId;
+
+  /// The athlete swapped this exercise during the workout and the server has
+  /// not confirmed it yet: a server row that still says "prescribed" must not
+  /// undo it.
+  bool swapPending = false;
+
+  /// Sets with entries were logged against this exercise's own identity (the
+  /// plan's) while the server's row names it differently. The entries are the
+  /// truth of what was done, so the identity is sent with them
+  /// ([swapFields]) and the server's row follows, instead of the workout being
+  /// stuck. Kept in the local draft; ends when a row agrees.
+  bool keepsOwnIdentity = false;
+
+  /// The exercise was left out today for a sore joint: the server made no
+  /// set rows for it, so nothing is logged against it and nothing is sent.
+  bool get leftOut => sets.isEmpty;
+
+  /// A set has something on it: it is never dropped or relabelled.
+  bool get hasEntries => sets.any((set) => !set.isUntouched);
+
+  /// The exercise's identity as the sync RPC records it (`performance_kind`,
+  /// `performed_name`, and the reason for a swap). A swap is logged as a
+  /// substituted performance for pain. An exercise that keeps its own plan
+  /// identity against a server row that says otherwise
+  /// ([keepsOwnIdentity]) is logged as prescribed, under the plan's name.
+  /// Otherwise nothing is sent: the server's row stands.
+  Map<String, Object> get swapFields {
+    if (exercise.swappedFrom != null) {
+      return {
+        'performance_kind': 'substituted',
+        'performed_name': exercise.name,
+        'substitution_reason': 'pain',
+      };
+    }
+    if (keepsOwnIdentity) {
+      return {
+        'performance_kind': 'prescribed',
+        'performed_name': exercise.name,
+      };
+    }
+    return const {};
+  }
+
+  /// Swaps this exercise for [name] (catalog [slug]) during the workout. The
+  /// swap carries no starting load. Only before any set has an entry.
+  bool swapForPain({required String name, String? slug}) {
+    if (hasEntries) return false;
+    exercise = exercise.swappedTo(name: name, slug: slug);
+    swapPending = true;
+    return true;
+  }
+
+  /// Takes the exercise's identity from a server row: `performance_kind` and
+  /// `performed_name`. A substituted row shows and logs the swap's name; a
+  /// prescribed one shows the plan's. What the athlete did on this phone wins
+  /// over a row that disagrees, and never the other way round: a swap not yet
+  /// confirmed ([swapPending]) is kept over a row that does not say it, and
+  /// sets with entries are never relabelled or dropped. The disagreement is
+  /// then resolved by sending this identity with the sets ([swapFields],
+  /// [keepsOwnIdentity]), which `sync_workout_draft` records, so the workout
+  /// can always be saved and finished.
+  void takeIdentity(Map<dynamic, dynamic> row) {
+    final id = row['performance_id'];
+    if (id is String) performanceId = id;
+    final kind = row['performance_kind'];
+    final name = row['performed_name'];
+    if (kind == 'substituted' && name is String && name.trim().isNotEmpty) {
+      if (exercise.name == name) {
+        swapPending = false;
+        keepsOwnIdentity = false;
+        return;
+      }
+      if (swapPending || keepsOwnIdentity) return;
+      if (hasEntries) {
+        if (exercise.swappedFrom != null) {
+          swapPending = true;
+        } else {
+          keepsOwnIdentity = true;
+        }
+        return;
+      }
+      final slug = row['exercise_slug'];
+      exercise = exercise.asPlanned.swappedTo(
+        name: name,
+        slug: slug is String ? slug : null,
+      );
+      return;
+    }
+    if (kind == 'prescribed') {
+      keepsOwnIdentity = false;
+      if (exercise.swappedFrom != null && !swapPending) {
+        if (hasEntries) {
+          swapPending = true;
+        } else {
+          exercise = exercise.asPlanned;
+        }
+      }
+    }
+  }
 
   bool get skipped => status == 'skipped';
 
@@ -253,11 +364,36 @@ class ExerciseDraft {
   Set<int> newBests(ExerciseHistory? history) =>
       newBestSetIndexes(history: history, sets: logged);
 
+  /// Gives the exercise [count] sets, the number of set rows the server holds
+  /// for it. The server's `start_workout` decides that number (it applies the
+  /// athlete's accepted same-day answer), so the phone follows it: untouched
+  /// sets at the end go, missing ones are added. A set that already has
+  /// something on it is never dropped.
+  void alignTo(int count) {
+    while (sets.length > count && sets.last.isUntouched) {
+      sets.removeLast();
+    }
+    while (sets.length < count) {
+      sets.add(WorkoutSetDraft());
+    }
+  }
+
   /// Reads the exercise from a saved draft or a server session.
   void restore(Map<String, dynamic> map) {
     status = map['status'] as String? ?? 'unknown';
     pain = map['pain_flag'] == true;
-    final rows = map['sets'] as List? ?? const [];
+    swapPending = false;
+    keepsOwnIdentity = false;
+    takeIdentity(map);
+    // A swap that was made on this phone and not confirmed yet stays pending
+    // until a server row says it.
+    swapPending = map['swap_pending'] == true && exercise.swappedFrom != null;
+    keepsOwnIdentity =
+        map['keep_identity'] == true && exercise.swappedFrom == null;
+    // A list of no rows is an exercise left out today: it has no sets.
+    final rows = map['sets'];
+    if (rows is! List) return;
+    alignTo(rows.length);
     for (var i = 0; i < rows.length && i < sets.length; i++) {
       final row = rows[i];
       if (row is Map) {

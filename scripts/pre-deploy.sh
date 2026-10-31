@@ -192,6 +192,15 @@ if echo "$STEPS" | grep -q "deno"; then
     die "restore privilege check tests failed"
   fi
 
+  info "retire functions script tests ..."
+  if bash "$repo_root/scripts/test-retire-functions.sh" 2>&1 | while IFS= read -r line; do
+    echo "    $line"
+  done; then
+    pass "retire functions tests passed"
+  else
+    die "retire functions tests failed"
+  fi
+
   if [[ "$FAILURES" -gt 0 ]]; then
     echo ""
     fail "$FAILURES Deno step(s) failed"

@@ -405,6 +405,14 @@ The logging screen computes these from the sets on the device; the server return
 - **Weight lifted.** `sum(load_kg × reps)` over completed sets with a logged load above 0, exactly
   as entered (a dumbbell load is not doubled). Bodyweight sets and `assistance` exercises are
   excluded. Rounded to 0.1 kg.
+- **Open workouts and the day.** A workout belongs to the day it started on. The elapsed time runs
+  from the session's own start, and an open session from an earlier day is never resumed as
+  today's: the server closes it as `abandoned` once its `local_date` is before the athlete's local
+  today and it started more than 10800 s ago (the cap `complete_workout_v2` applies), and the phone
+  first sends the sets and any saved finish of such a draft to its own session (the server accepts
+  both for a session it closed itself, never for one the athlete discarded), then drops the draft
+  instead of opening today's workout on it (`workoutLeftOnEarlierDay`). A same-day workout left open long enough still shows "Over 3 hours"
+  and saves as 3 hours; one that crossed midnight and is under 3 hours old resumes with its own time.
 - **Rest timer.** The end time is stored in the local workout draft, so a killed app resumes the
   same rest; ±15 s moves the end, skip ends it, and a rest that ended while the app was closed is
   cleared on resume.
@@ -525,6 +533,356 @@ stands. Missing reps in reserve does not block a target but sets `confidence` to
 is never an input (decision D9). The 14-day and 28-day thresholds, the three-session stall and the
 one-step lowering are Tracend's own choices, not research values, and wait for a coach's review.
 
+### Same-day Readiness Adjustment (B4, rules `readiness-v1`, 2026-10)
+
+Computed in the database (`private.readiness_assessment`, `private.day_adjustment_changes`,
+`private.day_adjustment_compute`, migration `20261023140024`); the numbers are mirrored with their
+sources in `_shared/training/readiness/rules.ts`, and a test keeps the two equal. It proposes one of
+three kinds for **today's scheduled workout only**; nothing in a plan version changes, and a model
+never proposes, applies or accepts it (decision D9; AI_SAFETY_SPEC section 6).
+
+```text
+inputs  today's current check-in (leads); sleep minutes (Apple Health, counted when 1 to 960;
+        0 means none recorded); the recovery score with its confidence and mode (computed
+        once for the day if missing; a failure leaves it missing)
+        NOT inputs: acute:chronic ratio, monotony, strain, sleeping heart rate
+
+points  sleep quality 1 / 2            2 / 1       energy 1 / 2           2 / 1
+        soreness 5 / 4                 2 / 1       mood 1                 1
+        pain 4-6                       2           pain 1-3               0 (a note)
+        sleep under 360 minutes        1           recovery under 35      1, only at medium or high
+                                                   confidence and only when the check-in has at
+                                                   least one point of its own (D9)
+
+gates   (first match wins)
+        check-in pain of 7 or more     band red, kind none, safety route pain_referral
+        no check-in                    band unknown, kind none (a low recovery score adds the
+                                       trigger "recovery_low" and asks for the check-in)
+        the athlete cannot train       band from the points, kind none
+        otherwise, by points P:
+          0     green  none
+          1     amber  hold_load      (none when no exercise would change)
+          2-3   amber  reduce_sets    (hold_load, then none, when no set can go)
+          4+    red    swap_to_easy_cardio
+
+confidence  high  = check-in + sleep + recovery at high confidence from a night
+            medium = check-in + sleep or a recovery at medium or high
+            low   = check-in alone;  unknown band has none
+```
+
+What each kind changes (per exercise of today's workout; the rest of the week is untouched):
+
+```text
+hold_load            where B3's target is add_load or add_reps: the last working load (for an
+                     assisted exercise the help; "body weight" or "unassisted" at 0) and the
+                     fewest reps of that session, clamped into the range; sets and effort unchanged
+reduce_sets          one set fewer on an exercise with 3 or more sets; effort one point lower,
+                     not below 6 and never above the plan's; hold_load's loads. Needs at least one
+                     set to go, else it falls back to hold_load
+swap_to_easy_cardio  every exercise to 0 sets; 20 to 30 minutes of easy cardio you can talk
+                     through (vigorous not allowed)
+```
+
+A load is never above the last logged one, sets never go up, and effort never rises. The sentences
+are fixed templates keyed by trigger and kind. Availability: `no_plan`, `rest_day`,
+`session_started`, `session_done`, `coach_adjusted` (a Coach next-session block already ends
+today). Only the athlete's own local today can be read or answered.
+
+**Answers.** The athlete accepts the proposed kind, or chooses any kind that would change today's
+session (`options`), with one tap, and can Undo until the session starts (at most 20 answers a day;
+Undo of a standing accepted answer is never refused). The sentence of a choice depends on the kind
+alone, not on whether the athlete has checked in. Each answer is stored with the kind the rules
+proposed at the time. An answer stands while it belongs to today's workout and the rules do not now
+ask for something stricter than what they asked then or than what the athlete answered (kind order:
+none, hold_load, reduce_sets, swap); otherwise the card asks again and names the answer it replaces
+with the reason, `check_in` (a different check-in) or `new_data` (sleep or scores that arrived
+since). A standing answer replaces only the kind, status, changes, cardio and origin; the band and
+reasons stay today's. A safety route wins over every stored answer and over a started or finished
+session: the payload then carries the referral and none of the old answer.
+`start_workout` takes the athlete's lock for the day (the one `respond_to_day_adjustment_v1`
+takes), then applies and links the current accepted answer for this workout when the start is for
+the athlete's own today, whatever the rules say now: it can only make the day easier, and asking
+again is the card's job. It builds the adjusted set counts for `reduce_sets`; for `hold_load` and
+the easy-cardio swap it links the answer and keeps the plan's sets (the plan stays usable); a start
+for another date gets the plan as written; the app pre-fills held loads. Today's scores are made
+when none exist and again when anything they read is newer than them (Apple Health data of the last
+35 days, today's check-in, a workout finished since), at most once in ten minutes per athlete and
+day, failed attempts included; a check-in saved after the last attempt always allows one at once.
+
+**B3 meets the adjustment.** An exercise that an accepted hold_load or reduce_sets answer lists, done
+in that session, is `adjusted`; its planned set count is the adjusted one (`sets_planned`). An
+exercise the answer left alone is judged as ever, however easy the rest of the session was. In the
+progression decision an adjusted session never counts towards lowering a load (rule 4, below the
+range, holds at the minimum instead of lowering; rule 6, a stall, needs three unadjusted
+sessions), and rule 5 compares the sets with `sets_planned`. A good performance on a lighter day still earns add reps or add load.
+A single poor workout never restructures training (PRD section 5.3).
+
+In-house numbers needing a coach's review after four weeks of the owner's data (O2): the points, the
+band cut-offs, the pain bands, 360 minutes and 35. Sources are in `rules.ts`: Saw 2016 (the check-in
+leads), Craven 2022 (six hours), Hickmott 2022 (easing back on a poor day), Bell 2023 (fewer sets is
+the way to cut volume), ACSM 2011 and WHO 2020 (the cardio dose), Impellizzeri 2020 (why the load
+ratio is not used).
+
+### Pain Check, Red Flags and Joint Rules (B5-1, rules `pain-v1` and `joint-v1`, 2026-10)
+
+Computed in the database (`private.pain_outcome`, `private.joint_states`, `private.joint_swap`,
+`private.joint_changes`, `private.day_adjustment_compute`, migration `20261024060025`); the numbers
+are mirrored with their sources in `_shared/training/joints/rules.ts`, and a test keeps the two equal.
+No model reads or writes any of it. Nothing here diagnoses a condition or prescribes rehab: the rules
+send the athlete to a doctor or physio, ease today's session around a sore joint, and say nothing else.
+
+**The outcome of one report.** A report holds an area (`knee`, `back`, `shoulder`, `other`), a
+severity 0 to 10, a pattern (`movement` or `rest`, stored and not scored), the red-flag answers (a
+list; empty means "none of these"; null means the question was not asked: an older build, a
+follow-up, or a workout check that asked severity only) and whether the athlete says a clinician has
+cleared the area. The outcome comes from the severity and the flags alone, first match:
+
+```text
+any urgent flag                       urgent            bladder_bowel_saddle, chest_or_breath
+any clinician_today flag, or 7+       clinician_today   numb_weak_limb, pop_or_sudden,
+                                                        cannot_bear_or_move, rapid_swelling,
+                                                        dislocated_or_cannot_lift
+any clinician flag                    clinician         locks_gives_way, fever_unwell, night_pain
+4 to 6                                modify
+1 to 3                                watch
+0                                     clear
+```
+
+A red flag routes out whatever the severity, even a 0. The three outcomes above `modify` hold the
+area. The database stores the outcome and a check constraint keeps it equal to the answers. Any flag
+in the list is accepted for any area (the app asks the ones that fit the area): a stored flag is never
+wrong to act on. Sources: Finucane 2020 and NICE NG59 for the back flags, Stiell 1997 for "cannot
+bear weight", the Coach's own symptom screen for chest, pop and swelling, fever and night pain from
+the spinal framework; the bands (4 and 7), the week and the fortnight are in-house (O8).
+
+**Joint states** (`private.joint_states`, `private.joint_states_detail`, per area from its reports up to the day asked about, newest
+first by when each was stored; a report's date only decides whether it has happened by then, so a flag
+entered late for an earlier day, after a clearance, is the newer fact and holds the area):
+
+```text
+held     the newest held-outcome report is not followed by a clearance: a report with
+         cleared_by_clinician, severity 3 or less, no red flag, and a held outcome somewhere before it.
+         A held area never lapses; only a clearance ends it, and a new symptom (severity above 3, or
+         a flag) holds it again
+limited  otherwise the newest report is at most 7 days old and has severity 4 to 6
+watch    the same with severity 1 to 3; also 7 days after a clearance, whatever severity it carried
+         (a later report of 0 ends it)
+none     no report, a report older than 7 days, or a newest report of 0
+persistent  the area is limited or held and either it has been held for 14 days or more, or its
+         current episode (the reports after the newest report of 0 or newest clearance) has two or
+         more reports of severity 4 or more, the first at least 14 days ago
+```
+
+The area `other` has states too (a flag there routes out) but never changes an exercise. Each held
+state carries `hold_outcome`, the strictest outcome among the reports of the hold in force (those after
+the newest clearance). The day gets a **safety route** `urgent`, `clinician_today` or `clinician`,
+stricter first, from three places: reports with a held outcome dated today, reports with a held
+outcome *stored* today (a phone's date can differ from the server's; only reports of an area still
+held count, so the athlete's own clearance recorded later the same day ends the route for that area,
+and a mere new check-in never withdraws a flag), and, on every later day, any
+area still held on an `urgent` or `clinician_today` outcome, until the athlete's own clearance (the
+copy says "until you've been seen"). A hold on a `clinician` outcome gives no route on later days;
+instead every day carries the line "Your <area> is on hold until you've had it checked." (or "The
+pain you reported elsewhere ...") even when no exercise changes (not repeated for an area whose
+exercises already carry its sentence). The route ranks with a check-in pain of 7 or more
+(`pain_referral`, between clinician_today and clinician) and the strictest wins. The day then has
+band red, kind none, no changes, no options, trigger codes `red_flag:<code>` of those reports (and
+`pain_severe` for a severity of 7 or more); it applies with no check-in, on a rest day and after the
+session started, and stands over every stored answer. The plan stays visible and startable: Tracend
+withholds advice, it does not block. A pain check is for the athlete's server today or yesterday: a
+phone a day ahead is stored under the server's today (a red flag is never lost), any other date is
+refused (22023). The day's cap of 40 reports counts only reports that do not route out, and a report
+that routes out is always stored.
+
+**What a joint state changes in today's session** (`private.joint_changes`, per exercise; the
+catalog's `knee_stress`, `back_stress`, `shoulder_stress` are the ratings; an exercise with no
+catalog link counts as moderate on every joint, so missing data lowers what is allowed):
+
+```text
+held     high or moderate   swap to a low-stress exercise (joint_swap), else leave it out (0 sets)
+limited  high               swap to a low or moderate one, else leave it out
+limited  moderate           limit: keep the exercise with a pain-free range cue, the last load held
+                            (hold_load's rule), effort at 7 or lower
+watch    high               limit
+anything else               as planned
+```
+
+The strictest action over the three joints wins (drop, then swap, then limit; then the more
+restricted state, the higher stress, knee before back before shoulder). A swap keeps sets, reps and
+effort and carries no starting load. `private.joint_swap` takes the first candidate in this order:
+the exercise's substitutes, then its regressions, then the same movement pattern, then a shared
+primary muscle; strictly gentler on the joint, never harsher on any joint, at most the state's
+ceiling (held low, limited moderate) and at most low (held, limited) or moderate (watch) on every
+other sore joint, within the athlete's equipment and level (a missing level counts as beginner), not
+a movement they avoid, not already in today's session or chosen for another swap; then the gentler,
+the same compound-ness, standard form before variation before regression, then slug. The cues
+(`range_note_code`: `knee_squat_depth`, `knee_lunge_depth`, `knee_extension_partial`,
+`back_hinge_range`, `back_squat_depth`, `back_core_neutral`, `back_press_seated`,
+`shoulder_press_height`, `shoulder_press_depth`, `shoulder_fly_stretch`, `shoulder_pull_range`,
+`shoulder_raise_height`, else `generic_pain_free`) are coaching cues in `rules.ts`, not rehab.
+
+Joint changes ride on the day adjustment (payload 1.1): every kind's changes carry them on the
+exercises a joint touches (the stricter value per exercise: fewer sets, lower effort; a swapped or
+left-out exercise carries no load or reps), and the new kind `joint_adjust` is offered alone on a day
+the readiness rules ask for nothing (also among `options`). The athlete answers it with the same one
+tap and Undo. It is not offered when the athlete said they cannot train. A stored answer stands only
+while the joint changes it carries (one key per exercise, joint, action and swap target) are exactly
+the ones the rules now ask for: a new report that changes any of them, a swap that a second sore joint
+makes unsafe included, makes the card ask again (`previous_answer.reason` `new_data`). `start_workout` leaves out an exercise the
+accepted answer drops (0 sets, the performance stays `unknown`, never inferred as skipped) whatever the
+kind, an easy-cardio answer included; the rest follows the kind. An exercise the answer swaps is
+created as a `substituted` performance named for the swap (`performed_name`, `substitution_reason`
+`pain`; the performance trigger keeps no catalog slug on a substitution, so the swap's slug stays in
+the answer's `swap_to_slug`), with the plan's sets and no load. `exercise_joint_options` carries, per
+exercise of today's session, the gentlest low-stress swap on each joint, meeting the same ceilings on
+the athlete's other sore joints as the day's swaps (`private.joint_caps`), so the in-workout pain chip
+can offer one offline. A limited exercise lists every cue it needs (`range_note_codes`, in joint
+order; `range_note_code` is the joint that decided).
+
+**Who is shown and given joint changes.** `get_my_day_adjustment_v1(local_date, supports_joint_changes
+default false)` and `respond_to_day_adjustment_v1(local_date, accept, chosen_kind default null,
+supports_joint_changes default false)` take a capability. A client that does not pass it (every
+build before the pain-check app) is shown the readiness kinds (`hold_load`, `reduce_sets`,
+`swap_to_easy_cardio`) without the merged joint changes, so it never previews a left-out or swapped
+exercise its accept would not give it; it still sees `joint_adjust` (the joint changes alone, as a note),
+`joint_states`, `exercise_joint_options` and the safety routes. What is accepted is what was shown: the
+answer stores `joint_capable`, and an answer from a client without the capability carries no joint
+change. `start_workout` (signature unchanged) applies the accepted answer as given, except that an
+answer that carries joint changes (a capable client's, or a `joint_adjust`) is applied only while
+those changes are exactly the ones the rules ask for now (`private.joint_change_keys`); otherwise the
+plan is built as written and the session is not linked to the answer. Joint states can only come from
+pain reports with an area, which only the new check-in keys and `record_pain_check_v1` write, so an
+athlete on an old build has none unless a newer build wrote them.
+
+On a day Coach already adjusted (`coach_adjusted`) the readiness kinds are still not offered, but the
+joint changes are: the exercises are the ones `start_workout` will create for that day, `joint_adjust`
+is offered alone (available, no unavailable reason) and applied at the start.
+
+**B3 meets joint accommodations.** An exercise that an accepted answer lists (hold_load, reduce_sets
+or joint_adjust), or that any answer limits for a joint, is adjusted when done under it: a poor
+performance there never lowers its load or counts as a stall. An easy-cardio answer that names no
+joint for the exercise leaves it judged as ever. An exercise left out for a joint (`sets_planned` 0)
+but trained anyway never earns `add_load` (it holds, reason `incomplete`).
+
+In-house numbers needing a coach's review before an external beta (O8, O9): the pain bands, the 7-day
+lapse, the 14-day line, the clearance ceiling of 3 (clearance is self-attested), the held-joint
+ceilings and every stress rating. Sources are in `rules.ts`: Finucane 2020, Stiell 1997, Keogh 2017
+(persistent pain goes to a professional), Schoenfeld 2020 (a shorter pain-free range), Haugen 2023 and
+Lopez 2021 (a gentler exercise keeps the stimulus).
+
+### Deloads (B5-3, rules `deload-v1`, 2026-10)
+
+A deload is one lighter week, proposed through the Coach proposal path (§10): a card, the athlete's
+approval, a new plan version, an audit event, an undo for seven days. Rules never apply one. The week is
+built by `_shared/coach_proposals/training.ts` from the sourced values in `_shared/training/standard/
+deload.ts`; when one could help is worked out in SQL (migration `20261024060125`:
+`private.deload_rules`, `private.deload_signals`, read through `get_my_training_guidance_v1` and, for the
+service role, `get_training_guidance_for_v1`) and a test keeps the TypeScript numbers equal to the
+migration. Heart rate is not an input (D9).
+
+```text
+the week   length                  exactly 1 week (a longer easing is the moderate-effort block)
+           sets                    max(1, ceil(sets x 0.5)) on every exercise
+           load                    held: start_load_kg is the load of the last working sets, or the
+                                   progression target's load when that is gentler (lower; for an
+                                   assisted exercise, more help). Never the target's step up.
+                                   Exercises with no logged load keep the plan's own.
+           effort                  min(target RPE, 7); no target becomes 7
+           exercises, days, rep ranges, rest   unchanged
+           after                   the regular plan returns the day after (A8 block end)
+
+reasons    performance_drop   at least 2 different exercises whose current B3 target is "lower" because
+                              of a stall or two sessions under the range (each needs 2 or 3 comparable
+                              sessions)
+           run_down           readiness band amber or red on at least 4 of the last 7 local days that
+                              have a check-in (the band each day had, from that day's check-in, sleep
+                              and stored recovery score; a past day is not rescored)
+           block_done         whole weeks since the later of the plan's first activation and the last
+                              deload's end >= clamp(plan block weeks, 4, 8), and completed sessions in
+                              the last 28 days >= 75% of sessions per week x 4
+
+suppressed no suggestion while a temporary block or deload runs (block_running); under
+           see_professional (screening); within 28 days of the end of the last deload
+           (recent_deload); within 14 days of a deload proposal the athlete declined, let run out, or
+           undid after approving it (declined_recently; the 14 days count from the day it was
+           undone); when fewer than 3 of the last 4 weeks had a completed session
+           (not_enough_training); no plan (no_plan); and on a day with a safety route
+           (safety_route), which the guidance reads from the day adjustment. A pending proposal is
+           withheld on a safety-route day too (no proposal_id), and cannot be approved on it (55000)
+status     running    a deload block is the active plan version (proposal_id, ends_on = its last day)
+           pending    an open, unexpired deload proposal built on the current plan version
+                      (proposal_id), unless screening, a safety route or another running block makes
+                      it unapprovable
+origin     proposal_origin (1.2): "tracend" when the open or running proposal carries the
+           DELOAD_SIGNALS evidence that only the rules' own suggestion (training-proposals) adds,
+           else "coach" (the athlete asked Coach); null with no proposal
+           suggested  at least one reason and nothing suppresses it
+           not_due    otherwise
+```
+
+Notes. The athlete can always ask for a deload; the asking is not gated (§10). An undone deload never ran
+and is not counted as the last one, but it holds new suggestions back for 14 days like a declined one; a block ended early ends on the day it was ended (the block-ended event's day) and stays ended that day; a block past its last day
+that the hourly job has not ended yet is not "running" and holds the plan (`block_running`). A deload
+block is recognised by `intensity_level: "deload"` in its stored proposal payload, or, for a block approved
+before that key existed, by the title "Deload until <date>". "Opt-in" for the block-end offer (owner
+decision O13) means the offer is only ever a suggestion the athlete accepts; no preference is stored.
+
+**B3 during and after a deload.** The week's sessions are marked `adjusted` (the B4 mechanism): they are
+never evidence for a stall or for lowering a load, in the week or after it. While the active plan version is
+a deload week, a B3 target never steps up: `add_load` becomes `hold` with reason `deload` at the last
+working load (the app prefills from the target before the plan's own load). The first session after the
+week reads as incomplete against the restored plan's full set count, so B3 holds the load for it.
+
+**A deload never overrides a stricter rule.** The week is an ordinary active plan version. The day's
+overlay (B4 and B5-1) is computed against it exactly as against any plan: a safety route still gives the
+day no training advice, a held or limited joint still swaps or drops its exercise, a poor night still takes
+a set off the deload week's sets, and no overlay ever raises a deload set or effort. The day adjustment
+takes the strictest rule per exercise.
+
+Sources (`deload.ts`): Bell 2023 (full text; a deload cuts volume by fewer sets, load may stay, it can be
+data-driven and fits fatigue regardless of the week and the end of a block), Coleman 2024 (a one-week
+deload), Saw 2016 (self-reported wellness tracks the training response). The numbers are in-house: the
+half, the cap of 7, the thresholds and the 28 days. Each carries its basis in the file. They need a coach's
+review before an external beta.
+
+### Cardio Dosing (B5-4, rules `cardio-v1`, 2026-10)
+
+A weekly cardio dose from the public health guidelines, the minutes the athlete has done, and what
+intensity is open today. Worked out in SQL (migrations `20261024060225` and the review fixes `20261024060325`:
+`private.cardio_rules`, `private.cardio_week`), carried by the training guidance 1.1 (`cardio_week`, `cardio_withheld`), with the
+sourced values in `_shared/training/standard/cardio.ts`. Heart rate may inform cardio dosing (D9): the
+easy ceiling is a share of heart-rate reserve that the app turns into beats per minute from the athlete's
+own profile, with the talk test as the plain-words rule. It never sets a lifting load and never picks an
+intensity by itself.
+
+```text
+target     150 minutes of moderate cardio a week (WHO 2020; ACSM 2011), every goal; fat_loss and
+           recomposition also show the upper figure 300 (stretch_max). A vigorous minute counts as 2.
+observed   Apple Health workouts of the last 7 days (today and the 6 before): cardio types only
+           (walking, running, cycling, hiking, elliptical, rowing, swimming, stairs, interval and mixed
+           cardio, jump rope, cardio dance, wheelchair walk and run paces, cross-country skiing,
+           paddle sports, social dance); strength, sports and other are not counted, steps never
+           are. A denied Apple Health workout permission reads as 0 minutes (the plugin returns no
+           workouts), not as missing: only missing summaries give a null figure. One workout counts for at most 180 minutes; overlapping workouts count once (their
+           union). Every counted minute is read as moderate (intensity_known false).
+missing    fewer than 5 of the 7 days with an Apple Health summary: done_min is null (the app asks the
+           athlete to connect Apple Health); a connected week with no cardio is 0, never "missing"
+today      vigorous_allowed only when the athlete has a cleared health-check row (no row is not
+           cleared for hard cardio), today's readiness band is green (no check-in, amber and red are
+           easy-only days), today's check-in does not say they cannot train, and no joint is held or
+           limited;
+           vigorous_sessions_max is 2 (0 under moderate_until_cleared). The easy ceiling is 60% of
+           heart-rate reserve (the top of the Easy zone); easy cardio on a swap day is 20 to 30
+           minutes, the same dose the readiness card quotes.
+withheld   no dose on a day with a safety route, and none under see_professional
+           (cardio_withheld: safety_route or screening)
+```
+
+Sources (`cardio.ts`): WHO 2020 and ACSM 2011 for the dose and the intensity classes, Schumann 2022 for the
+three-hour gap between hard cardio and lifting when explosive strength matters, Riebe 2015 for moderate
+effort as the default under a screening flag. The goal mapping, the cap of two hard sessions, the 180-minute
+cap, the 5-of-7-days rule and the workout list are in-house (O11).
+
 ### Literature
 
 - Gabbett, T.J. (2016). The training-injury prevention paradox. *Br J Sports Med* 50(5), 273–280.
@@ -566,6 +924,34 @@ sets a load or a prescription (D9). Sleeping heart rate is **not** an input (D10
   to 1 hour, dated by the day they end, at least 3 hours asleep, awake time removed): the median of
   readings asleep, the lowest mean of any 10-minute slot holding at least 2 readings (a night with none has no row), readings, minutes asleep and coverage of
   10-minute slots. A night is stored only with at least 20 readings and 50% coverage. No score uses it.
+
+### Heart-Rate Load Signals (C4, 2026-10)
+
+`supabase/functions/_shared/training/heart_rate/load_signals.ts`: arithmetic over the last 28 days of
+finished workouts (`get_workout_load_inputs_v1`, no load, repetitions or reps in reserve) and the
+heart-rate profile above. Heart rate informs rest, recovery and confidence; it never sets a load, a
+repetition target or a set count (D9), and no signal raises confidence. Sleeping heart rate is not an
+input (D10). The thresholds are Tracend's own choices, not research values, and wait for a coach's
+review. The output is only `engine: {confidence: none | lower, rest: none | allow_longer, reasons}`.
+Coach reads it in the plan context (AI_SAFETY_SPEC section 11.1): a fixed sentence on a step up
+(`add_load` or `add_reps`) when confidence is `lower`, a fixed rest sentence once per session when rest
+is `allow_longer`. The signals do not ask the athlete a question (B4 may add one later).
+
+- **Tracked set:** a `watch_workout` summary with coverage of at least 60% (the same line the
+  Watch-workout suggestion uses to count a tracked set).
+- **Start of set:** for tracked sets with a start heart rate and a rest of at least 30 seconds before
+  them (a shorter one is a set ticked during its own rest), the share of heart-rate reserve at the
+  moment the set began: `(start - resting) / (maximum - resting)`. Needs a resting heart rate and a
+  maximum with a reserve of at least 20 bpm (the profile's zones), at least 12 such sets in at least 2
+  workouts; otherwise it fires nothing. The middle (median) share at or above 50% of reserve (where the
+  Easy zone begins) is elevated. Elevated with a middle rest under 120 seconds is `rest_short` (rest
+  `allow_longer`; confidence unchanged, since a longer rest is the cure); elevated with a middle rest of
+  120 seconds or more is `slow_settling` (confidence `lower`). This is a fixed line, not a comparison with
+  the athlete's usual, so it is never worded "than usual".
+- **Recovery:** the profile's recovery state `slower` (a 60-second drop at least 3 bpm below the 28 days
+  before) is `recovery_slower` (confidence `lower`); it is a comparison with the athlete's own earlier
+  weeks and the only reason that may be worded "slower than usual".
+- A heart rate a medicine blunts (beta-blocker) reads low, which only removes a caution.
 
 ### Literature
 
@@ -911,20 +1297,21 @@ TDEE = BMR × daily-activity factor + training energy
   - estimated length = 8 min warm-up + Σ sets × (45 s + rest), within the athlete's minutes
     + max(5, 15%).
 - **Weekly sets per target muscle** (the catalog's first muscle): at most 12 for beginners and 20
-  for intermediates. ACSM 2026 gives about 10+ sets per muscle a week; Schoenfeld 2017.
+  for intermediate and advanced lifters. ACSM 2026 gives about 10+ sets per muscle a week;
+  Schoenfeld 2017.
 - **Coverage:** every week includes a squat or lunge, a hinge, a push and a pull. A pattern the
   athlete avoids is not required; a group with no pattern left that they can do is dropped.
 - **Movements to avoid:** squat, lunge, hinge, horizontal push, vertical push, horizontal pull,
   vertical pull. Every exercise with an avoided pattern is excluded.
 - **Prescription ranges:**
   - Reps 6–20, or 3–20 for strength (6–20 until a moderate-effort screening outcome clears).
-  - RPE 7–8.5 for beginners (RIR 2–3) and 7–9 for intermediates (6–7 until cleared).
+  - RPE 7–8.5 for beginners (RIR 2–3) and 7–9 for intermediate and advanced lifters (6–7 until
+    cleared).
   - Rest 60–180 s, or up to 240 s for strength.
   - Sets per exercise 1–5.
-- **Blocks:** 4–8 weeks before a review. The app repeats one weekly template, so the plan never
-  promises a deload or a different week; progression is adding reps or load within the ranges.
-  (Deloads in practice come about every 5–6 weeks, Sports Med Open 2024, and need a week-by-week
-  plan the app does not have yet.)
+- **Blocks:** 4–8 weeks before a review. The app repeats one weekly template, so the plan itself never
+  promises a deload or a different week; progression is adding reps or load within the ranges. A deload
+  is a separate, one-week block the athlete approves when the rules suggest one (§4 Deloads).
 - **Rules plan:** see "Templates and fractional volume" below. In short: the same limits, a
   template chosen by split, goal, experience and session length, prescriptions from the coaching
   standard, and weekly sets spread toward the standard's volume. It is validated before use;
@@ -933,6 +1320,35 @@ TDEE = BMR × daily-activity factor + training energy
   30–120 minutes × every screening outcome; its nutrition is valid and storable for 14,400
   combinations of body size, age, activity, goal, sex and schedule; and it is valid with any one
   movement avoided.
+
+### Week ahead and back-to-back muscles (2026-10-18)
+
+Code: `supabase/functions/_shared/training/schedule/` (`muscles.ts`, `week_ahead.ts`), the schedule
+resolution in `coach_context/contributors/training_plan.ts`; rule value
+`minimumDaysBetweenSessionsPerMuscle` in `training/standard/volume.ts`. Deterministic: the model
+explains the result and may offer a change as a proposal the athlete approves; it never decides it.
+
+- **Schedule.** The seven days from the athlete's coaching date (their own local date, not the
+  calendar week), one line each with the session and its muscles. The plan repeats weekly; after a
+  temporary block's last day the sessions are those of the plan the block replaced. Inside the
+  athlete's ISO week a session already finished (even early, as a swap) is not planned again: its
+  slot says when it was done. From next week on every session is planned again. Overlaps are
+  computed from the same resolved schedule.
+- **Undone sessions.** Sessions of earlier days this week that are still undone are stated as a
+  fact. One is made up today only when it is not tomorrow's own session (tomorrow covers that one)
+  and does not train a muscle tomorrow's session trains: the first undone session that is not
+  tomorrow's is the candidate; if it repeats tomorrow's muscles nothing is made up and the day says
+  so, with the muscles.
+- **Muscles of a session.** The catalog's primary muscles of each exercise, summed over its sets
+  (logged sets for a finished session, planned sets for the rest); a muscle counts at 2 direct sets,
+  the standard's weekly minimum (4) over its minimum sessions a week (2). The catalog's `shoulders`
+  group is split by the exercise's movement pattern: `rear_delts` work (face pulls, rear-delt flies)
+  is "rear delts", every other exercise listing shoulders is "front and side delts". Exercises
+  without catalog muscles are counted as unknown and said so.
+- **Overlap.** Two sessions, done or planned, on consecutive calendar dates (fewer days between
+  them than the standard's 1) that train a common muscle, where the later session is today or within
+  the next 2 days. A rest day between them ends the pair. Yesterday's finished session counts. The
+  data are dates, not times, so no hour count is used. No overlap, no line.
 
 ### Templates and fractional volume (B2, 2026-10)
 
@@ -947,7 +1363,7 @@ the template then depends on the goal, the experience and the session length.
 | --- | --- |
 | Days (split) | Full body A/B/C for 1–3 days; Upper A/B + Lower A/B for 4; Upper A, Lower A, Push, Pull, Legs for 5; Push, Pull, Legs, then Push 2, Pull 2, Legs 2 for 6 |
 | Goal | Strength: main lifts every session, two accessories at most. Muscle gain: shoulders, arms, calves and trunk after the lifts. Aesthetic: shoulders, rear delts and arms first. Fat loss and recomposition: compound-led, trunk first, few isolation exercises |
-| Experience | A beginner keeps at most 2 accessory exercises a session (in-house); only an intermediate is offered pull-ups (catalog level) |
+| Experience | A beginner keeps at most 2 accessory exercises a session (in-house); only an intermediate or advanced lifter is offered pull-ups (catalog level); an advanced lifter gets the advanced variant below |
 | Session length | Slots are in priority order (main, support, accessory); a session keeps as many from the top as its exercise limit (2 + minutes / 15) and set budget (minutes / 3) allow. Length also sets rest (below) |
 
 The plan names a template id (split, days, profile, experience, length) in the Deno tests; the
@@ -963,7 +1379,8 @@ the same there. A regression is never the variation.
 catalog muscles, and 0.5 toward each secondary muscle (catalog v2; Pelland 2026, fractional method).
 Weekly targets (indirect sets included): strength goals 6 (2 sessions × 3 sets, the standard's
 frequency and strength sets); other goals the growth level of 10, then, with spare session room, a
-stretch halfway to the experience's maximum (11 beginner, 15 intermediate); trunk 4 (the minimum),
+stretch halfway to the experience's maximum (11 beginner, 15 intermediate, 16 advanced from a growth
+level of 12); trunk 4 (the minimum),
 because every lift braces it. The rules plan starts every exercise at 2 sets, brings the main lifts
 to 3, then adds one set at a time where the weekly shortfall is largest (a main lift before an
 accessory when equal). An added set never passes the session set budget, the session length, the
@@ -983,7 +1400,7 @@ direct count is a hard limit. An exercise stops at 4 sets (3 for strength goals 
 | Hypertrophy compound rest | from 90 s | 150 s (120 s in short sessions) | 90 s in sessions of 45 minutes or less, otherwise 120 s; both inside the standard (Singer 2024: no clear gain beyond 90 s) and shorter than before, which leaves room for more sets |
 | Hypertrophy compound reps | beginner 8–12, intermediate 6–12 | 8–12 / 6–10 | the standard's ranges |
 | Isolation reps | 10–15 (strength: 8–12 beginner, 6–12 intermediate) | 10–15 | the standard's ranges |
-| Effort | reps in reserve 2–3 beginner, 1–3 intermediate | RPE 7–8.5 / 7–9 | compound lifts stop at the middle of the range (RPE 7.5 beginner, 8 intermediate), isolation at 2 reps left (RPE 8); the half point for short sleep still applies |
+| Effort | reps in reserve 2–3 beginner, 1–3 intermediate and advanced | RPE 7–8.5 / 7–9 | compound lifts stop at the middle of the range (RPE 7.5 beginner, 8 intermediate and advanced), isolation at 2 reps left (RPE 8); the half point for short sleep still applies |
 | Weekly sets | 4 minimum, 10 growth, 12/20 maximum | at most 12/20, no minimum | as above; the model path keeps the policy's direct-set limit |
 
 **Screening (Contract 8).** `PlanPolicies.screening` is optional; a missing outcome means `cleared`.
@@ -995,6 +1412,117 @@ the same cap. `see_professional` builds no plan: `buildRulesPlan`, `validRulesPl
 `validateOnboardingPlan` and `generateOnboardingProposal` throw `PlanBlockedByScreeningError` before
 any model call, and the caller answers with professional guidance (today's excluded path: the app
 stops at the eligibility step and nothing is built).
+
+### Advanced level (2026-10-23)
+
+Code: rule values in `training/standard/{prescription,volume,sources}.ts`, the week in
+`training/templates/advanced.ts`, exercise choice and prescription in `onboarding/rules_plan.ts`,
+the athlete's choice in `onboarding/answers.ts` and the onboarding Training step, and the four staple
+lifts in the catalog (`catalog.ts`, `catalog_v2.ts`, migration `20261023100050_advanced_level_catalog.sql`).
+Existing athletes keep their level; the level changes only when the athlete chooses it again in
+onboarding (a new plan version they approve) or Coach proposes and they approve a change.
+
+**Who is advanced.** The athlete, from three years of training. The Training step asks which fits
+better (intermediate or advanced) once "3–5 years" or "Over 5 years" is chosen; the server reads
+`experience: "advanced"` only with those years and otherwise reads intermediate (under a year stays
+beginner). ACSM 2009 calls an advanced lifter one with years of training; the three-year cut is
+in-house, because the answer bands are "1–2" and "3–5" years.
+
+**The numbers, and what each rests on.** A level with no source of its own uses the nearest cited value
+and says so.
+
+| Rule | Advanced | Intermediate (unchanged) | Source and note |
+| --- | --- | --- | --- |
+| Weekly sets, build-up level (indirect sets count 0.5) | 12 | 10 | Baz-Valle 2022: below 12 sets was its low-volume group, 12–20 its standard for trained lifters (at least a year of training; no study separates advanced lifters) |
+| Weekly sets, stretch with spare room | 16 (halfway from 12 to 20) | 15 | the halfway rule is in-house (`stretchTarget`) |
+| Weekly sets, maximum | 20 | 20 | Baz-Valle 2022 found no gain above 20 for the quadriceps or biceps; Pelland 2026: returns diminish. No source puts advanced lifters above 20 |
+| Strength weekly target | 6 | 6 | ACSM 2026 (2 sessions × 2–3 sets) |
+| Training days a week | 4–5 (a note when fewer) | 3–4 | ACSM 2009; Pelland 2026: frequency matters little for size once volume is counted |
+| Sessions per muscle | 2 or more | 2 or more | ACSM 2011/2026 |
+| Compound reps | strength 3–6, size 6–12 | same | ACSM 2009 gives intermediate and advanced lifters one recommendation (1–12 RM, eventual emphasis on 1–6 for strength and 6–12 for size); ACSM 2026: ≥ 80% 1RM for strength |
+| Heavy and light days | heavy takes the lower part of the compound range, light the upper | none | ACSM 2009 (periodized); Moesgaard 2022: undulating periodization gave trained lifters a small 1RM gain and no difference for size; ACSM 2026 finds no consistent periodization effect. The split point (lower half rounded down: 3–4 / 5–6, 6–9 / 10–12) is Tracend arithmetic on the cited range |
+| Isolation reps | strength 6–12, size 10–15 | same | ACSM 2009, Iversen 2021 |
+| Reps in reserve | 1–3 (compound mid-range, isolation 2) | 1–3 | Robinson 2024, ACSM 2026, Helms 2016; Refalo 2023 finds no gain from failure, so the range is not narrowed |
+| Rest | by goal and session length, as before | same | ACSM 2009, Singer 2024 |
+| Progression | double progression; one equipment step | same | ACSM 2009 (2–10%); no source sets a slower advanced rate, so none is invented |
+| Deload cadence | none | none | no cited cadence; Bell 2023 gives only the purpose of a deload and Coleman 2024 tested one week off in week 5 of 9 without a cadence. The plan has no deload week; a deload is suggested from the athlete's own data and approved as a one-week block (§4 Deloads) |
+
+**Heavy and light days (periodisation inside the block model).** The block stays six weeks and the app
+repeats one week, so the variation is inside the week. Every muscle meets a heavy and a light day:
+full body A heavy, B light, C the whole range; upper/lower: both heavy sessions, then both light;
+upper, lower, push, pull, legs: upper and lower heavy, the three others light; push/pull/legs twice:
+the first pass heavy, the second light. Only compound lifts take the part range; isolation work keeps
+its range. A heavy session's objective says so ("Heavy day: lower reps on the big lifts").
+
+**Specificity.** The sessions are the intermediate sessions plus, in non-strength goals, one more
+direct accessory where the session has room (below 8 slots): the first of a short list for that
+session type that it does not already train directly (biceps, triceps, calves, chest fly, hamstring
+curl, quad extension; no shoulder work, which presses and rows already carry past the standard's
+maximum when indirect sets are counted). The single-leg slot of the first lower session prefers the
+Bulgarian split squat, and the push day of the five-day split presses on an incline (`prefers` on
+a slot: the exercise comes after a focus muscle that still needs sets and only until the week has
+used it). The weighted pull-up and the close-grip bench press arrive through the normal rotation
+of a lift not yet used that week.
+
+**The staples.** `weighted-pull-up` (pull-up bar and dumbbells: a dumbbell held between the feet, load =
+added weight, step 2.5 kg, 0 kg added is a real value for progression), `close-grip-bench-press`,
+`incline-barbell-bench-press`, `bulgarian-split-squat`; all advanced level, so the plans of the other
+levels are unchanged (the 10,080-case digests in `catalog_plans_test.ts` are untouched). The
+conventional deadlift is `barbell-deadlift`. Joint stress is in-house: the weighted pull-up is
+shoulder `high` (the pull-up is `moderate`), the two bench variations keep the bench press's
+shoulder `high` (a narrower grip moves work to elbows and wrists, which are not rated, so no relief
+is claimed), the Bulgarian split squat is knee `high`. A swap into a harsher exercise is never
+offered; a swap away is.
+
+**No muscle loses to a staple.** Preferring a staple can displace a lift that trained a muscle
+(the weighted pull-up wins the vertical pull from the lat pulldown), and the higher advanced targets
+move sets between exercises. After building, `buildAdvancedPlan` compares the plan with the same
+athlete's intermediate plan: no muscle may end below the intermediate plan's weekly sets, capped at
+the growth level (10). If one would, the fewest staples that restore it are left out; if none does,
+all are left out; if the advanced targets alone still leave a muscle short, the plan keeps the
+intermediate week's exercises and set targets with the advanced prescription and heavy/light
+days. A sweep of 4,320 cases (5 goals x 6 day counts x 6 lengths x 4 equipment sets x 2 screening
+outcomes x 3 focus sets) is a permanent test: before the rule 206 plans had a muscle short (132 of
+them below the 10-set growth level where the intermediate twin met it), after it none do and 1,769
+of the 1,800 plans with the equipment keep a staple.
+
+**Progression with heavy and light days.** A lift planned more than once with different rep ranges
+(an advanced plan's bench on a heavy and on a light day) keeps one history per range in
+`private.next_session_targets`: only performances logged against a planned exercise with that range
+count, so a heavy 100 kg x 9 is never read as a light day's 100 kg x 10. A lift repeated with the
+same range, or planned once, keeps one shared history as before; a Deno test pins the redefinition
+as B3's function plus exactly the changed hunks. The weighted pull-up is flagged `added_load` in the
+catalog: its logged load is the weight added to the body, and no load and 0 both read as none added,
+so a set of bodyweight reps at the top of the range earns the first 2.5 kg step. Other exercises
+still read an empty or zero load as no load (a pull-up holds at the top of its range).
+
+Matching by range has one consequence on a level change. An athlete who moves from an intermediate
+plan (one range per lift) to an advanced plan has no target for a split lift's day until that day
+has been logged once under its own range: the earlier sets, logged in the other range, are not read
+as the new day's history. That day keeps the plan's prescription and is shown without a target.
+This is deliberate: missing data lowers confidence and is never filled from another day's sets. A
+next-session adjustment matches its target on the planned exercise id (`get_coach_proposal_inputs_v1`
+1.1 carries it), so a heavy day's target is never applied to the light day of the same lift, and a
+day without a target is adjusted from its planned load only.
+A plan rebuild (a change of training days, a goal or a setup) carries each exercise's start load
+the same way: a lift in one rep range carries by slug, a lift on a heavy and a light day carries
+each range's load only to the same lift in the same range, and otherwise starts without one.
+
+**Screening and safety.** Nothing about the screening gate changes: `moderate_until_cleared` caps
+effort at RPE 7, drops strength emphasis and uses hypertrophy reps (split into heavy and light days
+all the same); `see_professional` builds no plan; the avoided patterns, the joint-stress swaps and
+every policy limit apply to the new exercises as to any other. Advanced never relaxes a policy limit.
+
+**Measured** (the 7 equipment sets × 6 day counts × 5 goals × 5 lengths × 2 avoid × 3 focus sweep of
+`catalog_plans_test.ts`, extended with 120 minutes, 6,300 plans per level, rules plan, intermediate
+against advanced twin): sets per plan 52.2 → 53.2, exercises 18.3 → 18.5; weekly sets by muscle
+(indirect at half) back 11.5 → 11.7, biceps 10.9 → 11.3, quads 10.2 → 10.5, shoulders 14.3 → 14.6,
+triceps 12.4 → 12.7, chest 7.6 → 7.7, glutes 18.9 → 19.2. The growth targets rise (12/16 against
+10/15) but session length and the 8-exercise cap bind first: weekly sets rise 0% at 30 minutes, 0.8%
+at 45, 1.6% at 60 and 2.5% at 90 or more (a 90-minute session is already at the set budget of 30), and
+283 of the 6,300 advanced plans carry slightly fewer weekly sets than their intermediate twin (1 to
+3% in the cases inspected), because the staples change the mix of exercises. Chest remains the muscle the templates serve
+least in 60-minute sessions (two pressing slots), for both levels.
 
 ### Apple Health summary (2026-10)
 
@@ -1140,9 +1668,12 @@ the approval flow are in AI_SAFETY_SPEC §6 ("Coach proposals").
 - **Swap:** only a B1 catalog substitute of the exercise, owned equipment, an allowed movement, and
   no harsher than the original on the knee, back or shoulder; same sets, reps and effort; no
   starting load; weekly sets for the new target muscle stay inside the policy maximum.
-- **Deload:** half the sets of every exercise (rounded up, at least 1) at effort 7 or lower, for 1 to
-  8 weeks (an in-house choice in the range coaches use; B5 replaces it with the full deload rule).
-  **Moderate** caps effort at 7. A **strength** or **size** phase rebuilds the week for that goal
+- **Deload:** exactly one week (a longer length asked for is cut to one): half the sets of every
+  exercise (rounded up, at least 1), loads held where the last sets left them (never the target's
+  step up), effort 7 or lower (no target becomes 7), the same exercises, days and ranges; the stored
+  proposal marks the block `intensity_level: "deload"`. The rule values are in
+  `_shared/training/standard/deload.ts` (§4 Deloads), and the athlete may ask for a deload at any time.
+  **Moderate** caps effort at 7 for the length asked (1 to 8 weeks). A **strength** or **size** phase rebuilds the week for that goal
   for 1 to 8 weeks.
 - **Next session:** the next planned session (or today's, until it is done). Lighter: one set fewer
   on exercises with 3 or more sets, effort one point lower (not below 6), and the load one step

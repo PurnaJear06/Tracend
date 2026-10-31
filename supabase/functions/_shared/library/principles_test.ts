@@ -7,13 +7,26 @@ import {
   coachingPrinciplesContributor,
   coachingPrinciplesMaxChars,
   coachingPrinciplesMinChars,
+  withoutSourceIds,
 } from "./principles.ts";
 
 Deno.test("every source id the digest cites exists in the library", () => {
   const known = new Set(librarySources.map((source) => source.slug));
-  const cited = citedSourceKeys(coachingPrinciples.text);
+  const cited = citedSourceKeys(coachingPrinciples.authoredText);
   assert(cited.length >= 20, `digest cites only ${cited.length} sources`);
   for (const key of cited) assert(known.has(key), `unknown source id: ${key}`);
+});
+
+Deno.test("Coach sees the digest without source ids, which only retrieved excerpts make citable", () => {
+  assertEquals(citedSourceKeys(coachingPrinciples.text), []);
+  assert(!coachingPrinciples.text.includes("["), "no square brackets are left");
+  assert(!/ [.,;:]/.test(coachingPrinciples.text), "no space is left before punctuation");
+  assertEquals(
+    withoutSourceIds(
+      "Rest 1 to 2 minutes. [singer_2024_rest_intervals]\nNext [a_2020_x; b_2021_y].",
+    ),
+    "Rest 1 to 2 minutes.\nNext.",
+  );
 });
 
 Deno.test("the digest stays between 1,200 and 1,800 tokens (four characters a token)", () => {

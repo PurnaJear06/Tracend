@@ -206,6 +206,26 @@ export const athletes: Readonly<Record<string, OnboardingAnswers>> = {
     ],
     priorityMuscles: ["chest"],
   },
+  // Six years of structured lifting, slow progress on every lift: the advanced level.
+  "advanced-muscle-gain-gym-4d": {
+    ...base,
+    path: "experienced",
+    experience: "advanced",
+    goal: "muscle_gain",
+    trainingWeekdays: [1, 2, 4, 5],
+    sessionMinutes: 75,
+    currentPlan:
+      "Upper/lower four days, six-week blocks with a lighter week at the end; weighted pull-ups, close-grip bench, Bulgarian split squats",
+    trainingYears: "over_5",
+    trainingHistory: "Everything still moves, slowly; shoulders and calves lag behind",
+    currentLifts: [
+      { slug: "barbell-bench-press", loadKg: 110, reps: 5, repsLeft: 1 },
+      { slug: "barbell-back-squat", loadKg: 160, reps: 5, repsLeft: 2 },
+      { slug: "barbell-deadlift", loadKg: 200, reps: 3, repsLeft: 2 },
+    ],
+    priorityMuscles: ["shoulders", "calves"],
+    strongMuscles: ["back"],
+  },
   "experienced-fat-loss-kettlebell-3d": {
     ...base,
     path: "experienced",

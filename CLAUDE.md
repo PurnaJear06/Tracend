@@ -193,9 +193,9 @@ See `docs/CI_CD_DEPLOYMENT.md` for full design.
 - **Platform:** iOS only, owner's iPhone 12. No Android. `build ios --release --no-codesign`
   is the compilation gate.
 - **14 Edge Functions:** coach-chat, coach-decide, health-check, health-sync, meal-analyze,
-  meal-media-retention, onboarding-plan, onboarding-propose-plan (Phase-2 mock, kept for older
-  builds), physique-check (owner-only experiment, `PHYSIQUE_VISION_*`), privacy-delete-account,
-  privacy-export, and the website waitlist's waitlist-join, waitlist-confirm and
+  meal-media-retention, onboarding-plan, physique-check (owner-only experiment,
+  `PHYSIQUE_VISION_*`), privacy-delete-account, privacy-export, training-proposals (the rules'
+  deload suggestion, JWT), and the website waitlist's waitlist-join, waitlist-confirm and
   waitlist-unsubscribe (no session; `verify_jwt = false`, see `docs/handoff/website.md`).
 - **Website:** `site/` (Astro, static) on Cloudflare Pages at https://tracend.pages.dev. Use
   `./scripts/site.sh install | run dev | run build`. `deploy.yml` publishes it after the backend

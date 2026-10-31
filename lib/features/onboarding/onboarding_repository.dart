@@ -96,13 +96,13 @@ class OnboardingPlanInfeasible implements Exception {
   final List<String> change;
 }
 
-/// The proposal can no longer be answered: it expired, or a newer build
-/// replaced it. The athlete builds a fresh one from the same answers.
 /// The plan builder could not start (HTTP 503); nothing was saved or spent.
 class OnboardingPlanUnavailable implements Exception {
   const OnboardingPlanUnavailable();
 }
 
+/// The proposal can no longer be answered: it expired, or a newer build
+/// replaced it. The athlete builds a fresh one from the same answers.
 class OnboardingProposalStale implements Exception {
   const OnboardingProposalStale();
 }
@@ -317,6 +317,7 @@ class OnboardingProposal {
     required this.benefit,
     required this.downside,
     required this.confidence,
+    this.librarySources = const [],
   });
 
   final String id;
@@ -343,6 +344,10 @@ class OnboardingProposal {
   final String benefit;
   final String downside;
   final String confidence;
+
+  /// The research sources the plan cites: the label of each `library` item in
+  /// the proposal's evidence (the retrieved title and year, set by the server).
+  final List<String> librarySources;
 
   static List<String> _strings(Object? value) =>
       value is List ? value.whereType<String>().toList() : const [];
@@ -428,11 +433,29 @@ class OnboardingProposal {
       benefit: row['expected_benefit'] as String,
       downside: row['downside'] as String,
       confidence: row['confidence'] as String,
+      librarySources: [
+        for (final item in row['evidence'] as List? ?? const [])
+          if (item is Map &&
+              item['source'] == 'library' &&
+              item['label'] is String)
+            item['label'] as String,
+      ],
     );
   }
 }
 
-abstract interface class OnboardingRepository {
+/// The health check's record on the server, used by onboarding and by the
+/// Account screen that reopens the check.
+abstract interface class ScreeningRepository {
+  /// Records the health check and returns the server's outcome. Answering the
+  /// same again adds no record.
+  Future<ScreeningRecord> recordScreening(ScreeningAnswers answers);
+
+  /// The athlete's current screening on the server.
+  Future<StoredScreening> loadScreening();
+}
+
+abstract interface class OnboardingRepository implements ScreeningRepository {
   Future<bool> isOnboardingComplete();
   Future<OnboardingDraft?> loadDraft();
   Future<void> saveDraft({
@@ -445,13 +468,6 @@ abstract interface class OnboardingRepository {
   /// version is already granted. Approval writes the rest of the profile.
   Future<void> recordEligibilityAndConsent({required bool eligible});
   Future<void> saveGoal(String goal);
-
-  /// Records the pre-plan health check and returns the server's outcome.
-  /// Answering the same again adds no record.
-  Future<ScreeningRecord> recordScreening(ScreeningAnswers answers);
-
-  /// The athlete's current screening on the server.
-  Future<StoredScreening> loadScreening();
 
   /// Starts (or returns) the plan generation for the saved draft.
   /// Throws [OnboardingAnswersIncomplete] when answers are missing and
@@ -473,29 +489,42 @@ abstract interface class OnboardingRepository {
 }
 
 class SupabaseOnboardingRepository implements OnboardingRepository {
-  SupabaseOnboardingRepository(this._client);
+  SupabaseOnboardingRepository(
+    this._client, {
+    this.callTimeout = const Duration(seconds: 20),
+  });
 
   final SupabaseClient _client;
+
+  /// How long a call may take. One that never answers would leave the step
+  /// saving for good.
+  final Duration callTimeout;
+
+  Future<T> _limited<T>(Future<T> call) => call.timeout(callTimeout);
 
   String get _userId => _client.auth.currentUser!.id;
 
   @override
   Future<bool> isOnboardingComplete() async {
-    final row = await _client
-        .from('user_accounts')
-        .select('onboarding_state')
-        .eq('id', _userId)
-        .single();
+    final row = await _limited(
+      _client
+          .from('user_accounts')
+          .select('onboarding_state')
+          .eq('id', _userId)
+          .single(),
+    );
     return row['onboarding_state'] == 'completed';
   }
 
   @override
   Future<OnboardingDraft?> loadDraft() async {
-    final rows = await _client
-        .from('onboarding_drafts')
-        .select('path,current_section,payload')
-        .eq('user_id', _userId)
-        .limit(1);
+    final rows = await _limited(
+      _client
+          .from('onboarding_drafts')
+          .select('path,current_section,payload')
+          .eq('user_id', _userId)
+          .limit(1),
+    );
     if (rows.isEmpty) return null;
     final row = rows.first;
     return OnboardingDraft(
@@ -511,16 +540,15 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
     required String currentSection,
     required Map<String, dynamic> payload,
   }) async {
-    await _client.from('onboarding_drafts').upsert({
-      'user_id': _userId,
-      'path': path,
-      'current_section': currentSection,
-      'payload': payload,
-    });
-    await _client
-        .from('user_accounts')
-        .update({'onboarding_state': 'in_progress'})
-        .eq('id', _userId);
+    // The database moves the account to `in_progress` with the first draft.
+    await _limited(
+      _client.from('onboarding_drafts').upsert({
+        'user_id': _userId,
+        'path': path,
+        'current_section': currentSection,
+        'payload': payload,
+      }),
+    );
   }
 
   static const _legalNoticeVersion = '2026-07-01';
@@ -529,17 +557,21 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
   Future<void> recordEligibilityAndConsent({required bool eligible}) async {
     // Only the eligibility answer: training days, session length and
     // experience come from the approved plan, never from step-0 defaults.
-    await _client.from('user_profiles').upsert({
-      'user_id': _userId,
-      'adult_attested_at': DateTime.now().toUtc().toIso8601String(),
-      'eligible': eligible,
-    });
-    final records = await _client
-        .from('consent_records')
-        .select('consent_type,notice_version,action')
-        .eq('user_id', _userId)
-        .inFilter('consent_type', ['terms', 'privacy'])
-        .order('created_at', ascending: false);
+    await _limited(
+      _client.from('user_profiles').upsert({
+        'user_id': _userId,
+        'adult_attested_at': DateTime.now().toUtc().toIso8601String(),
+        'eligible': eligible,
+      }),
+    );
+    final records = await _limited(
+      _client
+          .from('consent_records')
+          .select('consent_type,notice_version,action')
+          .eq('user_id', _userId)
+          .inFilter('consent_type', ['terms', 'privacy'])
+          .order('created_at', ascending: false),
+    );
     bool granted(String type) {
       final newest = records.where((row) => row['consent_type'] == type);
       return newest.isNotEmpty &&
@@ -550,58 +582,69 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
     // Passing this step again adds no duplicate records.
     final missing = ['terms', 'privacy'].where((type) => !granted(type));
     if (missing.isEmpty) return;
-    await _client.from('consent_records').insert([
-      for (final type in missing)
-        {
-          'user_id': _userId,
-          'consent_type': type,
-          'notice_version': _legalNoticeVersion,
-          'action': 'granted',
-          'source': 'ios_app',
-        },
-    ]);
+    await _limited(
+      _client.from('consent_records').insert([
+        for (final type in missing)
+          {
+            'user_id': _userId,
+            'consent_type': type,
+            'notice_version': _legalNoticeVersion,
+            'action': 'granted',
+            'source': 'ios_app',
+          },
+      ]),
+    );
   }
 
   @override
   Future<void> saveGoal(String goal) async {
-    final existing = await _client
-        .from('user_goals')
-        .select('id')
-        .eq('user_id', _userId)
-        .eq('status', 'draft')
-        .limit(1);
-    if (existing.isEmpty) {
-      await _client.from('user_goals').insert({
-        'user_id': _userId,
-        'goal_type': goal,
-        'priority': 1,
-        'status': 'draft',
-      });
-    } else {
-      await _client
+    final existing = await _limited(
+      _client
           .from('user_goals')
-          .update({'goal_type': goal})
-          .eq('id', existing.first['id']);
+          .select('id')
+          .eq('user_id', _userId)
+          .eq('status', 'draft')
+          .limit(1),
+    );
+    if (existing.isEmpty) {
+      await _limited(
+        _client.from('user_goals').insert({
+          'user_id': _userId,
+          'goal_type': goal,
+          'priority': 1,
+          'status': 'draft',
+        }),
+      );
+    } else {
+      await _limited(
+        _client
+            .from('user_goals')
+            .update({'goal_type': goal})
+            .eq('id', existing.first['id']),
+      );
     }
   }
 
   @override
   Future<ScreeningRecord> recordScreening(ScreeningAnswers answers) async {
-    final result = await _client.rpc(
-      'record_screening_v1',
-      params: {
-        'exercises_regularly': answers.exercisesRegularly,
-        'known_disease': answers.knownCondition,
-        'symptoms': answers.symptoms,
-        'cleared_by_professional': answers.clearedByProfessional,
-      },
+    final result = await _limited(
+      _client.rpc(
+        'record_screening_v1',
+        params: {
+          'exercises_regularly': answers.exercisesRegularly,
+          'known_disease': answers.knownCondition,
+          'symptoms': answers.symptoms,
+          'cleared_by_professional': answers.clearedByProfessional,
+        },
+      ),
     );
     return ScreeningRecord.fromJson(result);
   }
 
   @override
-  Future<StoredScreening> loadScreening() async =>
-      StoredScreening.fromJson(await _client.rpc('get_my_screening_v1'));
+  Future<StoredScreening> loadScreening() async => StoredScreening.fromJson(
+    await _limited(_client.rpc('get_my_screening_v1')),
+  );
 
   @override
   Future<OnboardingQuestions> askQuestions() async {
@@ -667,18 +710,20 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
   @override
   Future<OnboardingGeneration?> loadGeneration() async =>
       OnboardingGeneration.fromJson(
-        await _client.rpc('get_my_onboarding_generation'),
+        await _limited(_client.rpc('get_my_onboarding_generation')),
       );
 
   @override
   Future<OnboardingProposal> loadProposal(String proposalId) async {
-    final row = await _client
-        .from('change_proposals')
-        .select(
-          'id,proposed_training,proposed_nutrition,rationale,expected_benefit,downside,confidence',
-        )
-        .eq('id', proposalId)
-        .single();
+    final row = await _limited(
+      _client
+          .from('change_proposals')
+          .select(
+            'id,proposed_training,proposed_nutrition,evidence,rationale,expected_benefit,downside,confidence',
+          )
+          .eq('id', proposalId)
+          .single(),
+    );
     return OnboardingProposal.fromRow(row);
   }
 

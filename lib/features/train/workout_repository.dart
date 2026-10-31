@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/muscle_groups.dart';
+import 'package:tracend/features/train/unfinished_workout.dart';
 
 /// What the next session's target does with last time's result.
 enum NextTargetAction {
@@ -93,6 +94,11 @@ class PlannedExercise {
     this.exerciseSlug,
     this.primaryMuscles = const [],
     this.nextTarget,
+    this.plannedSetCount,
+    this.loadHeld = false,
+    this.leftOut = false,
+    this.rangeNoteCodes = const [],
+    this.swappedFrom,
   });
   final int order;
   final String name;
@@ -118,6 +124,122 @@ class PlannedExercise {
   /// The next-session target from the sets logged (hub 1.7); null without
   /// logged sets and in every payload older than 1.7.
   final NextTarget? nextTarget;
+
+  /// The plan's set count when today's accepted adjustment made the session
+  /// lighter ([setCount] is then the lighter one); null otherwise.
+  final int? plannedSetCount;
+
+  /// Today's accepted adjustment holds last time's load and reps here, and
+  /// [nextTarget] is that held target.
+  final bool loadHeld;
+
+  /// Today's accepted adjustment leaves this exercise out for a sore joint:
+  /// it has no sets today and is never logged.
+  final bool leftOut;
+
+  /// The pain-free range cues (`range_note_code`s) that apply to this
+  /// exercise today, in the order the server gave them.
+  final List<String> rangeNoteCodes;
+
+  /// The exercise the plan has here when today's accepted adjustment swapped
+  /// it for a gentler one ([name] and [exerciseSlug] are then the swap's);
+  /// null when it was not swapped.
+  final PlannedExercise? swappedFrom;
+
+  PlannedExercise _copy({
+    String? name,
+    int? setCount,
+    num? targetRpe,
+    Object? targetLoadKg = _keep,
+    Object? exerciseSlug = _keep,
+    Object? nextTarget = _keep,
+    int? plannedSetCount,
+    bool? loadHeld,
+    bool? leftOut,
+    List<String>? rangeNoteCodes,
+    PlannedExercise? swappedFrom,
+  }) => PlannedExercise(
+    order: order,
+    name: name ?? this.name,
+    setCount: setCount ?? this.setCount,
+    repMin: repMin,
+    repMax: repMax,
+    targetRpe: targetRpe ?? this.targetRpe,
+    restSeconds: restSeconds,
+    notes: notes,
+    targetLoadKg: identical(targetLoadKg, _keep)
+        ? this.targetLoadKg
+        : targetLoadKg as num?,
+    exerciseSlug: identical(exerciseSlug, _keep)
+        ? this.exerciseSlug
+        : exerciseSlug as String?,
+    primaryMuscles: primaryMuscles,
+    nextTarget: identical(nextTarget, _keep)
+        ? this.nextTarget
+        : nextTarget as NextTarget?,
+    plannedSetCount: plannedSetCount ?? this.plannedSetCount,
+    loadHeld: loadHeld ?? this.loadHeld,
+    leftOut: leftOut ?? this.leftOut,
+    rangeNoteCodes: rangeNoteCodes ?? this.rangeNoteCodes,
+    swappedFrom: swappedFrom ?? this.swappedFrom,
+  );
+
+  static const Object _keep = Object();
+
+  /// This exercise as an accepted same-day adjustment leaves it: [setCount]
+  /// sets, a lower effort when [targetRpe] is given, and, with [hold], last
+  /// time's load and reps as the target. The plan itself is not changed.
+  PlannedExercise eased({
+    required int setCount,
+    num? targetRpe,
+    num? heldLoadKg,
+    int? heldReps,
+    bool hold = false,
+  }) => _copy(
+    setCount: setCount,
+    targetRpe: targetRpe,
+    nextTarget: hold
+        ? NextTarget(
+            action: NextTargetAction.hold,
+            reason: 'day_adjustment',
+            loadKg: heldLoadKg ?? nextTarget?.loadKg,
+            reps: heldReps ?? nextTarget?.reps ?? repMin,
+            sets: setCount,
+          )
+        : nextTarget,
+    plannedSetCount: setCount < this.setCount ? this.setCount : plannedSetCount,
+    loadHeld: hold || loadHeld,
+  );
+
+  /// This exercise under another [name]: what a finished session was
+  /// logged as, when the plan has since changed.
+  PlannedExercise renamed(String name) => _copy(name: name);
+
+  /// This exercise swapped for the gentler [name] (catalog [slug]) the
+  /// accepted adjustment chose. The swap keeps the sets, reps and effort and
+  /// carries no starting load: the athlete picks it.
+  PlannedExercise swappedTo({required String name, String? slug}) => _copy(
+    name: name,
+    exerciseSlug: slug,
+    targetLoadKg: null,
+    nextTarget: null,
+    loadHeld: false,
+    swappedFrom: swappedFrom ?? this,
+  );
+
+  /// The plan's exercise this one was swapped from, or itself.
+  PlannedExercise get asPlanned => swappedFrom ?? this;
+
+  /// This exercise left out today for a sore joint: no sets, never logged.
+  PlannedExercise leftOutToday() => _copy(
+    setCount: 0,
+    plannedSetCount: plannedSetCount ?? setCount,
+    leftOut: true,
+  );
+
+  /// This exercise with the pain-free range cues [codes] that apply today.
+  PlannedExercise withRangeNotes(List<String> codes) =>
+      _copy(rangeNoteCodes: List.unmodifiable(codes));
 
   /// The key `get_my_exercise_history` knows this exercise by: its catalog
   /// slug, or its name when it has none.
@@ -146,6 +268,19 @@ class PlannedWorkout {
   final int? weekday;
   final String warmUp;
   final String cooldownCardio;
+
+  /// This workout with [exercises] in place of its own.
+  PlannedWorkout withExercises(List<PlannedExercise> exercises) =>
+      PlannedWorkout(
+        id: id,
+        name: name,
+        objective: objective,
+        estimatedMinutes: estimatedMinutes,
+        exercises: exercises,
+        weekday: weekday,
+        warmUp: warmUp,
+        cooldownCardio: cooldownCardio,
+      );
 
   /// Parses a workout from `get_my_training_hub` or the daily brief's
   /// `today_workout`, which share one shape. [nextTargets] holds the hub's
@@ -269,6 +404,7 @@ class TrainingSessionSummary {
     required this.date,
     this.durationSeconds,
     this.workoutId,
+    this.currentWorkoutId,
     this.id,
     this.effort,
     this.completionSource,
@@ -281,6 +417,13 @@ class TrainingSessionSummary {
   /// Planned workout id from the hub (`recent_sessions[].workout_id`).
   /// Null on older payloads; the session row is then display-only.
   final String? workoutId;
+
+  /// The active plan version's copy of that workout, matched by name and
+  /// order (`recent_sessions[].current_workout_id`, hub 1.9); null when the
+  /// active plan has none, and on older payloads. A Coach change, a block or
+  /// a deload copies the workouts under new ids, so [workoutId] may belong to
+  /// an earlier version.
+  final String? currentWorkoutId;
 
   /// The session id (`recent_sessions[].id`).
   final String? id;
@@ -461,6 +604,7 @@ class TrainingHubData {
           date: DateTime.parse(row['local_date'] as String),
           durationSeconds: (row['duration_seconds'] as num?)?.toInt(),
           workoutId: row['workout_id'] as String?,
+          currentWorkoutId: row['current_workout_id'] as String?,
           id: row['id'] as String?,
           effort: row['effort'] as num?,
           completionSource: CompletionSource.fromKey(row['completion_source']),
@@ -558,6 +702,10 @@ class TrainingHubData {
     (d) => d.year == date.year && d.month == date.month && d.day == date.day,
   );
 
+  /// The workout planned for an ISO [weekday] (1 Monday to 7 Sunday), as the
+  /// server names it: a plan the server holds always has a weekday on every
+  /// workout. Only a plan with no backend (the fixture) can have none; its
+  /// lone workout is then available on any day.
   PlannedWorkout? workoutForWeekday(int weekday) {
     for (final workout in workouts) {
       if (workout.weekday == weekday) return workout;
@@ -565,8 +713,8 @@ class TrainingHubData {
     final hasAssignedWeekdays = workouts.any(
       (workout) => workout.weekday != null,
     );
-    if (!hasAssignedWeekdays) return workouts.isEmpty ? null : workouts.first;
-    return null;
+    if (hasAssignedWeekdays || workouts.length != 1) return null;
+    return workouts.first;
   }
 }
 
@@ -768,7 +916,8 @@ class SupabaseWorkoutRepository
         TrainingHubRepository,
         WorkoutRepairRepository,
         WorkoutReconciliationRepository,
-        HealthkitCandidateRepository {
+        HealthkitCandidateRepository,
+        UnfinishedWorkoutRepository {
   SupabaseWorkoutRepository(this._client, this._preferences);
   final SupabaseClient _client;
   final SharedPreferencesAsync _preferences;
@@ -876,6 +1025,128 @@ class SupabaseWorkoutRepository
   }
 
   @override
+  Future<UnfinishedWorkout?> loadUnfinishedWorkout() async {
+    // A discard queued offline goes first: the server then records it as the
+    // athlete's answer, and one that is still waiting hides its session.
+    final waiting = await _replayDiscards();
+    final value = await _client.rpc('get_my_unfinished_workout_v1');
+    if (value is! Map) return null;
+    final workout = UnfinishedWorkout.fromJson(value['workout']);
+    if (workout != null && waiting.contains(workout.sessionId)) return null;
+    return workout;
+  }
+
+  @override
+  Future<void> saveUnfinishedWorkout(
+    UnfinishedWorkout workout, {
+    required int sessionEffort,
+  }) async {
+    RangeError.checkValueInInterval(sessionEffort, 1, 10, 'sessionEffort');
+    // Sets and times that never reached the server go first: the draft is
+    // removed after the answer, so it must not hold anything the server lacks.
+    // When they cannot be sent nothing is answered and nothing is removed. A
+    // session that already refuses them (55000) was settled by an earlier try
+    // whose answer was lost; the answer below then replays or says it is gone.
+    try {
+      await _sendDraftOf(workout);
+    } on PostgrestException catch (e) {
+      if (e.code != '55000') rethrow;
+    }
+    await _answer(workout, {
+      'p_session_id': workout.sessionId,
+      'p_action': 'save',
+      'p_session_effort': sessionEffort,
+    });
+    AppBreadcrumbs.workout('Unfinished workout saved');
+    await _dropDraftOf(workout);
+  }
+
+  @override
+  Future<void> discardUnfinishedWorkout(UnfinishedWorkout workout) async {
+    await _answer(workout, {
+      'p_session_id': workout.sessionId,
+      'p_action': 'discard',
+    });
+    AppBreadcrumbs.workout('Unfinished workout discarded');
+    await _dropDraftOf(workout);
+  }
+
+  /// `resolve_unfinished_workout_v1`. Answers that say the workout can no
+  /// longer be answered become [UnfinishedWorkoutGone]: P0002 (past its seven
+  /// days, or not an unfinished workout any more), 55000 (it was discarded; the
+  /// phone's draft of it goes, since it can never be sent) and, for a discard,
+  /// 22023 (it was finished meanwhile).
+  Future<void> _answer(
+    UnfinishedWorkout workout,
+    Map<String, Object> params,
+  ) async {
+    try {
+      await _client.rpc('resolve_unfinished_workout_v1', params: params);
+    } on PostgrestException catch (e) {
+      final gone =
+          e.code == 'P0002' ||
+          e.code == '55000' ||
+          (params['p_action'] == 'discard' && e.code == '22023');
+      if (!gone) rethrow;
+      if (e.code == '55000') await _dropDraftOf(workout);
+      throw const UnfinishedWorkoutGone();
+    }
+  }
+
+  /// Sends the phone's draft of [workout] (its sets and times) to its
+  /// session, which takes them while it is closed as stale. Nothing is sent
+  /// without a readable draft of that very session; a failed send throws.
+  Future<void> _sendDraftOf(UnfinishedWorkout workout) async {
+    final saved = await loadDraft(workout.plannedWorkoutId);
+    if (saved == null) return;
+    final Map<String, dynamic> draft;
+    try {
+      draft = decodeDraft(saved);
+    } catch (error) {
+      debugPrint('Non-critical error: workout draft not read: $error');
+      return;
+    }
+    if (draft['session_id'] != workout.sessionId) return;
+    await syncDraft(
+      this,
+      workout.sessionId,
+      (draft['revision'] as num?)?.toInt() ?? 0,
+      serverDraftPayload(draft, workout.sessionId),
+      readRows: () async {
+        final value = await _client.rpc(
+          'get_my_workout_session',
+          params: {
+            'p_planned_workout_id': workout.plannedWorkoutId,
+            'p_local_date': workout.localDate.toIso8601String().substring(
+              0,
+              10,
+            ),
+          },
+        );
+        return value is Map && value['session_id'] == workout.sessionId
+            ? value['exercises']
+            : null;
+      },
+    );
+  }
+
+  /// This phone's draft and saved finish of an answered workout. Only the
+  /// draft that belongs to that session goes: opening the planned workout
+  /// again must not find it and send its sets into a session the server no
+  /// longer takes them for, and a draft of a newer session of the same
+  /// workout stays.
+  Future<void> _dropDraftOf(UnfinishedWorkout workout) async {
+    try {
+      final saved = await loadDraft(workout.plannedWorkoutId);
+      if (saved == null) return;
+      if (decodeDraft(saved)['session_id'] != workout.sessionId) return;
+      await clearDraft(workout.plannedWorkoutId);
+    } catch (error) {
+      debugPrint('Non-critical error: workout draft not removed: $error');
+    }
+  }
+
+  @override
   Future<PlannedWorkout> loadTodayWorkout() async {
     final weekday = DateTime.now().weekday;
     final rows = await _client
@@ -887,7 +1158,7 @@ class SupabaseWorkoutRepository
         )
         .eq('training_plan_versions.status', 'active')
         .eq('preferred_weekday', weekday)
-        .order('workout_order')
+        .order('workout_order', ascending: true)
         .limit(1);
     if (rows.isEmpty) {
       throw const FormatException('No approved workout is assigned today.');
@@ -1341,3 +1612,149 @@ abstract final class WorkoutLocalKeys {
 
 Map<String, dynamic> decodeDraft(String value) =>
     Map<String, dynamic>.from(jsonDecode(value) as Map);
+
+/// The keys of a saved draft that the server reads; the rest only this phone
+/// needs.
+const _serverDraftKeys = [
+  'workout_id',
+  'session_id',
+  'idempotency_key',
+  'revision',
+  'exercises',
+  'notes',
+];
+
+/// The five set keys the server may refuse when this phone's times are off.
+const _timingKeys = [
+  'started_at',
+  'completed_at',
+  'rest_before_seconds',
+  'rir',
+  'timing_source',
+];
+
+/// What the server reads of [draft], for session [sessionId].
+Map<String, dynamic> serverDraftPayload(
+  Map<String, dynamic> draft,
+  String sessionId,
+) => {
+  for (final key in _serverDraftKeys)
+    if (draft.containsKey(key)) key: draft[key],
+  'session_id': sessionId,
+};
+
+/// Reads the exercises of a session as `get_my_workout_session` gives them
+/// (each with its `order` and `sets` rows), or null when they cannot be read:
+/// offline, or a session the stale-workout rule closed, which that read no
+/// longer returns.
+typedef SessionRowsReader = Future<Object?> Function();
+
+/// Sends [payload] with `sync_workout_draft` and returns what was sent.
+///
+/// The server decides how many set rows an exercise has (`start_workout`
+/// applies the athlete's accepted same-day answer: fewer sets, or none for an
+/// exercise left out for a joint), and it refuses a set number it does not
+/// have. A saved draft that never read those rows (`rows_aligned: false`)
+/// can hold sets the server never made, so the rows are read first through
+/// [readRows] and the payload is made to fit them by [alignPayloadToRows].
+/// A set with something on it is never dropped; it stays in the draft and the
+/// server's refusal is the athlete's to see. When the server refuses the set
+/// times (22023, a phone clock that is off) the sets are sent again without
+/// them.
+Future<Map<String, dynamic>> syncDraft(
+  WorkoutRepository repository,
+  String sessionId,
+  int revision,
+  Map<String, dynamic> payload, {
+  SessionRowsReader? readRows,
+}) async {
+  Object? rows;
+  try {
+    rows = await readRows?.call();
+  } on Object catch (error) {
+    debugPrint('Non-critical error: session rows not read: $error');
+  }
+  final fitted = alignPayloadToRows(payload, rows);
+  try {
+    await repository.sync(sessionId, revision, fitted);
+    return fitted;
+  } on PostgrestException catch (e) {
+    if (e.code != '22023') rethrow;
+    final untimed = _withoutTiming(fitted);
+    await repository.sync(sessionId, revision, untimed);
+    return untimed;
+  }
+}
+
+/// A set of a draft payload with nothing on it: not done, and no load, reps or
+/// effort entered.
+bool _blankSet(Object? set) {
+  if (set is! Map) return false;
+  bool empty(Object? value) => value == null || '$value'.trim().isEmpty;
+  return set['completed'] != true &&
+      empty(set['load_kg']) &&
+      empty(set['repetitions']) &&
+      empty(set['rpe']);
+}
+
+/// [payload] with each exercise's sets made to fit the rows the server holds
+/// for it: trailing blank sets beyond the row count go (they say nothing the
+/// server lacks). With [rows] unreadable (null), every trailing blank set
+/// goes, which is safe for the same reason: the server's rows are never
+/// fewer than the sets that have something on them, or it would already have
+/// refused them. A set with entries is never dropped.
+Map<String, dynamic> alignPayloadToRows(
+  Map<String, dynamic> payload,
+  Object? rows,
+) {
+  final exercises = payload['exercises'];
+  if (exercises is! List) return payload;
+  final counts = <int, int>{
+    if (rows is List)
+      for (final row in rows)
+        if (row is Map && row['order'] is num && row['sets'] is List)
+          (row['order'] as num).toInt(): (row['sets'] as List).length,
+  };
+  return {
+    ...payload,
+    'exercises': [
+      for (final exercise in exercises)
+        if (exercise is Map && exercise['sets'] is List)
+          {
+            ...Map<String, dynamic>.from(exercise),
+            'sets': _fitSets(
+              List<Object?>.of(exercise['sets'] as List),
+              counts[(exercise['order'] as num?)?.toInt()],
+            ),
+          }
+        else
+          exercise,
+    ],
+  };
+}
+
+List<Object?> _fitSets(List<Object?> sets, int? rowCount) {
+  while (sets.isNotEmpty &&
+      _blankSet(sets.last) &&
+      (rowCount == null || sets.length > rowCount)) {
+    sets.removeLast();
+  }
+  return sets;
+}
+
+Map<String, dynamic> _withoutTiming(Map<String, dynamic> payload) => {
+  ...payload,
+  'exercises': [
+    for (final exercise in payload['exercises'] as List)
+      {
+        ...(exercise as Map<String, dynamic>),
+        'sets': [
+          for (final set in exercise['sets'] as List)
+            {
+              for (final entry in (set as Map<String, dynamic>).entries)
+                if (!_timingKeys.contains(entry.key)) entry.key: entry.value,
+            },
+        ],
+      },
+  ],
+};

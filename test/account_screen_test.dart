@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/app.dart';
@@ -218,6 +220,82 @@ void main() {
       },
     );
   }
+
+  testWidgets('a double tap on Sign out signs out once and leaves Account', (
+    tester,
+  ) async {
+    var calls = 0;
+    final answer = Completer<void>();
+    await _pushAccount(
+      tester,
+      onSignOut: (_) {
+        calls++;
+        return answer.future;
+      },
+    );
+    final button = find.widgetWithText(OutlinedButton, 'Sign out');
+    await tester.tap(button);
+    await tester.pump();
+    await tester.tap(button, warnIfMissed: false);
+    await tester.pump();
+    expect(calls, 1);
+    expect(tester.widget<OutlinedButton>(button).onPressed, isNull);
+
+    answer.complete();
+    await tester.pumpAndSettle();
+    // Back on the page below Account, never on an empty navigator.
+    expect(find.text('Open account'), findsOneWidget);
+    expect(find.byType(AccountScreen), findsNothing);
+  });
+
+  testWidgets('Account does not pop again when the gate already closed it', (
+    tester,
+  ) async {
+    await _pushAccount(
+      tester,
+      // The gate pops every pushed route when the session ends.
+      onSignOut: (context) async =>
+          Navigator.of(context).popUntil((route) => route.isFirst),
+    );
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Sign out'));
+    await tester.pumpAndSettle();
+    expect(find.text('Open account'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+Future<void> _pushAccount(
+  WidgetTester tester, {
+  required Future<void> Function(BuildContext context) onSignOut,
+}) async {
+  tester.view.physicalSize = const Size(390, 2400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: TracendTheme.dark,
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: Center(
+            child: TextButton(
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (inner) => AccountScreen(
+                    environment: _offline,
+                    onSignOut: () => onSignOut(inner),
+                  ),
+                ),
+              ),
+              child: const Text('Open account'),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('Open account'));
+  await tester.pumpAndSettle();
 }
 
 class _UsageCoach implements CoachRepository {
@@ -228,7 +306,8 @@ class _UsageCoach implements CoachRepository {
   @override
   Future<CoachDecision?> loadLatest() async => null;
   @override
-  Future<CoachDecision> generate() => throw StateError('not needed');
+  Future<CoachDecision> generate({String? localDate}) =>
+      throw StateError('not needed');
   @override
   Future<Map<String, dynamic>> loadUsage() async => usage;
 }

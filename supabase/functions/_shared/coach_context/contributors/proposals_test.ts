@@ -98,7 +98,37 @@ Deno.test("the contributor renders from its source and stays inside its budget",
   );
   assertEquals(contributor.id, "coach_proposals");
   assertEquals(contributor.slot, "volatile");
-  const text =
-    (await contributor.render({ userId: "u", question: "q", localDate: "2026-10-20" })) as string;
+  const rendered = await contributor.render({
+    userId: "u",
+    question: "q",
+    localDate: "2026-10-20",
+  });
+  const { text, trace } = rendered as { text: string; trace: Record<string, unknown> };
   assertEquals(text.length < proposalsContributorBudgetChars, true);
+  // The route reads how many proposals wait; no text travels with it.
+  assertEquals(trace, { waiting: 0 });
+});
+
+Deno.test("the contributor reports how many proposals wait for an answer", async () => {
+  const contributor = createProposalsContributor(() =>
+    Promise.resolve({
+      ...base,
+      proposals: ["pending", "pending", "declined"].map((status, i) => ({
+        kind: "nutrition_targets",
+        title: `Change ${i}`,
+        status,
+        created_on: "2026-10-18",
+        expires_at: "2026-10-23T00:00:00Z",
+        ends_on: null,
+      })),
+    })
+  );
+  const rendered = await contributor.render({
+    userId: "u",
+    question: "q",
+    localDate: "2026-10-20",
+  });
+  assertEquals((rendered as { trace: unknown }).trace, { waiting: 2 });
+  const none = createProposalsContributor(() => Promise.resolve({ ...base, proposals: [] }));
+  assertEquals(await none.render({ userId: "u", question: "q", localDate: "2026-10-20" }), null);
 });

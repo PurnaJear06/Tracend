@@ -38,6 +38,9 @@ The active training plan and nutrition targets always remain the last user-appro
 - units, dates, weight and measurement trends;
 - confirmed calorie and macro totals;
 - workout adherence, volume, progression, and performance deltas;
+- the same-day readiness adjustment: its band, triggers, kind and every number in it (B4);
+- when a deload could help and the week it would be (B5-3), and the weekly cardio dose, what counts
+  towards it and what intensity is open today (B5-4);
 - HealthKit baselines and deviations;
 - data freshness, sufficiency, and conflicts;
 - persistent-change eligibility;
@@ -140,7 +143,12 @@ Requirements:
 - Control values use documented enums.
 - Evidence codes must exist in the supplied snapshot or policy result.
 - User-visible text cannot introduce unsupported facts.
-- Same-day adjustments expire and never alter plan versions.
+- Same-day adjustments expire and never alter plan versions. The same-day readiness adjustment (B4)
+  is an overlay stored in `day_adjustments`, never a plan version; the athlete's answer changes only
+  today's session. The one exception is Coach's `next_session` proposal (A8), which writes a
+  one-day plan version because the athlete approved it in chat; it is to move onto the overlay so
+  one mechanism remains, and until then the readiness adjustment is not offered on a day Coach has
+  already adjusted.
 - Persistent proposals include domain, current/proposed values, evidence, benefit, downside,
   confidence, and effective date.
 - Unknown fields, invalid ranges, cross-domain actions, policy conflicts, and invalid references are
@@ -166,8 +174,73 @@ These conservative defaults are versioned policy, never prompt-only instructions
 May be allowed for a current recovery deviation, schedule limitation, or non-red-flag discomfort. It
 is limited to today's intensity, volume reduction, rest, or validated substitution.
 
+**Built (B4, rules `readiness-v1`; ALGORITHMS section 4, "Same-day readiness adjustment").** A
+deterministic function reads today's check-in, last night's sleep and the recovery score and
+proposes one of three things for today's scheduled workout only, never a plan version:
+
+| Kind | What changes today |
+|---|---|
+| `hold_load` | keep last time's loads and reps where the progression targets say to add |
+| `reduce_sets` | one set fewer on exercises with three or more sets, effort one point lower, last time's loads |
+| `swap_to_easy_cardio` | easy cardio of 20 to 30 minutes instead of the session |
+
+- The check-in leads. Sleep minutes add a point under six hours. The recovery score adds a point only
+  next to a point from the check-in and never adjusts a session by itself: a score built from
+  heart-derived signals informs the athlete and asks for a check-in, and the athlete decides (D9,
+  owner 2026-10-23). The athlete may choose any adjustment that would change today's session, with
+  one tap and Undo until the workout starts.
+- The acute:chronic workload ratio, sleeping heart rate and monotony are not inputs.
+- A pain of 7 or more gives no training change and a safety route (a referral to a doctor or
+  physio); it applies on a rest day too. Tracend withholds advice; it does not block the workout.
+- A bad day never lowers the load: the progression targets ignore an exercise that an accepted
+  adjustment lists, done under it, as evidence for lowering its load or for a stall, and count its
+  adjusted set number as the planned one. An exercise the adjustment left alone is judged as ever.
+- The athlete's accepted answer is applied when the workout starts, whatever the rules say by then
+  (it can only make the day easier); a safety route stands over every stored answer.
+- Model output never proposes, applies or accepts the adjustment. Its sentences are fixed templates
+  keyed by trigger and kind. No answer exists until the athlete taps; the answer, not the proposal,
+  is audited (`day_adjustment_answered`, codes only).
+- Missing data lowers confidence and is never invented. With no Apple Health the check-in alone
+  decides at low confidence; with no check-in the band is unknown and nothing is proposed.
+
 Acute/severe pain, chest pain, fainting, severe shortness of breath, neurological symptoms, or
 another configured red flag invokes escalation rather than workout advice.
+
+**Built (B5-1, rules `pain-v1` and `joint-v1`; ALGORITHMS section 4, "Pain check, red flags and joint
+rules").** The pain check and its routing are deterministic and stored before any model sees a
+question:
+
+- The athlete says where the pain is, how strong, when it hurts and whether any of ten red flags
+  applies (bladder or bowel trouble or groin numbness with back pain, chest pain or breathlessness,
+  numbness or weakness in a limb, a pop or sudden sharp pain, being unable to bear weight or move
+  it, quick swelling, a shoulder out of place, a knee that locks or gives way, fever, night pain).
+  The database works out the outcome from those answers alone: `urgent` (emergency care),
+  `clinician_today` (also a severity of 7 or more), `clinician`, then `modify` (4 to 6), `watch`
+  (1 to 3) and `clear`. A flag routes out whatever the severity.
+- A held outcome gives that day a safety route and no training change: no changes, no options, fixed
+  referral words (the emergency number named for `urgent`); it applies with no check-in, on a rest
+  day and after the session started, and stands over every stored answer. An `urgent` or
+  `clinician_today` hold keeps the route on every later day until the athlete's clearance; a
+  `clinician` hold adds a reminder line each day. The plan stays visible and startable: Tracend
+  withholds advice, it does not block (O12).
+- A held area is excluded from training on later days until the athlete says a clinician cleared it
+  (self-attested, O9), then it is on watch for seven days; a new symptom always holds it again.
+  Pain that has lasted two weeks adds the line to see a physio or doctor.
+- A limited or watched joint changes today's session in fixed ways: a gentler catalog exercise for
+  the same movement, or a shorter pain-free range with the last load held and effort at 7 or lower,
+  or leaving the exercise out. Nothing is rehab, nothing names a condition, and nothing here is a
+  model's output: the sentences are fixed templates and the exercises come from the catalog.
+- The Coach may not give sets, loads or exercises for a joint that is held, tell the athlete to train
+  through a pain of 4 or more in an exercise or through a red flag, or reassure that a red flag is
+  harmless (contract requests 2 and 3 in the program plan carry this to the reply guard and the A9
+  screen; until they land, Coach is told through the `readiness` context block built from
+  `get_readiness_context_v1`: the band, the card's answer state, the safety route and its strictness, and the
+  held, limited and watched areas, with fixed rules (never contradict the card; no training talk on a safety
+  route; nothing that loads a held area; the athlete decides and Coach never applies; a deload only as a
+  proposal). That is prompt text, not a reply check: the reply guard does not yet catch a held-area prescription).
+- Missing data lowers what is allowed and never raises it: an exercise with no catalog rating counts
+  as moderate on every joint; a report that did not ask the red-flag question is judged by severity
+  alone.
 
 ### Structural training change
 
@@ -263,6 +336,30 @@ is reported as ended so Coach suggests the next step as a new proposal).
 A diet break ends on its date but nutrition does not revert by itself: resuming a deficit is a new
 proposal the athlete approves, so no calorie change happens without a tap.
 
+### Deloads and cardio dosing (B5-3, B5-4)
+
+- **A deload is a persistent change, so it follows the proposal invariant.** Rules work out when one
+  could help (`private.deload_signals`, rules `deload-v1`; ALGORITHMS section 4, "Deloads") and the week
+  itself (exactly one week: half the sets, loads held, effort 7 or lower, the same exercises). Nothing
+  applies it: the athlete taps a card (or asks Coach in chat), a new plan version is written with an
+  audit event, the athlete can undo it for seven days, and the regular plan returns by itself.
+- **Reasons are the athlete's own data, never a heart signal.** Two lifts heading down, four amber or red
+  days of the last seven, or a finished block that was trained; no suggestion within 28 days of the last
+  deload, with too little training, while another block runs, under `see_professional`, or on a day with a
+  safety route. A deload is described as a widely used coaching practice with expert consensus on its
+  purpose, not a proven requirement (Bell 2023; Coleman 2024).
+- **A deload never overrides a stricter rule.** It is an ordinary plan version, and the day's overlay
+  (a safety route, a held or limited joint, a poor night) is computed on top of it exactly as on any plan;
+  the strictest rule per exercise wins. Coach may not use a deload to schedule training for a held joint.
+- **The cardio dose is a guideline figure, not a prescription from heart rate.** 150 minutes of moderate
+  cardio a week (up to 300 for fat loss and recomposition), counted from Apple Health workouts (all as
+  moderate, because the record has no intensity; none shown when Apple Health data is missing, never 0).
+  Hard cardio is open only to an athlete the health check has cleared, on a green readiness day with no
+  held or limited joint; under `moderate_until_cleared` it is never offered. No cardio dose is given on a
+  day with a safety route or under `see_professional`. Heart rate may set the easy ceiling and the
+  wording (a share of heart-rate reserve, the talk test); it never sets a lifting load and never
+  applies or pre-selects anything (D9, owner decision O1): the athlete decides.
+
 ### Initial plan
 
 Onboarding output identifies assumptions, missing information, confidence, and constraint
@@ -282,7 +379,8 @@ settings are in §10.4.
   - **Training:**
     - one workout on each chosen weekday, at most six;
     - a set and exercise budget per session length, and the session must fit its minutes;
-    - weekly sets per target muscle at most 12 for beginners and 20 for intermediates;
+    - weekly sets per target muscle at most 12 for beginners and 20 for intermediate and advanced
+      lifters;
     - each week includes a squat or lunge, a hinge, a push and a pull, except a group the
       athlete avoids entirely or cannot do with their equipment;
     - reps 6–20 (3–20 for strength), RPE 7–8.5 (beginners) or 7–9, rest 60–180 s (240 s for
@@ -337,7 +435,9 @@ settings are in §10.4.
     settles (at most 45 s in the app), so the two calls never spend the budget at once. Questions
     never block onboarding.
 - **No deload promise:** the app repeats one weekly template, so the prompt forbids promising a
-  deload or a different week, and the proposal no longer stores `deload_week`.
+  deload or a different week, and the proposal no longer stores `deload_week`. A deload exists
+  afterwards only as a one-week block the athlete approves (see "Deloads and cardio dosing" under
+  Coach proposals).
 - **When the model is not used:**
   - A plan that fails validation gets one targeted repair.
   - Anything else becomes the **rules plan**, built by the same policy without a model. That also
@@ -404,7 +504,8 @@ stool; dark or bloody urine after hard training; numbness and tingling in a limb
 sudden pain, a pop, tear or snap, a pain of 7/10 or more; purging, laxatives or diuretics for
 weight, binge-and-compensate, fasting for two or more days, a stated eating disorder; self-harm
 and suicidal statements. With pain of 7 or more on today's check-in (the policy's `escalate`
-outcome, `CHECK_IN_SAFETY_ESCALATION`), a question about training gets the referral too, and this
+outcome, `CHECK_IN_SAFETY_ESCALATION`; the same-day adjustment then returns the
+`pain_referral` safety route and no change), a question about training gets the referral too, and this
 is decided before the consent and budget gates from a cheap read of the newest check-in row (the
 athlete's local date from their timezone), so an athlete with no consent or no budget left still
 gets the referral; food,
@@ -640,6 +741,25 @@ the server enforces the same rule for every caller. `coach-chat` answers 403
 `ai_consent_required` without consent, and 503 `ai_consent_unavailable` when the check fails.
 `coach-decide` then uses the deterministic provider and `onboarding-plan` the rules plan, so no
 data reaches the AI provider.
+
+**New data and the accepted notice (2026-10-20).** Data reaches the AI only under an accepted notice
+that names it. The Coach notice (v5 and v6 list the same data) names: training plan and workout
+logs, check-ins, Apple Health summaries (sleep, heart rate, HRV, steps and workouts), meals and
+nutrition targets, body measurements, goals, focus muscles and preferences, and the messages the
+athlete sends the Coach. `_shared/ai_notice_coverage.ts` holds the verdict for the fields the
+lookups grew, and `coach-chat` passes the athlete's accepted notice version to the lookup runner:
+- **Not named, held back until a notice names them:** Apple Health breathing rate (`breathing_rate`)
+  and the athlete's free text in a workout: the session note, an exercise's note and the reason for
+  a swap (`workout_notes`). The rows leave them out and say they exist ("Withheld: ... Do not say
+  there are none"). To open one, the owner publishes a notice that names it, then sets the first
+  version number that does in `firstNoticeNaming` in the same change.
+- **Covered, not gated:** sleep stages (they are the Apple Health sleep summary), night and morning
+  HRV (HRV), workout minutes and the watch's workouts (workouts), proposals and daily decisions
+  (Tracend's own text about the plan, targets and goals the notice names), and Coach's own earlier
+  replies (the conversation memory has always sent them; they carry no new data).
+- **Already sent before this change, not named:** active energy (`health_daily_28d` in the athlete
+  file since v8; the Coach list does not name it, the onboarding sentence does). Not gated here
+  because it is not new; the next notice should name it.
 
 **Notices name a vendor.** All three tables have a `provider` column. The meal photo table always
 required one; the other two gained a nullable one in migration A1, and migration code 17 filled
@@ -928,7 +1048,33 @@ routes stay available by settings alone for two weeks after the cutover.
   direction of the trend. Questions and target suggestions ("Would 70 kg be a target you want to
   aim for?") are the reply the prompt requires and pass. A weight the athlete wrote in their own
   question and a weight directly governed by a limit word ("do not go below 60 kg") are not
-  claims. The rejection is
+  claims. A kg figure is a load only when ALL of these hold
+  (`goal_phase/weight_figures.ts`): (a) an exercise name or catalog slug is within two words before
+  it, in the same sentence or list item; (b) real rep or set notation is directly after it: "x 6"
+  (not followed by a time unit, so "x 2 weeks" is a duration), "for 8" (then the end, reps, sets or
+  punctuation), "3x5", "sets of 5", or "N kg per side" (with no scale or body word in the
+  sentence); (c) nothing before it in the sentence is about the person's weight (weigh, scale,
+  body weight, BMI, height, "your weight", "puts you at", or "you'll be / reach / hit / get to /
+  end up / sit / land"). Every other figure is a body weight and fails closed. There is no
+  exercise-word-alone branch and no bar-or-plate branch (plate math needs rep notation too),
+  nothing carries from one sentence to the next, the athlete's question carries nothing, and a
+  progression verb ("try", "add", "move up to", "go to", "pull") is never a load cue. Figures
+  written without the unit are read too: in a sentence about the person's weight, a bare number
+  from 30 to 300 straight after "you'll be at" or "weigh" ("You'll be at 50 by March"), and a
+  written number with kilos or kg ("fifty kilos"), are body weights. Stone ("8 stone", "7 st 12
+  lb"), "kilogrammes", markdown or a tilde around a number ("**50**", "~50"), full-width digits and
+  a letter O typed for a zero are read as the weights they are. Wording that puts a body weight
+  forward as a target or an end point with no look-ahead verb ("your ideal weight is 50 kg", "a
+  healthy finish line", "imagine yourself at", "many lifters your height sit at") and a duration
+  after the figure ("for 8 weeks", "x 12w") are checked against the floor too. The model is told to write
+  every load in the accepted form ("bench 45 kg x 6", "squat 100 kg for 5", "deadlift 140 kg
+  3x3"), and the repair for `weight_below_healthy_floor` and `projection_without_target` shows
+  it: "you'll move up to 45 kg next week" fails once and is rewritten as "bench 45 kg x 6 next
+  week". The floor rule's look-ahead wording includes "drop to", "dropping down to", "lose ... to",
+  "get down to", "aim for", "until", "stay at" and "hold at" beside the older cues. The reviews'
+  bypass probes are permanent tests (`goal_phase/weight_guard_adversarial_test.ts`). Both rules read only body
+  weights, so a lift's load below the floor (an overhead press at 55 kg for an athlete whose floor
+  is 57 kg) never sends the athlete to the data summary. The rejection is
   an ordinary validation failure (`weight_below_healthy_floor`, `projection_without_target`) that
   gets the one repair with a rule-specific instruction, then the existing unavailable path.
   Coach has no tools: it never says it changed, saved, updated, logged or set anything, and says
@@ -970,11 +1116,15 @@ routes stay available by settings alone for two weeks after the cutover.
   screening cap), `claimed_action` (Coach says it changed, saved, updated, scheduled or will do
   something, or offers to: it has no tools, so the repair says what the athlete can do in the app),
   `training_advice_on_pain_day` (any training prescription on a day of check-in pain of 7 or
-  more), `numbers_not_grounded` and `citation_not_retrieved` (a library source id the turn did not
-  show; §11.2). Every rule reads everything the athlete can see: the answer,
+  more), `numbers_not_grounded`, `citation_not_retrieved` (a library source id or a named study
+  the turn did not show; §11.2) and `repeats_previous_turn` (§12, "Repeats"). Every rule reads
+  everything the athlete can see: the answer,
   the follow-up chips, the missing-data notes, the evidence labels and the reasoning chain, in one
   pass. Sentences that warn against a thing ("never go below ...") or
-  describe the athlete's own past ("you lost 0.9 kg a week") are not advice. A reply that breaks
+  describe the athlete's own past ("you lost 0.9 kg a week") are not advice, nor is Coach's own
+  refusal that governs the figure, pace or effort in its clause ("I can't support 800 kcal a day",
+  "10 kg in 4 weeks isn't safe", "intervals are off the table"). The repair quotes the sentences
+  that broke a rule. A reply that breaks
   several rules is repaired once with all of them named.
 - **Numbers check.** Every figure the athlete would read as fact about themselves (kg, kcal, %, g,
   bpm, BMI, dates, minutes and hours above five, and any count above ten or decimal) must appear
@@ -991,7 +1141,20 @@ routes stay available by settings alone for two weeks after the cutover.
   amount word before it ("around 2000") it is a measurement and is checked. Not checked: list
   numbers, ordinals, clock times, real years, whole numbers
   up to ten with no measurement unit, and prescription numbers a coach gives as advice (sets up to
-  ten, reps up to thirty, rest seconds, RPE and RIR, `3x8`, whole minutes up to five). One repair
+  ten, reps up to thirty, rest seconds, RPE and RIR, `3x8`, whole minutes up to five, and the
+  length of a session item in a plan: a whole number of minutes from 10 to 90 in steps of five
+  that says how long to do a named activity, such as "30 min easy walk", "walk for 20-30
+  minutes", "walk 20 min after dinner" or "a 45-minute session"; the named activity is what makes
+  it advice, so a duration the wording gives to the athlete's past, records, habits or plan ("your
+  walk was 30 min", "you did a 30 minute walk yesterday", "your average walk is 30 min", "you
+  normally walk 45 minutes", "your plan is a 45-minute walk": was, did, last, logged, average,
+  usual, normally, currently, any "your", or "you" with no modal) is a claim about them and must be
+  in the data; only advice is exempt (an imperative, "you can/should/could ...", "try ..."), a duration with no activity beside it ("you slept 450
+  minutes"), a dose or recurring period ("walk 45 minutes a day", "every morning", "each
+  evening", "per session", "nightly", "three times a week", "every other day"), a figure that is
+  not a round number of minutes, and anything over 90 minutes are still checked). Loads in kg, calories,
+  body weights, percentages and every other measurement are never exempt: a load Coach did not get
+  from the athlete's logged or planned loads in the context is a figure it invented. One repair
   names the unsupported figures (in the repair instruction only: they are athlete content and
   never reach a log); a second failure ends in the labelled data summary (§12), like any other
   validation failure. The check ships enforcing, and every fault is logged as a finite rule name
@@ -1011,13 +1174,17 @@ routes stay available by settings alone for two weeks after the cutover.
   `plan_status` and the athlete file states there is no plan, the reason, the health-check outcome
   and date, and that Coach gives no plan-specific advice (sessions, loads, calorie or protein
   targets). General questions and next steps stay allowed.
-- **Second Coach route.** Questions that ask for analysis (progress, a trend or pace, a change to
-  the plan or a target, a nutrition amount; a domain noun alone is not enough) per
-  `coach_chat_provider_route.ts`, a rules classifier, use the route configured
+- **Second Coach route.** The route is chosen from the state of the athlete's records, never the
+  words of the question (`coach_chat_provider_route.ts`, deterministic): a health check that is not
+  cleared (or could not be read), pain on record (today's or yesterday's check-in, or an exercise
+  flagged for pain in the last 14 days; a pain signal that could not be read counts as pain, as an unreadable health check does), a Coach proposal waiting for the athlete's answer, or two
+  or more watch-outs about training decisions. A turn with any of them uses the route configured
   as `AI_COACH_CHAT_STRONG_*` when it is set, evaluated and its vendor is the one the athlete's
-  accepted notice names; every other question, and every question when it is unset, uses the
-  `coach_chat` route. The budget reservation, the price and the stored provenance follow the route
-  that answers.
+  accepted notice names; every other turn, and every turn when it is unset, uses the `coach_chat`
+  route. The contributors report the counts the choice reads, so it is made after they render; the
+  first budget place covers the dearer of the two routes. The budget, the price and the stored
+  provenance follow the route that answers. (Until 2026-10-20 a keyword list on the question chose
+  the route, so "check my training" stayed on the small model.)
 - Every coach-chat provider uses one shared coach persona (coaching approach, communication style,
   hard boundaries), followed by the null contract and the output accuracy/validation contract so the
   contract's rules take precedence.
@@ -1029,39 +1196,125 @@ records, for any day or period, when the question needs it. This is **not an age
 calling**. The mechanism is part of the JSON answer, so it works with any provider and the Claude
 adapter still sends no tools.
 
-- **A closed catalogue** (`_shared/coach_lookups/catalogue.ts`): ten lookups (`workouts`,
+- **A closed catalogue** (`_shared/coach_lookups/catalogue.ts`): eleven lookups (`workouts`,
   `exercise_history`, `meals`, `body`, `check_ins`, `recovery`, `plan_history`, `goals`,
-  `weekly_reviews`, `health_history`). Each is one `SECURITY DEFINER` RPC granted to
-  `service_role` only, read-only, with a `schema_version`, a row cap and a range clamp.
+  `weekly_reviews`, `health_history`, `past_messages`). Each is one `SECURITY DEFINER` RPC granted to
+  `service_role` only, read-only, with a `schema_version`, a row cap and a range clamp. The names
+  are the closed enum of the answer schema, whose bytes are fixed, so a newer kind of record is
+  reached through a filter on an existing lookup (`plan_history` with `schedule` or `proposals`,
+  `health_history` with `workouts`, `weekly_reviews` with `decisions`), never a new name.
+- **Coach investigates first (2026-10-20).** The always-on context is a summary, and the
+  **Coverage Brief** (`coverage_brief` contributor, gateway route only) says, for each kind of
+  record, what that summary shows, what a lookup adds, how much exists and how fresh it is, and the
+  neighbouring kinds to check with it. The neighbour table is static: the same for every athlete
+  and every question. The brief is shown even when the index read is slow or fails (the counts read "unavailable"). The instructions tell Coach to answer a question about the athlete only after
+  it has requested, in its first round, every lookup that could change the answer (the brief's
+  neighbours of the topic, the detail behind a summary, the days ahead for a question about today
+  or the week), and to skip lookups only for a greeting, thanks, general knowledge, a question about
+  the app and a follow-up the rows already in the conversation answer. The old rules "work only from
+  the prepared context", "do not look up what the context already holds" and "ask for the narrowest
+  range" are gone. The **watch-outs** (`watch_outs` contributor; it stays on the rollback route too) are facts
+  computed by code across kinds of record, at most 8 lines packed into what the contributor's
+  1,200-character budget leaves after its introduction (900 at most), shown when there are any: muscles shared on consecutive days, a session due today or tomorrow on a day with
+  a recovery score below 40, a sleep quality score below 50 or pain on the check-in, a pain flag on
+  an exercise that is planned again, sessions behind the plan this week, a session or exercise
+  skipped on each of its last two chances (only exercises and sessions of the plan in force), resting heart rate or HRV a spread or more from the
+  athlete's own usual (the recovery score's own z-scores), a weigh-in older than 14 days, an Apple
+  Health sync older than 2 days and a plan older than its block (measured from the plan's first version: a version bump does not reset it; a new plan or a temporary block starts a new count). Every threshold is one the product
+  already uses (the evidence-code table, the app's "than usual", the goal phase's stale reading, the
+  app's stale sync) and none is new; each line states its dates and figures, so the numbers check
+  grounds a reply on them. A watch-out is a verified fact, not an instruction: Coach addresses it or
+  says why it does not matter, and a change stays a proposal the athlete approves.
+- **Heart-rate caution in the plan block (C4, D9).** The `training_plan` contributor adds fixed
+  sentences, never a figure and never a changed target: on a step up (`add_load` or `add_reps`) "treat
+  this step as less certain", worded "slower recovery than usual" only when the recovery trend (the
+  athlete's last 28 days against the 28 before) says so, and "heart rate between sets suggests incomplete
+  recovery" when the start-of-set rule fired; once per session "resting a little longer between sets". The sentences are
+  not marked as records, so they ground nothing a reply could quote. Heart rate never sets a load or a
+  prescription, and the signals are read with a 1-second deadline of their own: a slow or failed read
+  leaves the plan block as it was and is logged as `load_signals` (ok, unavailable, failed, timeout).
 - **The model names a lookup, a range and a filter; nothing else.** The answer may carry
   `data_requests: [{lookup, from, to, filter}]` instead of a final answer. The athlete's id is bound
   by the Edge Function from the authenticated request when it builds the runner; it is never part of
   a request and never reaches the model's output.
 - **Validation before anything runs**: a known lookup, real dates, `from` not after `to`, at most
-  400 days, a range not wholly in the future (an end after the coaching date is cut to it), at most
-  4 requests a round, a required filter for `exercise_history`, filters of plain words only. A
-  refused request is an invalid answer (rules `lookup_request_invalid`,
-  `lookup_rounds_exceeded`): the one repair attempt must answer without lookups.
+  400 days, a range not wholly in the future (an end after the coaching date is cut to it; the one
+  exception is `plan_history` with the filter `schedule`, which reads the plan and may end up to 90
+  days after it), at most
+  8 requests a round, a required filter for `exercise_history`, filters of plain words only, and for
+  a lookup with modes (`plan_history`: `schedule`, `proposals`; `health_history`: `workouts`;
+  `weekly_reviews`: `decisions`) a filter that is empty or one of its modes: a near miss such as
+  `proposal` is refused and goes to the corrected round. A
+  request the catalogue refuses (`lookup_request_invalid`: a bad date, a missing filter, too many
+  requests) gets **one corrected round** per turn, if the time and a budget place allow: the model
+  is called again, told why, and may send a corrected list or answer. A second refusal, a request
+  after the rounds are used up (`lookup_rounds_exceeded`) and a correction that cannot be sent end
+  in the one repair attempt, which must answer without lookups.
 - **At most 2 lookup rounds.** After the rows return, the model is called again; after the second
-  round it is told no more lookups exist and must answer. A third request is refused.
+  round it is told no more lookups exist and must answer. A third request is refused. A round's
+  rows add at most 24,000 characters to the prompt (5,000 for each of up to four lookups, the total
+  shared out evenly beyond that).
 - **Budget.** Every extra call, lookup round or repair, reserves its own budget place at its own
   worst case before it is sent. When no place is available the model's interim sentence (it says
   what it is checking and has not seen) is the answer if it passes every guard; otherwise the turn
   ends in the labelled data summary.
 - **Order of guards.** The deterministic red-flag screen runs first and answers before any model
   call or lookup. Every guard (safe ranges, screening cap, claimed actions, the numbers check, the
-  goal-phase rules) runs on the final answer. The rows a lookup returned count as grounded for the
-  numbers check, because they are the athlete's own records; the model's own request text (its
-  filter) never does. The interim sentence is checked only against what the model had seen when it
+  goal-phase rules) runs on the final answer. What the numbers check is given is set by the next
+  item, and the model's own request text (its filter) never counts. The interim sentence is checked only against what the model had seen when it
   wrote it. A lookup call that fails, or a round that cannot start in the time left, also ends in
   the interim sentence, with a note of what was not checked.
+- **What grounds a figure (one rule, every path).** Every stored value Coach is shown is declared as
+  one of three kinds (`_shared/grounding.ts`), and a value that is not declared grounds nothing.
+  *Records* (the athlete's records, Apple Health, Tracend's calculations, what the athlete approved
+  or wrote) ground any figure, including one that states the athlete's own target ("your target is
+  ..."). *Proposal figures* (what Tracend built for a proposal: its title, reason, gain and cost, and
+  the targets a pending proposal would set) ground a figure but never one that states the athlete's
+  own target, because a proposal is not a target until the athlete approves it; Coach is told to
+  write them as the proposal's ("the proposal sets 2,350 kcal"). *Model text* (the reason on a plan
+  or a nutrition target, a daily decision's words, Coach's own earlier replies) is shown and grounds
+  nothing: a model's words do not show a figure is true, and a reason or decision written on an
+  earlier day states figures that were true that day. The plan's title and the names of its
+  workouts and exercises are records on every path, because the athlete approved the plan and the
+  app shows them; its rationale is model text on every path (`columnGrounding` declares each
+  stored column once, and the athlete file, the lookups and the contributors all read it). The
+  three places that show stored values declare their fields in the same way: the lookups field by
+  field (`lookupGrounding`; the rows that ground are rendered again from the payload cut down to
+  the declared fields, so an undeclared field cannot reach them), the athlete file key by key and,
+  for a key that mixes kinds, field by field (`providers/context_grounding.ts`), and the
+  contributors one by one (`coach_context/grounding.ts`). A contributor mixes fixed wording with
+  values (the windows it looks at, the thresholds it applies, the definition of a baseline, an id)
+  and states which are values: it writes each one through `record` while it builds its text
+  (`_shared/recorded_text.ts`), and hands the host the text without the marks and the marked
+  values as structured data (`RenderedBlock.records`, the way proposal figures were already
+  carried: `figure` marks what a pending proposal Tracend built would set, and a proposal's
+  title). Only those values ground; the fixed wording of a contributor grounds nothing, so "last 3"
+  in the brief or "(below 40)" in a watch-out cannot make a made-up "3 kg" or "40 ms" pass, and a
+  contributor that marks nothing grounds nothing. The principles digest is the exception by
+  design (`guidance`: its whole text is general guidance, never the athlete's target), and Coach's
+  notes ground only their dates. A lookup that shows a value declares it (`lookupGrounding`; a
+  rule Tracend applies, such as how many meals make a day complete, is a `thresholds` field: shown,
+  never a ground);
+  the rule that every field a renderer reads is declared is checked by reading the renderer's own
+  field reads, not by what a fixture happened to show. Each records contributor has a probe
+  (`contributor_grounding_test.ts`) that lists every number in its rendered text that is not a
+  record value, asserts none of them grounds a figure or the athlete's own data or target, and
+  asserts every marked value is a value of its fixture. Tests put
+  a change in every field each renderer shows, keeping its type, and fail a shown field that is
+  undeclared or that grounds differently from its declaration; they count the fields verified, not
+  walked, and read the keys the renderer touches. Durations stored in minutes are shown with the
+  hours and minutes the app shows and the hours to one decimal next to them (`341 min (5 h 41 min;
+  5.7 h)`), so "you slept 5.7 h" rests on a record: the numbers check never converts units.
 - **Rows are reference data**, dated and labelled; athlete-written text in them (check-in notes) is
   untrusted data. A lookup that fails is reported to the model as unreadable and it must say it
   could not check.
 - **Nothing is written, nothing runs in the background, no loop is open-ended.** Lookups exist
   only on the gateway route; today's DeepSeek path has none.
 - **Observability**: the lookup names and row counts, never the rows, are stored on the assistant
-  message (`coach_messages.lookups`), with the guard rules each attempt broke and any fallback code
+  message (`coach_messages.lookups`, names and totals) and per round (`coach_messages.lookup_rounds`:
+  `r1_workouts:4`, `r2_recovery:28`, with the mode of a lookup that has modes,
+  `r1_plan_history_proposals:3`, and `correction:1` when a refused request was corrected; 17 entries,
+  so the width of the first round and the follow-up of the second can be measured), with the guard rules each attempt broke and any fallback code
   (`coach_messages.guard_faults`), so the lead can query what Coach looked at and why a turn fell
   back.
 
@@ -1101,8 +1354,13 @@ adapter still sends no tools.
 - **A chat the athlete asked Coach not to remember** gets no notes, no suggestions (the model is not
   offered the field), no search and no appearance in another chat. A red-flag turn writes nothing.
 - **Raw message search** is the `past_messages` lookup: the athlete's own earlier questions in
-  remembered chats, found by their words, at most 12 rows of 300 characters. Coach's replies are not
-  searched, so a wrong claim of the Coach's never returns as memory.
+  remembered chats, found by their words, at most 12 rows of 300 characters. Since 2026-10-20 it
+  also returns, apart from them and labelled "Coach replied (an earlier reply, not a record; it may
+  have been wrong, so check any claim in it against the records)", at most 4 of Coach's own earlier
+  replies in the same remembered chats that match the same words (300 characters each; never a
+  data summary or a reply that failed), so Coach can re-read what it advised. The instructions say
+  such a line is not a record and a claim in it is checked against the records first. A figure in one never grounds the numbers check (the renderer leaves those lines out of the rows that count as given, so the same figure stated afresh is refused unless a record holds it). This replaces
+  the rule that Coach's replies are never searched; it is the owner's to confirm.
 - **Evaluation.** Bank cases cover a contradicted fact (knee, schedule, diet), a respected dislike, a
   confirmed limit in a leg session, a follow-through check against Coach's own note and a chat that
   is not remembered.
@@ -1123,18 +1381,38 @@ and shows Coach the chunks it found. The library never decides a number; it grou
   the model never loads inside coach-chat and a load that runs into the Edge CPU limit cannot kill
   a Coach turn. The call is gated like the cron job's, with the library worker secret, which the
   database keeps in Vault and hands only to the service role (`library_worker_secret_v1`); the body
-  is the question and nothing else, and neither function logs it. It then calls
-  `search_library_v2` with the athlete's id, so the search is limited to global sources and the
-  sources for the athlete's country (an `IN` source reaches only athletes in India; DATA_MODEL.md
-  section 12). The block holds up to 8 chunks, whole chunks only, within 9,000 characters, each
-  starting `[source: <id>]` with the stable manifest key.
+  is the question and nothing else, and neither function logs it. Coach chat starts the embedding
+  after the replay check and the budget reservation (a replay or a request at the usage limit never calls it), so it runs alongside the context preparation (a follow-up, whose
+  query needs the prepared context, is embedded then). It then calls `search_library_v3` with the
+  athlete's id, so the search is limited to global sources and the sources for the athlete's country
+  (an `IN` source reaches only athletes in India; DATA_MODEL.md section 12), and compares only chunks
+  embedded with the question's model. The block holds up to 8 chunks, whole chunks only, within
+  9,000 characters, each starting `[source: <id>]` with the stable manifest key, then the kind of
+  source, its year and its evidence level.
+- **Relevance floor.** Excerpts are shown only when the nearest chunk is within cosine distance 0.15
+  of the question; then every chunk within 0.19 is shown (`relevantRows`, calibrated on 219
+  retrieval questions over the 106 sources with the real model: 27 of 30 questions outside the
+  library are shown nothing, recall 0.855 against 0.890 without a floor; the 55 hold-out questions
+  gave 7 of 8 and no recall loss; `docs/handoff/research-library.md`). When the question could not
+  be embedded, the word-search fallback shows rows only when its best chunk has a `ts_rank` of at
+  least 0.0055 and holds 35% of the question's topic words (`keywordRelevantRows`: recall 0.611, 22
+  of 30 shown nothing). When nothing passes, the block says
+  that no library excerpt matched, that Coach must cite no library source and should say the evidence
+  is not in Tracend's library rather than answer from memory; when the search ran on words alone it
+  says Coach must not claim the library lacks the topic.
+- **Tracend's reading is not the source's finding.** Chunks from a "Practical reading" section are
+  Tracend's interpretation of a source and its limits, and a remark pointing to another library entry
+  is Tracend's too. The marker line says so, and the rules tell Coach to present such an excerpt as
+  our reading, never as what the study found.
 - **When retrieval does not happen or fails.** A red-flag turn (a symptom, or a training question
   on a pain day) is answered by the fixed referral and retrieves nothing. The contributor runs
   inside the host's 4-second limit; a search that fails or is slow leaves the library out and Coach
   answers without it. The call to `library-embed` has its own deadline of 1.5 seconds: on a timeout, an
   error or any status but 200 (a cold model load there, a secret mismatch, a deploy still in
-  progress) the search runs on the question's words alone (logged `library_retrieval_degraded`)
-  instead of the whole block being dropped at the host's limit. `library-embed` and coach-chat deploy
+  progress) the search runs on the question's words alone instead of the whole block being dropped
+  at the host's limit; a 401 first re-reads the worker secret and retries once. Each turn logs one
+  `library_retrieval` line (embedding time, degraded reason, shown source ids, nearest distance,
+  library version; no question or chunk text). `library-embed` and coach-chat deploy
   in the same workflow run, one after the other: until the new `library-embed` is live, coach-chat's
   query call gets a non-200 and answers from word search, which is safe. Today's
   DeepSeek path has neither the evidence field nor the block, so it does not retrieve.
@@ -1148,8 +1426,28 @@ and shows Coach the chunks it found. The library never decides a number; it grou
   rule `citation_not_retrieved` (the retrieved ids are not in the output schema because they change
   every turn and the schema is part of the prompt cache key), and the reply guard refuses a source
   id printed in the text that was not shown (Coach is told not to print ids). A turn with no
-  retrieved chunk accepts no library citation at all. The refusal is repaired once with the rule
-  named; a second failure ends in the labelled data summary, like every other rule.
+  retrieved chunk accepts no library citation at all. The coaching principles digest is shown
+  without its source ids, so it offers nothing to cite: only excerpts retrieved this turn are
+  citable. The refusal is repaired once with the rule
+  named; a second failure is cut or ends in the labelled data summary (§12).
+- **Studies named in the text (2026-10-18).** Coach sometimes writes "Maughan 2018" or "the NIH fact
+  sheet" and leaves `evidence` empty, so the app shows no source. The guard reads the visible text
+  for a named study, generically and not from a list of sources: a capitalised surname beside a
+  year ("Maughan 2018", "Schoenfeld et al. (2017)", "Burke & Maughan, 2018") or an institution's
+  initials beside the kind of document it publishes ("NIH fact sheet", "ACSM position stand",
+  "WHO guidelines"; `library/mentions.ts`). A mention matches a source shown this turn by the words
+  of the source's id (author, year, topic), its title and the initials of its title ("International
+  Society of Sports Nutrition" is ISSN), and, for a mention with a year, the author's name in the
+  excerpt shown. An institution's initials with no year match only the id or the title's acronyms
+  (case matters: "WHO" is an acronym, "who" a word in an excerpt), never the excerpt. When it matches, the server adds the source's evidence item to the reply (code the
+  source id, label the retrieved title and year, source `library`) when the evidence has room, and
+  the reply is read as citing it, so a figure only that source holds is grounded. When it matches
+  no shown source (or the year differs), the reply breaks `citation_not_retrieved` and the repair
+  tells Coach to drop the claim or name only the sources it was shown. A study the athlete named in
+  this conversation is theirs to ask about and is not refused, but only the same reference: their
+  message must carry the same surname and year, or the same institution's initials beside a kind of
+  document (a surname alone, "a Smith machine", names no study). Only the reply's own words (the
+  answer, chips, notes and reasoning) can attach a source; an evidence label never does.
 - **Numbers.** The library is kept out of the main numbers ground. A figure that only the library
   holds is accepted only when the reply cites, in `evidence`, the source whose shown chunks contain
   it (`coachReplyCheckFor` passes the cited ids to the check). In a sentence that states the
@@ -1164,12 +1462,56 @@ and shows Coach the chunks it found. The library never decides a number; it grou
 - **No memory from the model.** The rules tell Coach not to write that research shows something no
   excerpt supports and not to fill a gap from memory: it says what the library does not cover.
 - **Observability.** The contributor's outcome (rendered, empty, failed, timeout) is logged with
-  the other contributors (`coach_context_contributors`); a search that ran without its embedding
-  logs `library_retrieval_degraded`. Neither carries the question or any chunk.
-- **Evaluation.** `_evals/library_eval.ts` (recall of the expected sources in the top 8, MRR, follow-ups,
-  and regional isolation) runs the real search on every labelled run of `coach-eval.yml`; the answer
+  the other contributors (`coach_context_contributors`), and its trace as `library_retrieval`
+  (embedding time, degraded reason, prefetched, follow-up, candidates, shown source ids, nearest
+  distance, library version). Neither carries the question or any chunk. The library version is
+  stored on the answer (`coach_messages.library_version`).
+- **Evaluation.** `_evals/library_eval.ts` (recall of the expected sources in the top 8, MRR,
+  no-answer precision, follow-ups and regional isolation, after the relevance floor) runs the real
+  search on every labelled run of `coach-eval.yml` and on every pull request that changes the
+  library; the answer
   bank's `library` category (Claude gateway route only) grades citations and honesty on fixed chunks;
   `library_head_to_head.ts` compares retrieval with the whole library in the prefix.
+
+### 11.2a Plan explanations that cite sources (E5)
+
+The library also grounds the explanation of the athlete's plan. It never decides a number: the plan's
+calories, protein, sets, reps, effort and rest come from the rules and the athlete's approved plan.
+
+- **Coach chat.** A question that asks why the plan, or a part of it, is the way it is
+  (`isPlanExplanationQuestion`: it names the plan, a split, the targets or the sets and asks for the
+  reason; deterministic, no model call) is searched twice, side by side, and the lists are merged: as asked, and with what the plan is
+  made of added: training days, weekly sets per muscle, rep ranges, rest, effort, progression and the
+  goal's nutrition topic, from counts and enumerated values read from the plan state and the goal (`plan_facts.ts`;
+  never an exercise name, a load, a weight or a date). It is searched for this athlete, so the
+  region follows from the stored country. Citing, the `citation_not_retrieved` guard, figure grounding
+  and labels are §11.2's. The block adds one fixed note (no figure; it grounds nothing): explain from
+  the plan's own numbers and Tracend's rules first, use the excerpts for the reasoning behind them,
+  say plainly when a part has none. With no excerpt close enough the block says so and tells Coach
+  the explanation rests on the plan's rules and is less certain, to cite nothing and not to answer
+  from memory; a plan turn whose two searches both fail says the research could not be checked. The
+  plan facts have their own 0.8 s limit and a failure leaves the general topics of a plan.
+- **The onboarding plan** (`onboarding-plan`, gateway route only). Before the prompt is built, two
+  searches for this athlete (training and nutrition, from the enumerated answers; the athlete's own
+  words never enter a query) put up to 6,000 characters of excerpts, whole chunks, into the user
+  message; the rules about them are in the cached system prompt. The model may list the ids it relied
+  on in `sources`; `validateOnboardingPlan` refuses an id the prompt did not show
+  (`source_not_retrieved`), and so does the gateway when the plan's text prints an unshown id or names
+  a study or an institution's document that was not shown, and prose that names a source the prompt showed while `sources` leaves it out is refused the same way (`source_not_listed`; sources are never added from prose). One repair names the rule; a second failure
+  is the rules plan. A cited source becomes a `source: "library"` evidence item on the proposal,
+  labelled from the retrieved title and year, never from the model's words. A figure in an excerpt is
+  never the athlete's number: every number is validated as before.
+- **Missing hits.** A model plan that cites no source adds "No research source is cited for this plan;
+  its numbers come from Tracend's safe ranges and your answers" (or that the library could not be
+  searched) to "Not known yet"; when nothing close enough was found, or the search failed, its
+  confidence is low (Architecture rule 8); a search that failed with no excerpts left counts as failing, never as "nothing matched". The search has a 4 s limit and never throws: the plan is
+  built without excerpts. The rules plan and the settings path (the rollback route) use no library.
+- **Observability.** `onboarding_library` logs the status, the number of searches, the embedding time,
+  the degraded reason, the shown source ids, the nearest distance and the library version; no query,
+  excerpt or answer. Coach plan turns add `plan_explanation` and `plan_facts` to `library_retrieval`.
+- **Evaluation.** `library_eval.ts` also scores `library_questions_plan.json` (plan questions with
+  their plan facts) and athletes' onboarding answers with the floor as it stands, and fails under
+  `EVAL_MIN_PLAN_RECALL` and `EVAL_MIN_ONBOARDING_RECALL`.
 
 ## 12. Validation and Failure Handling
 
@@ -1187,6 +1529,62 @@ citation without adding facts or numbers. A live Coach chat must never delete in
 keep the prose, or present deterministic fallback text as a successful model answer; deterministic
 emergency and clinical-boundary refusals remain explicitly labeled safety responses.
 
+**Cutting a reply.** When the repair attempt still breaks only rules that are faults of particular
+sentences (`numbers_not_grounded`, `citation_not_retrieved` as a named study, `repeats_previous_turn`),
+or when a repair cannot be sent (no time or no budget place) and the first reply broke only those
+rules, the reply is cut instead of replaced by the data summary: `cutReply` (`reply_guard.ts`)
+removes, deterministically, the sentences (and list lines) that hold a figure that is not in the
+athlete's data, that name a source Coach was not shown, or that repeat the previous reply, from the
+answer, the follow-up chips, the missing-data notes, the reasoning steps and the evidence labels.
+Nothing is rewritten, nothing is added except one note in `missing_data` ("Left out lines with
+figures that are not in your data."; the notes take their place first, so when the model already
+wrote twelve its last ones are dropped to stay within the contract's twelve), a library citation's
+label is written again from the retrieved source's title and year before anything is read (the
+server writes it anyway; a figure in the model's wording of it cannot make the cut give up, and the
+citation stays; entry `salvage:label_rebuilt`), and a lead-in line left with nothing under it ("Here is the
+plan:") goes too. The cut reply must pass the whole check again (`parseCoachChatAnswer`), keep at
+least half of the answer's sentences and at least 40 characters, or the turn ends in the data
+summary as before. A sentence that introduces a list takes its whole list with it when it is cut. A cut also gives
+up, and the turn ends in the data summary, when it would remove a sentence that sets a rule or
+a limit or puts a condition on advice (a prohibition or limit in directive form ("don't", "never", "avoid", "no squatting";
+"keep it below", "stay under", "hold at or beneath", "or less", "cap", "ceiling", "top out", "no higher", "at most",
+"ease off"; a plain "no" or "not", or a comparison such as "3 bpm lower than last month", "within 137
+kcal of your target", "a max of 163 bpm" or "less than last week", is a fact and is cut), a symptom (including aches and flare-ups), "until", "unless",
+"only", "if", "but", "however", "up to", "instead"), because without it "for the next 13 days,
+skip all of these:" would leave a bare list of what to avoid; only a repeated closing question,
+which sets no rule, and a repeated plain sentence are cut without that test. A cut never applies
+when any other rule failed (calorie floor, loss ceiling,
+effort cap, pain day, a claimed action, a projected or below-floor body weight), so it can never
+let an invented body weight, calorie or medical figure through. The proposal and fact suggestions
+the model sent with the reply are read as for any answer. The turn trace records what was cut
+(`guard_faults` entries `salvage:numbers_stripped`, `salvage:study_stripped`,
+`salvage:closing_question_stripped`, `salvage:repeat_stripped`). A cut deletes the faulty sentence,
+not just its citation, so the rule above (never delete invalid citations and keep the prose) still
+holds. The owner approved removing a faulty sentence in place of the whole answer on 2026-10-18.
+The cut runs on the gateway route; today's DeepSeek path keeps one repair and the summary.
+
+**Repeats.** Coach must not close two turns running with the same question, or say the same
+sentence twice. `repeats_previous_turn` (`coach_safety/repeats.ts`) compares the reply's `answer`
+with the athlete's previous reply from Coach in the conversation (the app's data summary is not
+Coach's and is skipped). The closing question is the last sentence when it ends in "?"; it repeats
+when its content words (function words, figures and word endings dropped) have a Dice coefficient
+of at least 0.7 with the previous closing question, both having at least three content words. Any
+other sentence repeats when it has at least six content words and a Dice coefficient of at least
+0.8 with one sentence of the previous reply. Safety wording is never a repeat: emergency and
+red-flag wording (emergency number, chest pain, fainting, stroke, self-harm, crisis lines) always
+stands, and referral wording (doctor, physio, professional, clearance, "get it checked") stands
+when the turn needs it: the health check is not cleared, today's pain is 7 or more, or the
+question or the previous exchange may be about a health risk (`mayConcernHealthRisk`); on such a
+turn every caution or limit stands too. A stop rule for pain or another symptom ("stop if it
+hurts", "if the knee aches, end the session", "ease off if the shoulder flares up", "pause if it throbs", "switch to the bike", "lay off squats while it's tender", "keep it pain-free") always stands, whatever the turn. The
+repair instruction never asks Coach to drop a safety caution. Otherwise the same "when to get it
+looked at" line is an ordinary repeat. A negated sentence never matches an unnegated one ("increase volume" and "do not increase volume" share
+every content word), so the negation is kept in the comparison. An athlete asking the same thing again (their question
+and their previous one at least 0.7 similar) gets the same answer again. A repeat gets the one
+repair with the instruction to drop it; if it repeats again, or no repair can be sent, the
+repeated closing question and sentences are cut. There is no limit on the length of a reply here;
+that waits for a measurement with Haiku.
+
 **Labeled data summary.** For app builds that send request schema 1.1, the safe unavailable state
 is a deterministic data-summary reply instead of an error, so the athlete is never left at a dead
 end. It opens by saying the coach could not produce a full answer, copies every number verbatim
@@ -1194,7 +1592,22 @@ from the prepared context (no estimates), cites only permitted evidence, and car
 `safety_state: "unavailable"`, `answer_source: "data_summary"`, and a sanitized `diagnostic`
 (failure code and finite rule names). It is stored in the thread as an assistant message flagged
 `data_summary` and is never presented as the model's answer: not to the athlete, and not to the
-model, whose conversation memory leaves it out. Request schema 1.0 builds keep the 503.
+model. It stays in the conversation the model reads (`prepare_coach_chat_v10`, 2026-10-18), marked
+`answer_source: "data_summary"` and shown to the model as "TRACEND DATA SUMMARY (the app's own
+reply, calculated from the athlete's data; not your words)", so the next turn can refer to a
+number the app just showed. Its figures count as the athlete's data for a later turn of the same
+coaching date only: v10 carries the athlete's local date of the summary (`local_date`), an older
+summary stays in the thread as text, shown with its date, and grounds nothing (yesterday's "Recovery
+today: 13/100" must not make today's identical claim pass), and nothing grounds Coach's own earlier
+words, it is not a previous reply for the repeats rule, and a
+question that fell back to one still reads as unanswered when the athlete sends it again. After
+that retry the failed question is marked superseded (`safety_state` "unavailable" on that user
+message); v10 carries that state on user messages only (a summary is stored "unavailable" too and
+would always be dropped), and the reader drops the superseded question and the data summary that
+followed it, on every later turn and, for the question being asked again, on that turn. The
+summary shows the weight trend in kg a week (the unit Coach speaks in): the calculated 4-week
+trend of the readings, else the scoring engine's per-day trend times seven. Request schema 1.0
+builds keep the 503.
 
 The current app sends request 1.1 and labels the reply itself:
 
@@ -1263,6 +1676,13 @@ Maintain anonymized fixtures covering:
 - plateau with adequate versus poor adherence;
 - isolated bad workouts versus repeated regression;
 - poor sleep, recovery deviations, schedule and equipment changes;
+- the same-day readiness adjustment: each kind, a low recovery score with a good check-in (nothing
+  is proposed), pain of 7 or more (a safety route, no change), an accepted adjustment not lowering a
+  load (pgTAP sweeps in `readiness_sweep_test.sql`; Coach eval cases arrive with the Coach
+  contributor);
+- a deload suggestion: each reason alone and at its boundary, each suppression, no suggestion on a day with a
+  safety route, and the weekly cardio dose with missing Apple Health data, an easy-only day and a withheld
+  day (pgTAP `deloads_test.sql`, `cardio_dosing_test.sql`; Coach eval cases arrive with the Coach contributor);
 - missing and contradictory data;
 - mixed meals, uncertain portions, and hidden ingredients;
 - inconsistent progress photos;

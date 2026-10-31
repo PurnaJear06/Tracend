@@ -1,7 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { librarySources } from "../../../library/index.ts";
 import { chunkSource } from "./chunk.ts";
-import { sourceBlock } from "./migration_sql.ts";
+import { retireBlock, retireMarker, sourceBlock } from "./migration_sql.ts";
 import { type LibraryLicence, verbatimLicences } from "./types.ts";
 
 const kinds = new Set(["paper", "guideline", "position_stand", "summary"]);
@@ -172,27 +172,87 @@ Deno.test("the sources cover every area the knowledge base was asked to cover", 
   assert(count("screening") >= 2 && count("joint-friendly") >= 3 && count("sleep") >= 2);
   assert(count("india") >= 5 && count("older-adults") >= 3 && count("supplements") >= 5);
   const regions = new Set(librarySources.flatMap((source) => source.region));
-  for (const region of ["global", "US", "GB", "IN"]) assert(regions.has(region), region);
+  for (const region of ["global", "US", "GB", "IN", "AU"]) assert(regions.has(region), region);
 });
 
-Deno.test("the newest migration that loads each source carries its current content", async () => {
-  const dir = new URL("../../../migrations/", import.meta.url);
-  const migrations: { name: string; sql: string }[] = [];
-  for await (const entry of Deno.readDir(dir)) {
-    if (entry.isFile && entry.name.endsWith(".sql")) {
-      migrations.push({ name: entry.name, sql: await Deno.readTextFile(new URL(entry.name, dir)) });
-    }
-  }
-  migrations.sort((a, b) => a.name.localeCompare(b.name));
-  for (const source of librarySources) {
-    const marker = `-- library-source: ${source.slug} sha256:`;
-    const loaders = migrations.filter((migration) => migration.sql.includes(marker));
-    assert(loaders.length > 0, `no migration loads ${source.slug}`);
-    const newest = loaders[loaders.length - 1];
+Deno.test("each regional module has a nutrition source and a body-measure source for its region", () => {
+  // Decision D5: India, the United States, the United Kingdom and Australia. A body-measure
+  // source covers BMI or waist size, the points that differ by region.
+  for (const region of ["IN", "US", "GB", "AU"]) {
+    const own = librarySources.filter((source) => source.region.includes(region));
     assert(
-      newest.sql.includes(await sourceBlock(source)),
-      `${source.slug} changed since ${newest.name}; add a migration with its new block ` +
-        "(see _shared/library/migration_sql.ts)",
+      own.some((source) => source.topics.includes("nutrition")),
+      `${region} has no nutrition source`,
+    );
+    assert(
+      own.some((source) => source.topics.includes("bmi") || source.topics.includes("waist")),
+      `${region} has no body-measure source`,
     );
   }
+  const global = librarySources.filter((source) => source.region.includes("global"));
+  assert(global.some((source) => source.topics.includes("waist")), "no global waist source");
+});
+
+async function migrations(): Promise<{ name: string; sql: string }[]> {
+  const dir = new URL("../../../migrations/", import.meta.url);
+  const found: { name: string; sql: string }[] = [];
+  for await (const entry of Deno.readDir(dir)) {
+    if (entry.isFile && entry.name.endsWith(".sql")) {
+      found.push({ name: entry.name, sql: await Deno.readTextFile(new URL(entry.name, dir)) });
+    }
+  }
+  return found.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+const loadMarker = (key: string) => `-- library-source: ${key} sha256:`;
+/** Index of the newest migration holding the text, or -1. */
+const newestWith = (all: readonly { sql: string }[], text: string) =>
+  all.findLastIndex((migration) => migration.sql.includes(text));
+
+Deno.test("the newest migration that loads each source carries its current content", async () => {
+  const all = await migrations();
+  for (const source of librarySources) {
+    const newest = newestWith(all, loadMarker(source.slug));
+    assert(newest >= 0, `no migration loads ${source.slug}`);
+    assert(
+      all[newest].sql.includes(await sourceBlock(source)),
+      `${source.slug} changed since ${all[newest].name}; add a migration with its new block ` +
+        "(see _shared/library/migration_sql.ts)",
+    );
+    assert(
+      newestWith(all, retireMarker(source.slug)) < newest,
+      `${source.slug} is retired after its newest load; load it again in a later migration`,
+    );
+  }
+});
+
+Deno.test("a source removed from index.ts is retired by a migration after its last load", async () => {
+  const all = await migrations();
+  const listed = new Set(librarySources.map((source) => source.slug));
+  const loaded = new Set(
+    all.flatMap((migration) =>
+      [...migration.sql.matchAll(/^-- library-source: ([a-z0-9_.-]+) sha256:/gm)].map((m) => m[1])
+    ),
+  );
+  for (const key of [...loaded].filter((item) => !listed.has(item))) {
+    assert(
+      newestWith(all, retireBlock(key)) > newestWith(all, loadMarker(key)),
+      `${key} is no longer in index.ts; add a migration with its retire block ` +
+        `(build_migration.ts --retire ${key})`,
+    );
+  }
+});
+
+Deno.test("a retire block names one manifest key", () => {
+  assertEquals(
+    retireBlock("old_2019_source"),
+    "-- library-retire: old_2019_source\nselect private.library_retire_source('old_2019_source');\n",
+  );
+  let refused = "";
+  try {
+    retireBlock("x'); drop table y; --");
+  } catch (error) {
+    refused = (error as Error).message;
+  }
+  assert(refused.startsWith("not a manifest key"));
 });

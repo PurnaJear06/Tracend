@@ -35,7 +35,7 @@ without validation, the athlete's approval and an audit event (CLAUDE.md, Archit
 | D6 | Knee, back and shoulder training modifications are in scope: swaps, range limits, a pain check, referral warning signs. No diagnosis, no rehab programs. |
 | D7 | The beta waits until all four phases are merged and device-checked. No fixed date. |
 | D8 | Claude builds with sub-agents; the owner merges. |
-| D9 | Heart rate never sets the load. It raises or lowers confidence, informs rest, cardio dosing and recovery, and prompts a question. |
+| D9 | Heart rate never sets the load. It raises or lowers confidence, informs rest, cardio dosing and recovery, and prompts a question. Clarified by the owner (2026-10-23, O1): heart rate informs and offers, the athlete decides. The recovery score (built from heart-derived signals) never applies or pre-selects a same-day adjustment by itself; it tells the athlete what it shows, opens the check-in and the option to talk it through with Coach, and the athlete may then choose an adjustment themselves with one tap and Undo. |
 | D10 | Sleeping heart rate starts in shadow mode: computed and stored, not used in the recovery score until a later reviewed change. |
 | D11 | Privacy and AI wording (owner, 2026-10-15): no model names anywhere the athlete or the public reads (app, notices, website, privacy policy). Remove every DeepSeek, Groq and Qwen mention. Name the receiving company only where disclosure is needed: one line in each AI consent notice and the privacy policy's processor list. Rewrite the notices and privacy pages for clarity. This is a beta exit criterion. |
 
@@ -72,15 +72,15 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 3 | D2 | ios-widgets | Today and Lock Screen widgets | — | D1 | todo | |
 | 3 | E2 | research-library | Ingestion, the first 30 sources and the retrieval test set | 42 | E1 | merged | #135 |
 | 3 | E3 | research-library | Library inside Coach chat | 43 | A6, E2 | todo | |
-| 3 | A8 | ai-gateway | Coach proposals: Coach proposes a change in chat (`proposal_intent`), rules compute every number, the athlete approves with one tap, a new version and an audit event are written, undo for 7 days; temporary blocks end by themselves | 18 | A6, B7 | todo | |
+| 3 | A8 | ai-gateway | Coach proposals: Coach proposes a change in chat (`proposal_intent`), rules compute every number, the athlete approves with one tap, a new version and an audit event are written, undo for 7 days; temporary blocks end by themselves | 18 | A6, B7 | merged | #148 |
 | 3 | A9 | ai-gateway | Coach safety and honesty: pre-model red-flag screen, numbers grounding, safety floors, plain error messages, local date, no-plan chat | 19 | B7 | merged | #143, #142 |
 | 3 | A10 | ai-gateway | Coach memory: confirmed facts, athlete state, coach notes, a new context assembler (v9) | 20 | B7, A9 | todo | |
 | 3 | A11 | ai-gateway | Coach eval bank: synthetic athletes that gate every Coach change | — | B7 | todo | |
-| 4 | B4 | training-engine | Same-day readiness adjustment, one-tap approval | 24 | B3, C3 | todo | |
+| 4 | B4 | training-engine | Same-day readiness adjustment, one-tap approval (B4-1 server in review; B4-2 app next) | 24 | B3, C3 | review | #165 |
 | 4 | B5 | training-engine | Deloads, cardio dosing, joint rules, pain check, red flags | 25 | B3 | todo | |
-| 4 | C4 | workout-hr | Watch-workout prompt, load signals for the engine | — | C3 | todo | |
-| 4 | E4 | research-library | Regional modules | 44 | E3 | todo | |
-| 4 | E5 | research-library | Plan explanations citing sources | — | E3, B3 | todo | |
+| 4 | C4 | workout-hr | Watch-workout prompt, load signals for the engine | 34 | C3 | review | |
+| 4 | E4 | research-library | Regional modules | 44 | E3 | review | #164 |
+| 4 | E5 | research-library | Plan explanations citing sources | — | E3, B3 | review | #171 |
 
 | 5 | L1 | lifestyle | Lifestyle log: alcohol, smoking and vaping, cannabis and other substances (during beta) | 51 | beta start | todo | |
 | 5 | L2 | lifestyle | Hydration: water target and log, Apple Health water | 52 | beta start | todo | |
@@ -169,6 +169,18 @@ until the cutover, so those sections stay true.
 
 U3 leaves `lib/features/onboarding/**` alone. B6 merges after B2; after rebasing it adds the one call
 that passes the stored outcome into `policiesFor` (B2's file, reviewed by the lead).
+
+### File owners (Phase 4)
+
+| Path | Owner |
+|---|---|
+| migration code 24 (`day_adjustments`), `workout_sessions.day_adjustment_id`, `public.get_my_day_adjustment_v1`, `respond_to_day_adjustment_v1`, the redefinitions of `start_workout`, `private.progression_decision` and `private.next_session_targets`, new `_shared/training/readiness/**`, `_shared/training/standard/sources.ts` (new sources only), `privacy-export` (its tables), the `day_adjustment_*` contract fixtures and tests | B4-1 |
+| new `lib/features/readiness/**`, `lib/features/today/{today_screen,today_session_progress}.dart`, `lib/features/train/**`, `lib/shared/plan_changes.dart` | B4-2 |
+| migration code 25 (`pain_reports`, deloads, cardio), `save_daily_check_in`, `private.day_adjustment_compute` (joint rules from B5-1), new `_shared/training/{joints,standard/deload.ts}`, `_shared/coach_proposals/training.ts` (the deload branch), `lib/features/today/check_in_sheet.dart`, `lib/features/readiness/**` after B4-2 | B5 |
+| `_shared/coach_context/**` (a `readiness` contributor), `coach-chat/**`, `coach-decide/**`, `_shared/coach_proposals/**` (except B5's deload branch), the A9 red-flag screen | ai-gateway (see the contract requests) |
+| `.github/workflows/**`, `scripts/**`, `supabase/config.toml`, board rows and `PROGRAM:` lines | lead only |
+
+B4-1 does not edit `_shared/coach_context/contributors/training_plan.ts` (C4 owns it in review).
 
 ### File owners (Phase 3, round 2)
 
@@ -312,12 +324,52 @@ row per set in `public.exercise_set_heart_rate`: `exercise_set_id`, `start_bpm`,
 60 s with samples), `sample_count`, `source` (`watch_workout` or `background`). Summaries only;
 raw samples never leave the phone.
 
-### Contract 5: Readiness adjustment (B4)
+### Contract 5: Readiness adjustment (B4), version 1.0 as built (B4-1)
 
 `get_my_day_adjustment_v1(local_date date)` returns
 `{schema_version, band: "green"|"amber"|"red"|"unknown", triggers: text[], kind: "none"|"reduce_sets"|"hold_load"|"swap_to_easy_cardio", changes: [{exercise_order, sets_from, sets_to, load_note}], explanation, status: "proposed"|"accepted"|"declined"|"none"}`.
 `respond_to_day_adjustment_v1(local_date date, accept boolean)` records the answer with an audit
 event and returns the updated object.
+
+As built, only today (the athlete's own local date) can be read or answered. The keys above are
+kept exactly; everything else is additive: each change also carries `planned_exercise_id`, `name`,
+`load_kg_from`, `load_kg_to`, `reps_from`, `reps_to` and `rpe_to`; the object adds `available`,
+`unavailable_reason` (`no_plan`, `rest_day`, `session_started`, `session_done`, `coach_adjusted`),
+`safety_route` (`pain_referral`), `confidence`, `missing`, `cardio`, `planned_workout_id`,
+`workout_name`, `sets_total_from`, `sets_total_to`, `previous_answer` (`kind`, `status`,
+`answered_at`, `reason`: `check_in` or `new_data`), `answered_at`,
+`rules_version`, `origin` (`proposed` or `chosen`), `options` (every kind the athlete may choose,
+with its own changes and sentence) and `signals` (what the recovery score and sleep show).
+The training hub is 1.8 (the sessions inside a target's basis gain `adjusted` and `sets_planned`).
+`respond_to_day_adjustment_v1(local_date, accept, chosen_kind text default null)` takes a third,
+optional argument: with `accept = true` and a `chosen_kind` from `options` the athlete applies a
+kind of their own choosing (D9); `accept = false` declines or undoes (Undo) until the session
+starts. Errors: 42501 signed out; 22023 another date, nothing to answer, a kind that would change
+nothing, or a safety day; 55000 the day cannot be adjusted; P0001 more than 20 answers a day. Old
+builds never call these functions and see no change.
+
+**Version 1.1 as built (B5-1).** Keys are only added. The payload carries `schema_version: "1.1"` and
+two new keys: `joint_states` (`[{area, state, since, severity, persistent, hold_outcome}]` for each joint that is
+held, limited or on watch; `area` is `knee`, `back`, `shoulder` or `other`; `hold_outcome` is the
+strictest outcome of the hold in force when held, else null) and
+`exercise_joint_options` (per exercise of today's session `{exercise_order, planned_exercise_id, name,
+joint_options: {knee, back, shoulder}}`, each joint `{slug, name}` of the gentlest low-stress swap or
+null). `kind` gains `joint_adjust` (the changes a joint state makes, alone, on a day the readiness
+rules ask for nothing; also an entry of `options`; the same one tap and Undo). A change on an exercise
+a joint touches also carries `joint_action` (`swap`, `limit`, `drop`), `joint`, `joint_state`,
+`swap_to_slug`, `swap_to_name`, `range_note_code` and `range_note_codes` (every cue a limited exercise
+needs; null unless `limit`), all together (an exercise no joint touches carries none of them); a
+`drop` has `sets_to` 0. On a day Coach already adjusted, `joint_adjust` is still offered alone. `safety_route` gains `urgent`, `clinician_today`
+and `clinician` (from today's pain reports, and on later days from an area still held on `urgent` or
+`clinician_today`; the strictest of those and `pain_referral` wins), and
+`triggers` may hold `red_flag:<code>`. A client that reads 1.0 keeps working: nothing it read changed. `get_my_day_adjustment_v1` and
+`respond_to_day_adjustment_v1` take an optional `supports_joint_changes` (default false): without it
+the readiness kinds carry no joint changes (the app is shown, and accepts, the plain session);
+`joint_adjust`, `joint_states` and the safety routes are the same for every client. B5-2 passes true on
+both calls.
+`record_pain_check_v1(local_date, source, area, severity, pattern, red_flags, cleared_by_clinician,
+exercise_performance_id, idempotency_key)` returns `{schema_version "1.0", id, outcome, area_state}`;
+`save_daily_check_in` takes the optional pain keys described in DATA_MODEL (`pain_reports`).
 
 ### Contract 6: Library search (E1), version 1.1
 
@@ -337,7 +389,18 @@ reciprocal rank fusion with k = 50; rows add `source_key` (the manifest key Coac
 `schema_version` 2; at most three rows per source; `match_count` is capped at 10 (null means 8);
 `target_user_id` limits the sources to the athlete's regions (global plus the country in the account
 locale, and `IN` for an Indian time zone) when `filters` names no region. Details: DATA_MODEL.md
-section 12.
+section 12. From E4 (migration `20261023120044`, no signature change) the athlete's stored
+`user_accounts.country_code` replaces that locale and time-zone guess when it is set.
+
+**Version 3 (E3 production pass, migration code 44, for the lead's approval).**
+`search_library_v3(query_text, query_embedding, query_embedding_model, match_count, filters,
+target_user_id uuid default null)` is added beside v2, which stays for the deployed Coach chat until
+a cleanup migration. Same search, plus: vector search compares only chunks embedded with
+`query_embedding_model` (required with an embedding); rows add `evidence_level`, `kind`,
+`vector_distance` (cosine distance to the question), `text_rank` (`ts_rank`, 0 when no term
+matched) and `library_version` (`private.library_version()`), and carry `schema_version` 3. Coach
+chat applies the relevance floor to these rows (`_shared/library/retrieval.ts`). Details:
+DATA_MODEL.md section 12.
 
 ### Contract 7: Coach context contributor (A6 defines the host, E3/C3/B3 add contributors)
 
@@ -358,6 +421,12 @@ budget, labelled as reference data that never overrides Tracend rules or the ath
 newest first, current question excluded. The library uses it to give a follow-up a topic; a
 contributor that does not need it ignores it. Coach chat's evidence also gains the source `library`
 (an evidence item whose `code` is a library source id shown in the turn; `coach_chat_v1.ts`).
+
+**Version 1.2 (E3 production pass, for the lead's approval).** Two optional additions. `render`'s
+input gains `queryEmbedding?: { text, startedAt, embedding }`: the question's library embedding,
+started at the beginning of the request (the library reuses it when its query is that text). A
+contributor may return `trace` (names and numbers only, never content) beside `text` and `shown`;
+the host passes it on as `traces[id]`, and Coach chat logs the library's as `library_retrieval`.
 
 ### Contract 8: Screening outcome (B6 produces, B2 reads)
 
@@ -694,7 +763,53 @@ notice when new data goes to the AI provider, AI_SAFETY_SPEC), and non-judgement
 
 (A2's consent-granularity request was resolved by Contract 1 v2.)
 
-None open. A8's request (wire Coach chat to the proposal engine after A10) was resolved in the same
+Open, from B4/B5 (none of these files are built in B4-1):
+
+1. **ai-gateway, Coach context (built 2026-10-24, `claude/coach-readiness-context`; the deload signal and cardio week of B5-3/B5-4 (`get_training_guidance_for_v1`, merged in #174) are a follow-up that needs a cost measurement first):** a volatile `readiness` contributor (Contract 7) rendering today's
+   band, kind, status, safety route and each joint's state from the service-role reader
+   `get_readiness_context_v1(p_user_id, p_local_date)` (built in B5-1, version 1.0: `{schema_version,
+   local_date, band, kind, status, available, unavailable_reason, safety_route, triggers, confidence,
+   joint_states [{area, state, persistent}], rules_version}`; codes only, never a red-flag code or a
+   severity; only the athlete's own today). The athlete-facing payload parser is
+   `_shared/training/readiness/payload.ts` (1.0 and 1.1); the reader's shape is parsed by
+   `_shared/training/readiness/context_payload.ts`.
+2. **ai-gateway, A9 red-flag screen (B5-1 built the data):** treat today's newest pain report with
+   outcome `urgent`, `clinician_today` or `clinician` like a check-in pain of 7 or more (the context
+   view's `safety_route` says it), and add `pain_reports` to "pain on record" in the route choice.
+3. **ai-gateway, reply guard (B5-1 built the data):** no sets, loads or exercises for a joint in state
+   `held` (`joint_states` in the context view), and no advice to train through a pain of 4 or more or a
+   red flag.
+4. **ai-gateway, A8:** `buildNextSessionAdjustment` for today refuses when an accepted day
+   adjustment exists (add `today_adjusted` to `get_coach_proposal_inputs_v1`); deload intents
+   delegate to B5-3's builder. Later, move A8's "lighter today" onto the B4 overlay so one mechanism
+   remains.
+5. **ai-gateway, A5 coach-decide:** add `day_adjustment` (band, kind, status) to the daily snapshot
+   and an evidence code `READINESS_ADJUSTMENT_PROPOSED`, so the daily note never contradicts the
+   card.
+6. **research-library (E):** update `bell_2023_deloading` from its CC BY full text; add
+   summary-only entries for Finucane 2020, Stiell 1997 and NICE NG59 (B5).
+7. **lead (done in the Train-card branch `claude/train-deload-cardio-ui`):** `training-proposals` is in
+   `supabase/config.toml`, `deploy.yml` and `hotfix.yml`. B5-3 did not build it (it needs those files): the rules-originated card therefore
+   still has no creator. Until it lands, an athlete gets a deload by asking Coach (the A8 path, now
+   limited to one week with loads held), and `get_my_training_guidance_v1` reports `deload.status`
+   `suggested` with its reasons for the app to show.
+8. **ai-gateway, Coach context:** add `deload` (status, reasons, weeks since) and `cardio_week` to the
+   `readiness` contributor from the service-role reader `get_training_guidance_for_v1(p_user_id,
+   p_local_date)` (built in B5-3 and B5-4, version 1.1: `{schema_version, local_date, safety_route,
+   deload {status, reasons, last_ended_on, weeks_since, proposal_id, suppressed_by}, cardio_withheld,
+   cardio_week {...}}`; only the athlete's own today). Parser: `_shared/training/guidance/payload.ts`.
+   Coach may describe a deload as a widely used practice with expert consensus on its purpose, not a
+   requirement; it must not offer a deload or a cardio dose on a day with a safety route
+   (`safety_route` set), and must say the cardio minutes are counted as moderate (`intensity_known`
+   false) and are missing when `done_min` is null. The `intensity_or_phase` tool text in
+   `coach_chat_provider.ts` still says "weeks (1 to 8)": for `level: deload` the builder uses exactly
+   one week, so say so there.
+9. **app (B5-3, B5-4, built in `claude/train-deload-cardio-ui`; the bpm line is not shown):** a Train card "A lighter week could help" shown when
+   `deload.status` is `suggested` (reasons in words; "Suggested by Tracend"), a "Cardio this week" row
+   from `cardio_week` with its sheet (a missing `done_min` reads "Connect Apple Health to count your
+   cardio"; the easy-cardio heart-rate line comes from the C3 profile using `easy_hr_reserve_max`).
+
+A8's earlier request (wire Coach chat to the proposal engine after A10) was resolved in the same
 pull request as part 1 (#148): coach-chat calls `proposeCoachChange` after every reply guard has
 passed, stores `proposalId` on the assistant message (`coach_messages.proposal_id`, set by
 `link_coach_proposal_v1`), and the thread renders `CoachProposalLoader` under the reply. Details:
@@ -775,3 +890,21 @@ passed, stores `proposalId` on the assistant message (`coach_messages.proposal_i
   cost: some education questions ("does creatine cause dizziness?") now get a referral. A11
   measures it. Merge order: #143 before #142, so no-plan chat never reaches the model without
   the plan status.
+- 2026-10-23: advanced experience level and four staple lifts (owner-approved after the Coach
+  simulator found the top level was intermediate and the catalog lacked a weighted pull-up,
+  close-grip bench press, conventional deadlift and Bulgarian split squat). Advanced is the athlete's
+  choice from three years of training; new exercises are advanced-level so other levels' plans are
+  unchanged; numbers come from the standard's cited sources, and where none separates advanced
+  lifters the intermediate value stands. Details: training-engine handoff and ALGORITHMS "Advanced
+  level".
+- 2026-10-23: E4 (regional modules). The athlete may store an optional country (`user_accounts.country_code`; `ZZ` is "another country") and `private.library_regions_for_account` prefers it over the locale and time-zone guess; no plan rule reads it. D5's four regions each have a nutrition and a body-measure source; NICE is deferred (its text could not be read).
+- 2026-10-24: E5 (plan explanations that cite sources). No migration. Coach chat: a question that asks why the plan is the way it is is searched with what the plan is made of (counts and enumerated values, never the athlete's words) and the library block carries a fixed note; the onboarding plan (`onboarding-plan`, gateway route; `onboarding-propose-plan` is the old mock and cites nothing) searches the library for the athlete, shows the excerpts, lets the model list the ids it relied on in `sources` (refused unless shown) and stores each as a `library` evidence item that the app lists under "Why this plan". A plan with no source to cite says so, and one whose search found nothing or failed is low confidence. The rules plan and the settings path use no library.
+- 2026-10-23 (owner): B4/B5 design approved. O2 to O13 as recommended (in-house points and bands;
+  ACWR excluded; one tap with Undo and no confirm sheet; the adjustment is an overlay, not a plan
+  version; one-week deloads; pain bands 1-3 watch, 4-6 modify, 7 or more refer; self-attested
+  clinician clearance; Cardio target 150 minutes with Apple Health workouts counted as moderate;
+  withhold advice on a red-flag day, never block the workout). O1 amended: the recovery score alone
+  never applies or pre-selects an adjustment; it informs the athlete and opens the check-in, and the
+  athlete may choose an adjustment themselves with one tap and Undo (D9 clarified above). Authority
+  doc conflicts C1 (same-day adjustments are overlays), C2 (UX_FLOWS files B4 as same-day, one tap),
+  C4 (D9) and C6 (A8 merged on the board, Phase 4 file owners) resolved in the B4-1 PR.

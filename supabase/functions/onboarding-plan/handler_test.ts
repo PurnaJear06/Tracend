@@ -878,3 +878,56 @@ Deno.test("the stored outcome is read once per request and reaches the plan", as
   assertEquals(reads.length, 1);
   assertEquals(planOf(calls.persisted[0].proposal).screening, "moderate_until_cleared");
 });
+
+const gymDraft = (experience: string) => ({
+  path: "experienced",
+  payload: {
+    ...completeDraft.payload,
+    equipment_items: ["dumbbells", "barbell", "bench", "cables", "machines", "pull_up_bar"],
+    training_weekdays: [1, 2, 4, 5],
+    session_minutes: 60,
+    current_plan: "Upper/lower 4 days",
+    training_years: "over_5",
+    experience,
+  },
+});
+
+const experienceOf = (snapshot: Record<string, unknown>) =>
+  (snapshot.answers as { experience: string }).experience;
+
+Deno.test("an advanced draft builds a plan with the advanced staples and its own hash", async () => {
+  const advanced = store({ loadDraft: () => Promise.resolve(gymDraft("advanced")) });
+  const { response } = await run(advanced.fake);
+  assertEquals(response.status, 202);
+  assertEquals(experienceOf(advanced.calls.persisted[0].snapshot), "advanced");
+  // The snapshot (and so its hash) names the catalog that knows the advanced level: a plan built
+  // before it, by a function that did not, is never reused for the same answers.
+  assertEquals(advanced.calls.persisted[0].snapshot.catalog_version, "catalog-v2");
+  const slugs = (advanced.calls.persisted[0].proposal.training.weekly_structure as {
+    exercises: { slug: string }[];
+  }[]).flatMap((workout) => workout.exercises.map((exercise) => exercise.slug));
+  for (const slug of ["weighted-pull-up", "close-grip-bench-press", "bulgarian-split-squat"]) {
+    assert(slugs.includes(slug), `${slug} in ${slugs}`);
+  }
+
+  // The same answers as an intermediate athlete get no advanced exercise and another hash.
+  const intermediate = store({ loadDraft: () => Promise.resolve(gymDraft("intermediate")) });
+  await run(intermediate.fake);
+  assertEquals(experienceOf(intermediate.calls.persisted[0].snapshot), "intermediate");
+  const others = (intermediate.calls.persisted[0].proposal.training.weekly_structure as {
+    exercises: { slug: string }[];
+  }[]).flatMap((workout) => workout.exercises.map((exercise) => exercise.slug));
+  assert(!others.includes("weighted-pull-up") && !others.includes("bulgarian-split-squat"));
+  assert(advanced.calls.claimedHashes[0] !== intermediate.calls.claimedHashes[0]);
+
+  // Advanced without the years is an intermediate plan, built from the same answers.
+  const few = store({
+    loadDraft: () =>
+      Promise.resolve({
+        ...gymDraft("advanced"),
+        payload: { ...gymDraft("advanced").payload, training_years: "1_2" },
+      }),
+  });
+  await run(few.fake);
+  assertEquals(experienceOf(few.calls.persisted[0].snapshot), "intermediate");
+});

@@ -112,7 +112,19 @@ confirmed referrals first, then signup order, into `private.signup_invites`.
 ### `user_accounts`
 
 One application-owned row keyed by `id = auth.users.id`: locale, `timezone` (IANA name, default
-`UTC`), unit system, account status, onboarding state, and timestamps. The app writes `timezone`
+`UTC`), optional `country_code`, unit system, account status, onboarding state, and timestamps.
+`country_code` (E4, migration `20261023120044_regional_modules`) is null or two capital letters
+(ISO 3166-1 alpha-2, in practice one of the offered codes; `ZZ` means "another country", kept apart from null so a time zone is not used
+to guess a region for an athlete who answered). The app reads and writes it only through
+`get_my_country_v1` and `set_my_country_v1(p_country_code)`, both `{schema_version: "1.1",
+country_code, effective_regions}`, security definer, authenticated only. `effective_regions` is the
+sorted list the library search uses for the athlete now (`global` plus the stored country or, with
+none, the locale and time-zone guess), so the app can say which country Coach is going by. A blank
+code clears the choice; the set accepts only the codes the app offers (`AU`, `IN`, `GB`, `US`, `ZZ`)
+and raises `22023` otherwise; a signed-out caller gets `42501`. Clients cannot write the column
+directly. An actual change writes an `audit_events` row (`account.country.changed`, target the
+account, metadata `from` and `to`); setting the stored value again or clearing an unset country
+writes none. A new region adds its code to the set function in a later migration. The app writes `timezone`
 only through `set_my_timezone`, which accepts only names Postgres knows; clients cannot write the
 column directly. Readers such as the weekly-review scheduler go through `private.safe_timezone`,
 and `private.local_date_for` gives the athlete's local date.
@@ -185,7 +197,10 @@ on the active goal, requires a weight, a body-fat range or a physique goal (a da
 target), refuses a weight outside 30 to 300 kg or below BMI 18.5 at `user_profiles.height_cm`, a
 reversed or out-of-range body-fat range, and a date that is not within the next three years, and
 writes a `goal_target_set` audit event naming only the kinds of target set. `get_goal_target_v1()`
-returns the target and `min_target_weight_kg`; both return `schema_version "1.0"`.
+returns the target, `min_target_weight_kg` and (since 1.1) `min_target_body_fat_pct`; both return
+`schema_version "1.1"`. A body-fat target below `min_target_body_fat_pct` is refused (22023): 5 for
+men, 12 for women and for anyone whose sex is not on record (the more conservative figure), the
+essential-fat figures widely cited in sports medicine.
 `get_goal_phase_inputs_v1(uuid)` is service role only and feeds the Coach goal phase review. Only
 the athlete sets a target; the model has no path to these functions.
 
@@ -207,15 +222,14 @@ optional expiry. Today equipment, movements to avoid, limitations and diet notes
 ### `user_preferences` (superseded by `coach_facts`)
 
 Since A10 part 2 nothing in Coach chat reads or writes this table (the confirmed preferences were
-copied into `coach_facts` when that table was created). Older app builds can still write it through
-`persist_coach_preference`; "Forget everything" empties it. Kept until the frozen `prepare_coach_chat_v8`
-is retired. Confirmed food, training, schedule, communication, notification and lifestyle preferences. Each row
+copied into `coach_facts` when that table was created). `persist_coach_preference` is closed to the
+app roles (2026-10-31, nothing calls it); the service role keeps it. "Forget everything" empties
+the table. Kept until the frozen `prepare_coach_chat_v8` is retired. Confirmed food, training, schedule, communication, notification and lifestyle preferences. Each row
 stores `category`, `key` (1–120 characters), `value` (1–200 characters), `provenance`
 (`onboarding`, `chat_statement`, `repeated_signal`, `manual`), `confirmed_at` and `superseded_at`.
 Only one active row per user and key; a new value supersedes the old one. Model-inferred
-preferences cannot become confirmed automatically. Forced RLS, read-only for authenticated. The app
-confirms a preference through `persist_coach_preference`, which refuses any athlete but the caller
-unless the caller is the service role.
+preferences cannot become confirmed automatically. Forced RLS, read-only for authenticated.
+`persist_coach_preference` writes it for the service role only.
 
 ### `notification_preferences`
 
@@ -357,13 +371,25 @@ idempotency keys deduplicate retries while older revisions remain immutable hist
 
 ### `exercise_catalog`
 
-Curated exercise definitions (`catalog-v1`, 72 exercises): slug (primary key), name, movement
-pattern, primary muscles (the first is the target), required equipment (empty means bodyweight),
-level (`beginner`, `intermediate`), compound flag, `status` (`active` or `retired`) with
+Curated exercise definitions (`catalog-v1`, 76 exercises: 72 seeded, then four advanced staples):
+slug (primary key), name, movement pattern, primary muscles (the first is the target), required
+equipment (empty means bodyweight), level (`beginner`, `intermediate`, `advanced`; the lowest level
+that is offered the exercise, so an athlete sees every exercise at or below their own level),
+compound flag, `status` (`active` or `retired`) with
 `retired_at`, and catalog version. The rows mirror
 `supabase/functions/_shared/onboarding/catalog.ts`, and a Deno test keeps the two equal. Exercises
 are retired, never deleted; generation uses only active ones. Catalog changes do not rewrite
 historical snapshots.
+
+**Advanced level (migration `20261023100050_advanced_level_catalog.sql`).** `added_load` (boolean, default false) marks an exercise whose logged load is weight added to the body (`weighted-pull-up`): progression reads no load and 0 as none added. The four new rows carry `catalog_version` `catalog-v2` (the TypeScript `catalogVersion` is v2 too: it keys the onboarding snapshot hash and a plan's evidence). `get_coach_plan_state_v1` is 1.2 and adds `experience`. The `level` check
+accepts `advanced` (`experience_level` on `user_profiles` already did). Four rows are added, all
+level `advanced` and role `variation`, load step 2.5 kg: `weighted-pull-up` (vertical pull; bar and
+dumbbells), `close-grip-bench-press` and `incline-barbell-bench-press` (horizontal push; barbell and
+bench), `bulgarian-split-squat` (lunge; dumbbells and bench). Seven existing rows gained links to
+them (a progression or a substitute, mirrored); nothing was removed or renamed. `conventional
+deadlift` is not a new row: `barbell-deadlift` is the conventional deadlift. The reviewed muscle
+name "Bulgarian Split Squat" (`exercise_muscle_references`) now equals a catalog name with the same
+muscles; the reviewed list keeps the row for plans that name it without a slug.
 
 **Catalog v2 (B1, migration `20261015170021_exercise_catalog_v2.sql`).** Additive columns, mirrored
 from `_shared/onboarding/catalog_v2.ts` (a Deno test keeps them equal):
@@ -447,12 +473,91 @@ idempotency key and client revision, start and completion times, duration, sessi
 session effort (1–10), notes, actual start and end, logging completeness (0–1), and correction
 status (`none`, `needs_review`, `corrected`). One open session per planned workout.
 
+**A workout's identity across plan versions.** A Coach change, a block restore, a deload or a cardio
+block copies the plan's workouts under new ids (`private.clone_plan_version`,
+`private.coach_insert_workouts`), so a session keeps pointing at the workout of the version it was
+logged under. No lineage is recorded. A workout is the same workout in another version when it has
+the same name (case and outer spaces ignored) and the same `workout_order`, the match Coach's
+context already makes (`completed_this_week`): `private.workout_identity_ids(user, workout)` returns
+every such id of the athlete. Everything that asks whether a day is already logged uses it, not the
+bare id: `start_workout` (a second start for the same workout and day raises `55000`; a session in
+progress under an earlier version is the one a start of the copy returns, so no second one opens, but
+only when the copy holds the same exercises in the same order, `private.workout_resumable_ids`: the
+logger's rows are the session's own exercises matched by order, so a copy whose exercises changed
+starts its own session and never receives the older one's sets under other names),
+`get_my_workout_session` (finds the day's finished session of an earlier version, and a session in
+progress under a copy with the same exercises),
+`get_healthkit_completion_candidate`, `healthkit_auto_complete_workout`, `day_adjustment_compute`
+(`session_started` and `session_done`) and `private.unfinished_workouts`. The hub's history does not need it: it counts
+every completed session of the athlete by date. There is no unique index on (athlete, day, workout):
+the identity lives in `planned_workouts`, which an index on `workout_sessions` cannot read, and
+production already holds one athlete-day with the same workout logged twice. A workout renamed or
+reordered by a Coach change is a different workout to these checks. `start_workout` raises `22023`
+for a `p_local_date` after the athlete's local today (`private.local_date_for`), after the replay
+of an idempotent start. A workout started on the athlete's own today that is not the day's scheduled one
+(`planned_workout_for_date`) has no card and no stored answer, so the joint rules still take out or swap
+what a held or limited joint asks for it; readiness answers belong to the scheduled workout.
+
+**Weekdays.** `preferred_weekday` is read by every server reader of the day's workout
+(`planned_workout_for_date`, the readiness card, Apple Health completion, Coach context), so a plan
+version must not lack them. `private.fill_workout_weekdays(version)` gives a version whose workouts have
+none their weekdays in plan order (`private.default_workout_weekdays`: the profile's `training_days`
+when they are as many as the workouts, else a spread: two Monday and Thursday, three Monday, Wednesday and
+Friday, four Monday, Tuesday, Thursday and Friday, otherwise from Monday); `private.coach_insert_workouts`
+calls it, and the migration filled the versions that existed.
+
 `state` is `in_progress`, `completed` or `abandoned`. `abandon_workout` discards an open session
 (audited as `workout.abandoned`); the rows stay, and every history, load and hub read counts
-completed sessions only. `completion_source` (`manual`, `healthkit`, or null when no audit evidence
+completed sessions only. An `in_progress` session is also closed as `abandoned` by
+`private.abandon_stale_workouts` when its `local_date` is before the athlete's local today
+(`private.local_date_for`) and it started more than 10800 seconds (the 3-hour cap of
+`complete_workout_v2`) ago: `get_my_workout_session` closes the caller's before it looks, and an
+hourly job (`tracend-abandon-stale-workouts`) closes everyone's. The close touches only `state` and
+`updated_at`: sets, `local_date` and the start stay as they were, `actual_ended_at` stays empty (no
+end was recorded), and the audit event `workout.abandoned` carries `reason: stale`, the number of
+completed sets and the session's `local_date`. A session with logged sets is closed the same way:
+nothing is deleted, moved to another date or completed on the athlete's behalf, and a workout that
+crossed midnight stays open for its three hours. A session the rule closed (its audit event has
+`reason: stale`) still takes the athlete's own late send: `sync_workout_draft` saves unsent sets
+into it, and `complete_workout_v2` completes it on its own `local_date`, with its end set to its
+start plus the athlete's own duration. A session the athlete discarded herself has no such reason
+and stays final (55000). A planned workout repeats every week, so the open
+session is only ever found for its own day.
+
+**Unfinished workouts (migration `20261024050011_unfinished_workouts.sql`).** A session the rule
+closed that holds at least one completed set is offered back to the athlete, never finished for
+them: `private.unfinished_workouts(user, today)` lists the sessions that are `abandoned`, closed by
+the rule (`private.workout_closed_as_stale`), dated within the 28 days before the athlete's local
+today (what Coach looks back over), hold a completed set, and have no completed session of the same
+planned workout on the same day. Each carries `save_by`, 7 days after its own day: the athlete is
+offered it (Save or Discard) until then, and after that it stays listed for Coach only.
+`get_my_unfinished_workout_v1` (1.0) returns the newest still offered as `{workout: {session_id,
+planned_workout_id, name, local_date, save_by, started_at, logged_sets, total_sets, first_set_at,
+last_set_at}}` or `{workout: null}`; the times are the sets' own and null when the sets carry none.
+`resolve_unfinished_workout_v1(session, 'save' | 'discard', effort)` (1.0) is the only way an
+offered session is answered, both audited as `workout.unfinished_resolved` (`resolution`
+`saved` or `discarded`, the completed-set count and the `local_date`). **Save** completes the session
+on its own `local_date` through `private.complete_workout_session` with the athlete's own 1 to 10
+effort (`athlete`); its duration is the time from its start to its last logged set (capped at the
+same 10800 seconds) and, with no set times, stays null with no `actual_ended_at`, never the cap.
+**Discard** keeps it `abandoned`: `private.workout_closed_as_stale` is then false, so the athlete's
+late send is refused as for any discarded session (55000), and it is never offered again. A repeat
+of the same answer replays; the opposite answer is refused (55000 after a discard, 22023 to discard
+a completed one). Another athlete's session, one past its `save_by`, one with no set logged, one
+finished again the same day and one the athlete discarded in the app answer P0002. No table is
+written by the client. `abandon_workout` (the athlete's own discard) also records
+`workout.unfinished_resolved` `discarded` when it replays on a session the rule already closed: a
+discard queued on the phone while offline reaches the server after the close.
+`get_coach_plan_state_v1` is 1.3 and adds `unfinished` (planned workout id, `local_date`, name,
+`logged_sets` and `offerable`, whether `save_by` has not passed, of each listed session), so Coach
+says a session "logged N sets but was not finished" and not "not done". `completion_source` (`manual`, `healthkit`, or null when no audit evidence
 exists) and `session_effort_source` (`athlete`, `legacy_default`, `healthkit_default`) record
 provenance; see ALGORITHMS §4 "Effort Provenance". `complete_workout_v2` is the only writer of
 `athlete` effort.
+
+`day_adjustment_id` (nullable, B4) names the `day_adjustments` answer the session was started
+under, through a foreign key on `(day_adjustment_id, user_id)` so a session can only link its own
+athlete's row. `start_workout` sets it for the athlete's current accepted answer for that workout when the start is for their own today, whatever the rules say by then (it can only make the day easier; asking again is the card's job).
 
 ### `exercise_performances`
 
@@ -574,6 +679,71 @@ before the limit, so untrusted higher peaks never crowd out a valid lower one. T
 formula + 21 (a superset of the exact check), and the profile code applies the exact one.
 Discarded workouts are left out. Sleeping heart rate is never in the object.
 
+**Watch workout status and load inputs (C4).** No new table. `get_my_watch_workout_status_v1(local_date
+default today)` (security definer, authenticated, own data, date within 2 days of today, `schema_version`
+1.0) returns `{schema_version, as_of, recent_sessions: [{local_date, completed_sets, watch_sets}]}`: the
+last three finished workouts of the 28 days up to `as_of` that finished at least one set, newest first;
+`watch_sets` counts finished sets with `watch_workout` heart rate and coverage of at least 0.6.
+`get_workout_load_inputs_v1(target_user, local_date)` (service role only, 1.0) returns
+`{schema_version, as_of, sessions: [{local_date, completed_sets, sets: [{exercise_order, set_number,
+rest_before_seconds, start_bpm, peak_bpm, end_bpm, drop_30s_bpm, drop_60s_bpm, coverage, sample_count,
+source}]}]}`: the newest 12 finished workouts of the 28 days, with the finished sets that have a
+heart-rate summary (120 at most per workout). It carries no load, repetitions, reps in reserve or
+effort. Discarded, open and Apple Health completed (no set) workouts are left out, and so is a set that
+was finished and later undone.
+
+### `day_adjustments` (B4, migration code 24)
+
+The athlete's answers to the same-day readiness adjustment (rules `readiness-v1`; ALGORITHMS §4).
+An overlay for one day: it never changes a plan version. Rows are only added; the current answer
+for a user and local date is the one with `superseded_at` null (unique partial index).
+
+| Column | Meaning |
+|---|---|
+| `user_id`, `local_date` | owner (cascade from `user_accounts`) and the athlete's local day |
+| `planned_workout_id`, `plan_version_id` | today's scheduled workout and its plan version (composite foreign keys with `user_id`) |
+| `rules_version`, `band` | `readiness-v1`; `green`, `amber`, `red` or `unknown` when answered |
+| `kind`, `origin`, `rules_kind` | `hold_load`, `reduce_sets`, `swap_to_easy_cardio` or (B5-1) `joint_adjust`; `proposed` (the rules' kind) or `chosen` (the athlete's own pick); the kind the rules proposed at the time (`none` allowed) |
+| `triggers` | reason codes from a closed list (`sleep_very_poor`, `sleep_poor`, `sleep_short`, `energy_very_low`, `energy_low`, `very_sore`, `sore`, `mood_very_low`, `pain_moderate`, `pain_mild`, `recovery_low`, `no_check_in`, `not_available`) |
+| `changes` | array (at most 30) of per-exercise changes: `exercise_order`, `planned_exercise_id`, `name`, `sets_from`, `sets_to`, `load_note`, `load_kg_from`, `load_kg_to`, `reps_from`, `reps_to`, `rpe_to`; from B5-1 an exercise a joint touches also carries `joint_action` (`swap`, `limit`, `drop`), `joint`, `joint_state`, `swap_to_slug`, `swap_to_name`, `range_note_code` |
+| `cardio` | the easy-cardio dose (`minutes_min`, `minutes_max`, `effort`, `talk_test`, `vigorous_allowed`); not null exactly for `swap_to_easy_cardio` |
+| `inputs`, `inputs_hash` | the values the rules read (check-in id and revision, sleep minutes, recovery score, confidence and mode, screening outcome, and from B5-1 the joint states; Restricted health data) and their SHA-256 |
+| `status` | `accepted` or `declined` |
+| `answered_at`, `superseded_at`, `created_at` | times |
+
+An answer stands while it belongs to today's workout and the rules do not now ask for something
+stricter than what they asked for when it was given or than what the athlete answered; after the
+session starts it stands as it is. RLS is enabled and forced; the owner reads their rows, nobody
+writes them from the client (`respond_to_day_adjustment_v1` is the only writer). At most 20 answers
+a day. Export and account deletion cover it (cascade).
+
+### `pain_reports` (B5-1, migration `20261024060025`)
+
+The athlete's pain checks (rules `pain-v1`; ALGORITHMS §4, "Pain check, red flags and joint rules").
+Rows are only added; the newest report per area (by day, then by time stored) sets the area's state.
+
+| Column | Meaning |
+|---|---|
+| `user_id`, `local_date` | owner (cascade from `user_accounts`) and the athlete's local day of the report |
+| `source` | `check_in` (made in the daily check-in; `check_in_id` set, composite foreign key with `user_id`) or `workout` (the "Pain or discomfort" chip; may name its own `exercise_performance_id`) |
+| `area`, `severity`, `pattern` | `knee`, `back`, `shoulder` or `other`; 0 to 10; `movement`, `rest` or null |
+| `red_flags` | codes from `private.pain_red_flag_codes()` (ten, closed; sorted, no duplicates); empty = "none of these"; null = not asked |
+| `cleared_by_clinician` | the athlete says a doctor or physio cleared them; self-attested |
+| `outcome` | `urgent`, `clinician_today`, `clinician`, `modify`, `watch` or `clear`; a check constraint keeps it equal to `private.pain_outcome(severity, red_flags)` |
+| `idempotency_key`, `created_at` | a retried workout report returns the first (unique per user); time stored |
+
+One report per area per check-in (unique `(check_in_id, area)`); at most 40 reports a day that do not
+route out (a report that routes out is always stored). A report's day is the server's today or
+yesterday; a phone a day ahead is stored under the server's today. RLS is
+enabled and forced; the owner reads their rows, nobody writes them from the client
+(`save_daily_check_in` and `record_pain_check_v1` are the only writers, through
+`private.insert_pain_report`, which also records the audit event `pain_check_recorded` with the
+source, area and outcome only). Export and account deletion cover it. `save_daily_check_in` takes the
+optional keys `pain_area`, `pain_pattern`, `pain_red_flags`, `pain_cleared_by_clinician` and
+`pain_followups` (`[{area, severity, cleared_by_clinician}]` for areas already active); any of them
+marks a build that asks the questions, and then a pain above 0 needs an area and the red-flag answer
+and red flags need an area (22023, nothing saved). A build that sends none behaves as before.
+
 ### `workout_amendments`
 
 Append-only corrections to completed sessions: field path, old and new value, reason, and time.
@@ -625,7 +795,7 @@ entries are never promoted globally without review.
 
 Private-object metadata: user, purpose, opaque object key, content type (`image/jpeg`,
 `image/png`, `image/heic`), byte size (at most 10 MB), checksum, lifecycle status (`active`,
-`pending_deletion`, `deleted`), retention deadline, retention exemption, and deletion time. Meal
+`pending_deletion`, `deleted`), retention deadline, retention exemption, the time the retention worker claimed it (`retention_claimed_at`; a claim older than 30 minutes is handed out again), and deletion time. Meal
 photos get a 7-day deadline at upload; progress photos are exempt (deleted with their set or the
 account). Retention workers claim due objects before deleting Storage bytes, then finalize or
 schedule a retry. Clients never use object keys as authorization.
@@ -751,26 +921,66 @@ A10 adds two nullable columns on an assistant message, written by the Edge Funct
 role and never by the app (the app has select only): `guard_faults text[]` (rule names with counts,
 for example `rule:numbers_not_grounded:2`, `outcome:repair_timeout`, and
 `fallback:provider_response_invalid` when the turn ended in the data summary) and `lookups text[]`
-(the lookups a turn ran with their row counts, for example `exercise_history:14`). Names and counts
-only, never message content; a check limits each to 12 entries of `[a-z0-9_:]`. Row-level security
+(the lookups a turn ran with their row counts summed over rounds, for example `exercise_history:14`).
+Migration `20261020100017` adds a third, `lookup_rounds text[]`: the same per round and per mode of a lookup, for
+example `r1_workouts:4`, `r2_recovery:28`, `r1_plan_history_proposals:3`, and `correction:1` when a refused
+request was corrected. Names and counts
+only, never message content; a check limits `guard_faults` and `lookups` to 12 entries of `[a-z0-9_:]` (unchanged) and
+`lookup_rounds` to 17 entries (two rounds of eight and the correction marker) and 800 characters. Row-level security
 limits both to the message's owner.
+
+E3's production pass (migration `20261018200044_library_search_v3`) adds `library_version text`
+(16 lower-case hex characters, checked): the research library version the turn searched
+(`private.library_version()`, returned on every `search_library_v3` row), written by coach-chat with
+the turn trace on a model answer whose library search returned rows. It says which library content
+the answer was shown; it holds no content.
 
 #### Coach data lookups and baseline reads (A10, migration code 20)
 
 Read-only `SECURITY DEFINER` functions, granted to `service_role` only, each returning
-`schema_version` `1.0` (the user id comes from the authenticated Edge Function call; dates of
+`schema_version` (`1.0`; `1.1` for the three changed by migration `20261018190042`; the user id comes from the authenticated Edge Function call; dates of
 records such as plan versions and goals are the athlete's local days, `private.local_day`):
 
 - Baseline, `(p_user_id, p_local_date)`: `get_coach_plan_state_v1` (the active plan's sessions with
-  exercises, the sessions finished this ISO week, equipment and movements to avoid, and the next
-  targets from `get_progression_summary_v1`), `get_coach_nutrition_state_v1` (the week's days with
+  exercises, the sessions finished this ISO week, the workouts logged but left unfinished that the
+  athlete has not answered (`unfinished`, 1.3), the sessions finished yesterday and today with
+  their exercises and the sets actually logged (`recent_completed`, whatever the week), when the
+  active version is a temporary block the sessions it hands back to after `ends_on`
+  (`after_block`), equipment and movements to
+  avoid, and the next targets from `get_progression_summary_v1`), `get_coach_nutrition_state_v1` (the week's days with
   complete flags, the target, the schedule with what is logged, what was eaten today, where meals
-  came from), `get_coach_data_index_v1` (first and last date and count per kind of record).
-- Lookups (ten), `(p_user_id, p_from, p_to, p_filter)`, range cut to 400 days, rows capped:
+  came from), `get_coach_data_index_v1` (first and last date and count per kind of record, and `schedule`: the
+  active plan's weekdays and the date it took effect).
+- Lookups (eleven), `(p_user_id, p_from, p_to, p_filter)`, range cut to 400 days, rows capped:
   `coach_lookup_workouts_v1`, `_exercise_history_v1`, `_meals_v1`, `_body_v1`, `_check_ins_v1`,
   `_recovery_v1`, `_plan_history_v1`, `_goals_v1`, `_weekly_reviews_v1`,
-  `_health_history_v1`. Check-in notes are cut to 300 characters; a goal returns its target keys only
+  `_health_history_v1`, `_past_messages_v1`. `_plan_history_v1` with the filter `schedule` lays the active plan over the
+  range, past or ahead (`private.coach_plan_schedule`): per date the planned sessions of the plan
+  version in force that day (the latest non-draft version whose `effective_date` is on or before the
+  date; after a temporary block's `ends_on` the version it restores), marked with its version number
+  and whether it is a block, the finished sessions with their logged sets, and the athlete's `today`; the range is the one lookup that may end
+  after the coaching date (the Edge Function allows 90 days). Check-in notes are cut to 300 characters; a goal returns its target keys only
   (never the free-form details).
+- Coach investigates first (migration `20261020100017_coach_investigation.sql`, additive: keys and
+  one function added, `schema_version` bumped, nothing removed). The filters reach what no lookup
+  reached: `_plan_history_v1` with `proposals` (1.2; the Coach proposals in the range, newest 12,
+  with kind, title, status, why, gain, cost and dates; `private.coach_lookup_proposals`),
+  `_health_history_v1` with `workouts` (1.1; the individual watch workouts of any age, newest 40,
+  with how each stands against the logged sessions: the strongest standing among confirmed,
+  suggested and conflict, and rejected only when nothing else was proposed), `_weekly_reviews_v1` with `decisions` (1.1; the daily
+  `coach_decisions`, newest 30). `_workouts_v1` (1.1) adds the session note (cut to 300),
+  each exercise's note (cut to 200), the kind of performance and the reason for a substitution;
+  `_recovery_v1` (1.1) adds breathing rate, the four sleep stages, night and morning HRV, active
+  energy and workout minutes; `_past_messages_v1` (1.1) adds `coach_replies`, at most 4 of Coach's own
+  earlier replies in remembered chats that match the words (never a data summary), 300
+  characters each. `get_coach_data_index_v1` (1.2) adds `watch_workouts`, `proposals`,
+  `daily_decisions` and `past_messages` (first, last, count). `get_coach_watch_outs_v1(user,
+  local_date)` (1.0, service role) returns the facts the watch-outs are computed from, never a
+  conclusion: the newest night, the newest computed row of today or yesterday (recovery score,
+  sleep quality score, the engine's z-scores for resting heart rate and HRV and the components it
+  could not use), the newest check-in of today or yesterday, exercises flagged for pain in the last
+  14 days, exercises skipped in each of their last two or more sessions (56 days), the newest weigh-in
+  and Apple Health sync dates, and the active plan's number, when the plan began (its first version: a version bump does not reset it), and block length. Skipped exercises count only those the active plan still holds.
 - `private.nutrition_day_totals` and `private.nutrition_complete_day_rules` define a complete
   logging day (ALGORITHMS.md section 6); `evaluate_change_eligibility` averages complete days only.
 
@@ -780,7 +990,11 @@ stored and sets `change_proposals.source_message_id` the other way; the thread l
 the card shows live and on reload. `get_coach_proposals_context_v1(user, local_date)` (service role)
 feeds the Coach context: the running block and its last day, the goal phase and its end date (a
 phase or block that has ended is reported as ended), proposals waiting and how recent ones were
-answered.
+answered. From `schema_version` 1.1 (migration `20261020100017`, additive: only a field was added to
+each proposal) a pending proposal also carries `figures`, what its payload would set (`calories`,
+`protein_g`, `carbohydrate_g`, `fat_g`, `sessions_per_week`, `block_weeks`; a field is absent when the
+proposal does not change it, and `figures` is null once the proposal is answered). They are shown to
+Coach as the proposal's figures, never as the athlete's target.
 
 
 ### `coach_context_snapshots`
@@ -843,7 +1057,10 @@ narrative sections from the athlete's stored `coach_context_snapshots` (with the
 `coach_threads.remember` (default true) marks a conversation the athlete asked Coach not to remember
 (`create_coach_thread_v2`): no notes, no suggested facts, excluded from `coach_lookup_past_messages_v1`
 and `search_coach_messages`, and left out of every other conversation's context by
-`prepare_coach_chat_v9`.
+`prepare_coach_chat_v9`. `prepare_coach_chat_v10` (migration `20261018210031`, context
+`schema_version` 8.1) wraps v9 and rebuilds `recent_messages` with the app's labelled data summaries
+in, each carrying `answer_source: "data_summary"` beside `role` and `content`; every other message
+keeps its shape, except that a superseded user question (`safety_state` 'unavailable') carries that state. It rewrites the stored snapshot to match, as v9 does.
 
 ### `coach_narrative_entries` (never written)
 
@@ -909,6 +1126,8 @@ missing data, risk flags, and validity window.
 Bounded persistent proposal: feature snapshot, schema version, proposed training and nutrition,
 evidence, rationale, expected benefit, downside, confidence, effective date, expiry, and status.
 
+Evidence items are `{code, label, source}`. An onboarding proposal's items come from the athlete's answers and the policy (`feature_snapshot`, `policy_evaluation`) and, from E5, one item with `source: "library"` for each research source the plan cites (`code` is the library source id, `label` the retrieved title and year, written by the server). No column or constraint changed: the app lists the library items under "Why this plan".
+
 Onboarding proposals have two schema versions:
 
 - **1.0:** the Phase-2 mock, with names only.
@@ -948,7 +1167,7 @@ longer current. A newer pending proposal replaces an open one that would change 
 | `respond_to_coach_proposal_v1(proposal_id, action, note)` | athlete | `approve`, `decline` or `change`; approve re-checks pending, expiry, basis and screening and writes the new version(s) |
 | `undo_coach_proposal_v1(proposal_id)` | athlete | restores what approval replaced, as new versions, within seven days |
 
-All return `schema_version "1.0"`. Approval records a proposal as `expired` (and reports the
+All return `schema_version "1.0"` except `get_coach_proposal_inputs_v1`, which is `"1.1"` and adds `planned_exercise_id` to every plan exercise (a next-session target is matched on it, not on the slug). Approval records a proposal as `expired` (and reports the
 reason) when it is past `expires_at`, when the active plan, nutrition or goal is no longer the one
 in `basis`, when a temporary block's last day has passed, or when a block is already running; it
 also runs again what the build checked. `basis.gates` names the change-eligibility gates the build
@@ -1100,9 +1319,42 @@ Sleep quality:
     `load_kg` (null without a load), `reps`, `sets`, `confidence` (`high`, or `low` when reps in
     reserve were not logged for every working set) and `basis` (`last_date`; `recent`, up to three
     sessions latest first, each `local_date`, `load_kg`, `sets`, `min_reps`, `total_reps`,
-    `min_rir`, `effort_known`, `pain`). An exercise without logged sets has no entry.
+    `min_rir`, `effort_known`, `pain`, and from hub 1.8 (B4) `adjusted` (this exercise was listed by
+    the accepted hold-load or fewer-sets answer the session was started under) and `sets_planned`
+    (its adjusted set count, else null)). An exercise without logged sets has no entry.
   - `get_progression_summary_v1(p_user_id)` (service role only) returns `{schema_version: '1.0',
     targets}` with the same entries, for Coach context.
+- `get_my_training_guidance_v1(local_date)` and `get_training_guidance_for_v1(p_user_id, p_local_date)`
+  1.1 (B5-3, B5-4; the first for the athlete's own today, the second service role only; both refuse
+  any other date with 22023): `{schema_version, local_date, safety_route, deload {status, reasons,
+  last_ended_on, weeks_since, proposal_id, suppressed_by}, cardio_withheld, cardio_week {target_min,
+  stretch_max, done_min, intensity_known, vigorous_allowed, vigorous_sessions_max, vigorous_counts_as,
+  lift_separation_hours, easy_hr_reserve_max, window_from, window_to}}`. 1.0 (the deload part) is
+  never served alone: the two migrations deploy together. Read-only; no new table. Rules in
+  ALGORITHMS §4 ("Deloads", "Cardio Dosing"). A deload block is an `intensity` plan version whose
+  proposal payload carries `training.intensity_level: "deload"` (older blocks: the title
+  "Deload until <date>"); a moderate-effort block carries `"moderate"`.
+- `get_my_day_adjustment_v1(local_date)` and `respond_to_day_adjustment_v1(local_date, accept,
+  chosen_kind)` 1.1 (B4, B5-1): today's readiness adjustment and the athlete's answer; the keys are in
+  Contract 5 of the program plan (1.1 adds `joint_states`, `exercise_joint_options`, the
+  `joint_adjust` kind, the joint keys of a change (with `range_note_codes`), `hold_outcome` on a held
+  state, and the safety routes `urgent`, `clinician_today` and `clinician`, which last while the area is
+  held).
+- `record_pain_check_v1(local_date, source, area, severity, pattern, red_flags, cleared_by_clinician,
+  exercise_performance_id, idempotency_key)` 1.0 (B5-1, authenticated): a pain check made in the
+  workout; returns `{schema_version, id, outcome, area_state}`. `get_readiness_context_v1(p_user_id,
+  p_local_date)` 1.0 (service role only): the band, kind, status, safety route, reason codes (never a
+  red-flag code) and each joint's area, state and lasting flag for Coach context. `previous_answer` carries `kind`, `status`, `answered_at` and
+  `reason` (`check_in` or `new_data`). The training hub is 1.9 (every 1.8 key is unchanged;
+  B4's 1.8 added two keys to the sessions inside a target's `basis.recent`, and 1.9 adds
+  `recent_sessions[].current_workout_id`, the active version's workout with the session's
+  workout's name and order, null when there is none); the daily brief does not change. From 1.9 the hub's
+  `completed` list (history, the week's count, `completed_day_set`) is every completed session of the athlete in the window, joined to
+  its own planned workout in whichever version, and every date it uses is the athlete's local date
+  (`local_today`, the 28-day windows, `today_workout`, `computed`), not the database's `current_date`.
+  `private.day_adjustment_metric_attempts` (private, one row per athlete and day, deleted with the
+  account) records the last attempt to make the day's scores, so a failure is not retried on every
+  read.
 - `get_my_daily_brief` 1.8:
   - `recovery_previous` (yesterday's stored `recovery_score`);
   - `plan` (the active plan's `title`, `version_number`, `block_weeks` and `week_number`, weeks
@@ -1194,8 +1446,8 @@ with no policies; no grants to `anon`, `authenticated` or `service_role`. Edge F
 only through service-role functions. Not part of privacy export or account deletion. `pgvector`
 lives in the `extensions` schema. The tables are empty until ingestion.
 
-> **Planned (Phase 3 / E2):** ingestion and the first 30 sources. **Phase 3 / E3 (code 43):** the
-> library inside Coach chat. **Phase 4 / E4 (code 44):** regional modules.
+> Ingestion (E2), the library inside Coach chat (E3) and the regional modules (E4: eight UK, US,
+> Australian and global body-measure and nutrition sources, and the stored country) are built.
 
 #### `private.library_sources`
 
@@ -1213,6 +1465,7 @@ lives in the `extensions` schema. The tables are empty until ingestion.
 | topics         | text[]      | Topic tags used by search filters                                   |
 | evidence_level | text        | Nullable, free text set by ingestion                                |
 | kind           | text        | `paper`, `guideline`, `position_stand`, `summary`                   |
+| content_sha256 | text        | SHA-256 (hex) of what the loader stored for the source (`private.library_source_digest`); kept current by triggers, nullable (migration `20261018200044`) |
 | created_at     | timestamptz |                                                                     |
 
 #### `private.library_chunks`
@@ -1255,6 +1508,21 @@ and replaces its chunks only when their text changed, so loading a block again k
 embeddings. A later content update is a new migration holding the blocks printed by
 `_shared/library/build_migration.ts` for the changed sources; `library_content_test.ts` fails when a
 content file differs from the newest migration that loads it.
+
+**Retiring, digests and the library version (migration `20261018200044_library_search_v3`).** A
+source removed from `supabase/library/index.ts` is retired by a content migration holding its retire
+block (`build_migration.ts --retire <key>` prints `select private.library_retire_source('<key>');`),
+which deletes the source and, by the foreign key, its chunks; it returns whether a source was
+removed, so the block can run twice. `library_content_test.ts` fails while a migration still loads a
+source that `index.ts` no longer lists and no later block retires it, and when a source is retired
+after its newest load. Triggers on both tables keep `library_sources.content_sha256` equal to
+`private.library_source_digest(id)`: the digest of the source's loader fields and its chunks'
+ordinal, section, header, body and token count (embeddings, attempts and timestamps are left out, so
+embedding a chunk does not change it). `private.library_version()` is the first 16 hex characters of a
+SHA-256 over every source's `manifest_key:content_sha256`, in key order: it changes exactly when a
+source is added, changed or retired, and two databases with the same content report the same
+version. None of the three is executable by an API role. A migration that adds a content column to
+the loader adds it to `library_source_digest` too.
 
 Embeddings are filled server-side. Service-role functions (all security definer, empty
 `search_path`, no grant to `anon` or `authenticated`):
@@ -1308,10 +1576,13 @@ word, so a whole question matched almost nothing. Returns up to `match_count` ro
   `region`, so a regional caller passes for example `["global", "IN"]`.
 - `target_user_id` (optional): when set and `filters` has no `region`, the search is limited to the
   athlete's regions from `private.library_regions_for_account(uuid)` (not executable by any API
-  role): always `global`, plus the country in `user_accounts.locale` (`en-IN`, `en_US`) and `IN` for
-  the `Asia/Kolkata` and `Asia/Calcutta` time zones, because the app stores no country yet. An
-  unknown account gets `global` only. A source tagged `IN` therefore reaches only athletes in
-  India. When the app stores a country, change that one function.
+  role): always `global`, plus the athlete's stored `user_accounts.country_code` (E4). With none
+  stored, as before E4: the country in `user_accounts.locale` (`en-IN`, `en_US`) and `IN` for the
+  `Asia/Kolkata` and `Asia/Calcutta` time zones. A stored country replaces the guess entirely, so
+  `ZZ` ("another country") sees global sources only, even on an Indian time zone. An unknown
+  account gets `global` only. A source tagged `IN` therefore reaches only athletes in India, an
+  `AU` source only athletes who chose Australia (regions in the library today: `global`, `IN`,
+  `US`, `GB`, `AU`).
 - `public.library_worker_secret_v1()` (same migration): returns the Vault worker secret
   (`private.library_worker_secret()`), executable by `service_role` only. Coach chat uses it as the
   bearer when it calls `library-embed` to embed the question, so gte-small never loads inside
@@ -1319,6 +1590,29 @@ word, so a whole question matched almost nothing. Returns up to `match_count` ro
 - Coach does not filter by topic: the tags are free text, and a hard topic filter would drop the
   second source of a question that spans topics. The `topics` filter stays for callers that know
   what they want.
+
+#### `public.search_library_v3(query_text, query_embedding, query_embedding_model, match_count, filters, target_user_id)`
+
+Contract 6 v3 (E3 production pass, migration `20261018200044_library_search_v3`; additive, v2 stays
+for the deployed Coach chat until a cleanup migration). The same search as v2, with:
+
+- `query_embedding_model` (text): the model that embedded `query_embedding` (`gte-small`). Required
+  when an embedding is passed (`22023` otherwise); vector search compares only chunks whose
+  `embedding_model` equals it, so a re-embedding with another model never mixes two models' vectors.
+  The unfiltered path keeps the HNSW index (every chunk shares one model, so the filter drops
+  nothing).
+- Rows `{schema_version: 3, chunk_id, source_id, source_key, title, year, url, section, body, header,
+  evidence_level, kind, score, vector_distance, text_rank, library_version}`. `vector_distance` is
+  the cosine distance (`<=>`) between the chunk and the question for every row whose chunk carries an
+  embedding from that model, null without a query embedding. `text_rank` is `ts_rank` (normalisation
+  1) for the ORed terms, 0 when the chunk holds none of them, null when the question has no
+  searchable term. `library_version` is `private.library_version()`, the same on every row.
+- Coach chat applies the relevance floor to these rows (`_shared/library/retrieval.ts`,
+  `relevantRows`): excerpts are shown only when the nearest chunk is within the top limit, then every
+  chunk within the row limit; a question searched by words alone (no embedding) uses
+  `keywordRelevantRows` on `text_rank` and the share of its topic words the best chunk holds. The
+  calibration is in
+  `docs/handoff/research-library.md`.
 
 #### Dump-safe function signatures (all schemas we own)
 

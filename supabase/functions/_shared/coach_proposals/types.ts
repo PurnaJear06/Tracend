@@ -3,7 +3,7 @@
 // writes a new version and an audit event (Architecture 2 and 3). The model supplies only an
 // intent: a kind, parameters from closed vocabularies, dates and the athlete's own figures. Nothing
 // in this file or its neighbours calls a model.
-import type { AvoidablePattern, EquipmentItem } from "../onboarding/catalog.ts";
+import type { AvoidablePattern, EquipmentItem, ExperienceLevel } from "../onboarding/catalog.ts";
 import type { DailyActivity, Goal, Sex } from "../onboarding/answers.ts";
 import type { Muscle } from "../onboarding/catalog.ts";
 import type { ScreeningOutcome } from "../training/screening/outcome.ts";
@@ -125,6 +125,11 @@ export type CoachProposalIntent =
 export type BlockKind = "temporary_block" | "intensity" | "focus" | "next_session";
 
 export type StatePlanExercise = Readonly<{
+  /**
+   * The planned exercise's id: a next-session target belongs to it, not to the slug (a lift on a
+   * heavy and a light day has two). Null from an older payload, which then has no target.
+   */
+  plannedExerciseId: string | null;
   slug: string | null;
   name: string;
   sets: number;
@@ -189,7 +194,7 @@ export type StateProfile = Readonly<{
   age: number;
   birthYear: number;
   heightCm: number;
-  experience: "beginner" | "intermediate";
+  experience: ExperienceLevel;
   dailyActivity: DailyActivity;
   equipment: readonly EquipmentItem[];
   avoidPatterns: readonly AvoidablePattern[];
@@ -260,6 +265,8 @@ export type TrainingChange =
   | Readonly<{
     mode: "block";
     block_kind: BlockKind;
+    /** On an effort block: which one. The deload rules read it to tell a deload from moderate effort. */
+    intensity_level?: Exclude<IntensityLevel, "normal">;
     title: string;
     block_weeks: number;
     ends_on: string;

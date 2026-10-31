@@ -46,8 +46,16 @@ effort (no strength emphasis, at least 3 reps in reserve, no vigorous conditioni
 else is cleared. The answers, the outcome and the date are stored and exported. Tracend never
 diagnoses or names a condition. Accounts and app builds that never answered read as cleared.
 
-**Planned (Phase 4, E4; D5):** a global audience, with regional nutrition and body-measure modules
-(India ICMR-NIN, US DGA, UK NICE, Australia) chosen by the athlete's region.
+**Regional modules (Phase 4, E4; D5; built):** a global audience, with regional nutrition and
+body-measure modules in the research library for India (ICMR-NIN food guidelines, WHO and Indian
+BMI points), the United States (Dietary Guidelines for Americans, the NIH BMI and waist guide), the
+United Kingdom (Eatwell Guide, Government Dietary Recommendations, NHS BMI and waist guidance) and
+Australia (Australian Dietary Guidelines, protein reference values, activity guidelines). The
+athlete may choose a country in Account (optional); Coach then shows that country's sources next
+to the ones that apply everywhere, and with no country the app behaves as before. A country
+changes which guidelines Coach can cite, never a plan number: rules still set calories, protein and
+safe ranges. NICE's obesity guideline is not in the library yet (its text could not be read), and
+Australia's NHMRC review of the 2013 dietary guidelines may change that module.
 
 **Planned (Phase 4, B5; D6):** knee, back and shoulder training modifications: swaps, range limits,
 a pain check and referral warning signs. No diagnosis and no rehab programs.
@@ -149,8 +157,33 @@ either continuation or a revised plan. The user approves the result.
 5. Daily recommendations may adjust today's execution, but persistent target or plan changes enter a
    separate approval flow.
 
-**Planned (Phase 4, B4):** a same-day readiness adjustment (fewer sets, hold load, or easy cardio)
-that the athlete accepts or declines with one tap, recorded with an audit event.
+**Same-day readiness adjustment (Phase 4, B4; server built in B4-1, app in B4-2):** from today's
+check-in, last night's sleep and the recovery score, Tracend proposes holding last time's loads, one
+set fewer, or easy cardio for today's session only. The athlete accepts or declines with one tap
+(Undo until the workout starts), recorded with an audit event; the plan never changes. A poor check-in
+leads; the recovery score alone never adjusts a session, it informs the athlete and the athlete may
+choose an adjustment themselves. Pain of 7 or more gives a referral and no training change.
+
+**Pain check and joint rules (Phase 4, B5; server built in B5-1, app in B5-2):** an athlete with pain
+says where it is, how strong, when it hurts and whether any of ten red flags applies. The database
+works out the outcome: a red flag or a pain of 7 or more gives a referral (the emergency number when
+urgent) and no training change, applies on a rest day too, and holds the joint until the athlete says a
+clinician cleared it; 4 to 6 limits the joint for a week, 1 to 3 puts it on watch. A limited or held
+joint changes today's session (a gentler exercise for the same movement, a shorter pain-free range with
+the load held, or leaving the exercise out) through the same one-tap adjustment. Tracend never names a
+condition, never prescribes rehab, and never blocks the workout: it withholds advice.
+
+**Deloads and cardio dosing (Phase 4, B5; server built in B5-3 and B5-4):** when two lifts are heading
+down, the athlete has felt run down on four of the last seven days, or a block of training is done and
+was trained, Tracend can suggest a lighter week: the same sessions on the same days with half the sets,
+loads held and effort at 7 or lower, then the regular plan returns by itself. It is a suggestion, never
+applied: the athlete approves it (or asks Coach for one at any time) and can undo it for seven days.
+Nothing is suggested on a day with a safety route, under a health check that says to see a professional,
+within 28 days of the last deload or with too little training behind it. Separately, the week's cardio is
+shown against the health guideline (150 minutes of moderate cardio, up to 300 for fat loss and
+recomposition) from Apple Health workouts, with the honest note when the intensity is unknown or Apple
+Health data is missing; hard cardio is offered only to a cleared athlete on a good day with no painful
+joint. Heart rate informs the easy ceiling and the wording; it never applies or picks anything.
 
 Direct Coach questions use the active approved plan plus bounded longitudinal context: the active
 goal and profile, recent check-ins, normalized HealthKit summaries, completed workouts, confirmed
@@ -182,12 +215,13 @@ prescribed, substituted, and extra work. The app resumes a server-backed in-prog
 the user may edit it. Completed sessions are immutable through normal UI; corrections create
 audited amendments.
 
-Between sets a rest timer runs. It also shows as a Live Activity on the Lock Screen and Dynamic
-Island: a countdown with the exercise name and the next set's label only. An optional local alert
-says "Rest timer finished" when rest ends while the phone is locked. It is off by default ("Rest
-timer alerts" in Account › Notifications); off or denied, the rest timer stays in the app.
-
-**Planned (Phase 2, D1):** Done, Skip and +30s buttons on the Live Activity.
+Between sets a rest timer runs. The workout also shows as a Live Activity on the Lock Screen and
+Dynamic Island from the moment it opens: the set in progress (exercise, "Set 2 of 4", and its kg and
+reps only if the athlete turned on Lock Screen numbers) with a **Log set** button that logs the
+set at the values the logger pre-fills, then the rest countdown with **+30s** and **Skip**, then
+the next set. Changing reps or load needs the app. An optional local alert says "Rest timer
+finished" when rest ends while the phone is locked. It is off by default ("Rest timer alerts" in
+Account › Notifications); off or denied, the rest timer stays in the app.
 
 When Apple Health records a workout on a day the user has a scheduled Tracend workout but no
 completed session, Train offers a **mark complete from HealthKit** prompt. The user explicitly
@@ -294,7 +328,9 @@ must not prevent manual use.
 
 **Planned (Phases 2–4, C2–C4):** per-set workout heart rate (summaries only; raw samples never
 leave the phone), a heart-rate profile, and sleeping heart rate in shadow mode (D10). Heart rate
-never sets the load (D9).
+never sets the load (D9). C4 adds a dismissible suggestion on the workout screen to start a Watch
+workout when none of the last three workouts had Watch heart rate, and load signals for the training
+engine (confidence and rest), which Coach shows as fixed sentences in the plan context.
 
 ### 5.3 Plans and progression
 
@@ -307,7 +343,8 @@ never sets the load (D9).
 - A single poor workout must not trigger structural reprogramming.
 
 **Planned (Phases 2–4, B1–B6):** coach-grade rule data, templates by goal, days and experience,
-progression from the sets actually logged, deloads, cardio dosing, and a screening gate.
+progression from the sets actually logged, deloads, cardio dosing, and a screening gate. Deloads
+and cardio dosing are built on the server (B5-3, B5-4) and shown on Train (a lighter-week card, a Cardio this week row).
 
 ### 5.4 Coaching decisions
 
@@ -390,9 +427,11 @@ audit events without storing secrets or unnecessary raw prompt content.
 - Progress-photo interpretation remains separately consented and separately evaluated. Manual use
   and the approved plan survive every provider failure.
 - A research library (decision D3) holds open papers, guidelines and in-house summaries in our own
-  words. Paid course material is never stored. The tables and hybrid search exist; nothing is
-  ingested and no user sees it yet. **Planned (Phases 3–4, E2–E5):** ingestion, use inside Coach
-  chat, regional modules, and plan explanations that cite sources.
+  words. Paid course material is never stored. The tables and hybrid search exist; 114 sources
+  are ingested and shape every Coach reply (E3), regional modules choose the sources for the
+  athlete's country (E4), and plan explanations cite them: Coach chat when the athlete asks why the
+  plan is the way it is, and the onboarding plan, whose "Why this plan" lists the research behind it
+  (E5). A plan with no source to cite says so and is less certain.
 
 ## 6. Evidence-Gated Change Policy
 

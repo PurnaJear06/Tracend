@@ -144,3 +144,87 @@ Deno.test("ranges give both ends the unit of the end: a digest range grounds its
   assertEquals(ungroundedNumbers("About 150 minutes a week.", given), []);
   assertEquals(ungroundedNumbers("About 1.4 kg of protein.", given), ["1.4"]);
 });
+
+Deno.test("the length of a session item in a plan is advice, not a claim about the athlete", () => {
+  for (
+    const reply of [
+      "Day 1: 30 min easy walk.",
+      "Walk for 30 minutes after dinner.",
+      "Walk for 20-30 minutes.",
+      "Do a 45-minute session in the hotel gym.",
+      "Finish with 10 min of stretching.",
+      "Day 3: 20 minutes of mobility and a 15 min brisk walk.",
+      "Warm up for 10 minutes.",
+      "Walk 20 min after dinner.",
+      "Jog 15 minutes, then stretch.",
+      "You can walk 30 min after dinner.",
+      "You should do a 30-minute walk after dinner.",
+      "Try 20 minutes of easy cycling.",
+      "Do a 30-minute walk after dinner.",
+    ]
+  ) {
+    assertEquals(missing(reply), [], reply);
+  }
+});
+
+Deno.test("a duration that is not a round session item still has to be in the data", () => {
+  for (
+    const [reply, figure] of [
+      ["You slept 450 minutes.", "450"],
+      ["Your walk was 30 min.", "30"],
+      ["You did a 30 minute walk yesterday.", "30"],
+      ["Last week you did 45 min of cardio.", "45"],
+      ["Walk 37 minutes.", "37"],
+      ["Do a 120 minute session.", "120"],
+      ["Walk for 45 hours.", "45"],
+      ["Sleep 8 hours.", "8"],
+      ["Walk 45 minutes a day.", "45"],
+      ["You normally walk 45 minutes after dinner.", "45"],
+      ["You usually do a 45 minute walk.", "45"],
+      ["Your plan is a 45-minute walk after dinner.", "45"],
+      ["Your plan has a 30 min walk on Tuesday.", "30"],
+      ["Your warm-up is 10 minutes of easy cycling.", "10"],
+      ["You walk 45 minutes after dinner.", "45"],
+      ["Walk 30 minutes every morning.", "30"],
+      ["Do a 20 min walk each evening.", "20"],
+      ["Jog 20 min per session.", "20"],
+      ["Walk 30 minutes nightly.", "30"],
+      ["Walk 30 minutes three times a week.", "30"],
+      ["Walk 30 minutes every other day.", "30"],
+      ["Your average walk is 30 min.", "30"],
+      ["Your last walk was 30 min.", "30"],
+      ["Do a 30 min walk daily.", "30"],
+    ] as const
+  ) {
+    assertEquals(missing(reply), [figure], reply);
+  }
+});
+
+// Captured from the answer bank on 2026-10-24: each figure passed in its own sentence and failed
+// once the reply's other lines (a reasoning step, a follow-up) were joined after or before it.
+Deno.test("a figure's unit is read within its own line, and a range's unit across a line break", () => {
+  const ground = numberGroundOf([
+    "Latest weight 74.8 kg on 2026-10-13.",
+    "[source: jager_2017_protein] about 1.4 to 2.0 g per kg a day for people who train.",
+  ]);
+  assertEquals(ungroundedNumbers("Latest reading and BMI\n74.8 kg on 2026-10-13", ground), []);
+  assertEquals(
+    ungroundedNumbers("1.4 to 2.0 g per kg a day\nPlateau point from meta-analysis", ground),
+    [],
+  );
+  // The unit still decides: a BMI on the figure's own line is a BMI, and a gram range is not kcal.
+  assertEquals(ungroundedNumbers("Your BMI is 74.8", ground), ["74.8"]);
+  assertEquals(ungroundedNumbers("1.4 to 2.0 kcal per kg\nmore", ground), ["1.4", "2.0"]);
+});
+
+// Round 2 (hostile review of #177): the next line never lends a figure its unit, and a figure alone
+// on its line keeps the measurement label that ends the line before.
+Deno.test("a range takes no unit from the next line; a lone figure keeps the label above it", () => {
+  const ground = numberGroundOf(["Protein 35 g at lunch."]);
+  assertEquals(ungroundedNumbers("Body fat estimate: 25-28\nReps: 8-10 per set", ground), [
+    "25",
+    "28",
+  ]);
+  assertEquals(ungroundedNumbers("Your BMI:\n35", ground), ["35"]);
+  assertEquals(ungroundedNumbers("Protein:\n35 g", ground), []);
+});

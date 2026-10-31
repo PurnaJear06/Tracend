@@ -141,3 +141,16 @@ Deno.test("a question that starts with why or how come has a topic of its own", 
   assertEquals(isFollowUp("Why?"), true);
   assertEquals(isFollowUp("And why?"), true);
 });
+
+Deno.test("a question with no ASCII word is never a follow-up and is searched as it stands", () => {
+  for (const question of ["प्रोटीन कितना खाना चाहिए?", "クレアチンは安全ですか？", "💪🏽?"]) {
+    assertEquals(isFollowUp(question), false, question);
+    assertEquals(libraryRetrievalQuery(question, ["How much protein do I need?"]), {
+      text: question,
+      rewritten: false,
+    });
+  }
+  // A word of ASCII is enough to judge it the usual way.
+  assertEquals(isFollowUp("और creatine?"), false);
+  assertEquals(isFollowUp("Why?"), true);
+});

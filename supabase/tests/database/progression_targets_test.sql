@@ -5,11 +5,15 @@ select no_plan();
 -- Part 1 tests the pure decision with synthetic sessions; part 2 logs real sets and reads the hub.
 
 -- A session summary as private.next_session_targets builds it (latest first in the array).
+-- A session done under an accepted same-day adjustment (B4) is `adjusted`, with the set count it
+-- was planned at.
 create function pg_temp.sess(p_load numeric, p_sets integer, p_min_reps integer, p_total integer,
-  p_min_rir integer default 2, p_known boolean default true, p_pain boolean default false)
+  p_min_rir integer default 2, p_known boolean default true, p_pain boolean default false,
+  p_adjusted boolean default false, p_sets_planned integer default null)
 returns jsonb language sql as $$
   select jsonb_build_object('load_kg', p_load, 'sets', p_sets, 'min_reps', p_min_reps,
-    'total_reps', p_total, 'min_rir', p_min_rir, 'effort_known', p_known, 'pain', p_pain)
+    'total_reps', p_total, 'min_rir', p_min_rir, 'effort_known', p_known, 'pain', p_pain,
+    'adjusted', p_adjusted, 'sets_planned', p_sets_planned)
 $$;
 
 -- 3 sets of 6 to 8 at RPE 8 (two reps in reserve), 2.5 kg step, 3 days since the last session.
@@ -133,6 +137,40 @@ select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 8, 24, null, fals
 select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(2.5, 3, 6, 19)), 28)->>'load_kg', '2.5',
   'a lowering never reaches zero load');
 
+-- B4: a session done under an accepted adjustment is not evidence for lowering a load or for a stall,
+-- and its planned set count is the adjusted one.
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 4, 15, 2, true, false, true),
+    pg_temp.sess(80, 3, 5, 16))),
+  '{"action":"hold","reason":"below_range","load_kg":80,"reps":6,"sets":3,"confidence":"high"}'::jsonb,
+  'twice below the range at one load holds when the latest session was adjusted');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 4, 15),
+    pg_temp.sess(80, 3, 5, 16, 2, true, false, true)))->>'action', 'hold',
+  'and when the one before it was');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 4, 15), pg_temp.sess(80, 3, 5, 16)))->>'action',
+  'lower', 'while two ordinary sessions below the range still lower');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 6, 18, 2, true, false, true),
+    pg_temp.sess(80, 3, 6, 18), pg_temp.sess(80, 3, 6, 19)))->>'action', 'add_reps',
+  'three sessions without progress are not a stall when the latest was adjusted');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 6, 18), pg_temp.sess(80, 3, 6, 18, 2, true, false, true),
+    pg_temp.sess(80, 3, 6, 19)))->>'action', 'add_reps', 'or the middle one');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 6, 18), pg_temp.sess(80, 3, 6, 18),
+    pg_temp.sess(80, 3, 6, 19, 2, true, false, true)))->>'action', 'add_reps', 'or the oldest');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 6, 18), pg_temp.sess(80, 3, 6, 18),
+    pg_temp.sess(80, 3, 6, 19)))->>'action', 'lower', 'while an ordinary stall still lowers');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 2, 8, 16, 2, true, false, true, 2))),
+  '{"action":"add_load","reason":"top_of_range","load_kg":82.5,"reps":6,"sets":3,"confidence":"high"}'::jsonb,
+  'two sets done of two planned is a complete session: every set at the top earns the next step');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 2, 8, 16, 2, true, false, true, 3)))->>'reason',
+  'incomplete', 'two sets done of three planned is cut short');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 2, 8, 16)))->>'reason', 'incomplete',
+  'and an unadjusted session of two sets against the plan''s three is cut short too');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 8, 24, 2, true, false, true)))->>'action',
+  'add_load', 'a good adjusted session still earns the next step');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 6, 19, 2, true, false, true)))->>'action',
+  'add_reps', 'and one more rep');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 8, 24, 1, true, false, true)))->>'reason',
+  'effort', 'a grinding adjusted session still holds');
+
 -- However the history looks, the load never rises by more than one step.
 select is((
   select count(*) from generate_series(1, 12) reps, generate_series(1, 4) sets,
@@ -146,6 +184,23 @@ select is((
   where (pg_temp.decide(jsonb_build_array(pg_temp.sess(80, sets, reps, reps * sets)), gap)->>'reps')::integer
     not between 6 and 8
 ), 0::bigint, 'the target reps always sit inside the plan''s range');
+
+-- The invariants hold with adjusted sessions too: one step at most, reps inside the range.
+select is((
+  select count(*) from generate_series(1, 12) reps, generate_series(1, 4) sets,
+    unnest(array[null, 0, 1, 2, 3, 5]::integer[]) rir, generate_series(0, 30, 7) gap,
+    unnest(array[true, false]) skipped, unnest(array[null, 1, 2, 3]::integer[]) planned,
+    unnest(array[true, false]) older
+  where (pg_temp.decide(jsonb_build_array(pg_temp.sess(80, sets, reps, reps * sets, rir, true, false, true,
+          planned), pg_temp.sess(80, sets, reps, reps * sets, rir, true, false, older)),
+          gap, skipped)->>'load_kg')::numeric not between 77.5 and 82.5
+), 0::bigint, 'adjusted sessions move the load by at most one step');
+select is((
+  select count(*) from generate_series(1, 12) reps, generate_series(1, 4) sets,
+    unnest(array[null, 1, 2, 3, 4]::integer[]) planned, generate_series(0, 30, 7) gap
+  where (pg_temp.decide(jsonb_build_array(pg_temp.sess(80, sets, reps, reps * sets, 2, true, false, true,
+          planned)), gap)->>'reps')::integer not between 6 and 8
+), 0::bigint, 'and their target reps sit inside the plan''s range');
 
 -- Part 2: real logged sets through the hub -------------------------------------------------
 
@@ -240,7 +295,7 @@ set local "request.jwt.claim.sub" = 'b3000000-0000-4000-8000-000000000001';
 insert into hub select public.get_my_training_hub(28);
 reset role;
 
-select is((select j->>'schema_version' from hub), '1.7', 'hub schema 1.7');
+select is((select j->>'schema_version' from hub), '1.9', 'hub schema 1.9');
 select is((select array(select k from jsonb_object_keys(j) k order by k collate "C") from hub),
   array['active_plan', 'adherence', 'completed_day_set', 'computed', 'daily_load', 'local_today',
     'next_targets', 'period_days', 'progression', 'recent_sessions', 'schema_version',

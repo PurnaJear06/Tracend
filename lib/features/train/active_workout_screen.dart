@@ -9,6 +9,10 @@ import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/notification_repository.dart';
+import 'package:tracend/features/readiness/day_adjustment.dart';
+import 'package:tracend/features/readiness/pain_check_sheet.dart';
+import 'package:tracend/features/readiness/pain_reporting.dart';
+import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/rest_timer.dart';
 import 'package:tracend/features/train/set_timing.dart';
@@ -22,6 +26,8 @@ import 'package:tracend/features/train/workout_events.dart';
 import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/features/workout_hr/set_heart_rate_recorder.dart';
+import 'package:tracend/features/workout_hr/watch_workout_prompt.dart';
+import 'package:tracend/shared/home_widgets/lock_screen_numbers.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
@@ -47,6 +53,9 @@ class ActiveWorkoutScreen extends StatefulWidget {
     this.clock = DateTime.now,
     this.events,
     this.activity = const MethodChannelWorkoutActivityBridge(),
+    this.lockScreenNumbers = readLockScreenNumbers,
+    this.watchPrompt,
+    this.pain,
     super.key,
   });
 
@@ -66,10 +75,31 @@ class ActiveWorkoutScreen extends StatefulWidget {
   /// when none is given, and closes it when it goes away.
   final WorkoutEventHub? events;
 
-  /// The rest's Live Activity. The rest timer is its only driver; the
-  /// workout events above do not touch it. Its Done, Skip and +30s buttons
-  /// arrive as [WorkoutCommand]s through [events]' command sink.
+  /// The workout's Live Activity: the set in progress and the rest. The rest
+  /// timer controller is its only driver; the workout events above do not
+  /// touch it. Its "Log set", Skip and +30s buttons arrive as
+  /// [WorkoutCommand]s through [events]' command sink.
   final WorkoutActivityBridge activity;
+
+  /// Whether the athlete allows numbers on the Lock Screen. Read once when the
+  /// workout opens; the card shows the set's kg and reps only when true.
+  final Future<bool> Function() lockScreenNumbers;
+
+  /// Decides whether to suggest a Watch workout before the first set. The
+  /// screen makes the server-backed one for the Supabase repository and
+  /// suggests nothing otherwise.
+  final WatchWorkoutPromptSource? watchPrompt;
+
+  /// Sends the pain check made on an exercise ("Pain or discomfort") and keeps
+  /// it on the phone until Tracend has it. Without it the check cannot be
+  /// made.
+  final PainReporting? pain;
+
+  static int _open = 0;
+
+  /// Whether a workout screen is open anywhere in the app. A link from the
+  /// Live Activity then needs nothing more than the app coming forward.
+  static bool get isOpen => _open > 0;
 
   /// The longest workout the server records (3 hours).
   static const maxSessionSeconds = 10800;
@@ -85,8 +115,15 @@ enum _Leave { save, discard }
 /// What a Done press from the Live Activity did.
 enum _Tick { ticked, stale, unsuggested }
 
-/// What follows a set: the label, and the set it names (1-based).
-typedef _Next = ({String full, String short, int exerciseOrder, int setNumber});
+/// What follows a set: the label, and the set it names (1-based) with the
+/// index of its exercise in the workout.
+typedef _Next = ({
+  String full,
+  String short,
+  int exercise,
+  int exerciseOrder,
+  int setNumber,
+});
 
 /// Schedules the lock-screen alert only while the athlete's toggle is on;
 /// cancelling always goes through, so no alert outlives its rest.
@@ -118,9 +155,25 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   late final WorkoutEventHub _events = widget.events ?? WorkoutEventHub();
   StreamSubscription<void>? _commands;
   StreamSubscription<void>? _heartRate;
+  WatchWorkoutPromptSource? _watchPrompt;
+
+  /// The Watch-workout suggestion shows above the first set only.
+  bool _suggestWatch = false;
+
+  /// A set was done or the suggestion was answered: it is not shown again.
+  bool _watchSuggestionOver = false;
   final SetTimingRecorder _timing = SetTimingRecorder();
 
   String? _sessionId;
+
+  /// The logger has taken the set rows the server holds for [_sessionId]. The
+  /// server's `start_workout` decides how many sets a workout has, so nothing
+  /// is synced for a started session until its rows were read once; the draft
+  /// stays on the phone meanwhile.
+  bool _rowsAligned = false;
+
+  /// The code of the last refusal [_send] met.
+  String? _refusalCode;
   String _idempotencyKey = newIdempotencyKey();
   int _revision = 0;
   late DateTime _startedAt = widget.clock();
@@ -135,6 +188,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   bool _ready = false;
   _Sync _sync = _Sync.saving;
 
+  /// The server's rows name an exercise differently from what is logged on
+  /// it here (or lack a set that has something on it). Nothing is relabelled
+  /// or dropped and nothing is sent until the rows fit again: the draft stays
+  /// on this phone and the sync needs attention.
+  bool _rowsConflict = false;
+
   /// The workout is finished or discarded: nothing is saved any more.
   bool _closed = false;
 
@@ -144,6 +203,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   ExerciseHistoryResult? _history;
   HistoryStatus _historyStatus = HistoryStatus.loading;
+
+  /// The athlete allows kg and reps on the Lock Screen, so the Live Activity
+  /// shows the set's target.
+  bool _targetsOnLockScreen = false;
+
+  /// The exercise page on screen: the set the Live Activity names follows it.
+  int _page = 0;
 
   /// The rest shows full screen; false when it is shrunk to the pill.
   bool _restExpanded = true;
@@ -174,6 +240,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   @override
   void initState() {
     super.initState();
+    ActiveWorkoutScreen._open++;
     _commands = _events.handleCommands(_onCommand, clock: widget.clock);
     final repository = widget.repository;
     if (repository is SupabaseWorkoutRepository) {
@@ -185,11 +252,17 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         ),
       );
     }
+    _watchPrompt =
+        widget.watchPrompt ??
+        (repository is SupabaseWorkoutRepository
+            ? SupabaseWatchWorkoutPromptSource(Supabase.instance.client)
+            : null);
     _restore();
   }
 
   @override
   void dispose() {
+    ActiveWorkoutScreen._open--;
     // Finish, discard and save-and-leave stop the rest before the screen
     // goes; anything else (the app returning to sign-in) leaves the rest in
     // the draft and ends only its Live Activity.
@@ -219,18 +292,27 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _sync = _Sync.offline;
     }
     if (server != null && server['state'] == 'completed') {
-      _sessionId = server['session_id'] as String?;
-      _viewingCompleted = true;
-      _completedFromHealth = server['completion_source'] == 'healthkit';
-      _completedDuration = (server['duration_seconds'] as num?)?.toInt();
-      _hydrate(server['exercises']);
-      _ready = true;
-      if (mounted) setState(() {});
-      unawaited(_loadHistory());
+      _showCompleted(server);
       return;
     }
+    // Rows are matched to the plan's exercises by order, so a session begun
+    // on other exercises is never this workout's: its sets would be logged
+    // under the wrong names.
+    if (server != null && !_sessionFitsPlan(server)) server = null;
     final saved = await widget.repository.loadDraft(widget.workout.id);
-    final local = saved == null ? null : _decode(saved);
+    var local = saved == null ? null : _decode(saved);
+    if (local != null &&
+        _leftOnEarlierDay(local) &&
+        local['session_id'] != server?['session_id'] &&
+        await _sendLeftOver(local)) {
+      // An unfinished workout from an earlier day stays on its own day (the
+      // server closes it as discarded and still takes what was left unsent),
+      // so this phone's copy never opens today's workout or carries its sets
+      // and start time into it. It is dropped only once everything in it has
+      // reached the server; otherwise it stays and opens as it was saved.
+      await widget.repository.clearDraft(widget.workout.id);
+      local = null;
+    }
     final draft = _newer(server, local);
     if (draft != null) {
       _sessionId = draft['session_id'] as String?;
@@ -244,6 +326,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         _serverStartedAt = DateTime.tryParse(
           '${server['actual_started_at'] ?? ''}',
         );
+        _alignSets(server['exercises']);
+        _rowsAligned = true;
       }
       if (local != null && local['session_id'] == _sessionId) {
         _restoreClearedLoads(local[_clearedLoadsKey]);
@@ -254,6 +338,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           '${local[SetTimingRecorder.draftKey] ?? ''}',
         );
         _timingRefused = local[_timingRefusedKey] == true;
+        _rowsAligned = _rowsAligned || local[_rowsAlignedKey] != false;
       }
     }
     final storedRest = RestTimer.fromJson(local?[RestTimer.draftKey]);
@@ -268,9 +353,20 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     _pendingFinish = await widget.repository.loadPendingFinish(
       widget.workout.id,
     );
+    await _loadLockScreenChoice();
     _ready = true;
-    if (mounted) unawaited(widget.activity.attachButtons(_onButton));
     final first = _firstOpenExercise();
+    _page = first;
+    if (mounted) {
+      unawaited(widget.activity.attachButtons(_onButton));
+      if (_pendingFinish == null) {
+        _syncActivity(begin: true);
+      } else {
+        // The workout was finished and waits to be sent: a card left from
+        // before names sets that are done.
+        unawaited(_rest.stop());
+      }
+    }
     if (mounted) setState(() {});
     if (first > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -278,6 +374,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       });
     }
     unawaited(_loadHistory());
+    unawaited(_loadWatchSuggestion());
     try {
       if (_sessionId == null) {
         final id = await widget.repository.start(
@@ -286,15 +383,247 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           localDate: widget.sessionDate,
         );
         _sessionId = id;
+        _rowsAligned = false;
         _serverStartedAt ??= await _serverStartOf(id);
       }
     } catch (e) {
+      if (await _settleRefusedStart(e)) return;
       debugPrint('Non-critical error: workout start waits: $e');
       _sessionId ??= 'pending-$_idempotencyKey';
       _sync = _Sync.offline;
     }
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     await _save();
+  }
+
+  /// Whether the exercises the session [server] was begun with, as prescribed,
+  /// are this workout's own at each order.
+  bool _sessionFitsPlan(Map<String, dynamic> server) {
+    final rows = server['exercises'];
+    if (rows is! List) return true;
+    String key(String name) => name.trim().toLowerCase();
+    for (final row in rows) {
+      if (row is! Map || row['performance_kind'] != 'prescribed') continue;
+      final name = row['performed_name'];
+      final order = (row['order'] as num?)?.toInt();
+      final index = _exercises.indexWhere((e) => e.exercise.order == order);
+      if (name is! String || name.trim().isEmpty) continue;
+      if (index < 0 || key(_exercises[index].exercise.name) != key(name)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Opens the finished session [server] read-only. The exercises are named
+  /// as they were logged: the plan may have been copied since, so this
+  /// workout's own exercises can be other ones.
+  void _showCompleted(Map<String, dynamic> server) {
+    _sessionId = server['session_id'] as String?;
+    _viewingCompleted = true;
+    _completedFromHealth = server['completion_source'] == 'healthkit';
+    _completedDuration = (server['duration_seconds'] as num?)?.toInt();
+    final rows = server['exercises'];
+    if (rows is List) {
+      for (final row in rows) {
+        if (row is! Map) continue;
+        final name = row['performed_name'];
+        final order = (row['order'] as num?)?.toInt();
+        final index = _exercises.indexWhere((e) => e.exercise.order == order);
+        if (name is String &&
+            name.trim().isNotEmpty &&
+            index >= 0 &&
+            _exercises[index].exercise.name != name) {
+          _exercises[index] = ExerciseDraft(
+            _exercises[index].exercise.renamed(name),
+          );
+        }
+      }
+    }
+    _hydrate(rows);
+    _ready = true;
+    if (mounted) setState(() {});
+    unawaited(_loadHistory());
+  }
+
+  /// The server's final answers to `start_workout`: 22023 (the day has not
+  /// begun) and 55000 (the day is already logged). No retry changes either,
+  /// so neither is the workout being offline.
+  static bool _startRefused(Object error) =>
+      error is PostgrestException &&
+      (error.code == '22023' || error.code == '55000');
+
+  /// Settles a refused start. A day already logged (55000) opens the finished
+  /// session; a day that has not begun (22023) closes the workout with a
+  /// message, and any set already logged stays in the draft on this phone for
+  /// the left-over path. True when the screen took the answer.
+  Future<bool> _settleRefusedStart(Object error) async {
+    if (!_startRefused(error)) return false;
+    final code = (error as PostgrestException).code;
+    debugPrint('Non-critical error: workout start refused: $code');
+    _saveTimer?.cancel();
+    await _rest.stop();
+    if (code == '55000') {
+      Map<String, dynamic>? server;
+      try {
+        server = await widget.repository.loadSession(
+          widget.workout,
+          localDate: widget.sessionDate,
+        );
+      } catch (e) {
+        debugPrint('Non-critical error: logged session not read: $e');
+      }
+      if (server != null && server['state'] == 'completed') {
+        // The sets logged here cannot join a finished session, and this
+        // workout's draft must not open again as a later day's: the athlete
+        // is told what was not added.
+        final hadSets = _anySetDone;
+        await _openFinished(server);
+        if (hadSets && mounted) {
+          TracendToast.show(
+            context,
+            'Sets you logged here were not added to the finished workout.',
+            icon: CupertinoIcons.exclamationmark_triangle,
+          );
+        }
+        return true;
+      }
+    }
+    _closed = true;
+    if (!_anySetDone) await widget.repository.clearDraft(widget.workout.id);
+    _events.emit(WorkoutEnded(at: widget.clock(), completed: false));
+    if (!mounted) return true;
+    unawaited(TracendHaptics.warning());
+    TracendToast.show(
+      context,
+      code == '22023'
+          ? 'This day has not started yet. Open the workout on the day.'
+          : 'This workout is already logged for the day.',
+      icon: CupertinoIcons.exclamationmark_triangle,
+    );
+    Navigator.of(context).pop(false);
+    return true;
+  }
+
+  /// Opens the finished session [server] read-only and drops this phone's
+  /// draft and saved finish of the workout: the finished session is the truth,
+  /// and a draft left behind could open again as a later day's.
+  Future<void> _openFinished(Map<String, dynamic> server) async {
+    _saveTimer?.cancel();
+    await _rest.stop();
+    await widget.repository.clearDraft(widget.workout.id);
+    _pendingFinish = null;
+    _finishError = null;
+    _showCompleted(server);
+    _events.emit(WorkoutEnded(at: widget.clock(), completed: true));
+  }
+
+  /// A session that refuses a sync (55000) is finished or discarded. When it
+  /// is finished, say by a finish whose answer was lost, the screen opens it
+  /// instead of failing to send forever. True when it did.
+  Future<bool> _settleFinished(String id) async {
+    final server = await _readSession(id);
+    if (server == null || server['state'] != 'completed') return false;
+    await _openFinished(server);
+    return true;
+  }
+
+  /// Sends what an earlier day's draft holds that the server may not have:
+  /// its sets, and its finish when one was saved. True when nothing is left
+  /// on this phone that the server lacks, so the draft may go: no set was
+  /// done and no finish waits, or everything reached the server. False
+  /// keeps the draft (offline, or a draft whose session was never created
+  /// and has no finish to send). A session that no longer takes sets or a
+  /// finish (55000: it was saved or discarded already, say by an earlier try
+  /// whose answer was lost) is settled: nothing of the draft can reach it, so
+  /// it goes and never opens as a workout.
+  Future<bool> _sendLeftOver(Map<String, dynamic> draft) async {
+    final repository = widget.repository;
+    try {
+      final finish = await repository.loadPendingFinish(widget.workout.id);
+      if (finish == null && !_hasDoneSet(draft)) return true;
+      var id = draft['session_id'] as String?;
+      if (id == null || id.startsWith('pending-')) {
+        final key = draft['idempotency_key'] as String?;
+        final started = DateTime.tryParse(
+          '${draft['actual_started_at'] ?? ''}',
+        );
+        if (finish == null || key == null || started == null) return false;
+        id = await repository.start(
+          widget.workout,
+          key,
+          localDate: started.toLocal(),
+        );
+      }
+      final revision = (draft['revision'] as num?)?.toInt() ?? 0;
+      final sent = await syncDraft(
+        repository,
+        id,
+        revision,
+        serverDraftPayload(draft, id),
+        readRows: () async {
+          // The session of the day the draft was made on, not today's.
+          final session = await repository.loadSession(
+            widget.workout,
+            localDate: DateTime.tryParse(
+              '${draft['actual_started_at'] ?? ''}',
+            )?.toLocal(),
+          );
+          return session != null && session['session_id'] == id
+              ? session['exercises']
+              : null;
+        },
+      );
+      if (finish != null) {
+        await repository.completeWithEffort(
+          id,
+          revision,
+          finish.durationSeconds,
+          sent,
+          sessionEffort: finish.sessionEffort,
+        );
+      }
+      AppBreadcrumbs.workout(
+        'Earlier workout sent',
+        data: {'finished': finish != null},
+      );
+      return true;
+    } on PostgrestException catch (e) {
+      if (e.code == '55000') {
+        debugPrint('Non-critical error: earlier workout already settled: $e');
+        return true;
+      }
+      debugPrint('Non-critical error: earlier workout kept on the phone: $e');
+      return false;
+    } catch (e) {
+      debugPrint('Non-critical error: earlier workout kept on the phone: $e');
+      return false;
+    }
+  }
+
+  static bool _hasDoneSet(Map<String, dynamic> draft) {
+    final exercises = draft['exercises'];
+    if (exercises is! List) return false;
+    return exercises.any(
+      (exercise) =>
+          exercise is Map &&
+          exercise['sets'] is List &&
+          (exercise['sets'] as List).any(
+            (set) => set is Map && set['completed'] == true,
+          ),
+    );
+  }
+
+  bool _leftOnEarlierDay(Map<String, dynamic> draft) {
+    final started = DateTime.tryParse('${draft['actual_started_at'] ?? ''}');
+    if (started == null) return false;
+    final now = widget.clock();
+    return workoutLeftOnEarlierDay(
+      startedAt: started,
+      now: now,
+      sessionDate: widget.sessionDate ?? now,
+      maxSeconds: ActiveWorkoutScreen.maxSessionSeconds,
+    );
   }
 
   static Map<String, dynamic>? _decode(String saved) {
@@ -336,6 +665,40 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
   }
 
+  /// Makes each exercise be the one the server's row in [exercises] holds
+  /// and have as many sets as that row. A row with no sets is an exercise
+  /// left out today for a sore joint: it has none here either, so nothing is
+  /// logged or synced for it. A substituted row is the gentler exercise it
+  /// names. A row that names an exercise differently from what is logged on
+  /// it does not move the logged sets: they keep their identity and it is sent
+  /// with them (see [ExerciseDraft.takeIdentity]). `fits` is false when a set
+  /// with something on it has no row (it is never dropped); `changed` when any
+  /// count or name moved.
+  ({bool fits, bool changed}) _alignSets(Object? exercises) {
+    var fits = true;
+    var changed = false;
+    if (exercises is! List) return (fits: fits, changed: changed);
+    for (final row in exercises) {
+      if (row is! Map) continue;
+      final order = (row['order'] as num?)?.toInt();
+      final sets = row['sets'];
+      if (sets is! List) continue;
+      final index = _exercises.indexWhere((e) => e.exercise.order == order);
+      if (index < 0) continue;
+      final draft = _exercises[index];
+      final before = draft.sets.length;
+      final nameBefore = draft.exercise.name;
+      draft.takeIdentity(row);
+      draft.alignTo(sets.length);
+      if (draft.sets.length != before || draft.exercise.name != nameBefore) {
+        changed = true;
+      }
+      if (draft.sets.length != sets.length) fits = false;
+    }
+    _rowsConflict = !fits;
+    return (fits: fits, changed: changed);
+  }
+
   /// Sets whose load the athlete emptied on purpose, kept only in this
   /// phone's draft (the server stores just an empty load), so a restored
   /// workout never suggests a weight there again.
@@ -344,26 +707,53 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// The local draft field that holds [_serverStartedAt].
   static const _serverStartedKey = 'server_started_at';
 
+  /// The local draft field that holds [_rowsAligned]. A draft without it was
+  /// saved before the logger followed the server's rows and counts as aligned.
+  static const _rowsAlignedKey = 'rows_aligned';
+
   /// The local draft field that holds [_timingRefused].
   static const _timingRefusedKey = 'timing_refused';
 
-  /// When the server's copy of session [id] began, read back from the
-  /// server; the phone's clock only when that read fails (an estimate: a
-  /// refused time then falls back to syncing without times).
-  Future<DateTime> _serverStartOf(String id) async {
+  /// The server's copy of session [id], or null when it cannot be read or is
+  /// another session.
+  Future<Map<String, dynamic>?> _readSession(String id) async {
     try {
       final session = await widget.repository.loadSession(
         widget.workout,
         localDate: widget.sessionDate,
       );
-      if (session != null && session['session_id'] == id) {
-        final start = DateTime.tryParse(
-          '${session['actual_started_at'] ?? ''}',
-        );
-        if (start != null) return start;
-      }
+      return session != null && session['session_id'] == id ? session : null;
     } catch (e) {
-      debugPrint('Non-critical error: session start not read back: $e');
+      debugPrint('Non-critical error: session not read back: $e');
+      return null;
+    }
+  }
+
+  /// Takes the set rows the server holds for session [id] (`start_workout`
+  /// applies the athlete's accepted same-day answer, so they are the truth for
+  /// this workout). Null while the session cannot be read: the rows stay
+  /// pending and the caller retries.
+  Future<({bool fits, bool changed})?> _readRows(String id) async {
+    final session = await _readSession(id);
+    if (session == null) return null;
+    final aligned = _alignSets(session['exercises']);
+    _rowsAligned = true;
+    if (mounted) setState(() {});
+    return aligned;
+  }
+
+  /// Reads back the session [id] the server just started and takes its set
+  /// rows. Returns when it began; the phone's clock only when the read fails
+  /// (an estimate: a refused time then falls back to syncing without times),
+  /// and the rows then stay pending.
+  Future<DateTime> _serverStartOf(String id) async {
+    final session = await _readSession(id);
+    if (session != null) {
+      _alignSets(session['exercises']);
+      _rowsAligned = true;
+      if (mounted) setState(() {});
+      final start = DateTime.tryParse('${session['actual_started_at'] ?? ''}');
+      if (start != null) return start;
     }
     return widget.clock();
   }
@@ -401,6 +791,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
   }
 
+  Future<void> _loadLockScreenChoice() async {
+    try {
+      _targetsOnLockScreen = await widget.lockScreenNumbers();
+    } catch (e) {
+      debugPrint('Non-critical error: lock screen choice not read: $e');
+      _targetsOnLockScreen = false;
+    }
+  }
+
   Future<void> _loadHistory() async {
     try {
       final result = await widget.repository.loadExerciseHistory([
@@ -411,6 +810,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         _history = result;
         _historyStatus = HistoryStatus.ready;
       });
+      // The pre-filled kg and reps may now come from the history.
+      _syncActivity();
     } catch (e) {
       debugPrint('Non-critical error: exercise history not loaded: $e');
       if (mounted) setState(() => _historyStatus = HistoryStatus.unavailable);
@@ -476,7 +877,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   /// The draft. With [notBefore] (for the server), set times before it are
   /// left out; without [timing], every set's timing keys are.
-  Map<String, dynamic> _draft({DateTime? notBefore, bool timing = true}) => {
+  Map<String, dynamic> _draft({
+    DateTime? notBefore,
+    bool timing = true,
+    bool local = false,
+  }) => {
     'workout_id': widget.workout.id,
     'session_id': _sessionId,
     'idempotency_key': _idempotencyKey,
@@ -488,6 +893,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           'status': draft.status,
           'pain_flag': draft.pain,
           'rest_seconds': draft.exercise.restSeconds,
+          ...draft.swapFields,
+          // Only this phone needs to know that a swap waits to be confirmed
+          // (and which catalog exercise it is), so a restart keeps it.
+          if (local && draft.swapPending) 'swap_pending': true,
+          if (local && draft.keepsOwnIdentity) 'keep_identity': true,
+          if (local && draft.exercise.swappedFrom != null)
+            'exercise_slug': ?draft.exercise.exerciseSlug,
           'sets': [
             for (var j = 0; j < draft.sets.length; j++)
               {
@@ -503,10 +915,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// the running rest and the end of the last rest, which only the device
   /// needs.
   Map<String, dynamic> _localDraft() => {
-    ..._draft(),
+    ..._draft(local: true),
     'actual_started_at': _startedAt.toUtc().toIso8601String(),
     _serverStartedKey: ?_serverStartedAt?.toUtc().toIso8601String(),
     if (_timingRefused) _timingRefusedKey: true,
+    _rowsAlignedKey: _rowsAligned,
     RestTimer.draftKey: ?_rest.toDraft(),
     SetTimingRecorder.draftKey: ?_timing.pendingStart
         ?.toUtc()
@@ -515,6 +928,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   };
 
   void _changed() {
+    // A first set ends the suggestion for this workout for good: undoing the
+    // set does not bring the card back.
+    if (_anySetDone) {
+      _watchSuggestionOver = true;
+      _suggestWatch = false;
+    }
     _revision++;
     _saveTimer?.cancel();
     _saveTimer = Timer(const Duration(milliseconds: 250), _save);
@@ -539,15 +958,51 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           localDate: widget.sessionDate,
         );
         _sessionId = id;
+        _rowsAligned = false;
         _serverStartedAt = await _serverStartOf(id);
       } catch (e) {
+        if (await _settleRefusedStart(e)) return null;
         debugPrint('Non-critical error: workout start still waits: $e');
         if (mounted) setState(() => _sync = _Sync.offline);
         return _Sync.offline;
       }
     }
+    if (!_rowsAligned || _rowsConflict) {
+      final rows = await _readRows(id);
+      if (rows == null) {
+        // The server's rows are not known yet: sending sets now could name a
+        // set it does not have. The draft is on the phone; the next save
+        // tries again.
+        if (mounted) setState(() => _sync = _Sync.offline);
+        return _Sync.offline;
+      }
+      if (!rows.fits) {
+        // The rows and what is logged disagree: keep the draft, send none of
+        // it under another exercise's name, and say so.
+        if (mounted) setState(() => _sync = _Sync.attention);
+        return _Sync.attention;
+      }
+    }
     if (mounted) setState(() => _sync = _Sync.saving);
-    final first = await _send(id);
+    var first = await _send(id);
+    if (_refusalCode == '55000' && await _settleFinished(id)) return null;
+    if (_refusalCode == '22023') {
+      // The server may have refused a set number it does not have: read its
+      // rows again, and send once more when they moved. A set with something
+      // on it that has no row is never dropped; that needs attention.
+      final rows = await _readRows(id);
+      if (rows != null && !rows.fits) {
+        if (mounted) setState(() => _sync = _Sync.attention);
+        return _Sync.attention;
+      }
+      if (rows != null && rows.changed) {
+        await widget.repository.saveDraft(
+          widget.workout.id,
+          jsonEncode(_localDraft()),
+        );
+        first = await _send(id);
+      }
+    }
     final _Sync result;
     if (first != null) {
       result = first;
@@ -563,6 +1018,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       result = await _send(id) ?? _Sync.attention;
     }
     if (mounted) setState(() => _sync = result);
+    // Back online: pain reports made while the connection was down go too.
+    if (result == _Sync.saved) unawaited(widget.pain?.drain());
     return result;
   }
 
@@ -570,6 +1027,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// (22023) while it still carried this phone's set times; any other
   /// refusal needs attention.
   Future<_Sync?> _send(String id) async {
+    _refusalCode = null;
     try {
       await widget.repository.sync(
         id,
@@ -582,6 +1040,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       return _Sync.saved;
     } on PostgrestException catch (e) {
       debugPrint('Non-critical error: workout sync refused: ${e.code}');
+      _refusalCode = e.code;
       return e.code == '22023' && !_timingRefused ? null : _Sync.attention;
     } catch (e) {
       debugPrint('Non-critical error: workout sync waits: $e');
@@ -668,8 +1127,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               restSeconds,
               nextLabel: next.full,
               exerciseName: draft.exercise.name,
-              nextExerciseOrder: next.exerciseOrder,
-              nextSetNumber: next.setNumber,
+              next: _activitySet(next),
             )
             .then((_) => _persistRest()),
       );
@@ -684,10 +1142,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
         );
       }
-    } else if (_rest.timer == null) {
-      // No rest follows: the "Rest done" activity names a set that is now
-      // logged, so it goes.
-      unawaited(_rest.stop());
+    } else {
+      // No rest follows: the activity names the next set, or says every set
+      // is logged.
+      _rest.present(
+        next == null ? null : _activitySet(next),
+        begin: true,
+        nextLabel: next?.full ?? '',
+      );
     }
     _changed();
   }
@@ -716,6 +1178,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
     if (_restAfter == (exercise, set)) _restAfter = null;
     _changed();
+    _syncActivity();
   }
 
   void _setRir(int exercise, int set, int? rir) {
@@ -761,6 +1224,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       );
     }
     _changed();
+    _syncActivity();
   }
 
   /// How long a button press waits for the server copy before it answers;
@@ -817,8 +1281,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             await _saveForPress();
           case _Tick.stale:
             // The set is no longer the current one (a repeated or late
-            // Done): nothing changes.
-            break;
+            // press): nothing is logged, and the card is redrawn to the true
+            // set.
+            _rest.refresh();
           case _Tick.unsuggested:
             return false;
         }
@@ -863,6 +1328,118 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
   }
 
+  /// "Pain or discomfort": asks where, how strong and the two red-flag
+  /// questions, sends the report (or keeps it on the phone), flags the exercise
+  /// so the next target holds it, and says what to do. A report that routes out
+  /// stops the exercise and shows the referral, and has to be answered.
+  Future<void> _reportPain(int exercise) async {
+    final reporting = widget.pain;
+    if (reporting == null || _closed || _viewingCompleted) return;
+    final draft = _exercises[exercise];
+    final order = draft.exercise.order;
+    final before = reporting.readiness?.current;
+    final submission = await showPainCheckSheet(
+      context,
+      reporting: reporting,
+      exerciseName: draft.exercise.name,
+      localDate: reporting.readiness?.serverDay ?? _dayText(widget.clock()),
+      preselected: before?.likelyJoint(order),
+      exercisePerformanceId: draft.performanceId,
+    );
+    if (submission == null || !mounted) return;
+    draft.pain = true;
+    _changed();
+    final area = submission.report.area;
+    var adjustment = reporting.readiness?.current;
+    // The answer is shown at once, from what the phone knows: today's safety
+    // route, an area that is already held, and the report's own outcome. The
+    // server's word on the area is waited for only briefly, and only when
+    // nothing here already stops the exercise.
+    var held = _areaHeld(adjustment, area);
+    if (!submission.outcome.routesOut &&
+        adjustment?.safetyRoute == null &&
+        !held) {
+      // Whatever happens to the send, the answer is shown.
+      final delivery = await submission.delivery
+          .timeout(
+            _areaStateWait,
+            onTimeout: () =>
+                PainDelivery(outcome: submission.outcome, sent: false),
+          )
+          .onError<Object>(
+            (_, _) => PainDelivery(outcome: submission.outcome, sent: false),
+          );
+      held = delivery.areaState == 'held';
+      if (!mounted) return;
+      adjustment = reporting.readiness?.current;
+    }
+    final dayRoute = adjustment?.safetyRoute;
+    final stops = held || dayRoute != null || submission.outcome.routesOut;
+    // A swap only before anything is logged on the exercise, and never for one
+    // already swapped: its options are for the plan's exercise. None when the
+    // exercise stops, and none on a day with a safety route.
+    final swap = stops || draft.hasEntries || draft.exercise.swappedFrom != null
+        ? null
+        : adjustment?.jointOptionsFor(order)?.options[area];
+    final action = await showPainResultSheet(
+      context,
+      submission: submission,
+      swap: swap,
+      dayRoute: dayRoute,
+      heldArea: held,
+    );
+    // The referral was read here: Today does not open it again for the day.
+    final route = stricterRoute(submission.outcome.route, dayRoute);
+    if (route != null) {
+      unawaited(
+        reporting.acknowledge(
+          reporting.readiness?.serverDay ?? _dayText(widget.clock()),
+          route,
+        ),
+      );
+    }
+    if (!mounted) return;
+    switch (action) {
+      case PainChipAction.skipExercise:
+        draft.status = 'skipped';
+        _changed();
+        _syncActivity();
+      case PainChipAction.useSwap:
+        if (swap != null &&
+            draft.swapForPain(name: swap.name, slug: swap.slug)) {
+          _changed();
+          _syncActivity();
+          TracendToast.show(
+            context,
+            '${swap.name} instead. $swapLoadLine',
+            icon: CupertinoIcons.arrow_2_squarepath,
+          );
+        }
+      case PainChipAction.endWorkout:
+        await _saveAndLeave();
+      case PainChipAction.continueExercise || null:
+        break;
+    }
+  }
+
+  /// How long the server's word on whether the area is held is waited for
+  /// before the answer is shown from what the phone knows.
+  static const _areaStateWait = Duration(milliseconds: 1500);
+
+  /// Whether [area] is held today: a hold that stays until the athlete has
+  /// been seen. Judged from today's readiness; the server's answer to the
+  /// report adds to it.
+  static bool _areaHeld(DayAdjustment? adjustment, PainArea area) =>
+      adjustment?.jointStates.any(
+        (state) => state.area == area && state.state == JointStateKind.held,
+      ) ??
+      false;
+
+  static String _dayText(DateTime day) =>
+      '${day.year.toString().padLeft(4, '0')}-'
+      '${day.month.toString().padLeft(2, '0')}-'
+      '${day.day.toString().padLeft(2, '0')}';
+
   Future<void> _more(int exercise) async {
     final draft = _exercises[exercise];
     final skip = await showTracendActionSheet<bool>(
@@ -882,6 +1459,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (skip == null || !mounted) return;
     draft.status = skip ? 'skipped' : 'unknown';
     _changed();
+    _syncActivity();
   }
 
   /// What comes after the current set of [exercise]: its next set, else the
@@ -889,21 +1467,24 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   _Next? _nextLabel(int exercise) {
     final draft = _exercises[exercise];
     final set = draft.currentSetIndex;
-    if (set != null) {
+    if (set != null && !draft.skipped) {
       return (
         full: 'Set ${set + 1} of ${draft.exercise.name}',
         short: 'Set ${set + 1}',
+        exercise: exercise,
         exerciseOrder: draft.exercise.order,
         setNumber: set + 1,
       );
     }
     for (var i = 1; i < _exercises.length; i++) {
-      final other = _exercises[(exercise + i) % _exercises.length];
+      final index = (exercise + i) % _exercises.length;
+      final other = _exercises[index];
       final otherSet = other.currentSetIndex;
       if (!other.skipped && otherSet != null) {
         return (
           full: other.exercise.name,
           short: other.exercise.name,
+          exercise: index,
           exerciseOrder: other.exercise.order,
           setNumber: otherSet + 1,
         );
@@ -912,10 +1493,67 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     return null;
   }
 
+  /// The set the Live Activity names while no rest runs: the current set of
+  /// the exercise on screen, else the next exercise with a set to do; null
+  /// when every set is logged. "Log set" on the card logs this set with the
+  /// kg and reps the logger pre-fills for it ([suggestSet]).
+  _Next? _setInProgress() => _exercises.isEmpty
+      ? null
+      : _nextLabel(_page.clamp(0, _exercises.length - 1).toInt());
+
+  /// [next] as the Live Activity shows it. The target is the same kg and
+  /// reps the logger pre-fills and "Log set" logs, and only travels while the
+  /// athlete allows numbers on the Lock Screen.
+  ActivitySet _activitySet(_Next next) {
+    final draft = _exercises[next.exercise];
+    final suggestion = suggestSet(
+      draft,
+      next.setNumber - 1,
+      _historyOf(next.exercise),
+    );
+    final reps = num.tryParse(suggestion.reps);
+    final canLog = (reps ?? 0) > 0;
+    return (
+      exerciseOrder: next.exerciseOrder,
+      setNumber: next.setNumber,
+      setCount: draft.sets.length,
+      exerciseName: draft.exercise.name,
+      target: _targetsOnLockScreen && canLog
+          ? describeSet(
+              loadKg: num.tryParse(suggestion.load),
+              repetitions: reps!.round(),
+              assisted: draft.assisted,
+            )
+          : '',
+      canLog: canLog,
+    );
+  }
+
+  /// Shows the set in progress on the Live Activity. [begin] asks for a card
+  /// when none shows (the workout just opened); an edit only moves a card
+  /// that is there, so one the athlete dismissed stays gone.
+  void _syncActivity({bool begin = false}) {
+    if (!mounted ||
+        !_ready ||
+        _closed ||
+        _finishing ||
+        _viewingCompleted ||
+        _pendingFinish != null) {
+      return;
+    }
+    final next = _setInProgress();
+    _rest.present(
+      next == null ? null : _activitySet(next),
+      begin: begin,
+      nextLabel: next?.full ?? '',
+    );
+  }
+
   /// The next set to do in the workout, for a rest restored after a
   /// relaunch.
   _Next? _nextAfterCurrent() {
-    for (final draft in _exercises) {
+    for (var i = 0; i < _exercises.length; i++) {
+      final draft = _exercises[i];
       final set = draft.currentSetIndex;
       if (!draft.skipped && set != null) {
         return (
@@ -923,6 +1561,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               ? draft.exercise.name
               : 'Set ${set + 1} of ${draft.exercise.name}',
           short: set == 0 ? draft.exercise.name : 'Set ${set + 1}',
+          exercise: i,
           exerciseOrder: draft.exercise.order,
           setNumber: set + 1,
         );
@@ -1024,7 +1663,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     await _rest.stop();
     _saveTimer?.cancel();
     await _save();
-    if (!mounted) return;
+    // A refused start already closed the screen or opened the logged session.
+    if (!mounted || _closed || _viewingCompleted) return;
     _closed = true;
     _events.emit(WorkoutEnded(at: widget.clock(), completed: false));
     // The toast lives in the root overlay, so it outlasts this screen.
@@ -1112,7 +1752,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     await _rest.stop();
     _saveTimer?.cancel();
     final saved = await _save();
-    if (saved == _Sync.attention) {
+    if (_closed || _viewingCompleted) {
+      // A refused start already closed the screen or opened the logged session.
+      if (mounted) setState(() => _finishing = false);
+      return;
+    }
+    final rowsPending =
+        _sessionId != null &&
+        !_sessionId!.startsWith('pending-') &&
+        !_rowsAligned;
+    if (saved == _Sync.attention || rowsPending) {
       // The server holds older sets than this phone: finishing now would
       // finish from those, and clear the phone's copy.
       if (!mounted) return;
@@ -1589,6 +2238,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   void _pageChanged(int page) {
     TracendHaptics.selection();
+    _page = page;
+    _syncActivity();
     final exercise = _exercises[page].exercise;
     _events.emit(
       ExerciseAdvanced(
@@ -1639,12 +2290,36 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       onUndo: (set) => _undoSet(i, set),
       onRir: (set, rir) => _setRir(i, set, rir),
       onFillRir: (rir) => _fillRir(i, rir),
-      onPain: () {
-        _exercises[i].pain = !_exercises[i].pain;
-        _changed();
-      },
+      onPain: () => _reportPain(i),
       onMore: () => _more(i),
     );
+  }
+
+  bool get _anySetDone =>
+      _exercises.any((exercise) => exercise.completedCount > 0);
+
+  /// Asks whether to suggest a Watch workout, only for a workout with no set
+  /// done yet (a draft restored mid-workout is past the point of starting one).
+  Future<void> _loadWatchSuggestion() async {
+    final source = _watchPrompt;
+    if (source == null || _viewingCompleted || _anySetDone) return;
+    final suggest = await source.shouldSuggest();
+    if (!suggest ||
+        !mounted ||
+        _closed ||
+        _watchSuggestionOver ||
+        _anySetDone) {
+      return;
+    }
+    setState(() => _suggestWatch = true);
+  }
+
+  void _answerWatchSuggestion({required bool noWatch}) {
+    final source = _watchPrompt;
+    _watchSuggestionOver = true;
+    setState(() => _suggestWatch = false);
+    if (source == null) return;
+    unawaited(noWatch ? source.mute() : source.snooze());
   }
 
   List<Widget> _banners(BuildContext context) {
@@ -1667,6 +2342,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
     final pending = _pendingFinish;
     return [
+      if (_suggestWatch && !_viewingCompleted && !_closed)
+        WatchWorkoutPromptCard(
+          onNotNow: () => _answerWatchSuggestion(noWatch: false),
+          onNoWatch: () => _answerWatchSuggestion(noWatch: true),
+        ),
       if (_viewingCompleted && _completedFromHealth)
         banner([
           const StatusChip(

@@ -1,5 +1,5 @@
 begin;
-select plan(108);
+select plan(111);
 
 -- Coach proposals (migration 18): rules compute a change, Coach stores it as a pending proposal, the
 -- athlete approves it with one tap (a new version and an audit event) and can undo it for seven days.
@@ -558,6 +558,24 @@ select is(public.get_coach_proposals_context_v1('a8000000-0000-4000-8000-0000000
 insert into p select 'strict', pg_temp.store('a8000000-0000-4000-8000-000000000001', 'nutrition_targets',
   '{"nutrition":{"calories":2000,"protein_g":140,"carbohydrate_g":215,"fat_g":65,"rationale":"Four."}}',
   pg_temp.basis('a8000000-0000-4000-8000-000000000001', false, true, false));
+-- What a pending proposal would set, for Coach's context (the proposal's, not the athlete's target).
+-- Every row in this transaction has the same created_at; make this one clearly newest, so it is among the eight Coach is told about.
+update public.change_proposals set created_at = now() + interval '2 hours'
+where id = (select id from p where name = 'strict');
+select ok(exists (select 1 from jsonb_array_elements(
+    public.get_coach_proposals_context_v1('a8000000-0000-4000-8000-000000000001',
+      private.local_date_for('a8000000-0000-4000-8000-000000000001')) -> 'proposals') x
+  where x ->> 'status' = 'pending'
+    and x -> 'figures' = '{"calories":2000,"protein_g":140,"carbohydrate_g":215,"fat_g":65}'::jsonb),
+  'Coach is told what a pending proposal would set');
+select is(public.get_coach_proposals_context_v1('a8000000-0000-4000-8000-000000000001',
+    private.local_date_for('a8000000-0000-4000-8000-000000000001')) ->> 'schema_version', '1.1',
+  'with the version moved on');
+select is((select count(*)::integer from jsonb_array_elements(
+    public.get_coach_proposals_context_v1('a8000000-0000-4000-8000-000000000001',
+      private.local_date_for('a8000000-0000-4000-8000-000000000001')) -> 'proposals') x
+  where x ->> 'status' <> 'pending' and x -> 'figures' <> 'null'::jsonb), 0,
+  'and an answered proposal carries no figures');
 insert into public.onboarding_screenings(user_id, exercises_regularly, known_disease, symptoms,
   cleared_by_professional, outcome)
 values ('a8000000-0000-4000-8000-000000000001', true, true, false, false, 'moderate_until_cleared');

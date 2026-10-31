@@ -1,3 +1,4 @@
+import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 
 /// One planned exercise of today's workout, with the brief's own row for the
@@ -38,15 +39,36 @@ class TodaySessionProgress {
   int doneFor(TodayPlannedExercise exercise) =>
       (_completedSets[exercise.order] ?? 0).clamp(0, exercise.sets);
 
-  factory TodaySessionProgress.of(DailyBrief brief) {
+  /// [adjustment] is today's same-day adjustment: once the athlete accepted a
+  /// lighter session, each exercise counts the sets it was cut to. It is used
+  /// only for the workout it is about, on the day it is for.
+  factory TodaySessionProgress.of(
+    DailyBrief brief, {
+    DayAdjustment? adjustment,
+  }) {
     final workout = brief.workout;
+    final cut =
+        adjustment != null &&
+            adjustment.easesSession &&
+            adjustment.localDate == brief.localDate &&
+            workout != null &&
+            adjustment.plannedWorkoutId == workout['id']
+        ? {
+            for (final change in adjustment.appliedChanges)
+              change.exerciseOrder: change.setsTo,
+          }
+        : const <int, int>{};
     final exercises = <TodayPlannedExercise>[
       for (final item in (workout?['exercises'] as List? ?? const []))
         if (item is Map)
           (
             order: (item['order'] as num?)?.toInt() ?? 0,
             name: item['name'] as String? ?? 'Exercise',
-            sets: ((item['set_count'] as num?)?.toInt() ?? 0).clamp(0, 12),
+            sets:
+                (cut[(item['order'] as num?)?.toInt() ?? 0] ??
+                        (item['set_count'] as num?)?.toInt() ??
+                        0)
+                    .clamp(0, 12),
             row: Map<String, dynamic>.from(item),
           ),
     ];

@@ -120,6 +120,14 @@ class OnboardingProposalView extends StatelessWidget {
         ],
         const SectionLabel('Why this plan'),
         Text(proposal.rationale),
+        if (proposal.librarySources.isNotEmpty) ...[
+          const SizedBox(height: TracendSpacing.xs),
+          EvidenceAccordion(
+            title: researchTitle,
+            subtitle: 'Sources behind the reasons above',
+            child: _Bullets(proposal.librarySources),
+          ),
+        ],
         const SectionLabel('Expected benefit'),
         Text(proposal.benefit),
         const SectionLabel('Downside and uncertainty'),
@@ -169,6 +177,10 @@ class OnboardingProposalView extends StatelessWidget {
       ],
     );
   }
+
+  /// The disclosure under "Why this plan" that lists the research sources the
+  /// plan cites; absent when it cites none.
+  static const researchTitle = 'Research behind this plan';
 
   /// "Proposed by AI · checked by Tracend". The model that answered is stored
   /// with the proposal but never named on screen (D11).

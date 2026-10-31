@@ -48,7 +48,8 @@ class _Chat implements CoachRepository, CoachChatRepository {
   Future<CoachDecision?> loadLatest() async => null;
 
   @override
-  Future<CoachDecision> generate() => throw UnimplementedError();
+  Future<CoachDecision> generate({String? localDate}) =>
+      throw UnimplementedError();
 
   @override
   Future<Map<String, dynamic>> loadUsage() async => {};
@@ -78,7 +79,11 @@ Future<void> _open(WidgetTester tester, _Chat chat, {String? last}) async {
     MaterialApp(
       theme: TracendTheme.dark,
       home: Scaffold(
-        body: CoachScreen(repository: chat, threadMemory: _LastThread(last)),
+        body: CoachScreen(
+          repository: chat,
+          threadMemory: _LastThread(last),
+          now: () => _when.add(const Duration(hours: 1)),
+        ),
       ),
     ),
   );

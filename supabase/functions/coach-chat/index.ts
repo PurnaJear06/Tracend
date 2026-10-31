@@ -30,7 +30,10 @@ import {
   withoutSupersededQuestions,
 } from "./superseded.ts";
 import { referralFor } from "../_shared/coach_safety/referrals.ts";
-import { selectCoachChatRoute } from "../_shared/providers/coach_chat_provider_route.ts";
+import {
+  routeSignalsOf,
+  selectCoachChatRoute,
+} from "../_shared/providers/coach_chat_provider_route.ts";
 import {
   localDateIn,
   type RedFlagHit,
@@ -40,6 +43,10 @@ import {
   trainingQuestion,
 } from "../_shared/coach_safety/red_flags.ts";
 import { previousQuestionsOf } from "../_shared/library/query.ts";
+import { prefetchLibraryEmbedding } from "../_shared/library/live.ts";
+import { libraryContributorId } from "../_shared/library/retrieval.ts";
+import { trainingPlanContributorId } from "../_shared/coach_context/contributors/training_plan.ts";
+import { readinessContributorId } from "../_shared/coach_context/contributors/readiness.ts";
 import { loadMemoryContext, recordMemoryAfterTurn } from "../_shared/coach_memory/store.ts";
 import {
   noSuggestions,
@@ -77,9 +84,10 @@ import {
   coachContextContributorsFor,
 } from "../_shared/coach_context/registry.ts";
 import { coachServiceRpc } from "../_shared/coach_context/service_source.ts";
+import { noticeScopes } from "../_shared/ai_notice_coverage.ts";
 import { createLookupRunner } from "../_shared/coach_lookups/runner.ts";
 import { proposeFromChat } from "../_shared/coach_proposals/chat.ts";
-import { guardFaultsOf, lookupTrace, recordTurnTrace } from "./turn_trace.ts";
+import { guardFaultsOf, lookupRoundsTrace, lookupTrace, recordTurnTrace } from "./turn_trace.ts";
 
 export const coachChatResponseSchemaVersion = "1.1";
 // Request 1.1 (current app) gets response 1.2: answer_source on every message
@@ -456,6 +464,7 @@ export async function handleCoachChat(
   request: Request,
   held: { current?: CoachChatBudgetLedger },
   authenticate: typeof requireAuth = requireAuth,
+  prefetchLibrary: typeof prefetchLibraryEmbedding = prefetchLibraryEmbedding,
 ): Promise<Response> {
   const correlationId = extractCorrelationId(request);
   const log = createLogger(correlationId);
@@ -488,11 +497,14 @@ export async function handleCoachChat(
     await screenTodaysCheckIn(auth.serviceClient, auth.userId, input.question, input.timezone, log);
   // With AI_COACH_CHAT_* settings (and EVALUATED=true) the turn goes through the AI gateway;
   // without them, or when the route cannot be used, it keeps today's provider path, request for
-  // request. A question that needs analysis (progress, weight, nutrition numbers, the plan) uses
-  // the second route (AI_COACH_CHAT_STRONG_*) when it is set and the athlete's notice names its
-  // vendor.
+  // request. A turn whose records call for it (an open health check, pain on record, a proposal
+  // waiting, several watch-outs) uses the second route (AI_COACH_CHAT_STRONG_*) when it is set and
+  // the athlete's notice names its vendor. The signals come from the contributors, so the choice
+  // is made once they have rendered; until then the turn runs on the default route and the first
+  // budget place covers the dearer of the two.
   const defaultRoute = redFlag ? null : usableCoachRoute(log);
   let coachRoute = defaultRoute;
+  let strongRoute: AiRoute | null = null;
   // Nothing reaches the AI provider without the athlete's current consent,
   // whichever app build is calling. Through the gateway the consented notice
   // must also name the route's vendor.
@@ -501,21 +513,16 @@ export async function handleCoachChat(
   let consent: "granted" | "not_granted" | "unavailable" = "granted";
   let refusal: { status: 403 | 503; error: string } | null = null;
   let consentVendor: AiConsentWithProvider["provider"] = null;
+  let noticeVersion: string | null = null;
   if (defaultRoute) {
     const withProvider = await aiConsentWithProvider(rpc, auth.userId, "coach_chat");
     consent = withProvider.consent;
     consentVendor = withProvider.provider;
-    const selection = selectCoachChatRoute(
-      input.question,
-      defaultRoute,
-      () => usableCoachRoute(log, "coach_chat_strong"),
-      withProvider.provider,
-    );
-    coachRoute = selection.route;
-    if ("strongSkipped" in selection) {
-      log.warn("coach_chat_strong_route_not_used", { reason: selection.strongSkipped });
-    }
-    refusal = coachChatGatewayConsentRefusal(withProvider, selection.route);
+    noticeVersion = withProvider.noticeVersion;
+    // The stronger route is used only for the vendor the notice names (the choice is made below).
+    const strong = usableCoachRoute(log, "coach_chat_strong");
+    strongRoute = strong !== null && strong.vendor === withProvider.provider ? strong : null;
+    refusal = coachChatGatewayConsentRefusal(withProvider, defaultRoute);
   } else if (!redFlag) {
     const legacyVendor = legacyCoachChatVendor(Deno.env);
     if (legacyVendor) {
@@ -602,10 +609,11 @@ export async function handleCoachChat(
 
   // The gateway path reserves per attempt: this is the first attempt's worst case, and a repair
   // reserves its own before it is sent. A referral calls no model and reserves nothing.
-  const reserved = redFlag
-    ? true
-    : coachRoute
-    ? await budget.reserveInitial(coachChatReservationUsd(coachRoute, coachContextContributors)!)
+  const reserved = redFlag ? true : coachRoute
+    ? await budget.reserveInitial(Math.max(
+      coachChatReservationUsd(coachRoute, coachContextContributors)!,
+      strongRoute ? coachChatReservationUsd(strongRoute, coachContextContributors) ?? 0 : 0,
+    ))
     : await budget.reserveLegacy();
   if (!reserved) {
     return reply(
@@ -617,8 +625,13 @@ export async function handleCoachChat(
     );
   }
 
+  // The library (gateway route only) embeds the question now: after the replay is resolved and the
+  // budget is reserved, so a replay or a request at a limit never costs a library-embed call, and
+  // while the context is prepared; the contributor waits for it within its own deadline. A
+  // follow-up is embedded later, with the earlier question the prepared context supplies.
+  const libraryEmbedding = coachRoute && !redFlag ? prefetchLibrary(input.question) : null;
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
-    "prepare_coach_chat_v9",
+    "prepare_coach_chat_v10",
     {
       target_user_id: auth.userId,
       target_thread_id: input.thread_id,
@@ -638,7 +651,7 @@ export async function handleCoachChat(
   }
   if (prepareError || !prepared) {
     const reason = coachChatPreparationFailureCode(prepareError);
-    log.error("prepare_coach_chat_v9 failed", {
+    log.error("prepare_coach_chat_v10 failed", {
       error_code: prepareError?.code ?? "missing_prepared_context",
       reason,
     });
@@ -736,11 +749,31 @@ export async function handleCoachChat(
           question: input.question,
           localDate: coachingDate,
           previousQuestions: previousQuestionsOf(context, input.question),
+          ...(libraryEmbedding ? { queryEmbedding: libraryEmbedding } : {}),
         },
       );
     if (contributions.outcomes.length) {
       log.info("coach_context_contributors", { contributors: contributions.outcomes });
     }
+    // The route: the default one, or the stronger one when the athlete's records call for it.
+    if (defaultRoute && !redFlag) {
+      const selection = selectCoachChatRoute(
+        routeSignalsOf(contributions),
+        defaultRoute,
+        strongRoute,
+      );
+      coachRoute = selection.route;
+      log.info("coach_chat_route", { tier: selection.tier, reasons: [...selection.reasons] });
+    }
+    // Source ids, counts, timings and the nearest distance: never the question or a chunk.
+    const libraryTrace = contributions.traces?.[libraryContributorId];
+    if (libraryTrace) log.info("library_retrieval", { ...libraryTrace });
+    // Whether the heart-rate load signals were read, late or not at all: a word, never a value.
+    const planTrace = contributions.traces?.[trainingPlanContributorId];
+    if (planTrace) log.info("load_signals", { ...planTrace });
+    // Whether today's readiness card was read, late or not at all: a word, never what it shows.
+    const readinessTrace = contributions.traces?.[readinessContributorId];
+    if (readinessTrace) log.info("readiness_context", { ...readinessTrace });
     const generation = redFlag
       ? deterministicSafetyGeneration(redFlag)
       : coachRoute
@@ -752,7 +785,12 @@ export async function handleCoachChat(
         consentVendor,
         contributions,
         budget: budget.attemptBudget,
-        lookups: createLookupRunner((name, params) => coachServiceRpc(name, params), auth.userId),
+        // Data the accepted notice does not name (`ai_notice_coverage.ts`) stays out of the rows.
+        lookups: createLookupRunner(
+          (name, params) => coachServiceRpc(name, params),
+          auth.userId,
+          noticeScopes(noticeVersion),
+        ),
         proposals: true,
         factSuggestions: remembered,
         requestStartedAt: startedAtMs,
@@ -868,8 +906,12 @@ export async function handleCoachChat(
       auth.userId,
       persisted.assistant_message_id,
       {
-        guardFaults: guardFaultsOf(generation.attempts),
+        guardFaults: guardFaultsOf(generation.attempts, undefined, generation.cuts),
         lookups: lookupTrace(generation.lookups),
+        lookupRounds: lookupRoundsTrace(generation.lookups, generation.attempts),
+        libraryVersion: typeof libraryTrace?.library_version === "string"
+          ? libraryTrace.library_version
+          : null,
       },
     );
     if (!traced) log.warn("coach_chat_trace_not_stored");
@@ -1069,6 +1111,10 @@ export async function handleCoachChat(
       {
         guardFaults: guardFaultsOf(unavailable.metadata.attempts ?? [], unavailable.failureReason),
         lookups: lookupTrace(unavailable.metadata.lookups),
+        lookupRounds: lookupRoundsTrace(
+          unavailable.metadata.lookups,
+          unavailable.metadata.attempts ?? [],
+        ),
       },
     );
     log.info("coach_chat_data_summary_served", {

@@ -1,12 +1,22 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/coach/proposals/coach_proposal_repository.dart';
 import 'package:tracend/features/health/health_repository.dart';
+import 'package:tracend/features/readiness/day_adjustment_card.dart';
+import 'package:tracend/features/readiness/day_adjustment_controller.dart';
+import 'package:tracend/features/readiness/pain_reporting.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/features/train/active_workout_screen.dart';
+import 'package:tracend/features/train/guidance/cardio_week_sheet.dart';
+import 'package:tracend/features/train/guidance/deload_card.dart';
+import 'package:tracend/features/train/guidance/guidance_copy.dart';
+import 'package:tracend/features/train/guidance/training_guidance_controller.dart';
 import 'package:tracend/features/train/train_view_models.dart';
 import 'package:tracend/features/train/widgets/action_cards.dart';
 import 'package:tracend/features/train/widgets/exercise_detail_sheet.dart';
@@ -44,11 +54,43 @@ class TrainScreen extends StatefulWidget {
     this.onOpenAccount,
     this.now,
     this.planChanges,
+    this.workoutRequests,
+    this.dayAdjustment,
+    this.guidance,
+    this.proposals,
+    this.onTalkToCoach,
+    this.onCheckIn,
+    this.pain,
     super.key,
   });
 
+  /// Sends the pain check made during a workout started from here.
+  final PainReporting? pain;
+
+  /// Today's same-day readiness adjustment, shared with Today. Null without a
+  /// backend, where there is none.
+  final DayAdjustmentController? dayAdjustment;
+
+  /// Today's training guidance: the lighter-week card and the cardio row. Null
+  /// without a backend, where there is none.
+  final TrainingGuidanceController? guidance;
+
+  /// Answers the lighter week's proposal. The lighter-week card needs both
+  /// this and [guidance].
+  final CoachProposalRepository? proposals;
+
+  /// Opens Coach with the readiness card's question in the box.
+  final ValueChanged<String>? onTalkToCoach;
+
+  /// Opens today's check-in, which Today owns.
+  final VoidCallback? onCheckIn;
+
   /// Reloads the hub when a Coach proposal changed the plan.
   final PlanChanges? planChanges;
+
+  /// Counts the taps on the workout's Live Activity that ask for the workout
+  /// in progress. Today's workout reopens when it has a draft on this phone.
+  final ValueListenable<int>? workoutRequests;
   final WorkoutRepository? repository;
   final DailyBriefRepository? brief;
   final CoachRepository coach;
@@ -89,6 +131,13 @@ class _TrainScreenState extends State<TrainScreen> {
 
   late Future<_Readiness> _readiness;
 
+  /// The brief's numbers behind today's readiness, for the readiness card's
+  /// "what Tracend sees". Null until the brief loads.
+  ComputedMetrics? _computed;
+
+  /// The day [_readiness] and [_computed] were loaded for.
+  late DateTime _readinessDay;
+
   List<WorkoutRepairCandidate> _repairs = const [];
   List<WorkoutReconciliation> _reconciliations = const [];
   final Set<String> _respondedReconciliationIds = {};
@@ -103,6 +152,10 @@ class _TrainScreenState extends State<TrainScreen> {
   bool _healthkitBusy = false;
 
   BodySide _side = BodySide.front;
+
+  /// The Live Activity asked for the workout in progress and the hub that
+  /// says which workout is today's has not loaded yet.
+  bool _resumePending = false;
 
   DateTime _clock() => (widget.now ?? DateTime.now)();
 
@@ -121,12 +174,46 @@ class _TrainScreenState extends State<TrainScreen> {
     _loadHub();
     _fetchCandidate();
     widget.planChanges?.addListener(_planChanged);
+    final requests = widget.workoutRequests;
+    if (requests != null) {
+      _resumePending = requests.value > 0;
+      requests.addListener(_workoutRequested);
+    }
   }
 
   @override
   void dispose() {
     widget.planChanges?.removeListener(_planChanged);
+    widget.workoutRequests?.removeListener(_workoutRequested);
     super.dispose();
+  }
+
+  void _workoutRequested() {
+    _resumePending = true;
+    unawaited(_resumeWorkout());
+  }
+
+  /// Reopens today's workout when it was started and left open: it has a
+  /// draft on this phone and is not done. Nothing opens over a workout that
+  /// is already on screen, and a request the hub could not answer is dropped,
+  /// so it never opens a workout later on its own.
+  Future<void> _resumeWorkout() async {
+    final hub = _hub;
+    if (!_resumePending || hub == null || _hubLoading) return;
+    _resumePending = false;
+    if (ActiveWorkoutScreen.isOpen) return;
+    final today = _today;
+    final workout = hub.workoutForWeekday(today.weekday);
+    if (workout == null || hub.isDayCompleted(today)) return;
+    String? draft;
+    try {
+      draft = await _source.loadDraft(workout.id);
+    } catch (error) {
+      debugPrint('Non-critical error: workout draft not read: $error');
+    }
+    if (draft == null || !mounted || ActiveWorkoutScreen.isOpen) return;
+    _select(today);
+    await _start(workout, today);
   }
 
   void _planChanged() {
@@ -177,9 +264,23 @@ class _TrainScreenState extends State<TrainScreen> {
           _selected = normalizedDate(hub.localToday!);
           _weekStart = mondayOf(_selected);
         }
+        // The readiness numbers were read for the phone's day: read them
+        // again for the server's when the two differ.
+        if (hub.localToday != null &&
+            !sameDay(hub.localToday!, _readinessDay)) {
+          _computed = null;
+          _readiness = _loadReadiness()..ignore();
+        }
       });
+      unawaited(_resumeWorkout());
+      // The hub names the athlete's own today: the day readiness is read for.
+      if (hub.localToday != null) {
+        unawaited(widget.dayAdjustment?.load(localToday: hub.localToday));
+        unawaited(widget.guidance?.load(localToday: hub.localToday));
+      }
     } catch (error) {
       debugPrint('Train: training hub failed: $error');
+      _resumePending = false;
       if (!mounted) return;
       setState(() {
         _hubError = error;
@@ -208,9 +309,14 @@ class _TrainScreenState extends State<TrainScreen> {
 
   Future<_Readiness> _loadReadiness() async {
     final repository = widget.brief ?? const FixtureDailyBriefRepository();
-    final today = normalizedDate(_clock());
+    // The hub's day once it is known: the server's today, not the phone's.
+    final today = _today;
+    _readinessDay = today;
     final brief = await repository.load(today);
     final computed = brief.computed;
+    if (mounted && sameDay(today, _readinessDay)) {
+      setState(() => _computed = computed);
+    }
     bool connected =
         brief.health != null ||
         computed?.baselines.hrv != null ||
@@ -317,13 +423,51 @@ class _TrainScreenState extends State<TrainScreen> {
   // Actions
   // ---------------------------------------------------------------------------
 
-  Future<void> _start(PlannedWorkout workout, DateTime date) async {
+  /// [workout] as the athlete's accepted same-day adjustment leaves it, when
+  /// [date] is today, for showing; any other day's workout is the plan as
+  /// written.
+  PlannedWorkout _forDay(PlannedWorkout workout, DateTime date) {
+    final adjustment = widget.dayAdjustment?.current;
+    if (adjustment == null || !sameDay(date, _today)) return workout;
+    return adjustment.applyTo(workout);
+  }
+
+  /// The plan's own copy of [shown], which may be today's adjusted view.
+  PlannedWorkout _planned(PlannedWorkout shown) {
+    for (final workout in _hub?.workouts ?? const <PlannedWorkout>[]) {
+      if (workout.id == shown.id) return workout;
+    }
+    return shown;
+  }
+
+  /// Opens the logger for [planned], the plan as written. The logger takes
+  /// held weights from today's accepted answer, never its set counts: the
+  /// server decides the sets when the workout starts, and the logger follows
+  /// the rows it reads back. Nothing starts while an answer is on its way, so
+  /// a start never races the answer it should carry. The adjustment is read
+  /// again whenever the workout screen closes.
+  Future<void> _start(PlannedWorkout planned, DateTime date) async {
+    final readiness = widget.dayAdjustment;
+    if (readiness?.busy ?? false) {
+      TracendToast.show(
+        context,
+        'Saving your choice for today. Try again in a moment.',
+        icon: CupertinoIcons.hourglass,
+      );
+      return;
+    }
+    final adjustment = readiness?.current;
+    final workout = adjustment == null || !sameDay(date, _today)
+        ? planned
+        : adjustment.applyTo(planned, sets: false);
     final completed = await startWorkout(
       context,
       workout: workout,
       repository: _source,
       sessionDate: date,
+      pain: widget.pain,
     );
+    if (readiness != null) unawaited(readiness.load());
     if (completed && mounted) {
       setState(() => _candidate = null);
       await _refresh();
@@ -339,31 +483,59 @@ class _TrainScreenState extends State<TrainScreen> {
         progressionRule: _hub?.plan?.progressionRule,
       );
 
-  void _viewSummary(PlannedWorkout workout, DateTime date) =>
-      showWorkoutSummarySheet(
-        context,
-        workout: workout,
-        repository: _source,
-        date: date,
-      );
+  /// Opens the summary of the day's session. A session of [workout] under any
+  /// plan version opens through [workout]; a [session] of another workout, one
+  /// the active plan has no copy of, opens through its own workout id and
+  /// name, so the summary finds the session the day holds.
+  void _viewSummary(
+    PlannedWorkout workout,
+    DateTime date, {
+    TrainingSessionSummary? session,
+  }) {
+    final id = session?.workoutId;
+    final own =
+        session == null ||
+        id == null ||
+        id == workout.id ||
+        session.currentWorkoutId == workout.id;
+    showWorkoutSummarySheet(
+      context,
+      workout: own
+          ? workout
+          : PlannedWorkout(
+              id: id,
+              name: session.name,
+              objective: '',
+              estimatedMinutes: 0,
+              exercises: const [],
+            ),
+      repository: _source,
+      date: date,
+    );
+  }
 
   Future<void> _openOverview(
     PlannedWorkout workout,
     DateTime date, {
     required bool done,
+    required bool canStart,
+    TrainingSessionSummary? session,
   }) async {
     final action = await showWorkoutOverviewSheet(
       context,
       workout: workout,
       isCompleted: done,
+      canStart: canStart,
       onExerciseTap: (exercise) => _openExercise(workout, exercise),
     );
     if (!mounted || action == null) return;
     switch (action) {
       case WorkoutOverviewAction.start:
-        await _start(workout, date);
+        await _start(_planned(workout), date);
+      case WorkoutOverviewAction.doToday:
+        await _start(_planned(workout), _today);
       case WorkoutOverviewAction.viewSummary:
-        _viewSummary(workout, date);
+        _viewSummary(workout, date, session: session);
     }
   }
 
@@ -492,8 +664,20 @@ class _TrainScreenState extends State<TrainScreen> {
   // ---------------------------------------------------------------------------
 
   @override
-  Widget build(BuildContext context) =>
-      Material(type: MaterialType.transparency, child: _buildPage(context));
+  Widget build(BuildContext context) {
+    final listenables = <Listenable>[?widget.dayAdjustment, ?widget.guidance];
+    return Material(
+      type: MaterialType.transparency,
+      // The shared adjustment answers on Today as well: the day's sets and
+      // held weights follow it here at once. The guidance feeds the cardio row.
+      child: listenables.isEmpty
+          ? _buildPage(context)
+          : ListenableBuilder(
+              listenable: Listenable.merge(listenables),
+              builder: (context, _) => _buildPage(context),
+            ),
+    );
+  }
 
   Widget _buildPage(BuildContext context) {
     final hub = _hub;
@@ -564,6 +748,11 @@ class _TrainScreenState extends State<TrainScreen> {
         ? week.where((d) => hub.workoutForWeekday(d.weekday) != null).length
         : hub.plan?.sessionsPerWeek ?? hub.workouts.length;
     final attention = _repairs.isNotEmpty || _reconciliations.isNotEmpty;
+    // The cardio week is the last seven days up to today: it belongs to this
+    // week's summary only, never to a past week the athlete paged back to.
+    final cardio = sameDay(_weekStart, _currentWeek)
+        ? widget.guidance?.current?.cardioWeek
+        : null;
     return [
       if (!sameDay(_weekStart, _currentWeek))
         _WeekCaption(
@@ -594,6 +783,20 @@ class _TrainScreenState extends State<TrainScreen> {
         onOpenAccount: widget.onOpenAccount,
       ),
       const SizedBox(height: TracendSpacing.sm),
+      if (widget.dayAdjustment != null && sameDay(_selected, _today))
+        DayAdjustmentCard(
+          controller: widget.dayAdjustment!,
+          forDate: DayBoxesStrip.iso(_today),
+          computed: sameDay(_readinessDay, _today) ? _computed : null,
+          onCheckIn: widget.onCheckIn,
+          onTalkToCoach: widget.onTalkToCoach ?? (_) {},
+        ),
+      if (widget.guidance != null && widget.proposals != null)
+        DeloadCard(
+          controller: widget.guidance!,
+          proposals: widget.proposals!,
+          onPlanChanged: widget.planChanges?.announce,
+        ),
       if (attention) ...[
         AttentionGroup(
           repairs: _repairs,
@@ -621,6 +824,10 @@ class _TrainScreenState extends State<TrainScreen> {
         planned: plannedThisWeek,
         loadLabel: load.rowLabel,
         onLoadTap: () => showTrainingLoadSheet(context, model: load),
+        cardioLabel: cardio == null ? null : cardioRowValue(cardio),
+        onCardioTap: cardio == null
+            ? null
+            : () => showCardioWeekSheet(context, week: cardio),
         historyLabel: hub.recentSessions.isEmpty
             ? null
             : historyLabel(hub.recentSessions),
@@ -645,7 +852,8 @@ class _TrainScreenState extends State<TrainScreen> {
   Widget _dayContent(TrainingHubData hub) {
     final date = _selected;
     final today = _today;
-    final workout = hub.workoutForWeekday(date.weekday);
+    final planned = hub.workoutForWeekday(date.weekday);
+    final workout = planned == null ? null : _forDay(planned, date);
     if (workout == null) {
       DateTime? nextDate;
       PlannedWorkout? next;
@@ -670,21 +878,35 @@ class _TrainScreenState extends State<TrainScreen> {
       );
     }
     final done = hub.isDayCompleted(date);
+    // A day that has not begun is previewed, never started: the server
+    // refuses a start for it.
+    final upcoming = date.isAfter(today);
     final state = done
         ? HeroDayState.done
+        : upcoming
+        ? HeroDayState.upcoming
         : date.isBefore(today)
         ? HeroDayState.notLogged
         : HeroDayState.planned;
     TrainingSessionSummary? doneSession;
+    TrainingSessionSummary? daySession;
     if (done) {
+      // The session of this workout, under any plan version: the hub names
+      // the active copy as currentWorkoutId. A day done as another workout
+      // shows no session of its own (its minutes are not this workout's),
+      // but View summary still opens that session.
       for (final session in hub.recentSessions) {
-        if (sameDay(session.date, date) &&
-            (session.workoutId == null || session.workoutId == workout.id)) {
+        if (!sameDay(session.date, date)) continue;
+        daySession ??= session;
+        if (session.workoutId == null ||
+            session.workoutId == workout.id ||
+            session.currentWorkoutId == workout.id) {
           doneSession = session;
           break;
         }
       }
     }
+    final summarySession = doneSession ?? daySession;
     final candidate = _candidate;
     final canAutoComplete = _source is SupabaseWorkoutRepository;
     return Column(
@@ -698,9 +920,19 @@ class _TrainScreenState extends State<TrainScreen> {
           doneSession: doneSession,
           side: _side,
           onSideChanged: (side) => setState(() => _side = side),
-          onOpenOverview: () => _openOverview(workout, date, done: done),
-          onStart: () => _start(workout, date),
-          onViewSummary: () => _viewSummary(workout, date),
+          onOpenOverview: () => _openOverview(
+            workout,
+            date,
+            done: done,
+            canStart: !upcoming,
+            session: summarySession,
+          ),
+          onStart: widget.dayAdjustment?.busy ?? false
+              ? null
+              : () => _start(_planned(workout), date),
+          onViewSummary: () =>
+              _viewSummary(workout, date, session: summarySession),
+          onDoToday: upcoming ? () => _start(_planned(workout), _today) : null,
           onOpenMuscles: () => showMusclesSheet(context, workout: workout),
           healthkitCandidate: candidate,
           healthkitBusy: _healthkitBusy,
@@ -709,7 +941,10 @@ class _TrainScreenState extends State<TrainScreen> {
               : () => _autoComplete(candidate),
           onHealthkitManual: candidate == null
               ? null
-              : () => _start(workout, normalizedDate(candidate.localDate)),
+              : () => _start(
+                  _planned(workout),
+                  normalizedDate(candidate.localDate),
+                ),
         ),
         Builder(
           builder: (context) => SectionLabel(

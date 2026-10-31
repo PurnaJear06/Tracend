@@ -1,6 +1,6 @@
 # Tracend Current State
 
-**As of:** 2026-10-18
+**As of:** 2026-10-20
 
 **Lifecycle:** owner-only private beta; not approved for public production. Production Auth
 sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
@@ -22,35 +22,165 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   red-flag screen before the model, a numbers check, safe ranges and reply guards on every visible
   field, a screening contributor, the coaching-principles digest in the stable prefix, an optional
   stronger route) and #142 (app: plain error messages, same-key retries, the athlete's local date,
-  chat without a plan, one budget gate, a warning at 80%; migration 19). Coach simulator (eval
-  only, `claude/coach-simulator`): simulated athletes with months of synthetic records talk to
-  Coach in eight scenarios on the production gateway path over the eval router, graded by code,
-  an expert-coach judge and a claim-support judge (RAG audit P1-3); `Coach Eval` with `simulate`,
-  report only. The answer bank now runs on the same router gateway route, library cases included.
-  First sized run (2026-10-18, Sonnet played because the router answers 502 for Haiku 5.5): six
-  Coach findings in the handoff, none fixed in that PR; a second run waits for router credit.
-  Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
+  chat without a plan, one budget gate, a warning at 80%; migration 19). Coach answer validity
+  (2026-10-24, branch `claude/coach-response-validity`, in review): 22% of bank answers fell back
+  as `provider_response_invalid`, now 3%; causes were parser and validator false positives
+  ("0.26 kg a week" read as a 26 kg body weight, "Thu 2026-10-15" as a study, refusals read as
+  advice), not truncation or the schema. Coach simulator (eval only, `claude/coach-simulator`,
+  #154): simulated athletes with months of synthetic records talk to Coach in eight scenarios on
+  the production gateway path, graded by code, an expert-coach judge and a claim-support judge
+  (RAG audit P1-3), report only. Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
   sources; nothing reads it until B2). Phase 3 round 1 merged (2026-10-17): B2 templates and
   fractional volume (#127), B6 screening gate (#128, migration 26). Round 2 merged (2026-10-17): B3 progression from logged sets, hub 1.7 (#132); B7 goal phase review,
   athlete-set targets and no projection as a goal (#136); B7.1 the whole recorded weight history
-  and the continuous loss judged across it (#141). Next: A11, A10, E3, A8, D2. Handoff: [`training-engine.md`](./handoff/training-engine.md).
+  and the continuous loss judged across it (#141). Advanced experience level and four staple lifts (weighted pull-up, close-grip and incline barbell bench press, Bulgarian split squat) in review on `claude/advanced-level-catalog` (2026-10-23, migration `20261023100050`; intermediate plans unchanged, advanced chosen by the athlete from 3 years). B4-1 same-day readiness adjustment, server side, in review as #165 (2026-10-23, migration
+  `20261023140024`): `day_adjustments`, `get_my_day_adjustment_v1` / `respond_to_day_adjustment_v1`
+  (hold loads, one set fewer or easy cardio for today only; one tap and Undo; the recovery score never
+  adjusts a session alone, the athlete may choose), `start_workout` building the adjusted sets and B3
+  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). B5-1 (pain check and joint rules) merged as #172; B5-2 (the pain check in the app) in review as #176; B5-3 and B5-4 (deloads and cardio dosing, server) in review. Training-day integrity (QA group A, branch `claude/training-day-integrity`, migration `20261024090000`, hub 1.9): sessions logged under an earlier plan version stay done in Train and cannot be logged twice, a start for a future day is refused (the app previews it), and the hub uses the athlete's local date. Handoff:
+  [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping
-  heart rate in shadow. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
+  heart rate in shadow. C4 in review (branch `claude/watch-workout-prompt`, migration 34): a card on the
+  workout screen suggests starting a Watch workout when the last three had no Watch heart rate, and
+  load signals (rest, recovery, confidence; never a load) are computed for the training engine and
+  shown to Coach as two fixed sentences in the plan context. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
 - ios-widgets: D0 live (#112). D1 merged (#121: Done, Skip and +30s on the Lock Screen and in the
-  Dynamic Island); the owner's device check is pending. D2 in review (#149): Today widgets on the Home Screen and the
+  Dynamic Island); the owner's device check is pending. D2 merged (#149): Today widgets on the Home Screen and the
   Lock Screen, Lock Screen numbers an off-by-default per-athlete choice, 12-hour expiry, snapshot
-  excluded from backups and emptied on every sign-out. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
+  excluded from backups and emptied on every sign-out. Live Activity set logging in review (branch
+  `claude/live-activity-set-logging`): the card shows the set in progress with **Log set** and **Open**
+  (kg and reps only with Lock Screen numbers on), then the rest, the next set, and "All sets logged";
+  Log set is the in-app Done set. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
 - research-library: E1 live (#109: pgvector, library tables, `search_library_v1`, D3 doc rule). E2 merged (#135): 35 sources, 122 chunks embedded in production
-  by `library-embed`, retrieval test set (hybrid recall 0.93). E2.1 merged (14 gap sources). E2.2 in review (2026-10-18): 57 more
+  by `library-embed`, retrieval test set (hybrid recall 0.93). E2.1 merged (14 gap sources). E2.2 merged (#152): 57 more
   verified sources (106 in all, 351 chunks) and machine-readable licences with a verbatim flag, review date and supersession
-  (migration `20261018170042_library_expansion.sql`). Handoff: [`research-library.md`](./handoff/research-library.md).
+  (migration `20261018170042_library_expansion.sql`). E3 merged (#150: the library in every
+  Coach reply). E3.1 in review (engine production pass, migration 44): `search_library_v3` with
+  distances, a relevance floor recalibrated on the 106-source library (219 calibration questions:
+  recall 0.855, 27 of 30 out-of-library questions shown nothing; the 55-question hold-out set gave
+  recall 0.897, 7 of 8, but multi-source recall 0.646 and word-search no-answer precision 63% miss
+  their gates), a word-search floor (recall 0.611, down from 0.795 unfloored), an explicit no-match line, evidence level and Tracend's-reading marks
+  on excerpts, the embedding started with the request, a `library_retrieval` log line, the library
+  version on each answer, a retire path, the retrieval gate on library pull requests and a deploy
+  check. E4 in review (#164, branch `claude/regional-modules`, migration `20261023120044`): regional
+  modules for India, the US, the UK and Australia (eight new sources, 114 in all; each region has a
+  nutrition and a body-measure source) and an optional **Country** in Account
+  (`user_accounts.country_code`, `get_my_country_v1` and `set_my_country_v1`) that picks the regional
+  sources instead of the locale and time-zone guess; no plan number reads it, nothing changes with it
+  empty; needs the migration first, then an app reinstall for the row. NICE is not included (its text
+  could not be read). E5 in review (branch `claude/e5-plan-explanations`, no migration): plan
+  explanations cite sources. Coach chat searches a "why is my plan like this?" question with what
+  the plan is made of added (counts and enumerated values) and tells Coach to explain from the plan's
+  own numbers first; the onboarding plan (`onboarding-plan`, gateway route) shows the model library
+  excerpts for the athlete's region, accepts the ids it lists in a new `sources` field only if they
+  were shown, and stores each as a `library` evidence item that the app lists under "Why this plan"
+  ("Research behind this plan"; needs a reinstall). A plan with no source to cite says so in "Not
+  known yet", and one whose search found nothing or failed is low confidence; the rules plan and the
+  settings path use no library. The old mock `onboarding-propose-plan` was removed on 2026-10-31. The CI
+  retrieval gate also scores 12 plan questions. Handoff: [`research-library.md`](./handoff/research-library.md).
+- qa-audit groups G and H (2026-10-31, branch `claude/onboarding-legacy-forms`, migration
+  `20261031100000`, in review): legacy onboarding and fixture-meal RPCs closed and `onboarding-propose-plan`
+  removed (the deploy deletes the deployed function: `scripts/retire-functions.sh`), Account › Health check reopens the screening,
+  remote sign-out returns to the gate, reminders leave the phone on sign-out, body-fat target floor
+  (5% men, 12% women or unknown), Progress and Meals form fixes. Handoff:
+  [`onboarding.md`](./handoff/onboarding.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
+
+**Lost replies and thread switching (2026-10-24, branch `claude/lost-replies-thread-switch`, PR open):** QA audit groups E
+and F, app only. Coach: the latest conversation open wins and a failed open restores the previous chat; New conversation
+keeps the Continue row; a conversation loads its newest 200 messages; a follow-up tapped while Coach is busy waits
+visibly instead of being dropped. A Coach proposal, the onboarding plan approval, a manual meal and an Apple Health
+sync no longer treat a lost reply as a failure: they re-read the server, repeat one idempotency key, or keep what was
+typed; a failed meal photo deletes its draft and an empty draft can be deleted. Needs `./scripts/install-device.sh`
+from the merged commit. Workout finish (M-E3) is left to the open workout PRs. Details: "Lost replies, idempotent
+writes and thread switching" in [`ai-gateway.md`](./handoff/ai-gateway.md).
+
+**Query order fix (2026-10-24, branch `claude/explicit-query-order`, PR open):** saved Coach conversations loaded
+newest-first (postgrest-dart's `order()` defaults to descending, and `loadMessages` left the direction out), so a
+reply sat above its question and the screen opened on the oldest message. Fixed with an explicit ascending order;
+every other `.order(` in the app now states its direction (active goal by priority, measurements, meals, meal
+candidates and today's workout were also descending by accident) and a source-scan test keeps it that way. App
+only, no migration; needs `./scripts/install-device.sh` from the merged commit. Details: "Coach conversations load
+oldest-first" in [`ai-gateway.md`](./handoff/ai-gateway.md).
+
+**Coach opens a fresh chat (2026-10-24, branch `claude/coach-chat-fresh`, PR open):** Coach reopens the last
+conversation only if its last message is under 6 hours old, otherwise a new conversation with a **Continue last
+chat** row (checked again when the Coach tab is re-activated or the app resumes, never mid-send or with a typed
+draft); opening any conversation now lands on its newest message even when content lays out late. App only, no
+migration. Details: "Coach opens a fresh chat after 6 hours" in [`ai-gateway.md`](./handoff/ai-gateway.md).
+
+**Stale open workouts (2026-10-23, branch `claude/stale-workout-resume`, PR open):** the owner's Legs B resumed a
+session left open since 2026-07-17 (timer 2348 h, today's sets saved on a July date). An open session from an earlier
+local day more than 3 hours old is now closed as `abandoned` (rows and sets kept) when any workout is opened and by an
+hourly job, and the phone sends an earlier day's unsent sets and finish first, then drops its draft; a session the
+rule closed still takes that late send on its own date. Migration `20261023150021`; `start_workout` (as #165 left it) closes the caller's stale sessions after its advisory lock and before its open-session lookup. Details:
+"Stale workouts" in [`training-engine.md`](./handoff/training-engine.md).
+
+**B5-1 pain check, red flags and joint rules, server side (2026-10-24, branch `claude/b5-1-pain-red-flags`, PR open):**
+migration `20261024060025` adds `pain_reports`, `record_pain_check_v1`, the optional pain keys of
+`save_daily_check_in`, joint states (held, limited, watch), joint swaps and range cues, the safety
+routes `urgent`, `clinician_today` and `clinician`, the `joint_adjust` kind and payload 1.1 of the
+day adjustment, and `get_readiness_context_v1` for Coach context. A red flag or a pain of 7 or more
+gives a referral and no training change (even on a rest day or with no check-in); a held joint stays
+held until the athlete says a clinician cleared it. The installed B4-2 build reads the new kind and
+routes strictly, so B5-2 must be installed with or before the first build that sends the pain keys.
+Details: "B5-1" in [`training-engine.md`](./handoff/training-engine.md).
+
+**B5-2 pain check in the app (2026-10-24, branch `claude/b5-2-pain-check-app`, PR open):** the check-in
+asks where, when and the red-flag questions (and how an area already noted is today), the workout's
+**Pain or discomfort** chip runs the same check with a swap offered offline, the card handles the
+`joint_adjust` kind, joint states, hold reminders and the referral routes, the logger follows server rows
+(an exercise left out for a joint has no sets and is never logged; a swap logs under its name), every
+day-adjustment call passes `supports_joint_changes: true`, a pain report that cannot be sent is kept,
+sent again within the day and told if refused, referrals need **Got it** (once per day), and the error
+reports carry no pain answer. No server change. Details: "B5-2" in
+[`training-engine.md`](./handoff/training-engine.md). Next: B5-3 (deloads), B5-4 (cardio dosing).
+
+**B5-3 deloads and B5-4 cardio dosing, server side (2026-10-24, branch `claude/b5-3-4-deloads-cardio`, PR open):**
+migrations `20261024060125` and `20261024060225` add `get_my_training_guidance_v1` and
+`get_training_guidance_for_v1` (1.1): when a lighter week could help (two lifts heading down, four amber
+or red days of the last seven, a finished block that was trained), what suppresses it (a running block,
+28 days since the last deload, too little training, `see_professional`, a safety route), and the weekly
+cardio dose (150 minutes, 300 for fat loss and recomposition) from Apple Health workouts with what
+intensity is open today. A deload stays a proposal the athlete approves: the A8 builder now makes exactly
+one week, half the sets, loads held, effort 7 or lower. Nothing is applied by rules and heart rate picks
+nothing. Review round 1 (migration `20261024060325`): B3 holds instead of stepping up during a deload week
+and ignores deload sessions as stall evidence, a pending deload is withheld and unapprovable on a safety-route
+day, 14 days of quiet after a declined or expired proposal, and the cardio gates (unavailable today, a cleared
+screening row). **App and function (2026-10-24, branch `claude/train-deload-cardio-ui`, PR open):** Train shows
+"A lighter week could help" ("Suggested by Tracend": the reasons in words, one tap to **See what changes**,
+then Approve or Not now through the Coach proposal card, Undo for 7 days; a running week keeps a
+**Details and undo** card) and a **Cardio this week** row with a sheet (minutes against 150, hard cardio
+open or easy only, "Not enough Apple Health data" when `done_min` is null, never 0). The new JWT function
+`training-proposals` stores the pending deload for a `suggested` status (same one-week builder as Coach,
+no model); it is in `config.toml`, `deploy.yml` and `hotfix.yml`, so it deploys with the merge. Review added
+migration `20261024060425` (guidance 1.2: `proposal_origin`, `ends_on`; an undone deload waits 14 days; a per-athlete
+lock in `persist_coach_proposal_v1`): install the app only after it has deployed. Not built yet: the Coach contributor. Details: "B5-3 and B5-4" in
+[`training-engine.md`](./handoff/training-engine.md).
+
+**Coach knows today's readiness card (2026-10-24, branch `claude/coach-readiness-context`, PR open):** a `readiness`
+Coach context block (band, the card's answer state, safety route and strictness, held/limited/watched joints, fixed
+rules; no red-flag code or severity) read from `get_readiness_context_v1` with a 1.5 s deadline and an
+ok/unavailable/failed/timeout trace; the deload and cardio-week reader (`get_training_guidance_for_v1`) is not wired yet: it needs a cost measurement first. Today's meals
+and the Coach decision's freshness follow the server day on Today, not the phone date. Daily coaching retries a
+busy or failing provider once and names a rejection by its HTTP status (`anthropic_request_failed_status_<n>`,
+`anthropic_overloaded`). Details: "Coach knows today's readiness card" in [`ai-gateway.md`](./handoff/ai-gateway.md).
+Still open: the reply guard and the A9 screen do not read pain reports (contract requests 2 and 3).
+
+**Unfinished workouts (2026-10-24, branch `claude/unfinished-workout`, PR open):** the owner's Legs B (23 sets logged,
+never finished) was closed by the stale rule and Coach then called it "not done". A stale-closed session with logged sets
+is now offered back on Today ("You didn't finish Legs B on Fri 23 Oct · 23 sets logged"): **Save workout** completes it
+on its own date with the athlete's effort, **Discard** keeps it out for good, each audited; nothing is finished for them.
+Coach reads it as "logged N sets, not finished", not undone or missed. Migration `20261024050011`
+(`get_my_unfinished_workout_v1`, `resolve_unfinished_workout_v1`, `get_coach_plan_state_v1` 1.3); needs the migration
+deployed before the app is reinstalled. Details: "Unfinished workouts" in
+[`training-engine.md`](./handoff/training-engine.md).
 
 **Incident 2026-10-18: every Coach chat turn timed out (Refs FLUTTER-K). Fixed by #155 (deploy pending verification: confirm `schema_sha` `274ee4fafead` and a first successful turn in production).** The gateway's answer
 schema had grown to 24 optional properties and 4 unions and listed the day's evidence codes, so
@@ -62,6 +192,40 @@ first call, per-attempt timing and schema-hash telemetry in the logs and Sentry,
 schema's shape, and a turn deadline counted from the request's start so the data summary still
 returns inside the app's 45 s. Nothing changes for the app. Details: "Coach answer schema: one stable grammar" in
 [`ai-gateway.md`](./handoff/ai-gateway.md).
+
+**Coach reply guards (2026-10-18, branch `claude/coach-reply-guards`, PR open):** from the Coach
+simulator: a lift's load is no longer read as a body weight (55 kg on the overhead press was sending
+athletes to the data summary); a plan the athlete asked for keeps its answer (session lengths like "30
+min walk" are advice, and a reply that still fails only on figures, unshown sources or repeats is cut
+sentence by sentence instead of replaced by the data summary; loads and body-weight, calorie and
+medical figures are never let through); a shown study named in the text is attached to the evidence
+and one that was not shown is repaired; the app's data summary stays in the thread (migration
+`20261018210031`, `prepare_coach_chat_v10`, trend in kg/week); the same closing question or sentence on
+consecutive turns is repaired and then cut. Answer schema unchanged. Details: "Coach reply guards" in
+[`ai-gateway.md`](./handoff/ai-gateway.md); rules in `AI_SAFETY_SPEC.md` §11, §11.2 and §12.
+
+**Coach investigates first (2026-10-20, branch `claude/coach-investigate-first`, PR open).** Coach
+now checks every relevant kind of record before it answers. A Coverage Brief replaces the data
+index (per kind: what the context shows, what a lookup adds, what exists and how fresh, the kinds to
+check with it), watch-outs computed by code across kinds of record (back-to-back muscles, a session
+due on a poor-recovery day, a pain flag planned again, behind plan, repeated skips, drift, stale
+weigh-in or sync, plan age) join the context, the prompt makes the first reply a sweep (up to 8
+lookups), a refused request gets one corrected round, the model tier follows the state of the
+records, and `coach_messages.lookups` records lookups per round. Migration
+`20261020100017_coach_investigation.sql` (additive; new kinds are filters on existing lookups, so the
+answer schema is unchanged at 2,818 bytes). 37 `inv-` eval cases and a 90% domain-coverage gate; the
+live measurement is still to run. Owner decisions: `past_messages` now returns Coach's own earlier
+replies, labelled and never grounding a figure (AI_SAFETY_SPEC §11.1a); breathing rate and the athlete's
+free text in a workout are held back until a notice names them (§10.3, wording in `ai-gateway.md`). One grounding rule covers every path (records ground both, a pending proposal's figures ground only a figure about the proposal, a model's words and anything undeclared ground nothing: §11.1 "What grounds a figure"), and sleep durations carry their hours so "5.7 h" rests on a "341 min" row. Details: "Coach investigates first" in
+[`ai-gateway.md`](./handoff/ai-gateway.md).
+
+**Coach week-ahead fix (2026-10-18, merged as #156).** On a Sunday Coach
+named only the week's undone session and never said that Monday trains the same muscles. Coach
+now sees the next 7 days from the athlete's own date with each session's muscles, a deterministic
+line when two sessions share a muscle on consecutive days, and can look up the plan for any past or
+future dates (`plan_history`, filter `schedule`, up to 90 days ahead). Migration
+`20261018190042_coach_schedule.sql` (RPCs 1.0 to 1.1, fields added); the answer schema is unchanged.
+Details: "Coach sees the next 7 days" in [`ai-gateway.md`](./handoff/ai-gateway.md).
 
 **Authority docs rewritten (2026-10-15):** the 13 authority docs were checked against `main` after
 Iteration 1. The addenda were folded in and the contradictions and stale facts were removed. Planned
@@ -83,7 +247,6 @@ Decided by the owner on 2026-10-16:
   leave the phone.
 
 Known gaps found:
-- `privacy-export` leaves out several tables (SECURITY_PRIVACY §15).
 - The app's terms and privacy checkboxes don't link to the site pages.
 
 **Website and waitlist (2026-10-13):** the public website (`site/`, Astro, Cloudflare Pages at
@@ -116,6 +279,17 @@ failed-call cost, list-price defaults) and PR 4b (meal-photo AI notice enforced 
 AI notice v5; needs the new build) and PR 5 (Keychain session storage, SHA-pinned actions,
 read-only workflow tokens) are in review. Workstream state:
 [`docs/handoff/security-hardening.md`](./handoff/security-hardening.md).
+
+**Privacy export, deletion and retention fixes (2026-10-24, QA audit group D):** the export now
+carries every table with a `user_id` (Coach threads and messages included) in pages of 1000, with a
+test that fails on a table that is neither exported nor excluded; account deletion pages its file
+lists; an export stuck in `processing` is claimed again after 15 minutes and a dead `ready` export is
+replaced on the next request; the retention worker survives a failing row or stage, reclaims photo
+claims older than 30 minutes, reports codes to Sentry and compares its secret in constant time.
+Migration `20261024070000_privacy_retention_recovery.sql`, which also creates the
+`meal-media-retention-daily` cron job (02:15 UTC; it was made by hand in production) behind Vault.
+Review round 1: keyset paging, no Coach snapshot bodies, linked invite and waitlist rows, a memory
+guard (`export_too_large`).
 
 **Current priority (2026-10-03):** the app-wide graphite + lime redesign. The owner chose palette
 A and the round 3 signature picks (focus logging, muscle map on, big new-best moment, day boxes,
@@ -235,7 +409,7 @@ Needs a reinstall. See [`docs/handoff/account-session.md`](./handoff/account-ses
   - A2 (#41, merged 2026-09-29): the app side.
     - The app sends request 1.1, so a model failure shows a labeled data summary or safety note,
       with Retry and the beta diagnostic.
-    - Coach reopens the last conversation and creates a thread on its first send.
+    - Coach reopens the last conversation (since 2026-10-24 only within 6 hours) and creates a thread on its first send.
     - It lists only conversations that contain a message (`get_my_coach_threads`).
     - The first install (build 185) had no font files, so every icon showed as a "?" box. Its
       build folder was shared with other checkouts. A rebuild from the same commit, with every font

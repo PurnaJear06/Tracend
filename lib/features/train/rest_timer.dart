@@ -65,22 +65,26 @@ class RestTimer {
   );
 }
 
-/// Runs the rest timer and keeps the lock-screen alert and the Live Activity
-/// in step with it. In the app the activity calls are never awaited, so the
+/// Runs the rest timer and is the only driver of the workout's Live Activity:
+/// the set in progress, the rest between sets, and the card that says every
+/// set is logged. In the app the activity calls are never awaited, so the
 /// timer never waits on iOS; each is sent before the alert is touched
 /// (channel messages arrive in the order they are sent, so a stop that follows
 /// a start can never reach iOS first), and is remembered until it completes.
 /// A Live Activity button press, after which iOS may suspend the app, waits
 /// for those with [activityUpdated] before it answers.
 ///
-/// The activity shows a rest from its start until the next set is ticked or
-/// the workout closes. When the rest is over (it ran out, Skip, or -15 past
-/// the end) it reads "Rest done" with a Done button for [doneLinger], so
-/// the next set can be ticked from the Lock Screen; the next rest replaces
-/// it in place. ActivityKit cannot dismiss an activity by itself (only app
-/// code, or a push, can), so while the app is away nothing ends it on time:
-/// it goes at the first [tick] after the app runs again, at the next launch
-/// (the native sweep), or at the next button press once the time has passed.
+/// The activity shows the set in progress ([present]) from the moment the
+/// workout opens. A rest replaces it ([start]) and carries the set that
+/// follows, so when the rest is over (it ran out, Skip, or -15 past the end)
+/// the card turns into that set on its own, even with the app suspended; the
+/// next rest replaces it in place. After the last set the card says every set
+/// is logged and goes [doneLinger] later. The athlete leaves with Finish,
+/// Discard or Save and leave ([stop]). ActivityKit cannot dismiss an
+/// activity by itself (only app code, or a push, can), so while the app is
+/// away the finished card goes at the first [tick] after the app runs again,
+/// at the next launch (the native sweep), or at the next button press once
+/// the time has passed.
 class RestTimerController {
   RestTimerController({
     required RestAlertScheduler alerts,
@@ -99,7 +103,7 @@ class RestTimerController {
   /// How long [activityUpdated] waits at most.
   final Duration activityWait;
 
-  /// How long "Rest done" shows after the rest is over
+  /// How long the card that says every set is logged shows
   /// (SECURITY_PRIVACY.md §10).
   static const doneLinger = Duration(minutes: 2);
 
@@ -111,9 +115,14 @@ class RestTimerController {
   /// The activity calls sent and not yet finished.
   final _pending = <Future<void>>{};
 
-  /// When the "Rest done" activity goes, while no rest runs; null when none
-  /// shows.
+  /// When the card that says every set is logged goes; null when it does not
+  /// show.
   DateTime? _doneUntil;
+
+  /// The set the activity names (null: every set is logged) as last sent,
+  /// or null when nothing was sent since the workout opened. A rest carries
+  /// it too, so it is also the set the card turns into when the rest ends.
+  ({ActivitySet? set})? _drawn;
 
   /// The running timer, or null when no rest is running.
   RestTimer? get timer => _timer;
@@ -149,29 +158,60 @@ class RestTimerController {
   /// The value to store in the workout draft under [RestTimer.draftKey].
   Map<String, Object>? toDraft() => _timer?.toJson();
 
+  /// Shows [set] as the one in progress, or that every set is logged when it
+  /// is null. While a rest runs only the set that follows it changes (the
+  /// card turns into it when the rest ends). With [begin] a card is requested
+  /// when none shows (the workout opened, a set was logged); without it
+  /// nothing appears, so a card the athlete dismissed stays gone. The same
+  /// set again sends nothing, unless [begin]. [nextLabel] is the "Next: …"
+  /// line of a running rest for [set].
+  ///
+  /// With a rest running and no set left, the rest goes on but the card
+  /// carries no set, so it says every set is logged when the rest ends, and
+  /// goes [doneLinger] later.
+  void present(ActivitySet? set, {bool begin = false, String nextLabel = ''}) {
+    final drawn = _drawn;
+    if (!begin && drawn != null && drawn.set == set) return;
+    final timer = _timer;
+    if (timer != null) {
+      _drawn = (set: set);
+      _send(
+        _activity.updateRest(
+          endsAt: timer.endsAt,
+          nextLabel: nextLabel,
+          next: set,
+          clearNext: set == null,
+        ),
+      );
+      return;
+    }
+    _drawn = (set: set);
+    _doneUntil = set == null ? _clock().add(doneLinger) : null;
+    _send(_activity.showSet(set, begin: begin));
+  }
+
   /// Starts a rest of [seconds] (a set's `rest_seconds`), replacing any
   /// running one, and shows it as the Live Activity with the exercise and
-  /// what follows ([nextLabel], which names the set [nextExerciseOrder] /
-  /// [nextSetNumber]: the card's Done button carries that set back). A rest
-  /// of zero or less starts nothing and ends the activity.
+  /// what follows ([nextLabel], which names the set [next]: the card turns
+  /// into that set when the rest ends, and its "Log set" carries that set
+  /// back). A rest of zero or less starts nothing.
   Future<void> start(
     int seconds, {
     String nextLabel = '',
     String exerciseName = '',
-    int? nextExerciseOrder,
-    int? nextSetNumber,
+    ActivitySet? next,
   }) async {
-    if (seconds <= 0) return stop();
+    if (seconds <= 0) return;
     final timer = RestTimer.start(seconds, now: _clock());
     _timer = timer;
     _doneUntil = null;
+    _drawn = (set: next);
     _send(
       _activity.startRest(
         endsAt: timer.endsAt,
         nextLabel: nextLabel,
         exerciseName: exerciseName,
-        nextExerciseOrder: nextExerciseOrder,
-        nextSetNumber: nextSetNumber,
+        next: next,
       ),
     );
     await _alerts.scheduleRestAlert(seconds);
@@ -190,74 +230,99 @@ class RestTimerController {
     await _alerts.scheduleRestAlert(next.remainingSeconds(now));
   }
 
-  /// Redraws the running rest's activity with its true end, which also
-  /// clears "Open Tracend to continue". Used after a button press that
-  /// changed nothing, so the card never shows a state the workout is not in.
+  /// Redraws the activity with its true state, which also clears "Open
+  /// Tracend": the running rest with its end, else the set in progress. Used
+  /// after a button press that changed nothing, so the card never shows a
+  /// state the workout is not in.
   void refresh() {
     final timer = _timer;
-    if (timer != null) _send(_activity.updateRest(endsAt: timer.endsAt));
+    final drawn = _drawn;
+    if (timer != null) {
+      _send(
+        _activity.updateRest(
+          endsAt: timer.endsAt,
+          next: drawn?.set,
+          clearNext: drawn != null && drawn.set == null,
+        ),
+      );
+    } else if (drawn != null) {
+      _send(_activity.showSet(drawn.set, begin: false));
+    }
   }
 
-  /// Skip: the rest ends now and the activity reads "Rest done".
+  /// Skip: the rest ends now and the card turns into the set that follows.
   Future<void> skip() => _over(_clock());
 
   /// The rest ran to its end (seen by the in-app timer, or late after the
-  /// app was away). The activity already reads "Rest done" from its end
-  /// time, so nothing is sent to it; it goes [doneLinger] after the end.
+  /// app was away). The activity already turned into the set that follows
+  /// from its end time, so nothing is sent to it.
   Future<void> ranOut() async {
     final timer = _timer;
     if (timer == null) return;
     _timer = null;
-    _doneUntil = timer.endsAt.add(doneLinger);
+    _lingerIfFinished(timer.endsAt);
     await _alerts.cancelRestAlert();
   }
 
-  /// Ends the "Rest done" activity once [doneLinger] has passed. The
-  /// workout screen calls it every second while the app is on screen.
+  /// A rest that ends with no set to turn into leaves the card that says
+  /// every set is logged: it goes [doneLinger] after [from].
+  void _lingerIfFinished(DateTime from) {
+    final drawn = _drawn;
+    if (drawn != null && drawn.set == null) _doneUntil = from.add(doneLinger);
+  }
+
+  /// Ends the card that says every set is logged once [doneLinger] has
+  /// passed. The workout screen calls it every second while the app is on
+  /// screen.
   void tick() {
     final until = _doneUntil;
     if (_timer != null || until == null || _clock().isBefore(until)) return;
     _doneUntil = null;
+    _drawn = null;
     _send(_activity.end());
   }
 
-  /// Ends the rest, its alert and its Live Activity: finishing, discarding,
-  /// or leaving the workout, a set with no rest after it, and an expired
-  /// rest on resume.
+  /// Ends the rest, its alert and the Live Activity: finishing, discarding,
+  /// or leaving the workout.
   Future<void> stop() async {
     _timer = null;
     _doneUntil = null;
+    _drawn = null;
     _send(_activity.end());
     await _alerts.cancelRestAlert();
   }
 
   /// The workout screen went away without the athlete ending the workout
-  /// (the app returned to sign-in, for example). Nothing runs the rest on
-  /// screen any more, so its Live Activity ends; the stored rest and its
-  /// alert stay, and reopening the workout brings the rest back in the app.
+  /// (the app returned to sign-in, for example). Nothing drives the activity
+  /// any more, so it ends; the stored rest and its alert stay, and reopening
+  /// the workout brings the rest back in the app.
   void detach() {
-    if (_timer == null && _doneUntil == null) return;
+    if (_timer == null && _drawn == null) return;
     _doneUntil = null;
+    _drawn = null;
     _send(_activity.end());
   }
 
   /// Resumes the timer stored in the draft after a relaunch. A rest that has
-  /// already ended is cleared with its alert and activity; a running one
-  /// keeps its end, and the activity still showing from before the relaunch
-  /// is moved to that end.
+  /// already ended is cleared with its alert; the activity still showing
+  /// from before the relaunch is left for [present] to move to the set in
+  /// progress. A running one keeps its end, and the activity is moved to it.
   Future<void> restore(Object? stored) async {
     final timer = RestTimer.fromJson(stored);
-    if (timer == null || timer.isExpired(_clock())) return stop();
+    if (timer == null || timer.isExpired(_clock())) {
+      await _alerts.cancelRestAlert();
+      return;
+    }
     _timer = timer;
     _doneUntil = null;
     _send(_activity.updateRest(endsAt: timer.endsAt));
   }
 
-  /// The rest ends at [now]: the activity reads "Rest done" from now on.
+  /// The rest ends at [now]: the activity turns into the set that follows.
   Future<void> _over(DateTime now) async {
     if (_timer == null) return;
     _timer = null;
-    _doneUntil = now.add(doneLinger);
+    _lingerIfFinished(now);
     _send(_activity.updateRest(endsAt: now));
     await _alerts.cancelRestAlert();
   }

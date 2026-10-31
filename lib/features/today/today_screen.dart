@@ -9,6 +9,7 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/account_screen.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/account/privacy_export_repository.dart';
+import 'package:tracend/features/account/region_repository.dart';
 import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
@@ -16,6 +17,14 @@ import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
+import 'package:tracend/features/readiness/day_adjustment_controller.dart';
+import 'package:tracend/features/readiness/pain_notice_card.dart';
+import 'package:tracend/features/readiness/pain_reporting.dart';
+import 'package:tracend/features/readiness/safety_acknowledgements.dart';
+import 'package:tracend/features/readiness/safety_copy.dart';
+import 'package:tracend/features/readiness/safety_referral_sheet.dart';
+import 'package:tracend/features/train/unfinished_workout.dart';
+import 'package:tracend/features/train/widgets/workout_finish_sheet.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/features/today/check_in_gate.dart';
@@ -27,12 +36,15 @@ import 'package:tracend/features/today/widgets/plan_progress_line.dart';
 import 'package:tracend/features/today/widgets/today_hero.dart';
 import 'package:tracend/features/today/widgets/today_session_card.dart';
 import 'package:tracend/features/today/widgets/today_tiles.dart';
+import 'package:tracend/features/today/widgets/unfinished_workout_card.dart';
 import 'package:tracend/features/today/widgets/your_week_card.dart';
+import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/shared/widgets/tracend_confirm.dart';
 import 'package:tracend/shared/widgets/tracend_skeleton.dart';
 import 'package:tracend/shared/widgets/tracend_toast.dart';
 
@@ -57,6 +69,10 @@ class TodayScreen extends StatefulWidget {
     this.planChanges,
     this.widgetPublisher,
     this.widgetTaps,
+    this.dayAdjustment,
+    this.onTalkToCoach,
+    this.pain,
+    this.userId,
     this.clock = DateTime.now,
     super.key,
   });
@@ -106,6 +122,23 @@ class TodayScreen extends StatefulWidget {
   /// are fresh by the time the athlete looks.
   final Listenable? widgetTaps;
 
+  /// Today's same-day readiness adjustment, shared with Train. Null without a
+  /// backend, where there is none.
+  final DayAdjustmentController? dayAdjustment;
+
+  /// Shell wiring: open Coach with a question in the box ("Talk to Coach" on
+  /// the readiness card).
+  final ValueChanged<String>? onTalkToCoach;
+
+  /// Sends the pain reports made during a workout and keeps the ones that
+  /// cannot go yet. Today sends them again whenever it comes forward and says
+  /// so when one is waiting or was refused.
+  final PainReporting? pain;
+
+  /// The signed-in athlete, whose referrals acknowledged on this phone are
+  /// remembered apart from anyone else's.
+  final String? userId;
+
   /// The time Today measures the age of its brief by.
   final DateTime Function() clock;
 
@@ -121,10 +154,37 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   late Future<CoachDecision?> _latestDecision;
   bool _syncing = false;
 
+  /// The workout the server offers back (logged, never finished), and
+  /// whether an answer to it is on its way.
+  UnfinishedWorkout? _unfinished;
+  bool _answeringUnfinished = false;
+
+  /// Which read of the offer started last, and which answer came last. A
+  /// read that finishes after a newer read started or an answer was given
+  /// (a slow one from before it) is ignored, so it never brings back a card
+  /// the athlete already answered.
+  int _unfinishedLoads = 0;
+
   /// Today's check-in as this phone knows it: saved (also when only queued
   /// offline) or put off with "Not today". Each holds the day it was set.
   String? _checkedInOn;
   String? _skippedOn;
+
+  /// The server's today (`YYYY-MM-DD`), once the readiness controller learned
+  /// it, whatever the phone's date says. The brief is loaded for it, and a
+  /// check-in is saved under it, so the card, the numbers, the session and the
+  /// check-in all describe one day. Until it is known the phone's date is used.
+  String? _serverDay;
+
+  /// A referral sheet is open, so another is not stacked on it.
+  bool _safetyShowing = false;
+
+  /// Pain reports that have not reached Tracend: a check-in or a workout
+  /// report waiting on this phone, or one the server refused as too old.
+  bool _painWaiting = false;
+  bool _painRefused = false;
+  bool _painRefusedTooOld = true;
+  bool _painBusy = false;
   DailyBrief? _lastBrief;
   static const _checkedInKey = 'today_check_in_saved_on';
   static const _skippedKey = 'today_check_in_skipped_on';
@@ -156,7 +216,10 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _reloadIfStale();
+    if (state != AppLifecycleState.resumed) return;
+    _reloadIfStale();
+    // A pain report must reach Tracend within a day: try again at once.
+    unawaited(_replayPendingCheckIn());
   }
 
   /// When the brief last arrived; null until the first one does.
@@ -172,6 +235,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   /// what the widgets get: an old one is never written again.
   void _reloadIfStale() {
     if (!mounted) return;
+    unawaited(widget.dayAdjustment?.refreshIfStale());
     final loadedAt = _briefLoadedAt;
     final brief = _lastBrief;
     final now = widget.clock();
@@ -179,13 +243,14 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         loadedAt == null ||
         brief == null ||
         now.difference(loadedAt) > _staleBriefAfter ||
-        brief.localDate != _dateKey(now);
+        brief.localDate != _dateKey(_briefDay());
     if (!stale) return;
     setState(() {
       _targets = widget.nutrition.loadTargets();
       _meals = _loadMeals();
       _brief = _loadBrief();
     });
+    unawaited(_loadUnfinished());
   }
 
   @override
@@ -194,11 +259,13 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     widget.widgetTaps?.removeListener(_reloadIfStale);
     widget.aiConsent?.removeListener(_consentChanged);
     widget.planChanges?.removeListener(_planChanged);
+    widget.dayAdjustment?.removeListener(_dayAdjustmentChanged);
     super.dispose();
   }
 
   void _planChanged() {
     if (!mounted) return;
+    unawaited(widget.dayAdjustment?.load());
     setState(() {
       _targets = widget.nutrition.loadTargets();
       _brief = _loadBrief();
@@ -212,7 +279,9 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     widget.widgetTaps?.addListener(_reloadIfStale);
     widget.aiConsent?.addListener(_consentChanged);
     widget.planChanges?.addListener(_planChanged);
+    widget.dayAdjustment?.addListener(_dayAdjustmentChanged);
     _reloadHealth();
+    unawaited(widget.dayAdjustment?.load());
     _targets = widget.nutrition.loadTargets();
     _meals = _loadMeals();
     _brief = _loadBrief();
@@ -220,6 +289,127 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     _restoreCheckInDays();
     _autoSyncHealthIfNeeded();
     _replayPendingCheckIn();
+    unawaited(_loadUnfinished());
+  }
+
+  UnfinishedWorkoutRepository? get _unfinishedSource {
+    final source = widget.workouts;
+    return source is UnfinishedWorkoutRepository
+        ? source as UnfinishedWorkoutRepository
+        : null;
+  }
+
+  /// Asks which workout, if any, was logged and left unfinished. A failed
+  /// read keeps what is shown: the offer is a convenience, never a gate.
+  Future<void> _loadUnfinished() async {
+    final source = _unfinishedSource;
+    if (source == null) return;
+    final load = ++_unfinishedLoads;
+    try {
+      final workout = await source.loadUnfinishedWorkout();
+      if (mounted && load == _unfinishedLoads) {
+        setState(() => _unfinished = workout);
+      }
+    } catch (error) {
+      debugPrint('Non-critical error: unfinished workout: $error');
+    }
+  }
+
+  /// "Save workout": asks how hard it was, then puts it in the history on
+  /// its own day. Nothing is saved until the athlete answers.
+  Future<void> _saveUnfinished(UnfinishedWorkout workout) async {
+    final source = _unfinishedSource;
+    if (source == null || _answeringUnfinished) return;
+    final effort = await showWorkoutFinishSheet(
+      context,
+      workoutName: workout.name,
+      unloggedSets: workout.unloggedSets,
+      saving: true,
+    );
+    if (effort == null || !mounted) return;
+    setState(() => _answeringUnfinished = true);
+    try {
+      await source.saveUnfinishedWorkout(workout, sessionEffort: effort);
+      if (!mounted) return;
+      _unfinishedLoads++;
+      setState(() {
+        _unfinished = null;
+        _brief = _loadBrief();
+      });
+      TracendToast.show(
+        context,
+        '${workout.name} saved to ${dayAndDate(workout.localDate)}.',
+        icon: CupertinoIcons.checkmark_alt,
+      );
+    } on UnfinishedWorkoutGone {
+      if (!mounted) return;
+      TracendToast.show(
+        context,
+        'This workout can no longer be saved.',
+        icon: CupertinoIcons.exclamationmark_triangle,
+      );
+    } catch (error) {
+      debugPrint('Non-critical error: unfinished workout not saved: $error');
+      if (!mounted) return;
+      TracendToast.show(
+        context,
+        'Could not save the workout. Try again.',
+        icon: CupertinoIcons.exclamationmark_triangle,
+      );
+    } finally {
+      if (mounted) setState(() => _answeringUnfinished = false);
+    }
+    unawaited(_loadUnfinished());
+    // Saving or discarding a session changes whether today's can still be
+    // adjusted.
+    unawaited(widget.dayAdjustment?.load());
+  }
+
+  /// "Discard": after a confirmation, keeps the workout out of the history
+  /// for good.
+  Future<void> _discardUnfinished(UnfinishedWorkout workout) async {
+    final source = _unfinishedSource;
+    if (source == null || _answeringUnfinished) return;
+    final confirmed = await showTracendConfirm(
+      context,
+      title: 'Discard ${workout.name}?',
+      message:
+          'It will not count in your history or your training load. This '
+          'cannot be undone.',
+      confirmLabel: 'Discard',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _answeringUnfinished = true);
+    try {
+      await source.discardUnfinishedWorkout(workout);
+      if (!mounted) return;
+      _unfinishedLoads++;
+      setState(() => _unfinished = null);
+    } on UnfinishedWorkoutGone {
+      if (!mounted) return;
+      TracendToast.show(
+        context,
+        'This workout is no longer offered.',
+        icon: CupertinoIcons.exclamationmark_triangle,
+      );
+    } catch (error) {
+      debugPrint(
+        'Non-critical error: unfinished workout not discarded: $error',
+      );
+      if (!mounted) return;
+      TracendToast.show(
+        context,
+        'Could not discard the workout. Try again.',
+        icon: CupertinoIcons.exclamationmark_triangle,
+      );
+    } finally {
+      if (mounted) setState(() => _answeringUnfinished = false);
+    }
+    unawaited(_loadUnfinished());
+    // Saving or discarding a session changes whether today's can still be
+    // adjusted.
+    unawaited(widget.dayAdjustment?.load());
   }
 
   /// Deliver any check-in queued while offline: the sheet persists the
@@ -233,19 +423,88 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     if (!widget.environment.hasSupabaseConfiguration) return;
     try {
       final queue = await _resolveQueue();
-      if (queue == null) return;
-      final outcome = await queue.replay(_replaySender);
-      if (outcome == CheckInReplayOutcome.delivered && mounted) {
-        setState(() {
-          _brief = _loadBrief();
-        });
-        // The replayed check-in is new evidence: today's decision may have
-        // been generated without it and must be refreshed.
-        await _refreshDecisionAfterEvidence();
+      if (queue != null) {
+        final outcome = await queue.replay(_replaySender);
+        if (outcome == CheckInReplayOutcome.delivered && mounted) {
+          setState(() {
+            _brief = _loadBrief();
+          });
+          // The replayed check-in is what today's call rests on, and it may
+          // send the athlete to a professional: read it and say so, as after
+          // an online save.
+          final readiness = widget.dayAdjustment;
+          if (readiness != null) {
+            await readiness.load();
+            if (mounted) await _showSafetyOnce();
+          }
+          // The replayed check-in is new evidence: today's decision may have
+          // been generated without it and must be refreshed.
+          await _refreshDecisionAfterEvidence();
+        }
       }
     } on Exception {
       // Keep the envelope; retried on next launch.
     }
+    // Pain reports made in a workout while offline go the same way.
+    await widget.pain?.drain();
+    await _refreshPainNotice();
+  }
+
+  /// Reads what is waiting or refused, in the check-in queue and among the
+  /// workout's pain reports, for the notice at the top of Today.
+  Future<void> _refreshPainNotice() async {
+    var waiting = false;
+    var refused = false;
+    var tooOld = true;
+    try {
+      final queue = await _resolveQueue();
+      final state = queue?.painState;
+      waiting = state == CheckInPainState.waiting;
+      refused = state == CheckInPainState.refused;
+      if (refused) tooOld = queue?.painRefusedTooOld ?? true;
+      final reports = await widget.pain?.state();
+      if (reports != null) {
+        waiting = waiting || reports.waiting.isNotEmpty;
+        if (reports.refused.isNotEmpty) {
+          refused = true;
+          tooOld = tooOld && reports.refusedTooOld;
+        }
+      }
+    } on Exception catch (error) {
+      debugPrint('Non-critical error: pain notice not read: $error');
+    }
+    if (!mounted) return;
+    if (waiting != _painWaiting ||
+        refused != _painRefused ||
+        tooOld != _painRefusedTooOld) {
+      setState(() {
+        _painWaiting = waiting;
+        _painRefused = refused;
+        _painRefusedTooOld = tooOld;
+      });
+    }
+  }
+
+  /// The athlete has read that a pain report was not recorded: it is let go,
+  /// and the rest of its check-in is sent without the pain answers.
+  Future<void> _acknowledgeRefusedPain() async {
+    if (_painBusy) return;
+    setState(() => _painBusy = true);
+    try {
+      await (await _resolveQueue())?.acknowledgeRefusedPain(_replaySender);
+      await widget.pain?.dismissRefused();
+    } on Exception catch (error) {
+      debugPrint('Non-critical error: refused pain report kept: $error');
+    }
+    if (mounted) setState(() => _painBusy = false);
+    await _refreshPainNotice();
+  }
+
+  Future<void> _retryPain() async {
+    if (_painBusy) return;
+    setState(() => _painBusy = true);
+    await _replayPendingCheckIn();
+    if (mounted) setState(() => _painBusy = false);
   }
 
   Future<bool> _replaySender(
@@ -276,6 +535,8 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
 
   Future<CheckInQueue?> _resolveQueue() async {
     if (widget.queueFactory != null) return widget.queueFactory!();
+    // Without a backend there is no signed-in athlete to queue for.
+    if (!widget.environment.hasSupabaseConfiguration) return null;
     final preferences = await SharedPreferences.getInstance();
     return CheckInQueue(
       preferences,
@@ -287,11 +548,12 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   /// leaves the schedule null so the card says the plan did not load.
   Future<TodayMeals> _loadMeals() async {
     final nutrition = widget.nutrition;
-    final now = DateTime.now();
+    final day = _briefDay();
+    _mealsRequestedFor = _dateKey(day);
     try {
-      final meals = await nutrition.loadMeals(now);
+      final meals = await nutrition.loadMeals(day);
       final schedule = nutrition is NutritionScheduleRepository
-          ? await (nutrition as NutritionScheduleRepository).loadSchedule(now)
+          ? await (nutrition as NutritionScheduleRepository).loadSchedule(day)
           : const NutritionSchedule(title: '', items: []);
       return (schedule: schedule, meals: meals);
     } catch (error) {
@@ -305,11 +567,67 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   /// never overwrites the newer day's brief, gate or widgets.
   int _briefLoads = 0;
 
+  /// The day the brief is loaded for: the server's once it is known, else the
+  /// phone's.
+  DateTime _briefDay() {
+    final day = _serverDay == null ? null : DateTime.tryParse(_serverDay!);
+    return day ?? widget.clock();
+  }
+
+  /// The day of the newest brief request, `YYYY-MM-DD`.
+  String? _briefRequestedFor;
+
+  /// The day of the newest meals request, `YYYY-MM-DD`.
+  String? _mealsRequestedFor;
+
+  /// The athlete's day for the check-in gate and its saved marks: the
+  /// server's when known, else the brief's, else the phone's.
+  String _dayKey() =>
+      _serverDay ?? _lastBrief?.localDate ?? _dateKey(widget.clock());
+
+  /// The day the coaching decision must be dated for to be current: the
+  /// server's once it is known, else the phone's. (The brief's date is not
+  /// used: before the server's day is known it is the phone's own request.)
+  String _decisionDay() => _dateKey(_briefDay());
+
+  /// Follows the server's day. It is recorded as soon as the controller learns
+  /// it, whether or not the brief has arrived, and the brief and today's meals
+  /// are loaded again when the newest request was for another day, whichever
+  /// of the two finishes first.
+  void _dayAdjustmentChanged() {
+    final readiness = widget.dayAdjustment;
+    final day = readiness?.serverDay;
+    if (!mounted || day == null) return;
+    final rolledOver = _serverDay != null && _serverDay != day;
+    _serverDay = day;
+    // A route that came in with the read (a report made in a workout, a hold
+    // that stands from an earlier day) is said here when nothing else is on
+    // top of Today, and is not said again once it has been answered.
+    if (readiness!.current?.safetyRoute != null &&
+        !readiness.loading &&
+        !readiness.busy &&
+        ModalRoute.of(context)?.isCurrent != false) {
+      unawaited(_showSafetyOnce());
+    }
+    // The server's day moved on while Today was open (midnight where the
+    // athlete is): yesterday's decision is no longer today's.
+    if (rolledOver) unawaited(_refreshDecisionAfterEvidence());
+    final briefStale = _briefRequestedFor != day;
+    final mealsStale = _mealsRequestedFor != day;
+    if (!briefStale && !mealsStale) return;
+    setState(() {
+      if (briefStale) _brief = _loadBrief();
+      if (mealsStale) _meals = _loadMeals();
+    });
+  }
+
   /// Loads the brief and, once it arrives, sets the check-in gate from it and
   /// hands it to the widgets.
   Future<DailyBrief> _loadBrief() {
     final load = ++_briefLoads;
-    final future = widget.brief.load(widget.clock());
+    final day = _briefDay();
+    _briefRequestedFor = _dateKey(day);
+    final future = widget.brief.load(day);
     future.then((brief) {
       if (!mounted || load != _briefLoads) return;
       _lastBrief = brief;
@@ -386,7 +704,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
 
   /// "Not today": the tab bar comes back until tomorrow.
   void _skipCheckIn() {
-    final day = _lastBrief?.localDate ?? _dateKey(DateTime.now());
+    final day = _dayKey();
     setState(() => _skippedOn = day);
     _updateGate();
     _rememberDay(_skippedKey, day);
@@ -398,11 +716,14 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
 
   void _reloadBriefAndHealth() {
     _reloadHealth();
+    // Sleep and recovery that just arrived can change today's call.
+    unawaited(widget.dayAdjustment?.load());
     setState(() {
       _brief = _loadBrief();
       _targets = widget.nutrition.loadTargets();
       _meals = _loadMeals();
     });
+    unawaited(_loadUnfinished());
   }
 
   Future<void> _autoSyncHealthIfNeeded() async {
@@ -447,24 +768,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       _reloadBriefAndHealth();
       if (widget.environment.hasSupabaseConfiguration) {
         try {
-          final latest = await widget.coach.loadLatest();
-          final today = _dateKey(DateTime.now());
-          final citedCheckInMissing =
-              latest != null &&
-              latest.localDate == today &&
-              latest.missingData.contains('recovery_check_in');
-          if (_aiAllowed &&
-              (latest == null ||
-                  latest.localDate != today ||
-                  citedCheckInMissing)) {
-            // Same freshness rule as _refreshDecisionAfterEvidence: a
-            // decision generated before the check-in landed is stale.
-            await widget.coach.generate();
-          }
-          if (!mounted) return;
-          setState(() {
-            _latestDecision = widget.coach.loadLatest();
-          });
+          await _makeDecisionCurrent();
         } catch (_) {
           failures.add('coach decision');
         }
@@ -516,27 +820,40 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   Future<void> _refreshDecisionAfterEvidence() async {
     if (!widget.environment.hasSupabaseConfiguration || !_aiAllowed) return;
     try {
-      final latest = await widget.coach.loadLatest();
-      final today = _dateKey(DateTime.now());
-      final citedCheckInMissing =
-          latest != null &&
-          latest.localDate == today &&
-          latest.missingData.contains('recovery_check_in');
-      // Checked again after the load: Today stays mounted while AI coaching
-      // is turned off in Account, so the answer can change during the wait.
-      if (_aiAllowed &&
-          (latest == null ||
-              latest.localDate != today ||
-              citedCheckInMissing)) {
-        await widget.coach.generate();
-      }
-      if (!mounted) return;
-      setState(() {
-        _latestDecision = widget.coach.loadLatest();
-      });
+      await _makeDecisionCurrent();
     } catch (_) {
       // Stale-but-valid decision stays on screen; the hero sync retries.
     }
+  }
+
+  /// The checks that make the decision current, one at a time: a check that
+  /// starts while another is making a decision waits for it and then sees
+  /// that decision, so one day never makes two.
+  Future<void> _decisionChain = Future<void>.value();
+
+  Future<void> _makeDecisionCurrent() {
+    final check = _decisionChain.then((_) => _checkDecision());
+    _decisionChain = check.then<void>((_) {}, onError: (_) {});
+    return check;
+  }
+
+  Future<void> _checkDecision() async {
+    final latest = await widget.coach.loadLatest();
+    final today = _decisionDay();
+    final citedCheckInMissing =
+        latest != null &&
+        latest.localDate == today &&
+        latest.missingData.contains('recovery_check_in');
+    // Checked again after the load: Today stays mounted while AI coaching
+    // is turned off in Account, so the answer can change during the wait.
+    if (_aiAllowed &&
+        (latest == null || latest.localDate != today || citedCheckInMissing)) {
+      await widget.coach.generate(localDate: today);
+    }
+    if (!mounted) return;
+    setState(() {
+      _latestDecision = widget.coach.loadLatest();
+    });
   }
 
   Future<void> _openCheckIn() async {
@@ -544,9 +861,11 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       context,
       widget.environment,
       sender: widget.checkInSender,
+      localDate: _serverDay,
+      jointStates: widget.dayAdjustment?.current?.jointStates ?? const [],
     );
-    if (saved && mounted) {
-      final day = _lastBrief?.localDate ?? _dateKey(DateTime.now());
+    if (saved != null && mounted) {
+      final day = _dayKey();
       setState(() => _checkedInOn = day);
       _updateGate();
       // The widgets say the check-in is done at once: the brief reloaded
@@ -559,15 +878,139 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       setState(() {
         _brief = _loadBrief();
       });
-      await _refreshDecisionAfterEvidence();
+      // The check-in is what today's call rests on: read it again, and when
+      // it sends the athlete to a professional, say so where it cannot be
+      // missed. When it only waits on this phone, the same rules say it from
+      // the answers.
+      if (saved != null) {
+        if (saved.delivered) await widget.dayAdjustment?.load();
+        // A referral for the report just made is always shown, whether or
+        // not the same route was read earlier today.
+        if (mounted) {
+          final pending = saved.pending;
+          if (pending != null) unawaited(_afterPendingCheckIn(pending));
+          await _showSafetyOnce(
+            fallbackRoute: saved.referralRoute,
+            fresh: saved.referralRoute != null,
+          );
+        }
+      }
+      if (mounted) unawaited(_refreshPainNotice());
+      if (mounted) await _refreshDecisionAfterEvidence();
     }
   }
 
-  /// Opens the brief's workout: the one planned for the date the brief was
-  /// loaded for. A fixture brief carries no workout id, so its repository's
-  /// workout opens instead.
+  /// The check-in left the sheet before the server answered (a referral does
+  /// not wait for it): when it lands, today is read again, and when it does
+  /// not, the athlete is told it waits on the phone.
+  Future<void> _afterPendingCheckIn(Future<bool> pending) async {
+    bool delivered;
+    try {
+      delivered = await pending;
+    } on Exception catch (error) {
+      debugPrint('Non-critical error: check-in send ended badly: $error');
+      delivered = false;
+    }
+    if (!mounted) return;
+    if (delivered) {
+      await widget.dayAdjustment?.load();
+      if (mounted) {
+        setState(() {
+          _brief = _loadBrief();
+        });
+      }
+    } else {
+      TracendToast.show(
+        context,
+        painQueuedToast,
+        icon: CupertinoIcons.cloud_upload,
+      );
+    }
+    if (mounted) await _refreshPainNotice();
+  }
+
+  Future<SafetyAcknowledgements?> _acknowledgements() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      return SafetyAcknowledgements(preferences, userId: widget.userId);
+    } on Exception catch (error) {
+      debugPrint('Non-critical error: referrals not remembered: $error');
+      return null;
+    }
+  }
+
+  /// The referral for a day with a safety route, shown until it has been
+  /// acknowledged, and then once for that day and route. [fallbackRoute] is
+  /// the route the phone worked out from the pain answers, for when the
+  /// server's day cannot be read. `urgent` and `clinician_today` cannot be
+  /// closed without choosing "Got it". With [fresh] (a report the athlete
+  /// just made) it is shown even when the same route was read earlier today:
+  /// once a day applies only to what Today opens on its own.
+  Future<void> _showSafetyOnce({
+    String? fallbackRoute,
+    bool fresh = false,
+  }) async {
+    if (_safetyShowing || !mounted) return;
+    _safetyShowing = true;
+    try {
+      final adjustment = widget.dayAdjustment?.current;
+      final route = stricterRoute(adjustment?.safetyRoute, fallbackRoute);
+      if (route == null) return;
+      final acknowledgements = await _acknowledgements();
+      final key = SafetyAcknowledgements.keyOf(
+        adjustment?.localDate ?? _dayKey(),
+        route,
+      );
+      if (acknowledgements == null ||
+          (!fresh && acknowledgements.isAcknowledged(key)) ||
+          !mounted) {
+        return;
+      }
+      await showSafetyReferralSheet(
+        context,
+        route,
+        extraLines: adjustment == null
+            ? const []
+            : jointReminderLines(adjustment),
+      );
+      await acknowledgements.acknowledge(key);
+    } finally {
+      _safetyShowing = false;
+    }
+  }
+
+  /// Opens the workout of the day the server counts. The brief on screen can
+  /// be for the phone's day while the server's brief is still loading (the
+  /// two differ near midnight and across a travelled time zone), and its
+  /// workout is that other day's: it is never started with the server's date.
+  /// The brief for the server's day is loaded first when they differ. A
+  /// fixture brief carries no workout id, so its repository's workout opens
+  /// instead.
   Future<void> _openWorkout(DailyBrief brief) async {
-    final row = brief.workout;
+    final readiness = widget.dayAdjustment;
+    if (readiness != null && readiness.serverDay == null) {
+      await readiness.load();
+      if (!mounted) return;
+    }
+    final serverDay = readiness?.serverDay;
+    var opening = brief;
+    if (serverDay != null && brief.localDate != serverDay) {
+      try {
+        opening = await widget.brief.load(DateTime.parse(serverDay));
+      } catch (e) {
+        debugPrint('Non-critical error: the server day brief not loaded: $e');
+        if (mounted) {
+          TracendToast.show(
+            context,
+            'Today could not load. Try again.',
+            icon: CupertinoIcons.exclamationmark_triangle,
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+    }
+    final row = opening.workout;
     PlannedWorkout? workout;
     if (row != null && row['id'] is String) {
       workout = PlannedWorkout.fromHubJson(row);
@@ -579,15 +1022,24 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       }
     }
     if (workout == null || !mounted) return;
+    final sessionDay =
+        DateTime.tryParse(serverDay ?? '') ??
+        DateTime.tryParse(opening.localDate) ??
+        DateTime.now();
     final completed = await Navigator.of(context).push<bool>(
       CupertinoPageRoute(
         builder: (_) => WorkoutDetailScreen(
           repository: widget.workouts,
+          dayAdjustment: widget.dayAdjustment,
+          pain: widget.pain,
           workout: workout,
-          sessionDate: DateTime.tryParse(brief.localDate) ?? DateTime.now(),
+          sessionDate: sessionDay,
         ),
       ),
     );
+    // Whatever happened in the workout screen (saved, paused, finished), the
+    // readiness card must say whether the session has started.
+    unawaited(widget.dayAdjustment?.load());
     if (completed == true && mounted) {
       setState(() => _brief = _loadBrief());
     }
@@ -613,6 +1065,9 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         deletion: widget.environment.hasSupabaseConfiguration
             ? SupabaseAccountDeletionRepository(Supabase.instance.client)
             : const FixtureAccountDeletionRepository(),
+        region: widget.environment.hasSupabaseConfiguration
+            ? SupabaseRegionRepository(Supabase.instance.client)
+            : const FixtureRegionRepository(),
         aiConsent: widget.aiConsent,
       ),
     ),
@@ -637,6 +1092,15 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         onRefresh: _syncEverything,
         trailing: _AccountButton(onPressed: _openAccount),
         children: [
+          PainNoticeCard(
+            waiting: _painWaiting,
+            refused: _painRefused,
+            refusedTooOld: _painRefusedTooOld,
+            busy: _painBusy,
+            onTryAgain: _retryPain,
+            onReportAgain: _openCheckIn,
+            onAcknowledge: _acknowledgeRefusedPain,
+          ),
           FutureBuilder<DailyBrief>(
             future: _brief,
             builder: (context, snapshot) {
@@ -661,9 +1125,15 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
                       widget.onOpenTrain ?? () => _openWorkout(brief),
                   onCheckIn: _openCheckIn,
                   checkedIn: _checkedIn(brief),
+                  dayAdjustment: widget.dayAdjustment,
+                  onTalkToCoach: widget.onTalkToCoach,
                   offerCheckIn:
                       widget.checkInGate == null ||
                       _skippedOn == brief.localDate,
+                  unfinished: _unfinished,
+                  answeringUnfinished: _answeringUnfinished,
+                  onSaveUnfinished: _saveUnfinished,
+                  onDiscardUnfinished: _discardUnfinished,
                 );
               }
               if (snapshot.connectionState == ConnectionState.waiting) {
@@ -814,6 +1284,12 @@ class _BriefContent extends StatelessWidget {
     required this.onCheckIn,
     required this.checkedIn,
     required this.offerCheckIn,
+    required this.dayAdjustment,
+    required this.onTalkToCoach,
+    required this.unfinished,
+    required this.answeringUnfinished,
+    required this.onSaveUnfinished,
+    required this.onDiscardUnfinished,
   });
 
   final DailyBrief brief;
@@ -830,10 +1306,19 @@ class _BriefContent extends StatelessWidget {
   final VoidCallback onCheckIn;
   final bool checkedIn;
   final bool offerCheckIn;
+  final DayAdjustmentController? dayAdjustment;
+  final ValueChanged<String>? onTalkToCoach;
+
+  /// A workout logged and left unfinished, asked about right under the hero.
+  final UnfinishedWorkout? unfinished;
+  final bool answeringUnfinished;
+  final ValueChanged<UnfinishedWorkout> onSaveUnfinished;
+  final ValueChanged<UnfinishedWorkout> onDiscardUnfinished;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
+    final unfinished = this.unfinished;
     final today = DateTime.tryParse(brief.localDate) ?? DateTime.now();
     final plan = brief.plan;
     var index = 0;
@@ -853,6 +1338,17 @@ class _BriefContent extends StatelessWidget {
             onCheckIn: onCheckIn,
           ),
         ),
+        if (unfinished != null) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          enter(
+            UnfinishedWorkoutCard(
+              workout: unfinished,
+              busy: answeringUnfinished,
+              onSave: () => onSaveUnfinished(unfinished),
+              onDiscard: () => onDiscardUnfinished(unfinished),
+            ),
+          ),
+        ],
         if (plan != null) ...[
           const SizedBox(height: TracendSpacing.sm),
           enter(PlanProgressLine(plan: plan)),
@@ -902,6 +1398,9 @@ class _BriefContent extends StatelessWidget {
               decision: snapshot.data,
               aiAllowed: aiAllowed,
               onOpen: onOpenWorkout,
+              dayAdjustment: dayAdjustment,
+              onTalkToCoach: onTalkToCoach,
+              onCheckIn: onCheckIn,
             ),
           ),
         ),

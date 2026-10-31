@@ -12,8 +12,8 @@ select ok(
     'public.onboarding_generations'::regclass, 'public.ai_consent_notices'::regclass,
     'public.ai_notice_current'::regclass, 'public.exercise_catalog'::regclass])),
   'new tables enable and force RLS');
-select is((select count(*) from public.exercise_catalog where status = 'active'), 72::bigint,
-  'the catalog seeds all 72 exercises');
+select is((select count(*) from public.exercise_catalog where status = 'active'), 76::bigint,
+  'the catalog seeds all 76 exercises (72, then four advanced staples)');
 select ok(not has_table_privilege('anon', 'public.exercise_catalog', 'select'),
   'anonymous callers cannot read the catalog');
 select ok(not has_table_privilege('authenticated', 'public.exercise_catalog', 'insert'),
@@ -136,9 +136,9 @@ set local role authenticated;
 set local "request.jwt.claim.sub" = 'e1000000-0000-4000-8000-000000000001';
 select is(public.get_my_onboarding_generation()->>'status', 'succeeded',
   'the app sees its finished generation');
-select throws_ok($$select public.respond_to_onboarding_proposal(
-    (select id from public.change_proposals where schema_version = '2.0'), 'accept')$$,
-  '55000', null, 'an older app cannot approve a 2.0 proposal');
+select ok(not has_function_privilege('authenticated',
+  'public.respond_to_onboarding_proposal(uuid, public.proposal_response_action)', 'execute'),
+  'the first-generation approval cannot be called, so an older app cannot approve a 2.0 proposal');
 select lives_ok($$select public.respond_to_onboarding_proposal_v2(
     (select id from public.change_proposals where schema_version = '2.0'), 'accept')$$,
   'the athlete approves the 2.0 proposal');

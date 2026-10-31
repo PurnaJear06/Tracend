@@ -5,6 +5,7 @@
 // and labels each block as reference data that never overrides Tracend's rules. A figure Tracend
 // calculated from the athlete's own records outranks a stale goal detail or an older note in the
 // athlete file. Stable contributors join the cached prompt prefix; volatile ones follow it.
+import { pieces, plain } from "../recorded_text.ts";
 
 export type CoachContextSlot = "stable" | "volatile";
 
@@ -19,7 +20,53 @@ export type CoachContextInput = Readonly<{
    * a contributor that does not need them ignores it.
    */
   previousQuestions?: readonly string[];
+  /**
+   * The question's library embedding, started when the request began so that it runs alongside
+   * the context preparation (Contract 7 v1.2). The library uses it when its query is this text and
+   * embeds the query itself otherwise. Optional: other contributors ignore it.
+   */
+  queryEmbedding?: PrefetchedQueryEmbedding;
+  /**
+   * Reads shared by the contributors of one turn (see `sharedRead`): the host makes the map, so a
+   * read two contributors need, such as the plan state, is made once. Absent in a hand-built
+   * input; `sharedRead` then reads every time.
+   */
+  shared?: Map<string, Promise<unknown>>;
 }>;
+
+/**
+ * One read for the turn: the first contributor to ask under `key` starts it, the others get the
+ * same promise. A key names one source of data, so every contributor using it reads the same thing.
+ */
+export function sharedRead(
+  input: Pick<CoachContextInput, "shared">,
+  key: string,
+  read: () => Promise<unknown>,
+): Promise<unknown> {
+  if (!input.shared) return read();
+  let promise = input.shared.get(key);
+  if (!promise) {
+    promise = read();
+    input.shared.set(key, promise);
+  }
+  return promise;
+}
+
+/** A query embedding already on its way: the text embedded, when it started, and the result. */
+export type PrefetchedQueryEmbedding = Readonly<{
+  text: string;
+  /** performance.now() when the embedding started; the library's deadline counts from it. */
+  startedAt: number;
+  embedding: Promise<number[]>;
+}>;
+
+/**
+ * Names and numbers a contributor reports about its own turn, for the request log: never message
+ * text, a health value or a figure from the athlete's records.
+ */
+export type ContributorTrace = Readonly<
+  Record<string, string | number | boolean | null | readonly string[]>
+>;
 
 /** A library source Coach was shown this turn: what a reply's evidence may cite, and how it reads. */
 export type ShownSource = Readonly<{
@@ -34,7 +81,35 @@ export type RenderedBlock = Readonly<{
   text: string;
   /** Library sources shown in the text, by source id (E3). */
   shown: Readonly<Record<string, ShownSource>>;
+  /** What the contributor reports about this turn for the log. */
+  trace?: ContributorTrace;
+  /**
+   * The values in `text` that a figure in a reply may rest on: the athlete's records, Tracend's
+   * calculations and what the athlete approved or wrote, each as it is written in the text with
+   * the words that give its unit (`../recorded_text.ts`). The rest of the text (its fixed wording,
+   * thresholds, windows and baseline definitions) grounds nothing. A contributor declared
+   * `records` (`./grounding.ts`) that hands none grounds nothing.
+   */
+  records?: readonly string[];
+  /**
+   * The values in `text` that state the figures of a proposal Tracend built: they ground a figure
+   * in a reply but never one that states the athlete's own target (`../grounding.ts`).
+   */
+  figures?: readonly string[];
 }>;
+
+/** The text of what a contributor rendered: a plain string or a block; null when it rendered nothing. */
+export const renderedText = (rendered: string | RenderedBlock | null): string | null =>
+  typeof rendered === "object" && rendered !== null ? rendered.text : rendered;
+
+/** A block from a text built with `record` and `figure`: the text, and the values in it. */
+export function blockOf(
+  marked: string,
+  rest: Omit<Partial<RenderedBlock>, "text" | "records" | "figures"> = {},
+): RenderedBlock {
+  const { text, records, figures } = pieces(marked);
+  return { shown: {}, ...rest, text, records, figures };
+}
 
 export type CoachContextContributor = Readonly<{
   /** Lower-case id, e.g. "library" or "heart_rate_profile"; unique in the registry. */
@@ -66,6 +141,12 @@ export type CoachContributions = Readonly<{
   texts: Readonly<Record<string, string>>;
   /** The library sources shown this turn, by source id; none when no contributor showed any. */
   shown: Readonly<Record<string, ShownSource>>;
+  /** The recorded values of each contributor's text, by contributor id (see `RenderedBlock`). */
+  records?: Readonly<Record<string, readonly string[]>>;
+  /** The proposal figures of each contributor's text, by contributor id (see `RenderedBlock`). */
+  figures?: Readonly<Record<string, readonly string[]>>;
+  /** The traces contributors reported, by contributor id; absent in hand-built contributions. */
+  traces?: Readonly<Record<string, ContributorTrace>>;
 }>;
 
 export const noCoachContributions: CoachContributions = Object.freeze({
@@ -74,6 +155,7 @@ export const noCoachContributions: CoachContributions = Object.freeze({
   outcomes: Object.freeze([]),
   texts: Object.freeze({}),
   shown: Object.freeze({}),
+  traces: Object.freeze({}),
 });
 
 /** How long one contributor may take before the turn goes on without it. */
@@ -126,6 +208,28 @@ export function clipToBudget(text: string, budgetChars: number): string {
   return `${text.slice(0, end)}…`;
 }
 
+/** Ends a block that lost its trailing lines, so the reader knows the lists stop early. */
+export const cutNote = "[The rest of this block was cut for size.]";
+
+/**
+ * Text clipped to budget characters by whole lines: trailing lines are dropped and `cutNote` closes
+ * the block, so a line is never cut in half. Text with no line break that fits is clipped by
+ * characters as `clipToBudget` does.
+ */
+export function clipLinesToBudget(text: string, budgetChars: number): string {
+  if (text.length <= budgetChars) return text;
+  const room = budgetChars - cutNote.length - 1;
+  const kept: string[] = [];
+  let used = 0;
+  for (const line of text.split("\n")) {
+    const next = used + line.length + (kept.length > 0 ? 1 : 0);
+    if (next > room) break;
+    kept.push(line);
+    used = next;
+  }
+  return kept.length === 0 ? clipToBudget(text, budgetChars) : `${kept.join("\n")}\n${cutNote}`;
+}
+
 const closingTag = /<\/reference_data/gi;
 
 function label(id: string, text: string): string {
@@ -139,6 +243,9 @@ type Rendered = Readonly<{
   block: string | null;
   text?: string;
   shown?: RenderedBlock["shown"];
+  trace?: ContributorTrace;
+  records?: readonly string[];
+  figures?: readonly string[];
 }>;
 
 async function renderOne(
@@ -154,13 +261,22 @@ async function renderOne(
   try {
     const rendered = await Promise.race([contributor.render(input), timedOut]);
     if (rendered === "timeout") return { outcome: { ...base, outcome: "timeout" }, block: null };
-    const text = typeof rendered === "object" && rendered !== null ? rendered.text : rendered;
+    const text = renderedText(rendered);
     if (typeof text !== "string" || text.trim() === "") {
-      return { outcome: { ...base, outcome: "empty" }, block: null };
+      // An empty block can still report counts: the route reads them whether or not text rendered.
+      return {
+        outcome: { ...base, outcome: "empty" },
+        block: null,
+        ...(typeof rendered === "object" && rendered !== null && rendered.trace
+          ? { trace: rendered.trace }
+          : {}),
+      };
     }
     // A contributor's text cannot close its own label and pose as instructions after it.
-    const safe = text.trim().replace(closingTag, "<\\/reference_data");
-    const clipped = clipToBudget(safe, contributor.budgetChars);
+    // The marks of recorded_text.ts never reach the prompt, even from a contributor that forgot to
+    // read them out.
+    const safe = plain(text.trim()).replace(closingTag, "<\\/reference_data");
+    const clipped = clipLinesToBudget(safe, contributor.budgetChars);
     return {
       outcome: {
         ...base,
@@ -173,6 +289,16 @@ async function renderOne(
       // Sources stay citable only if the block was not cut.
       ...(typeof rendered === "object" && rendered !== null && clipped.length === safe.length
         ? { shown: rendered.shown }
+        : {}),
+      ...(typeof rendered === "object" && rendered !== null && rendered.trace
+        ? { trace: rendered.trace }
+        : {}),
+      // Only the values that survived the clip are still in the text.
+      ...(typeof rendered === "object" && rendered !== null && rendered.records
+        ? { records: rendered.records.filter((piece) => clipped.includes(piece)) }
+        : {}),
+      ...(typeof rendered === "object" && rendered !== null && rendered.figures
+        ? { figures: rendered.figures.filter((piece) => clipped.includes(piece)) }
         : {}),
     };
   } catch {
@@ -193,8 +319,9 @@ export async function renderCoachContext(
 ): Promise<CoachContributions> {
   validateCoachContextContributors(contributors);
   if (contributors.length === 0) return noCoachContributions;
+  const turnInput: CoachContextInput = { ...input, shared: input.shared ?? new Map() };
   const rendered = await Promise.all(
-    contributors.map((contributor) => renderOne(contributor, input, timeoutMs)),
+    contributors.map((contributor) => renderOne(contributor, turnInput, timeoutMs)),
   );
   const blocks = (slot: CoachContextSlot) =>
     rendered.filter((item) => item.outcome.slot === slot && item.block !== null)
@@ -207,5 +334,22 @@ export async function renderCoachContext(
       rendered.flatMap((item) => item.text === undefined ? [] : [[item.outcome.id, item.text]]),
     ),
     shown: Object.assign({}, ...rendered.map((item) => item.shown ?? {})),
+    traces: Object.fromEntries(
+      rendered.flatMap((item) => item.trace === undefined ? [] : [[item.outcome.id, item.trace]]),
+    ),
+    records: Object.fromEntries(
+      rendered.flatMap((item) =>
+        item.records === undefined || item.records.length === 0
+          ? []
+          : [[item.outcome.id, item.records]]
+      ),
+    ),
+    figures: Object.fromEntries(
+      rendered.flatMap((item) =>
+        item.figures === undefined || item.figures.length === 0
+          ? []
+          : [[item.outcome.id, item.figures]]
+      ),
+    ),
   };
 }

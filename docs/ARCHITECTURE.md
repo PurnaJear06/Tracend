@@ -90,19 +90,30 @@ toggle is device-only); pending requests are delivery state and are repaired fro
 reopen. The in-app rest timer keeps its end time in the local workout draft and does not depend on
 the alert.
 
-**Widget extension and rest Live Activity.** The `TracendWidgets` WidgetKit extension
+**Widget extension and workout Live Activity.** The `TracendWidgets` WidgetKit extension
 (`com.tracend.app.TracendWidgets`, embedded in Runner) draws `RestActivityAttributes`
-(`ios/Shared/`, both targets): the rest's end time, the exercise name and the next-set label,
-nothing else (SECURITY_PRIVACY §10 exception). `RestTimerController` is its only driver, through
-`WorkoutActivityBridge` (`lib/shared/live_activity/`, channel `tracend/live_activity`: `startRest`,
-`updateRest`, `end`; native `ios/Runner/Native/WorkoutActivityBridge.swift`), never awaited.
-Sign-out, account deletion and a refused session call `end`, and the native side ends finished
-activities left from an earlier launch. ActivityKit runs the countdown from the end time
-(`Text(timerInterval:)`): no push, no server. The Live Activity itself uses no App Group. It is off
-when iOS Live Activities are off.
+(`ios/Shared/`, both targets), the workout's card: the set in progress, the rest between sets, and
+"all sets logged". It holds the rest's end time, the exercise name, the labels, the set to log
+(exercise order, set number, how many sets) and, only while the athlete chose Lock Screen numbers,
+the kg and reps text (SECURITY_PRIVACY §10 exception). When the rest's end passes the system marks
+the card stale and it draws the set it carries, so it turns into the next set with the app asleep.
+`RestTimerController` is its only driver, through `WorkoutActivityBridge`
+(`lib/shared/live_activity/`, channel `tracend/live_activity`: `startRest`, `updateRest`,
+`showSet`, `hideNumbers`, `end`; native `ios/Runner/Native/WorkoutActivityBridge.swift`), never
+awaited. `ActiveWorkoutScreen` tells it the set in progress (`present`): the pre-filled values come
+from the logger's own `suggestSet`. Sign-out, account deletion and a refused session call `end`,
+and the native side ends cards left from an earlier launch that are over. ActivityKit runs the
+countdown from the end time (`Text(timerInterval:)`): no push, no server. The Live Activity itself
+uses no App Group. It is off when iOS Live Activities are off.
 
-> **Planned (coaching platform, Phase 2 / D1):** Done, Skip and +30s buttons on the Live Activity,
-> driven by Contract 3 commands.
+The buttons (**Log set**, Skip, +30s) are iOS 17 `LiveActivityIntent`s in
+`ios/Shared/RestActivityIntents.swift` (both targets), run in the app's process. The bridge forwards
+each as a `press` to the attached workout screen and waits for its answer (8 s at most) and for its
+queued activity calls; the screen maps it to a Contract 3 command (`CompleteCurrentSet`, `SkipRest`,
+`AddRest`) in its one command sink, and **Log set** runs the same `_doneSet` as the in-app tick, so
+the draft, `sync_workout_draft`, set timing, workout events (and with them the heart-rate recorder)
+and audit are the in-app ones. **Open** and a card tap open `tracend://workout`: with a workout
+screen open it only comes forward; otherwise Train reopens today's workout when it has a draft.
 
 **Today and Lock Screen widgets (D2).** The same extension draws `TodayWidget` (small, medium) and
 `LockScreenWidget` (circular, rectangular, inline). The widget process cannot reach the app's
@@ -209,7 +220,9 @@ physique check answer within the request.
     until the deploy workflow stores that URL after the migrations, via
     `private.library_set_embed_url`, executable by `service_role` only); and
   - the daily `meal-media-retention` worker, which authenticates with `RETENTION_WORKER_SECRET`
-    read from Vault. The same worker removes expired export packages and orphaned Storage objects;
+    read from Vault (job `meal-media-retention-daily`, created by migration; it posts only to the
+    URL in the Vault secret `meal_media_retention_url`, set by the deploy workflow via
+    `private.meal_media_retention_set_url`). The same worker removes expired export packages and orphaned Storage objects;
     a failed Storage deletion keeps the object reference for retry.
 
 The weekly-review worker is database-native. Daily Cron deduplicates one job per active user and
@@ -369,7 +382,7 @@ history.
 
 ### Edge Functions
 
-Fourteen functions, each in its own directory under `supabase/functions/` (`_shared`, `_tests` and
+Fifteen functions, each in its own directory under `supabase/functions/` (`_shared`, `_tests` and
 `_evals` hold shared code, tests and evals):
 
 ```text
@@ -380,10 +393,10 @@ health-sync              JWT    HealthKit summaries and workouts
 meal-analyze             JWT    meal-photo candidates
 meal-media-retention     secret retention, export expiry, orphan sweep
 onboarding-plan          JWT    starting plan and follow-up questions
-onboarding-propose-plan  JWT    Phase-2 mock, kept for installed older builds
 physique-check           JWT    owner-only physique check
 privacy-delete-account   JWT    account deletion
 privacy-export           JWT    encrypted export
+training-proposals       JWT    the deload the rules suggest, stored for the athlete to answer
 waitlist-confirm         none   website double opt-in
 waitlist-join            none   website signup
 waitlist-unsubscribe     none   website unsubscribe
@@ -429,12 +442,14 @@ question follows one path regardless of its wording:
    with averages, eight weeks of weights, 14 days of check-ins, 28 days of logged nutrition,
    today's meals, plan structure, proposals, reconciliations, data freshness), under a 90K
    whole-section size guard. Conversation memory is the ten newest messages of the thread and of
-   other threads, each capped at 2,000 characters keeping its ending, never a labeled data
-   summary. A long thread keeps fewer, newest messages rather than failing preparation. The
+   other threads, each capped at 2,000 characters keeping its ending. The labeled data summary is left out of
+   other threads and, since `prepare_coach_chat_v10`, kept in this thread, marked as the app's own
+   reply. A long thread keeps fewer, newest messages rather than failing preparation. The
    prepared file is stored in `coach_context_snapshots`.
    A10 part 2 adds `prepare_coach_chat_v9`, which calls v8 unchanged and then leaves out other
    conversations the athlete asked Coach not to remember and the older preference, journal and
-   narrative sections; coach-chat calls v9. Memory reaches the prompt through two contributors: the
+   narrative sections; v10 (2026-10-18) calls v9 and puts the app's data summaries back into this
+   thread's memory, marked; coach-chat calls v10. Memory reaches the prompt through two contributors: the
    athlete's confirmed facts (stable, before the volatile parts, so the prefix caches) and Coach's
    own notes (volatile, labelled untrusted). Precedence: Tracend's calculations, then confirmed
    facts, then the athlete's recent statements, then Coach's notes, then the library. After the reply
@@ -647,11 +662,16 @@ never stored, and every source records its licence.
   hold no user data, so they are outside export and account deletion.
 - Embeddings are Supabase's built-in `gte-small` (384 dimensions, mean-pooled and normalised), run
   inside Edge Functions (D4). No new processor receives any text.
-- `public.search_library_v2` (service role only, Contract 6 v2) fuses the top 30 Postgres
-  full-text matches (the terms of the question ORed) and the top 30 nearest embeddings (cosine
-  distance; HNSW index without filters, exact ranking over the matching sources with a region or
-  topics filter) by reciprocal rank fusion (k = 50) and returns at most 10 chunks, at most 3 per
-  source, limited to the athlete's regions (global plus their country).
+- `public.search_library_v3` (service role only, Contract 6 v3; v2 stays for the deployed build)
+  fuses the top 30 Postgres full-text matches (the terms of the question ORed) and the top 30
+  nearest embeddings from the question's model (cosine distance; HNSW index without filters, exact
+  ranking over the matching sources with a region or topics filter) by reciprocal rank fusion
+  (k = 50) and returns at most 10 chunks, at most 3 per source, limited to the athlete's regions
+  (global plus their country), each with its cosine distance, text rank, evidence level, kind and
+  the library version.
+- Every source carries a content digest kept by triggers, and `private.library_version()` digests
+  them all; a Coach answer records the version it was shown. A source removed from the content files
+  is retired by a content migration (`private.library_retire_source`).
 - Retrieved text is reference data. It never overrides Tracend rules, the athlete's data or the
   safety policy, and rules still decide every number.
 
@@ -664,15 +684,32 @@ coaching-principles digest of the sources sits in the Coach's stable prompt pref
 
 The library shapes every Coach reply on the gateway route (E3): the `library` contributor builds the
 query from the question (a follow-up borrows the topic of the last real question, deterministically),
-embeds it with `gte-small` by calling the `library-embed` function (the only place the model loads), searches for the athlete's region and renders up to
-8 chunks, each tagged with its stable source id, as a volatile block after the athlete data. Coach
+embeds it with `gte-small` by calling the `library-embed` function (the only place the model loads;
+coach-chat starts that call once the replay check and the budget reservation have passed, alongside the context preparation),
+searches for the athlete's region and renders up to 8 chunks that pass a calibrated relevance floor
+(the nearest chunk within cosine distance 0.15, then chunks within 0.19), each tagged with its stable
+source id, its kind, year and evidence level, as a volatile block after the athlete data. When no
+chunk passes, the block says so and Coach cites nothing. Coach
 cites the sources it uses as `library` evidence, and a citation of an id that was not shown is a
 reply-guard failure (AI_SAFETY_SPEC §11.2). If retrieval is slow or fails, Coach answers without it
 (the Contract 7 host's 4-second limit). Retrieval was chosen over putting the whole library in the
 cached prefix after a head-to-head (`docs/handoff/research-library.md`).
 
-> **Planned (coaching platform):** regional modules chosen by the athlete's region (Phase 4 / E4,
-> D5), and plan explanations citing sources (Phase 4 / E5).
+Regional modules (E4, D5) are library sources tagged with a country code. The search shows an
+athlete `global` sources plus the sources of the country the athlete chose in Account
+(`user_accounts.country_code`, optional); with none chosen it falls back to the account locale and
+time zone, as before.
+
+Plan explanations cite sources (E5). In Coach chat, a question that asks why the plan is the way it is
+(`isPlanExplanationQuestion`, deterministic) is searched twice, as asked and with what the plan is made of
+added (the athlete's training days, rep ranges, effort and goal as counts and enumerated values, read
+once for the turn), the two result lists merged, and the library block carries a fixed note that the
+explanation starts from the plan's own numbers. In the onboarding plan (`onboarding-plan`, gateway route), two searches for the athlete's
+region (training, nutrition) put excerpts into the prompt; the model may list the ids it relied on in
+`sources`, deterministic code refuses an id that was not shown, and a cited source becomes a
+`source: "library"` evidence item labelled from the retrieval and listed in the app under "Why this
+plan". A plan that cites nothing says so in "Not known yet", and one whose search found nothing or
+failed has low confidence. The rules plan and the settings path never use the library.
 
 ### Bounded Coach data lookups (A10)
 
@@ -680,13 +717,28 @@ Coach chat on the gateway route can read the athlete's own records on demand: th
 `data_requests` (a lookup name from a closed catalogue, a date range of at most 400 days, a filter
 that is "" when the lookup takes none; an empty list is a final answer) in its JSON answer, the Edge Function validates them and calls a read-only `SECURITY DEFINER`
 RPC granted to `service_role` for the authenticated athlete, and calls the model again with the dated
-rows. At most 2 rounds; each extra model call has its own budget place; the red-flag screen runs
+rows. At most 2 rounds of at most 8 lookups; each extra model call has its own budget place; the red-flag screen runs
 before everything and every guard runs on the final answer. It is bounded, read-only and in-request:
 not an autonomous agent (no writes, no background runs, a hard cap on rounds) and not native tool
 calling (the gateway sends no tools, so the provider can be swapped). The always-on baseline stays
 small: the goal phase, the screening, today's or the next session with targets and home
-alternatives, this week's complete-day nutrition and an index of what exists; everything else comes
-from lookups. See AI_SAFETY_SPEC §11.1.
+alternatives, the next 7 days with their muscles, this week's complete-day nutrition, the
+watch-outs and the Coverage Brief; everything else comes from lookups. See AI_SAFETY_SPEC §11.1.
+
+**Investigate first (2026-10-20).** Two deterministic contributors make the baseline honest about
+what it leaves out. The **Coverage Brief** (`coverage_brief`, replacing the data index) lists each
+kind of record with what the summary shows, what a lookup adds, how much exists, how fresh it is and
+the neighbouring kinds to check; its neighbour table is static, the same for every question. The
+**watch-outs** (`watch_outs`) are facts computed by code across several kinds of record at once
+(back-to-back muscles, a session due on a poor-recovery day, a pain flag planned again, behind plan,
+repeated skips, drift from the athlete's own usual, stale inputs, an old plan), so no cross-domain
+inference is left to a model with thinking off; each states its dates and figures, so the numbers
+check grounds a reply on it. The instructions make the first reply a sweep: every lookup that could
+change the answer, in one round. A refused request gets one corrected round instead of ending the
+investigation. The route (default or stronger model) is chosen from the state of the records the
+contributors report, never from the words of the question. The newer kinds of record (the proposals
+history, watch workouts of any age, the daily decisions) are filters on existing lookups, so the
+structured-output schema is the same bytes as before.
 
 ### Add vector retrieval over user data only when all are true
 

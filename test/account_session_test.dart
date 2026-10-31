@@ -12,6 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/account/account_deletion_repository.dart';
+import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/account/widgets/account_sheets.dart';
 import 'package:tracend/features/auth/account_session.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
@@ -21,6 +22,8 @@ import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
+import 'package:tracend/features/readiness/pain_report_queue.dart';
+import 'package:tracend/features/readiness/safety_acknowledgements.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
@@ -68,6 +71,42 @@ class _Server {
 
   void answer(String route, int status, Object body) =>
       routes[route] = () async => _json(status, body);
+}
+
+/// The phone's reminders: records every change the gate makes.
+class _FakeNotifications implements NotificationRepository {
+  final configured = <({bool daily, bool weekly, bool rest})>[];
+
+  /// The rest-timer choice this phone holds.
+  var rest = false;
+
+  @override
+  Future<NotificationPreferences> load() async => NotificationPreferences(
+    authorizationStatus: 'authorized',
+    dailyCheckIn: false,
+    weeklyReview: false,
+    restTimerAlertsEnabled: rest,
+  );
+
+  @override
+  Future<NotificationPreferences> configure({
+    required bool dailyCheckIn,
+    required bool weeklyReview,
+    required bool restTimerAlertsEnabled,
+  }) async {
+    rest = restTimerAlertsEnabled;
+    configured.add((
+      daily: dailyCheckIn,
+      weekly: weeklyReview,
+      rest: restTimerAlertsEnabled,
+    ));
+    return NotificationPreferences(
+      authorizationStatus: 'authorized',
+      dailyCheckIn: dailyCheckIn,
+      weeklyReview: weeklyReview,
+      restTimerAlertsEnabled: restTimerAlertsEnabled,
+    );
+  }
 }
 
 http.Response _json(int status, Object body) => http.Response(
@@ -163,6 +202,9 @@ void main() {
       SharedPreferencesCoachThreadMemory.storageKey: 'thread-1',
       CheckInQueue.storageKeyFor(_userId): '{}',
       CheckInQueue.storageKeyFor(_otherUserId): '{}',
+      PainReportQueue.storageKeyFor(_userId): '[]',
+      PainReportQueue.storageKeyFor(_otherUserId): '[]',
+      SafetyAcknowledgements.storageKeyFor(_userId): '[]',
     });
   });
 
@@ -232,6 +274,16 @@ void main() {
       legacy.getString(CheckInQueue.storageKeyFor(_otherUserId)),
       isNotNull,
     );
+    // A pain report and the referrals read go with the account too.
+    expect(legacy.getString(PainReportQueue.storageKeyFor(_userId)), isNull);
+    expect(
+      legacy.getString(SafetyAcknowledgements.storageKeyFor(_userId)),
+      isNull,
+    );
+    expect(
+      legacy.getString(PainReportQueue.storageKeyFor(_otherUserId)),
+      isNotNull,
+    );
   }
 
   /// A refused session may belong to an account that still exists: only the
@@ -248,14 +300,17 @@ void main() {
       isNull,
     );
     expect(legacy.getString(CheckInQueue.storageKeyFor(_userId)), isNotNull);
+    expect(legacy.getString(PainReportQueue.storageKeyFor(_userId)), isNotNull);
   }
 
   late FakeWorkoutActivityBridge liveActivity;
   late FakeHomeWidgetBridge homeWidgets;
+  late _FakeNotifications notifications;
 
   Future<void> pumpGate(WidgetTester tester, _Server server) async {
     liveActivity = FakeWorkoutActivityBridge();
     homeWidgets = FakeHomeWidgetBridge();
+    notifications = _FakeNotifications();
     await tester.pumpWidget(
       MaterialApp(
         theme: TracendTheme.light,
@@ -264,6 +319,7 @@ void main() {
           client: server.client,
           liveActivity: liveActivity,
           homeWidgets: homeWidgets,
+          notifications: notifications,
         ),
       ),
     );
@@ -523,6 +579,82 @@ void main() {
       expect(find.byType(AiCoachingConsentScreen), findsNothing);
     });
 
+    testWidgets('signing in puts the saved reminders back on the phone', (
+      tester,
+    ) async {
+      server.answer('POST /rest/v1/rpc/get_current_ai_notice', 200, {
+        'version': 'ai-coaching-v6',
+        'provider_label': 'Anthropic',
+        'body': 'One.',
+      });
+      server.answer('GET /rest/v1/notification_preferences', 200, {
+        'daily_check_in': true,
+        'weekly_review': false,
+        'authorization_status': 'authorized',
+      });
+
+      await openGate(tester);
+
+      expect(notifications.configured, [
+        (daily: true, weekly: false, rest: false),
+      ]);
+    });
+
+    testWidgets('a sign-out while the saved reminders load restores nothing', (
+      tester,
+    ) async {
+      server.answer('POST /rest/v1/rpc/get_current_ai_notice', 200, {
+        'version': 'ai-coaching-v6',
+        'provider_label': 'Anthropic',
+        'body': 'One.',
+      });
+      final saved = Completer<http.Response>();
+      server.routes['GET /rest/v1/notification_preferences'] = () =>
+          saved.future;
+      await openGate(tester);
+      expect(notifications.configured, isEmpty);
+
+      await tester.runAsync(
+        () => server.client.auth.signOut(scope: SignOutScope.local),
+      );
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      saved.complete(
+        _json(200, {
+          'daily_check_in': true,
+          'weekly_review': true,
+          'authorization_status': 'authorized',
+        }),
+      );
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(notifications.configured, [
+        (daily: false, weekly: false, rest: false),
+      ]);
+    });
+
+    testWidgets('a failure restoring them never blocks the gate', (
+      tester,
+    ) async {
+      server.answer('POST /rest/v1/rpc/get_current_ai_notice', 200, {
+        'version': 'ai-coaching-v6',
+        'provider_label': 'Anthropic',
+        'body': 'One.',
+      });
+      server.answer('GET /rest/v1/notification_preferences', 500, {
+        'message': 'down',
+      });
+
+      await openGate(tester);
+
+      expect(find.byType(AiCoachingConsentScreen), findsOneWidget);
+      expect(notifications.configured, isEmpty);
+    });
+
     testWidgets('a notice that loads still asks before the app opens', (
       tester,
     ) async {
@@ -596,6 +728,100 @@ void main() {
       expect(homeWidgets.calls, ['clear']);
       expect(liveActivity.methods, ['end']);
       await expectWidgetChoiceForgotten();
+    });
+
+    testWidgets('signing out removes the reminders from this phone', (
+      tester,
+    ) async {
+      await openSignedIn(tester);
+      notifications.configured.clear();
+
+      await tester.tap(find.text('Sign out'));
+      await settle(tester);
+
+      expect(notifications.configured, [
+        (daily: false, weekly: false, rest: false),
+      ]);
+    });
+
+    testWidgets('signing out keeps the rest-timer choice, which lives only '
+        'on this phone', (tester) async {
+      await openSignedIn(tester);
+      notifications.rest = true;
+      notifications.configured.clear();
+
+      await tester.tap(find.text('Sign out'));
+      await settle(tester);
+
+      expect(notifications.configured, [
+        (daily: false, weekly: false, rest: true),
+      ]);
+    });
+
+    testWidgets('a session that ended elsewhere removes them too', (
+      tester,
+    ) async {
+      await openSignedIn(tester);
+      notifications.configured.clear();
+
+      await tester.runAsync(
+        () => server.client.auth.signOut(scope: SignOutScope.local),
+      );
+      await settle(tester);
+
+      expect(notifications.configured, [
+        (daily: false, weekly: false, rest: false),
+      ]);
+    });
+
+    testWidgets('a deletion that settles removes them', (tester) async {
+      await openSignedIn(tester);
+      notifications.configured.clear();
+
+      server.answer('GET /auth/v1/user', 403, _userNotFound);
+      await tester.runAsync(
+        () => SupabaseAccountDeletionRepository(server.client).confirm(),
+      );
+      await settle(tester);
+
+      expect(notifications.configured, [
+        (daily: false, weekly: false, rest: false),
+      ]);
+    });
+
+    testWidgets('a sign-out that happens elsewhere closes every pushed route', (
+      tester,
+    ) async {
+      await openSignedIn(tester);
+      final navigator = Navigator.of(
+        tester.element(find.byType(OnboardingFlow)),
+      );
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute(
+            builder: (_) => const Scaffold(body: Text('Pushed screen')),
+          ),
+        ),
+      );
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute(
+            builder: (_) => const Scaffold(body: Text('Second screen')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Second screen'), findsOneWidget);
+
+      await tester.runAsync(
+        () => server.client.auth.signOut(scope: SignOutScope.local),
+      );
+      await settle(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Pushed screen'), findsNothing);
+      expect(find.text('Second screen'), findsNothing);
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
     });
 
     testWidgets('a deletion settling after its sheet closed empties them', (

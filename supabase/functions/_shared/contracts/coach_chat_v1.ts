@@ -1,3 +1,5 @@
+import { namedShownSources, type ShownSources } from "../library/mentions.ts";
+
 // 1.1 clients render the labeled data-summary reply; 1.0 clients keep the 503.
 export const coachChatRequestSchemaVersions = ["1.0", "1.1"] as const;
 
@@ -99,6 +101,7 @@ export const coachChatValidationRules = [
   "projection_without_target",
   "numbers_not_grounded",
   "citation_not_retrieved",
+  "repeats_previous_turn",
   "calories_below_floor",
   "loss_rate_above_ceiling",
   "effort_above_screening_cap",
@@ -121,6 +124,11 @@ export type CoachChatAnswerBreak = Readonly<{
   rules?: readonly CoachChatValidationRule[];
   detail?: string;
   count?: number;
+  /**
+   * The sentences of the reply that broke a rule, as the check read them, for the repair only.
+   * They are athlete-facing model text, so they are never logged.
+   */
+  sentences?: readonly string[];
 }>;
 
 export class CoachChatAnswerValidationError extends Error {
@@ -132,6 +140,8 @@ export class CoachChatAnswerValidationError extends Error {
     readonly rules: readonly CoachChatValidationRule[] = [rule],
     /** Repair instruction only; never logged. */
     readonly detail?: string,
+    /** The sentences that broke a rule: repair instruction only; never logged. */
+    readonly sentences?: readonly string[],
   ) {
     super(`invalid_chat_answer:${rule}:${path}`);
     this.name = "CoachChatAnswerValidationError";
@@ -178,8 +188,13 @@ export function parseCoachChatRequest(value: unknown): CoachChatRequestV1 {
  */
 export type CoachChatAnswerCheck = (
   answer: string,
-  /** The library source ids the reply's evidence cites (E3). */
+  /**
+   * The library source ids the reply cites (E3): the evidence items it declares and the shown
+   * sources its text names, which the server attaches to the evidence.
+   */
   citedLibrarySources?: readonly string[],
+  /** The `answer` field alone, without the follow-ups, notes and labels that `answer` joins. */
+  replyText?: string,
 ) => CoachChatValidationRule | CoachChatAnswerBreak | null;
 
 /**
@@ -188,12 +203,12 @@ export type CoachChatAnswerCheck = (
  * action or an unsupported figure cannot sit in a field the check skips. Call after the shape is
  * validated.
  */
-function visibleText(answer: Record<string, unknown>): string[] {
+export function visibleText(answer: Record<string, unknown>, withLabels = true): string[] {
   const texts: string[] = [answer.answer as string];
   const strings = (value: unknown) =>
     Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
   texts.push(...strings(answer.suggested_follow_ups), ...strings(answer.missing_data));
-  for (const item of Array.isArray(answer.evidence) ? answer.evidence : []) {
+  for (const item of withLabels && Array.isArray(answer.evidence) ? answer.evidence : []) {
     texts.push(...strings([(item as Record<string, unknown>).label]));
   }
   for (const item of Array.isArray(answer.reasoning_chain) ? answer.reasoning_chain : []) {
@@ -214,7 +229,7 @@ export function parseCoachChatAnswer(
   value: unknown,
   permittedEvidence: readonly string[],
   answerCheck?: CoachChatAnswerCheck,
-  shownLibrarySources: Readonly<Record<string, Readonly<{ label: string }>>> = {},
+  shownLibrarySources: ShownSources = {},
 ): CoachChatAnswerV2 {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     invalid("invalid_root", "$");
@@ -323,6 +338,10 @@ export function parseCoachChatAnswer(
       invalid("evidence_source_invalid", `${path}.source`);
     }
   }
+  // A reasoning step may point at a library source the evidence cites (checked above against the
+  // sources shown this turn): it is the step's evidence, and the app does not show the id.
+  const citedLibraryCodes = (answer.evidence as Record<string, unknown>[])
+    .filter((item) => item.source === "library").map((item) => item.code as string);
   if (answer.reasoning_chain !== undefined) {
     if (!Array.isArray(answer.reasoning_chain)) {
       invalid("reasoning_not_array", "reasoning_chain");
@@ -365,16 +384,29 @@ export function parseCoachChatAnswer(
       if (step.evidence_id !== null && typeof step.evidence_id !== "string") {
         invalid("reasoning_evidence_invalid", `${path}.evidence_id`);
       }
-      if (typeof step.evidence_id === "string" && !permittedEvidence.includes(step.evidence_id)) {
+      if (
+        typeof step.evidence_id === "string" && !permittedEvidence.includes(step.evidence_id) &&
+        !citedLibraryCodes.includes(step.evidence_id)
+      ) {
         invalid("reasoning_evidence_not_permitted", `${path}.evidence_id`);
       }
     }
   }
   // One pass over everything the athlete can read, not only `answer`.
-  const cited = (answer.evidence as Record<string, unknown>[]).filter((item) =>
+  const declared = (answer.evidence as Record<string, unknown>[]).filter((item) =>
     item.source === "library"
   ).map((item) => item.code as string);
-  const found = answerCheck?.(visibleText(answer).join("\n"), cited);
+  const text = visibleText(answer).join("\n");
+  // A shown source the text names ("Maughan 2018") but the evidence does not cite is cited for
+  // the reply: the server adds its evidence item, so the app shows the source, and the check
+  // reads the reply as citing it. Only while the evidence has room.
+  // Only the reply's own words can name a source: an evidence label is the model's wording of a
+  // citation, not a claim in the answer, and must not attach a source the answer never names.
+  const named = namedShownSources(visibleText(answer, false).join("\n"), shownLibrarySources)
+    .filter((id) => !declared.includes(id))
+    .slice(0, Math.max(0, coachChatAnswerLimits.evidenceMaxItems - answer.evidence.length));
+  const cited = [...declared, ...named];
+  const found = answerCheck?.(text, cited, answer.answer);
   if (found) {
     const broken: CoachChatAnswerBreak = typeof found === "string" ? { rule: found } : found;
     throw new CoachChatAnswerValidationError(
@@ -384,15 +416,23 @@ export function parseCoachChatAnswer(
       broken.count,
       broken.rules ?? [broken.rule],
       broken.detail,
+      broken.sentences,
     );
   }
   if (cited.length === 0) return answer as unknown as CoachChatAnswerV2;
   return {
     ...answer,
-    evidence: (answer.evidence as Record<string, unknown>[]).map((item) =>
-      item.source === "library"
-        ? { ...item, label: shownLibrarySources[item.code as string].label }
-        : item
-    ),
+    evidence: [
+      ...(answer.evidence as Record<string, unknown>[]).map((item) =>
+        item.source === "library"
+          ? { ...item, label: shownLibrarySources[item.code as string].label }
+          : item
+      ),
+      ...named.map((code) => ({
+        code,
+        label: shownLibrarySources[code].label,
+        source: "library",
+      })),
+    ],
   } as unknown as CoachChatAnswerV2;
 }

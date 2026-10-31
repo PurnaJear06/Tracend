@@ -26,6 +26,7 @@ import {
   type DataRequest,
   dataRequestsJsonSchema,
   maxLookupRounds,
+  maxRequestsPerRound,
   validateDataRequests,
 } from "../coach_lookups/catalogue.ts";
 import type { CoachLookupRunner, LookupCount } from "../coach_lookups/runner.ts";
@@ -55,6 +56,7 @@ import {
   coachChatTiming,
   CoachChatUnavailableError,
   coachReplyCheckFor,
+  coachReplyCutFor,
   deterministicSafetyGeneration,
   issueOfValidationError,
   loggableIssue,
@@ -206,7 +208,13 @@ export type CoachChatRepair = Readonly<{ issue: ValidationIssue; candidate: stri
 export type CoachChatLookupPrompt = Readonly<{
   sections: readonly string[];
   closed: boolean;
+  /** Why the model's last data_requests were refused: it may send a corrected list once. */
+  correction?: string;
 }>;
+
+/** What the model is told when its data_requests were refused and it may correct them. */
+export const lookupCorrectionText = (reason: string): string =>
+  `Your data_requests were refused: ${reason}. Return a corrected data_requests list now (a known lookup name, real dates as YYYY-MM-DD, a range of at most 400 days, a filter where the lookup needs one, at most ${maxRequestsPerRound} requests), or, if you need no records, answer now with data_requests as [].`;
 
 const lookupsClosed =
   "No more lookups are available this turn. Answer now, with data_requests as [], from the context and the rows above, and say plainly what you could not check.";
@@ -246,6 +254,9 @@ export function buildCoachChatGatewayPrompt(
   content.push({ type: "text", text: questionLead + question });
   for (const section of lookups?.sections ?? []) content.push({ type: "text", text: section });
   if (lookups?.closed) content.push({ type: "text", text: lookupsClosed });
+  if (lookups?.correction) {
+    content.push({ type: "text", text: lookupCorrectionText(lookups.correction) });
+  }
   if (repair) content.push({ type: "text", text: repairText(repair, permitted) });
   return {
     system: [{
@@ -280,8 +291,11 @@ function permittedEvidenceOf(context: Record<string, unknown>): string[] {
 // The eval's richest athlete file measured about 1.8 characters per token (numbers and tables),
 // so the ceiling assumes 1.5 and over-reserves rather than under-reserves.
 const charsPerTokenFloor = 1.5;
-// The rules, the answer contract and its evidence codes, the question and every wrapper.
-const instructionsMaxChars = 16_000;
+// The rules, the answer contract and its evidence codes, the question and every wrapper. The
+// instructions with every block on (lookups, proposals, fact suggestions) and a full list of
+// evidence codes measured 25,199 characters on 2026-10-24, leaving room for other changes;
+// coach_chat_persona_test.ts fails if they pass this.
+export const instructionsMaxChars = 25_500;
 const reserveCeilingMinUsd = 0.001;
 /** The most `reserve_ai_budget_v2` accepts for one reservation. */
 export const coachChatReservationCapUsd = 0.5;
@@ -413,6 +427,11 @@ type Attempted = Readonly<{
   factSuggestions?: unknown;
   /** The model asked for data instead of answering. */
   lookup?: Readonly<{ requests: readonly DataRequest[]; interim: unknown }>;
+  /**
+   * The model asked for data but the catalogue refused the request (not for the rounds being used
+   * up): the reason, so the turn can ask for one corrected list instead of ending the investigation.
+   */
+  correction?: Readonly<{ reason: string }>;
   model?: string;
   failure?: Readonly<{
     reason: CoachChatFailureCode;
@@ -473,8 +492,10 @@ export async function generateCoachChatViaGateway(
   // Only lines the server produced from the records count, never the model's own request text.
   const sections: string[] = [];
   const grounds: string[] = [];
+  // Figures Tracend proposed (rows of the proposals lookup): given, but not the athlete's targets.
+  const proposed: string[] = [];
   const lookupsRun: LookupCount[] = [];
-  let answerCheck = coachReplyCheckFor(context, question, contributions, grounds);
+  let answerCheck = coachReplyCheckFor(context, question, contributions, grounds, proposed);
   // One call of a lookup round gets half an initial attempt, and a round starts only when that
   // much of the turn's deadline is left, so sequential calls cannot run past it.
   const lookupCallMs = Math.round(timing.initialAttemptMs / 2);
@@ -511,16 +532,18 @@ export async function generateCoachChatViaGateway(
       ...extra,
     });
 
-  const lookupPrompt = (closed: boolean): CoachChatLookupPrompt | undefined =>
-    input.lookups ? { sections: [...sections], closed } : undefined;
-  const promptFor = (repair?: CoachChatRepair, closed = false) =>
+  const lookupPrompt = (closed: boolean, correction?: string): CoachChatLookupPrompt | undefined =>
+    input.lookups
+      ? { sections: [...sections], closed, ...(correction ? { correction } : {}) }
+      : undefined;
+  const promptFor = (repair?: CoachChatRepair, closed = false, correction?: string) =>
     buildCoachChatGatewayPrompt(
       question,
       context,
       contextKind,
       contributions,
       repair,
-      lookupPrompt(closed || repair !== undefined),
+      lookupPrompt(closed || repair !== undefined, correction),
       input.proposals === true,
       input.factSuggestions === true,
     );
@@ -676,6 +699,7 @@ export async function generateCoachChatViaGateway(
             retryAfterSeconds: null,
             repair: { issue, candidate: result.text },
           },
+          ...(check && !check.ok ? { correction: { reason: check.reason } } : {}),
         };
       }
       const proposalIntent = input.proposals === true
@@ -769,8 +793,13 @@ export async function generateCoachChatViaGateway(
     attempts.push(attempted.telemetry);
     spentUsd += attempted.usage?.costUsd ?? 0;
   };
-  const success = (attempted: Attempted, answer: CoachChatAnswerV2): CoachChatGeneration => ({
+  const success = (
+    attempted: Attempted,
+    answer: CoachChatAnswerV2,
+    cuts: readonly string[] = [],
+  ): CoachChatGeneration => ({
     answer,
+    ...(cuts.length ? { cuts } : {}),
     ...(attempted.proposalIntent === undefined ? {} : { proposalIntent: attempted.proposalIntent }),
     ...(attempted.factSuggestions === undefined
       ? {}
@@ -814,6 +843,48 @@ export async function generateCoachChatViaGateway(
     }
   };
 
+  // A reply that failed only cuttable rules (a figure not in the athlete's data, a source that was
+  // not shown, a repeat of the previous reply) after its repair, or whose repair could not be sent,
+  // is cut instead of thrown away: the sentences at fault go, and what is left must pass every
+  // check again and be enough of an answer (cutReply). The proposal and fact suggestions the
+  // model sent with the candidate are read as for any answer.
+  const cutFromRepair = (
+    failed: Attempted,
+  ): { attempted: Attempted; answer: CoachChatAnswerV2; cuts: readonly string[] } | null => {
+    const repair = failed.failure?.repair;
+    if (!repair || repair.candidate === null || repair.issue.path !== "answer") return null;
+    try {
+      const parts = splitGatewayAnswer(JSON.parse(repair.candidate));
+      if (!parts.answer || typeof parts.answer !== "object" || Array.isArray(parts.answer)) {
+        return null;
+      }
+      const rules = repair.issue.rules ?? [repair.issue.rule];
+      const cut = coachReplyCutFor(context, question, contributions, grounds, proposed)(
+        parts.answer as Record<string, unknown>,
+        rules,
+      );
+      if (!cut) return null;
+      const answer = parseCoachChatAnswer(cut.answer, permitted, answerCheck, shown);
+      const proposalIntent = input.proposals === true
+        ? intentFromModel(parts.proposalIntent)
+        : undefined;
+      const factSuggestions = input.factSuggestions === true
+        ? unlessEmpty(parts.factSuggestions)
+        : undefined;
+      return {
+        attempted: {
+          ...failed,
+          ...(proposalIntent === undefined ? {} : { proposalIntent }),
+          ...(factSuggestions === undefined ? {} : { factSuggestions }),
+        },
+        answer,
+        cuts: cut.cuts,
+      };
+    } catch {
+      return null;
+    }
+  };
+
   let current = (await attempt("initial", prompt, true))!;
   record(current);
   // One slow initial call does not fail the turn: when it timed out and enough of the deadline is
@@ -832,7 +903,27 @@ export async function generateCoachChatViaGateway(
   // Lookup rounds: run what the model asked for, then call it again with the rows.
   let rounds = 0;
   let lookupStopped = false;
-  while (current.lookup && input.lookups) {
+  // A refused or malformed request gets one corrected list, not a silent end to the investigation:
+  // the model is called again, told why, and may ask again (or answer). It runs inside the same
+  // time and budget rules as a round, and only once a turn.
+  let corrected = false;
+  while (input.lookups && (current.lookup || (current.correction && !corrected))) {
+    if (!current.lookup) {
+      corrected = true;
+      if (deadline - Date.now() < lookupCallMs) break;
+      const again = await attempt(
+        "lookup",
+        promptFor(undefined, false, current.correction!.reason),
+        true,
+      );
+      // Not sent (no budget place, no time): the original failure goes to the repair as before.
+      if (!again) break;
+      record(again);
+      // A call that failed outright (a timeout, a provider error) leaves the original refusal to
+      // the repair, which answers without data; any other outcome carries on from here.
+      current = again.failure && !again.failure.repair ? current : again;
+      continue;
+    }
     pending = {
       json: current.lookup.interim,
       check: answerCheck,
@@ -846,8 +937,9 @@ export async function generateCoachChatViaGateway(
     const round = await input.lookups(current.lookup.requests);
     sections.push(round.text);
     grounds.push(...round.grounds);
-    lookupsRun.push(...round.counts);
-    answerCheck = coachReplyCheckFor(context, question, contributions, grounds);
+    proposed.push(...(round.proposalGrounds ?? []));
+    lookupsRun.push(...round.counts.map((count) => ({ ...count, round: rounds })));
+    answerCheck = coachReplyCheckFor(context, question, contributions, grounds, proposed);
     const closed = rounds >= maxLookupRounds;
     const next = await attempt("lookup", promptFor(undefined, closed), !closed);
     if (!next) {
@@ -878,7 +970,10 @@ export async function generateCoachChatViaGateway(
 
   const second = await attempt("repair", promptFor(repair, true), false);
   if (!second) {
-    // The repair was never sent, so the earlier failure stands.
+    // The repair was never sent: the first reply is cut when only cuttable rules failed it,
+    // otherwise the earlier failure stands.
+    const cut = cutFromRepair(current);
+    if (cut) return success(cut.attempted, cut.answer, cut.cuts);
     throw unavailable(current.failure!.reason, current.failure!.retryAfterSeconds, {
       ...initialRule,
       repairSkipped,
@@ -886,6 +981,8 @@ export async function generateCoachChatViaGateway(
   }
   record(second);
   if (second.answer) return success(second, second.answer);
+  const cut = cutFromRepair(second);
+  if (cut) return success(cut.attempted, cut.answer, cut.cuts);
   const repairIssue = second.failure?.repair?.issue;
   throw unavailable(second.failure!.reason, second.failure!.retryAfterSeconds, {
     ...initialRule,

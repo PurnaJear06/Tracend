@@ -9,7 +9,7 @@ import 'package:tracend/features/train/rest_timer.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 
 /// Plays the native side of `tracend/live_activity` as
-/// `ios/Runner/Native/WorkoutActivityBridge.swift` implements it: one rest
+/// `ios/Runner/Native/WorkoutActivityBridge.swift` implements it: one
 /// activity at most, every call answers whether one is showing, and
 /// `attachButtons`/`detachButtons` say whether a workout takes the buttons.
 class _NativeLiveActivity {
@@ -33,6 +33,15 @@ class _NativeLiveActivity {
         if (showingUntilMillis == null) return false;
         showingUntilMillis = arguments['ends_at_millis']! as int;
         return true;
+      case 'showSet':
+        if (!enabled) return false;
+        if (showingUntilMillis == null && arguments['begin'] != true) {
+          return false;
+        }
+        showingUntilMillis = 0;
+        return true;
+      case 'hideNumbers':
+        return showingUntilMillis != null;
       case 'end':
         showingUntilMillis = null;
         return false;
@@ -100,27 +109,43 @@ void main() {
     },
   );
 
+  const benchSet = (
+    exerciseOrder: 2,
+    setNumber: 3,
+    setCount: 4,
+    exerciseName: 'Bench press',
+    target: '82.5 kg × 8',
+    canLog: true,
+  );
+  const benchSetKeys = {
+    'next_exercise_order': 2,
+    'next_set_number': 3,
+    'next_set_count': 4,
+    'next_exercise_name': 'Bench press',
+    'next_target': '82.5 kg × 8',
+    'next_can_log': true,
+  };
+
   test('startRest sends the set the card names only when given', () async {
     await bridge.startRest(
       endsAt: endsAt,
       nextLabel: 'Set 3 of Bench press',
       exerciseName: 'Bench press',
-      nextExerciseOrder: 2,
-      nextSetNumber: 3,
+      next: benchSet,
     );
 
     expect(native.calls.single.arguments, {
       'ends_at_millis': endsAt.millisecondsSinceEpoch,
       'next_label': 'Set 3 of Bench press',
       'exercise_name': 'Bench press',
-      'next_exercise_order': 2,
-      'next_set_number': 3,
+      ...benchSetKeys,
     });
   });
 
-  test('updateRest sends the next label only when given', () async {
+  test('updateRest sends the next label and set only when given', () async {
     await bridge.updateRest(endsAt: endsAt);
     await bridge.updateRest(endsAt: endsAt, nextLabel: 'Squat');
+    await bridge.updateRest(endsAt: endsAt, next: benchSet);
 
     expect(native.calls[0].arguments, {
       'ends_at_millis': endsAt.millisecondsSinceEpoch,
@@ -129,6 +154,67 @@ void main() {
       'ends_at_millis': endsAt.millisecondsSinceEpoch,
       'next_label': 'Squat',
     });
+    expect(native.calls[2].arguments, {
+      'ends_at_millis': endsAt.millisecondsSinceEpoch,
+      ...benchSetKeys,
+    });
+  });
+
+  test('showSet names the set by its keys, or none when every set is '
+      'logged', () async {
+    await bridge.showSet(benchSet, begin: true);
+    await bridge.showSet(null, begin: false);
+
+    expect(native.calls[0].method, 'showSet');
+    expect(native.calls[0].arguments, {'begin': true, ...benchSetKeys});
+    expect(native.calls[1].arguments, {'begin': false});
+  });
+
+  test('an update never brings back a card nobody asked for', () async {
+    await bridge.showSet(benchSet, begin: false);
+    expect(native.showingUntilMillis, isNull);
+    expect(breadcrumbs.last.data, {'showing': false});
+
+    await bridge.showSet(benchSet, begin: true);
+    expect(native.showingUntilMillis, isNotNull);
+    expect(breadcrumbs.last.data, {'showing': true});
+  });
+
+  test('updateRest says the card carries no set only when asked', () async {
+    await bridge.updateRest(endsAt: endsAt, clearNext: true);
+    await bridge.updateRest(endsAt: endsAt, next: benchSet, clearNext: true);
+    await bridge.updateRest(endsAt: endsAt);
+
+    expect(native.calls[0].arguments, {
+      'ends_at_millis': endsAt.millisecondsSinceEpoch,
+      'clear_next': true,
+    });
+    // A named set wins; the plain call leaves the set alone.
+    expect((native.calls[1].arguments as Map)['clear_next'], isNull);
+    expect(native.calls[2].arguments, {
+      'ends_at_millis': endsAt.millisecondsSinceEpoch,
+    });
+  });
+
+  test('hideNumbers sends no arguments', () async {
+    await bridge.hideNumbers();
+
+    expect(native.calls.single.method, 'hideNumbers');
+    expect(native.calls.single.arguments, isNull);
+  });
+
+  test('the target travels as sent: empty while numbers are off', () {
+    const hidden = (
+      exerciseOrder: 2,
+      setNumber: 3,
+      setCount: 4,
+      exerciseName: 'Bench press',
+      target: '',
+      canLog: true,
+    );
+
+    expect(activitySetArguments(hidden)['next_target'], '');
+    expect(activitySetArguments(hidden).keys, benchSetKeys.keys);
   });
 
   test('end sends no arguments', () async {
@@ -201,7 +287,7 @@ void main() {
     });
 
     test('start, +15, skip', () async {
-      await controller.start(90, nextLabel: 'Set 2 of Squat');
+      await controller.start(90, nextLabel: 'Set 2 of Squat', next: benchSet);
       await pumpEventQueue();
       expect(
         native.showingUntilMillis,
@@ -219,6 +305,20 @@ void main() {
       await pumpEventQueue();
       expect(native.methods, ['startRest', 'updateRest', 'updateRest']);
       expect(native.showingUntilMillis, now.millisecondsSinceEpoch);
+    });
+
+    test('the set in progress, a rest, and the end of the workout', () async {
+      controller.present(benchSet, begin: true);
+      await pumpEventQueue();
+      expect(native.methods, ['showSet']);
+      expect(native.showingUntilMillis, isNotNull);
+
+      await controller.start(90, next: benchSet);
+      controller.present(null);
+      await controller.stop();
+      await pumpEventQueue();
+      expect(native.methods, ['showSet', 'startRest', 'updateRest', 'end']);
+      expect(native.showingUntilMillis, isNull);
     });
 
     test(

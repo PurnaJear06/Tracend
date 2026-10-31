@@ -939,7 +939,7 @@ Deno.test("v8: each watch average names the days its metric was measured", () =>
   for (
     const fact of [
       "last 7 days averages (7 days synced)",
-      "sleep 395 min over 1 day measured",
+      "sleep 395 min (6 h 35 min; 6.6 h) over 1 day measured",
       "RHR 57.9 bpm over 7 days measured",
     ]
   ) {
@@ -1301,8 +1301,8 @@ Deno.test("DeepSeek system prompt carries the full coach persona before the outp
     const messages = bodies[0].messages as Array<Record<string, unknown>>;
     const system = String(messages[0]?.content ?? "");
     const markers = [
-      "work only from the prepared context",
-      "Answer the question that was asked, first and concretely",
+      "checks the athlete's records before advising",
+      "answer the question that was asked, first and concretely",
       "Do not repeat advice or a caution you already gave",
       "Connect the question to the context",
       "without judgment",

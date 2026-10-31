@@ -214,3 +214,62 @@ Deno.test("a shown library id is not a permitted code for data evidence", () => 
   );
   assertEquals(error.rule, "evidence_code_not_permitted");
 });
+
+Deno.test("only the reply's own words attach a source it names, never an evidence label", () => {
+  const shown = {
+    maughan_2018_ioc_supplements: { label: "IOC consensus statement (2018)", text: "" },
+  };
+  const base = {
+    answer: "Creatine is a well studied supplement.",
+    evidence: [{ code: "APPROVED_PLAN_ACTIVE", label: "Maughan 2018", source: "coach_context" }],
+    missing_data: [],
+    safety_state: "allowed",
+    suggested_follow_ups: [],
+  };
+  const labelOnly = parseCoachChatAnswer(base, ["APPROVED_PLAN_ACTIVE"], undefined, shown);
+  assertEquals(labelOnly.evidence.map((item) => item.source), ["coach_context"]);
+  const named = parseCoachChatAnswer(
+    { ...base, answer: "Maughan 2018 calls creatine well studied." },
+    ["APPROVED_PLAN_ACTIVE"],
+    undefined,
+    shown,
+  );
+  assertEquals(named.evidence.map((item) => item.source), ["coach_context", "library"]);
+});
+
+// Captured from the answer bank on 2026-10-24: the model pointed a reasoning step at the library
+// source its evidence cites, and the parser refused it, so the reply fell back.
+Deno.test("a reasoning step may point at a library source the evidence cites, and no other", () => {
+  const step = (evidenceId: string) => ({
+    ...libraryAnswer("schoenfeld_2017_weekly_volume"),
+    reasoning_chain: [{ step: "volume", value: "10+ sets", evidence_id: evidenceId }],
+  });
+  const parsed = parseCoachChatAnswer(
+    step("schoenfeld_2017_weekly_volume"),
+    ["APPROVED_PLAN_ACTIVE"],
+    undefined,
+    shownVolume,
+  );
+  assertEquals(parsed.reasoning_chain?.[0].evidence_id, "schoenfeld_2017_weekly_volume");
+  // Shown but not cited in the evidence, or never shown: still refused.
+  for (
+    const [id, evidence] of [
+      ["schoenfeld_2017_weekly_volume", "APPROVED_PLAN_ACTIVE"],
+      ["made_up_2019_claim", "schoenfeld_2017_weekly_volume"],
+    ]
+  ) {
+    const answer = {
+      ...step(id),
+      evidence: [{
+        code: evidence,
+        label: "x",
+        source: evidence === "APPROVED_PLAN_ACTIVE" ? "policy_evaluation" : "library",
+      }],
+    };
+    const error = assertThrows(
+      () => parseCoachChatAnswer(answer, ["APPROVED_PLAN_ACTIVE"], undefined, shownVolume),
+      CoachChatAnswerValidationError,
+    );
+    assertEquals(error.rule, "reasoning_evidence_not_permitted");
+  }
+});

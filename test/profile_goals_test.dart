@@ -44,4 +44,22 @@ void main() {
     expect(find.text('Onboarding answers'), findsNothing);
     expect(find.text('Training profile'), findsOneWidget);
   });
+
+  testWidgets('the profile shows the advanced level as Advanced', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TracendTheme.light,
+        home: ProfileGoalsScreen(
+          data: Future.value(const {
+            'profile': {'experience_level': 'advanced'},
+          }),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Experience'), findsOneWidget);
+    expect(find.text('Advanced'), findsOneWidget);
+  });
 }

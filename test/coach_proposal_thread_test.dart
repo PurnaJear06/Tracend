@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -69,7 +70,8 @@ class _Chat implements CoachRepository, CoachChatRepository {
   Future<CoachDecision?> loadLatest() async => null;
 
   @override
-  Future<CoachDecision> generate() => throw UnimplementedError();
+  Future<CoachDecision> generate({String? localDate}) =>
+      throw UnimplementedError();
 
   @override
   Future<Map<String, dynamic>> loadUsage() async => {};
@@ -81,8 +83,14 @@ class _Proposals implements CoachProposalRepository {
   CoachProposal proposal;
   final answers = <String>[];
 
+  /// When set, load waits for it: the card appears after the thread laid out.
+  Completer<void>? loadGate;
+
   @override
-  Future<List<CoachProposal>> load({String? id}) async => [proposal];
+  Future<List<CoachProposal>> load({String? id}) async {
+    await loadGate?.future;
+    return [proposal];
+  }
 
   @override
   Future<CoachProposalAnswer> respond(
@@ -128,8 +136,10 @@ Future<void> _open(
   _Chat chat, {
   CoachProposalRepository? proposals,
   PlanChanges? changes,
+  Size size = const Size(800, 2800),
+  bool settle = true,
 }) async {
-  tester.view.physicalSize = const Size(800, 2800);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -146,14 +156,58 @@ Future<void> _open(
           threadMemory: _Memory(),
           proposals: proposals,
           planChanges: changes,
+          now: () => _when.add(const Duration(hours: 1)),
         ),
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+  }
 }
 
 void main() {
+  testWidgets('a card that loads after the thread laid out keeps the view on '
+      'the newest message', (tester) async {
+    final proposal = _pending();
+    final gate = Completer<void>();
+    final repository = _Proposals(proposal)..loadGate = gate;
+    await _open(
+      tester,
+      _Chat([
+        for (var i = 0; i < 20; i++) ...[
+          _user('u$i', 'Question $i ${'about my training ' * 8}'),
+          if (i < 19) _reply('a$i') else _reply('a$i', proposalId: proposal.id),
+        ],
+      ]),
+      proposals: repository,
+      size: const Size(800, 900),
+      settle: false,
+    );
+    final scroll = tester
+        .state<ScrollableState>(
+          find
+              .descendant(
+                of: find.byType(CoachScreen),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        )
+        .position;
+    expect(scroll.pixels, scroll.maxScrollExtent);
+    final before = scroll.maxScrollExtent;
+
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CoachProposalCard), findsOneWidget);
+    expect(scroll.maxScrollExtent, greaterThan(before));
+    expect(scroll.pixels, scroll.maxScrollExtent);
+  });
+
   testWidgets('a reloaded reply shows its proposal card; approving announces '
       'the plan change', (tester) async {
     final proposal = _pending();

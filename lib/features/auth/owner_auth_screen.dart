@@ -251,14 +251,35 @@ class _OwnerAuthScreenState extends State<OwnerAuthScreen> {
 
 /// The message shown for a refused sign-in or sign-up. Sign-ups are
 /// invite-only: the database refuses an email that is not on the invite list,
-/// and Auth reports that as an unexpected failure (HTTP 500).
+/// and Auth reports that as an unexpected failure (HTTP 500). Auth's own
+/// codes say more than its status (a wrong password and an unconfirmed email
+/// are both 400, a closed sign-up and a weak password both 422).
 @visibleForTesting
 String authErrorMessage(AuthException error, {required bool createAccount}) {
   if (createAccount &&
       (error.statusCode == '500' || error.code == 'unexpected_failure')) {
     return "This email isn't on the invite list yet.";
   }
-  if (error.statusCode == '400') {
+  switch (error.code) {
+    case 'email_not_confirmed':
+      return 'Confirm your email first: open the message Tracend sent you, then sign in.';
+    case 'signup_disabled':
+      return 'New accounts are closed during the private beta.';
+    case 'email_exists' || 'user_already_exists':
+      return 'An account with this email already exists. Sign in instead.';
+    case 'weak_password':
+      return 'Choose a stronger password of at least 8 characters.';
+    case 'email_address_invalid':
+      return 'Check the email address.';
+    case 'over_request_rate_limit' ||
+        'over_email_send_rate_limit' ||
+        'over_sms_send_rate_limit':
+      return 'Too many attempts. Wait a minute, then try again.';
+  }
+  if (error.statusCode == '429') {
+    return 'Too many attempts. Wait a minute, then try again.';
+  }
+  if (error.statusCode == '400' || error.statusCode == '422') {
     return createAccount
         ? 'This account could not be created. Check the email and password.'
         : 'The email or password is incorrect.';

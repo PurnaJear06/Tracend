@@ -7,13 +7,16 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/account/privacy_export_repository.dart';
+import 'package:tracend/features/account/region_repository.dart';
 import 'package:tracend/features/account/widgets/account_sheets.dart';
 import 'package:tracend/features/account/widgets/account_widgets.dart';
 import 'package:tracend/features/account/widgets/ai_usage_screen.dart';
 import 'package:tracend/features/account/widgets/coach_threads_sheet.dart';
 import 'package:tracend/features/account/widgets/consent_history_screen.dart';
+import 'package:tracend/features/account/widgets/health_check_screen.dart';
 import 'package:tracend/features/account/widgets/notification_settings.dart';
 import 'package:tracend/features/account/widgets/profile_goals_screen.dart';
+import 'package:tracend/features/account/widgets/region_settings.dart';
 import 'package:tracend/features/account/widgets/widget_settings.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
@@ -22,6 +25,7 @@ import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/health/health_status_card.dart';
+import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
@@ -47,6 +51,8 @@ class AccountScreen extends StatefulWidget {
     this.notifications = const FixtureNotificationRepository(),
     this.exports = const FixturePrivacyExportRepository(),
     this.deletion = const FixtureAccountDeletionRepository(),
+    this.region = const FixtureRegionRepository(),
+    this.screening,
     this.aiConsent,
     this.widgetPublisher,
     super.key,
@@ -64,6 +70,14 @@ class AccountScreen extends StatefulWidget {
   final PrivacyExportRepository exports;
   final AccountDeletionRepository deletion;
 
+  /// The athlete's optional country, which picks the national guidelines Coach
+  /// can cite.
+  final RegionRepository region;
+
+  /// The health check's record. Null uses the signed-in athlete's, and
+  /// without a backend the Health check row does not show.
+  final ScreeningRepository? screening;
+
   /// Where AI coaching is turned on or off. Null without a backend.
   final AiCoachingConsentController? aiConsent;
 
@@ -79,6 +93,7 @@ class _AccountScreenState extends State<AccountScreen> {
   late Future<Map<String, dynamic>> _aiUsage;
   late Future<Map<String, dynamic>> _profile;
   late Future<HealthSyncStatus> _health;
+  bool _signingOut = false;
 
   @override
   void initState() {
@@ -106,7 +121,7 @@ class _AccountScreenState extends State<AccountScreen> {
           .from('user_goals')
           .select('goal_type')
           .eq('status', 'active')
-          .order('priority')
+          .order('priority', ascending: true)
           .limit(1)
           .maybeSingle();
       return {'name': name, 'goal': goal};
@@ -159,6 +174,15 @@ class _AccountScreenState extends State<AccountScreen> {
                   leading: const TracendRowIcon(icon: CupertinoIcons.person),
                   onTap: _openProfileGoals,
                 ),
+                if (configured || widget.screening != null)
+                  TracendListRow(
+                    title: 'Health check',
+                    subtitle: 'The answers behind your plan’s effort level',
+                    leading: const TracendRowIcon(
+                      icon: CupertinoIcons.checkmark_shield,
+                    ),
+                    onTap: _openHealthCheck,
+                  ),
               ],
             ),
             const SectionLabel('Health'),
@@ -234,6 +258,8 @@ class _AccountScreenState extends State<AccountScreen> {
             const AccountFootnote(
               'Provider keys stay on Tracend’s server, never on this phone.',
             ),
+            const SectionLabel('Region'),
+            RegionSettings(repository: widget.region),
             const SectionLabel('Privacy'),
             TracendGroupedList(
               children: [
@@ -264,12 +290,9 @@ class _AccountScreenState extends State<AccountScreen> {
             ),
             const SizedBox(height: TracendSpacing.xl),
             OutlinedButton(
-              onPressed: widget.onSignOut == null
+              onPressed: widget.onSignOut == null || _signingOut
                   ? null
-                  : () async {
-                      await widget.onSignOut!();
-                      if (context.mounted) Navigator.of(context).pop();
-                    },
+                  : _signOut,
               child: const Text('Sign out'),
             ),
           ],
@@ -322,6 +345,16 @@ class _AccountScreenState extends State<AccountScreen> {
     ),
   );
 
+  Future<void> _openHealthCheck() => Navigator.of(context).push<void>(
+    CupertinoPageRoute(
+      builder: (_) => HealthCheckScreen(
+        repository:
+            widget.screening ??
+            SupabaseOnboardingRepository(Supabase.instance.client),
+      ),
+    ),
+  );
+
   Future<Map<String, dynamic>> _loadProfileGoals() async {
     if (!widget.environment.hasSupabaseConfiguration) return const {};
     final client = Supabase.instance.client;
@@ -338,7 +371,7 @@ class _AccountScreenState extends State<AccountScreen> {
           .from('user_goals')
           .select('goal_type,priority,status,details,activated_at')
           .eq('status', 'active')
-          .order('priority')
+          .order('priority', ascending: true)
           .limit(1)
           .maybeSingle(),
       client
@@ -418,8 +451,22 @@ class _AccountScreenState extends State<AccountScreen> {
           ? CupertinoIcons.checkmark_alt
           : CupertinoIcons.info,
     );
-    await widget.onSignOut?.call();
-    if (mounted) Navigator.of(context).pop();
+    await _signOut();
+  }
+
+  /// Signs out once, then leaves Account unless the gate already closed it
+  /// (a second pop would take the gate's own route, leaving a black screen).
+  Future<void> _signOut() async {
+    if (_signingOut) return;
+    setState(() => _signingOut = true);
+    try {
+      await widget.onSignOut?.call();
+    } finally {
+      if (mounted) setState(() => _signingOut = false);
+    }
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
   }
 
   Future<void> _openMemory() => Navigator.of(context).push<void>(

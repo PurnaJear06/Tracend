@@ -6,7 +6,13 @@
 // slots not yet logged with their foods, next to what has been eaten, and where the last two
 // weeks of meals came from (a photo estimate is an estimate). Replaces the athlete file's
 // per-logged-day nutrition lines.
-import type { CoachContextContributor } from "../host.ts";
+//
+// The days, the counts, the averages, the target and the foods are records, marked as such
+// (`../../recorded_text.ts`). The rule that makes a day complete (its meals and share of the
+// target) and the windows (7 and 14 days) are fixed wording and ground nothing.
+import { plain, record } from "../../recorded_text.ts";
+import { shownDays } from "./coverage_brief.ts";
+import { blockOf, type CoachContextContributor } from "../host.ts";
 import { coachServiceRpc, type StateSource, stateSourceFromRpc } from "../service_source.ts";
 
 export const nutritionStateContributorId = "nutrition_state";
@@ -107,15 +113,26 @@ const mean = (values: readonly number[]) =>
 
 /** The text for one nutrition state, or null when there is nothing to say. Exposed for tests. */
 export function renderNutritionState(state: NutritionState | null): string | null {
+  const marked = nutritionMarked(state);
+  return marked === null ? null : plain(marked);
+}
+
+function nutritionMarked(state: NutritionState | null): string | null {
   if (state === null) return null;
   const lines: string[] = [];
   const complete = state.days.filter((day) => day.complete);
   const partial = state.days.filter((day) => !day.complete);
   if (state.days.length === 0) {
-    lines.push("Last 7 days (to " + state.localDate + "): no confirmed meals logged.");
+    lines.push(
+      `Last ${shownDays.nutrition} days (to ${
+        record(state.localDate)
+      }): no confirmed meals logged.`,
+    );
   } else {
     lines.push(
-      `Last 7 days (to ${state.localDate}): ${complete.length} of ${state.days.length} logged ` +
+      `Last ${shownDays.nutrition} days (to ${record(state.localDate)}): ${
+        record(complete.length)
+      } of ${record(state.days.length)} logged ` +
         `days are complete (a complete day has at least ${state.minMeals} confirmed meals or ` +
         `${Math.round(state.minShare * 100)}% of the calorie target). Days with no meals are ` +
         "unknown, not zero.",
@@ -130,16 +147,20 @@ export function renderNutritionState(state: NutritionState | null): string | nul
     ) => {
       const average = mean(values);
       return target === undefined
-        ? `${average} ${unit} ${name}`
-        : `${average} ${unit} ${name} (target ${target}, ${signed(average - target)})`;
+        ? `${record(average)} ${unit} ${name}`
+        : `${record(average)} ${unit} ${name} (target ${record(target)}, ${
+          record(signed(average - target))
+        })`;
     };
     const t = state.target;
     lines.push(
-      `Average of the ${complete.length} complete ${complete.length === 1 ? "day" : "days"}: ${
-        part("energy", "kcal", complete.map((day) => day.calories), t?.calories)
-      }, ${part("protein", "g", complete.map((day) => day.protein), t?.protein)}, ${
-        part("carbohydrate", "g", complete.map((day) => day.carbs), t?.carbs)
-      }, ${part("fat", "g", complete.map((day) => day.fat), t?.fat)}.`,
+      `Average of the ${record(complete.length)} complete ${
+        complete.length === 1 ? "day" : "days"
+      }: ${part("energy", "kcal", complete.map((day) => day.calories), t?.calories)}, ${
+        part("protein", "g", complete.map((day) => day.protein), t?.protein)
+      }, ${part("carbohydrate", "g", complete.map((day) => day.carbs), t?.carbs)}, ${
+        part("fat", "g", complete.map((day) => day.fat), t?.fat)
+      }.`,
     );
   } else if (state.days.length > 0) {
     lines.push("No complete day yet this week, so no intake average is given.");
@@ -148,9 +169,9 @@ export function renderNutritionState(state: NutritionState | null): string | nul
     lines.push(
       "Partial days (probably not fully logged; do not read them as low intake): " +
         partial.map((day) =>
-          `${day.localDate} ${day.meals} ${
-            day.meals === 1 ? "meal" : "meals"
-          }, ${day.calories} kcal, ${day.protein} g protein`
+          `${record(day.localDate)} ${record(day.meals)} ${day.meals === 1 ? "meal" : "meals"}, ${
+            record(day.calories)
+          } kcal, ${record(day.protein)} g protein`
         ).join("; ") + ".",
     );
   }
@@ -160,7 +181,9 @@ export function renderNutritionState(state: NutritionState | null): string | nul
     lines.push(
       open.length
         ? "Planned meals not logged yet today: " +
-          open.map((slot) => `${slot.label} ${slot.time} (${slot.foods || "no foods listed"})`)
+          open.map((slot) =>
+            `${slot.label} ${slot.time} (${slot.foods ? record(slot.foods) : "no foods listed"})`
+          )
             .join("; ") +
           "."
         : "Every planned meal today is logged.",
@@ -174,14 +197,19 @@ export function renderNutritionState(state: NutritionState | null): string | nul
   lines.push(
     state.eaten.length
       ? "Eaten today (confirmed): " +
-        state.eaten.map((meal) => `${meal.type} (${meal.how}): ${meal.foods}`).join("; ") + "."
+        state.eaten.map((meal) => `${meal.type} (${meal.how}): ${record(meal.foods)}`).join("; ") +
+        "."
       : "Eaten today (confirmed): nothing logged yet.",
   );
   if (state.sources.meals > 0) {
     lines.push(
-      `Where the last 14 days of meals came from (${state.sources.meals} meals): ${state.sources.photo} ` +
-        `photo estimates (calories are estimates), ${state.sources.schedule} from the schedule, ` +
-        `${state.sources.typed} typed in.`,
+      `Where the last 14 days of meals came from (${record(state.sources.meals)} meals): ${
+        record(state.sources.photo)
+      } ` +
+        `photo estimates (calories are estimates), ${
+          record(state.sources.schedule)
+        } from the schedule, ` +
+        `${record(state.sources.typed)} typed in.`,
     );
   }
   return lines.join("\n");
@@ -193,7 +221,10 @@ export function createNutritionStateContributor(source: StateSource): CoachConte
     slot: "volatile",
     budgetChars: nutritionStateContributorBudgetChars,
     async render(input) {
-      return renderNutritionState(parseNutritionState(await source(input.userId, input.localDate)));
+      const marked = nutritionMarked(
+        parseNutritionState(await source(input.userId, input.localDate)),
+      );
+      return marked === null ? null : blockOf(marked);
     },
   };
 }

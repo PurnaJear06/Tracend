@@ -19,7 +19,13 @@
 // Figures that carry no claim about the athlete are not checked (the allow-list): list numbers,
 // ordinals, clock times, years, whole numbers up to ten with no measurement unit, and the
 // prescription numbers a coach gives as advice (sets, reps, rest seconds, effort scales,
-// "3x8", up to 30 reps and 10 sets).
+// "3x8", up to 30 reps and 10 sets), and the length of a session item in a plan: a round number
+// of minutes (10 to 90, in fives) that states how long to do a named activity ("30 min easy
+// walk", "walk for 20-30 minutes", "walk 20 min after dinner", "a 45-minute session"). Like rest
+// seconds, it is advice about what to do, not a claim about the athlete. It never covers a
+// duration said of the athlete's past or their own data ("your walk was 30 min", "you did a 30
+// minute walk yesterday"), a duration with no activity beside it ("you slept 450 minutes"), a
+// dose over time ("walk 45 minutes a day"), or anything over 90 minutes.
 
 export type GivenNumber = Readonly<{ value: number; unit: string }>;
 
@@ -158,14 +164,21 @@ function tokensOf(text: string): Token[] {
     if (!Number.isFinite(value)) continue;
     const end = match.index + match[0].length;
     const before = text.slice(Math.max(0, match.index - 28), match.index).toLowerCase();
-    const after = text.slice(end, end + 28).toLowerCase();
+    // What follows is read to the end of the figure's line only.
+    const after = text.slice(end, end + 28).toLowerCase().split("\n")[0];
+    // The unit is read within the figure's own line: "BMI" ending the line before ("Latest
+    // reading and BMI" then "74.8 kg") is not this figure's unit. A figure alone on its line takes
+    // the label that ends the line before ("Your BMI:" then "35").
+    const line = before.slice(before.lastIndexOf("\n") + 1);
+    const alone = line.trim() === "" && /^[\s.,;:!?)]*$/.test(after) &&
+      labelEndsLine.test(before);
     found.push({
       value,
       decimals: fraction.length,
       raw: match[0],
       before,
       after,
-      unit: unitOf(before, rangeEnd.exec(after)?.[1] ?? after),
+      unit: unitOf(alone ? before : line, rangeEnd.exec(after)?.[1] ?? after),
     });
   }
   return found;
@@ -206,12 +219,53 @@ export function mergeGrounds(...grounds: readonly NumberGround[]): NumberGround 
 const measurementUnit =
   /^\s*(?:%|percent\b|per ?cent\b|kgs?\b|kilos?\b|kilograms?\b|lbs?\b|pounds?\b|kcals?\b|calories?\b|cals?\b|gr?\b|grams?\b|bpm\b|ms\b|milliseconds?\b|cm\b|mm\b|litres?\b|liters?\b|ml\b|mg\b|oz\b|km\b|miles?\b|mmhg\b)/;
 const timeUnit = /^\s*(?:hours?\b|hrs?\b|h\b|minutes?\b|mins?\b)/;
+const minuteUnit = /^\s*-?\s*(?:minutes?|mins?)\b/;
+const sessionActivity = String
+  .raw`(?:walk(?:s|ing)?|jog(?:ging)?|run(?:ning)?|cardio|bik(?:e|ing)|cycl(?:e|ing)|swim(?:ming)?|row(?:ing)?|mobility|stretch(?:es|ing)?|yoga|warm[- ]?up|cool[- ]?down|circuit|conditioning|zone ?2|hiit|intervals?|session|workout|emom|amrap|plank|hold)`;
+const activityAfterMinutes = new RegExp(
+  String
+    .raw`^\s*-?\s*(?:minutes?|mins?)\b\s*(?:of\s+)?(?:(?:easy|brisk|light|gentle|steady|slow|moderate|incline|continuous)\s+)?${sessionActivity}\b`,
+);
+const activityBeforeMinutes = new RegExp(
+  String
+    .raw`\b${sessionActivity}\s+(?:(?:for|of|about|around|roughly|~)\s*(?:about |around |roughly |up to )?)?(?:\d+\s*(?:-|–|to)\s*)?$`,
+);
+// A dose over time ("walk 45 minutes a day", "every morning", "per session", "nightly", "three times
+// a week") is guidance with a figure, not one session item.
+const aRate =
+  /\b(?:a|per|each|every)\s+(?:other\s+)?(?:day|week|month|morning|afternoon|evening|night|session|workout|training day)\b|\b(?:daily|weekly|monthly|nightly)\b|\bmost days\b|\b(?:times|x)\s+(?:a|per)\s+week\b|\b(?:once|twice)\b/;
+// A duration said of the athlete's own past, records, habits or plan is a claim about them, however
+// round it is. Only advice is exempt: an imperative ("walk 30 min"), or "you" with a modal
+// ("you can", "you should", "try"). So "your plan is a 45-minute walk", "you normally walk 45
+// minutes" and "you walk 45 minutes after dinner" must be in the athlete's data.
+const aboutTheAthleteWords =
+  /\b(?:did|was|were|had|has|have|been|logged|averag\w*|completed|last|yesterday|previous|recorded|lasted|took|usual\w*|typical\w*|normal\w*|often|currently|already|always|generally|regularly|sometimes|tend|tends|so far|your)\b/;
+const youWithAdvice =
+  /^\s*(?:'ll\s+)?(?:can|could|should|might|may|need to|needs to|ought to|must|have to|want to|try|aim to|aim for|let's)\b/;
+function describesTheAthlete(before: string): boolean {
+  if (aboutTheAthleteWords.test(before)) return true;
+  const you = [...before.matchAll(/\byou\b/g)].at(-1);
+  if (!you) return false;
+  return !youWithAdvice.test(before.slice(you.index + 3));
+}
 const prescriptionUnit = /^\s*(?:sets?\b|reps?\b|repetitions?\b|rounds?\b|seconds?\b|secs?\b|s\b)/;
 const measuredBefore = /\b(?:bmi|rhr|hrv)\s*(?:of|is|was|at|about|around|~|:)?\s*$/;
 const scaleBefore = /\b(?:rpe|rir)\s*(?:of|is|was|at|about|around|~|:)?\s*$/;
 const timesAfter = /^\s*[x×]\s*\d/;
 const timesBefore = /\d\s*[x×]\s*$/;
-const rangeEnd = /^\s*(?:-|–|—|to)\s*\d[\d,]*(?:\.\d+)?(.*)$/;
+// The rest of the line after a range's second figure ("1.4 to 2.0 g per kg a day" is in grams);
+// the next line never gives a range its unit ("25-28" then "Reps: 8-10").
+const rangeEnd = /^\s*(?:-|–|—|to)\s*\d[\d,]*(?:\.\d+)?([^\n]*)$/;
+const labelEndsLine = /\b(?:bmi|rhr|hrv)\b[^\n\d]{0,6}\n\s*$/;
+
+/** Whether a figure of minutes states how long to do a named activity, not a fact about the athlete. */
+function isSessionItemLength(token: Token, after: string): boolean {
+  if (token.decimals !== 0 || token.value < 10 || token.value > 90 || token.value % 5 !== 0) {
+    return false;
+  }
+  if (describesTheAthlete(token.before) || aRate.test(after.slice(0, 40))) return false;
+  return activityAfterMinutes.test(after) || activityBeforeMinutes.test(token.before);
+}
 
 /** Whether the figure is a claim about the athlete that must come from the given text. */
 function mustBeGrounded(token: Token): boolean {
@@ -219,6 +273,7 @@ function mustBeGrounded(token: Token): boolean {
   const after = range ? range[1] : token.after;
   const integer = token.decimals === 0;
   if (measurementUnit.test(after) || measuredBefore.test(token.before)) return true;
+  if (minuteUnit.test(after) && isSessionItemLength(token, after)) return false;
   if (timeUnit.test(after)) return !(integer && token.value <= 5);
   if (scaleBefore.test(token.before)) return !(integer && token.value <= 10);
   if (timesAfter.test(token.after) || timesBefore.test(token.before)) {

@@ -2,8 +2,15 @@
 // papers and Tracend's own summaries. Every rule value in this folder names at
 // least one of these. Each entry and every value that cites it were checked
 // against its PubMed abstract on 2026-10-15; ACSM 2026's values were also
-// checked in its full text. `access` says what anyone can read for free:
-// "full_text" is open in PubMed Central, "abstract" is the abstract only.
+// checked in its full text. Bell 2023, Hickmott 2022, Craven 2022, Saw 2016,
+// Impellizzeri 2020 and WHO 2020 were added with the readiness rules (B4) and
+// their ids, DOIs and open-access status checked against Europe PMC on 2026-10-23. Finucane 2020,
+// Stiell 1997, Keogh 2017, Schoenfeld 2020, Haugen 2023 and Lopez 2021 were added with the pain
+// check and joint rules (B5-1) and checked against Europe PMC on 2026-10-24. Coleman 2024,
+// Schumann 2022 and Riebe 2015 were added with the deload and cardio rules (B5-3, B5-4) and
+// checked against Europe PMC on 2026-10-24.
+// `access` says what anyone can read for free: "full_text" is open in PubMed Central,
+// "abstract" is the abstract only.
 // Paid course material (NASM, ACE, K11) is never a source.
 
 export type SourceAccess = "full_text" | "abstract" | "in_house";
@@ -111,6 +118,18 @@ export const sources = Object.freeze({
     pmcid: null,
     access: "abstract",
   }),
+  moesgaard_2022: source({
+    id: "moesgaard_2022",
+    label: "Moesgaard 2022",
+    citation: "Moesgaard L, Beck MM, Christiansen L, Aagaard P, Lundbye-Jensen J. Effects of " +
+      "periodization on strength and muscle hypertrophy in volume-equated resistance " +
+      "training programs: a systematic review and meta-analysis. Sports Med. " +
+      "2022;52(7):1647-1666.",
+    doi: "10.1007/s40279-021-01636-1",
+    pmid: "35044672",
+    pmcid: null,
+    access: "abstract",
+  }),
   singer_2024: source({
     id: "singer_2024",
     label: "Singer 2024",
@@ -152,6 +171,183 @@ export const sources = Object.freeze({
       "series of meta-regressions. Sports Med. 2024;54(9):2209-2231.",
     doi: "10.1007/s40279-024-02069-2",
     pmid: "38970765",
+    pmcid: null,
+    access: "abstract",
+  }),
+  refalo_2023: source({
+    id: "refalo_2023",
+    label: "Refalo 2023",
+    citation: "Refalo MC, Helms ER, Trexler ET, Hamilton DL, Fyfe JJ. Influence of resistance " +
+      "training proximity-to-failure on skeletal muscle hypertrophy: a systematic review " +
+      "with meta-analysis. Sports Med. 2023;53(3):649-665.",
+    doi: "10.1007/s40279-022-01784-y",
+    pmid: "36334240",
+    pmcid: "PMC9935748",
+    access: "full_text",
+  }),
+  bell_2023: source({
+    id: "bell_2023",
+    label: "Bell 2023",
+    citation: "Bell L, Strafford BW, Coleman M, Androulakis Korakakis P, Nolan D. Integrating " +
+      "deloading into strength and physique sports training programmes: an international " +
+      "Delphi consensus approach. Sports Med Open. 2023;9(1):87.",
+    doi: "10.1186/s40798-023-00633-0",
+    pmid: "37730925",
+    pmcid: "PMC10511399",
+    access: "full_text",
+  }),
+  hickmott_2022: source({
+    id: "hickmott_2022",
+    label: "Hickmott 2022",
+    citation: "Hickmott LM, Chilibeck PD, Shaw KA, Butcher SJ. The effect of load and volume " +
+      "autoregulation on muscular strength and hypertrophy: a systematic review and " +
+      "meta-analysis. Sports Med Open. 2022;8(1):9.",
+    doi: "10.1186/s40798-021-00404-9",
+    pmid: "35038063",
+    pmcid: "PMC8762534",
+    access: "full_text",
+  }),
+  craven_2022: source({
+    id: "craven_2022",
+    label: "Craven 2022",
+    citation: "Craven J, McCartney D, Desbrow B, Sabapathy S, Bellinger P, Roberts L, Irwin C. " +
+      "Effects of acute sleep loss on physical performance: a systematic and meta-analytical " +
+      "review. Sports Med. 2022;52(11):2669-2690.",
+    doi: "10.1007/s40279-022-01706-y",
+    pmid: "35708888",
+    pmcid: "PMC9584849",
+    access: "full_text",
+  }),
+  saw_2016: source({
+    id: "saw_2016",
+    label: "Saw 2016",
+    citation: "Saw AE, Main LC, Gastin PB. Monitoring the athlete training response: subjective " +
+      "self-reported measures trump commonly used objective measures: a systematic review. " +
+      "Br J Sports Med. 2016;50(5):281-291.",
+    doi: "10.1136/bjsports-2015-094758",
+    pmid: "26423706",
+    pmcid: "PMC4789708",
+    access: "full_text",
+  }),
+  impellizzeri_2020: source({
+    id: "impellizzeri_2020",
+    label: "Impellizzeri 2020",
+    citation: "Impellizzeri FM, Tenan MS, Kempton T, Novak A, Coutts AJ. Acute:chronic workload " +
+      "ratio: conceptual issues and fundamental pitfalls. Int J Sports Physiol Perform. " +
+      "2020;15(6):907-913.",
+    doi: "10.1123/ijspp.2019-0864",
+    pmid: "32502973",
+    pmcid: null,
+    access: "abstract",
+  }),
+  who_2020: source({
+    id: "who_2020",
+    label: "WHO 2020",
+    citation: "Bull FC, Al-Ansari SS, Biddle S, et al. World Health Organization 2020 " +
+      "guidelines on physical activity and sedentary behaviour. Br J Sports Med. " +
+      "2020;54(24):1451-1462.",
+    doi: "10.1136/bjsports-2020-102955",
+    pmid: "33239350",
+    pmcid: "PMC7719906",
+    access: "full_text",
+  }),
+  finucane_2020: source({
+    id: "finucane_2020",
+    label: "Finucane 2020",
+    citation: "Finucane LM, Downie A, Mercer C, et al. International framework for red flags for " +
+      "potential serious spinal pathologies. J Orthop Sports Phys Ther. 2020;50(7):350-372.",
+    doi: "10.2519/jospt.2020.9971",
+    pmid: "32438853",
+    pmcid: null,
+    access: "abstract",
+  }),
+  stiell_1997: source({
+    id: "stiell_1997",
+    label: "Stiell 1997",
+    citation:
+      "Stiell IG, Wells GA, Hoag RH, et al. Implementation of the Ottawa knee rule for the " +
+      "use of radiography in acute knee injuries. JAMA. 1997;278(23):2075-2079.",
+    doi: "10.1001/jama.1997.03550230051036",
+    pmid: "9403421",
+    pmcid: null,
+    access: "abstract",
+  }),
+  keogh_2017: source({
+    id: "keogh_2017",
+    label: "Keogh 2017",
+    citation: "Keogh JWL, Winwood PW. The epidemiology of injuries across the weight-training " +
+      "sports. Sports Med. 2017;47(3):479-501.",
+    doi: "10.1007/s40279-016-0575-0",
+    pmid: "27328853",
+    pmcid: null,
+    access: "abstract",
+  }),
+  schoenfeld_2020_rom: source({
+    id: "schoenfeld_2020_rom",
+    label: "Schoenfeld 2020",
+    citation: "Schoenfeld BJ, Grgic J. Effects of range of motion on muscle development during " +
+      "resistance training interventions: a systematic review. SAGE Open Med. 2020;8:2050312120901559.",
+    doi: "10.1177/2050312120901559",
+    pmid: "32030125",
+    pmcid: "PMC6977096",
+    access: "full_text",
+  }),
+  haugen_2023: source({
+    id: "haugen_2023",
+    label: "Haugen 2023",
+    citation:
+      "Haugen ME, Varvik FT, Larsen S, Haugen AS, van den Tillaar R, Bjornsen T. Effect of " +
+      "free-weight vs. machine-based strength training on maximal strength, hypertrophy and jump " +
+      "performance: a systematic review and meta-analysis. BMC Sports Sci Med Rehabil. " +
+      "2023;15(1):103.",
+    doi: "10.1186/s13102-023-00713-4",
+    pmid: "37582807",
+    pmcid: "PMC10426227",
+    access: "full_text",
+  }),
+  lopez_2021: source({
+    id: "lopez_2021",
+    label: "Lopez 2021",
+    citation: "Lopez P, Radaelli R, Taaffe DR, et al. Resistance training load effects on muscle " +
+      "hypertrophy and strength gain: systematic review and network meta-analysis. Med Sci Sports " +
+      "Exerc. 2021;53(6):1206-1216.",
+    doi: "10.1249/MSS.0000000000002585",
+    pmid: "33433148",
+    pmcid: "PMC8126497",
+    access: "full_text",
+  }),
+  coleman_2024: source({
+    id: "coleman_2024",
+    label: "Coleman 2024",
+    citation: "Coleman M, Burke R, Augustin F, Piñero A, Maldonado J, Fisher JP, Israetel M, " +
+      "Androulakis Korakakis P, Swinton P, Oberlin D, Schoenfeld BJ. Gaining more from doing " +
+      "less? The effects of a one-week deload period during supervised resistance training on " +
+      "muscular adaptations. PeerJ. 2024;12:e16777.",
+    doi: "10.7717/peerj.16777",
+    pmid: "38274324",
+    pmcid: "PMC10809978",
+    access: "full_text",
+  }),
+  schumann_2022: source({
+    id: "schumann_2022",
+    label: "Schumann 2022",
+    citation: "Schumann M, Feuerbacher JF, Sünkeler M, Freitag N, Rønnestad BR, Doma K, " +
+      "Lundberg TR. Compatibility of concurrent aerobic and strength training for skeletal " +
+      "muscle size and function: an updated systematic review and meta-analysis. Sports Med. " +
+      "2022;52(3):601-612.",
+    doi: "10.1007/s40279-021-01587-7",
+    pmid: "34757594",
+    pmcid: "PMC8891239",
+    access: "full_text",
+  }),
+  riebe_2015: source({
+    id: "riebe_2015",
+    label: "Riebe 2015",
+    citation: "Riebe D, Franklin BA, Thompson PD, Garber CE, Whitfield GP, Magal M, Pescatello " +
+      "LS. Updating ACSM's recommendations for exercise preparticipation health screening. " +
+      "Med Sci Sports Exerc. 2015;47(11):2473-2479.",
+    doi: "10.1249/MSS.0000000000000664",
+    pmid: "26473759",
     pmcid: null,
     access: "abstract",
   }),

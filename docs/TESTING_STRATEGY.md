@@ -102,7 +102,8 @@ accepted as a permanent retry.
   kind, training totals and volume from completed sets only, amended weights replaced, the audit
   snapshot storing the delivered context, the question stored once before the model runs,
   DeepSeek failures recorded with finite rule names, and the labeled summary stored once. It also
-  proves a data summary never enters conversation memory, and that a long pre-v8 thread keeps its
+  proves a data summary never enters v8's conversation memory (v10 keeps it, marked:
+  `coach_chat_summary_in_thread_test.sql`, 11 assertions), and that a long pre-v8 thread keeps its
   newest ten messages (capped, question first) instead of failing with `chat context too large`,
   on v8 and on the v7 rollback path. A retried request reports its turn as answered (data summary
   or model answer), failed with its code, or in progress, and each watch average carries the days
@@ -114,13 +115,21 @@ accepted as a permanent retry.
   synthetic athletes (the owner's long cut, a stale goal detail, an outlier reading, partial
   logging, no target at a healthy weight, red flags and their harmless look-alikes, screening
   caps, calorie floor and loss ceiling, claimed actions, contradicted facts, no plan, Hinglish
-  phrasing, data lookups), each graded by code. Its deterministic half runs in the Deno job of
+  phrasing, data lookups, and 37 investigate-first cases), each graded by code. Its deterministic half runs in the Deno job of
   every pull request with no key (the red-flag cases run through the real path with a fetch that
   fails on any request, and every grader is tested on hand-written good and bad replies, including
   two replies that failed in production). Its live half runs each case that reaches a model 3
   times: safety categories (red flags, screening, floors and actions) allow zero failures, every
   other category reports its pass rate against 0.8, with at least 97% model answers and no dead
-  ends. The over-caution rate and the optional tone judge (a different model, binary rubric,
+  ends. The investigate-first cases (`cases_investigation.ts`, category `investigation`, ids `inv-`)
+  name the kinds of record each question turns on (the Coverage Brief's kinds); the `domain_coverage`
+  grader passes a run when each kind was in the athlete file for the period or was looked up, and the
+  gate is 90% of such runs. `over_fetch` bounds the lookups of a greeting, thanks, a general-knowledge
+  or app question (none) and of a narrow question (a few). Run only those against a live model with
+  `EVAL_CASES=inv- ./scripts/deno.sh run --allow-env --allow-net --allow-read --allow-write
+  supabase/functions/_evals/coach_bank/run.ts` (the model comes from `AI_COACH_CHAT_*`; the bank
+  serves no rows for these cases, so it measures what Coach asks for, not what it says). The
+  over-caution rate and the optional tone judge (a different model, binary rubric,
   ungated until checked against about 30 human labels) are reported. Every Coach pull request must
   pass the bank before the lead hands it over: add the `coach-eval` label (the `Coach Eval`
   workflow) or run `coach_bank/run.ts` locally, and say in the pull request which model ran. With
@@ -154,9 +163,12 @@ accepted as a permanent retry.
   through an OpenAI-compatible router as a cheap smoke test, which says nothing about production
   latency;
 - the library retrieval bank (`library_eval.ts`, job `library-retrieval` of the same workflow)
-  scores 86 questions (61 single-topic, 15 multi-source, 10 outside the library) through the real
-  hybrid search: recall@8 and MRR per search mode and kind. It needs the database and the real
-  embeddings, so only the question set and the metrics are tested in the Deno job;
+  scores 274 questions over the 106 sources (single-source, multi-source, follow-ups, colloquial
+  phrasing, and 38 outside the library) through the real hybrid search: recall@8 and MRR per search
+  mode and kind. 219 are the calibration set (`library_questions.json`), which chooses every
+  threshold; 55 are a hold-out set (`library_questions_holdout.json`, `question_set: holdout`),
+  run once to confirm the result and never used to tune. It needs the database and the real
+  embeddings, so only the question files (both) and the metrics are tested in the Deno job;
 - Coach-chat provider tests require `finish_reason=stop`, cover truncation, empty/malformed and
   schema-invalid output, unknown evidence, and overlong reasoning fields; prove exactly one
   non-thinking targeted repair receives only the finite rule/path/limit and allowed codes; and prove
@@ -252,12 +264,42 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   recorder listening to `WorkoutEventHub` (waiting list, retries, refusals, restarts), and the
   summary line; `test/contract/set_heart_rate_contract_test.dart` pins both RPC fixtures.
   `privacy-export/index_test.ts` checks the export lists the table.
+- **Watch-workout suggestion and load signals (C4):** `watch_workout_load_signals_test.sql` (53
+  assertions) covers both RPCs' grants and complete key lists, the three-workout limit, the 28-day
+  window, the 12-workout cap, the 60% coverage line, the workouts left out (discarded, open, Apple
+  Health, an undone set) and isolation between athletes. `load_signals_test.ts` has a test per rule
+  (the 50% of reserve line, the 120 s split, the 30 s rest floor, the tracked-set filter, minimum sets and
+  workouts, the 28-day window, no profile, the slower recovery), a grid proving the output has no load,
+  repetition or sleeping field and never raises confidence, and the loader failing closed. Each was
+  checked by breaking its rule and watching the test fail. `test/workout_hr/watch_workout_prompt_test.dart`
+  covers the rule, the contract fixture `watch_workout_status_v1_0.json`, snooze and mute;
+  `test/phase_3_workout_flow_test.dart` covers the card on the workout screen.
+  `training_plan_test.ts` covers the fixed Coach sentences: each reason gets its own sentence and only
+  the recovery comparison says "than usual"; absent with confidence none, on a hold or cut, with no
+  target; the target text is identical with and without the signals; no digit in any sentence; a
+  signals read that never answers, fails, throws or returns nothing renders the plan as before (the
+  1-second deadline, tested with the real value and with a short one) and leaves its trace; the read
+  starts with the plan read; the profile's inputs are read once for the heart-rate block and the
+  signals, in either order; the largest plan has room for the longest sentence on nine steps plus the
+  rest line. Each was checked by breaking it.
 - **Rest Live Activity (D0):** `test/contract/live_activity_channel_contract_test.dart` plays the
   native side of the `tracend/live_activity` method channel as
   `ios/Runner/Native/WorkoutActivityBridge.swift` implements it, and proves refused, disabled or
   missing native calls are swallowed. `test/live_activity/rest_timer_live_activity_test.dart`
   covers start, adjust, skip, end, leaving the workout, and a rest that ended while the app was
   closed. The Lock Screen and Dynamic Island are checked on the owner's iPhone.
+- **Set logging from the Live Activity:** the contract test also pins `showSet`, `hideNumbers` and the
+  `next_*` set keys; `test/live_activity/rest_timer_live_activity_test.dart` covers the controller's
+  states (set in progress, rest carrying the set it turns into, all sets logged and its two-minute
+  end, no card brought back after a dismissal). `test/phase_3_workout_flow_test.dart` runs a whole
+  workout from the card (set in progress, Log set, rest, +30s, Skip, next set, next exercise, all
+  sets logged), proves Log set writes the same fields as the in-app Done set, double and repeated
+  presses, a press for a set already logged in the app, edits and swipes moving the card,
+  relaunch (mid-rest, mid-set, rest ended away, every set logged), finish and discard,
+  offline logging, and the numbers staying off the card unless chosen.
+  `test/live_activity/workout_resume_test.dart` covers `tracend://workout`. `RunnerTests.swift`
+  (`WorkoutActivityStateTests`, not run in CI) covers the content state's decoding, phases and
+  set keys.
 - **Today and Lock Screen widgets (D2):** `test/home_widgets/today_widget_snapshot_test.dart`
   builds the snapshot from briefs (planned, under way, finished, rest day, no targets, unscored,
   hidden and chosen Lock Screen numbers, the stale limit, no free text);
@@ -275,14 +317,108 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   as stale, schema refusal, links). The
   Xcode tests are not run in CI; the widgets themselves are checked on the owner's iPhone.
 - **Research library (E1, E3):** `research_library_test.sql` covers pgvector, forced RLS with no
-  API access, the indexes, `search_library_v2` grants, hybrid ranking by reciprocal rank fusion
+  API access, the indexes, `search_library_v2` grants (v2 stays for the deployed build), hybrid ranking by reciprocal rank fusion
   (k = 50), the ORed full-text terms, filters, the athlete's regions (`IN` sources reach only Indian
   accounts), the three-per-source cap, `match_count` limits, the exact contract keys, and a rule
   that no `public` or `private` function takes an argument whose type lives in a schema
   `supabase db dump` excludes. In Deno: `query_test.ts` (follow-up rewrite), `retrieval_test.ts`
   (the contributor, the shown ids, timeouts), the gateway, contract and reply-guard tests for
   library citations, and the retrieval gate `library_eval.ts` (recall in the top 8 of at least 0.8,
-  regional isolation) in `coach-eval.yml`, which needs the database and the embedding model.
+  multi-source recall 0.7, MRR 0.5 and no-answer precision 0.7, all after the relevance floor, the
+  word-search fallback's own gates (recall 0.55, no-answer precision 0.7), plus regional isolation and the floor's calibration sweep) in `coach-eval.yml`, which needs the
+  database and the embedding model and runs by itself on every pull request that changes the
+  library (not a required check). `library_search_v3_test.sql` (E3.1) covers v3's grants and keys,
+  cosine distances, the embedding-model filter, text ranks, the content digest and its triggers, the
+  library version, retiring a source and `coach_messages.library_version`;
+  `library_content_test.ts` checks that a source removed from `index.ts` is retired by a migration; E5 (plan explanations that cite sources) is covered by `plan_explanation_test.ts`, `plan_facts_test.ts`, `plan_library_test.ts`, the plan turns in `retrieval_test.ts`, `plan_contract_library_test.ts` and the library cases of `onboarding-plan/gateway_test.ts`, and the retrieval gate scores `library_questions_plan.json` (plan questions as asked and as Coach searches them, and onboarding answers through the plan's two searches; `EVAL_MIN_PLAN_RECALL`, `EVAL_MIN_ONBOARDING_RECALL`);
+  `embed_service_test.ts` covers the worker-secret cache and the Sentry gate. E4 added
+  `regional_modules_test.sql` (the optional country: grants, no direct write, the exact key list,
+  capital-letter storage, refused codes, a signed-out caller, the regions an account maps to with and
+  without a country, and the search showing an Australian source only to an athlete who chose
+  Australia), `library_content_test.ts` (each of India, the US, the UK and Australia has a nutrition
+  and a body-measure source), the 17 regional retrieval questions, and in Flutter
+  `contract/region_contract_test.dart` and `region_settings_test.dart` (the Account country row).
+
+- **Same-day readiness adjustment (B4-1).** pgTAP `readiness_sweep_test.sql` calls the pure
+  `private.readiness_assessment` row by row (each source of points alone, the recovery gate, the
+  fallbacks, the gates, confidence) and over 47,628 combinations of check-in answers, pain, "can
+  train", sleep minutes and recovery score with its confidence: pain of 7 or more always routes out,
+  worsening any one input never gives a less strict kind, zero points from the check-in and no short
+  sleep never gives a kind whatever the recovery score (D9), an athlete who cannot train never gets
+  a kind, a kind always has a reason, and the band and kind follow the points. A second sweep runs
+  1,800 exercises (sets, ranges, RPE, last reps, reps in reserve, loaded, assisted and bodyweight),
+  each with the real B3 decision, through `private.day_adjustment_changes` for all three kinds:
+  sets never go up and never reach zero outside the cardio swap, a held load is the last logged one
+  and never above the target, effort drops by one point and never below 6, totals add up.
+  `day_adjustments_test.sql` covers real athletes: the keys of the answer (and that the unknown and
+  started-safety contract fixtures are the real answers, key for key), each source of points,
+  the recovery score alone, a safety day, accept, Undo (not refused at the answer limit),
+  idempotence, a chosen kind with and without a check-in, the staleness rule and its reasons, a
+  start after a worse check-in, a backdated start, the day's lock, per-exercise adjusted sessions,
+  the scoring retry bound, `start_workout` building the adjusted sets, B3 reading an adjusted session, rest and
+  coach-adjusted days, the 20-answer limit, cross-athlete reads, grants through
+  `has_function_privilege`, the session link's foreign key and account deletion. New rows in
+  `progression_targets_test.sql` pin the adjusted-session rules and re-run B3's one-step and
+  in-range invariants over adjusted sessions. Deno: `readiness_test.ts` keeps the sourced numbers
+  equal to the migration, reads no heart signal and no diagnosis word in the SQL sentences,
+  parses the contract fixtures strictly, and pins the redefinitions of `start_workout`,
+  `private.progression_decision` and `private.next_session_targets` to their earlier definitions
+  plus the intended hunks. Flutter: `day_adjustment_contract_test.dart` pins the fixtures' complete
+  key lists. Each rule is proved by a test that fails without it (the PR lists them).
+
+- **Deloads and cardio dosing (B5-3, B5-4).** pgTAP `deloads_test.sql` runs real athletes through the
+  proposal path: each reason alone and at its boundary (one stalled lift against two; three amber
+  days against four, with days that have no check-in not counted, a replaced check-in and an eighth day
+  ignored; short sleep, the invalid sleep values and a low recovery score with a clean check-in; a
+  finished block at its length, one week short, two sessions short, the 4-week floor, the 8-week cap
+  and one session a week), each suppression (a deload that ended 27 against 28 days ago, an undone
+  deload, a moderate block, an older untagged deload, a running deload, another block, an overdue
+  block, a pending and an expired proposal, `see_professional`, `moderate_until_cleared`, too little
+  training, no plan), a day with a pain of 8 or an urgent red flag (suggested by the signals, withheld
+  by the guidance), a running deload meeting a limited knee and a poor night, the readers' own-today
+  rule and cross-athlete reads. `cardio_dosing_test.sql`: the week's every figure, Apple Health missing
+  against connected with no cardio, the window's edges, what counts, the 180-minute cap, overlapping
+  workouts, the target by goal, the easy-only days (amber, red, no check-in, a limited joint, a low
+  recovery score alone not closing it), `moderate_until_cleared`, the days that withhold the dose, the
+  easy-cardio card quoting the same dose, the guidance's complete key lists and grants. Deno:
+  `deload_cardio_test.ts` keeps both rule sets equal to their migrations, reads no heart signal outside
+  cardio, pins `private.training_guidance` 1.1 to B5-3's text plus the cardio hunks, checks every
+  function's owner, search path and grants, parses the three contract fixtures strictly; the proposal
+  builder's tests in `coach_proposals/build_test.ts` hold the deload week (one week whatever length is
+  asked, half the sets rounded up, effort 7 or lower, loads held, exercises, days and ranges unchanged)
+  over 5,400 plans (every goal x days x experience x length x equipment x progression target x health
+  check). Each rule is proved by a test that fails without it (the PR lists them).
+
+- **Pain check, red flags and joint rules (B5-1).** pgTAP `pain_checks_test.sql`: the outcome table
+  (severity alone at 0, 1, 3, 4, 6, 7 and 10; each of the ten red flags at every one of those
+  severities; two flags together; a rule with the bands moved up fails it), the table's constraints (an
+  outcome that disagrees with its answers, an unknown flag, area, pattern, source or severity), the
+  check-in with a pain check (an older build makes no report; a new build's area, pattern, flags and
+  follow-ups; idempotence; every refusal saves nothing), the workout chip (the four result keys,
+  idempotence, outcomes and area state, the audit event of codes only, another athlete's exercise,
+  every bad value, the forty-a-day limit), cross-athlete reads, grants through `has_function_privilege`
+  and account deletion. `joint_states_test.sql` has one athlete per case: the 6-, 7- and 8-day
+  boundary for a limit and a watch, a hold that never lapses, clearance (only at 3 or below, never with
+  a flag, and a new symptom holds again), same-day order, areas that do not affect each other, the 13-
+  and 14-day lines for pain that lasts. `joint_rules_test.sql` has real athletes: the swap options on a
+  good day, a held knee on a good day (kind `joint_adjust`, left-out exercises, every option carrying
+  them), accept, a new report making the answer stale, `start_workout` giving no sets to a left-out
+  exercise under every kind, a limited shoulder merged with a lighter day, watch, an athlete who
+  cannot train, the safety routes (a flag recorded in the workout, an urgent flag with a pain of 8, a
+  pain of 8 in an old build, a fever, no check-in, a rest day, a started session, an accepted answer
+  overridden by a flag, yesterday's flag), the Coach context view, and B3 reading answers that limit
+  or swap an exercise or name another one. `joint_swap_sweep_test.sql`: hand-derived swaps, then about
+  19,000 cases (every catalog exercise x joint x seven equipment sets x three levels x movements to
+  avoid x two ceilings) checked against an independent predicate in both directions (every swap is
+  acceptable, no acceptable swap is missed), mutants that allow an equal stress or ignore equipment
+  failing it, and every catalog exercise under all 64 combinations of three joint states checked for
+  completeness, action, sets, effort, cues, swaps, duplicates and monotonicity. Deno: `joints_test.ts`
+  keeps the sourced numbers, the red-flag list, the questions and the range cues equal to the
+  migration, finds no heart signal or diagnosis word, checks the migration is additive and every
+  function's search path and grants, parses the 1.0 and 1.1 contract fixtures strictly, and pins the
+  redefinitions of the day adjustment functions, `start_workout`, `next_session_targets` and
+  `save_daily_check_in` to their earlier definitions plus the intended hunks. Flutter:
+  `pain_check_contract_test.dart` pins the 1.1 fixtures' key lists and that 1.1 only adds keys to 1.0.
 
 ### Supabase boundaries
 
@@ -402,6 +538,9 @@ dry-run and a backup.
   with the state the migrations create. Any difference stops the deploy. CI runs
   `scripts/test-restore-privileges.sh` for the parsing, history and report logic.
 - **Backup storage:** `scripts/test-store-backup.sh` covers `scripts/store-backup.sh` in CI.
+- **Retired functions:** `scripts/test-retire-functions.sh` covers `scripts/retire-functions.sh` in
+  CI with a stub CLI (deletes only listed names, idempotent, refuses a listed name that has a
+  directory, `--check` flags an unknown deployed function).
 - **App bundle:** CI runs `scripts/verify-app-bundle.sh` on its unsigned iOS build.
 
 ## 3. AI Evaluation
@@ -583,6 +722,13 @@ DSN is the only identifier reaching the client; the project lives at `sentry.io`
 `resting_heart_rate_bpm`, `heart_rate`, `step_count`, `blood_pressure`, `meal_content`,
 `meal_description`, `food_items`, `ingredients`, `photo_url`, `signed_url`, `image_url`,
 `object_key`, `prompt`, `prompt_text`, `question`, `answer_text`, `answer_payload`.
+Since B5-2 the scrubber (`lib/app/sentry_scrubber.dart`, also set as `beforeBreadcrumb`) drops the
+pain check entirely, key and value, from an event's request, contexts, extra data, tags and from
+every breadcrumb: any key starting `pain_`, `joint_` or `red_flag`, and `area`, `area_state`,
+`severity`, `safety_route`, `hold_outcome`, `red_flags`, `followups`, `cleared_by_clinician`,
+`range_note_code(s)`, `swap_to_name`, `swap_to_slug`. The same words, the ten red-flag codes and the
+database's "Failing row contains (...)" text are replaced inside messages, exception messages and
+strings (`test/sentry_scrubber_test.dart`).
 
 Edge Functions report exceptions through `captureException` in `coach-chat`, `meal-analyze`,
 `meal-media-retention`, `onboarding-plan`, `physique-check` and `privacy-delete-account`. Coach

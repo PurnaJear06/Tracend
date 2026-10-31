@@ -2,10 +2,16 @@ import { assert, assertEquals, assertRejects, assertStringIncludes } from "jsr:@
 import {
   createGoalPhaseContributor,
   goalPhaseContributorBudgetChars,
+  goalPhaseInputsReadKey,
   goalPhaseSourceFromRpc,
   renderGoalPhasePayload,
 } from "./goal_phase.ts";
-import { renderCoachContext, validateCoachContextContributors } from "../host.ts";
+import {
+  renderCoachContext,
+  renderedText,
+  sharedRead,
+  validateCoachContextContributors,
+} from "../host.ts";
 import { coachContextContributors } from "../registry.ts";
 import { longCutPayload } from "../../training/goal_phase/fixtures.ts";
 import {
@@ -20,7 +26,7 @@ Deno.test("the contributor is volatile and fits its budget on the owner's case",
   const contributor = createGoalPhaseContributor(() => Promise.resolve(longCutPayload));
   assertEquals(contributor.slot, "volatile");
   assertEquals(contributor.budgetChars, goalPhaseContributorBudgetChars);
-  const text = (await contributor.render(input)) as string;
+  const text = renderedText(await contributor.render(input))!;
   assert(text.length <= goalPhaseContributorBudgetChars, `${text.length} chars`);
   const rendered = await renderCoachContext([contributor], input);
   assertEquals(rendered.stable, "");
@@ -65,11 +71,13 @@ Deno.test("the registry holds the goal phase contributor after the screening and
     "confirmed_facts",
     "goal_phase",
     "training_plan",
+    "readiness",
     "nutrition_state",
     "coach_proposals",
     "heart_rate_profile",
     "coach_notes",
-    "data_index",
+    "watch_outs",
+    "coverage_brief",
     "library",
   ]);
 });
@@ -97,7 +105,7 @@ Deno.test("eight excluded readings, a long history and a long run still fit with
     readings,
   };
   const contributor = createGoalPhaseContributor(() => Promise.resolve(payload));
-  const text = (await contributor.render({ ...input, localDate: "2026-10-05" })) as string;
+  const text = renderedText(await contributor.render({ ...input, localDate: "2026-10-05" }))!;
   assert(text.length <= goalPhaseContributorBudgetChars, `${text.length} chars`);
   const rendered = await renderCoachContext([contributor], { ...input, localDate: "2026-10-05" });
   assertEquals(rendered.outcomes[0].clipped, false);
@@ -111,4 +119,21 @@ Deno.test("eight excluded readings, a long history and a long run still fit with
   assert(text.indexOf("Review outcome") < text.indexOf("Recorded history"));
   assertEquals(text.split("\n").filter((line) => line.startsWith("- Excluded reading")).length, 3);
   assertStringIncludes(text, "and 5 more excluded readings");
+});
+
+Deno.test("the goal inputs are read once for the turn, whoever asks first (the library's plan facts too)", async () => {
+  let reads = 0;
+  const contributor = createGoalPhaseContributor(() => {
+    reads++;
+    return Promise.resolve(longCutPayload);
+  });
+  const shared = new Map<string, Promise<unknown>>();
+  const turn = { ...input, shared };
+  await sharedRead(turn, goalPhaseInputsReadKey, () => Promise.resolve(longCutPayload));
+  const text = renderedText(await contributor.render(turn))!;
+  assertStringIncludes(text, "-15.2 kg");
+  // The reader that came first started the read; the contributor took its result.
+  assertEquals(reads, 0);
+  await contributor.render({ ...input, shared: new Map() });
+  assertEquals(reads, 1);
 });

@@ -10,7 +10,7 @@ import {
   parseNutritionState,
   renderNutritionState,
 } from "../../_shared/coach_context/contributors/nutrition_state.ts";
-import { renderDataIndex } from "../../_shared/coach_context/contributors/data_index.ts";
+import { renderCoverageBrief } from "../../_shared/coach_context/contributors/coverage_brief.ts";
 import { exerciseCatalogV1 } from "../../_shared/onboarding/catalog.ts";
 import { buildCoachChatGatewayPrompt } from "../../_shared/providers/coach_chat_provider_gateway.ts";
 import { renderTurn } from "../coach_bank/harness.ts";
@@ -71,8 +71,11 @@ Deno.test("the contributor payloads are ones the production parsers read", () =>
     const { contributors } = persona.athlete();
     assert(renderTrainingPlan(parsePlanState(contributors.trainingPlan)), persona.id);
     assert(renderNutritionState(parseNutritionState(contributors.nutritionState)), persona.id);
-    const index = renderDataIndex(contributors.dataIndex, persona.records.spec.today)!;
-    assertStringIncludes(index, "- workouts: ");
+    const brief = renderCoverageBrief(contributors.dataIndex, persona.records.spec.today);
+    assertStringIncludes(brief, "- training | ");
+    assert(!brief.includes("counts unavailable"), persona.id);
+    assert(!/- training \|[^\n]*none yet/.test(brief), persona.id);
+    assert(!/- plan_ahead \|[^\n]*no active plan/.test(brief), persona.id);
   }
 });
 

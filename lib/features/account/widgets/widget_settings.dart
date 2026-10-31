@@ -8,9 +8,10 @@ import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_toast.dart';
 
-/// Account › Widgets: whether Lock Screen widgets show health numbers
+/// Account › Widgets: whether the Lock Screen shows health numbers: in the
+/// widgets, and the kg and reps of the set in the workout's Live Activity
 /// (UX_FLOWS.md §13, SECURITY_PRIVACY.md §10). Off until chosen. Turning it
-/// off removes the numbers from what the widgets read at once.
+/// off removes the numbers from what they show at once.
 class WidgetSettings extends StatefulWidget {
   const WidgetSettings({required this.publisher, super.key});
 
@@ -61,10 +62,11 @@ class _WidgetSettingsState extends State<WidgetSettings> {
               child: TracendListRow(
                 title: 'Health numbers on the Lock Screen',
                 subtitle: shown
-                    ? 'On · recovery, today’s session and protein show while '
-                          'the phone is locked'
+                    ? 'On · recovery, today’s session, protein and your '
+                          'current set’s kg and reps show while the phone is '
+                          'locked'
                     : 'Off · Lock Screen widgets show Tracend and nothing '
-                          'else',
+                          'else; the workout card shows no kg or reps',
                 trailing: Switch.adaptive(
                   value: shown,
                   onChanged: _shown == null ? null : _set,
@@ -74,8 +76,9 @@ class _WidgetSettingsState extends State<WidgetSettings> {
           ],
         ),
         const AccountFootnote(
-          'Anyone holding your locked phone can read Lock Screen widgets. '
-          'Home Screen widgets show your day once the phone is unlocked.',
+          'Anyone holding your locked phone can read Lock Screen widgets and '
+          'the workout card. Home Screen widgets show your day once the phone '
+          'is unlocked.',
         ),
       ],
     );

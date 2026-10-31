@@ -127,6 +127,11 @@ export type ReviewOutcome = typeof reviewOutcomes[number];
 export type ReviewReason = Readonly<{
   code: string;
   detail: string;
+  /**
+   * `detail` with the athlete's recorded and calculated values marked (`recorded_text.ts`): the
+   * thresholds in it ("below 18.5", "above 1% a week") are Tracend's rules and are not marked.
+   */
+  marked: string;
   sources: readonly string[];
 }>;
 

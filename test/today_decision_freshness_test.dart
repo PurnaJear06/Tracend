@@ -150,7 +150,7 @@ class _FakeCoachRepository implements CoachRepository {
   Future<CoachDecision?> loadLatest() async => latest;
 
   @override
-  Future<CoachDecision> generate() async {
+  Future<CoachDecision> generate({String? localDate}) async {
     generateCalls++;
     // The refreshed decision sees the check-in: no missing data, full
     // action space.

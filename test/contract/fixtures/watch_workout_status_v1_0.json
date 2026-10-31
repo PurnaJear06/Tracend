@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "as_of": "2026-10-23",
+  "recent_sessions": [
+    { "local_date": "2026-10-22", "completed_sets": 9, "watch_sets": 0 },
+    { "local_date": "2026-10-20", "completed_sets": 8, "watch_sets": 6 },
+    { "local_date": "2026-10-18", "completed_sets": 10, "watch_sets": 0 }
+  ]
+}

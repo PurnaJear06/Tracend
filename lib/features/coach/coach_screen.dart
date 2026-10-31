@@ -19,6 +19,7 @@ import 'package:tracend/features/coach/widgets/coach_thinking_indicator.dart';
 import 'package:tracend/features/coach/widgets/fact_suggestion_chip.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/shared/formatting.dart';
+import 'package:tracend/shared/coach_draft_requests.dart';
 import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
@@ -49,6 +50,38 @@ typedef _TurnFailure = ({
 /// (it would answer "still working" forever) cannot trap Retry.
 const _maxKeyReplays = 2;
 
+/// Opening Coach reopens the last conversation only when its latest message is
+/// newer than this. A day-old chat is a different topic: the athlete starts a
+/// fresh one and can still continue the old one from the "Continue last chat"
+/// row or Saved conversations.
+const coachReopenWindow = Duration(hours: 6);
+
+/// The screen's conversation as it was when the athlete started opening
+/// another, so a failed open can put it back.
+class _OpenedFrom {
+  const _OpenedFrom({
+    required this.view,
+    required this.threadId,
+    required this.previousThreadId,
+    required this.remembered,
+    required this.openedAt,
+    required this.messages,
+    required this.turnFailure,
+    required this.factSuggestions,
+    required this.budgetWarning,
+  });
+
+  final int view;
+  final String? threadId;
+  final String? previousThreadId;
+  final bool remembered;
+  final DateTime? openedAt;
+  final List<CoachMessage> messages;
+  final _TurnFailure? turnFailure;
+  final List<CoachFactSuggestion> factSuggestions;
+  final bool budgetWarning;
+}
+
 class CoachScreen extends StatefulWidget {
   const CoachScreen({
     this.repository = const FixtureCoachRepository(),
@@ -57,9 +90,20 @@ class CoachScreen extends StatefulWidget {
     this.proposals,
     this.planChanges,
     this.memory,
+    this.draftRequests,
+    this.now = DateTime.now,
+    this.active = true,
     super.key,
   });
   final CoachRepository repository;
+
+  /// Whether this is the visible tab. The shell keeps the screen alive while
+  /// another tab shows, so becoming active again (like the app resuming)
+  /// re-checks [coachReopenWindow] against the open conversation.
+  final bool active;
+
+  /// The clock behind [coachReopenWindow]; tests set it.
+  final DateTime Function() now;
   final CoachThreadMemory threadMemory;
 
   /// Reads and answers the proposals Coach makes (A8). Null without a backend,
@@ -69,6 +113,10 @@ class CoachScreen extends StatefulWidget {
   /// Saves what the athlete confirms when Coach suggests a fact. Null without a
   /// backend, where Coach suggests none.
   final CoachMemoryRepository? memory;
+
+  /// Questions other screens leave for the composer ("Talk to Coach" on
+  /// today's readiness card). The text is put in the box, never sent.
+  final CoachDraftRequests? draftRequests;
 
   /// Announced when an approved or undone proposal changed the plan, the
   /// targets or the goal, so the screens that show them reload.
@@ -81,7 +129,7 @@ class CoachScreen extends StatefulWidget {
   State<CoachScreen> createState() => _CoachScreenState();
 }
 
-class _CoachScreenState extends State<CoachScreen> {
+class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
   static const _uuid = Uuid();
   final _composer = TextEditingController();
   final _scroll = ScrollController();
@@ -114,6 +162,30 @@ class _CoachScreenState extends State<CoachScreen> {
   /// moved on, its new thread is not selected and its reply is not shown
   /// there. The server still keeps both, so the thread appears in the list.
   int _view = 0;
+  int _viewSequence = 0;
+
+  /// Starts a new view and returns its token. Tokens never repeat, so a
+  /// request from a view that was left cannot match a later one.
+  int _beginView() => _view = ++_viewSequence;
+
+  /// What the screen showed before the conversation being opened, until that
+  /// open settles. A failed open puts it back, so the messages on screen
+  /// always belong to the thread id and its next send.
+  _OpenedFrom? _openedFrom;
+
+  /// A follow-up the athlete asked for (a chip, "Change it") while Coach was
+  /// still answering or cooling down. It sends when Coach is free, and is
+  /// shown meanwhile.
+  String? _queuedFollowUp;
+
+  /// When the athlete explicitly opened the current conversation (Continue
+  /// last chat, Saved conversations). An old chat opened on purpose stays open
+  /// for the visit: it counts as touched then, not at its last message.
+  DateTime? _openedAt;
+
+  /// The conversation a fresh view replaced, offered as "Continue last chat".
+  /// Null falls back to the newest saved conversation.
+  String? _previousThreadId;
 
   /// Only the newest thread-list request may replace the list.
   int _threadsRequest = 0;
@@ -123,6 +195,12 @@ class _CoachScreenState extends State<CoachScreen> {
   int _restoredRows = 0;
   bool _loadingChat = true;
   bool _sending = false;
+
+  /// True after a conversation opens, until the athlete touches the screen or
+  /// sends. While true, content that lays out late (long replies, cards that
+  /// load after the messages) keeps the view on the newest message.
+  bool _pinnedToEnd = false;
+  bool _pinScheduled = false;
 
   /// A problem with the conversations themselves (loading, deleting).
   String? _error;
@@ -162,25 +240,62 @@ class _CoachScreenState extends State<CoachScreen> {
   void initState() {
     super.initState();
     widget.aiConsent?.addListener(_consentChanged);
+    widget.draftRequests?.addListener(_takeDraft);
+    _takeDraft();
     if (widget.repository is CoachContextRepository) {
       _contextStatus = (widget.repository as CoachContextRepository)
           .loadContextStatus();
     }
+    WidgetsBinding.instance.addObserver(this);
     _restoreChat();
+  }
+
+  /// Puts a question another screen left into the composer: in an empty box,
+  /// or under what the athlete had already typed. A conversation older than
+  /// [coachReopenWindow] gives way to a fresh one first (a typed draft would
+  /// otherwise keep it), so the question never lands in a stale chat.
+  void _takeDraft() {
+    final text = widget.draftRequests?.take();
+    if (text == null) return;
+    _startFreshIfStale();
+    _addToComposer(text);
+  }
+
+  /// Puts [text] in the composer: in an empty box, or under what is typed.
+  void _addToComposer(String text) {
+    final typed = _composer.text;
+    _composer.text = typed.trim().isEmpty ? text : '$typed\n\n$text';
+    _composer.selection = TextSelection.collapsed(
+      offset: _composer.text.length,
+    );
   }
 
   @override
   void didUpdateWidget(CoachScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.draftRequests != widget.draftRequests) {
+      oldWidget.draftRequests?.removeListener(_takeDraft);
+      widget.draftRequests?.addListener(_takeDraft);
+    }
     if (oldWidget.aiConsent != widget.aiConsent) {
       oldWidget.aiConsent?.removeListener(_consentChanged);
       widget.aiConsent?.addListener(_consentChanged);
+    }
+    if (widget.active && !oldWidget.active) _startFreshIfStale();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && widget.active) {
+      _startFreshIfStale();
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.aiConsent?.removeListener(_consentChanged);
+    widget.draftRequests?.removeListener(_takeDraft);
     _composer.dispose();
     _scroll.dispose();
     _threadList.dispose();
@@ -200,7 +315,37 @@ class _CoachScreenState extends State<CoachScreen> {
     _cooldownSubscription = stream.listen((remaining) {
       if (!mounted) return;
       setState(() => _cooldownRemaining = remaining > 0 ? remaining : null);
+      if (remaining <= 0) _sendQueued();
     });
+  }
+
+  /// Sends the waiting follow-up once Coach is free.
+  void _sendQueued() {
+    final text = _queuedFollowUp;
+    if (text == null ||
+        _sending ||
+        _loadingChat ||
+        _cooldownRemaining != null) {
+      return;
+    }
+    if (!_aiAllowed) {
+      // Nothing is sent without permission, and the consent sheet is the
+      // athlete's to open: the text waits in the composer.
+      _queuedToComposer();
+      return;
+    }
+    setState(() => _queuedFollowUp = null);
+    unawaited(_send(text));
+  }
+
+  /// A follow-up that is not going out (Cancel, a failed reply, a switch of
+  /// conversation, a newer follow-up, AI coaching off) goes to the composer,
+  /// to send or change; it is never lost.
+  void _queuedToComposer() {
+    final text = _queuedFollowUp;
+    if (text == null) return;
+    setState(() => _queuedFollowUp = null);
+    _addToComposer(text);
   }
 
   Future<void> _restoreChat() async {
@@ -209,33 +354,48 @@ class _CoachScreenState extends State<CoachScreen> {
       if (mounted) setState(() => _loadingChat = false);
       return;
     }
+    final view = _view;
     try {
       final (threads, remembered) = await (
         chat.loadThreads(),
         widget.threadMemory.lastThreadId(),
       ).wait;
       // Reopen the conversation the user last had open; otherwise the one
-      // with the newest message; with none, start a new conversation.
-      final threadId = threads.any((thread) => thread.id == remembered)
-          ? remembered
-          : threads.firstOrNull?.id;
+      // with the newest message; with none, or none touched within
+      // [coachReopenWindow], start a new conversation. The server bumps a
+      // thread's updatedAt with every message, so it is the last message time.
+      final last =
+          threads.where((thread) => thread.id == remembered).firstOrNull ??
+          threads.firstOrNull;
+      final threadId =
+          last != null &&
+              widget.now().difference(last.updatedAt) < coachReopenWindow
+          ? last.id
+          : null;
       final messages = threadId == null
           ? const <CoachMessage>[]
           : await chat.loadMessages(threadId);
       if (!mounted) return;
+      // The athlete may have opened or started a conversation meanwhile: the
+      // list still applies, the selection does not.
+      if (_view != view) {
+        setState(() => _threads = threads);
+        return;
+      }
       setState(() {
         _threads = threads;
         _threadId = threadId;
+        _previousThreadId = threadId == null ? last?.id : null;
         _threadRemembered = threads
             .where((thread) => thread.id == threadId)
             .every((thread) => thread.remember);
         _messages = messages;
         _loadingChat = false;
       });
-      _scrollToEnd(animate: false);
+      _showNewest();
     } catch (e) {
       debugPrint('Non-critical error: $e');
-      if (mounted) {
+      if (mounted && _view == view) {
         setState(() {
           _loadingChat = false;
           _error = 'Saved conversations could not be loaded.';
@@ -244,53 +404,128 @@ class _CoachScreenState extends State<CoachScreen> {
     }
   }
 
+  /// The open conversation's last activity: the later of its thread's
+  /// updatedAt, its newest message and the moment the athlete opened it.
+  DateTime? _lastActivity() {
+    final id = _threadId;
+    if (id == null) return null;
+    final times = [
+      ?_openedAt,
+      for (final thread in _threads)
+        if (thread.id == id) thread.updatedAt,
+      for (final message in _messages) message.createdAt,
+    ];
+    return times.isEmpty ? null : times.reduce((a, b) => a.isAfter(b) ? a : b);
+  }
+
+  /// The screen outlives a visit (tab switch, app in the background), so the
+  /// [coachReopenWindow] is checked again when the athlete returns. Never
+  /// while a turn is in flight or something is typed: the chat stays, and the
+  /// next return checks again.
+  void _startFreshIfStale() {
+    if (_loadingChat || _sending || _composer.text.trim().isNotEmpty) return;
+    final last = _lastActivity();
+    if (last == null || widget.now().difference(last) < coachReopenWindow) {
+      return;
+    }
+    _newThread(previous: _threadId);
+  }
+
   Future<void> _openThread(String id) async {
     final chat = _chat;
     if (chat == null) return;
+    if (_sending) {
+      // The reply on its way belongs to this conversation, and a failed open
+      // would put it back without its answer. Switching waits for it.
+      TracendToast.show(
+        context,
+        'Coach is still answering. Open another conversation when it’s done.',
+        icon: CupertinoIcons.clock,
+      );
+      return;
+    }
+    // Only the first open of a run keeps what to go back to: a second tap
+    // while the first still loads must not take the empty loading state for
+    // the conversation the athlete was reading.
+    final from =
+        _openedFrom ??
+        _OpenedFrom(
+          view: _view,
+          threadId: _threadId,
+          previousThreadId: _previousThreadId,
+          remembered: _threadRemembered,
+          openedAt: _openedAt,
+          messages: _messages,
+          turnFailure: _turnFailure,
+          factSuggestions: _factSuggestions,
+          budgetWarning: _budgetWarning,
+        );
+    final view = _beginView();
     setState(() {
-      _view++;
+      _openedFrom = from;
+      _openedAt = widget.now();
+      _pinnedToEnd = false;
       _loadingChat = true;
       _threadId = id;
       _threadRemembered = _threads
           .where((thread) => thread.id == id)
           .every((thread) => thread.remember);
+      _messages = const [];
       _error = null;
       _turnFailure = null;
       _factSuggestions = const [];
       _budgetWarning = false;
     });
-    unawaited(widget.threadMemory.remember(id));
+    _queuedToComposer();
     try {
       final messages = await chat.loadMessages(id);
-      if (mounted) {
-        setState(() {
-          _messages = messages;
-          _loadingChat = false;
-        });
-        _scrollToEnd(animate: false);
-      }
+      if (!mounted || _view != view) return;
+      unawaited(widget.threadMemory.remember(id));
+      setState(() {
+        _openedFrom = null;
+        _messages = messages;
+        _loadingChat = false;
+      });
+      _showNewest();
     } catch (e) {
       debugPrint('Non-critical error: $e');
-      if (mounted) {
-        setState(() {
-          _loadingChat = false;
-          _error = 'Conversation could not be opened.';
-        });
-      }
+      if (!mounted || _view != view) return;
+      setState(() {
+        _openedFrom = null;
+        _view = from.view;
+        _threadId = from.threadId;
+        _previousThreadId = from.previousThreadId;
+        _threadRemembered = from.remembered;
+        _openedAt = from.openedAt;
+        _messages = from.messages;
+        _turnFailure = from.turnFailure;
+        _factSuggestions = from.factSuggestions;
+        _budgetWarning = from.budgetWarning;
+        _loadingChat = false;
+        _error = 'Conversation could not be opened.';
+      });
     }
   }
 
-  void _newThread() => setState(() {
-    _view++;
-    _threadId = null;
-    _rememberChat = true;
-    _threadRemembered = true;
-    _messages = const [];
-    _error = null;
-    _turnFailure = null;
-    _factSuggestions = const [];
-    _budgetWarning = false;
-  });
+  void _newThread({String? previous}) {
+    setState(() {
+      _beginView();
+      _openedFrom = null;
+      _openedAt = null;
+      _previousThreadId = previous;
+      _pinnedToEnd = false;
+      _threadId = null;
+      _rememberChat = true;
+      _threadRemembered = true;
+      _messages = const [];
+      _loadingChat = false;
+      _error = null;
+      _turnFailure = null;
+      _factSuggestions = const [];
+      _budgetWarning = false;
+    });
+    _queuedToComposer();
+  }
 
   /// Creates the server thread for a new conversation's first send. It is
   /// selected and listed (under its first question, the title the server
@@ -314,7 +549,7 @@ class _CoachScreenState extends State<CoachScreen> {
           CoachThread(
             id: id,
             title: question,
-            updatedAt: DateTime.now(),
+            updatedAt: widget.now(),
             remember: remember,
           ),
           ..._threads,
@@ -346,7 +581,15 @@ class _CoachScreenState extends State<CoachScreen> {
   Future<void> _send([String? suggestion, _TurnFailure? retrying]) async {
     final chat = _chat;
     final question = (suggestion ?? _composer.text).trim();
-    if (chat == null || question.isEmpty || _sending || _loadingChat) {
+    if (chat == null || question.isEmpty || _loadingChat) return;
+    if (_sending || _cooldownRemaining != null) {
+      // A chip or "Change it" is never dropped: it waits, shown, and goes out
+      // when Coach is free. Typing and Retry are off while busy.
+      if (suggestion != null) {
+        final replaced = _queuedFollowUp;
+        setState(() => _queuedFollowUp = question);
+        if (replaced != null && replaced != question) _addToComposer(replaced);
+      }
       return;
     }
     if (!_aiAllowed) {
@@ -356,6 +599,7 @@ class _CoachScreenState extends State<CoachScreen> {
     unawaited(TracendHaptics.light());
     // Retry and suggestion chips keep whatever the user is typing.
     if (suggestion == null) _composer.clear();
+    _pinnedToEnd = false;
     final view = _view;
     final key = retrying != null && retrying.reuseKey
         ? retrying.key
@@ -379,7 +623,7 @@ class _CoachScreenState extends State<CoachScreen> {
             id: 'pending-${DateTime.now().microsecondsSinceEpoch}',
             role: 'user',
             content: question,
-            createdAt: DateTime.now(),
+            createdAt: widget.now(),
           );
     setState(() {
       if (!_messages.contains(local)) _messages = [..._messages, local];
@@ -405,6 +649,7 @@ class _CoachScreenState extends State<CoachScreen> {
             ];
             _sending = false;
           });
+          _queuedToComposer();
         }
         unawaited(_refreshThreads(chat));
         return;
@@ -436,6 +681,7 @@ class _CoachScreenState extends State<CoachScreen> {
           _sending = false;
         });
         _scrollToEnd();
+        _sendQueued();
       }
     } catch (e) {
       if (mounted) {
@@ -460,6 +706,7 @@ class _CoachScreenState extends State<CoachScreen> {
           icon: CupertinoIcons.exclamationmark_circle,
         );
         _scrollToEnd();
+        _queuedToComposer();
       }
     }
     unawaited(_refreshThreads(chat));
@@ -499,6 +746,27 @@ class _CoachScreenState extends State<CoachScreen> {
       }
     }
     return null;
+  }
+
+  /// Opens the view on the newest message and keeps it there while the
+  /// content settles (see [_pinnedToEnd]).
+  void _showNewest() {
+    _pinnedToEnd = true;
+    _scrollToEnd(animate: false);
+  }
+
+  /// Layout changes while pinned (a late card, a long reply) move the end
+  /// further down: follow it.
+  bool _followEnd(ScrollMetricsNotification notification) {
+    if (!_pinnedToEnd || notification.depth != 0 || _pinScheduled) return false;
+    _pinScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pinScheduled = false;
+      if (!mounted || !_pinnedToEnd || !_scroll.hasClients) return;
+      final end = _scroll.position.maxScrollExtent;
+      if ((end - _scroll.position.pixels).abs() > 0.5) _scroll.jumpTo(end);
+    });
+    return false;
   }
 
   void _scrollToEnd({bool animate = true}) {
@@ -643,7 +911,7 @@ class _CoachScreenState extends State<CoachScreen> {
             OutlinedButton.icon(
               onPressed: () {
                 Navigator.pop(sheetContext);
-                _newThread();
+                _newThread(previous: _threadId ?? _previousThreadId);
               },
               icon: const Icon(CupertinoIcons.square_pencil, size: 20),
               label: const Text('New conversation'),
@@ -687,19 +955,27 @@ class _CoachScreenState extends State<CoachScreen> {
       body: Stack(
         children: [
           Positioned.fill(
-            child: NotificationListener<ScrollUpdateNotification>(
-              // Dragging the conversation puts the keyboard away.
-              onNotification: (notification) {
-                if (notification.dragDetails != null) {
-                  FocusManager.instance.primaryFocus?.unfocus();
-                }
-                return false;
-              },
-              child: PrimaryScrollController(
-                controller: _scroll,
-                child: TracendScrollView(
-                  title: 'Coach',
-                  children: _content(context),
+            // Touching the conversation ends the follow-the-newest pin, so a
+            // tap that expands a card does not jump away.
+            child: Listener(
+              onPointerDown: (_) => _pinnedToEnd = false,
+              child: NotificationListener<ScrollMetricsNotification>(
+                onNotification: _followEnd,
+                child: NotificationListener<ScrollUpdateNotification>(
+                  // Dragging the conversation puts the keyboard away.
+                  onNotification: (notification) {
+                    if (notification.dragDetails != null) {
+                      FocusManager.instance.primaryFocus?.unfocus();
+                    }
+                    return false;
+                  },
+                  child: PrimaryScrollController(
+                    controller: _scroll,
+                    child: TracendScrollView(
+                      title: 'Coach',
+                      children: _content(context),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -783,6 +1059,13 @@ class _CoachScreenState extends State<CoachScreen> {
     final colors = context.tracendColors;
     final textTheme = Theme.of(context).textTheme;
     final failure = _turnFailure;
+    // A new conversation offers the one before it.
+    final previous = _threadId == null
+        ? _threads
+                  .where((thread) => thread.id == _previousThreadId)
+                  .firstOrNull ??
+              _threads.firstOrNull
+        : null;
     return [
       if (_error != null) ...[
         _Notice(_error!),
@@ -860,6 +1143,18 @@ class _CoachScreenState extends State<CoachScreen> {
           ),
           const SizedBox(height: TracendSpacing.lg),
         ],
+        if (previous != null) ...[
+          TracendGroupedList(
+            children: [
+              TracendListRow(
+                title: 'Continue last chat',
+                subtitle: _ThreadRow._title(previous.title),
+                onTap: () => _openThread(previous.id),
+              ),
+            ],
+          ),
+          const SizedBox(height: TracendSpacing.lg),
+        ],
         // Padded chips already keep 8pt between rows. An athlete without an
         // approved plan is offered questions the Coach can answer for them.
         FutureBuilder<List<CoachContextSource>>(
@@ -927,6 +1222,10 @@ class _CoachScreenState extends State<CoachScreen> {
           alignment: Alignment.centerLeft,
           child: CoachThinkingIndicator(),
         ),
+      ],
+      if (_queuedFollowUp case final queued?) ...[
+        const SizedBox(height: TracendSpacing.md),
+        _QueuedFollowUp(text: queued, onCancel: _queuedToComposer),
       ],
       if (widget.memory != null)
         for (final suggestion in _factSuggestions) ...[
@@ -1057,6 +1356,37 @@ class _NotRememberedNotice extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A follow-up waiting for Coach to finish, with a way to cancel it.
+class _QueuedFollowUp extends StatelessWidget {
+  const _QueuedFollowUp({required this.text, required this.onCancel});
+
+  final String text;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Icon(CupertinoIcons.clock, size: 18, color: colors.textSecondary),
+        const SizedBox(width: TracendSpacing.xs),
+        Expanded(
+          child: Text(
+            'Sends when Coach is ready: $text',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
+          ),
+        ),
+        TextButton(onPressed: onCancel, child: const Text('Cancel')),
+      ],
     );
   }
 }

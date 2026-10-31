@@ -472,6 +472,100 @@ void main() {
     });
   });
 
+  group('Training Hub contract — get_my_training_hub v1.8', () {
+    test('v1.8 keeps every v1.7 key and adds two keys to a target session', () {
+      final v17 = _loadFixtureJson('training_hub_v1_7.json');
+      final v18 = _loadFixtureJson('training_hub_v1_8.json');
+      expect(v18['schema_version'], '1.8');
+      expect(v18.keys.toSet(), v17.keys.toSet());
+      for (final key in v17.keys.where(
+        (k) => k != 'schema_version' && k != 'next_targets',
+      )) {
+        expect(v18[key], v17[key], reason: '$key is unchanged');
+      }
+      for (final target in (v18['next_targets'] as List).toMapList()) {
+        final basis = Map<String, dynamic>.from(target['basis'] as Map);
+        for (final session in (basis['recent'] as List).toMapList()) {
+          expect(session.keys.toList()..sort(), [
+            'adjusted',
+            'effort_known',
+            'load_kg',
+            'local_date',
+            'min_reps',
+            'min_rir',
+            'pain',
+            'sets',
+            'sets_planned',
+            'total_reps',
+          ]);
+        }
+      }
+    });
+
+    test('a 1.8 hub parses with its targets, as a 1.7 hub does', () {
+      for (final name in ['training_hub_v1_7.json', 'training_hub_v1_8.json']) {
+        final hub = TrainingHubData.fromHubJson(_loadFixtureJson(name));
+        final exercises = hub.workouts.single.exercises;
+        expect(exercises[0].nextTarget!.loadKg, 75, reason: name);
+        expect(exercises[1].nextTarget!.lowConfidence, isTrue, reason: name);
+        expect(exercises[2].nextTarget, isNull, reason: name);
+      }
+    });
+  });
+
+  group('Training Hub contract — get_my_training_hub v1.9', () {
+    test(
+      'v1.9 keeps every v1.8 key and adds current_workout_id to sessions',
+      () {
+        final v18 = _loadFixtureJson('training_hub_v1_8.json');
+        final v19 = _loadFixtureJson('training_hub_v1_9.json');
+        expect(v19['schema_version'], '1.9');
+        expect(v19.keys.toSet(), v18.keys.toSet());
+        for (final key in v18.keys.where(
+          (k) => k != 'schema_version' && k != 'recent_sessions',
+        )) {
+          expect(v19[key], v18[key], reason: '$key is unchanged');
+        }
+        final before = (v18['recent_sessions'] as List).toMapList();
+        final after = (v19['recent_sessions'] as List).toMapList();
+        expect(after, hasLength(before.length));
+        for (var i = 0; i < before.length; i++) {
+          expect(after[i].keys.toSet(), {
+            ...before[i].keys,
+            'current_workout_id',
+          });
+          for (final key in before[i].keys.where((k) => k != 'workout_id')) {
+            expect(after[i][key], before[i][key], reason: 'session $i $key');
+          }
+        }
+      },
+    );
+
+    test('a session of an earlier plan version names the active copy', () {
+      final hub = TrainingHubData.fromHubJson(
+        _loadFixtureJson('training_hub_v1_9.json'),
+      );
+      final first = hub.recentSessions.first;
+      expect(first.workoutId, '550e8400-e29b-41d4-a716-4466554400a2');
+      expect(first.currentWorkoutId, '550e8400-e29b-41d4-a716-446655440002');
+      expect(
+        hub.recentSessions[1].currentWorkoutId,
+        hub.recentSessions[1].workoutId,
+      );
+      expect(hub.recentSessions[2].currentWorkoutId, isNull);
+    });
+
+    test('a 1.8 hub has no current workout and parses as before', () {
+      final hub = TrainingHubData.fromHubJson(
+        _loadFixtureJson('training_hub_v1_8.json'),
+      );
+      expect(
+        hub.recentSessions.every((s) => s.currentWorkoutId == null),
+        isTrue,
+      );
+    });
+  });
+
   group('Training Hub parser — TrainingHubData.fromHubJson', () {
     test('a 1.6 hub keeps the plan dates, links, provenance and day load', () {
       final hub = TrainingHubData.fromHubJson(

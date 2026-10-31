@@ -15,6 +15,7 @@ class GoalTargetSheet extends StatefulWidget {
     required this.onSave,
     this.initial = const GoalTarget(),
     this.minWeightKg,
+    this.minBodyFatPct,
     super.key,
   });
 
@@ -23,6 +24,10 @@ class GoalTargetSheet extends StatefulWidget {
 
   /// The lowest weight the server accepts for this athlete, when known.
   final double? minWeightKg;
+
+  /// The lowest body-fat percentage the server accepts for this athlete, when
+  /// known.
+  final double? minBodyFatPct;
 
   @override
   State<GoalTargetSheet> createState() => _GoalTargetSheetState();
@@ -104,7 +109,11 @@ class _GoalTargetSheetState extends State<GoalTargetSheet> {
           : null;
     }
     final value = _number(controller);
+    final floor = widget.minBodyFatPct ?? 3;
     if (value == null || value < 3 || value > 60) return 'Between 3 and 60';
+    if (value < floor) {
+      return 'Lowest healthy target for you is ${_percent(floor)}%';
+    }
     final low = _number(_fatMin);
     final high = _number(_fatMax);
     if (low != null && high != null && low > high) {
@@ -112,6 +121,10 @@ class _GoalTargetSheetState extends State<GoalTargetSheet> {
     }
     return null;
   }
+
+  static String _percent(double value) => value == value.roundToDouble()
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
 
   Future<void> _pickDate() async {
     final today = DateUtils.dateOnly(DateTime.now());
@@ -254,6 +267,13 @@ class _GoalTargetSheetState extends State<GoalTargetSheet> {
       ),
     ],
     _Kind.bodyFat => [
+      if (widget.minBodyFatPct != null) ...[
+        Text(
+          'Lowest healthy target for you: ${_percent(widget.minBodyFatPct!)}%',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: TracendSpacing.xs),
+      ],
       Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

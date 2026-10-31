@@ -1,7 +1,18 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 import { routeFor } from "../ai/fakes.ts";
 import { route } from "../ai/routes.ts";
-import { needsStrongerCoachRoute, selectCoachChatRoute } from "./coach_chat_provider_route.ts";
+import {
+  type RouteSignals,
+  routeSignalsOf,
+  selectCoachChatRoute,
+  strongRouteReasons,
+} from "./coach_chat_provider_route.ts";
+import {
+  type CoachContributions,
+  noCoachContributions,
+  renderCoachContext,
+} from "../coach_context/host.ts";
+import { createScreeningContributor } from "../coach_context/contributors/screening.ts";
 import {
   chooseCoachChatRoute,
   coachChatReservationCapUsd,
@@ -22,90 +33,158 @@ const sonnet = () =>
     EVALUATED: "true",
   });
 
-Deno.test("progress, weight and goal, nutrition-number and plan questions need the stronger route", () => {
-  for (
-    const question of [
-      "How is my progress this month?",
-      "Why has my weight stalled?",
-      "Am I losing weight fast enough?",
-      "Should I raise my protein?",
-      "How many calories should I eat on rest days?",
-      "Can you change my plan so legs come twice a week?",
-      "Is my cut going to plateau?",
-      "Do I need a deload?",
-      "How is my progress over the last month?",
-      "Should I change my calories?",
-    ]
-  ) {
-    assert(needsStrongerCoachRoute(question), question);
-  }
-});
+const calm: RouteSignals = {
+  screening: "cleared",
+  pain: "none",
+  proposalsWaiting: 0,
+  watchOutDecisions: 0,
+};
 
-Deno.test("conversation and simple questions stay on the default route", () => {
-  for (
-    const question of [
-      "hi",
-      "thanks, that helps",
-      "I'm feeling unmotivated today",
-      "how do I breathe during a squat?",
-      "what time should I train?",
-      "good morning coach",
-      "how many sets should I do today?",
-      "should I go heavier?",
-      "what's my plan today?",
-      "what's my body fat goal?",
-      "what's my protein target?",
-      "what weight should I use for squats?",
-    ]
-  ) {
-    assert(!needsStrongerCoachRoute(question), question);
-  }
-});
-
-Deno.test("the stronger route answers when it is set and its vendor holds the athlete's consent", () => {
-  const strong = sonnet();
-  const picked = selectCoachChatRoute(
-    "Why has my weight stalled?",
-    haiku(),
-    () => strong,
-    "anthropic",
+Deno.test("each structural signal asks for the stronger route, and nothing else does", () => {
+  assertEquals(strongRouteReasons(calm), []);
+  assertEquals(strongRouteReasons({ ...calm, screening: "moderate_until_cleared" }), [
+    "screening_not_cleared",
+  ]);
+  assertEquals(strongRouteReasons({ ...calm, screening: "see_professional" }), [
+    "screening_not_cleared",
+  ]);
+  assertEquals(strongRouteReasons({ ...calm, screening: "unknown" }), ["screening_not_cleared"]);
+  assertEquals(strongRouteReasons({ ...calm, pain: "on_record" }), ["pain_on_record"]);
+  assertEquals(strongRouteReasons({ ...calm, pain: "unknown" }), ["pain_unknown"]);
+  assertEquals(strongRouteReasons({ ...calm, proposalsWaiting: 1 }), ["proposal_waiting"]);
+  assertEquals(strongRouteReasons({ ...calm, watchOutDecisions: 1 }), []);
+  assertEquals(strongRouteReasons({ ...calm, watchOutDecisions: 2 }), ["several_watch_outs"]);
+  assertEquals(
+    strongRouteReasons({
+      screening: "unknown",
+      pain: "on_record",
+      proposalsWaiting: 2,
+      watchOutDecisions: 3,
+    }),
+    ["screening_not_cleared", "pain_on_record", "proposal_waiting", "several_watch_outs"],
   );
+});
+
+const outcome = (id: string, state: "rendered" | "empty" | "failed" | "timeout") => ({
+  id,
+  slot: "volatile" as const,
+  outcome: state,
+  chars: 0,
+  clipped: false,
+});
+
+Deno.test("the signals come from what the contributors reported, never from the question", () => {
+  const contributions = (
+    traces: Record<string, Record<string, number | boolean | null>>,
+    outcomes = Object.keys(traces).map((id) => outcome(id, "rendered")),
+  ): CoachContributions => ({ ...noCoachContributions, outcomes, traces });
+  assertEquals(routeSignalsOf(null), calm);
+  assertEquals(routeSignalsOf(contributions({})), calm);
+  assertEquals(
+    routeSignalsOf(contributions({
+      watch_outs: { lines: 4, decisions: 3, pain: true },
+      coach_proposals: { waiting: 1 },
+    })),
+    { screening: "cleared", pain: "on_record", proposalsWaiting: 1, watchOutDecisions: 3 },
+  );
+  assertEquals(
+    routeSignalsOf(contributions({ watch_outs: { lines: 1, decisions: 0, pain: false } })),
+    calm,
+  );
+});
+
+Deno.test("the signals do not depend on what rendered: pain on record counts when there is nothing to show", () => {
+  const empty: CoachContributions = {
+    ...noCoachContributions,
+    outcomes: [outcome("watch_outs", "empty")],
+    traces: { watch_outs: { lines: 0, decisions: 0, pain: true } },
+  };
+  assertEquals(routeSignalsOf(empty).pain, "on_record");
+  assertEquals(strongRouteReasons(routeSignalsOf(empty)), ["pain_on_record"]);
+  // Nothing found and no pain: the default route.
+  const quiet: CoachContributions = {
+    ...empty,
+    traces: { watch_outs: { lines: 0, decisions: 0, pain: false } },
+  };
+  assertEquals(routeSignalsOf(quiet).pain, "none");
+});
+
+Deno.test("a pain signal that is unknown fails toward the stronger route: a timeout, a failure, unreadable facts", () => {
+  for (const state of ["timeout", "failed"] as const) {
+    const lost: CoachContributions = {
+      ...noCoachContributions,
+      outcomes: [outcome("watch_outs", state)],
+    };
+    assertEquals(routeSignalsOf(lost).pain, "unknown", state);
+    assertEquals(strongRouteReasons(routeSignalsOf(lost)), ["pain_unknown"], state);
+  }
+  // The block rendered or was empty but its facts could not be read: pain null.
+  const unreadable: CoachContributions = {
+    ...noCoachContributions,
+    outcomes: [outcome("watch_outs", "empty")],
+    traces: { watch_outs: { lines: 0, decisions: 0, pain: null } },
+  };
+  assertEquals(routeSignalsOf(unreadable).pain, "unknown");
+  // A route without the contributor (the legacy path, a test) has nothing to know.
+  assertEquals(routeSignalsOf({ ...noCoachContributions, outcomes: [] }).pain, "none");
+});
+
+Deno.test("a screening that is not cleared, or could not be read, is read from the real screening block", async () => {
+  const turn = (
+    source: Parameters<typeof createScreeningContributor>[0],
+  ) =>
+    renderCoachContext([createScreeningContributor(source)], {
+      userId: "user-1",
+      question: "check my training",
+      localDate: "2026-10-20",
+    });
+  const states = {
+    moderate: await turn(() =>
+      Promise.resolve({ outcome: "moderate_until_cleared", screenedAt: "2026-09-01T09:00:00Z" })
+    ),
+    cleared: await turn(() =>
+      Promise.resolve({ outcome: "cleared", screenedAt: "2026-09-01T09:00:00Z" })
+    ),
+    never: await turn(() => Promise.resolve(null)),
+    unreadable: await turn(() => Promise.reject(new Error("down"))),
+  };
+  assertEquals(routeSignalsOf(states.moderate).screening, "moderate_until_cleared");
+  assertEquals(routeSignalsOf(states.cleared).screening, "cleared");
+  assertEquals(routeSignalsOf(states.never).screening, "cleared");
+  assertEquals(routeSignalsOf(states.unreadable).screening, "unknown");
+  assertEquals(strongRouteReasons(routeSignalsOf(states.moderate)), ["screening_not_cleared"]);
+  assertEquals(strongRouteReasons(routeSignalsOf(states.unreadable)), ["screening_not_cleared"]);
+  assertEquals(strongRouteReasons(routeSignalsOf(states.cleared)), []);
+});
+
+Deno.test("the same words choose the same route for the same records: the question is not an input", () => {
+  const strong = sonnet();
+  const defaultRoute = haiku();
+  const questions = ["How is my progress this month?", "hi", "check my training"];
+  for (const _question of questions) {
+    assertEquals(selectCoachChatRoute(calm, defaultRoute, strong).tier, "default");
+    assertEquals(
+      selectCoachChatRoute({ ...calm, pain: "on_record" }, defaultRoute, strong).tier,
+      "strong",
+    );
+  }
+});
+
+Deno.test("the stronger route answers when a signal asks for it and it is set", () => {
+  const strong = sonnet();
+  const picked = selectCoachChatRoute({ ...calm, pain: "on_record" }, haiku(), strong);
   assertEquals(picked.tier, "strong");
   assertEquals(picked.route, strong);
+  assertEquals(picked.reasons, ["pain_on_record"]);
 });
 
-Deno.test("the default route answers without a stronger route, for a simple question, or on another vendor's notice", () => {
+Deno.test("the default route answers without a stronger route or without a signal", () => {
   const defaultRoute = haiku();
-  const asked = { count: 0 };
-  const simple = selectCoachChatRoute("hi", defaultRoute, () => {
-    asked.count++;
-    return sonnet();
-  }, "anthropic");
-  assertEquals([simple.tier, simple.route, asked.count], ["default", defaultRoute, 0]);
-
-  const unset = selectCoachChatRoute(
-    "Why has my weight stalled?",
-    defaultRoute,
-    () => null,
-    "anthropic",
-  );
+  const calmTurn = selectCoachChatRoute(calm, defaultRoute, sonnet());
+  assertEquals([calmTurn.tier, calmTurn.route], ["default", defaultRoute]);
+  const unset = selectCoachChatRoute({ ...calm, pain: "on_record" }, defaultRoute, null);
   assertEquals([unset.tier, unset.route], ["default", defaultRoute]);
-
-  const other = selectCoachChatRoute(
-    "Why has my weight stalled?",
-    defaultRoute,
-    () => sonnet(),
-    "deepseek",
-  );
-  assertEquals(other.tier, "default");
-  assertEquals("strongSkipped" in other && other.strongSkipped, "consent_vendor_differs");
-  const noNotice = selectCoachChatRoute(
-    "Why has my weight stalled?",
-    defaultRoute,
-    () => sonnet(),
-    null,
-  );
-  assertEquals(noNotice.tier, "default");
+  assertEquals(unset.reasons, ["pain_on_record"]);
 });
 
 Deno.test("the second route is a gateway feature with its own settings and is not set by default", () => {

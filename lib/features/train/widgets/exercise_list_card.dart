@@ -23,7 +23,8 @@ class ExerciseListCard extends StatelessWidget {
           key: ValueKey('exercise-row-${workout.exercises[i].order}'),
           leading: ExerciseIndexTile(number: i + 1),
           title: workout.exercises[i].name,
-          subtitle: exerciseLine(workout.exercises[i]),
+          subtitle: exerciseSubtitle(workout.exercises[i]),
+          trailing: _wasSets(workout.exercises[i]),
           semanticLabel:
               '${workout.exercises[i].name}, '
               '${exerciseSpeech(workout.exercises[i])}. Opens details.',
@@ -33,9 +34,33 @@ class ExerciseListCard extends StatelessWidget {
   );
 }
 
+/// The plan's own set count, struck through, beside an exercise today's
+/// accepted adjustment cut. VoiceOver reads the cut in [exerciseSpeech].
+Widget? _wasSets(PlannedExercise exercise) {
+  final planned = exercise.plannedSetCount;
+  if (planned == null) return null;
+  return ExcludeSemantics(
+    child: Builder(
+      builder: (context) => Text(
+        '$planned',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          decoration: TextDecoration.lineThrough,
+          color: Theme.of(
+            context,
+          ).textTheme.bodySmall?.color?.withValues(alpha: 0.6),
+        ),
+      ),
+    ),
+  );
+}
+
 /// The exercise line in words VoiceOver reads naturally.
 String exerciseSpeech(PlannedExercise exercise) {
-  final sets = '${exercise.setCount} sets of ${repRange(exercise)} reps';
+  if (exercise.leftOut) return 'left out today because of a sore joint';
+  final planned = exercise.plannedSetCount;
+  final sets =
+      '${exercise.setCount} sets of ${repRange(exercise)} reps'
+      '${planned == null ? '' : ', down from $planned sets'}';
   final next = exercise.nextTarget;
   if (next != null) {
     final load = next.loadKg;
@@ -49,7 +74,9 @@ String exerciseSpeech(PlannedExercise exercise) {
     } else {
       target = '${formatKg(load)} kilograms for ${next.reps} reps';
     }
-    return '$sets, next target $target';
+    return exercise.loadHeld
+        ? '$sets, held at $target today'
+        : '$sets, next target $target';
   }
   final load = exercise.targetLoadKg;
   return load == null ? sets : '$sets at ${formatKg(load)} kilograms';

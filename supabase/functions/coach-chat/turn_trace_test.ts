@@ -1,8 +1,11 @@
 import { assertEquals } from "jsr:@std/assert@1.0.14";
 import type { CoachChatAttemptTelemetry } from "../_shared/providers/coach_chat_provider.ts";
 import {
+  correctionSent,
   guardFaultsOf,
+  lookupRoundsTrace,
   lookupTrace,
+  mostRoundEntries,
   mostTraceEntries,
   recordTurnTrace,
   type TraceClient,
@@ -67,15 +70,122 @@ Deno.test("entries are names and counts only, in the column's format, and bounde
   for (const entry of entries) assertEquals(/^[a-z0-9_:]+$/.test(entry), true, entry);
 });
 
-Deno.test("lookups are logged by name with the rows they returned, summed over rounds", () => {
+Deno.test("lookups keep their old meaning: the name and the rows it returned, summed over rounds, at most 12", () => {
   assertEquals(
     lookupTrace([
-      { lookup: "exercise_history", rows: 14 },
-      { lookup: "body", rows: 3 },
-      { lookup: "exercise_history", rows: 2 },
+      { lookup: "exercise_history", rows: 14, round: 1 },
+      { lookup: "body", rows: 3, round: 1 },
+      { lookup: "exercise_history", rows: 2, round: 2 },
+      { lookup: "plan_history", rows: 5, round: 1, mode: "proposals" },
+      { lookup: "plan_history", rows: 1, round: 2, mode: "schedule" },
     ]),
-    ["exercise_history:16", "body:3"],
+    ["exercise_history:16", "body:3", "plan_history:6"],
   );
+  assertEquals(lookupTrace(undefined), []);
+  const names = [
+    "workouts",
+    "exercise_history",
+    "meals",
+    "body",
+    "check_ins",
+    "recovery",
+    "plan_history",
+    "goals",
+    "weekly_reviews",
+    "health_history",
+    "past_messages",
+  ];
+  const all = lookupTrace(names.map((lookup) => ({ lookup, rows: 60, round: 1 })));
+  assertEquals(all.length, 11);
+  assertEquals(all.length <= mostTraceEntries, true);
+});
+
+Deno.test("lookup_rounds are per round: r1_workouts:4, r2_recovery:28, summed within a round", () => {
+  assertEquals(
+    lookupRoundsTrace([
+      { lookup: "exercise_history", rows: 14, round: 1 },
+      { lookup: "body", rows: 3, round: 1 },
+      { lookup: "exercise_history", rows: 2, round: 1 },
+      { lookup: "exercise_history", rows: 5, round: 2 },
+      { lookup: "recovery", rows: 28, round: 2 },
+    ]),
+    ["r1_exercise_history:16", "r1_body:3", "r2_exercise_history:5", "r2_recovery:28"],
+  );
+  // A count with no round (a caller that does not run rounds) reads as the first.
+  assertEquals(lookupRoundsTrace([{ lookup: "workouts", rows: 4 }]), ["r1_workouts:4"]);
+  assertEquals(lookupRoundsTrace(undefined), []);
+});
+
+Deno.test("a mode of a lookup is part of the round entry: plan_history reads three different sets of records", () => {
+  assertEquals(
+    lookupRoundsTrace([
+      { lookup: "plan_history", rows: 3, round: 1 },
+      { lookup: "plan_history", rows: 7, round: 1, mode: "schedule" },
+      { lookup: "plan_history", rows: 2, round: 1, mode: "proposals" },
+      { lookup: "plan_history", rows: 4, round: 1, mode: "proposals" },
+      { lookup: "health_history", rows: 5, round: 2, mode: "workouts" },
+    ]),
+    [
+      "r1_plan_history:3",
+      "r1_plan_history_schedule:7",
+      "r1_plan_history_proposals:6",
+      "r2_health_history_workouts:5",
+    ],
+  );
+});
+
+Deno.test("two rounds of eight and a correction fit the round column's limits: 17 entries, 800 characters, its format", () => {
+  const all = [
+    "workouts",
+    "exercise_history",
+    "meals",
+    "body",
+    "check_ins",
+    "recovery",
+    "plan_history",
+    "goals",
+  ];
+  const round = (n: number) => all.map((lookup) => ({ lookup, rows: 60, round: n }));
+  const attempts = [
+    attempt("initial", "invalid", { rule: "lookup_request_invalid" }),
+    attempt("lookup", "lookup"),
+    attempt("lookup", "valid"),
+  ];
+  const entries = lookupRoundsTrace([...round(1), ...round(2)], attempts);
+  assertEquals(entries.length, 17);
+  assertEquals(mostRoundEntries, 17);
+  assertEquals(entries[0], "r1_workouts:60");
+  assertEquals(entries[15], "r2_goals:60");
+  assertEquals(entries[16], "correction:1");
+  const column = entries.join(" ");
+  assertEquals(/^[a-z0-9_: ]*$/.test(column), true);
+  assertEquals(column.length <= 800, true);
+  const longest = lookupRoundsTrace(
+    ["health_history", "weekly_reviews", "plan_history", "exercise_history"].flatMap((lookup) =>
+      [1, 2].map((r) => ({ lookup, rows: 999, round: r, mode: "proposals" }))
+    ),
+    attempts,
+  );
+  assertEquals(longest.join(" ").length <= 800, true);
+});
+
+Deno.test("a corrected round is told by a refused request followed by a lookup call, and only then", () => {
+  const refused = attempt("initial", "invalid", { rule: "lookup_request_invalid" });
+  assertEquals(correctionSent([refused, attempt("lookup", "valid")]), true);
+  assertEquals(
+    correctionSent([
+      refused,
+      attempt("lookup", "invalid", { rule: "lookup_request_invalid" }),
+      attempt("repair", "valid"),
+    ]),
+    true,
+  );
+  // The refusal went straight to the repair (no budget or time for a correction).
+  assertEquals(correctionSent([refused, attempt("repair", "valid")]), false);
+  assertEquals(correctionSent([attempt("initial", "lookup"), attempt("lookup", "valid")]), false);
+  assertEquals(correctionSent([]), false);
+  assertEquals(lookupRoundsTrace([], [refused, attempt("repair", "valid")]), []);
+  assertEquals(lookupRoundsTrace([], [refused, attempt("lookup", "valid")]), ["correction:1"]);
 });
 
 function client(result: { error: unknown } | "throw") {
@@ -112,6 +222,31 @@ Deno.test("the trace is written on the assistant message for that athlete only",
   }]);
 });
 
+Deno.test("the library version the turn searched is stored with the answer", async () => {
+  const { traceClient, writes } = client({ error: null });
+  assertEquals(
+    await recordTurnTrace(traceClient, "user-1", "message-1", {
+      guardFaults: [],
+      lookups: [],
+      libraryVersion: "0123456789abcdef",
+    }),
+    true,
+  );
+  assertEquals(
+    await recordTurnTrace(traceClient, "user-1", "message-2", {
+      guardFaults: [],
+      lookups: [],
+      libraryVersion: "not a version",
+    }),
+    true,
+  );
+  assertEquals(writes, [{
+    values: { library_version: "0123456789abcdef" },
+    id: "message-1",
+    userId: "user-1",
+  }]);
+});
+
 Deno.test("a clean turn or a missing message writes nothing; a failed write never throws", async () => {
   const { traceClient, writes } = client({ error: { code: "x" } });
   assertEquals(
@@ -132,4 +267,24 @@ Deno.test("a clean turn or a missing message writes nothing; a failed write neve
     await recordTurnTrace(thrower.traceClient, "u", "m", { guardFaults: ["a"], lookups: [] }),
     false,
   );
+});
+
+Deno.test("the round trace is written to its own column; lookups keeps its names", async () => {
+  const { traceClient, writes } = client({ error: null });
+  assertEquals(
+    await recordTurnTrace(traceClient, "user-1", "message-1", {
+      guardFaults: [],
+      lookups: ["body:3"],
+      lookupRounds: ["r1_body:3"],
+    }),
+    true,
+  );
+  assertEquals(writes[0].values, { lookups: ["body:3"], lookup_rounds: ["r1_body:3"] });
+  const rounds = client({ error: null });
+  await recordTurnTrace(rounds.traceClient, "user-1", "message-1", {
+    guardFaults: [],
+    lookups: [],
+    lookupRounds: ["correction:1"],
+  });
+  assertEquals(rounds.writes[0].values, { lookup_rounds: ["correction:1"] });
 });

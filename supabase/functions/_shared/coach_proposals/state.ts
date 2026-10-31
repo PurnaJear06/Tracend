@@ -13,6 +13,8 @@ import {
   avoidablePatterns,
   type EquipmentItem,
   equipmentItems,
+  type ExperienceLevel,
+  experienceLevels,
   type Muscle,
   muscles,
 } from "../onboarding/catalog.ts";
@@ -67,6 +69,7 @@ function parsePlan(raw: unknown): StatePlan | null | undefined {
         return null;
       }
       return {
+        plannedExerciseId: str(exercise.planned_exercise_id),
         slug: str(exercise.slug),
         name,
         sets,
@@ -133,7 +136,7 @@ export function parseAthleteState(sources: StateSources): AthleteState | null {
   const sex = oneOf<Sex>(sexes, profile.sex);
   const birthYear = whole(profile.birth_year);
   const heightCm = num(profile.height_cm);
-  const experience = oneOf(["beginner", "intermediate", "advanced"] as const, profile.experience);
+  const experience = oneOf<ExperienceLevel>(experienceLevels, profile.experience);
   const activity = oneOf<DailyActivity>(dailyActivities, profile.daily_activity);
   const days = list(profile.training_days).map(whole);
   const sessionMinutes = whole(profile.session_minutes);
@@ -192,8 +195,7 @@ export function parseAthleteState(sources: StateSources): AthleteState | null {
       age,
       birthYear,
       heightCm,
-      // The rules treat everyone above a beginner as intermediate (onboarding answers).
-      experience: experience === "beginner" ? "beginner" : "intermediate",
+      experience,
       dailyActivity: activity,
       equipment: many<EquipmentItem>(equipmentItems, profile.equipment),
       avoidPatterns: many<AvoidablePattern>(avoidablePatterns, profile.avoid_patterns),

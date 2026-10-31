@@ -875,15 +875,22 @@ export function goalPhasePayload(
   };
 }
 
-/** get_coach_data_index_v1: per kind of record, the first and last date and a count. */
+/**
+ * get_coach_data_index_v1 (1.2): per kind of record, the first and last date and a count, and the
+ * active plan's repeating weekdays. The personas keep no watch workouts, proposals, decisions or
+ * earlier threads.
+ */
 export function dataIndexPayload(records: Records, extras: RecordsExtras): Record<string, unknown> {
   const span = (dates: readonly string[]) =>
     dates.length === 0
       ? { count: 0, first: null, last: null }
       : { count: dates.length, first: dates[0], last: dates[dates.length - 1] };
   const sorted = (dates: string[]) => [...dates].sort();
+  const plan = planOn(records.spec, records.spec.today);
+  const none = span([]);
   return {
-    schema_version: "1.0",
+    schema_version: "1.2",
+    local_date: records.spec.today,
     domains: {
       workouts: span(records.sessions.map((s) => s.local_date)),
       meals: span(records.mealDays.map((d) => d.local_date)),
@@ -900,6 +907,15 @@ export function dataIndexPayload(records: Records, extras: RecordsExtras): Recor
         ),
       ),
       health_history: span(extras.healthHistory.map((m) => `${String(m.month)}-01`)),
+      watch_workouts: none,
+      proposals: none,
+      daily_decisions: none,
+      past_messages: none,
+    },
+    schedule: {
+      version: records.spec.plans.indexOf(plan) + 1,
+      starts_on: plan.from,
+      weekdays: [...new Set(plan.week.map((session) => session.weekday))].sort(),
     },
   };
 }
@@ -1126,6 +1142,7 @@ export function statePlanOf(records: Records): StatePlan {
       warmUp: "",
       coolDown: "",
       exercises: session.lifts.map((lift) => ({
+        plannedExerciseId: `pe-${lift.slug}`,
         slug: lift.slug,
         name: lift.name,
         sets: lift.sets,

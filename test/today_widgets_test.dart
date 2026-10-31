@@ -20,10 +20,13 @@ import 'package:tracend/features/today/widgets/today_hero.dart';
 import 'package:tracend/features/today/widgets/today_session_card.dart';
 import 'package:tracend/features/today/widgets/today_tiles.dart';
 import 'package:tracend/features/today/widgets/your_week_card.dart';
+import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
 import 'package:tracend/shared/widgets/tracend_skeleton.dart';
+
+import 'day_adjustment_fixtures.dart';
 
 Widget _wrap(Widget child) {
   return MaterialApp(
@@ -38,6 +41,7 @@ Widget _wrap(Widget child) {
 }
 
 DailyBrief _brief({
+  String localDate = '2026-08-23',
   Map<String, dynamic>? workout,
   Map<String, dynamic>? nextMeal,
   Map<String, dynamic>? checkIn,
@@ -50,7 +54,7 @@ DailyBrief _brief({
   List<TodayWeekDay> week = const [],
   TodaySession? todaySession,
 }) => DailyBrief(
-  localDate: '2026-08-23',
+  localDate: localDate,
   workout: workout,
   nextMeal: nextMeal,
   checkIn: checkIn,
@@ -1518,6 +1522,85 @@ void main() {
       expect(screen.sessionDate, DateTime(2026, 8, 23));
     });
 
+    testWidgets("opens the workout on the server's day, not a phone date "
+        'ahead of it', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      // The brief was loaded for the phone's day (23 August); the server's
+      // day is the 22nd, and a start for the 23rd would be refused.
+      final controller = DayAdjustmentController(
+        repository: FakeDayAdjustmentRepository(
+          adjustmentJson(day: '2026-08-22'),
+        ),
+        clock: () => DateTime(2026, 8, 23, 9),
+        serverToday: () async => DateTime(2026, 8, 22),
+      );
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: Scaffold(
+            body: TodayScreen(
+              environment: _environment,
+              brief: _PlannedBriefRepository(),
+              dayAdjustment: controller,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Pull day'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pull day'));
+      await tester.pumpAndSettle();
+      final screen = tester.widget<WorkoutDetailScreen>(
+        find.byType(WorkoutDetailScreen),
+      );
+      expect(screen.sessionDate, DateTime(2026, 8, 22));
+    });
+
+    testWidgets('while the server day\'s brief is still loading, the card '
+        'opens the server day\'s workout, not the phone day\'s', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final repository = _DatedBriefRepository();
+      final controller = DayAdjustmentController(
+        repository: FakeDayAdjustmentRepository(
+          adjustmentJson(day: '2026-08-22'),
+        ),
+        clock: () => DateTime(2026, 8, 23, 9),
+        serverToday: () async => DateTime(2026, 8, 22),
+      );
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: Scaffold(
+            body: TodayScreen(
+              environment: _environment,
+              brief: repository,
+              dayAdjustment: controller,
+              clock: () => DateTime(2026, 8, 23, 9),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Workout 23'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Workout 23'));
+      await tester.pumpAndSettle();
+      final screen = tester.widget<WorkoutDetailScreen>(
+        find.byType(WorkoutDetailScreen),
+      );
+      expect(screen.sessionDate, DateTime(2026, 8, 22));
+      expect(screen.workout?.name, 'Workout 22');
+      expect(
+        repository.loaded,
+        containsAllInOrder(['2026-08-23', '2026-08-22']),
+      );
+    });
+
     testWidgets('goes to Train when the shell wires it', (tester) async {
       var train = 0;
       await tester.pumpWidget(
@@ -1601,6 +1684,50 @@ class _NoCheckInBriefRepository implements DailyBriefRepository {
     workout: const {'name': 'Push day'},
     computed: _computed(recovery: 72, sleepQuality: 80),
   );
+}
+
+/// A brief per day, each with its own workout. The reload for the server's
+/// day that the day change starts never arrives (a slow request), so the card
+/// still shows the phone day's workout when it is tapped.
+class _DatedBriefRepository implements DailyBriefRepository {
+  final loaded = <String>[];
+  var _serverDayLoads = 0;
+
+  @override
+  Future<DailyBrief> load(DateTime date) async {
+    final key = date.toIso8601String().substring(0, 10);
+    loaded.add(key);
+    if (key == '2026-08-22' && _serverDayLoads++ == 0) {
+      return Completer<DailyBrief>().future;
+    }
+    return _brief(
+      localDate: key,
+      workout: {
+        'id': 'b1d6c1a2-0000-4000-8000-0000000000${date.day}',
+        'weekday': 7,
+        'name': 'Workout ${date.day}',
+        'objective': 'Build pulling strength.',
+        'estimated_minutes': 45,
+        'warm_up': 'Easy rowing.',
+        'cooldown_cardio': 'Walk.',
+        'exercises': const [
+          {
+            'id': 'e1',
+            'order': 1,
+            'name': 'Lat pulldown',
+            'set_count': 3,
+            'rep_min': 8,
+            'rep_max': 10,
+            'target_rpe': 8,
+            'rest_seconds': 120,
+            'notes': '',
+          },
+        ],
+      },
+      checkIn: const {'energy': 3},
+      computed: _computed(recovery: 72, sleepQuality: 80),
+    );
+  }
 }
 
 class _PlannedBriefRepository implements DailyBriefRepository {

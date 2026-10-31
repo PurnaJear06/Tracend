@@ -14,9 +14,9 @@ export const libraryEmbedPath = "/functions/v1/library-embed";
 export type QueryEmbedderDeps = Readonly<{
   /** The project URL (SUPABASE_URL), read when the call is made. */
   baseUrl: () => string;
-  /** The library worker secret; read once and kept. */
+  /** The library worker secret; read once and kept until library-embed refuses it. */
   secret: () => Promise<string>;
-  /** Longest the call may take before it is abandoned. */
+  /** Longest one call may take before it is abandoned. */
   timeoutMs: number;
   fetch?: typeof fetch;
 }>;
@@ -24,14 +24,23 @@ export type QueryEmbedderDeps = Readonly<{
 export function createQueryEmbedder(deps: QueryEmbedderDeps): Embedder {
   const send = deps.fetch ?? fetch;
   let secret: string | undefined;
-  return async (text) => {
+  const call = async (text: string) => {
     const bearer = secret ??= await deps.secret();
-    const response = await send(`${deps.baseUrl().replace(/\/+$/, "")}${libraryEmbedPath}`, {
+    return await send(`${deps.baseUrl().replace(/\/+$/, "")}${libraryEmbedPath}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearer}` },
       body: JSON.stringify({ query: text }),
       signal: AbortSignal.timeout(deps.timeoutMs),
     });
+  };
+  return async (text) => {
+    let response = await call(text);
+    // The secret changed (a restore creates a new one): read it again and retry once.
+    if (response.status === 401) {
+      await response.body?.cancel();
+      secret = undefined;
+      response = await call(text);
+    }
     if (response.status !== 200) {
       await response.body?.cancel();
       throw new Error(`library_embed_${response.status}`);

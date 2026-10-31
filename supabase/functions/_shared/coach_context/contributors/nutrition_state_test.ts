@@ -1,4 +1,5 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
+import { renderedText } from "../host.ts";
 import {
   createNutritionStateContributor,
   nutritionStateContributorBudgetChars,
@@ -116,5 +117,5 @@ Deno.test("the contributor reads the state for the coaching date and fits its bu
   });
   const text = await contributor.render({ userId: "u1", question: "q", localDate: "2026-10-17" });
   assertEquals(seen, ["u1|2026-10-17"]);
-  assertEquals((text as string).length <= nutritionStateContributorBudgetChars, true);
+  assertEquals(renderedText(text)!.length <= nutritionStateContributorBudgetChars, true);
 });

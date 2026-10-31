@@ -10,6 +10,7 @@ import 'package:shared_preferences_platform_interface/shared_preferences_async_p
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/features/train/exercise_history.dart';
+import 'package:tracend/features/train/unfinished_workout.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 
 const _url = 'https://tracend-test.supabase.co';
@@ -32,7 +33,10 @@ class _Server {
         throw http.ClientException('unexpected $path');
       }
       final name = path.substring('/rest/v1/rpc/'.length);
-      final params = Map<String, dynamic>.from(jsonDecode(request.body) as Map);
+      final body = request.body.isEmpty ? null : jsonDecode(request.body);
+      final params = body is Map
+          ? Map<String, dynamic>.from(body)
+          : <String, dynamic>{};
       calls.add((name, params));
       final answer = answers[name];
       if (answer == null) throw http.ClientException('offline');
@@ -98,6 +102,13 @@ Map<String, dynamic> _draft() => {
   'revision': 4,
   'exercises': const [],
 };
+
+/// The one set of the one exercise in a `sync_workout_draft` call.
+Map<String, dynamic> _sentSet(Map<String, dynamic> call) {
+  final draft = call['draft'] as Map;
+  final exercise = (draft['exercises'] as List).single as Map;
+  return Map<String, dynamic>.from((exercise['sets'] as List).single as Map);
+}
 
 void main() {
   late _Server server;
@@ -365,6 +376,482 @@ void main() {
       expect(discard.queued, isFalse);
       expect(server.calls, isEmpty);
       expect(await repository.loadDraft(_workoutId), isNull);
+    });
+  });
+
+  group('unfinished workout', () {
+    // The session was closed by the stale rule, which the read no longer
+    // returns: its rows are unknown and the draft is sent as it fits.
+    setUp(() => server.answer('get_my_workout_session', null));
+
+    final offered = UnfinishedWorkout(
+      sessionId: _sessionId,
+      plannedWorkoutId: _workoutId,
+      name: 'Legs B',
+      localDate: DateTime(2026, 10, 23),
+      loggedSets: 23,
+      totalSets: 25,
+      saveBy: DateTime(2026, 10, 30),
+    );
+
+    Map<String, Object?> payload() => {
+      'schema_version': '1.0',
+      'workout': {
+        'session_id': _sessionId,
+        'planned_workout_id': _workoutId,
+        'name': 'Legs B',
+        'local_date': '2026-10-23',
+        'save_by': '2026-10-30',
+        'started_at': '2026-10-23T16:45:00+00:00',
+        'logged_sets': 23,
+        'total_sets': 25,
+        'first_set_at': null,
+        'last_set_at': null,
+      },
+    };
+
+    test('reads the workout the server offers back', () async {
+      server.answer('get_my_unfinished_workout_v1', payload());
+
+      final workout = (await repository.loadUnfinishedWorkout())!;
+
+      expect(workout.sessionId, _sessionId);
+      expect(workout.plannedWorkoutId, _workoutId);
+      expect(workout.name, 'Legs B');
+      expect(workout.localDate, DateTime(2026, 10, 23));
+      expect(workout.loggedSets, 23);
+      expect(workout.unloggedSets, 2);
+      expect(workout.saveBy, DateTime(2026, 10, 30));
+    });
+
+    test('a discard queued offline is sent before the offer is read', () async {
+      server.refuse('abandon_workout', '57014');
+      await repository.abandon(_sessionId, workoutId: _workoutId);
+      server.calls.clear();
+      server.answer('abandon_workout', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'state': 'abandoned',
+        'replayed': true,
+      });
+      server.answer('get_my_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'workout': null,
+      });
+
+      await repository.loadUnfinishedWorkout();
+
+      expect(server.names, ['abandon_workout', 'get_my_unfinished_workout_v1']);
+    });
+
+    test('a discard still waiting hides its workout from the offer', () async {
+      server.refuse('abandon_workout', '57014');
+      await repository.abandon(_sessionId, workoutId: _workoutId);
+      server.answer('get_my_unfinished_workout_v1', payload());
+
+      expect(await repository.loadUnfinishedWorkout(), isNull);
+      expect(server.names, [
+        'abandon_workout',
+        'abandon_workout',
+        'get_my_unfinished_workout_v1',
+      ]);
+    });
+
+    test('reads nothing when nothing is offered', () async {
+      server.answer('get_my_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'workout': null,
+      });
+
+      expect(await repository.loadUnfinishedWorkout(), isNull);
+    });
+
+    test('an answer this build cannot read offers nothing', () {
+      expect(UnfinishedWorkout.fromJson({'session_id': _sessionId}), isNull);
+      expect(UnfinishedWorkout.fromJson('x'), isNull);
+      expect(
+        UnfinishedWorkout.fromJson({
+          'session_id': _sessionId,
+          'planned_workout_id': _workoutId,
+          'name': 'Legs B',
+          'local_date': 'not a date',
+          'logged_sets': 1,
+          'total_sets': 2,
+        }),
+        isNull,
+      );
+    });
+
+    Map<String, dynamic> unsyncedDraft() => {
+      ..._draft(),
+      'exercises': [
+        {
+          'order': 1,
+          'status': 'performed',
+          'sets': [
+            {
+              'number': 1,
+              'repetitions': '8',
+              'load_kg': '100',
+              'completed': true,
+              'started_at': '2026-10-23T16:58:00Z',
+              'completed_at': '2026-10-23T17:00:00Z',
+            },
+          ],
+        },
+      ],
+    };
+
+    test('save sends the athlete effort and removes the draft', () async {
+      server.answer('sync_workout_draft', {
+        'session_id': _sessionId,
+        'client_revision': 4,
+        'replayed': true,
+      });
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'saved',
+        'state': 'completed',
+        'replayed': false,
+      });
+
+      await repository.saveUnfinishedWorkout(offered, sessionEffort: 8);
+
+      expect(server.names, [
+        'get_my_workout_session',
+        'sync_workout_draft',
+        'resolve_unfinished_workout_v1',
+      ]);
+      final (_, params) = server.calls.last;
+      expect(params, {
+        'p_session_id': _sessionId,
+        'p_action': 'save',
+        'p_session_effort': 8,
+      });
+      expect(await repository.loadDraft(_workoutId), isNull);
+      expect(breadcrumbs.single.message, 'Unfinished workout saved');
+    });
+
+    test('save fits the draft to the rows the session holds', () async {
+      // The plan had two exercises of three sets; the server's rows are two
+      // for the first and none for the second (left out for a sore joint).
+      await repository.saveDraft(
+        _workoutId,
+        jsonEncode({
+          ..._draft(),
+          'exercises': [
+            for (final order in [1, 2])
+              {
+                'order': order,
+                'status': 'unknown',
+                'sets': [
+                  for (var n = 1; n <= 3; n++)
+                    {
+                      'number': n,
+                      'completed': order == 1 && n == 1,
+                      if (order == 1 && n == 1) 'repetitions': '8',
+                    },
+                ],
+              },
+          ],
+        }),
+      );
+      server.answer('get_my_workout_session', {
+        'session_id': _sessionId,
+        'exercises': [
+          {
+            'order': 1,
+            'sets': [
+              {'number': 1},
+              {'number': 2},
+            ],
+          },
+          {'order': 2, 'sets': <Object>[]},
+        ],
+      });
+      server.answer('sync_workout_draft', {
+        'session_id': _sessionId,
+        'client_revision': 4,
+        'replayed': false,
+      });
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'saved',
+        'state': 'completed',
+        'replayed': false,
+      });
+
+      await repository.saveUnfinishedWorkout(offered, sessionEffort: 7);
+
+      final sent = server.calls[1].$2;
+      final exercises = (sent['draft'] as Map)['exercises'] as List;
+      expect((exercises[0] as Map)['sets'], hasLength(2));
+      expect((exercises[1] as Map)['sets'], isEmpty);
+    });
+
+    test('save sends sets that never reached the server first', () async {
+      await repository.saveDraft(_workoutId, jsonEncode(unsyncedDraft()));
+      server.answer('sync_workout_draft', {
+        'session_id': _sessionId,
+        'client_revision': 4,
+        'replayed': false,
+      });
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'saved',
+        'state': 'completed',
+        'replayed': false,
+      });
+
+      await repository.saveUnfinishedWorkout(offered, sessionEffort: 7);
+
+      expect(server.names, [
+        'get_my_workout_session',
+        'sync_workout_draft',
+        'resolve_unfinished_workout_v1',
+      ]);
+      final (_, sent) = server.calls[1];
+      expect(sent['session_id'], _sessionId);
+      expect(sent['client_revision'], 4);
+      final set = _sentSet(sent);
+      expect(set['repetitions'], '8');
+      expect(set['started_at'], '2026-10-23T16:58:00Z');
+      expect(await repository.loadDraft(_workoutId), isNull);
+    });
+
+    test('times the server refuses are sent again without them', () async {
+      await repository.saveDraft(_workoutId, jsonEncode(unsyncedDraft()));
+      var syncs = 0;
+      server.answers['sync_workout_draft'] = (_) {
+        syncs++;
+        return syncs == 1
+            ? _json(400, {'code': '22023', 'message': 'time', 'details': null})
+            : _json(200, {'session_id': _sessionId, 'replayed': false});
+      };
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'saved',
+        'state': 'completed',
+        'replayed': false,
+      });
+
+      await repository.saveUnfinishedWorkout(offered, sessionEffort: 7);
+
+      final retried = _sentSet(server.calls[2].$2);
+      expect(retried.containsKey('started_at'), isFalse);
+      expect(retried['repetitions'], '8');
+      expect(server.names.last, 'resolve_unfinished_workout_v1');
+    });
+
+    test('a failed send answers nothing and keeps the draft', () async {
+      await repository.saveDraft(_workoutId, jsonEncode(unsyncedDraft()));
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'saved',
+        'state': 'completed',
+        'replayed': false,
+      });
+
+      await expectLater(
+        repository.saveUnfinishedWorkout(offered, sessionEffort: 7),
+        throwsA(isA<http.ClientException>()),
+      );
+
+      expect(server.names, ['get_my_workout_session', 'sync_workout_draft']);
+      expect(jsonDecode((await repository.loadDraft(_workoutId))!), {
+        ...unsyncedDraft(),
+      });
+    });
+
+    test(
+      'a send the server refuses for another reason answers nothing',
+      () async {
+        server.refuse('sync_workout_draft', '22P02');
+
+        await expectLater(
+          repository.saveUnfinishedWorkout(offered, sessionEffort: 7),
+          throwsA(isA<PostgrestException>()),
+        );
+
+        expect(server.names, ['get_my_workout_session', 'sync_workout_draft']);
+        expect(await repository.loadDraft(_workoutId), isNotNull);
+      },
+    );
+
+    test(
+      'a retry after a lost answer saves again and removes the draft',
+      () async {
+        // The first try reached the server, which saved the workout; the
+        // answer was lost. The session now refuses the draft (55000).
+        server.refuse('sync_workout_draft', '55000');
+        server.answer('resolve_unfinished_workout_v1', {
+          'schema_version': '1.0',
+          'session_id': _sessionId,
+          'resolution': 'saved',
+          'state': 'completed',
+          'replayed': true,
+        });
+
+        await repository.saveUnfinishedWorkout(offered, sessionEffort: 7);
+
+        expect(server.names, [
+          'get_my_workout_session',
+          'sync_workout_draft',
+          'resolve_unfinished_workout_v1',
+        ]);
+        expect(await repository.loadDraft(_workoutId), isNull);
+      },
+    );
+
+    test('a workout discarded meanwhile is gone and its draft goes', () async {
+      server.refuse('sync_workout_draft', '55000');
+      server.refuse('resolve_unfinished_workout_v1', '55000');
+
+      await expectLater(
+        repository.saveUnfinishedWorkout(offered, sessionEffort: 7),
+        throwsA(isA<UnfinishedWorkoutGone>()),
+      );
+
+      expect(await repository.loadDraft(_workoutId), isNull);
+    });
+
+    test('a workout past its seven days is gone and nothing is lost', () async {
+      server.answer('sync_workout_draft', {
+        'session_id': _sessionId,
+        'replayed': true,
+      });
+      server.refuse('resolve_unfinished_workout_v1', 'P0002');
+
+      await expectLater(
+        repository.saveUnfinishedWorkout(offered, sessionEffort: 7),
+        throwsA(isA<UnfinishedWorkoutGone>()),
+      );
+
+      expect(await repository.loadDraft(_workoutId), isNotNull);
+    });
+
+    test('a discard of a workout finished meanwhile is gone', () async {
+      server.refuse('resolve_unfinished_workout_v1', '22023');
+
+      await expectLater(
+        repository.discardUnfinishedWorkout(offered),
+        throwsA(isA<UnfinishedWorkoutGone>()),
+      );
+    });
+
+    test('a draft of another session is not sent with this one', () async {
+      await repository.saveDraft(
+        _workoutId,
+        jsonEncode({
+          ..._draft(),
+          'session_id': '8a000000-0000-4000-8000-000000000009',
+        }),
+      );
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'saved',
+        'state': 'completed',
+        'replayed': false,
+      });
+
+      await repository.saveUnfinishedWorkout(offered, sessionEffort: 7);
+
+      expect(server.names, ['resolve_unfinished_workout_v1']);
+      expect(await repository.loadDraft(_workoutId), isNotNull);
+    });
+
+    test('without a draft nothing is sent first', () async {
+      await repository.clearDraft(_workoutId);
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'saved',
+        'state': 'completed',
+        'replayed': false,
+      });
+
+      await repository.saveUnfinishedWorkout(offered, sessionEffort: 7);
+
+      expect(server.names, ['resolve_unfinished_workout_v1']);
+    });
+
+    test('an effort outside 1 to 10 is never sent', () async {
+      expect(
+        () => repository.saveUnfinishedWorkout(offered, sessionEffort: 11),
+        throwsRangeError,
+      );
+      expect(server.calls, isEmpty);
+    });
+
+    test('discard sends the answer and removes the draft', () async {
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'discarded',
+        'state': 'abandoned',
+        'replayed': false,
+      });
+
+      await repository.discardUnfinishedWorkout(offered);
+
+      final (name, params) = server.calls.single;
+      expect(name, 'resolve_unfinished_workout_v1');
+      expect(params, {'p_session_id': _sessionId, 'p_action': 'discard'});
+      expect(await repository.loadDraft(_workoutId), isNull);
+      expect(breadcrumbs.single.message, 'Unfinished workout discarded');
+    });
+
+    test('a draft of a newer session of the same workout stays', () async {
+      await repository.saveDraft(
+        _workoutId,
+        jsonEncode({
+          ..._draft(),
+          'session_id': '8a000000-0000-4000-8000-000000000009',
+        }),
+      );
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'discarded',
+        'state': 'abandoned',
+        'replayed': false,
+      });
+
+      await repository.discardUnfinishedWorkout(offered);
+
+      expect(await repository.loadDraft(_workoutId), isNotNull);
+    });
+
+    test('a refused answer keeps the draft and says so', () async {
+      server.refuse('resolve_unfinished_workout_v1', '57014');
+
+      await expectLater(
+        repository.discardUnfinishedWorkout(offered),
+        throwsA(isA<PostgrestException>()),
+      );
+
+      expect(await repository.loadDraft(_workoutId), isNotNull);
+    });
+
+    test('a draft that cannot be read does not undo the answer', () async {
+      await repository.saveDraft(_workoutId, 'not json');
+      server.answer('resolve_unfinished_workout_v1', {
+        'schema_version': '1.0',
+        'session_id': _sessionId,
+        'resolution': 'discarded',
+        'state': 'abandoned',
+        'replayed': false,
+      });
+
+      await repository.discardUnfinishedWorkout(offered);
+
+      expect(server.names, ['resolve_unfinished_workout_v1']);
     });
   });
 

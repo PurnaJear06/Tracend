@@ -1,11 +1,12 @@
 // The coaching principles digest (decision D3): a compact, stable summary, in Tracend's own
 // words, of what the library's sources say about good coaching. It is the part of the library
 // that shapes every Coach reply, so it is fixed text with no athlete data. Ids in square
-// brackets are library manifest keys; every one must exist in index.ts (a test checks).
+// brackets are library manifest keys; every one must exist in index.ts (a test checks). Coach is
+// shown the text without them (_shared/library/principles.ts): only retrieved excerpts are citable.
 //
 // Changing this text changes the cached prompt prefix, so bump `version` with any edit.
 
-export const coachingPrinciplesVersion = 2;
+export const coachingPrinciplesVersion = 3;
 
 export const coachingPrinciplesText = `Coaching principles (Tracend library digest v${coachingPrinciplesVersion}). General guidance for healthy adults. Tracend's rules and the athlete's data set every number in a plan; this digest grounds how to explain and coach.
 

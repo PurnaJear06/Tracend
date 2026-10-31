@@ -71,7 +71,8 @@ proposes and words.
 - D0 (#112, merged; build 395 installed): the `TracendWidgets` extension and the rest-timer Live
   Activity countdown. The owner's Lock Screen and Dynamic Island check is pending.
 - E1 (#109, live): pgvector, library tables and the library search (`search_library_v1`, replaced by
-  `search_library_v2` in E3).
+  `search_library_v2` in E3, then `search_library_v3` with distances and the relevance floor in
+  E3.1).
 - W1 (#108, merged): site copy and privacy policy fixes and the TestFlight checklist. The site
   publish waits for the owner to set the `CONTACT_EMAIL` repository variable.
 - U1 (#107, live): the glass tab bar. The owner did not like it, so a U2 design pass comes next,

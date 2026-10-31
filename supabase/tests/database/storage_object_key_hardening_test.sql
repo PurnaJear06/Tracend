@@ -1,5 +1,5 @@
 begin;
-select plan(17);
+select plan(15);
 
 insert into auth.users(id, role) values
   ('a1000000-0000-4000-8000-000000000001', 'authenticated'),
@@ -73,15 +73,10 @@ select lives_ok($$select public.register_progress_photo('a1200000-0000-4000-8000
   'the exact progress key the app uploads is accepted');
 
 -- Coach preferences ---------------------------------------------------------------------
-select throws_ok($$select public.persist_coach_preference('a1000000-0000-4000-8000-000000000002',
-  'training', 'split', 'upper lower', 'chat_statement')$$,
-  '42501', 'not allowed', 'a preference cannot be written for another athlete');
-select lives_ok($$select public.persist_coach_preference('a1000000-0000-4000-8000-000000000001',
-  'training', 'split', 'upper lower', 'chat_statement')$$,
-  'an athlete can confirm their own preference');
-select throws_ok($$select public.persist_coach_preference(null,
-  'training', 'split', 'upper lower', 'chat_statement')$$,
-  '42501', 'not allowed', 'a missing athlete is refused');
+-- The app has no path to this function any more (it has no caller); only the service role does.
+select ok(not has_function_privilege('authenticated',
+  'public.persist_coach_preference(uuid,text,text,text,text)', 'execute'),
+  'the app role cannot write a preference through the function');
 
 reset role;
 set local role service_role;
@@ -93,7 +88,7 @@ reset role;
 
 select is((select count(*) from public.user_preferences
   where user_id = 'a1000000-0000-4000-8000-000000000002' and key = 'split'), 0::bigint,
-  'no preference was written for the other athlete by the app');
+  'no preference was written for the other athlete');
 
 -- Stored keys ---------------------------------------------------------------------------
 select throws_ok($$insert into public.media_objects(user_id, purpose, object_key, content_type,

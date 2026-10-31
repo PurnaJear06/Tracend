@@ -478,7 +478,8 @@ set local role service_role;
 
 select is((select array_agg(k order by k) from jsonb_object_keys(public.coach_lookup_past_messages_v1(
     'a1020000-0000-4000-8000-000000000001', current_date - 30, current_date, 'knee')) k),
-  array['from', 'lookup', 'messages', 'schema_version', 'to', 'truncated'], 'the lookup has exactly its contract keys');
+  array['coach_replies', 'from', 'lookup', 'messages', 'schema_version', 'to', 'truncated'],
+  'the lookup has exactly its contract keys');
 select is((select array_agg(m ->> 'message_id') from jsonb_array_elements(public.coach_lookup_past_messages_v1(
     'a1020000-0000-4000-8000-000000000001', current_date - 30, current_date, 'knee') -> 'messages') m),
   array['a1020000-0000-4000-8000-0000000000a1'],

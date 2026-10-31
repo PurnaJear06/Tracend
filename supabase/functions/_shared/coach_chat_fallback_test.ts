@@ -1,5 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 import { buildCoachChatDataSummary, mayConcernHealthRisk } from "./coach_chat_fallback.ts";
+import { calculateCoachNumbers } from "./coach_calculations.ts";
 import { parseCoachChatAnswer } from "./contracts/coach_chat_v1.ts";
 
 const context = {
@@ -34,7 +35,7 @@ Deno.test("data summary copies every number from the prepared context", () => {
       "Recovery today: 38/100",
       "Sleep quality: 51/100",
       "Latest weight: 78.4 kg on 2026-09-25",
-      "28-day trend: -0.05 kg/day",
+      "4-week trend: -0.35 kg/week",
       "Nutrition target: 1900 kcal and 150 g protein a day",
       "0 of the last 7 days have confirmed meals",
     ]
@@ -130,4 +131,28 @@ Deno.test("ordinary training and food questions still get the data summary", () 
     assertEquals(mayConcernHealthRisk(ordinary), false, ordinary);
     assertEquals(buildCoachChatDataSummary(context, ordinary).safety_state, "unavailable");
   }
+});
+
+Deno.test("the weight trend is shown per week, as Coach speaks, from the calculated trend when there is one", () => {
+  const readings = ["2026-09-27", "2026-09-20", "2026-09-13", "2026-09-06", "2026-09-02"].map((
+    measured_on,
+    index,
+  ) => ({ measured_on, weight_kg: 78.4 + index * 0.4 }));
+  const summary = buildCoachChatDataSummary({
+    ...context,
+    weight_series_8w: readings,
+  }, question);
+  const calculated = calculateCoachNumbers({ ...context, weight_series_8w: readings })!
+    .weight!.trends.find((trend) => trend.window_days === 28)!;
+  assert(calculated.kg_per_week < -0.3 && calculated.kg_per_week !== -0.35);
+  assert(
+    summary.answer.includes(`4-week trend: ${calculated.kg_per_week} kg/week.`),
+    summary.answer,
+  );
+  assert(!summary.answer.includes("kg/day"), summary.answer);
+  const unavailable = buildCoachChatDataSummary({
+    ...context,
+    computed_metrics: { unavailable: true, weight: { trend_28d_kg_per_day: -0.05 } },
+  }, question);
+  assert(!unavailable.answer.includes("trend"), unavailable.answer);
 });

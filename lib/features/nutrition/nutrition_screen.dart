@@ -119,6 +119,10 @@ class _NutritionScreenState extends State<NutritionScreen> {
   /// "Turn off meal photo AI". Null until it loads, and on the fixture.
   PhotoAiNotice? _mealPhotoNotice;
 
+  /// The notice is still loading. Log a meal waits for it, so the sheet it
+  /// opens knows whether to offer "Turn off meal photo AI".
+  bool _noticeLoading = false;
+
   @override
   void initState() {
     super.initState();
@@ -141,13 +145,18 @@ class _NutritionScreenState extends State<NutritionScreen> {
   Future<void> _loadMealPhotoNotice() async {
     final repository = widget.repository;
     if (repository is! MealPhotoRepository) return;
+    // Runs from initState, before the first build.
+    _noticeLoading = true;
     try {
       final notice = await (repository as MealPhotoRepository)
-          .loadMealPhotoNotice();
+          .loadMealPhotoNotice()
+          .timeout(const Duration(seconds: 10));
       if (mounted) setState(() => _mealPhotoNotice = notice);
     } catch (e) {
       // The sheet then offers no off switch; the photo flow loads it again.
       debugPrint('Non-critical error: $e');
+    } finally {
+      if (mounted) setState(() => _noticeLoading = false);
     }
   }
 
@@ -260,60 +269,69 @@ class _NutritionScreenState extends State<NutritionScreen> {
 
   String get _dateLabel => friendlyDate(_date);
 
-  Future<void> _openManualMeal({
+  Future<void> _openManualMeal({ScheduledMeal? scheduled, String? mealType}) =>
+      showTracendSheet<void>(
+        context,
+        title: 'Enter meal',
+        subtitle: 'It counts toward your totals as soon as you confirm it.',
+        scrollable: false,
+        builder: (_) => ManualMealSheet(
+          initialMealType: mealType ?? defaultMealType(DateTime.now()),
+          onSave: (input) => _saveManualMeal(scheduled, input),
+        ),
+      );
+
+  /// Saves a meal from the manual sheet, which stays open with what was typed
+  /// if this throws. When the save fails the server is asked whether it wrote
+  /// the meal anyway (a lost reply): if it did, the meal counts as saved; if
+  /// the answer is no, the failure stands; if it cannot be told,
+  /// [MealSaveOutcomeUnknown] says so. The day is reloaded after any failure,
+  /// and a retry carries the same key, so it adds nothing twice.
+  Future<void> _saveManualMeal(
     ScheduledMeal? scheduled,
-    String? mealType,
-  }) async {
-    final input = await showTracendSheet<ManualMealResult>(
-      context,
-      title: 'Enter meal',
-      subtitle: 'It counts toward your totals as soon as you confirm it.',
-      scrollable: false,
-      builder: (_) => ManualMealSheet(
-        initialMealType: mealType ?? defaultMealType(DateTime.now()),
-      ),
-    );
-    if (input == null) return;
-    await _run(successMessage: 'Meal logged', () {
-      final repository = widget.repository;
+    ManualMealResult input,
+  ) async {
+    final repository = widget.repository;
+    try {
       if (scheduled != null && repository is ScheduledMealLogger) {
-        return (repository as ScheduledMealLogger).saveScheduledMeal(
+        await (repository as ScheduledMealLogger).saveScheduledMeal(
           date: _date,
           scheduleItemId: scheduled.id,
           mealType: input.mealType,
           food: input.food,
+          idempotencyKey: input.idempotencyKey,
+        );
+      } else {
+        await repository.saveManualMeal(
+          date: _date,
+          mealType: input.mealType,
+          food: input.food,
+          idempotencyKey: input.idempotencyKey,
         );
       }
-      return repository.saveManualMeal(
-        date: _date,
-        mealType: input.mealType,
-        food: input.food,
-      );
-    });
-  }
-
-  Future<void> _reviewFixture(String mealType) async {
-    setState(() {
-      _working = true;
-      _error = null;
-    });
-    try {
-      final mealId = await widget.repository.createFixtureMeal(
-        date: _date,
-        mealType: mealType,
-      );
-      await _openCandidateReview(mealId);
     } catch (e) {
       debugPrint('Non-critical error: $e');
-      if (mounted) {
-        setState(
-          () => _error =
-              'Meal analysis is unavailable. Enter the meal manually instead.',
-        );
+      final bool written;
+      try {
+        written = await repository.isMealSaved(input.idempotencyKey);
+      } catch (lookup) {
+        debugPrint('Non-critical error: $lookup');
+        if (mounted) unawaited(_refresh());
+        throw const MealSaveOutcomeUnknown();
       }
-    } finally {
-      if (mounted) setState(() => _working = false);
+      if (!written) {
+        if (mounted) unawaited(_refresh());
+        rethrow;
+      }
     }
+    unawaited(TracendHaptics.success());
+    if (!mounted) return;
+    TracendToast.show(
+      context,
+      'Meal logged',
+      icon: CupertinoIcons.checkmark_alt,
+    );
+    unawaited(_refresh());
   }
 
   Future<void> _selectMealPhoto(ImageSource source, String mealType) async {
@@ -403,9 +421,21 @@ class _NutritionScreenState extends State<NutritionScreen> {
     }
   }
 
+  /// A draft the app did not just analyze is known to have no estimates for
+  /// good only after the analysis could have finished: a draft younger than
+  /// [mealAnalysisWindow] may still be running.
+  bool _analysisSettled(MealEntry meal) {
+    final created = meal.loggedAt;
+    return created != null &&
+        DateTime.now().difference(created) >= mealAnalysisWindow;
+  }
+
+  /// [analysisSettled] says the draft's analysis is over: true for the one
+  /// just run here, and for an older draft ([_analysisSettled]).
   Future<void> _openCandidateReview(
     String mealId, {
     bool fromPhoto = false,
+    bool analysisSettled = true,
   }) async {
     setState(() {
       _working = true;
@@ -419,7 +449,11 @@ class _NutritionScreenState extends State<NutritionScreen> {
         context,
         title: 'Review candidates',
         scrollable: false,
-        builder: (_) => CandidateSheet(candidates: candidates),
+        builder: (_) => CandidateSheet(
+          candidates: candidates,
+          canDiscard: analysisSettled,
+          onDiscard: () => _discardDraft(mealId),
+        ),
       );
       if (selected == null || selected.isEmpty) return;
       await _run(
@@ -480,6 +514,14 @@ class _NutritionScreenState extends State<NutritionScreen> {
     }
   }
 
+  /// Deletes a draft meal that has nothing to review, then reloads the day.
+  Future<void> _discardDraft(String mealId) async {
+    await widget.repository.deleteMeal(mealId);
+    if (!mounted) return;
+    TracendToast.show(context, 'Draft deleted', icon: CupertinoIcons.delete);
+    unawaited(_refresh());
+  }
+
   Future<void> _deleteMeal(MealEntry meal) async {
     final confirmed = await showTracendConfirm(
       context,
@@ -519,8 +561,6 @@ class _NutritionScreenState extends State<NutritionScreen> {
         await _selectMealPhoto(ImageSource.gallery, choice.mealType);
       case LogMealMethod.manual:
         await _openManualMeal(mealType: choice.mealType);
-      case LogMealMethod.sample:
-        await _reviewFixture(choice.mealType);
       case LogMealMethod.turnOffPhotoAi:
         await _turnOffMealPhotoAi();
     }
@@ -579,7 +619,10 @@ class _NutritionScreenState extends State<NutritionScreen> {
           NutritionTimeline(
             entries: timeline,
             enabled: !_working,
-            onReview: (meal) => _openCandidateReview(meal.id),
+            onReview: (meal) => _openCandidateReview(
+              meal.id,
+              analysisSettled: _analysisSettled(meal),
+            ),
             onDelete: _deleteMeal,
             onLog: (slot) => _openManualMeal(scheduled: slot),
           ),
@@ -591,12 +634,12 @@ class _NutritionScreenState extends State<NutritionScreen> {
           child: nextMeal == null
               ? FilledButton(
                   key: const ValueKey('log-a-meal'),
-                  onPressed: _working ? null : _openLogMeal,
+                  onPressed: _working || _noticeLoading ? null : _openLogMeal,
                   child: _LogMealLabel(working: _working && !_analyzingPhoto),
                 )
               : OutlinedButton(
                   key: const ValueKey('log-a-meal'),
-                  onPressed: _working ? null : _openLogMeal,
+                  onPressed: _working || _noticeLoading ? null : _openLogMeal,
                   child: _LogMealLabel(working: _working && !_analyzingPhoto),
                 ),
         ),
