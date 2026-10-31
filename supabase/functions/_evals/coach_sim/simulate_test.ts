@@ -367,7 +367,7 @@ Deno.test("the athlete reads the reply after the proposal step: a refused intent
   assertEquals(turn.reply.answer, "Pack light. Here's a travel block you can approve below.");
   assertStringIncludes(turn.shown!, "Pack light.");
   assert(!turn.shown!.includes("approve below"));
-  assertStringIncludes(turn.shown!, "Ask again closer to the start date.");
+  assertStringIncludes(turn.shown!, "Ask for it again from 19 Oct.");
   const thread = seen[1].context.recent_messages as { role: string; content: string }[];
   assertEquals(thread[1].content, turn.shown);
 });

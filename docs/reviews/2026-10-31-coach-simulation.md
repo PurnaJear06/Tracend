@@ -88,16 +88,18 @@ The owner's three complaints, as this run saw them:
 
 Ranked by what the athlete would notice.
 
-1. **A load the athlete wrote ended the turn in the data summary.** Fixed in #187.
+1. **A load the athlete wrote ended the turn in the data summary.** Not fixed: the change was held back (see below).
    - The athlete wrote "My old bench was 115 for 5" and "so RDL is 112.5 x 6".
    - The numbers check read those figures with the unit "other", so the reply's "115 kg x 5" and "112.5 kg x 6" were ungrounded twice. Two of the three data summaries came from this.
-   - Rep notation is now a load in kg or lb.
-2. **"The ISSN position stand" was refused although the source was shown.** Fixed in #187.
+   - A first fix made rep notation a load in kg or lb; review found it let a lifting load ground a body weight.
+2. **"The ISSN position stand" was refused although the source was shown.** Not fixed: held back.
    - The title is in sentence case ("International society of sports nutrition position stand: caffeine ...").
-   - Initials now also come from runs of 3 to 6 words before the colon.
-3. **"2 to 2.5 min" rest was refused.** Fixed in #187.
+   - A first fix derived initials from the words before the colon; review found it named the shown stand for another topic.
+3. **"2 to 2.5 min" rest was refused.** Not fixed: held back.
    - It was a follow-up about rest times.
-   - Half-minute rests up to five minutes are now advice, unless they are said of the athlete's past.
+   - A first fix exempted half-minute rests; review found "Heart rate recovery 4.5 min" and invented study rests passed.
+   - Held back: these three refusals fail closed (the turn ends in the data summary), so the guards stay strict until a
+     narrower change (`docs/handoff/ai-gateway.md`).
 4. **A travel block for next week cannot be proposed on Friday.** The reason was changed in #187.
    - The rules start a block on approval, at most 2 days ahead (`block_start_too_far`). Haiku sent the intent anyway in 4 of 4 turns, even with the limit in the rules.
    - The athlete now reads "Ask for it again from 17 Oct." instead of "closer to the start date".
@@ -121,7 +123,11 @@ Not seen:
 - No body-weight guard false positive on lift loads. The fix on main holds.
 - No refusal of a valid question.
 
-## Run 2 (with #187 applied, 8 conversations)
+## Run 2 (with all five first fixes applied, 8 conversations)
+
+Run 2 used the first version of #187, including the three guard changes that were later held back.
+With those out, the 3 data summaries in these conversations remain.
+
 
 - **Outcomes:** 24 turns: 24 model answers, 0 data summaries. Run 1 had 3 in these conversations.
 - **Supplements:** both supplement conversations cite now (2/2).
