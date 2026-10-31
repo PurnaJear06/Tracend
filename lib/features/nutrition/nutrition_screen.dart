@@ -119,6 +119,10 @@ class _NutritionScreenState extends State<NutritionScreen> {
   /// "Turn off meal photo AI". Null until it loads, and on the fixture.
   PhotoAiNotice? _mealPhotoNotice;
 
+  /// The notice is still loading. Log a meal waits for it, so the sheet it
+  /// opens knows whether to offer "Turn off meal photo AI".
+  bool _noticeLoading = false;
+
   @override
   void initState() {
     super.initState();
@@ -141,13 +145,18 @@ class _NutritionScreenState extends State<NutritionScreen> {
   Future<void> _loadMealPhotoNotice() async {
     final repository = widget.repository;
     if (repository is! MealPhotoRepository) return;
+    // Runs from initState, before the first build.
+    _noticeLoading = true;
     try {
       final notice = await (repository as MealPhotoRepository)
-          .loadMealPhotoNotice();
+          .loadMealPhotoNotice()
+          .timeout(const Duration(seconds: 10));
       if (mounted) setState(() => _mealPhotoNotice = notice);
     } catch (e) {
       // The sheet then offers no off switch; the photo flow loads it again.
       debugPrint('Non-critical error: $e');
+    } finally {
+      if (mounted) setState(() => _noticeLoading = false);
     }
   }
 
@@ -290,30 +299,6 @@ class _NutritionScreenState extends State<NutritionScreen> {
         food: input.food,
       );
     });
-  }
-
-  Future<void> _reviewFixture(String mealType) async {
-    setState(() {
-      _working = true;
-      _error = null;
-    });
-    try {
-      final mealId = await widget.repository.createFixtureMeal(
-        date: _date,
-        mealType: mealType,
-      );
-      await _openCandidateReview(mealId);
-    } catch (e) {
-      debugPrint('Non-critical error: $e');
-      if (mounted) {
-        setState(
-          () => _error =
-              'Meal analysis is unavailable. Enter the meal manually instead.',
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _working = false);
-    }
   }
 
   Future<void> _selectMealPhoto(ImageSource source, String mealType) async {
@@ -519,8 +504,6 @@ class _NutritionScreenState extends State<NutritionScreen> {
         await _selectMealPhoto(ImageSource.gallery, choice.mealType);
       case LogMealMethod.manual:
         await _openManualMeal(mealType: choice.mealType);
-      case LogMealMethod.sample:
-        await _reviewFixture(choice.mealType);
       case LogMealMethod.turnOffPhotoAi:
         await _turnOffMealPhotoAi();
     }
@@ -591,12 +574,12 @@ class _NutritionScreenState extends State<NutritionScreen> {
           child: nextMeal == null
               ? FilledButton(
                   key: const ValueKey('log-a-meal'),
-                  onPressed: _working ? null : _openLogMeal,
+                  onPressed: _working || _noticeLoading ? null : _openLogMeal,
                   child: _LogMealLabel(working: _working && !_analyzingPhoto),
                 )
               : OutlinedButton(
                   key: const ValueKey('log-a-meal'),
-                  onPressed: _working ? null : _openLogMeal,
+                  onPressed: _working || _noticeLoading ? null : _openLogMeal,
                   child: _LogMealLabel(working: _working && !_analyzingPhoto),
                 ),
         ),

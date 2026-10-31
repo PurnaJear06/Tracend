@@ -197,7 +197,10 @@ on the active goal, requires a weight, a body-fat range or a physique goal (a da
 target), refuses a weight outside 30 to 300 kg or below BMI 18.5 at `user_profiles.height_cm`, a
 reversed or out-of-range body-fat range, and a date that is not within the next three years, and
 writes a `goal_target_set` audit event naming only the kinds of target set. `get_goal_target_v1()`
-returns the target and `min_target_weight_kg`; both return `schema_version "1.0"`.
+returns the target, `min_target_weight_kg` and (since 1.1) `min_target_body_fat_pct`; both return
+`schema_version "1.1"`. A body-fat target below `min_target_body_fat_pct` is refused (22023): 5 for
+men, 12 for women and for anyone whose sex is not on record (the more conservative figure), the
+essential-fat figures widely cited in sports medicine.
 `get_goal_phase_inputs_v1(uuid)` is service role only and feeds the Coach goal phase review. Only
 the athlete sets a target; the model has no path to these functions.
 
@@ -219,15 +222,14 @@ optional expiry. Today equipment, movements to avoid, limitations and diet notes
 ### `user_preferences` (superseded by `coach_facts`)
 
 Since A10 part 2 nothing in Coach chat reads or writes this table (the confirmed preferences were
-copied into `coach_facts` when that table was created). Older app builds can still write it through
-`persist_coach_preference`; "Forget everything" empties it. Kept until the frozen `prepare_coach_chat_v8`
-is retired. Confirmed food, training, schedule, communication, notification and lifestyle preferences. Each row
+copied into `coach_facts` when that table was created). `persist_coach_preference` is closed to the
+app roles (2026-10-31, nothing calls it); the service role keeps it. "Forget everything" empties
+the table. Kept until the frozen `prepare_coach_chat_v8` is retired. Confirmed food, training, schedule, communication, notification and lifestyle preferences. Each row
 stores `category`, `key` (1–120 characters), `value` (1–200 characters), `provenance`
 (`onboarding`, `chat_statement`, `repeated_signal`, `manual`), `confirmed_at` and `superseded_at`.
 Only one active row per user and key; a new value supersedes the old one. Model-inferred
-preferences cannot become confirmed automatically. Forced RLS, read-only for authenticated. The app
-confirms a preference through `persist_coach_preference`, which refuses any athlete but the caller
-unless the caller is the service role.
+preferences cannot become confirmed automatically. Forced RLS, read-only for authenticated.
+`persist_coach_preference` writes it for the service role only.
 
 ### `notification_preferences`
 

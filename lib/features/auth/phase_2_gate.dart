@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/features/account/account_time_zone.dart';
+import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/auth/account_session.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
@@ -26,6 +27,7 @@ class Phase2Gate extends StatefulWidget {
     this.localData,
     this.liveActivity = const MethodChannelWorkoutActivityBridge(),
     this.homeWidgets = const MethodChannelHomeWidgetBridge(),
+    this.notifications = const MethodChannelNotificationRepository(),
     super.key,
   });
 
@@ -41,6 +43,10 @@ class Phase2Gate extends StatefulWidget {
   /// The Home Screen and Lock Screen widgets, emptied on every signed-out
   /// transition so no widget keeps a signed-out athlete's day.
   final HomeWidgetBridge homeWidgets;
+
+  /// The reminders on this phone, removed on every signed-out transition so
+  /// a signed-out phone, or the next athlete's, gets none of them.
+  final NotificationRepository notifications;
   final LocalAccountData? localData;
 
   @override
@@ -95,6 +101,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
             state.signOutReason != SignOutReason.userInitiated &&
             _authenticated;
         _showSignedOut();
+        _closePushedRoutes();
         // A refresh token Auth refuses while the app is open (the account
         // was deleted elsewhere) removes the session.
         if (refused) {
@@ -156,7 +163,10 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
         if (ended()) return;
         _userId = userId;
         // The usual months a later plan review compares with; never blocks.
-        if (complete) unawaited(_baselineSource().refreshIfDue());
+        if (complete) {
+          unawaited(_baselineSource().refreshIfDue());
+          unawaited(_restoreReminders(client));
+        }
         setState(() {
           _authenticated = true;
           _onboardingComplete = complete;
@@ -189,6 +199,14 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     });
   }
 
+  /// Pops every route pushed above the gate (Account, a workout, a sheet):
+  /// a session that ended elsewhere would otherwise leave them on top of
+  /// sign-in.
+  void _closePushedRoutes() {
+    if (!mounted) return;
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
   /// Ends the rest's Live Activity and empties the widgets. Runs on every
   /// signed-out transition, whichever screen ended the session. (The shell's
   /// publisher also clears the snapshot as it goes away; both go through the
@@ -196,6 +214,34 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   void _clearSessionOutputs() {
     unawaited(widget.liveActivity.end());
     unawaited(_emptyWidgets());
+    unawaited(_cancelReminders());
+  }
+
+  /// Removes the daily and weekly reminders and the rest alert from this
+  /// phone. The athlete's choices stay on the server, and the next sign-in
+  /// puts them back (`_restoreReminders`).
+  Future<void> _cancelReminders() async {
+    try {
+      await widget.notifications.configure(
+        dailyCheckIn: false,
+        weeklyReview: false,
+        restTimerAlertsEnabled: false,
+      );
+    } catch (e) {
+      debugPrint('Non-critical error: reminders not cancelled: $e');
+    }
+  }
+
+  /// Puts the signed-in athlete's saved reminder choices back on the phone.
+  Future<void> _restoreReminders(SupabaseClient client) async {
+    try {
+      await SupabaseNotificationRepository(
+        client,
+        device: widget.notifications,
+      ).load();
+    } catch (e) {
+      debugPrint('Non-critical error: reminders not restored: $e');
+    }
   }
 
   /// Empties the widgets; a clear that fails for good is kept and retried

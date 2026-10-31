@@ -12,6 +12,7 @@ import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/onboarding/onboarding_proposal_view.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_screening.dart';
+import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/brand/tracend_mark.dart';
 
 void main() {
@@ -694,6 +695,44 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Try again'), findsOneWidget);
   });
 
+  testWidgets('a retry that fails again shows a message and a retry, never a '
+      'spinner', (tester) async {
+    final repository = _FakeOnboardingRepository(
+      draft: _draft('proposal'),
+      generations: [
+        const OnboardingGeneration(
+          id: 'gen-1',
+          status: 'failed',
+          errorCode: 'lease_expired',
+        ),
+        _running,
+        _succeeded,
+      ],
+    )..failingStarts = 1;
+    await _pump(tester, repository);
+    await tester.pumpAndSettle();
+    expect(find.text('Your plan was not built.'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Try again'));
+    await tester.pumpAndSettle();
+    // The start failed on a lost connection: the Plan step says so and
+    // offers the retry again.
+    expect(repository.startCalls, 1);
+    expect(find.text('Your plan was not built.'), findsOneWidget);
+    expect(
+      find.text(
+        'Your plan could not be started. Check the connection and try again.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byType(TracendLoader), findsNothing);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Try again'));
+    await tester.pumpAndSettle();
+    expect(repository.startCalls, 2);
+    expect(find.text('Your starting plan'), findsOneWidget);
+  });
+
   testWidgets('requesting changes sends the note and returns to review', (
     tester,
   ) async {
@@ -935,6 +974,37 @@ void main() {
     await tester.tap(find.text('Sign out'));
     await tester.pumpAndSettle();
     expect(signedOut, isTrue);
+  });
+
+  testWidgets('sign out is still available while an answer is being saved', (
+    tester,
+  ) async {
+    var signedOut = false;
+    final repository = _FakeOnboardingRepository()
+      ..screeningDelay = Completer<void>();
+    await _pump(
+      tester,
+      repository,
+      consent: AiCoachingConsentController(
+        FixtureAiCoachingConsentRepository(),
+      ),
+      onSignOut: () async => signedOut = true,
+    );
+    await _tapText(tester, 'I am 18 or older');
+    await _tapText(tester, 'I accept the private-beta terms');
+    await _tapText(tester, 'I have read the privacy notice');
+    await _continue(tester);
+    await _answerScreening(tester, [true, false, false]);
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+    await tester.pump();
+    expect(repository.screenings, hasLength(1));
+
+    // The server is still answering: the athlete can leave regardless.
+    await tester.tap(find.text('Sign out'));
+    await tester.pump();
+    expect(signedOut, isTrue);
+    repository.screeningDelay!.complete();
+    await tester.pumpAndSettle();
   });
 
   group('recovery and controls', () {
@@ -2023,9 +2093,16 @@ class _FakeOnboardingRepository implements OnboardingRepository {
   @override
   Future<void> saveGoal(String goal) async {}
 
+  /// How many plan starts fail with a connection error before one works.
+  int failingStarts = 0;
+
   @override
   Future<OnboardingGeneration> startGeneration() async {
     startCalls++;
+    if (failingStarts > 0) {
+      failingStarts--;
+      throw Exception('offline');
+    }
     if (missing != null) throw OnboardingAnswersIncomplete(missing!);
     if (infeasible != null) throw OnboardingPlanInfeasible(infeasible!);
     if (unavailable) throw const OnboardingPlanUnavailable();

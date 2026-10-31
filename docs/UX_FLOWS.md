@@ -190,6 +190,12 @@ sign-in**.
    server refuses for a malformed or professional-first screening sends the athlete back to it (the
    latter with the same guidance and Continue closed). Builds from before the
    health check never send answers; the server reads that as cleared.
+   After onboarding the same four questions reopen from **Account › Plan › Health check**
+   (`record_screening_v1` again). The saved answers show first, with the moderate-effort note when
+   it applies; changing an answer clears the result until **Save answers**. Only the athlete's own
+   updated answers lift the cap: Tracend never lifts it for them, and a see-a-professional result
+   holds until their own answers say a professional has cleared them. A plan already approved keeps
+   its effort until it is next changed; new plans and Coach proposals use the new outcome.
 7. Choose whether to allow AI coaching. **Allow AI coaching** and **Not now** are both valid
    answers.
    - The text is the server's current notice (`get_current_ai_notice`). The app records that
@@ -1238,7 +1244,11 @@ Account is one iOS inset-grouped settings page:
 - **Identity:** the name from the email local-part, a **Private beta** chip and **Current goal**
   when the active-goal query returns one. There is no separate Edit control; **Profile and goals**
   is the edit entry.
-- **Plan:** **Profile and goals** opens the read-only screen of that title (§4.4).
+- **Plan:** **Profile and goals** opens the read-only screen of that title (§4.4). **Health check**
+  reopens the four health-check questions (§4.1, step 6). Signing out, and a session that ends on
+  another device, return to sign-in from any screen; a double tap on **Sign out** signs out once.
+  Signing out or deleting the account also removes the reminders from the phone; signing in puts the
+  athlete's saved reminder choices back.
 - **Health:** **Apple Health** with its status in plain words ("Updated today at 14:05",
   "· needs a refresh", "· some signals missing", or "Not connected · manual logging works"). It
   opens a sheet with the full status card and **Connect** or **Refresh Apple Health**.

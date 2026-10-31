@@ -76,8 +76,14 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   were shown, and stores each as a `library` evidence item that the app lists under "Why this plan"
   ("Research behind this plan"; needs a reinstall). A plan with no source to cite says so in "Not
   known yet", and one whose search found nothing or failed is low confidence; the rules plan and the
-  settings path use no library. `onboarding-propose-plan` is the old mock and is unchanged. The CI
+  settings path use no library. The old mock `onboarding-propose-plan` was removed on 2026-10-31. The CI
   retrieval gate also scores 12 plan questions. Handoff: [`research-library.md`](./handoff/research-library.md).
+- qa-audit groups G and H (2026-10-31, branch `claude/onboarding-legacy-forms`, migration
+  `20261031100000`, in review): legacy onboarding and fixture-meal RPCs closed and `onboarding-propose-plan`
+  removed (owner deletes the deployed function), Account › Health check reopens the screening,
+  remote sign-out returns to the gate, reminders leave the phone on sign-out, body-fat target floor
+  (5% men, 12% women or unknown), Progress and Meals form fixes. Handoff:
+  [`onboarding.md`](./handoff/onboarding.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.

@@ -1,5 +1,5 @@
 begin;
-select plan(22);
+select plan(23);
 
 insert into auth.users(id, role) values
   ('11111111-1111-7777-8777-111111111111', 'authenticated'),
@@ -42,6 +42,9 @@ select ok((select json->>'meal_id' is not null from draft),
 
 select is((select json->>'replayed' from draft), 'false',
   'first creation is not a replay');
+
+select is((select json->>'schema_version' from draft), '1.0',
+  'the draft carries a schema version');
 
 select ok((select json->>'media_id' is not null from draft),
   'photo draft returns a media_id');

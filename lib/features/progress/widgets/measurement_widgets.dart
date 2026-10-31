@@ -142,6 +142,18 @@ class MeasurementDetailSheet extends StatelessWidget {
   }
 }
 
+/// The values the database accepts for a measurement (`body_measurements`
+/// checks): weight in kg, the rest in cm. A value outside them would be
+/// refused after the sheet closed.
+const measurementRanges = <(double, double)>[
+  (25, 350), // weight
+  (30, 250), // waist
+  (30, 250), // chest
+  (30, 250), // hip
+  (10, 100), // arm
+  (20, 150), // thigh
+];
+
 /// Manual measurement entry form (confirmed write via `save_body_measurement`).
 class MeasurementEntrySheet extends StatefulWidget {
   const MeasurementEntrySheet({super.key});
@@ -164,7 +176,7 @@ class _MeasurementEntrySheetState extends State<MeasurementEntrySheet> {
 
   double? n(int i) => fields[i].text.trim().isEmpty
       ? null
-      : double.tryParse(fields[i].text.trim());
+      : double.tryParse(fields[i].text.trim().replaceAll(',', '.'));
 
   /// Shown in a sheet titled "Record measurement" with `scrollable: false`:
   /// the form brings its own scroll view so a drag dismisses the keyboard.
@@ -208,8 +220,13 @@ class _MeasurementEntrySheetState extends State<MeasurementEntrySheet> {
                   if (e.key == 0 && n(0) == null) {
                     return 'Enter a valid weight';
                   }
-                  if (v!.isNotEmpty && n(e.key) == null) {
-                    return 'Enter a valid number';
+                  if (v!.isEmpty) return null;
+                  final value = n(e.key);
+                  if (value == null) return 'Enter a valid number';
+                  final (low, high) = measurementRanges[e.key];
+                  if (value < low || value > high) {
+                    return 'Between ${low.round()} and ${high.round()} '
+                        '${e.key == 0 ? 'kg' : 'cm'}';
                   }
                   return null;
                 },

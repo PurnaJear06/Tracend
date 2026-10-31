@@ -78,8 +78,8 @@ select ok(
   'persist_coach_preference not executable by anon'
 );
 select ok(
-  has_function_privilege('authenticated', 'public.persist_coach_preference(uuid,text,text,text,text)', 'execute'),
-  'persist_coach_preference executable by authenticated'
+  not has_function_privilege('authenticated', 'public.persist_coach_preference(uuid,text,text,text,text)', 'execute'),
+  'persist_coach_preference not executable by authenticated (retired; the service role keeps it)'
 );
 
 select finish();

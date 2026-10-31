@@ -106,6 +106,9 @@ abstract interface class ProgressRepository {
   Future<ProgressSummary> loadSummary();
   Future<void> saveMeasurement(BodyMeasurement measurement);
   Future<List<ProgressPhotoSet>> loadPhotoSets();
+
+  /// Whether the athlete already agreed to private photo storage.
+  Future<bool> hasPhotoStorageConsent();
   Future<void> grantPhotoStorageConsent();
   Future<String> beginPhotoSet();
   Future<void> uploadPhoto({
@@ -210,6 +213,10 @@ class SupabaseProgressRepository
     );
   }
 
+  /// The newest photo sets shown; a set has at most four photos, so the
+  /// photo read below stays far under the API's row cap.
+  static const _photoSetLimit = 100;
+
   @override
   Future<List<ProgressPhotoSet>> loadPhotoSets() async {
     final sets = await _client
@@ -218,10 +225,13 @@ class SupabaseProgressRepository
         .order('captured_on', ascending: false)
         // Several sets can share a day: the newest is the one taken last.
         .order('created_at', ascending: false)
-        .order('id', ascending: true);
+        .order('id', ascending: true)
+        .limit(_photoSetLimit);
+    if (sets.isEmpty) return const [];
     final photos = await _client
         .from('progress_photos')
-        .select('photo_set_id,media_objects(object_key)');
+        .select('photo_set_id,media_objects(object_key)')
+        .inFilter('photo_set_id', [for (final set in sets) set['id']]);
     return sets.map((set) {
       final id = set['id'] as String;
       return ProgressPhotoSet(
@@ -234,6 +244,18 @@ class SupabaseProgressRepository
             .toList(),
       );
     }).toList();
+  }
+
+  @override
+  Future<bool> hasPhotoStorageConsent() async {
+    final row = await _client
+        .from('consent_records')
+        .select('action')
+        .eq('consent_type', 'progress_photo_storage')
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    return row?['action'] == 'granted';
   }
 
   @override
@@ -309,13 +331,19 @@ class SupabaseProgressRepository
   );
   @override
   Future<void> deletePhotoSet(ProgressPhotoSet set) async {
-    if (set.objectKeys.isNotEmpty) {
-      await _client.storage.from('progress-photos').remove(set.objectKeys);
-    }
+    // Rows first: a set whose rows are gone can never show broken photos. A
+    // photo file that fails to go is removed by the retention worker's sweep
+    // of files no row points to.
     await _client.rpc(
       'delete_my_progress_photo_set',
       params: {'target_set_id': set.id},
     );
+    if (set.objectKeys.isEmpty) return;
+    try {
+      await _client.storage.from('progress-photos').remove(set.objectKeys);
+    } catch (e) {
+      debugPrint('Non-critical error: photo files not removed: $e');
+    }
   }
 
   @override
@@ -419,6 +447,8 @@ class FixtureProgressRepository implements ProgressRepository {
       throw StateError('Configure Supabase to save measurements.');
   @override
   Future<List<ProgressPhotoSet>> loadPhotoSets() async => const [];
+  @override
+  Future<bool> hasPhotoStorageConsent() async => false;
   @override
   Future<void> grantPhotoStorageConsent() =>
       throw StateError('Configure Supabase.');

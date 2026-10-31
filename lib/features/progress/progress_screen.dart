@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/goals/goal_target_repository.dart';
 import 'package:tracend/features/goals/widgets/goal_target_section.dart';
@@ -442,7 +443,19 @@ class _ProgressScreenState extends State<ProgressScreen> {
       builder: (_) => WeeklyReviewSheet(review: review),
     );
     if (acknowledge != true || review.acknowledged) return;
-    await widget.repository.acknowledgeWeeklyReview(review.id);
+    setState(() => _problem = null);
+    try {
+      await widget.repository.acknowledgeWeeklyReview(review.id);
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      if (mounted) {
+        _showProblem(
+          'Could not mark the weekly review as seen. Try again.',
+          _ProblemArea.weeklyReview,
+        );
+      }
+      return;
+    }
     if (mounted) setState(_reload);
   }
 
@@ -464,21 +477,50 @@ class _ProgressScreenState extends State<ProgressScreen> {
     } catch (e) {
       debugPrint('Non-critical error: $e');
       if (!mounted) return;
-      _showProblem(
-        'Could not save measurement. Check your connection and try again.',
-        _ProblemArea.top,
-      );
+      _showProblem(measurementSaveMessage(e), _ProblemArea.top);
+    }
+  }
+
+  /// Whether this account can run physique checks, which send photos to an
+  /// AI model once the athlete agrees to that separately.
+  Future<bool> _hasPhysiqueCheck() async {
+    try {
+      return (await _physique).provider != null;
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      return false;
     }
   }
 
   Future<void> _ensureConsent() async {
     if (_hasConsent) return;
+    try {
+      // Agreed on an earlier launch: no new question and no new record.
+      if (await widget.repository.hasPhotoStorageConsent()) {
+        _hasConsent = true;
+        return;
+      }
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      if (mounted) {
+        _showProblem(
+          'Could not check your photo settings. Try again.',
+          _ProblemArea.photos,
+        );
+      }
+      return;
+    }
+    final physique = await _hasPhysiqueCheck();
+    if (!mounted) return;
     final accepted = await showTracendConfirm(
       context,
       title: 'Save private progress photos?',
-      message:
-          'Your photos are stored privately and only you can open them. '
-          'They are never sent to an AI model.',
+      message: physique
+          ? 'Your photos are stored privately and only you can open them. '
+                'They are sent to an AI model only if you choose a physique '
+                'check, which asks for your permission first.'
+          : 'Your photos are stored privately and only you can open them. '
+                'They are never sent to an AI model.',
       confirmLabel: 'I agree and continue',
     );
     if (!accepted || !mounted) return;
@@ -750,3 +792,11 @@ class _ProgressSkeleton extends StatelessWidget {
     ),
   );
 }
+
+/// What to tell the athlete when a weigh-in was not saved: a value the
+/// database refuses (23514) is not a connection problem.
+@visibleForTesting
+String measurementSaveMessage(Object error) =>
+    error is PostgrestException && error.code == '23514'
+    ? 'A value is outside the range Tracend accepts. Check the numbers and try again.'
+    : 'Could not save measurement. Check your connection and try again.';

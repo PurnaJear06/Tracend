@@ -391,7 +391,6 @@ health-sync              JWT    HealthKit summaries and workouts
 meal-analyze             JWT    meal-photo candidates
 meal-media-retention     secret retention, export expiry, orphan sweep
 onboarding-plan          JWT    starting plan and follow-up questions
-onboarding-propose-plan  JWT    Phase-2 mock, kept for installed older builds
 physique-check           JWT    owner-only physique check
 privacy-delete-account   JWT    account deletion
 privacy-export           JWT    encrypted export

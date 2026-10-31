@@ -175,8 +175,18 @@ class _Repository implements ProgressRepository {
 
   @override
   Future<List<ProgressPhotoSet>> loadPhotoSets() async => const [];
+
+  /// Set to true to start with the photo-storage agreement already given.
+  bool photoConsentGranted = false;
+  int consentGrants = 0;
   @override
-  Future<void> grantPhotoStorageConsent() async {}
+  Future<bool> hasPhotoStorageConsent() async => photoConsentGranted;
+  @override
+  Future<void> grantPhotoStorageConsent() async {
+    consentGrants++;
+    photoConsentGranted = true;
+  }
+
   @override
   Future<String> beginPhotoSet() async => 'set-1';
   @override

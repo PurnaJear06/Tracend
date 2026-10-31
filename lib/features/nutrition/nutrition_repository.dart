@@ -20,6 +20,35 @@ class NutritionSummary {
   final double carbohydrate;
   final double fat;
   final int confirmedMeals;
+
+  /// Reads `get_my_daily_nutrition` (schema version 1.x; an answer from
+  /// before the field existed reads as 1.0).
+  factory NutritionSummary.fromJson(Object? value) {
+    if (value is! Map || !_isVersionOne(value['schema_version'])) {
+      throw const FormatException('The daily nutrition answer is unreadable.');
+    }
+    return NutritionSummary(
+      calories: (value['calories'] as num).toDouble(),
+      protein: (value['protein_g'] as num).toDouble(),
+      carbohydrate: (value['carbohydrate_g'] as num).toDouble(),
+      fat: (value['fat_g'] as num).toDouble(),
+      confirmedMeals: (value['confirmed_meals'] as num).toInt(),
+    );
+  }
+}
+
+bool _isVersionOne(Object? version) =>
+    version == null || (version is String && version.startsWith('1.'));
+
+/// The meal a photo draft was made for, from `create_meal_photo_draft`
+/// (schema version 1.x).
+String mealIdFromDraft(Object? value) {
+  if (value is! Map ||
+      !_isVersionOne(value['schema_version']) ||
+      value['meal_id'] is! String) {
+    throw const FormatException('The meal photo draft is unreadable.');
+  }
+  return value['meal_id'] as String;
 }
 
 class NutritionTargets {
@@ -274,10 +303,6 @@ abstract interface class NutritionRepository {
     required String mealType,
     required ManualFoodInput food,
   });
-  Future<String> createFixtureMeal({
-    required DateTime date,
-    required String mealType,
-  });
   Future<List<MealCandidate>> loadCandidates(String mealId);
   Future<void> confirmCandidates(String mealId, List<MealCandidate> candidates);
   Future<void> deleteMeal(String mealId);
@@ -359,23 +384,21 @@ class SupabaseNutritionRepository
           .from('user_accounts')
           .select('timezone')
           .single();
-      final draft = Map<String, dynamic>.from(
+      final mealId = mealIdFromDraft(
         await _client.rpc(
-              'create_meal_photo_draft',
-              params: {
-                'meal_date': _dateKey(date),
-                'meal_timezone': account['timezone'] as String? ?? 'UTC',
-                'meal_kind': mealType,
-                'request_idempotency_key': requestId,
-                'object_path': path,
-                'object_content_type': 'image/jpeg',
-                'object_byte_size': bytes.length,
-                'object_checksum': sha256.convert(bytes).toString(),
-              },
-            )
-            as Map,
+          'create_meal_photo_draft',
+          params: {
+            'meal_date': _dateKey(date),
+            'meal_timezone': account['timezone'] as String? ?? 'UTC',
+            'meal_kind': mealType,
+            'request_idempotency_key': requestId,
+            'object_path': path,
+            'object_content_type': 'image/jpeg',
+            'object_byte_size': bytes.length,
+            'object_checksum': sha256.convert(bytes).toString(),
+          },
+        ),
       );
-      final mealId = draft['meal_id'] as String;
       step = 'analysis';
       final response = await _client.functions.invoke(
         'meal-analyze',
@@ -492,19 +515,11 @@ class SupabaseNutritionRepository
 
   @override
   Future<NutritionSummary> loadSummary(DateTime date) async {
-    final value = Map<String, dynamic>.from(
+    return NutritionSummary.fromJson(
       await _client.rpc(
-            'get_my_daily_nutrition',
-            params: {'target_date': _dateKey(date)},
-          )
-          as Map,
-    );
-    return NutritionSummary(
-      calories: (value['calories'] as num).toDouble(),
-      protein: (value['protein_g'] as num).toDouble(),
-      carbohydrate: (value['carbohydrate_g'] as num).toDouble(),
-      fat: (value['fat_g'] as num).toDouble(),
-      confirmedMeals: (value['confirmed_meals'] as num).toInt(),
+        'get_my_daily_nutrition',
+        params: {'target_date': _dateKey(date)},
+      ),
     );
   }
 
@@ -546,27 +561,6 @@ class SupabaseNutritionRepository
         'meal_note': '',
       },
     );
-  });
-
-  @override
-  Future<String> createFixtureMeal({
-    required DateTime date,
-    required String mealType,
-  }) => _reads.afterWrite(() async {
-    final account = await _client
-        .from('user_accounts')
-        .select('timezone')
-        .single();
-    return await _client.rpc(
-          'create_fixture_meal',
-          params: {
-            'meal_date': _dateKey(date),
-            'meal_timezone': account['timezone'] as String? ?? 'UTC',
-            'meal_kind': mealType,
-            'request_idempotency_key': _uuid.v4(),
-          },
-        )
-        as String;
   });
 
   @override
@@ -691,11 +685,6 @@ class FixtureNutritionRepository
     required String mealType,
     required ManualFoodInput food,
   }) => throw StateError('Configure Supabase to save meals.');
-  @override
-  Future<String> createFixtureMeal({
-    required DateTime date,
-    required String mealType,
-  }) => throw StateError('Configure Supabase to analyze meals.');
   @override
   Future<List<MealCandidate>> loadCandidates(String mealId) async => const [];
   @override
