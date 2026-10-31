@@ -2338,6 +2338,23 @@ back."
   `get_readiness_context_v1`, `prepare_daily_coaching_core`, `persist_daily_coaching_result_v2`,
   `prepare_coach_chat_v5`. Existing pgTAP version and wording assertions moved to 1.10 / 1.9 and the new
   card text.
+- **Review fixes (Codex and Opus, same PR):**
+  - the brief's week says `paused` per day and a break day is `planned` only when a session was logged on
+    it (it no longer depends on the current break); the hub's paused sessions leave out logged days, and
+    Train counts the same way, so done never passes planned; a session logged on a break day stays on
+    Today;
+  - `day_adjustments.triggers` allows `paused`, a break day offers no readiness choice (a held or limited
+    joint's change still is, and accepting or declining it works), the TS mirror knows `paused`;
+  - Today shows the card's safety referral above a running break;
+  - the standing state's "never ask again" covers only the break and today's availability (pain keeps
+    its normal follow-up), a running break is still stated on a safety-route day, and the highest pain of
+    7 or more in 7 days (area and date) is a line that is never trimmed;
+  - an undone break covers no day anywhere;
+  - coach-decide: on `rest_as_chosen` a model answer that does not rest or does not pass is replaced by
+    the deterministic rest decision (logged `daily_decision_policy_override`); legacy prompt bytes are
+    unchanged;
+  - the simulator regexes had backspace characters instead of `\b` (fixed; a test checks each
+    scenario's phrases against an intended and a forbidden reply).
 - **Simulator scenarios** (not run live): `checkin-unavailable-hi`, `break-across-chats`,
   `first-day-back`, `end-break-early`, each with a `setup` that seeds the standing state (the bank
   harness renders the real contributor, plan and watch-outs over it).

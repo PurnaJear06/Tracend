@@ -195,49 +195,56 @@
       "recovery": 55,
       "strain": 3.5,
       "trained": true,
-      "planned": true
+      "planned": true,
+      "paused": false
     },
     {
       "local_date": "2026-09-08",
       "recovery": null,
       "strain": null,
       "trained": false,
-      "planned": true
+      "planned": true,
+      "paused": false
     },
     {
       "local_date": "2026-09-09",
       "recovery": null,
       "strain": null,
       "trained": false,
-      "planned": false
+      "planned": false,
+      "paused": false
     },
     {
       "local_date": "2026-09-10",
       "recovery": null,
       "strain": null,
       "trained": false,
-      "planned": false
+      "planned": false,
+      "paused": false
     },
     {
       "local_date": "2026-09-11",
       "recovery": null,
       "strain": null,
       "trained": false,
-      "planned": true
+      "planned": true,
+      "paused": false
     },
     {
       "local_date": "2026-09-12",
       "recovery": null,
       "strain": null,
       "trained": false,
-      "planned": true
+      "planned": true,
+      "paused": false
     },
     {
       "local_date": "2026-09-13",
       "recovery": null,
       "strain": null,
       "trained": false,
-      "planned": false
+      "planned": false,
+      "paused": false
     }
   ],
   "today_session": {

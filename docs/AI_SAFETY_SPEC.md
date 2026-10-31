@@ -164,7 +164,9 @@ Requirements:
   deterministic evidence code `TRAINING_PAUSED` or `ATHLETE_UNAVAILABLE_TODAY`; the only training
   action it permits is `REST_AS_CHOSEN`, so the decision can never proceed as planned on that day,
   and `REST_AS_CHOSEN` is refused under any other outcome. Escalation (pain of 7 or more) keeps its
-  precedence.
+  precedence. The policy wins over the model: on such a day an answer that does not rest, or does not
+  pass, is replaced by the deterministic rest decision (logged `daily_decision_policy_override`), so the
+  day never ends without a decision on any provider path. An undone break counts as never set.
 - Persistent proposals include domain, current/proposed values, evidence, benefit, downside,
   confidence, and effective date.
 - Unknown fields, invalid ranges, cross-domain actions, policy conflicts, and invalid references are

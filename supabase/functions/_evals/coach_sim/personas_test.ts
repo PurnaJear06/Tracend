@@ -251,3 +251,52 @@ Deno.test("the standing-state scenarios give Coach the break or the can't-train 
     .find((item) => item.local_date === today);
   if (row) assertEquals(row.available_to_train, false);
 });
+
+Deno.test("the standing-state scenarios' phrases are real patterns: an intended reply passes, a forbidden one is caught", () => {
+  const matches = (phrase: { anyOf: readonly RegExp[] }, text: string) =>
+    phrase.anyOf.some((pattern) => pattern.test(text));
+  const cases: [string, string, string][] = [
+    [
+      "checkin-unavailable-hi",
+      "Hi! You said you can't train today, so treat it as a rest day. Your next session is Thursday.",
+      "Your check-in shows sleep 5 and energy 5, so you can train if you feel up to it.",
+    ],
+    [
+      "break-across-chats",
+      "You're on your break until 14 Nov. No session is due, and your plan resumes the day after.",
+      "How long is your break? Are you still on a break?",
+    ],
+    [
+      "first-day-back",
+      "Welcome back. This is your first session back, so ease in with lighter weights this week.",
+      "You missed 10 sessions and you're behind your plan.",
+    ],
+    [
+      "end-break-early",
+      "Good to have you back. Today's session is Lower A; ease in with lighter loads.",
+      "You're still on a break, so no session is due today.",
+    ],
+  ];
+  for (const [id, good, bad] of cases) {
+    const scenario = scenarios.find((item) => item.id === id)!;
+    for (const phrase of scenario.expect.mentions ?? []) {
+      assert(matches(phrase, good), `${id}: "${phrase.label}" misses the intended reply`);
+    }
+    for (const phrase of scenario.expect.forbids ?? []) {
+      assert(!matches(phrase, good), `${id}: "${phrase.label}" flags the intended reply`);
+    }
+    assert(
+      (scenario.expect.forbids ?? []).some((phrase) => matches(phrase, bad)),
+      `${id}: no forbidden phrase catches the bad reply`,
+    );
+    // Every pattern is plain text: no control character (a "\b" written as a backspace).
+    for (const phrase of [...scenario.expect.mentions ?? [], ...scenario.expect.forbids ?? []]) {
+      for (const pattern of phrase.anyOf) {
+        assert(
+          ![...pattern.source].some((ch) => ch.charCodeAt(0) < 32),
+          `${id}: ${pattern}`,
+        );
+      }
+    }
+  }
+});

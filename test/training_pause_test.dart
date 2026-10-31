@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
+import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/train/train_screen.dart';
@@ -13,6 +14,7 @@ import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/training_availability.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
 
+import 'day_adjustment_fixtures.dart';
 import 'train_fixtures.dart';
 
 const _environment = AppEnvironment(
@@ -93,9 +95,11 @@ class _Pauses implements TrainingPauseRepository {
 }
 
 class _Brief implements DailyBriefRepository {
-  _Brief(this.availability);
+  _Brief(this.availability, {this.todaySession, this.week = const []});
 
   TrainingAvailability availability;
+  TodaySession? todaySession;
+  List<TodayWeekDay> week;
   int loads = 0;
 
   @override
@@ -112,6 +116,8 @@ class _Brief implements DailyBriefRepository {
         ],
       },
       availability: availability,
+      todaySession: todaySession,
+      week: week,
     );
   }
 }
@@ -120,6 +126,7 @@ Future<void> _pumpToday(
   WidgetTester tester, {
   required _Brief brief,
   required _Pauses pauses,
+  DayAdjustmentController? dayAdjustment,
 }) async {
   SharedPreferences.setMockInitialValues({});
   tester.view.physicalSize = const Size(390, 2400);
@@ -139,6 +146,7 @@ Future<void> _pumpToday(
             onOpenTrain: () {},
             pauses: pauses,
             clock: trainNow,
+            dayAdjustment: dayAdjustment,
           ),
         ),
       ),
@@ -459,6 +467,103 @@ void main() {
         expect(brief.loads, greaterThan(loadsBefore));
         expect(find.text('On a break until Mon 5 Oct'), findsNothing);
         expect(find.text('Upper body A'), findsOneWidget);
+      },
+    );
+
+    testWidgets('a safety referral on the card stays above a running break', (
+      tester,
+    ) async {
+      final brief = _Brief(
+        TrainingAvailability.fromJson(
+          _availabilityJson(
+            status: 'paused',
+            paused: true,
+            pause: _pauseJson(),
+          ),
+        ),
+      );
+      final controller = DayAdjustmentController(
+        repository: FakeDayAdjustmentRepository(
+          adjustmentJson(
+            kind: 'none',
+            status: 'none',
+            band: 'red',
+            triggers: const ['pain_severe', 'paused'],
+            safetyRoute: 'pain_referral',
+          ),
+        ),
+        serverToday: () async => DateTime(2026, 10, 2),
+        clock: () => DateTime(2026, 10, 2, 9),
+      );
+      await _pumpToday(
+        tester,
+        brief: brief,
+        pauses: _Pauses(),
+        dayAdjustment: controller,
+      );
+
+      expect(find.text('Your safety first'), findsOneWidget);
+      expect(find.text('On a break until Mon 5 Oct'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('Your safety first')).dy,
+        lessThan(tester.getTopLeft(find.text('On a break until Mon 5 Oct')).dy),
+      );
+    });
+
+    testWidgets('a session logged on a break day stays visible on Today', (
+      tester,
+    ) async {
+      final brief = _Brief(
+        TrainingAvailability.fromJson(
+          _availabilityJson(
+            status: 'paused',
+            paused: true,
+            pause: _pauseJson(),
+          ),
+        ),
+        todaySession: const TodaySession(
+          state: 'completed',
+          completedSets: {1: 3},
+        ),
+      );
+      await _pumpToday(tester, brief: brief, pauses: _Pauses());
+
+      expect(find.text('On a break until Mon 5 Oct'), findsOneWidget);
+      expect(find.text('Upper body A'), findsOneWidget);
+    });
+
+    testWidgets(
+      'the week counts a break day as planned only when it was trained',
+      (tester) async {
+        final brief = _Brief(
+          TrainingAvailability.available,
+          week: [
+            for (var i = 0; i < 7; i++)
+              TodayWeekDay.fromJson({
+                'local_date': const [
+                  '2026-09-28',
+                  '2026-09-29',
+                  '2026-09-30',
+                  '2026-10-01',
+                  '2026-10-02',
+                  '2026-10-03',
+                  '2026-10-04',
+                ][i],
+                // Monday was a break day the athlete trained on; Tuesday a break day they rested.
+                'paused': i < 2,
+                'planned': i != 1,
+                'trained': i == 0,
+              }),
+          ],
+        );
+        expect(brief.week[1].paused, isTrue);
+        expect(brief.week[1].planned, isFalse);
+        expect(
+          TodayWeekDay.fromJson({'local_date': '2026-10-02'}).paused,
+          isFalse,
+        );
+        await _pumpToday(tester, brief: brief, pauses: _Pauses());
+        expect(find.textContaining('1 of 6'), findsWidgets);
       },
     );
 

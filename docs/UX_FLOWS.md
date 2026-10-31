@@ -573,7 +573,9 @@ plan resumes by itself after the break's last day. Today, Train and Coach all re
   longer than 42 days, over another break). After Confirm a toast reads "Break set · 1–15 Nov" and
   the break card's button reads **Undo** while the screen stays open.
 - **On a break:** Today shows "On a break until <day>" in place of the session card, with **End break
-  early** (confirm first). Train shows the break's days as paused (never due, never missed) and the
+  early** (confirm first). A safety referral on today's readiness card ("Your safety first") stays
+  above the break card, and a session the athlete started or logged that day stays visible below it.
+  The week counts a break day as planned only when a session was logged on it. Train shows the break's days as paused (never due, never missed) and the
   break card where the next session would be; adherence leaves paused sessions out.
 - **A break ahead:** Today shows when it starts, with **Cancel break**.
 - **End break early** ends the break today, so today is available; ending one not begun cancels it.

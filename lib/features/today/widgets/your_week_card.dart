@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
-import 'package:tracend/shared/training_availability.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
 
@@ -17,25 +16,10 @@ import 'package:tracend/shared/widgets/tracend_motion.dart';
 /// The headline counts sessions against the plan's week and the average of
 /// the days that were scored. Nothing is interpolated.
 class YourWeekCard extends StatefulWidget {
-  const YourWeekCard({
-    required this.week,
-    required this.today,
-    this.pause,
-    super.key,
-  });
+  const YourWeekCard({required this.week, required this.today, super.key});
 
   final List<TodayWeekDay> week;
   final DateTime today;
-
-  /// The running or next break; its days are not counted as planned.
-  final TrainingPause? pause;
-
-  bool paused(DateTime date) {
-    final pause = this.pause;
-    if (pause == null) return false;
-    final day = DateTime(date.year, date.month, date.day);
-    return !day.isBefore(pause.startDate) && !day.isAfter(pause.endDate);
-  }
 
   @override
   State<YourWeekCard> createState() => _YourWeekCardState();
@@ -70,9 +54,7 @@ class _YourWeekCardState extends State<YourWeekCard> {
     final todayIndex = _todayIndex;
     final selected = _selected ?? todayIndex;
     final trained = week.where((d) => d.trained).length;
-    final planned = week
-        .where((d) => d.planned && !widget.paused(d.date))
-        .length;
+    final planned = week.where((d) => d.planned).length;
     final scored = [
       for (var i = 0; i <= todayIndex && i < week.length; i++)
         if (week[i].recovery != null) week[i].recovery!,
@@ -121,7 +103,7 @@ class _YourWeekCardState extends State<YourWeekCard> {
                     day: week[i],
                     today: i == todayIndex,
                     future: i > todayIndex,
-                    paused: widget.paused(week[i].date),
+                    paused: week[i].paused,
                     selected: i == selected,
                     semanticLabel: _dayLine(i),
                     onTap: () => setState(() => _selected = i),
@@ -156,7 +138,7 @@ class _YourWeekCardState extends State<YourWeekCard> {
     final day = widget.week[index];
     final todayIndex = _todayIndex;
     final name = index == todayIndex ? 'Today' : _names[index];
-    final paused = widget.paused(day.date) && !day.trained;
+    final paused = day.paused && !day.trained;
     if (index > todayIndex) {
       if (paused) return '$name · on a break';
       return '$name · ${day.planned ? 'session planned' : 'rest day'}';

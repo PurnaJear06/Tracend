@@ -1,5 +1,5 @@
 begin;
-select plan(72);
+select plan(79);
 
 -- Coach standing state (20261101200000): a break is approved state (training_pauses, an overlay), one
 -- availability helper answers "can this athlete train today?", the brief, the hub, the readiness card and
@@ -38,6 +38,8 @@ select pg_temp.athlete(pg_temp.u(1));
 select pg_temp.athlete(pg_temp.u(2));
 select pg_temp.athlete(pg_temp.u(3));
 select pg_temp.athlete(pg_temp.u(4));
+select pg_temp.athlete(pg_temp.u(5));
+select pg_temp.athlete(pg_temp.u(6));
 create temporary table t as select private.local_date_for(pg_temp.u(1)) as today;
 create temporary table r(name text primary key, j jsonb);
 create temporary table p(name text primary key, id uuid);
@@ -328,6 +330,70 @@ select lives_ok($$select public.persist_daily_coaching_result_v2(pg_temp.u(3),
       'change_proposals', '[]'::jsonb),
     0, 'mock', 'deterministic-mock-v2', 0, 0, 0)$$,
   'a decision may cite the two new evidence codes');
+
+
+-- 11. Per-day pause state in the brief's week, and adherence that never passes planned --------------------
+
+-- A plan with a workout every day, a break on last week's Monday and Tuesday that is over, and a session
+-- the athlete logged on that Monday anyway.
+create temporary table wk as select private.local_date_for(pg_temp.u(5))
+  - (extract(isodow from private.local_date_for(pg_temp.u(5)))::integer - 1) - 7 as monday;
+grant select on wk to authenticated;
+do $$
+declare
+  pl uuid := gen_random_uuid();
+  v uuid := gen_random_uuid();
+  mon date := (select monday from wk);
+begin
+  insert into public.training_plans(id, user_id, title, source) values (pl, pg_temp.u(5), 'Daily', 'imported');
+  insert into public.training_plan_versions(id, user_id, plan_id, version_number, status, block_weeks,
+    sessions_per_week, prescription, rationale, approved_at, effective_date)
+  values (v, pg_temp.u(5), pl, 1, 'active', 6, 7, '{}', 'Approved', now(), mon - 28);
+  insert into public.planned_workouts(user_id, plan_version_id, workout_order, name, objective,
+    preferred_weekday, estimated_minutes, warm_up_guidance, cool_down_guidance)
+  select pg_temp.u(5), v, d, 'Day ' || d, 'Train', d, 40, 'Warm up', 'Cool down' from generate_series(1, 7) d;
+  insert into public.training_pauses(user_id, start_date, end_date, reason, source)
+  values (pg_temp.u(5), mon, mon + 1, 'rest', 'athlete');
+  insert into public.workout_sessions(user_id, plan_version_id, planned_workout_id, local_date,
+    timezone, state, idempotency_key, completed_at, duration_seconds, session_effort,
+    session_effort_source, completion_source)
+  select pg_temp.u(5), v, w.id, mon, 'UTC', 'completed', gen_random_uuid(),
+    now() - (private.local_date_for(pg_temp.u(5)) - mon) * interval '1 day', 3000, 7, 'athlete', 'manual'
+  from public.planned_workouts w where w.plan_version_id = v and w.preferred_weekday = 1;
+end $$;
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'c5000000-0000-4000-8000-000000000005';
+insert into r select 'week_brief', public.get_my_daily_brief((select monday from wk) + 2);
+insert into r select 'week_hub', public.get_my_training_hub(28);
+reset role;
+select ok((select j -> 'availability' -> 'pause' = 'null'::jsonb from r where name = 'week_brief'),
+  'the break is over by the brief''s day, so no break is current');
+select is((select array_agg((day ->> 'paused') || '/' || (day ->> 'planned') || '/' || (day ->> 'trained')
+      order by day ->> 'local_date')
+    from r, jsonb_array_elements(j -> 'week') day where name = 'week_brief'),
+  array['true/true/true', 'true/false/false', 'false/true/false', 'false/true/false', 'false/true/false',
+    'false/true/false', 'false/true/false'],
+  'per day: a break day is not planned, unless a session was logged on it');
+select is((select j -> 'adherence' ->> 'paused_sessions' from r where name = 'week_hub'), '1',
+  'the hub leaves out the break day with no session, and keeps the logged one as planned');
+select ok((select (j -> 'adherence' ->> 'completed_sessions')::integer
+    <= (j -> 'adherence' ->> 'planned_sessions')::integer from r where name = 'week_hub'),
+  'so done never passes planned');
+
+-- 12. High pain stays in the standing state, and undone breaks cover no day ---------------------------------
+
+insert into public.pain_reports(user_id, local_date, source, area, severity, red_flags,
+  cleared_by_clinician, outcome, created_at)
+values (pg_temp.u(6), (select today from t) - 2, 'workout', 'knee', 8, null, false,
+  private.pain_outcome(8, null), now() - interval '2 days');
+select is(public.get_coach_standing_state_v1(pg_temp.u(6), (select today from t)) -> 'high_pain',
+  jsonb_build_object('severity', 8, 'area', 'knee', 'local_date', (select today from t) - 2),
+  'the highest pain of 7 or more in 7 days is kept with its area and date');
+select ok(public.get_coach_standing_state_v1(pg_temp.u(3), (select today from t)) -> 'high_pain' = 'null'::jsonb,
+  'and none is invented');
+select is((select count(*)::integer from private.paused_days(pg_temp.u(4), (select today from t) - 30,
+    (select today from t) + 30) d), 1,
+  'the undone break adds no paused day (only the one-day break set directly does)');
 
 select * from finish();
 rollback;

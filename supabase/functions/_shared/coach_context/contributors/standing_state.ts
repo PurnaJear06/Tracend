@@ -7,13 +7,15 @@
 //
 // It holds today's availability (a break covering today, a check-in saying the athlete cannot train,
 // a safety route), a break ahead or just ended (the first session back), the held and limited joint
-// areas, recent pain on a check-in (never its figure), the goal and phase, and the proposals the
+// areas, recent pain on a check-in (the highest of 7 or more in 7 days with its area and date, so a
+// trimmed history never hides it; below that only that pain of 4 or more was reported), the goal and phase, and the proposals the
 // athlete answered in the last 14 days. A fixed rule says it outranks the plan, the readiness card and
 // the daily decision. It is the last block before the question (the volatile slot, after the cache
 // breakpoint), so a check-in or a tap during the day never invalidates the cached athlete file.
 //
 // The text is capped at `standingStateBudgetChars` by dropping whole lines from the least important
-// end; the rule and today's line are never dropped. A read that fails renders a short "could not be
+// end; the rule, today's line and a high pain are never dropped. "Never ask again" covers only the
+// break and today's availability: pain and symptoms keep their normal follow-up. A read that fails renders a short "could not be
 // read" block, never silence. The dates, titles and areas are marked as records; the thresholds and
 // windows are fixed wording.
 import { blockOf, type CoachContextContributor, type RenderedBlock, sharedRead } from "../host.ts";
@@ -71,6 +73,8 @@ export type StandingState = Readonly<{
   returnFromPause: Readonly<{ lastPausedDay: string }> | null;
   jointAreas: readonly Readonly<{ area: string; state: "held" | "limited" }>[];
   recentPain: boolean;
+  /** The highest pain of 7 or more in the last 7 days (a report's area, or none from a check-in). */
+  highPain: Readonly<{ severity: number; area: string | null; localDate: string }> | null;
   goal: Readonly<{ goalType: string; phase: string | null; phaseEndsOn: string | null }> | null;
   decisions: readonly StandingDecision[];
   breaks: readonly StandingBreak[];
@@ -167,6 +171,17 @@ export function parseStandingState(raw: unknown, localDate: string): StandingSta
     if (!raw || !type) return null;
     goal = { goalType: type, phase: text(raw.phase, 40), phaseEndsOn: date(raw.phase_ends_on) };
   }
+  let highPain: StandingState["highPain"] = null;
+  if (row.high_pain !== null && row.high_pain !== undefined) {
+    const raw = rec(row.high_pain);
+    const severity = raw?.severity;
+    const on = date(raw?.local_date);
+    if (
+      !raw || typeof severity !== "number" || !Number.isInteger(severity) || severity < 7 ||
+      severity > 10 || !on
+    ) return null;
+    highPain = { severity, area: raw.area === null ? null : text(raw.area, 20), localDate: on };
+  }
   const pausedDays = dates(row.paused_days);
   const unavailableDays = dates(row.unavailable_days);
   if (!pausedDays || !unavailableDays) return null;
@@ -180,6 +195,7 @@ export function parseStandingState(raw: unknown, localDate: string): StandingSta
     returnFromPause: back,
     jointAreas,
     recentPain: row.recent_pain,
+    highPain,
     goal,
     decisions,
     breaks,
@@ -229,7 +245,7 @@ export function restDaysOf(state: StandingState | null): ReadonlySet<string> {
 
 /** The fixed rule. It is the first line and is never dropped. */
 export const standingStateRule =
-  "Standing state, built by Tracend from what the athlete approved and said. It outranks the plan, the readiness card and the daily decision. Never ask again about anything it records. On a break or a day the athlete cannot train, never prescribe that day's session: acknowledge it and help within it.";
+  "Standing state, built by Tracend from what the athlete approved and said. It outranks the plan, the readiness card and the daily decision. Never ask again whether the athlete is on a break, for how long, or whether they can train today: it records that. Pain, symptoms and how they feel still get your normal follow-up questions. On a break or a day the athlete cannot train, never prescribe that day's session: acknowledge it and help within it.";
 
 const kindWords: Readonly<Record<string, string>> = Object.freeze({
   temporary_block: "temporary block",
@@ -251,25 +267,41 @@ const goalWords = (goal: NonNullable<StandingState["goal"]>) =>
 function todayLine(state: StandingState): string {
   const day = record(state.localDate);
   const pause = state.pause;
+  const onBreak = state.paused && pause !== null
+    ? `the athlete is on a break from ${record(pause.startDate)} to ${
+      record(pause.endDate)
+    } (they approved it). No session is due until it ends and the plan resumes by itself the day after; do not ask again whether, or for how long, they are taking a break.`
+    : null;
+  // A safety route comes first, and a running break is still stated after it.
   if (state.status === "safety_route") {
     return `Today (${day}): the readiness card carries a safety route (${
       record(state.safetyRoute ?? "")
-    }). No training today; point to the referral on the card.`;
+    }). No training today; point to the referral on the card.${
+      onBreak === null ? "" : ` Also, ${onBreak}`
+    }`;
   }
-  if (state.paused && pause !== null) {
-    return `Today (${day}): the athlete is on a break from ${record(pause.startDate)} to ${
-      record(pause.endDate)
-    } (they approved it). No session is due until it ends and the plan resumes by itself the day after; do not ask again whether, or for how long, they are taking a break.`;
-  }
+  if (onBreak !== null) return `Today (${day}): ${onBreak}`;
   if (state.unavailableToday) {
     return `Today (${day}): the athlete said on today's check-in that they cannot train today. Do not offer today's session.`;
   }
   return `Today (${day}): no break and no check-in saying the athlete cannot train.`;
 }
 
-/** The lines in the order they are kept: the first two always, the rest dropped from the end. */
+/**
+ * The lines in the order they are kept: the rule, today's line and a high pain always, the rest
+ * dropped from the end.
+ */
 export function standingStateLines(state: StandingState): string[] {
   const lines = [standingStateRule, todayLine(state)];
+  if (state.highPain !== null) {
+    lines.push(
+      `Highest pain in the last 7 days: ${record(state.highPain.severity)} out of 10${
+        state.highPain.area === null ? "" : `, ${record(state.highPain.area)}`
+      }, on ${
+        record(state.highPain.localDate)
+      }. Ask how it is now and keep to the readiness card's referral; never diagnose.`,
+    );
+  }
   if (state.paused && state.unavailableToday) {
     lines.push("Today's check-in also says they cannot train.");
   }
@@ -330,7 +362,8 @@ export function standingStateLines(state: StandingState): string[] {
 /** The block's marked text, within the budget: whole lines dropped from the least important end. */
 export function standingStateMarked(state: StandingState): string {
   const lines = standingStateLines(state);
-  while (lines.length > 2 && plain(lines.join("\n")).length > standingStateBudgetChars) {
+  const kept = state.highPain === null ? 2 : 3;
+  while (lines.length > kept && plain(lines.join("\n")).length > standingStateBudgetChars) {
     lines.pop();
   }
   return lines.join("\n");

@@ -111,6 +111,10 @@ Deno.test("a break ahead, the first day back and a safety route each have their 
     payload({ status: "safety_route", safety_route: "urgent", paused: true, pause: runningBreak }),
   );
   assertStringIncludes(route, "carries a safety route (urgent). No training today");
+  // The safety route comes first and the running break is still stated.
+  assertStringIncludes(route, "Also, the athlete is on a break from 2026-10-25 to 2026-11-08");
+  const routeLine = route.split("\n")[1];
+  assert(routeLine.indexOf("safety route") < routeLine.indexOf("on a break"));
 });
 
 Deno.test("held and limited areas, recent pain, the goal and the decisions are listed, never a pain figure", async () => {
@@ -385,5 +389,53 @@ Deno.test("the net prompt goes down: the trimmed check-ins and other conversatio
     (shown.recent.split("## This Conversation")[0].match(/\*\*(USER|ASSISTANT):\*\*/g) ?? [])
       .length,
     gatewayOtherMessagesShown,
+  );
+});
+
+Deno.test("never ask again covers the break and today's availability, never pain", () => {
+  assertStringIncludes(
+    standingStateRule,
+    "Never ask again whether the athlete is on a break, for how long, or whether they can train today",
+  );
+  assertStringIncludes(
+    standingStateRule,
+    "Pain, symptoms and how they feel still get your normal follow-up",
+  );
+  assert(!standingStateRule.includes("anything it records"));
+});
+
+Deno.test("a high pain in the last 7 days is stated with its area and date and is never trimmed", async () => {
+  const text = await render(payload({}, {
+    high_pain: { severity: 8, area: "knee", local_date: "2026-10-29" },
+  }));
+  assertStringIncludes(text, "Highest pain in the last 7 days: 8 out of 10, knee, on 2026-10-29.");
+  assertStringIncludes(text, "never diagnose");
+  const crowded = parseStandingState(
+    payload({ status: "unavailable_today", unavailable_today: true }, {
+      high_pain: { severity: 9, area: null, local_date: "2026-10-30" },
+      decisions: [1, 2, 3].map((n) => ({
+        kind: "training_schedule",
+        title: "A long title that the rules wrote for a weekly schedule change, again ".repeat(2),
+        status: "approved",
+        on: `2026-10-2${n}`,
+        ends_on: null,
+      })),
+      joint_areas: [{ area: "knee", state: "held" }, { area: "back", state: "limited" }],
+      goal: { goal_type: "fat_loss", phase: "cut", phase_ends_on: "2026-12-06" },
+    }),
+    today,
+  )!;
+  const kept = plain(standingStateMarked(crowded));
+  assert(kept.length <= standingStateBudgetChars);
+  assertStringIncludes(
+    kept.split("\n")[2],
+    "Highest pain in the last 7 days: 9 out of 10, on 2026-10-30.",
+  );
+  assertEquals(
+    parseStandingState(
+      payload({}, { high_pain: { severity: 5, area: null, local_date: today } }),
+      today,
+    ),
+    null,
   );
 });

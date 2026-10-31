@@ -928,5 +928,34 @@ select pg_temp.log_bench(pg_temp.u(25), 7, 'joint_adjust', 'limit', 2);
 select is(pg_temp.bench_target(pg_temp.u(25)), 'lower:below_range:57.5',
   'an answer that names another exercise leaves the bench judged as ever');
 
+-- A day in a break the athlete approved (20261101200000) ------------------------------------------------------
+-- The readiness choices are not offered; a held knee's own change still is, and answering it works (the
+-- answers' trigger list allows 'paused').
+
+select pg_temp.make_athlete(pg_temp.u(47));
+select pg_temp.make_athlete(pg_temp.u(48));
+select pg_temp.report(pg_temp.u(47), 1, 'knee', 3, array['locks_gives_way']);
+select pg_temp.report(pg_temp.u(48), 1, 'knee', 3, array['locks_gives_way']);
+do $$ begin
+  perform private.insert_training_pause(pg_temp.u(47), (select today from t), (select today from t) + 3,
+    'rest', null, 'athlete', null);
+  perform private.insert_training_pause(pg_temp.u(48), (select today from t), (select today from t) + 3,
+    'rest', null, 'athlete', null);
+end $$;
+select pg_temp.as_user(pg_temp.u(47)::text);
+insert into r select 'break_day', public.get_my_day_adjustment_v1((select today from t), true);
+select is((select array[j ->> 'kind', j ->> 'status'] from r where name = 'break_day'),
+  array['joint_adjust', 'proposed'], 'on a break day the held knee still changes a session the athlete chooses to do');
+select is((select array(select o ->> 'kind' from jsonb_array_elements(j -> 'options') o) from r
+    where name = 'break_day'), array['joint_adjust'], 'and no readiness choice is offered');
+select ok((select j -> 'triggers' ? 'paused' from r where name = 'break_day'), 'the day carries the paused trigger');
+insert into r select 'break_accept', public.respond_to_day_adjustment_v1((select today from t), true, null, true);
+select is((select j ->> 'status' from r where name = 'break_accept'), 'accepted', 'accepting it works');
+select ok((select 'paused' = any(triggers) from public.day_adjustments
+    where user_id = pg_temp.u(47) and superseded_at is null), 'and the answer stores the paused trigger');
+select pg_temp.as_user(pg_temp.u(48)::text);
+insert into r select 'break_decline', public.respond_to_day_adjustment_v1((select today from t), false, null, true);
+select is((select j ->> 'status' from r where name = 'break_decline'), 'declined', 'declining it works too');
+
 select * from finish();
 rollback;

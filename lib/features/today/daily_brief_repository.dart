@@ -106,6 +106,7 @@ class TodayWeekDay {
     required this.planned,
     this.recovery,
     this.strain,
+    this.paused = false,
   });
 
   factory TodayWeekDay.fromJson(Map<String, dynamic> json) => TodayWeekDay(
@@ -114,6 +115,7 @@ class TodayWeekDay {
     strain: (json['strain'] as num?)?.toDouble(),
     trained: json['trained'] as bool? ?? false,
     planned: json['planned'] as bool? ?? false,
+    paused: json['paused'] as bool? ?? false,
   );
 
   final DateTime date;
@@ -127,8 +129,12 @@ class TodayWeekDay {
   /// A session was completed that day.
   final bool trained;
 
-  /// The active plan has a workout on that weekday.
+  /// The active plan has a workout on that weekday that is due: a day a break
+  /// covers is not planned unless a session was logged on it (brief 1.9).
   final bool planned;
+
+  /// A break the athlete approved covers the day (brief 1.9); false before.
+  final bool paused;
 }
 
 /// Today's latest kept session (brief 1.7 `today_session`).

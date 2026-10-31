@@ -184,6 +184,10 @@ Deno.test("get_my_daily_brief is its latest earlier definition plus the standing
       "  return jsonb_build_object(\n    'schema_version', '1.8',\n",
       "  return jsonb_build_object(\n    'schema_version', '1.9',\n    'availability', private.availability_on(v_user_id, target_date, false),\n",
     ],
+    [
+      "        'planned', exists (\n          select 1\n          from public.planned_workouts w\n",
+      "        -- A day a break covers is not planned unless a session was logged on it (it then counts\n        -- as planned and trained, as in the hub's adherence); paused says which days it covers.\n        'paused', private.is_paused_on(v_user_id, d.day),\n        'planned', (not private.is_paused_on(v_user_id, d.day) or exists (\n          select 1 from public.workout_sessions s\n          where s.user_id = v_user_id\n            and s.local_date = d.day\n            and s.state = 'completed')) and exists (\n          select 1\n          from public.planned_workouts w\n",
+    ],
   ];
   await pinned(
     "20261004160000_recovery_modes.sql",
@@ -198,7 +202,7 @@ Deno.test("get_my_training_hub is its latest earlier definition plus the standin
   const hunks: Hunks = [
     [
       "  order by dcm.computed_at desc\n  limit 1\n)\nselect jsonb_build_object(",
-      "  order by dcm.computed_at desc\n  limit 1\n), paused_sessions as (\n  -- Planned sessions on days a break covers: neither due nor missed, so left out of adherence.\n  select count(*)::integer as n\n  from private.paused_days(auth.uid(),\n    (select today from local_day)-greatest(7,least(period_days,365))+1,\n    (select today from local_day)) d\n  join workouts w on w.preferred_weekday=extract(isodow from d)::integer\n)\nselect jsonb_build_object(",
+      "  order by dcm.computed_at desc\n  limit 1\n), paused_sessions as (\n  -- Planned sessions on days a break covers: neither due nor missed, so left out of adherence. A\n  -- day a session was logged on stays planned, so done never passes planned.\n  select count(*)::integer as n\n  from private.paused_days(auth.uid(),\n    (select today from local_day)-greatest(7,least(period_days,365))+1,\n    (select today from local_day)) d\n  join workouts w on w.preferred_weekday=extract(isodow from d)::integer\n  where not exists (select 1 from completed c where c.local_date=d)\n)\nselect jsonb_build_object(",
     ],
     [
       "'schema_version','1.9'",
@@ -255,6 +259,18 @@ Deno.test("day_adjustment_compute is its latest earlier definition plus the stan
     [
       "  kind := case when unavailable is not null or safety is not null then 'none'",
       "  kind := case when unavailable is not null or safety is not null or paused then 'none'",
+    ],
+    [
+      "    if can_hold and not joint_only then",
+      "    if can_hold and not joint_only and not paused then",
+    ],
+    [
+      "    if can_reduce and not joint_only then",
+      "    if can_reduce and not joint_only and not paused then",
+    ],
+    [
+      "    if (swap_c ->> 'sets_from')::integer > 0 and not joint_only then",
+      "    if (swap_c ->> 'sets_from')::integer > 0 and not joint_only and not paused then",
     ],
   ];
   await pinned(

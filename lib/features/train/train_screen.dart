@@ -1214,13 +1214,15 @@ class _TrainScreenState extends State<TrainScreen> {
     final doneThisWeek = currentWeek.where(hub.isDayCompleted).length;
     final open = _open;
     final assigned = hub.workouts.any((w) => w.weekday != null);
-    // A day of a break has nothing due, so it does not count as planned.
+    // A day of a break has nothing due, so it does not count as planned,
+    // unless a session was logged on it: then it counts as planned and done,
+    // as in the hub's adherence, so done never passes planned.
     final plannedThisWeek = assigned
         ? currentWeek
               .where(
                 (d) =>
                     hub.workoutForWeekday(d.weekday) != null &&
-                    !hub.isDayPaused(d),
+                    (!hub.isDayPaused(d) || hub.isDayCompleted(d)),
               )
               .length
         : hub.plan?.sessionsPerWeek ?? hub.workouts.length;

@@ -145,7 +145,9 @@ end $$;
 revoke all on function private.insert_training_pause(uuid, date, date, text, text, text, uuid)
   from public, anon, authenticated;
 
--- Ends a break on p_today: a running break stops covering today, one not begun yet is cancelled. A break
+-- Ends a break on p_today: a running break stops covering today, one not begun yet is cancelled. An undone
+-- break (the proposal's undo) covers no day at all, as if it was never set: every reader (the paused days,
+-- the availability, the standing state's breaks, the first day back) then leaves it out alike. A break
 -- already over or already ended reports not_running and changes nothing.
 create function private.end_training_pause(p_user uuid, p_pause uuid, p_reason text, p_today date)
 returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -160,7 +162,8 @@ begin
     return jsonb_build_object('schema_version', '1.0', 'status', 'not_running',
       'pause_id', pause.id, 'ended_on', pause.ended_on);
   end if;
-  ended := greatest(pause.start_date, p_today);
+  ended := case when p_reason = 'undone' then pause.start_date
+    else greatest(pause.start_date, p_today) end;
   update public.training_pauses
   set ended_at = statement_timestamp(), ended_on = ended, end_reason = p_reason
   where id = pause.id;
@@ -168,11 +171,20 @@ begin
   values (p_user, 'training_pause_ended', 'training_pause', pause.id, 'succeeded',
     jsonb_build_object('schema_version', '1.0', 'reason', p_reason, 'ended_on', ended));
   return jsonb_build_object('schema_version', '1.0',
-    'status', case when pause.start_date > p_today then 'cancelled' else 'ended' end,
+    'status', case when p_reason = 'undone' then 'undone'
+      when pause.start_date > p_today then 'cancelled' else 'ended' end,
     'pause_id', pause.id, 'ended_on', ended);
 end $$;
 revoke all on function private.end_training_pause(uuid, uuid, text, date)
   from public, anon, authenticated;
+
+-- A day in a break carries the readiness trigger 'paused' (day_adjustment_compute below). A joint adjustment
+-- answered on such a day stores it, so the answers' trigger list allows it.
+alter table public.day_adjustments drop constraint day_adjustments_triggers_check;
+alter table public.day_adjustments add constraint day_adjustments_triggers_check check (triggers <@ array[
+  'not_available', 'no_check_in', 'sleep_very_poor', 'sleep_poor', 'sleep_short',
+  'energy_very_low', 'energy_low', 'very_sore', 'sore', 'mood_very_low', 'pain_moderate',
+  'pain_mild', 'recovery_low', 'paused']::text[]);
 
 -- 2. Availability ------------------------------------------------------------------------------------
 
@@ -337,7 +349,8 @@ alter type public.policy_outcome add value if not exists 'rest_as_chosen';
 -- 8. What the Coach's standing-state block is built from --------------------------------------------------
 
 -- Service role. The athlete's standing state on their own day: availability (with the safety route), the
--- held and limited joint areas, whether pain of 4 or more was reported on a check-in in the last 7 days,
+-- held and limited joint areas, whether pain of 4 or more was reported on a check-in in the last 7 days, the
+-- highest pain of 7 or more in those days (with its area and date),
 -- the goal and its phase, the last 3 proposals the athlete approved, declined or undid in 14 days, the
 -- breaks of the last 14 days and ahead, and the days a break covers or a check-in said they could not
 -- train (28 days back; breaks also 13 days ahead), which the plan and the watch-outs never count as due
@@ -359,6 +372,18 @@ begin
     'recent_pain', exists (select 1 from public.daily_check_ins c
       where c.user_id = p_user_id and c.superseded_at is null
         and c.local_date between p_local_date - 6 and p_local_date and c.pain_severity >= 4),
+    -- The highest pain of 7 or more in the last 7 days, from a pain report (with its area) or a check-in,
+    -- so a trimmed history never hides it.
+    'high_pain', (select jsonb_build_object('severity', x.severity, 'area', x.area, 'local_date', x.local_date)
+      from (
+        select pr.severity, pr.area, pr.local_date from public.pain_reports pr
+        where pr.user_id = p_user_id and pr.local_date between p_local_date - 6 and p_local_date
+          and pr.severity >= 7
+        union all
+        select c.pain_severity, null, c.local_date from public.daily_check_ins c
+        where c.user_id = p_user_id and c.superseded_at is null
+          and c.local_date between p_local_date - 6 and p_local_date and c.pain_severity >= 7
+      ) x order by x.severity desc, x.local_date desc, x.area nulls last limit 1),
     'goal', (select jsonb_build_object('goal_type', g.goal_type, 'phase', g.details ->> 'phase',
         'phase_ends_on', g.details ->> 'phase_ends_on')
       from public.user_goals g where g.id = private.active_goal_id(p_user_id)),
@@ -1089,7 +1114,14 @@ begin
           where s.user_id = v_user_id
             and s.local_date = d.day
             and s.state = 'completed'),
-        'planned', exists (
+        -- A day a break covers is not planned unless a session was logged on it (it then counts
+        -- as planned and trained, as in the hub's adherence); paused says which days it covers.
+        'paused', private.is_paused_on(v_user_id, d.day),
+        'planned', (not private.is_paused_on(v_user_id, d.day) or exists (
+          select 1 from public.workout_sessions s
+          where s.user_id = v_user_id
+            and s.local_date = d.day
+            and s.state = 'completed')) and exists (
           select 1
           from public.planned_workouts w
           join public.training_plan_versions pv
@@ -1203,12 +1235,14 @@ with active_version as (
   order by dcm.computed_at desc
   limit 1
 ), paused_sessions as (
-  -- Planned sessions on days a break covers: neither due nor missed, so left out of adherence.
+  -- Planned sessions on days a break covers: neither due nor missed, so left out of adherence. A
+  -- day a session was logged on stays planned, so done never passes planned.
   select count(*)::integer as n
   from private.paused_days(auth.uid(),
     (select today from local_day)-greatest(7,least(period_days,365))+1,
     (select today from local_day)) d
   join workouts w on w.preferred_weekday=extract(isodow from d)::integer
+  where not exists (select 1 from completed c where c.local_date=d)
 )
 select jsonb_build_object(
   'schema_version','1.10','period_days',greatest(7,least(period_days,365)),
@@ -1552,21 +1586,21 @@ begin
   -- the day is unavailable, carries a safety route or the athlete said they cannot train.
   if (unavailable is null or joint_only) and safety is null
      and coalesce(check_in.available_to_train, true) and workout_id is not null then
-    if can_hold and not joint_only then
+    if can_hold and not joint_only and not paused then
       options := options || jsonb_build_object('kind', 'hold_load',
         'explanation', private.day_adjustment_explanation(band, 'hold_load', '{}', null,
           hold_c -> 'changes', false, null),
         'sets_total_to', (hold_c ->> 'sets_to')::integer, 'changes', hold_c -> 'changes',
         'cardio', null);
     end if;
-    if can_reduce and not joint_only then
+    if can_reduce and not joint_only and not paused then
       options := options || jsonb_build_object('kind', 'reduce_sets',
         'explanation', private.day_adjustment_explanation(band, 'reduce_sets', '{}', null,
           reduce_c -> 'changes', false, null),
         'sets_total_to', (reduce_c ->> 'sets_to')::integer, 'changes', reduce_c -> 'changes',
         'cardio', null);
     end if;
-    if (swap_c ->> 'sets_from')::integer > 0 and not joint_only then
+    if (swap_c ->> 'sets_from')::integer > 0 and not joint_only and not paused then
       options := options || jsonb_build_object('kind', 'swap_to_easy_cardio',
         'explanation', private.day_adjustment_explanation(band, 'swap_to_easy_cardio', '{}', null,
           swap_c -> 'changes', false, null),

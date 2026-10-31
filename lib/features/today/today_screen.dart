@@ -38,6 +38,7 @@ import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/widgets/fuel_rail_card.dart';
 import 'package:tracend/features/today/widgets/plan_progress_line.dart';
 import 'package:tracend/features/today/widgets/today_hero.dart';
+import 'package:tracend/features/readiness/day_adjustment_card.dart';
 import 'package:tracend/features/today/widgets/today_session_card.dart';
 import 'package:tracend/features/today/widgets/today_tiles.dart';
 import 'package:tracend/features/today/widgets/unfinished_workout_card.dart';
@@ -1506,6 +1507,20 @@ class _BriefContent extends StatelessWidget {
   final List<OpenWorkout> open;
   final ValueChanged<OpenWorkout>? onResumeWorkout;
 
+  /// Today's session card, with the latest decision.
+  Widget _sessionCard() => FutureBuilder<CoachDecision?>(
+    future: latestDecision,
+    builder: (context, snapshot) => TodaySessionCard(
+      brief: brief,
+      decision: snapshot.data,
+      aiAllowed: aiAllowed,
+      onOpen: onOpenWorkout,
+      dayAdjustment: dayAdjustment,
+      onTalkToCoach: onTalkToCoach,
+      onCheckIn: onCheckIn,
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
@@ -1615,8 +1630,25 @@ class _BriefContent extends StatelessWidget {
           ),
         ],
         const SizedBox(height: TracendSpacing.md),
-        // A break replaces today's session: nothing is due on its days.
-        if (running != null)
+        // A break replaces today's session: nothing is due on its days. A safety referral on today's
+        // card still comes first, and a session the athlete started or logged today stays visible.
+        if (running != null) ...[
+          if (dayAdjustment case final readiness?)
+            ListenableBuilder(
+              listenable: readiness,
+              builder: (context, _) => readiness.current?.hasSafetyRoute == true
+                  ? Padding(
+                      padding: const EdgeInsets.only(bottom: TracendSpacing.md),
+                      child: DayAdjustmentCard(
+                        controller: readiness,
+                        forDate: brief.localDate,
+                        computed: brief.computed,
+                        onCheckIn: onCheckIn,
+                        onTalkToCoach: onTalkToCoach ?? (_) {},
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
           enter(
             BreakCard(
               pause: running,
@@ -1625,34 +1657,19 @@ class _BriefContent extends StatelessWidget {
               justSet: running.id == justSetPauseId,
               onEnd: () => onEndBreak(running),
             ),
-          )
-        else ...[
-          enter(
-            FutureBuilder<CoachDecision?>(
-              future: latestDecision,
-              builder: (context, snapshot) => TodaySessionCard(
-                brief: brief,
-                decision: snapshot.data,
-                aiAllowed: aiAllowed,
-                onOpen: onOpenWorkout,
-                dayAdjustment: dayAdjustment,
-                onTalkToCoach: onTalkToCoach,
-                onCheckIn: onCheckIn,
-              ),
-            ),
           ),
+          if (brief.todaySession != null) ...[
+            const SizedBox(height: TracendSpacing.md),
+            enter(_sessionCard()),
+          ],
+        ] else ...[
+          enter(_sessionCard()),
           if (upcoming == null)
             TakeBreakButton(onPressed: pauseBusy ? null : onTakeBreak),
         ],
         if (brief.week.isNotEmpty) ...[
           const SizedBox(height: TracendSpacing.md),
-          enter(
-            YourWeekCard(
-              week: brief.week,
-              today: today,
-              pause: availability.pause,
-            ),
-          ),
+          enter(YourWeekCard(week: brief.week, today: today)),
         ],
         const SizedBox(height: TracendSpacing.lg),
         Text(

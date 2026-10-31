@@ -352,19 +352,19 @@ export const scenarios: readonly Scenario[] = [
       mentions: [
         phrase(
           "treats today as rest",
-          /rest/i,
-          /not training today/i,
-          /day off/i,
-          /can'?t train today/i,
+          /\brest\b/i,
+          /\bnot training today\b/i,
+          /\bday off\b/i,
+          /\bcan'?t train today\b/i,
         ),
       ],
       forbids: [
         phrase(
           "says they can train today",
-          /you can (?:still )?train (?:today|if)/i,
-          /if you feel up to it/i,
+          /\byou can (?:still )?train (?:today|if)\b/i,
+          /\bif you feel up to it\b/i,
         ),
-        phrase("recites check-in scores", /sleep (?:of |at )?5/i, /energy (?:of |at )?5/i),
+        phrase("recites check-in scores", /\bsleep (?:of |at )?5\b/i, /\benergy (?:of |at )?5\b/i),
       ],
     },
     setup: (athlete) => {
@@ -396,18 +396,18 @@ export const scenarios: readonly Scenario[] = [
     coachBrief:
       "The athlete approved a 15-day break that is running; the standing state shows its dates. Never prescribe the plan's session, never ask whether or how long they are taking a break, give the end date, and say the plan resumes by itself the day after.",
     expect: {
-      mentions: [phrase("names the break", /break/i)],
+      mentions: [phrase("names the break", /\bbreak\b/i)],
       forbids: [
         phrase(
           "asks again about the break",
-          /how long (?:is|will) (?:your|the) break/i,
-          /are you (?:still )?(?:taking|on) (?:a|your|the) break\?/i,
-          /how many days (?:off|of break)/i,
+          /\bhow long (?:is|will) (?:your|the) break\b/i,
+          /\bare you (?:still )?(?:taking|on) (?:a|your|the) break\?/i,
+          /\bhow many days (?:off|of break)\b/i,
         ),
         phrase(
           "prescribes a session",
-          /today'?s (?:planned )?session is/i,
-          /do (?:your|the) [a-z ]+ (?:day|session) today/i,
+          /\btoday'?s (?:planned )?session is\b/i,
+          /\bdo (?:your|the) [a-z ]+ (?:day|session) today\b/i,
         ),
       ],
     },
@@ -486,13 +486,18 @@ export const scenarios: readonly Scenario[] = [
       "The break ended yesterday and no session has been done since: today is the first session back. Ease in (lighter loads or fewer sets in words, never invented figures), never call the break missed sessions, and use the plan's session for today.",
     expect: {
       mentions: [
-        phrase("eases back in", /ease/i, /lighter/i, /first (?:session|week|day) back/i),
+        phrase(
+          "eases back in",
+          /\bease\b/i,
+          /\blighter\b/i,
+          /\bfirst (?:session|week|day) back\b/i,
+        ),
       ],
       forbids: [
         phrase(
           "calls the break missed",
-          /missed (?:\d+ |several |many )?sessions/i,
-          /behind (?:on )?(?:your |the )?plan/i,
+          /\bmissed (?:\d+ |several |many )?sessions\b/i,
+          /\bbehind (?:on )?(?:your |the )?plan\b/i,
         ),
       ],
     },
@@ -539,13 +544,18 @@ export const scenarios: readonly Scenario[] = [
       "The athlete ended the break early today, so today is available and the first session back. Do not say they are still on a break; give today's session, suggest easing in, and say a new break can be set on Today or Train.",
     expect: {
       mentions: [
-        phrase("eases back in", /ease/i, /lighter/i, /first (?:session|week|day) back/i),
+        phrase(
+          "eases back in",
+          /\bease\b/i,
+          /\blighter\b/i,
+          /\bfirst (?:session|week|day) back\b/i,
+        ),
       ],
       forbids: [
         phrase(
           "says they are still on a break",
-          /you'?re (?:still )?on (?:a|your) break/i,
-          /no session is due/i,
+          /\byou'?re (?:still )?on (?:a|your) break\b/i,
+          /\bno session is due\b/i,
         ),
       ],
     },

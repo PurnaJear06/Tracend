@@ -735,7 +735,9 @@ plan resumes by itself after the break.
 | `ended_at`, `ended_on`, `end_reason` | when and on which local day it was ended, and why: `ended_early` (End break early, or cancelled before it began) or `undone` (the proposal's undo); all null while it stands |
 
 A break covers the days from `start_date` to `end_date`, or to the day before `ended_on` when it was
-ended (`private.pause_last_day`); one ended before it began covers none. Rows are never deleted or
+ended (`private.pause_last_day`); one ended before it began covers none, and so does an undone one
+(undo sets `ended_on` to its first day: an undone break counts as never set, in the paused days, the
+availability, the standing state's breaks and the first day back alike). Rows are never deleted or
 moved: ending one records the end. Breaks never overlap (checked by `private.training_pause_problem` in
 every writer, under a per-athlete lock). RLS is enabled and forced; the owner reads their rows; nobody
 writes them from the client. Every write has an audit event (`training_pause_started`,
@@ -745,8 +747,13 @@ writes them from the client. Every write has an audit event (`training_pause_sta
 `paused`, `unavailable_today` or `available`, with the break covering the day (or the next one ahead),
 `return_from_pause` (the break that ended in the 7 days before while no session has been finished since:
 the first day back) and `offer_break` (two can't-train check-ins in a row and no break). The daily brief
-(1.9) and the training hub (1.10, with `paused_days` and `adherence.paused_sessions`) carry it, and
-`get_coach_standing_state_v1` gives it to the Coach.
+(1.9; each day of its `week` also says `paused`, and a break day is `planned` only when a session was
+logged on it) and the training hub (1.10, with `paused_days` and `adherence.paused_sessions`, which
+leaves out break days without a logged session, so done never passes planned) carry it, and
+`get_coach_standing_state_v1` gives it to the Coach (with `high_pain`, the highest pain of 7 or more in 7
+days with its area and date). A day in a break adds the readiness trigger `paused`, which
+`day_adjustments.triggers` allows, and offers no readiness choice; a held or limited joint's own change
+still does.
 
 ### `pain_reports` (B5-1, migration `20261024060025`)
 
