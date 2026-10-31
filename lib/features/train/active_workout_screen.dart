@@ -14,6 +14,7 @@ import 'package:tracend/features/readiness/pain_check_sheet.dart';
 import 'package:tracend/features/readiness/pain_reporting.dart';
 import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/features/train/exercise_history.dart';
+import 'package:tracend/features/train/open_workout.dart';
 import 'package:tracend/features/train/rest_timer.dart';
 import 'package:tracend/features/train/set_timing.dart';
 import 'package:tracend/features/train/widgets/focus_exercise_page.dart';
@@ -181,8 +182,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   late PlannedWorkout _workout = widget.workout;
 
   /// The day the session is logged under: [ActiveWorkoutScreen.sessionDate],
-  /// or the day an unsent draft left on an earlier day was started, so its
-  /// sets never land on the day it is opened.
+  /// or, once this phone's draft opens, the day the draft stored (the day an
+  /// unsent draft left on an earlier day was started, for a draft saved
+  /// before the date was kept), so its sets never land on the day it is
+  /// opened.
   late DateTime? _sessionDate = widget.sessionDate;
 
   /// The send of waiting workouts' copy of this workout, when one was under
@@ -339,7 +342,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     // it stalls. A send of another workout is never waited for.
     final repository = widget.repository;
     var replaying = false;
+    // The draft as it stood before the wait, so a send that files it on its
+    // own day meanwhile is told apart from a workout with no draft.
+    String? before;
     if (repository is WorkoutSendInFlight) {
+      before = await widget.repository.loadDraft(_workout.id);
       _replay = (repository as WorkoutSendInFlight).sendInFlight(_workout.id);
       await _replay.timeout(_replayWait, onTimeout: () => replaying = true);
     }
@@ -362,6 +369,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     // under the wrong names.
     if (server != null && !_sessionFitsPlan(server)) server = null;
     final saved = await widget.repository.loadDraft(_workout.id);
+    if (saved == null && !replaying && _filedMeanwhile(before)) {
+      // The send of waiting workouts filed this workout on its own day while
+      // the screen opened: its sets reached the server, and it is answered on
+      // Today. Starting it again here would open an empty second session.
+      await _closeFiled();
+      return;
+    }
     var local = saved == null ? null : _decode(saved);
     // A send still under way has this draft in hand: it is not sent twice.
     if (local != null &&
@@ -378,13 +392,17 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       local = null;
     }
     final draft = _newer(server, local);
-    if (local != null &&
-        draft?['session_id'] == local['session_id'] &&
-        _leftOnEarlierDay(local)) {
-      // The earlier day's draft could not be sent and opens as it was saved:
-      // its session is started, read and finished on the day it was started.
-      final started = DateTime.parse('${local['actual_started_at']}');
-      _sessionDate = started.toLocal();
+    if (local != null && draft?['session_id'] == local['session_id']) {
+      // This phone's draft opens: its session is started, read and finished
+      // on the day the draft was logged under. An older draft without that
+      // day, left on an earlier day and not sent, keeps the day it began.
+      final stored = draftSessionDate(local);
+      if (stored != null) {
+        _sessionDate = stored;
+      } else if (_leftOnEarlierDay(local)) {
+        final started = DateTime.parse('${local['actual_started_at']}');
+        _sessionDate = started.toLocal();
+      }
     }
     if (draft != null) {
       _sessionId = draft['session_id'] as String?;
@@ -459,6 +477,27 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     await _save();
+  }
+
+  /// Whether [before], the draft this screen found as it opened, had sets
+  /// done: a send that clears such a draft has filed it on its own day.
+  static bool _filedMeanwhile(String? before) {
+    final draft = before == null ? null : _decode(before);
+    return draft != null && draftHasDoneSet(draft);
+  }
+
+  /// Closes the screen for a workout the send of waiting workouts filed while
+  /// it opened, and says where to answer it.
+  Future<void> _closeFiled() async {
+    _closed = true;
+    _events.emit(WorkoutEnded(at: widget.clock(), completed: false));
+    if (!mounted) return;
+    TracendToast.show(
+      context,
+      workoutFiledMessage,
+      icon: CupertinoIcons.checkmark_circle,
+    );
+    Navigator.of(context).pop(false);
   }
 
   /// Whether the exercises the session [server] was begun with, as prescribed,
@@ -677,6 +716,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     final now = widget.clock();
     return workoutLeftOnEarlierDay(
       startedAt: started,
+      loggedOn: draftSessionDate(draft),
       now: now,
       sessionDate: widget.sessionDate ?? now,
       maxSeconds: ActiveWorkoutScreen.maxSessionSeconds,
@@ -968,12 +1008,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     ],
   };
 
-  /// The draft kept on this phone: the synced draft plus the start time,
-  /// the running rest and the end of the last rest, which only the device
-  /// needs.
+  /// The draft kept on this phone: the synced draft plus the start time, the
+  /// day the session is logged under, the workout's name (for the Resume
+  /// card), the running rest and the end of the last rest, which only the
+  /// device needs.
   Map<String, dynamic> _localDraft() => {
     ..._draft(local: true),
     'workout_identity': ?_workout.identity?.toJson(),
+    workoutNameDraftKey: _workout.name,
+    sessionDateDraftKey: localDayKey(_sessionDate ?? _startedAt),
     'actual_started_at': _startedAt.toUtc().toIso8601String(),
     _serverStartedKey: ?_serverStartedAt?.toUtc().toIso8601String(),
     if (_timingRefused) _timingRefusedKey: true,

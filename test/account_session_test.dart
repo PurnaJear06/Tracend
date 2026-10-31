@@ -491,9 +491,9 @@ void main() {
       await pumpGate(tester, server);
 
       expect(find.text('Connection needed'), findsOneWidget);
-      // The failure reaches Sentry by its type, never its text.
-      expect(reported.single.what, 'Account state not loaded');
-      expect(reported.single.detail, 'AuthRetryableFetchException');
+      // No signal is not a fault: it is logged, never reported, on a cold
+      // start as much as on a retry.
+      expect(reported, isEmpty);
       expect(server.client.auth.currentSession, isNotNull);
       expect(liveActivity.calls, isEmpty);
       expect(homeWidgets.calls, isEmpty);
@@ -501,6 +501,28 @@ void main() {
         await preferences.getString(HealthPreferenceKeys(_userId).lastSync),
         isNotNull,
       );
+    });
+
+    testWidgets('a server error from Auth is still reported, by its type and '
+        'code', (tester) async {
+      final reported = <NonCriticalFailure>[];
+      final previousSink = failureSink;
+      failureSink = (failure, _) => reported.add(failure);
+      addTearDown(() => failureSink = previousSink);
+      final server = _Server()
+        ..answer('GET /auth/v1/user', 503, {'msg': 'unavailable'});
+      await _storeSession(
+        server.client,
+        DateTime.now().add(const Duration(minutes: 50)),
+      );
+
+      await pumpGate(tester, server);
+
+      expect(find.text('Connection needed'), findsOneWidget);
+      // The failure reaches Sentry by its type, never its text.
+      expect(reported.single.what, 'Account state not loaded');
+      expect(reported.single.detail, 'AuthRetryableFetchException 503');
+      expect(server.client.auth.currentSession, isNotNull);
     });
 
     testWidgets('the intro plays on a cold start only, never on a retry', (

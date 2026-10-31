@@ -462,6 +462,12 @@ Reading order:
      sets logged"). **Save workout** asks how hard it was (1 to 10, required) and puts it in
      history on its own day; **Discard** asks first and keeps it out of history and load for good.
      It does not count as a workout until the athlete saves it.
+   - **Workout in progress**, under the hero: a workout left open on this phone, whatever day it is
+     logged under ("Legs B · Fri 30 Oct · 2 sets logged") with **Resume**, which switches to Train
+     and opens it on that day. More than one: the newest leads and the others are listed under
+     "Also in progress", each with its own **Resume**. A workout the server already offers back as
+     unfinished shows only on that card. It reads only this phone's drafts, so it shows even when
+     the brief fails to load (above the "Use your approved plan." card).
 3. **Plan progress**: the plan's title and "Week 3 of 20" with a thin bar; past the block, "Week
    22 · block of 20 done".
 4. **Tiles**: Sleep (tall: duration, sleep debt or quality, a deep/REM share bar from Apple
@@ -878,8 +884,8 @@ health value (SECURITY_PRIVACY.md §10). The countdown keeps running with the ap
   Compact shows the glyph and "2/4", minimal the glyph.
 - **Log set** logs the set exactly as the in-app **Done set** does, at the values the logger
   pre-fills; the card never edits them (changing reps or load needs the app, whose logger the
-  **Open** button and a tap on the card bring forward: from a killed app they reopen today's
-  workout that was left open). A set with no reps to pre-fill gets **Open** only.
+  **Open** button and a tap on the card bring forward: from a killed app they reopen the newest
+  workout left open on this phone, on the day it is logged under). A set with no reps to pre-fill gets **Open** only.
 - **Rest:** after Log set, or **Done set** in the app, the card becomes the rest: "Rest", the
   exercise, "Next: …" and a big lime countdown, with **+30s** and **Skip**. When the rest ends, by
   itself (even with the phone locked and the app asleep), by Skip or by −15 past the end, the card
@@ -921,8 +927,8 @@ workout?" naming that the logged sets are deleted; calls `abandon_workout`, toas
 discarded") and **Keep logging**.
 
 **An unfinished workout from an earlier day** is not resumed as today's. Opening a workout closes
-every session of the athlete's that began on an earlier local day more than 3 hours ago as
-discarded (their sets stay in the record, uncounted in history), and a draft of one on the phone
+every session of the athlete's logged under an earlier local day that began more than 3 hours ago
+as discarded (their sets stay in the record, uncounted in history), and a draft of one on the phone
 is dropped, so today's workout starts at 0:00 on today's date. A workout begun late the night
 before and still inside 3 hours resumes with its own time. A finish that was saved on the phone but
 never sent, for a workout already more than 3 hours into an earlier day, is sent first when the
@@ -974,6 +980,17 @@ confirmation actions. The tab reads top to bottom:
   without dates). The pill opens the plan sheet: title, block weeks and sessions a week, week
   pips, the plan rule when the plan has one, and "You approved this plan on 15 September. Changes
   always need your approval." At large text the pill moves under the title.
+- **Workout in progress.** At the top, when a workout is left open on this phone (a draft with a
+  set done and no finish waiting), whatever its day: "Legs B · Fri 30 Oct · 2 sets logged" with
+  **Resume**, which opens the logger on the day the workout is logged under. More than one: the
+  newest (by the last set done) leads, and the others are listed under "Also in progress", each with
+  its own **Resume**. It reads only this phone's drafts, so it shows offline too. A workout that the
+  send of waiting workouts filed on its day meanwhile answers "This workout was sent to Tracend.
+  Save or discard it on Today." (the workout screen closes with the same words when the send files
+  it while the screen opens, so it is never started a second time). A workout begun before the plan
+  was copied with new ids is found by its place and exercises and moves to its copy in the current
+  plan before it opens; with no copy it says "This workout is no longer in your plan. Its sets are
+  kept on this phone.", and with no connection to read the plan it asks to connect.
 - **Day boxes.** Seven boxes for the week: a check for a done day, a dot for a planned day, a lime
   ring for today and a raised fill for the selected day. A tap plays the selection haptic and slides
   the day's content in from the side it came from (a crossfade under Reduce Motion). A horizontal
@@ -1030,22 +1047,36 @@ confirmation actions. The tab reads top to bottom:
   workout record?" (**Confirm correction** / **Not now**). A match ("Match confidence N%") offers
   **Confirm match**, **Not the same workout** and, for another day, **Switch to that day**. Results
   are toasts ("Workout record corrected", "Workout match confirmed", "Match dismissed").
-- **Workout hero.** A kicker ("Today", a weekday, "Done today", "Done on Tuesday", "Tuesday, not
-  logged"), the name, "6 exercises, about 48 min" (a done day shows "48 min, 6 exercises"), the
+- **Workout hero.** A kicker ("Today", a weekday, "Done today", "Done on Tuesday", "Tuesday,
+  missed", "In progress"), the name, "6 exercises, about 48 min" (a done day shows "48 min, 6 exercises"), the
   worked muscles as chips and on the turnable `MuscleMap` with a Front/Back control. When
   exercises with known muscles carry less than three quarters of the workout's planned sets, the
   map and chips are left out (a partial map would misdescribe the session) and the card says
   "Muscle map appears with your next plan."
   - The title area opens the **workout overview** sheet (objective, warm-up, exercises, cooldown,
-    then **Start workout** for a day not done, or **View summary**). The map opens the **muscles
+    then **Start workout** for today or a day in progress, **Do it today** for a missed or coming
+    day, or **View summary**). The map opens the **muscles
     sheet**: front and back side by side, a row per muscle with its sets and exercises, rows and
     muscles selecting each other, and a note that muscles come from the exercise catalog or
     Tracend's reviewed exercise list.
-  - The one action is **Start workout** (heavy haptic), **Log this workout** for a past day with
-    nothing logged, **Preview workout** for a day that has not begun (it opens the overview, whose one
-    action is **Do it today**, as does a link under the preview: it starts that workout with today's
-    date; the server refuses a start for a future date), or **View summary** for a
-    done day. A day done under an earlier plan version (a Coach change, a block or a deload copies the
+  - The one action is **Start workout** (heavy haptic) for today, **Resume** for a day with a
+    workout left open on this phone ("In progress", never "missed"), **Preview workout** for a day
+    that has not begun (it opens the overview, whose one action is **Do it today**, as does a link
+    under the preview: it starts that workout with today's date; the server refuses a start for a
+    future date), or **View summary** for a done day.
+  - A past day with nothing logged is **missed** and has no Start: a skipped day does not invite a
+    start. Its main action is **Do it today** (today's date). A quiet text button under it, "I did
+    it, log it for Tue 29 Sep", is for a workout trained and not logged: it asks "Log Upper body B
+    for Tuesday 29 September?" (**Log for Tuesday** / **Cancel**) and logs the session under that
+    day.
+  - **One workout at a time.** Starting a workout while another has sets logged asks first, in an
+    action sheet: "Legs B (Fri) has 2 sets logged." with **Resume it** and **Start this one
+    anyway**. Starting anyway leaves that draft as it is; nothing is discarded. The same workout
+    open on another day shares its draft on this phone, so it is asked about first, even when
+    another workout's draft is newer, and only **Resume it** is offered.
+  - A started workout keeps the day it is logged under in its draft on this phone. Every start and
+    every late send uses that day, so a past day's workout logged offline is filed on that day
+    (a draft saved before this was kept goes on the day it began). A day done under an earlier plan version (a Coach change, a block or a deload copies the
     workouts) shows as done, with its session. Train shows the weekdays the server holds. A Coach proposal that carries no
     weekday gets the athlete's training days when they are as many as the workouts, else a spread
     (two: Monday, Thursday; three: Monday, Wednesday, Friday; four: Monday, Tuesday, Thursday, Friday;
@@ -1100,8 +1131,9 @@ targets.
 ### Apple Health quick-complete
 
 When Apple Health records a workout on a day with a scheduled Tracend workout but no completed
-session, the workout hero replaces its action (**Start workout** or **Log this workout**) with a
-prompt. It never shows on a done day.
+session, the workout hero replaces its action (**Start workout**, or **Do it today** on a missed
+day) with a prompt. A day with a workout in progress on this phone never shows it (completing from
+Apple Health would record a second session); it shows **Resume**. It never shows on a done day.
 
 - Kicker: **Apple Health detected workout** with the `heart_fill` icon.
 - "Apple Health recorded a N min workout today / yesterday / on 2 October. Did you complete

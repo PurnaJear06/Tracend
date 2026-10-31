@@ -36,6 +36,7 @@ import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/train/active_workout_screen.dart';
 import 'package:tracend/features/train/guidance/training_guidance_controller.dart';
 import 'package:tracend/features/train/guidance/training_guidance_repository.dart';
+import 'package:tracend/features/train/open_workout.dart';
 import 'package:tracend/features/train/train_screen.dart';
 import 'package:tracend/features/train/training_pause_repository.dart';
 import 'package:tracend/features/train/workout_repository.dart';
@@ -220,6 +221,9 @@ class _AppShellState extends State<AppShell> {
   /// in progress; Train reopens it when no workout screen is open.
   final _workoutRequests = ValueNotifier<int>(0);
 
+  /// The open workout Today's Resume card asked for; Train reopens it.
+  final _resumeRequests = ResumeRequests();
+
   @override
   void didUpdateWidget(AppShell oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -232,6 +236,7 @@ class _AppShellState extends State<AppShell> {
   void dispose() {
     _widgetTaps.dispose();
     _workoutRequests.dispose();
+    _resumeRequests.dispose();
     widget.homeWidgets.stopListeningForTab(_openRequestedTab);
     unawaited(_widgetPublisher.dispose());
     _checkInGate.dispose();
@@ -450,6 +455,12 @@ class _AppShellState extends State<AppShell> {
     ),
   );
 
+  /// Today's Resume card: Train opens the workout it named.
+  void _resumeInTrain(OpenWorkout workout) {
+    _resumeRequests.request(workout);
+    _selectTab(1);
+  }
+
   void _selectTab(int index) {
     if (index == _selectedIndex) return;
     HapticFeedback.selectionClick();
@@ -499,6 +510,8 @@ class _AppShellState extends State<AppShell> {
               pain: _pain,
               userId: widget.userId,
               pauses: _pauses,
+              onResumeWorkout: _resumeInTrain,
+              active: _selectedIndex == 0,
             ),
       () => TrainScreen(
         key: const ValueKey('tab_train'),
@@ -509,6 +522,7 @@ class _AppShellState extends State<AppShell> {
         onOpenAccount: _openAccount,
         planChanges: _planChanges,
         workoutRequests: _workoutRequests,
+        resumeRequests: _resumeRequests,
         dayAdjustment: _dayAdjustment,
         guidance: _guidance,
         proposals: _proposals,

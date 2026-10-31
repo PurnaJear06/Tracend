@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -18,6 +22,19 @@ String describeFailure(Object? error) {
   final type = error == null ? 'unknown' : error.runtimeType.toString();
   return code == null || code.isEmpty ? type : '$type $code';
 }
+
+/// Whether [error] says the server could not be reached: no signal, a dropped
+/// or refused connection, a failed TLS handshake, or a wait that ran out.
+/// Auth's retryable failure counts only without a status code, which is how
+/// it wraps a lost connection; with one it is a server error (5xx).
+bool isNetworkFailure(Object error) => switch (error) {
+  AuthRetryableFetchException(:final statusCode) => statusCode == null,
+  SocketException() ||
+  HandshakeException() ||
+  TimeoutException() ||
+  http.ClientException() => true,
+  _ => false,
+};
 
 /// Notes a failure the app carries on from. The debug log and the crash
 /// report's breadcrumbs get the type and code only (see [describeFailure]),

@@ -429,6 +429,15 @@ day, never today's; a stalled send no longer holds the workout screen (bounded w
 writer); Train on a saved plan hides the lighter-week card and cardio row; an interrupted plan-copy
 move keeps the saved finish.
 
+Resume any open workout (2026-10-31, branch `claude/workout-resume`, in review; owner report on
+build 902, Refs FLUTTER-N): Train and Today show a Resume card for a workout left open on this
+phone whatever its day, a day with one reads "In progress", the Live Activity reopens the newest,
+a second start asks first, a missed past day offers **Do it today** with a quiet "I did it, log it"
+(owner decision), the draft keeps its session date so an offline past-day workout is filed on that
+day, the gate logs instead of reporting a launch with no signal, and the meal AI-limit message no
+longer names an amount. App only, needs a reinstall. See
+[`docs/handoff/account-session.md`](./handoff/account-session.md).
+
 ## Shipped baseline
 
 - iOS-only Flutter app backed by Supabase Auth, PostgreSQL/RLS, Storage, and nine Edge Functions.

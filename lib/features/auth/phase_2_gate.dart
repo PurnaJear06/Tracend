@@ -185,8 +185,10 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
       }
     } catch (e, stackTrace) {
       // Seen in Sentry by type and code: a gate that cannot load the account
-      // leaves the athlete on "Connection needed", or on the saved plan.
-      if (_offline) {
+      // leaves the athlete on "Connection needed", or on the saved plan. No
+      // signal is not a fault, on a cold start as much as on a retry: it is
+      // only logged.
+      if (_offline || isNetworkFailure(e)) {
         logNonCritical(e, 'Account state not loaded');
       } else {
         reportNonCritical(e, stackTrace, 'Account state not loaded');
