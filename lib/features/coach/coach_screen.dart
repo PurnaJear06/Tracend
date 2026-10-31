@@ -58,6 +58,32 @@ const _maxKeyReplays = 2;
 /// row or Saved conversations.
 const coachReopenWindow = Duration(hours: 6);
 
+/// The screen's conversation as it was when the athlete started opening
+/// another, so a failed open can put it back.
+class _OpenedFrom {
+  const _OpenedFrom({
+    required this.view,
+    required this.threadId,
+    required this.previousThreadId,
+    required this.remembered,
+    required this.openedAt,
+    required this.messages,
+    required this.turnFailure,
+    required this.factSuggestions,
+    required this.budgetWarning,
+  });
+
+  final int view;
+  final String? threadId;
+  final String? previousThreadId;
+  final bool remembered;
+  final DateTime? openedAt;
+  final List<CoachMessage> messages;
+  final _TurnFailure? turnFailure;
+  final List<CoachFactSuggestion> factSuggestions;
+  final bool budgetWarning;
+}
+
 class CoachScreen extends StatefulWidget {
   const CoachScreen({
     this.repository = const FixtureCoachRepository(),
@@ -146,6 +172,21 @@ class _CoachScreenState extends State<CoachScreen> {
   /// moved on, its new thread is not selected and its reply is not shown
   /// there. The server still keeps both, so the thread appears in the list.
   int _view = 0;
+  int _viewSequence = 0;
+
+  /// Starts a new view and returns its token. Tokens never repeat, so a
+  /// request from a view that was left cannot match a later one.
+  int _beginView() => _view = ++_viewSequence;
+
+  /// What the screen showed before the conversation being opened, until that
+  /// open settles. A failed open puts it back, so the messages on screen
+  /// always belong to the thread id and its next send.
+  _OpenedFrom? _openedFrom;
+
+  /// A follow-up the athlete asked for (a chip, "Change it") while Coach was
+  /// still answering or cooling down. It sends when Coach is free, and is
+  /// shown meanwhile.
+  String? _queuedFollowUp;
 
   /// When the athlete explicitly opened the current conversation (Continue
   /// last chat, Saved conversations). An old chat opened on purpose stays open
@@ -246,6 +287,11 @@ class _CoachScreenState extends State<CoachScreen> {
     final text = widget.draftRequests?.take();
     if (text == null) return;
     _startFreshIfStale();
+    _addToComposer(text);
+  }
+
+  /// Puts [text] in the composer: in an empty box, or under what is typed.
+  void _addToComposer(String text) {
     final typed = _composer.text;
     _composer.text = typed.trim().isEmpty ? text : '$typed\n\n$text';
     _composer.selection = TextSelection.collapsed(
@@ -300,7 +346,37 @@ class _CoachScreenState extends State<CoachScreen> {
     _cooldownSubscription = stream.listen((remaining) {
       if (!mounted) return;
       setState(() => _cooldownRemaining = remaining > 0 ? remaining : null);
+      if (remaining <= 0) _sendQueued();
     });
+  }
+
+  /// Sends the waiting follow-up once Coach is free.
+  void _sendQueued() {
+    final text = _queuedFollowUp;
+    if (text == null ||
+        _sending ||
+        _loadingChat ||
+        _cooldownRemaining != null) {
+      return;
+    }
+    if (!_aiAllowed) {
+      // Nothing is sent without permission, and the consent sheet is the
+      // athlete's to open: the text waits in the composer.
+      _queuedToComposer();
+      return;
+    }
+    setState(() => _queuedFollowUp = null);
+    unawaited(_send(text));
+  }
+
+  /// A follow-up that is not going out (Cancel, a failed reply, a switch of
+  /// conversation, a newer follow-up, AI coaching off) goes to the composer,
+  /// to send or change; it is never lost.
+  void _queuedToComposer() {
+    final text = _queuedFollowUp;
+    if (text == null) return;
+    setState(() => _queuedFollowUp = null);
+    _addToComposer(text);
   }
 
   Future<void> _restoreChat() async {
@@ -309,6 +385,7 @@ class _CoachScreenState extends State<CoachScreen> {
       if (mounted) setState(() => _loadingChat = false);
       return;
     }
+    final view = _view;
     try {
       final (threads, remembered) = await (
         chat.loadThreads(),
@@ -330,6 +407,12 @@ class _CoachScreenState extends State<CoachScreen> {
           ? const <CoachMessage>[]
           : await chat.loadMessages(threadId);
       if (!mounted) return;
+      // The athlete may have opened or started a conversation meanwhile: the
+      // list still applies, the selection does not.
+      if (_view != view) {
+        setState(() => _threads = threads);
+        return;
+      }
       setState(() {
         _threads = threads;
         _threadId = threadId;
@@ -343,7 +426,7 @@ class _CoachScreenState extends State<CoachScreen> {
       _showNewest();
     } catch (e) {
       logNonCritical(e);
-      if (mounted) {
+      if (mounted && _view == view) {
         setState(() {
           _loadingChat = false;
           _error = 'Saved conversations could not be loaded.';
@@ -382,8 +465,35 @@ class _CoachScreenState extends State<CoachScreen> {
   Future<void> _openThread(String id) async {
     final chat = _chat;
     if (chat == null) return;
+    if (_sending) {
+      // The reply on its way belongs to this conversation, and a failed open
+      // would put it back without its answer. Switching waits for it.
+      TracendToast.show(
+        context,
+        'Coach is still answering. Open another conversation when it’s done.',
+        icon: CupertinoIcons.clock,
+      );
+      return;
+    }
+    // Only the first open of a run keeps what to go back to: a second tap
+    // while the first still loads must not take the empty loading state for
+    // the conversation the athlete was reading.
+    final from =
+        _openedFrom ??
+        _OpenedFrom(
+          view: _view,
+          threadId: _threadId,
+          previousThreadId: _previousThreadId,
+          remembered: _threadRemembered,
+          openedAt: _openedAt,
+          messages: _messages,
+          turnFailure: _turnFailure,
+          factSuggestions: _factSuggestions,
+          budgetWarning: _budgetWarning,
+        );
+    final view = _beginView();
     setState(() {
-      _view++;
+      _openedFrom = from;
       _openedAt = widget.now();
       _pinnedToEnd = false;
       _loadingChat = true;
@@ -391,46 +501,62 @@ class _CoachScreenState extends State<CoachScreen> {
       _threadRemembered = _threads
           .where((thread) => thread.id == id)
           .every((thread) => thread.remember);
+      _messages = const [];
       _error = null;
       _turnFailure = null;
       _factSuggestions = const [];
       _budgetWarning = false;
     });
-    unawaited(widget.threadMemory.remember(id));
+    _queuedToComposer();
     try {
       final messages = await chat.loadMessages(id);
-      if (mounted) {
-        setState(() {
-          _messages = messages;
-          _loadingChat = false;
-        });
-        _showNewest();
-      }
+      if (!mounted || _view != view) return;
+      unawaited(widget.threadMemory.remember(id));
+      setState(() {
+        _openedFrom = null;
+        _messages = messages;
+        _loadingChat = false;
+      });
+      _showNewest();
     } catch (e) {
       logNonCritical(e);
-      if (mounted) {
-        setState(() {
-          _loadingChat = false;
-          _error = 'Conversation could not be opened.';
-        });
-      }
+      if (!mounted || _view != view) return;
+      setState(() {
+        _openedFrom = null;
+        _view = from.view;
+        _threadId = from.threadId;
+        _previousThreadId = from.previousThreadId;
+        _threadRemembered = from.remembered;
+        _openedAt = from.openedAt;
+        _messages = from.messages;
+        _turnFailure = from.turnFailure;
+        _factSuggestions = from.factSuggestions;
+        _budgetWarning = from.budgetWarning;
+        _loadingChat = false;
+        _error = 'Conversation could not be opened.';
+      });
     }
   }
 
-  void _newThread({String? previous}) => setState(() {
-    _view++;
-    _openedAt = null;
-    _previousThreadId = previous;
-    _pinnedToEnd = false;
-    _threadId = null;
-    _rememberChat = true;
-    _threadRemembered = true;
-    _messages = const [];
-    _error = null;
-    _turnFailure = null;
-    _factSuggestions = const [];
-    _budgetWarning = false;
-  });
+  void _newThread({String? previous}) {
+    setState(() {
+      _beginView();
+      _openedFrom = null;
+      _openedAt = null;
+      _previousThreadId = previous;
+      _pinnedToEnd = false;
+      _threadId = null;
+      _rememberChat = true;
+      _threadRemembered = true;
+      _messages = const [];
+      _loadingChat = false;
+      _error = null;
+      _turnFailure = null;
+      _factSuggestions = const [];
+      _budgetWarning = false;
+    });
+    _queuedToComposer();
+  }
 
   /// Creates the server thread for a new conversation's first send. It is
   /// selected and listed (under its first question, the title the server
@@ -486,7 +612,15 @@ class _CoachScreenState extends State<CoachScreen> {
   Future<void> _send([String? suggestion, _TurnFailure? retrying]) async {
     final chat = _chat;
     final question = (suggestion ?? _composer.text).trim();
-    if (chat == null || question.isEmpty || _sending || _loadingChat) {
+    if (chat == null || question.isEmpty || _loadingChat) return;
+    if (_sending || _cooldownRemaining != null) {
+      // A chip or "Change it" is never dropped: it waits, shown, and goes out
+      // when Coach is free. Typing and Retry are off while busy.
+      if (suggestion != null) {
+        final replaced = _queuedFollowUp;
+        setState(() => _queuedFollowUp = question);
+        if (replaced != null && replaced != question) _addToComposer(replaced);
+      }
       return;
     }
     if (!_aiAllowed) {
@@ -546,6 +680,7 @@ class _CoachScreenState extends State<CoachScreen> {
             ];
             _sending = false;
           });
+          _queuedToComposer();
         }
         unawaited(_refreshThreads(chat));
         return;
@@ -577,6 +712,7 @@ class _CoachScreenState extends State<CoachScreen> {
           _sending = false;
         });
         _scrollToEnd();
+        _sendQueued();
       }
     } catch (e) {
       if (mounted) {
@@ -601,6 +737,7 @@ class _CoachScreenState extends State<CoachScreen> {
           icon: CupertinoIcons.exclamationmark_circle,
         );
         _scrollToEnd();
+        _queuedToComposer();
       }
     }
     unawaited(_refreshThreads(chat));
@@ -805,7 +942,7 @@ class _CoachScreenState extends State<CoachScreen> {
             OutlinedButton.icon(
               onPressed: () {
                 Navigator.pop(sheetContext);
-                _newThread(previous: _threadId);
+                _newThread(previous: _threadId ?? _previousThreadId);
               },
               icon: const Icon(CupertinoIcons.square_pencil, size: 20),
               label: const Text('New conversation'),
@@ -1117,6 +1254,10 @@ class _CoachScreenState extends State<CoachScreen> {
           child: CoachThinkingIndicator(),
         ),
       ],
+      if (_queuedFollowUp case final queued?) ...[
+        const SizedBox(height: TracendSpacing.md),
+        _QueuedFollowUp(text: queued, onCancel: _queuedToComposer),
+      ],
       if (widget.memory != null)
         for (final suggestion in _factSuggestions) ...[
           const SizedBox(height: TracendSpacing.lg),
@@ -1246,6 +1387,37 @@ class _NotRememberedNotice extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A follow-up waiting for Coach to finish, with a way to cancel it.
+class _QueuedFollowUp extends StatelessWidget {
+  const _QueuedFollowUp({required this.text, required this.onCancel});
+
+  final String text;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Icon(CupertinoIcons.clock, size: 18, color: colors.textSecondary),
+        const SizedBox(width: TracendSpacing.xs),
+        Expanded(
+          child: Text(
+            'Sends when Coach is ready: $text',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
+          ),
+        ),
+        TextButton(onPressed: onCancel, child: const Text('Cancel')),
+      ],
     );
   }
 }

@@ -261,6 +261,9 @@ class _Server {
   /// The `order` query parameter of each coach_messages read.
   final messageOrders = <String?>[];
 
+  /// The `limit` query parameter of each coach_messages read.
+  final messageLimits = <String?>[];
+
   late final client = SupabaseClient(
     'https://tracend-test.supabase.co',
     'publishable-test',
@@ -282,7 +285,10 @@ class _Server {
           messageOrders.add(
             request.url.queryParameters['order']?.replaceAll('.nullslast', ''),
           );
-          return json(messages);
+          messageLimits.add(request.url.queryParameters['limit']);
+          // [messages] are listed in reading order; the repository asks for
+          // the newest first, as the real server answers.
+          return json(messages.reversed.toList());
         case '/functions/v1/coach-chat':
           if (offline) throw http.ClientException('offline');
           chatBodies.add(jsonDecode(request.body) as Map<String, dynamic>);
@@ -485,16 +491,19 @@ void main() {
       },
     );
 
-    test('a thread is read oldest-first, ties broken by id', () async {
+    test('a thread is read as its newest messages, then shown oldest-first '
+        'with ties broken by id', () async {
       final server = _Server();
       final repository = SupabaseCoachRepository(
         server.client,
         now: () => _now,
       );
       await repository.loadMessages(_threadId);
-      // postgrest-dart sorts descending unless told otherwise; a descending
-      // read puts every answer above its question.
-      expect(server.messageOrders, ['created_at.asc,role.desc,id.asc']);
+      // postgrest-dart sorts descending unless told otherwise, so every
+      // direction is explicit. The read is the exact reverse of the order
+      // shown, capped at the newest messages.
+      expect(server.messageOrders, ['created_at.desc,role.asc,id.desc']);
+      expect(server.messageLimits, ['$coachMessageWindow']);
     });
 
     test('a thread hides the questions the server marked superseded', () async {

@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
@@ -7,11 +8,21 @@ import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:uuid/uuid.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
+/// What the manual meal sheet asks to save. [idempotencyKey] belongs to this
+/// meal as entered: a save that is repeated unchanged repeats the key.
 class ManualMealResult {
-  const ManualMealResult(this.mealType, this.food);
+  const ManualMealResult(this.mealType, this.food, this.idempotencyKey);
   final String mealType;
   final ManualFoodInput food;
+  final String idempotencyKey;
+
+  /// Whether [other] is the same meal as entered, whatever its key.
+  bool sameMeal(ManualMealResult other) =>
+      mealType == other.mealType &&
+      mapEquals(food.toJson(), other.food.toJson());
 }
 
 void dismissKeyboard(PointerDownEvent _) {
@@ -187,9 +198,18 @@ class MealTypeChips extends StatelessWidget {
 }
 
 class ManualMealSheet extends StatefulWidget {
-  const ManualMealSheet({this.initialMealType = 'breakfast', super.key});
+  const ManualMealSheet({
+    required this.onSave,
+    this.initialMealType = 'breakfast',
+    super.key,
+  });
 
   final String initialMealType;
+
+  /// Saves the meal. The sheet stays open, with what was typed, until this
+  /// completes; if it throws, the sheet says so and the athlete can try
+  /// again.
+  final Future<void> Function(ManualMealResult result) onSave;
 
   @override
   State<ManualMealSheet> createState() => _ManualMealSheetState();
@@ -204,6 +224,16 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
   final _carbs = TextEditingController();
   final _fat = TextEditingController();
   late String _mealType = widget.initialMealType;
+  bool _saving = false;
+  bool _failed = false;
+
+  /// The save failed and the app could not tell whether it was written.
+  bool _unknown = false;
+
+  /// The last save that failed. The server may have written it before the
+  /// reply was lost, so an unchanged retry repeats its key and adds nothing;
+  /// a changed meal is a different save and gets a new key.
+  ManualMealResult? _failedSave;
 
   @override
   void dispose() {
@@ -225,22 +255,42 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
   String? _number(String? value) =>
       double.tryParse(value ?? '') == null ? 'Enter a valid number' : null;
 
-  void _submit() {
-    if (!_formKey.currentState!.validate()) return;
-    Navigator.pop(
-      context,
-      ManualMealResult(
-        _mealType,
-        ManualFoodInput(
-          name: _name.text.trim(),
-          servingLabel: _serving.text.trim(),
-          calories: double.parse(_calories.text),
-          protein: double.parse(_protein.text),
-          carbohydrate: double.parse(_carbs.text),
-          fat: double.parse(_fat.text),
-        ),
+  Future<void> _submit() async {
+    if (_saving || !_formKey.currentState!.validate()) return;
+    final entered = ManualMealResult(
+      _mealType,
+      ManualFoodInput(
+        name: _name.text.trim(),
+        servingLabel: _serving.text.trim(),
+        calories: double.parse(_calories.text),
+        protein: double.parse(_protein.text),
+        carbohydrate: double.parse(_carbs.text),
+        fat: double.parse(_fat.text),
       ),
+      const Uuid().v4(),
     );
+    final failed = _failedSave;
+    final result = failed != null && failed.sameMeal(entered)
+        ? failed
+        : entered;
+    setState(() {
+      _saving = true;
+      _failed = false;
+      _unknown = false;
+    });
+    try {
+      await widget.onSave(result);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      logNonCritical(e);
+      if (!mounted) return;
+      setState(() {
+        _failedSave = result;
+        _failed = true;
+        _unknown = e is MealSaveOutcomeUnknown;
+        _saving = false;
+      });
+    }
   }
 
   /// Shown in a sheet titled "Enter meal" with `scrollable: false`: the
@@ -309,7 +359,27 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
             onTapOutside: dismissKeyboard,
           ),
           const SizedBox(height: TracendSpacing.lg),
-          FilledButton(onPressed: _submit, child: const Text('Confirm meal')),
+          if (_failed) ...[
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                _unknown
+                    ? 'The meal may not have been saved. What you entered is '
+                          'kept; check the connection and confirm it again. '
+                          'If it was saved, it is not added twice.'
+                    : 'The meal was not saved. What you entered is kept; '
+                          'check the connection and confirm it again.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: context.tracendColors.stateDanger,
+                ),
+              ),
+            ),
+            const SizedBox(height: TracendSpacing.sm),
+          ],
+          FilledButton(
+            onPressed: _saving ? null : _submit,
+            child: Text(_saving ? 'Saving…' : 'Confirm meal'),
+          ),
         ],
       ),
     ),
@@ -317,8 +387,21 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
 }
 
 class CandidateSheet extends StatefulWidget {
-  const CandidateSheet({required this.candidates, super.key});
+  const CandidateSheet({
+    required this.candidates,
+    required this.onDiscard,
+    this.canDiscard = true,
+    super.key,
+  });
   final List<MealCandidate> candidates;
+
+  /// Whether the draft's analysis is over. A draft younger than the analysis
+  /// can take may still get estimates, so it is not offered for deletion.
+  final bool canDiscard;
+
+  /// Deletes the draft meal. Shown as the way out when the draft has no
+  /// estimates to review (its photo analysis failed).
+  final Future<void> Function() onDiscard;
   @override
   State<CandidateSheet> createState() => _CandidateSheetState();
 }
@@ -331,6 +414,27 @@ class _CandidateSheetState extends State<CandidateSheet> {
   late final Set<String> _selected = widget.candidates
       .map((item) => item.id)
       .toSet();
+  bool _discarding = false;
+  bool _discardFailed = false;
+
+  Future<void> _discard() async {
+    setState(() {
+      _discarding = true;
+      _discardFailed = false;
+    });
+    try {
+      await widget.onDiscard();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      logNonCritical(e);
+      if (mounted) {
+        setState(() {
+          _discarding = false;
+          _discardFailed = true;
+        });
+      }
+    }
+  }
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
@@ -346,7 +450,51 @@ class _CandidateSheetState extends State<CandidateSheet> {
   /// Shown in a sheet titled "Review candidates" with `scrollable: false`:
   /// the list brings its own scroll view so a drag dismisses the keyboard.
   @override
-  Widget build(BuildContext context) => Form(
+  Widget build(BuildContext context) {
+    if (widget.candidates.isEmpty) return _empty(context);
+    return _review(context);
+  }
+
+  /// A draft with no estimates cannot be confirmed: say so and offer the way
+  /// out instead of a Confirm button that never enables.
+  Widget _empty(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text(
+        widget.canDiscard
+            ? 'Nothing to review. The photo could not be analyzed, so this '
+                  'draft has no foods to confirm. Delete it, then log the '
+                  'meal again or enter it manually. Nothing was added to '
+                  'your totals.'
+            : 'Nothing to review yet. This photo is still being analyzed, or '
+                  'the analysis failed. Check again in a few minutes. '
+                  'Nothing was added to your totals.',
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+      if (_discardFailed) ...[
+        const SizedBox(height: TracendSpacing.sm),
+        Semantics(
+          liveRegion: true,
+          child: Text(
+            'The draft was not deleted. Check the connection and try again.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: context.tracendColors.stateDanger,
+            ),
+          ),
+        ),
+      ],
+      if (widget.canDiscard) ...[
+        const SizedBox(height: TracendSpacing.md),
+        FilledButton(
+          onPressed: _discarding ? null : _discard,
+          child: Text(_discarding ? 'Deleting…' : 'Delete draft'),
+        ),
+      ],
+    ],
+  );
+
+  Widget _review(BuildContext context) => Form(
     key: _formKey,
     child: SingleChildScrollView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,

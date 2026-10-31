@@ -277,6 +277,9 @@ class SupabaseHealthRepository
     DateTime now,
   ) async {
     Exception? lastException;
+    // One key for the whole sync: an attempt whose reply was lost may have
+    // been written, and the server returns it for a repeated key.
+    final idempotencyKey = _uuid.v4();
     for (var attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) {
         await Future<void>.delayed(Duration(seconds: attempt * attempt));
@@ -286,7 +289,7 @@ class SupabaseHealthRepository
           'health-sync',
           body: {
             'schema_version': '1.0',
-            'idempotency_key': _uuid.v4(),
+            'idempotency_key': idempotencyKey,
             'requested_start': _dateKey(start),
             'requested_end': _dateKey(now),
             'requested_types': result.requestedMetrics

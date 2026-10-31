@@ -1214,6 +1214,21 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     };
   }
 
+  /// What the server holds for [proposal] after a failed answer: its status
+  /// (`pending`, `accepted`, `rejected`, `revision_requested`, `expired`), or
+  /// null when it cannot be read. The failure may only have lost the reply.
+  Future<String?> _serverProposalStatus(OnboardingProposal proposal) async {
+    try {
+      final generation = await widget.repository.loadGeneration();
+      return generation?.proposalId == proposal.id
+          ? generation?.proposalStatus
+          : null;
+    } catch (e) {
+      logNonCritical(e);
+      return null;
+    }
+  }
+
   Future<void> _respond(String action, {String? note}) async {
     final proposal = _proposal;
     if (proposal == null || _saving) return;
@@ -1222,9 +1237,37 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _error = null;
     });
     try {
-      await widget.repository.respond(proposal.id, action, note: note);
+      var accepted = false;
+      try {
+        await widget.repository.respond(proposal.id, action, note: note);
+        accepted = action == 'accept';
+      } catch (e) {
+        logNonCritical(e);
+        final status = await _serverProposalStatus(proposal);
+        if (!mounted) return;
+        if (status == 'accepted') {
+          // Approved, whatever was asked and however the reply was lost.
+          accepted = true;
+        } else if (status != _recordedStatus[action]) {
+          // 55000 is the server's own answer that this proposal can no
+          // longer be answered; a status that is not pending says the same.
+          if (e is OnboardingProposalStale ||
+              (status != null && status != 'pending')) {
+            _showProposalExpired();
+          } else {
+            setState(() {
+              _error = status == null
+                  ? 'Tracend could not confirm your response. Check the '
+                        'connection and try again.'
+                  : 'Your response was not saved. Nothing has changed; try '
+                        'again.';
+            });
+          }
+          return;
+        }
+      }
       if (!mounted) return;
-      if (action == 'accept') {
+      if (accepted) {
         setState(() {
           _approved = proposal;
           _proposal = null;
@@ -1232,11 +1275,18 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         return;
       }
       _revisionNote.text = action == 'request_revision' ? (note ?? '') : '';
-      await widget.repository.saveDraft(
-        path: _path,
-        currentSection: _sectionKeys[_reviewStep],
-        payload: _payload,
-      );
+      try {
+        await widget.repository.saveDraft(
+          path: _path,
+          currentSection: _sectionKeys[_reviewStep],
+          payload: _payload,
+        );
+      } catch (e) {
+        // The answer is recorded and the draft already holds the answers;
+        // only the place to reopen at was not saved.
+        logNonCritical(e);
+      }
+      if (!mounted) return;
       setState(() {
         _proposal = null;
         _step = _reviewStep;
@@ -1244,18 +1294,17 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             ? 'Proposal rejected. Your answers are unchanged.'
             : 'Change your answers if needed, then build the plan again.';
       });
-    } on OnboardingProposalStale {
-      if (mounted) _showProposalExpired();
-    } catch (e) {
-      logNonCritical(e);
-      if (!mounted) return;
-      setState(() {
-        _error = 'Your response was not saved. Nothing has changed; try again.';
-      });
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
+
+  /// The proposal status each answer leaves on the server.
+  static const _recordedStatus = {
+    'accept': 'accepted',
+    'reject': 'rejected',
+    'request_revision': 'revision_requested',
+  };
 
   bool _sheetOpen = false;
 
