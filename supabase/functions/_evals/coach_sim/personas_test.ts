@@ -190,3 +190,34 @@ Deno.test("every exercise in a persona's plan and logs is one the product's cata
     }
   }
 });
+
+// Review of #154: the windows are prepare_coach_chat_v8's, `coaching_date - (days - 1)` through the
+// coaching date (build_coach_athlete_context, migration 20260927230000).
+Deno.test("the athlete file's windows end on the coaching date and start days - 1 before it", () => {
+  for (const persona of personas) {
+    const file = persona.athlete().context;
+    const today = String(file.coaching_date);
+    const { records } = persona;
+    const since = (days: number) => addDays(today, -(days - 1));
+    const sessionsIn = (days: number) =>
+      records.sessions.filter((s) => s.local_date >= since(days) && s.local_date <= today).length;
+    const log = file.training_log_28d as { local_date: string }[];
+    assertEquals(log.length, sessionsIn(28), persona.id);
+    assert(log.every((s) => s.local_date >= since(28) && s.local_date <= today), persona.id);
+    const totals = file.training_totals as Record<string, { sessions: number }>;
+    assertEquals(totals.last_7_days.sessions, sessionsIn(7), persona.id);
+    assertEquals(totals.last_14_days.sessions, sessionsIn(14), persona.id);
+    const checkIns = file.check_ins_14d as { local_date: string }[];
+    assertEquals(
+      checkIns.length,
+      records.checkIns.filter((c) => c.local_date >= since(14) && c.local_date <= today).length,
+      persona.id,
+    );
+    const meals = file.nutrition_adherence as { days_with_confirmed_meals_7d: number };
+    assertEquals(
+      meals.days_with_confirmed_meals_7d,
+      records.mealDays.filter((d) => d.local_date >= since(7) && d.local_date <= today).length,
+      persona.id,
+    );
+  }
+});

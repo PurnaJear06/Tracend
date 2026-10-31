@@ -225,6 +225,8 @@ Deno.test("the report names the models, ranks the problems and holds every trans
     athleteModel: options.athleteModel,
     judgeModel: options.judgeModel,
     judgeNote: "",
+    backend: "router",
+    coachMode: "structured output (response_format json_schema), max_tokens",
     endpoint: "router.example",
     maxUsd: 5,
     maxTurns: 3,
@@ -237,7 +239,11 @@ Deno.test("the report names the models, ranks the problems and holds every trans
     sizing: "Sized to the cap so that every conversation runs: 3 athlete messages.",
     harnessFailures: [],
   });
-  assertStringIncludes(text, "Coach played by `anthropic/claude-haiku-5.5`");
+  assertStringIncludes(
+    text,
+    "Coach played by `anthropic/claude-haiku-5.5` through the eval router at router.example (structured output",
+  );
+  assertStringIncludes(text, "Over the router the request is OpenAI-compatible");
   assertStringIncludes(text, "used the production model");
   assertStringIncludes(text, "## Problems, ranked");
   assertStringIncludes(text, "Judge output per call (thinking included), limit 3000");
@@ -245,6 +251,33 @@ Deno.test("the report names the models, ranks the problems and holds every trans
   assertStringIncludes(text, "primary/bench-plateau, turn 3: same_opening");
   assertStringIncludes(text, "### primary/last-tuesday");
   assertStringIncludes(text, "A 20-year coach would say: Drop to triples");
+
+  // A direct run is not reported as going through the router.
+  const direct = renderReport(result.conversations, result.spend, result.stoppedForBudget, {
+    coachModel: "claude-haiku-5-5",
+    coachChoice: "the production route on Anthropic directly",
+    productionModel: "claude-haiku-5-5",
+    production: true,
+    athleteModel: options.athleteModel,
+    judgeModel: options.judgeModel,
+    judgeNote: "",
+    backend: "anthropic",
+    coachMode: "the production Claude request: Messages API, structured output",
+    endpoint: "api.anthropic.com",
+    maxUsd: 5,
+    maxTurns: 3,
+    estimateUsd: 0.1,
+    assumedPrices: [],
+    preflight: [],
+    errors: [],
+    judgeOutputTokens: [],
+    judgeMaxTokens: 3_000,
+    sizing: "",
+    harnessFailures: [],
+  });
+  assertStringIncludes(direct, "on Anthropic's API directly at api.anthropic.com");
+  assertStringIncludes(direct, "The request is production's own Claude request");
+  assert(!direct.includes("router"), "no router wording in a direct run");
 });
 
 const generation = (answer: string): CoachChatGeneration => ({

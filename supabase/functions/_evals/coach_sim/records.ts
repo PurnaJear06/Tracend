@@ -937,20 +937,23 @@ export type ProfileFacts = Readonly<{
 
 /**
  * The athlete file in prepare_coach_chat_v8's shape, every figure taken from the records: the
- * last 28 days of sessions and watch data, eight weeks of weigh-ins, two weeks of check-ins.
+ * last 28 days of sessions and watch data, eight weeks of weigh-ins, two weeks of check-ins. Every
+ * window is the SQL's: `coaching_date - (days - 1)` through the coaching date, today included
+ * (build_coach_athlete_context, migration 20260927230000).
  */
 export function athleteFile(records: Records, profile: ProfileFacts): Record<string, unknown> {
   const { spec } = records;
   const today = spec.today;
   const plan = planOn(spec, today);
   const target = targetOn(spec, today);
-  const last28 = newestFirst(within(records.sessions, addDays(today, -28), addDays(today, -1)));
-  const health = newestFirst(within(records.recovery, addDays(today, -27), today));
-  const weights = records.weights.filter((w) => w.date >= addDays(today, -55)).reverse();
-  const checkIns = newestFirst(records.checkIns).slice(0, 14);
+  const since = (days: number) => addDays(today, -(days - 1));
+  const last28 = newestFirst(within(records.sessions, since(28), today));
+  const health = newestFirst(within(records.recovery, since(28), today));
+  const weights = records.weights.filter((w) => w.date >= since(56) && w.date <= today).reverse();
+  const checkIns = newestFirst(within(records.checkIns, since(14), today));
   const latestCheckIn = checkIns.find((c) => c.local_date === today) ?? null;
   const window = (days: number) => {
-    const inside = last28.filter((s) => s.local_date >= addDays(today, -days));
+    const inside = last28.filter((s) => s.local_date >= since(days));
     return {
       days,
       sessions: inside.length,
@@ -962,9 +965,12 @@ export function athleteFile(records: Records, profile: ProfileFacts): Record<str
   const measured = (
     days: number,
     key: "sleep_minutes" | "resting_heart_rate_bpm" | "hrv_ms" | "steps",
-  ) => health.slice(0, days).map((d) => d[key]).filter((v): v is number => v !== null);
+  ) =>
+    health.filter((d) => d.local_date >= since(days)).map((d) => d[key]).filter((v): v is number =>
+      v !== null
+    );
   const averages = (days: number) => ({
-    days_synced: Math.min(days, health.length),
+    days_synced: health.filter((d) => d.local_date >= since(days)).length,
     days_with_sleep: measured(days, "sleep_minutes").length,
     avg_sleep_minutes: mean(measured(days, "sleep_minutes")),
     days_with_resting_heart_rate: measured(days, "resting_heart_rate_bpm").length,
@@ -987,7 +993,7 @@ export function athleteFile(records: Records, profile: ProfileFacts): Record<str
   const acute = window(7).volume_kg;
   const chronic = window(28).volume_kg / 4;
   const todayHealth = health.find((d) => d.local_date === today);
-  const mealDays7 = within(records.mealDays, addDays(today, -7), today);
+  const mealDays7 = within(records.mealDays, since(7), today);
   const permitted = ["APPROVED_PLAN_ACTIVE", "HEALTH_CONTEXT_AVAILABLE"];
   if ((todayHealth?.recovery_score ?? 60) < 45) permitted.push("RECOVERY_BELOW_BASELINE");
   if ((todayHealth?.sleep_quality ?? 70) < 55) permitted.push("SLEEP_QUALITY_LOW");

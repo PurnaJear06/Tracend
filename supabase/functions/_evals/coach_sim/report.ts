@@ -17,6 +17,10 @@ export type ReportHeader = Readonly<{
   judgeModel: string | null;
   /** Why the judges are off, when they are. */
   judgeNote: string;
+  /** Where the models answered: the eval router, or Anthropic's API directly. */
+  backend: "router" | "anthropic";
+  /** How the Coach was asked (describeMode of the mode that worked). */
+  coachMode: string;
   endpoint: string;
   maxUsd: number;
   maxTurns: number;
@@ -322,11 +326,17 @@ export function renderReport(
   return [
     "# Coach simulation (report only)",
     "",
-    `Coach played by \`${header.coachModel}\` through the eval router at ${header.endpoint}: ${header.coachChoice}. Production Coach chat uses \`${header.productionModel}\`; this run ${
+    `Coach played by \`${header.coachModel}\` ${
+      header.backend === "router"
+        ? `through the eval router at ${header.endpoint}`
+        : `on Anthropic's API directly at ${header.endpoint}`
+    } (${header.coachMode}): ${header.coachChoice}. Production Coach chat uses \`${header.productionModel}\`; this run ${
       header.production ? "used the production model" : "did NOT use the production model"
     }.${
       served.length
-        ? ` The router reported serving: ${served.map((m) => `\`${m}\``).join(", ")}.`
+        ? ` The ${header.backend === "router" ? "router" : "API"} reported serving: ${
+          served.map((m) => `\`${m}\``).join(", ")
+        }.`
         : ""
     }`,
     `Athlete played by \`${header.athleteModel}\`. Judges: ${
@@ -335,7 +345,11 @@ export function renderReport(
         : `off (${header.judgeNote})`
     }.`,
     "",
-    "The Coach runs the production gateway path (generateCoachChatViaGateway): the athlete file, the real contributors, data lookups through the production runner, the proposal intent, the red-flag screen and every reply guard. Over the router the request is OpenAI-compatible JSON mode rather than the Claude Messages API. Stand-ins: the database (months of synthetic records per persona) and the library search (a word search over the real chunks; library_eval.ts measures the real search).",
+    `The Coach runs the production gateway path (generateCoachChatViaGateway): the athlete file, the real contributors, data lookups through the production runner, the proposal intent, the red-flag screen and every reply guard. ${
+      header.backend === "router"
+        ? "Over the router the request is OpenAI-compatible (the mode above) rather than the Claude Messages API."
+        : "The request is production's own Claude request: the Messages API with the answer schema as structured output, the route's output tokens and timeout."
+    } Stand-ins: the database (months of synthetic records per persona) and the library search (a word search over the real chunks; library_eval.ts measures the real search).`,
     "",
     `Spend: USD ${usd(spentUsd(spend))} (Coach ${usd(spend.coach)}, athlete ${
       usd(spend.athlete)

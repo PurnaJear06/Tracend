@@ -59,6 +59,7 @@ import {
   type ChatMode,
   chatModes,
   defaultChatMode,
+  describeMode,
   judgePreferences,
   pickModel,
   pickModels,
@@ -215,6 +216,8 @@ const coachFallbacks: readonly string[] = ["claude-sonnet-5-5"];
 
 /** Where the run's models answer: the eval router, or Claude's API directly. */
 type Backend = Readonly<{
+  /** Where the models answer, for the report. */
+  kind: "router" | "anthropic";
   /** The model ids the backend serves, empty when it could not list them. */
   available: readonly string[];
   /** The host, for the report. */
@@ -271,6 +274,7 @@ async function routerBackend(
     }
   }
   return {
+    kind: "router",
     available: routed.available,
     endpoint: new URL(routed.baseUrl).host,
     coachCheck,
@@ -299,6 +303,7 @@ async function anthropicBackend(direct: AnthropicGateway): Promise<Backend> {
   const chat = anthropicChat(direct.apiKey);
   const secrets = [direct.apiKey];
   return {
+    kind: "anthropic",
     available: anthropicModels,
     endpoint: new URL(anthropicMessagesUrl).host,
     coachCheck: await preflightDirect(chat, "coach", direct.coachModel, secrets),
@@ -488,6 +493,10 @@ async function main(): Promise<void> {
     athleteModel,
     judgeModel,
     judgeNote,
+    backend: backend.kind,
+    coachMode: backend.kind === "anthropic"
+      ? "the production Claude request: Messages API, structured output"
+      : describeMode(played.mode),
     endpoint: backend.endpoint,
     maxUsd,
     maxTurns: fit.maxTurns,

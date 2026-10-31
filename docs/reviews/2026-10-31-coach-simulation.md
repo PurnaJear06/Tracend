@@ -1,8 +1,10 @@
 # Coach simulation on the production model (2026-10-31)
 
 Simulated athletes talked to the Coach the way a real athlete uses it. The Coach was the production
-model, `claude-haiku-5-5` on Anthropic, through the production gateway path
-(`generateCoachChatViaGateway`, production timing, 4,096 output tokens, 30 s per attempt). That path
+model, `claude-haiku-5-5`, called on Anthropic's API directly (no router), through the production
+gateway path (`generateCoachChatViaGateway`). It sent production's own Claude request: the Messages
+API with the answer schema as structured output, production timing, 4,096 output tokens and 30 s
+per attempt. That path
 includes the contributors, the lookups through the production runner, the proposal intent, the
 red-flag screen and every reply guard.
 
@@ -11,7 +13,9 @@ from the Coach. Both ran on the Messages API with the owner's review key; no key
 personas and their months of records are synthetic. No real user data was used.
 
 The run was local because the eval router had no credit. It used the direct mode added on #154: with
-no `EVAL_BASE_URL`, the Coach takes the `AI_COACH_CHAT_*` route.
+no `EVAL_BASE_URL`, the Coach takes the `AI_COACH_CHAT_*` route. The generated `simulation.md`
+of both runs said "through the eval router" and described the router's OpenAI-compatible request.
+That wording was wrong for a direct run; the report now names the backend and the request mode.
 
 ## Spend
 
