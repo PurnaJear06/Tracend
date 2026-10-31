@@ -31,6 +31,7 @@ import { createMemorySource } from "./memory_source.ts";
 import { createNutritionStateContributor } from "./nutrition_state.ts";
 import { ownersPlanPayload, splitPlanPayload } from "./plan_fixtures.ts";
 import { createProposalsContributor } from "./proposals.ts";
+import { createReadinessContributor } from "./readiness.ts";
 import { createScreeningContributor } from "./screening.ts";
 import { createTrainingPlanContributor } from "./training_plan.ts";
 import { createWatchOutsContributor } from "./watch_outs.ts";
@@ -49,6 +50,7 @@ Deno.test("every contributor that grounds as records has a probe here", () => {
     "confirmed_facts",
     "goal_phase",
     "training_plan",
+    "readiness",
     "nutrition_state",
     "coach_proposals",
     "heart_rate_profile",
@@ -381,6 +383,36 @@ Deno.test("heart rate: measured and calculated values ground; the age formula an
   for (const side of [inputs.ground, inputs.athleteGround!]) {
     // 208 - 0.7 x age is the formula Tracend uses, not the athlete's maximum.
     assertEquals(ungroundedNumbers("Your maximum heart rate is 208 bpm.", side), ["208"]);
+  }
+});
+
+Deno.test("readiness: the card's date grounds; the fixed wording states no figure", async () => {
+  const card = {
+    localDate: "2026-10-17",
+    band: "amber" as const,
+    kind: "joint_adjust" as const,
+    status: "proposed" as const,
+    available: true,
+    unavailableReason: null,
+    safetyRoute: null,
+    confidence: "medium" as const,
+    jointStates: [
+      { area: "knee" as const, state: "held" as const, persistent: true },
+      { area: "back" as const, state: "limited" as const, persistent: false },
+      { area: "shoulder" as const, state: "watch" as const, persistent: false },
+    ],
+  };
+  const block = await blockOf(createReadinessContributor(() => Promise.resolve(card)));
+  const inputs = probeContributor({
+    id: "readiness",
+    block,
+    fixture: card,
+    calculated: [],
+    fixed: [],
+  });
+  for (const side of [inputs.ground, inputs.athleteGround!]) {
+    // Nothing on the card is a number: no band, state or day count stands behind a figure.
+    assertEquals(ungroundedNumbers("Your knee has been held for 14 days.", side), ["14"]);
   }
 });
 

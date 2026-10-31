@@ -9,6 +9,8 @@ import 'package:tracend/features/readiness/day_adjustment_card.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/readiness/day_adjustment_repository.dart';
 import 'package:tracend/features/readiness/readiness_copy.dart';
+import 'package:tracend/features/readiness/safety_copy.dart';
+import 'package:tracend/features/readiness/safety_referral_sheet.dart';
 
 import 'day_adjustment_fixtures.dart';
 
@@ -390,7 +392,8 @@ void main() {
           home: Builder(
             builder: (context) => Scaffold(
               body: TextButton(
-                onPressed: () => showDaySafetySheet(context, 'pain_referral'),
+                onPressed: () =>
+                    showSafetyReferralSheet(context, 'pain_referral'),
                 child: const Text('open'),
               ),
             ),
@@ -789,25 +792,6 @@ void main() {
     Future<_Harness> pumpFixture(WidgetTester tester, String name) =>
         _pump(tester, fixture(name), serverToday: DateTime(2026, 10, 24));
 
-    testWidgets('a joint adjustment shows its words and offers no accept', (
-      tester,
-    ) async {
-      final harness = await pumpFixture(tester, 'day_adjustment_v1_1_joint');
-      expect(
-        _text(
-          'Your shoulder is on watch. 1 exercise kept in a pain-free range.',
-        ),
-        findsOneWidget,
-      );
-      expect(find.byType(FilledButton), findsNothing);
-      expect(find.byType(OutlinedButton), findsNothing);
-      expect(_text(otherOptionsLabel), findsNothing);
-      expect(harness.controller.current!.unsupportedKind, isTrue);
-      expect(harness.controller.current!.kind, isNull);
-      expect(harness.controller.current!.appliedChanges, isEmpty);
-      expect(harness.repository.responses, isEmpty);
-    });
-
     testWidgets('a red-flag day shows its referral', (tester) async {
       await pumpFixture(tester, 'day_adjustment_v1_1_red_flag');
       expect(_text('Get this checked today'), findsOneWidget);
@@ -829,9 +813,10 @@ void main() {
 
   group('copy', () {
     test('names no condition, model or company', () {
-      final text = File(
+      final text = [
         'lib/features/readiness/readiness_copy.dart',
-      ).readAsStringSync().toLowerCase();
+        'lib/features/readiness/safety_copy.dart',
+      ].map((path) => File(path).readAsStringSync()).join('\n').toLowerCase();
       for (final word in [
         'tendin',
         'sprain',

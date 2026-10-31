@@ -345,7 +345,8 @@ today's path.
   no model or company names) and the day's context in the user turn inside `<coaching_context>`.
   JSON via the gateway with today's `decisionSchema`; context cap 12,000 characters as today.
   Failures use today's code forms: `<vendor>_timeout`, `<vendor>_request_failed`,
-  `<vendor>_request_failed_status_429`, `<vendor>_response_invalid`, plus `<vendor>_refused`.
+  `<vendor>_request_failed_status_<n>`, `<vendor>_overloaded`, `<vendor>_response_invalid`, plus
+  `<vendor>_refused`; one retry of a transient unbilled failure (2026-10-24, below).
   The eval router is refused (no notice names it).
 - `parseCoachDecision` still runs on every path's output in coach-decide before anything is
   stored; a forbidden answer is a 503 `coaching_unavailable`, as today.
@@ -1712,7 +1713,8 @@ loading, or the composer holds text; the next return checks again. Tests: "comin
 Saved conversations showed the reply above its question and opened on the oldest message. postgrest-dart's
 `order(column, {ascending = false})` sorts **descending** when the direction is left out, and
 `SupabaseCoachRepository.loadMessages` called `.order('created_at')`. It now asks for
-`created_at.asc,id.asc` (the id breaks exact ties); the superseded-question filter below it already assumed
+`created_at.asc,id.asc` (the id breaks exact ties; since the lost-replies change it reads the newest 200 in the
+reverse order and flips them); the superseded-question filter below it already assumed
 oldest-first, so it is right again. App only, no migration. Every other `.order(` in `lib/` now states its
 direction, and `test/query_order_explicit_test.dart` fails the build if one does not. Changed to ascending
 because the intended order is ascending: the active goal's `priority` (1 is the top goal; Account x2 and
@@ -1722,6 +1724,189 @@ the photo-set `id` tie-break. Reads that wanted newest-first already said `ascen
 `test/coach_chat_errors_test.dart` (request order), `test/coach_restored_order_test.dart` (a restored
 conversation reads question then answer, newest last), `test/query_order_directions_test.dart` and
 `test/account_goal_order_test.dart` (the other directions).
+
+## Lost replies, idempotent writes and thread switching (2026-10-24, branch `claude/lost-replies-thread-switch`)
+
+QA audit groups E and F, app only, no migration. A write whose reply was lost, or whose retry was not idempotent,
+now settles against the server instead of guessing; switching Coach conversations can no longer mix threads.
+
+- **Coach threads.** `_openThread` takes a view token (`_beginView`, never reused), clears the messages when the
+  open starts and applies its result only if it is still the latest; `_restoreChat` checks the same token. A failed
+  open puts the previous chat back (thread, messages, failure, view token), so a send still goes to the thread on
+  screen. `New conversation` uses `_threadId ?? _previousThreadId`. `loadMessages` asks for the newest 200
+  (`coachMessageWindow`) in the exact reverse of the shown order (`created_at desc, role asc, id desc`, explicit
+  directions plus `limit`) and reverses them, so the tie-break `created_at asc, role desc, id asc` is unchanged.
+  A saved conversation cannot be opened while a send is in flight (a failed open would restore it without its
+  reply); New conversation stays allowed. A window that starts with an assistant row drops it. A suggested next
+  action or "Change it" tapped while a reply is in flight, or during the retry countdown, is queued and shown
+  ("Sends when Coach is ready") instead of dropped; Cancel, a failed reply, a newer follow-up, a switch or AI
+  coaching being off put it in the composer.
+- **Coach proposals.** Every exception (socket, timeout, client) is a connection message. After any error the card
+  re-reads the proposal and shows what the server holds (applied, declined, change requested, undone), calling
+  `onPlanChanged` when the plan changed, including a retry refused with 55000 on an accepted proposal.
+- **Onboarding.** After a failed answer the flow reads `loadGeneration()`'s proposal status: `accepted` goes to
+  "You're set" whatever the action; a stale refusal (55000), or a status that is expired, rejected or
+  revision-requested, offers the rebuild; a plain network error with an unreadable status keeps the proposal on
+  screen with a "could not confirm" message, and "Nothing has changed" is said only when the status is known to
+  be pending. A recorded reject or revision goes to Review even if the follow-up `saveDraft` fails.
+- **Nutrition.** `saveManualMeal` and `saveScheduledMeal` take an `idempotencyKey`; the manual sheet makes one per
+  entered meal, keeps its inputs and shows an error when the save fails, repeats the key on an unchanged retry and
+  makes a new one when the meal changed, asks the server (`isMealSaved`, `meals.idempotency_key`) whether a failed
+  save was written, and the day reloads after a failure. A failed meal photo analysis now
+  deletes its draft (`delete_my_meal`; a draft whose creation reply was lost is found by its request key). The draft
+  lookup is limited to `status = draft`. A draft with no candidates opens a sheet with **Delete draft** instead of
+  a Confirm that never enables, offered only once the draft is older than `mealAnalysisWindow` (10 minutes).
+- **Apple Health.** One idempotency key per sync, reused by its retries.
+- Not in this change: workout finish (M-E3), owned by the open workout PRs.
+
+Tests: `test/coach_thread_switching_test.dart`, `test/coach_restored_order_test.dart`,
+`test/coach_proposal_card_test.dart`, `test/coach_proposal_repository_test.dart`, `test/phase_2_flow_test.dart`
+("an answer to the plan whose reply is lost"), `test/nutrition_lost_reply_test.dart`, `test/health_sync_key_test.dart`.
+
+## Coach answers that fell back as invalid (2026-10-24, branch `claude/coach-response-validity`)
+
+The answer bank on the production route (`claude-haiku-5-5`, 4,096 output tokens, 30 s) had 64 of
+268 model runs (22%) end `provider_response_invalid`. Every call returned HTTP 200 with
+`stop_reason` `end_turn` and schema-valid JSON: nothing was truncated and the schema (0 optionals,
+0 unions) was not the cause. Each failure was the reply check or the answer contract refusing a
+good reply twice, because the repair could not see what was wrong. Root causes, each fixed in
+deterministic code with a captured-shape test:
+
+- **Weight guard read inside a number** (`weight_figures.ts`): "0.26 kg a week" matched as 26 kg,
+  under every athlete's healthy floor, so any reply that stated the weekly trend failed. The figure
+  now starts at the start of a number; every real body weight is still read (fail-closed rule
+  unchanged). Fixing it alone took invalid answers from 22% to 12% (one-repeat run).
+- **A weekday before a date read as a study** (`library/mentions.ts`): "Thu 2026-10-15" was the
+  study "Thu 2026". A year that opens a date is not a citation year; weekday abbreviations are not
+  authors.
+- **The numbers check read across lines** (`numbers_check.ts`): a figure took its unit from the line
+  before ("... and BMI" then "74.8 kg" was a BMI), and a range lost its unit when a line break fell
+  inside the window ("1.4 to 2.0 g per kg"). Figures that passed alone failed once the reply's
+  reasoning steps were joined to it.
+- **Refusals read as advice** (`reply_guard.ts`): "I can't support 800 kcal a day", "Losing 10 kg
+  in 4 weeks isn't safe", "intervals are off the table", "until that's done". Exemptions added
+  only where the refusal governs the match in its own clause (a first-person refusal verb with the
+  figure as its object, never with above, over, other than, only or but between; the floor named
+  after the figure; a judgement after a loss over weeks; a ruled-out predicate after an effort word;
+  a done-claim after until/once/when). New adversarial rows show what still flags.
+- **The repair did not name the sentence**: the check now returns the sentences that broke a rule
+  (never logged) and the repair quotes them, escaped and marked untrusted. A follow-up chip in the
+  athlete's voice ("Show me what I logged") is then rewritten instead of kept.
+- **Contract stricter than the model's natural shape**: a reasoning step citing the library source
+  its evidence cites is accepted (the app does not show the id); a new week with no length the
+  athlete gave gets the rules' 8 weeks (spec A8: rules compute every number).
+- **`safety_state`** was not defined for the model, which marked declined floor requests and
+  precautionary doctor mentions as `limited`. The instructions now define `allowed` as any turn
+  Coach coaches (25,495 of 25,500 instruction characters; legacy request digests re-recorded).
+
+| Bank (2 repeats, 292 runs) | Before (ee9ef6e) | After |
+|---|---|---|
+| Model answers (gate 97%) | 77.9% (64 invalid) | 97.2% (8 invalid) |
+| Safety failures | 22 | 15 |
+| floors_actions pass | 10% | 50% |
+| length / screening pass | 25% / 69% | 100% / 88% |
+| Domain coverage | 46% | 45% |
+
+Left (evidence in the PR): the 8 remaining invalid answers are mostly model-computed figures or
+dates the numbers check rightly refuses (a protein range in grams worked out from body weight, a
+lookup's own date range); the calorie guard still flags Coach describing the athlete's own logged
+640 kcal ("The 640 kcal on ... comes from a partial day") and reasoning steps written as
+imperatives. Over-caution (3 of 3) is the deterministic red-flag screen, fail-closed by design.
+`clear-take-medication` and `clear-avoid-dizziness-cutting` still get `limited` from the model.
+Domain coverage (45%) and `training_today` routines are model behaviour, not validity.
+
+**Round 2 (hostile review of #177): safety before validity.** Every exemption that could not be an
+exact allowlist was narrowed until 40 adversarial replies the first round passed now flag. A calorie
+refusal counts only as "I can't|won't|don't <support|recommend|...|tell you to eat|help you plan>
+<figure> [a day] [even ...|for a week|for you]" ending its sentence; a judgement after a figure or a
+pace must end its clause and is never negated ("isn't safe" counts, "is not dangerous" and "isn't
+below your floor" do not, "safe" alone never); a ruled-out effort word must be the subject and only
+the effort cap uses it; none counts in a question or before a but/yet/so/though/however/for clause.
+"Set" no longer excuses a figure after a negation. Main's "Losing 2 kg a week is not dangerous" hole
+is closed too. Study mentions: a weekday is an author unless a full date follows ("Sun et al. 2020"
+cites again). Numbers: a range's unit comes from its own line, and a figure alone on its line keeps
+the BMI label above it. Every guard reads digits of any script as ASCII (`_shared/ascii_digits.ts`),
+and a decimal with a whole part of 1 to 9 also reads its fraction as a weight unless it is a rate
+("Week 2.45 kg ..." fails closed). The repair says to remove advice and never refer back to it; the
+wording advice for a refusal only when the sentence is one. Instructions trimmed to 25,199 of 25,500.
+One-repeat bank after round 2: model answers 96.1%, safety failures 2 (clear-take-medication
+`limited`, one screening fallback), floors_actions 80%. Not done: non-English daily cues in the
+calorie guard, and "I wouldn't advise less than 800 kcal a day" (a false flag).
+
+**Daily coaching (Sonnet) `anthropic_request_failed`, 2026-10-20 00:08 to 00:14 UTC:** all five
+were HTTP **401** (`ai_call` logs, `http_status` 401, about 300 ms each): the Anthropic key the
+Edge Functions held was rejected for those minutes. No deploy happened between 2026-10-18 and
+2026-10-23, and the same code succeeded before and after (06:33 UTC, HTTP 200), so it is not a
+request-shape bug. A retry cannot fix a 401.
+
+## Coach knows today's readiness card; daily coaching retries a busy provider (2026-10-24, branch `claude/coach-readiness-context`)
+
+**Readiness contributor.** `_shared/coach_context/contributors/readiness.ts` (volatile, right after the training
+plan, on the gateway and the rollback route) reads `get_readiness_context_v1(p_user_id, p_local_date)` with the
+service role and tells Coach, read-only: the band and confidence, the adjustment the card offers and whether
+the athlete accepted or declined it or has not answered, why the card is closed, the safety route (`pain_referral`,
+`urgent`, `clinician_today`, `clinician`), and the held, limited and watched joint areas with the "lasted two
+weeks" flag. Its fixed sentences: never contradict the card; the athlete decides on the card, Coach explains and
+never applies, accepts, declines or changes it; on a safety route suggest no training, loads, exercises or cardio,
+point to the card's referral, never diagnose (urgent: care now; clinician_today: seen today); a held area gets no
+exercise, load, stretch, range or test and is never called healed or safe, and only the athlete's own clearance
+lifts it; limited areas keep to the card's swaps and shorter range; a lasting area should be seen by a physio or
+doctor; a deload is only ever a proposal the athlete approves. The parser (`training/readiness/context_payload.ts`)
+keeps only the fields the text uses, so no red-flag code, trigger, pain severity or free text reaches the model
+even if the reader later returns more (tests feed it all of them; a drift test reads the migration and fails
+when the reader's keys change). The only figure in the block is the card's date, marked with `record()`
+(declared `records` in `grounding.ts`, probed in `contributor_grounding_test.ts`); the output schema is
+untouched (0 optional fields, 0 unions).
+
+**Read, deadline, trace.** The read has its own 1.5 s deadline (`readinessDeadlineMs`); the trace
+`{readiness: ok | unavailable | failed | timeout}` is logged as `readiness_context` by coach-chat (a word, never a
+value). A card that cannot be read, is for another day than the coaching date (the reader answers only the
+athlete's own server day) or is not exactly the expected shape renders a short block saying so ("do not say what
+the card shows or that nothing is wrong with a joint; anything the athlete tells you about pain still counts"),
+never silence. Budget 2,400 characters; see CONTEXT_BUDGET.
+
+**Seam for B5-3/B5-4 (not wired: `get_training_guidance_for_v1` is on main since #174, but it needs a cost measurement before Coach reads it).** `get_training_guidance_for_v1`
+(deload signal, cardio week, cardio withheld) joins in `readinessLines`: read it in parallel with the card under
+the same deadline through `parseTrainingGuidance` (`training/guidance/payload.ts`), add its lines (a
+suggested or running deload is offered only through the A8 proposal path; the cardio target and what was done,
+nothing when `cardio_withheld` names a reason, no deload line on a safety-route day), a second trace key
+`guidance`, and a case in `readiness_test.ts` per state.
+
+**Open contract requests** (program plan 2 to 5): the A9 red-flag screen and the route choice still do not read
+`pain_reports`; the reply guard has no `training_advice_for_held_area` check, so a held area is enforced by the
+prompt text only; A8 `buildNextSessionAdjustment` and the A5 daily snapshot do not know the day adjustment.
+`intensity_or_phase` tool text now says a deload is one week (send 1).
+
+**Review round 1.** (1) The daily decision is now requested for the server day: `CoachRepository.generate({localDate})`
+sends it to coach-decide (the phone's date only before the server day is known), so the decision Today treats as
+current is the one it asked for and a second refresh does not make another (tested with phone day != server day).
+coach-decide accepts any well-formed `YYYY-MM-DD` and does not bound or override it server-side (only the daily
+rate limit applies; `prepare_daily_coaching` does not compare it with the athlete's day), so the app is what keeps
+it right. (2) The readiness block no longer names a check-in, sleep or recovery: a card can come from a pain
+report or a hold alone (tested without a check-in).
+
+**Review round 2.** (1) On a safety route the readiness block gives no instruction about limited or watched
+areas (no swaps, range or keep-training lines): only the referral, the holds and the lasting-area referral. (2) A
+watched area is only "being watched": the watch state also follows a clinician clearance, so the block never
+calls it painful or mild (an area reported elsewhere is named that, not "pain reported elsewhere"). (3) Today
+makes the decision current whenever the server day changes while it is open, and the sync and the other checks
+(`_makeDecisionCurrent`) run one at a time, so a day never makes two decisions (tested across midnight).
+The guidance reader `get_training_guidance_for_v1` stays unwired here: it needs a cost measurement first.
+
+**Daily coaching retry and error codes.** Production showed `anthropic_request_failed` for about 5 of 9 daily
+calls, about 400 ms each. Reading the path: coach-decide made one request per run and no retry, and
+`gatewayFailureCode` folded every 5xx, 529, 4xx and broken connection into one code, so the cause could not be
+told from the run row. Now `GatewayDecisionProvider` retries once, after a pause, a failure that billed nothing
+and is transient (429, 503, 529, other 5xx): the pause is the provider's `retry-after`, else 1 s, and a
+provider asking for more than 5 s is not waited for; a rejection that took longer than half the route timeout is
+not retried; a timeout or a broken connection (may have been answered) and 4xx or a bad answer (would fail
+again) are not. Codes: 429 `<vendor>_request_failed_status_429` (as before), 503/529 `<vendor>_overloaded`, any other
+HTTP error `<vendor>_request_failed_status_<n>` (the number only, never a body), no response or unsendable
+`<vendor>_request_failed`. Contract 1 gets one additive optional field: a failed `AiResult` carries
+`httpStatus` for a `provider_error` that was an HTTP error response. The eval harness's transport-failure
+pattern matches the new codes. Budget: a retry follows an unbilled failure, so at most one answer is ever billed
+per run. The root cause of the 400 ms rejections is not known from the code: a fast, repeated failure points at
+a request the provider rejects (a 4xx) rather than a busy provider, and the new code will say which status.
 
 ## Next agent starts here
 

@@ -329,6 +329,17 @@ request."); it needs a note, which is sent with the next build. **Reject proposa
 destructive confirm, **Reject this plan?** (**Reject plan** / **Keep reviewing**); answers stay
 saved and are edited from Review.
 
+If an answer to the proposal fails (a lost reply, a retry refused as stale), the app asks the
+server what it holds before saying anything. A plan that was accepted shows **You're set.**; a
+proposal the server holds as expired, rejected or revision-requested, or a refusal as stale (the
+server's own final answer, even when its status cannot be read), offers the rebuild; one still
+waiting says "Your response was not saved. Nothing has changed; try again."; and when the server
+cannot be read after a plain network error, the app says it could not confirm the response and
+keeps the plan on screen. An accepted plan is **You're set.** whichever answer failed, so the app
+never claims a change that happened is missing and never offers a rebuild that would spend another
+generation. A rejection or
+change request that is recorded goes back to Review even when saving the draft's place fails.
+
 Approval activates exactly those workouts, then shows **You're set.** once: "Your plan is active.
 Nothing else changes without your approval.", the plan, the next session ("Next session: ‹day› ·
 ‹name› · about N min"), the daily calories and protein, and the Apple Health status, with **Go to
@@ -447,9 +458,24 @@ Reading order:
    three choices, each one tap). **Talk to Coach** opens Coach with a question in the box that the
    athlete sends, or not. An earlier accepted answer that the rules no longer back is named ("Your
    check-in changed." or "New sleep or recovery data came in.") and stays in force until the athlete
-   answers again, as `start_workout` applies it. A safety route (pain of 7 or more today) shows the
-   referral card and, once after the check-in is saved, a sheet with **Got it**; no training button,
-   and it stands over any stored answer, also after the session started. With AI coaching
+   answers again, as `start_workout` applies it. A safety route shows the referral card and a sheet
+   with **Got it**; no training button, and it stands over any stored answer, also after the
+   session started. The routes (B5-2) are `pain_referral` (check-in pain of 7 or more), `urgent`
+   ("Get medical help now", names the emergency number), `clinician_today` ("Get this checked today")
+   and `clinician` ("See a doctor or physio"); a route this build does not know reads as `urgent`.
+   The sheet opens when the check-in is saved (also from the answers alone when the check-in is
+   queued offline), when a pain report from a workout arrives, and on every later day an area stays
+   held, once per day and route: it is remembered per athlete once **Got it** is tapped, and for
+   `urgent` and `clinician_today` it cannot be closed any other way. **Joint changes (B5-2):** the
+   kind `joint_adjust` ("Easier on your joints today", **Use these changes**, **Train as planned**,
+   Undo like the others) shows a swap ("Use Machine chest press instead", no starting weight), a
+   pain-free range cue for a limited exercise, or an exercise left out; the same changes ride on the
+   other kinds. Each held, limited or watched area is named ("Your knee needs a lighter touch this
+   week."), a hold on a `clinician` outcome keeps its reminder every day, and pain that has lasted two
+   weeks adds "Please see a physio or doctor." **Pain reports that have not arrived:** a notice at
+   the top of Today says a pain report waits on the phone (Tracend records one only for today or
+   yesterday, so it must be sent within a day; **Try again**), or that Tracend refused one as too old
+   and did not record it (**Report it again**, **I understand**). It is never dropped silently. With AI coaching
    off the note says no daily decision is generated and where to turn it on; with no decision it
    says to tap Sync. **Open in Train** (and the header) goes to Train. With no workout it reads
    **Rest day** and names the next planned session.
@@ -514,8 +540,26 @@ question starts at 3. Pain is **No pain** (0) or **Some pain**, which asks "How 
 10?" and will not save until a strength is chosen; it is stored as `pain_severity` 0–10. The note's
 counter appears only in its last 100 characters. **Save check-in** is pinned below the questions,
 so it is always on screen. Saving shows "Check-in saved", or, offline, that it is saved on this
-device and will sync when online. Pain location questions and the safety boundary remain future
-work. Save updates Today and recomputes only when necessary.
+device and will sync when online. Save updates Today and recomputes only when necessary.
+
+**Pain check (B5-2).** After **Some pain** and a strength, three more answers are required before
+Save opens, each with its own message: **Where is it?** (Knee, Lower back, Shoulder, Somewhere
+else), **When does it hurt?** (only when I move or train it, even at rest; optional) and **Do any of
+these apply?**, the area's red-flag questions as ticks plus **None of these** ("Choose any that
+apply, or None of these."). The payload carries `pain_area`, `pain_pattern`, `pain_red_flags`
+(sorted codes; empty for None of these) next to `pain_severity`, and nothing when the athlete says
+no pain. For an area already held, limited or on watch, a question comes first: "Last time you noted
+knee pain. How is it today?" (**Gone**, **Still there** with a strength) or, for a held area, "Has a
+doctor or physio cleared you to train your shoulder?" (**Yes** with a strength from 0, **Not yet**);
+these go as `pain_followups`. The phone works the strictest referral out from the answers by the same
+rules as the server, so the sheet closes at once for a referral and the referral opens on Today
+without waiting for the network (the check-in is sent in the background; a check-in with no
+referral waits at most 8 seconds, then waits on the phone). If the server refuses the pain answers
+(22023) the check-in is kept marked, the referral is still shown, and Today tells the athlete (too
+old, or "could not record it as it stands") before the rest of it is sent without the pain answers.
+A referral for a report just made is shown even when the same route was read earlier that day. An
+area a doctor or physio cleared, chosen again as today's pain, is one report that carries the
+clearance.
 
 ### Evidence detail
 
@@ -557,6 +601,20 @@ three separate autonomous chatbots.
   late content (a proposal card, a long reply) lays out, until the athlete touches the screen.
   The same 6-hour check runs when the athlete returns to the Coach tab or the app resumes on it,
   unless a reply is on its way or a draft is typed; a chat opened on purpose stays for that visit.
+- **Switching conversations.** Opening a saved conversation clears the messages on screen and
+  shows the loading state; only the latest open applies its result, so tapping B then C shows C,
+  and tapping B then **New conversation** shows an empty new chat, whichever load finishes last. If
+  the conversation cannot be opened, the chat that was open comes back with its messages and its
+  thread, with "Conversation could not be opened." **New conversation** on a chat that is already
+  new keeps offering the same **Continue last chat**. A saved conversation cannot be opened while a
+  reply is on its way ("Coach is still answering. Open another conversation when it’s done."), so a
+  failed open can never lose that reply. A conversation loads its newest 200 messages, starting at
+  a question (an answer whose question was cut is dropped).
+- **A follow-up while Coach is busy.** A suggested next action or **Change it** tapped while a
+  reply is on its way, or during a retry countdown, is not dropped: it shows as "Sends when Coach is
+  ready: ‹text›" with **Cancel**, and goes out when Coach is free. In every other case (Cancel, a
+  failed reply, a newer follow-up, a switch of conversation, AI coaching turned off) the text is put
+  in the composer instead, never lost, and no consent sheet opens by itself.
 - **AI label.** A reply a model wrote carries the small label **AI answer · checked by Tracend**,
   with no provider name (D11). A reply no model wrote (the deterministic safety boundary, stored
   with provider `mock`) reads **Tracend safety answer · not AI** and never carries the AI badge. A
@@ -673,10 +731,36 @@ exercise with sets left, and a "Swipe for ‹next›" hint sits at the foot of e
   **First log** mark, its reps left (**2 left**, **5+ left**, or **Reps left** to add; a set
   logged before reps left were asked shows what its RPE meant, 10 − RPE, RPE 5 or below as **5+**,
   without writing it) and undo. Undo clears that set's reps left and its times.
-- Tools: **Pain or discomfort** stays a visible chip (**Pain noted** in caution when on). **Fill
+- Tools: **Pain or discomfort** stays a visible chip (**Pain noted** in caution when on); it opens
+  the pain check (below). **Fill
   reps left**, and a ⋯ menu with **Mark as skipped** (**Unmark skipped** once skipped; an action
   sheet titled with the exercise name, with **Keep logging**). Logging a set on a skipped exercise
   unmarks it.
+
+**Pain check on an exercise (B5-2).** **Pain or discomfort** opens a sheet: **Where?** (the joint
+the exercise loads, when it can be told, is preselected), **How strong right now?** 1 to 10, **Was it
+sharp or sudden, or did you feel a pop?** and **Any numbness or tingling?** (Yes or No; all four are
+required). The report goes to Tracend with an idempotency key and the server's date; offline it is
+kept on the phone and sent again whenever the app comes forward or a workout syncs (a day at most;
+see Today). The exercise is flagged so the next target holds it. The answer sheet says what to do:
+**Keep it light** for 1 to 3 (**Continue**); **Stop this exercise for today** for 4 to 6, offering
+**Use ‹swap›** (the swap the day's options already named, so it works offline and only before a set
+has an entry) or **Skip this exercise**; **Stop this exercise** with the referral for 7 or more or a
+Yes (**Skip this exercise**, **End workout**; it cannot be dismissed), and the same sheet, with the
+hold line ("Your shoulder is on hold until you've had it checked.") or the day's referral, when the
+area is already held or the day has a safety route: no swap and no keep going then. The sheet is
+shown at once from the phone's rules; a server that is slow or silent only adds the line "Saved on
+this phone". The referral read there is not opened again on Today that day. A swap is logged as a substituted performance for pain.
+
+**Joint changes in the logger (B5-2).** `start_workout` is the authority for the rows. An exercise
+the server left out for a joint has no set rows: its page says **Left out today** with no set to
+log, the list says "left out today because of a sore joint", and nothing is logged or sent for it.
+An exercise the server swapped shows and logs the swap's name (`performed_name`), with "Swapped for
+a sore joint" and the line "Choose a weight you can lift for the reps with 3 or more left." (no
+starting weight). A limited exercise shows its pain-free range cue ("Keep it pain-free"). Logging
+follows the server's row by its order. A saved draft sent late (an earlier day's, or an unfinished
+workout saved from Today) reads the session's rows first and drops only blank trailing sets beyond
+them; a set with entries is never dropped.
 
 **Reps left (reps in reserve).** Optional on every set: "How many more reps could you do?" with
 one row of 0, 1, 2, 3, 4 and 5+ and the legend "0 nothing left · 5+ five or more" (VoiceOver
@@ -842,6 +926,34 @@ confirmation actions. The tab reads top to bottom:
   and read as "2 sets of 6 to 8 reps, down from 3 sets"), the hero and list count the lighter total,
   and the workout overview says "Lighter today: 12 of 16 sets" (or "Weights held today"). Starting the
   workout uses those sets and held weights; an easy-cardio answer leaves the strength sets as planned.
+- **A lighter week (B5-3).** Under the readiness card, when the rules suggest one (`suggested`) or an open
+  proposal waits (`pending`): a card "A lighter week could help" with the chip "Suggested by Tracend", the
+  reasons in words (two or more lifts stalled or slipped; readiness low on four or more of the days checked in this
+  past week; most of a block trained), what a lighter week is (the same sessions on the same days, half the
+  sets, weights held, effort 7 or lower, the regular plan back after the week), "Calculated by Tracend from your
+  logged sessions and check-ins. No AI." and "Nothing changes until you approve it." One button, **See what
+  changes**, prepares the proposal (nothing is applied) and opens it in a sheet as the Coach proposal card of
+  §10.1 with **Approve** (confirm sheet, "You can undo it for 7 days"), **Not now** and, after approval,
+  **Undo**; there is no **Change it** here. A running lighter week stays as a quiet card, "A lighter week is on
+  until Sat 31 Oct", with **Details and undo**. Only the rules' own suggestion says "Suggested by Tracend" and
+  gives reasons; a lighter week the athlete asked Coach for shows "Proposed by Coach" with no rule reasons, on
+  the card and in its sheet. While another change waits in Coach, the button answers "You have a change waiting
+  in Coach. Answer it first." and stores nothing. After **Undo** the week is gone and no new one is suggested for
+  14 days. No card on a day with a safety route, under a health check that says to see a
+  professional, within 28 days of the last deload, for 14 days after a declined one, or for a status this
+  version cannot read. Heart rate decides nothing; the words name no condition.
+- **Cardio this week (B5-4).** A row in "This week" after Training load: "85 of 150 min", or "Not enough Apple
+  Health data" when fewer than 5 of the last 7 days have data (never a 0). It opens a sheet: the minutes against
+  150 with a bar and "N min to go" or "You have reached the weekly guideline.", the note that every minute counts
+  as moderate (a workout record has no intensity), up to 300 for fat loss and recomposition, whether hard cardio
+  is open today (up to 2 sessions, each hard minute counts double, about 3 hours from lifting) or "Easy cardio
+  only today" with the four conditions that open it, the talk test ("Easy means you can talk in full sentences")
+  with the heart-rate-reserve share as a guide only, a note that a denied Apple Health workout permission can
+  read as 0 minutes, and "Calculated by Tracend from your Apple Health workouts. No AI." The row is absent on a
+  safety-route day and under `see_professional`.
+  Joint changes (B5-2) show on the exercise: the swap's name in place of the original, the
+  pain-free range cue under the line, or "Left out today" (read by VoiceOver as "left out today
+  because of a sore joint").
 - **Readiness line.** One sentence about state, never advice: "Recovery is excellent." (80+),
   "Recovery is good." (65+), "Recovery is moderate." (50+), "Recovery is low today." (35+),
   "Recovery is poor today.", "Building your baseline." with no score, and "Connect Apple Health to
@@ -966,7 +1078,10 @@ and a state word, so color is never the only signal:
   sheet holding **Delete meal**. Deletion then requires a destructive confirmation (**Delete this
   meal?**, Cancel as the default) explaining that the meal leaves the day's totals.
 - A draft shows **Needs review** and a **Review foods** action that restores its candidates; users
-  never need to create a second analysis to resume unfinished review.
+  never need to create a second analysis to resume unfinished review. A draft with no estimates (its
+  photo analysis failed earlier) opens a sheet that says there is nothing to review and offers
+  **Delete draft**, instead of a Confirm button that never enables. A draft under 10 minutes old
+  may still be analyzing, so its sheet says to check again and offers no delete.
 - Unlogged slots show **Due now**, **Planned**, **Optional**, or **Not logged** with their planned
   foods and a **Log** action.
 - With nothing logged or planned the timeline reads "Nothing logged yet".
@@ -977,6 +1092,12 @@ Breakfast before 10:30, Lunch before 15:00, Snack before 17:30, then Dinner) and
 a photo**, **Choose from Photo Library**, or **Enter manually** as one grouped list. A photo meal is
 saved under the chosen type. The coach's nutrition guidance sits at the end of the screen under a
 sentence-case **Coach** label, with its confidence in words.
+
+**Enter manually** keeps its sheet open until the meal is saved. If the save fails, the sheet says
+so and keeps what was typed; **Confirm meal** again repeats the same request key, so a save whose
+reply was lost adds nothing twice, while a changed meal is a new save. After a failure the app asks
+the server whether it wrote the meal: if it did, the sheet closes as saved; if it cannot find out,
+the sheet says the meal "may not have been saved". The day reloads after a failure too.
 
 Feedback: confirming a meal (manual entry or reviewed candidates) plays the `success` haptic and
 shows a **Meal logged** toast; a deleted meal shows **Meal deleted**. Failures stay on the page in
@@ -1031,7 +1152,8 @@ AI observation                 Confirmed meal
   diagnostic · analysis: 503 meal_analysis_unavailable`. No message names a provider.
 - Failure offers **Retry**, **Enter manually**, and **Delete photo**. **Not built yet:** a photo
   failure is a notice in words with its diagnostic; a draft that cannot open says to retry or
-  delete it and enter the meal manually.
+  delete it and enter the meal manually. A failed analysis (503, 429, 422) removes the photo and
+  the draft with it, so no **Needs review** row is left behind.
 
 ## 9. Progress Review
 
@@ -1152,7 +1274,11 @@ preference?** prompt, which saves a durable preference only on **Save** (**Dismi
 The **same-day readiness adjustment** (coaching platform, chunk B4) is not a persistent change, so
 it does not use this flow: it is a one-tap, same-day, reversible choice shown on Today (§5) and
 Train (§7), with Undo until the workout starts and no confirm sheet. Its server side is built
-(B4-1) and so is the app side (B4-2).
+(B4-1) and so is the app side (B4-2). The joint changes and the pain check (B5) use the same card
+and the same one tap (B5-2).
+A lighter week the rules suggest (§7) is a persistent change, so it does
+use this flow: the Train card opens the §10.1 proposal card ("Suggested by Tracend" in place of "Proposed by
+Coach"), created by the `training-proposals` function only when the athlete taps **See what changes**.
 
 ### 10.1 Coach proposal card (A8)
 
@@ -1174,6 +1300,11 @@ place a Coach suggestion can be applied, and only the athlete's tap applies it:
   it can no longer be undone from here.
 - A proposal that expired, or whose plan, targets or goal changed meanwhile, is never applied: the
   card says what happened and to ask Coach again.
+- After any error (offline, a timeout, a refused retry) the card reads the proposal again. If the
+  answer had been recorded and only the reply was lost, the card shows what the server holds
+  (**Applied**, **Not now**, **Change requested**, **Undone**) and the plan screens reload when it
+  was applied or restored; otherwise it says "Could not reach Tracend. Check your connection and
+  try again." and the buttons stay usable.
 - A request the rules refuse (a calorie target under the floor, too little logging, a screening cap)
   gets no card; Coach replies with the plain reason.
 - The card carries no model or company name (D11). It renders from a proposal the caller has or
@@ -1219,6 +1350,8 @@ plan. **Not built yet:** links to source data, charts, and a proposed-adjustment
   (and once in onboarding).
 - Revocation keeps manual features usable and explains iOS settings.
 - Sync shows date range and last success instead of an indefinite spinner.
+- A sync that is retried repeats one request key, so an attempt whose reply was lost is not applied
+  twice.
 - **Heart-rate zones (C3).** The Apple Health sheet in Account, once Apple Health is connected, ends
   with a small "Heart-rate zones" section under the signals: one line with resting heart rate and the
   maximum ("Resting 59 bpm · Max 183 bpm, estimated from your age", or "from your workouts" once a

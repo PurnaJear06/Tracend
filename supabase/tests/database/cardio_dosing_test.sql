@@ -337,7 +337,7 @@ reset role;
 select is((select array(select k from jsonb_object_keys(j) k order by k collate "C") from r where name = 'mine'),
   array['cardio_week', 'cardio_withheld', 'deload', 'local_date', 'safety_route', 'schema_version'],
   'the guidance has exactly its contract keys');
-select is((select j ->> 'schema_version' from r where name = 'mine'), '1.1', 'at schema version 1.1');
+select is((select j ->> 'schema_version' from r where name = 'mine'), '1.2', 'at schema version 1.2');
 select is((select array(select k from jsonb_object_keys(j -> 'cardio_week') k order by k collate "C")
     from r where name = 'mine'),
   array['done_min', 'easy_hr_reserve_max', 'intensity_known', 'lift_separation_hours', 'stretch_max',
@@ -346,8 +346,9 @@ select is((select array(select k from jsonb_object_keys(j -> 'cardio_week') k or
   'the cardio week has exactly its contract keys');
 select is((select array(select k from jsonb_object_keys(j -> 'deload') k order by k collate "C")
     from r where name = 'mine'),
-  array['last_ended_on', 'proposal_id', 'reasons', 'status', 'suppressed_by', 'weeks_since'],
-  'and the deload part its six');
+  array['ends_on', 'last_ended_on', 'proposal_id', 'proposal_origin', 'reasons', 'status', 'suppressed_by',
+    'weeks_since'],
+  'and the deload part its eight');
 select is((select j -> 'cardio_week' ->> 'done_min' from r where name = 'mine'), '135',
   'the athlete reads their own minutes');
 select pg_temp.as_user(pg_temp.u(5)::text);
@@ -359,7 +360,7 @@ select is((select j -> 'cardio_week' -> 'done_min' from r where name = 'other'),
 select is(public.get_training_guidance_for_v1(pg_temp.u(1), (select today from t)) -> 'cardio_week' ->> 'done_min',
   '135', 'the service-role reader answers for the athlete it is asked about');
 select is(public.get_training_guidance_for_v1(pg_temp.u(1), (select today from t)) ->> 'schema_version',
-  '1.1', 'at the same version');
+  '1.2', 'at the same version');
 
 select * from finish();
 rollback;

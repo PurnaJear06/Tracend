@@ -134,6 +134,9 @@ abstract interface class CoachContextRepository {
 /// the model cannot produce a valid answer.
 const coachChatRequestSchemaVersion = '1.1';
 
+/// How many of a conversation's newest messages the app loads.
+const coachMessageWindow = 200;
+
 /// The idempotency key makes a request safe to repeat: the server returns
 /// what the first attempt with that key produced and never runs the model or
 /// charges again. A new question (and a retry after the server did answer,
@@ -292,7 +295,10 @@ abstract interface class CoachRawResponses {
 
 abstract interface class CoachRepository {
   Future<CoachDecision?> loadLatest();
-  Future<CoachDecision> generate();
+
+  /// Makes the day's decision. [localDate] (`YYYY-MM-DD`) is the athlete's day
+  /// as the server named it; without it the phone's date is sent.
+  Future<CoachDecision> generate({String? localDate});
   Future<Map<String, dynamic>> loadUsage();
 }
 
@@ -357,18 +363,30 @@ class SupabaseCoachRepository
 
   @override
   Future<List<CoachMessage>> loadMessages(String threadId) async {
-    final rows = await _client
+    // The newest [coachMessageWindow] rows, so a long conversation neither
+    // loads everything nor loses its newest messages to the server's row cap.
+    // The order is the exact reverse of the one shown, so the cut falls on a
+    // row boundary: PostgREST's `order` defaults to descending here, hence
+    // every direction is explicit. A question and its answer stored in one
+    // transaction share `created_at`, so within one instant the question goes
+    // first ('user' sorts after 'assistant') as the server's turn order has
+    // it; the id only settles what is left.
+    final newestFirst = await _client
         .from('coach_messages')
         .select()
         .eq('thread_id', threadId)
-        // PostgREST's `order` defaults to descending here: ask for the
-        // conversation oldest-first. A question and its answer stored in one
-        // transaction share `created_at`, so the question goes first ('user'
-        // sorts after 'assistant'), as the server's turn order has it; the id
-        // only settles what is left.
-        .order('created_at', ascending: true)
-        .order('role', ascending: false)
-        .order('id', ascending: true);
+        .order('created_at', ascending: false)
+        .order('role', ascending: true)
+        .order('id', ascending: false)
+        .limit(coachMessageWindow);
+    final rows = newestFirst.reversed.toList();
+    // A full window may have cut a question from its answer: the window
+    // starts at a question, never at an answer without one.
+    if (newestFirst.length >= coachMessageWindow) {
+      while (rows.isNotEmpty && rows.first['role'] == 'assistant') {
+        rows.removeAt(0);
+      }
+    }
     // A question the server marked superseded (`safety_state` unavailable on
     // a user row: a failed, lost or summarised attempt that its retry
     // replaced) is not part of the conversation, and neither is the data
@@ -481,9 +499,10 @@ class SupabaseCoachRepository
   });
 
   @override
-  Future<CoachDecision> generate() => _reads.afterWrite(_generate);
+  Future<CoachDecision> generate({String? localDate}) =>
+      _reads.afterWrite(() => _generate(localDate));
 
-  Future<CoachDecision> _generate() async {
+  Future<CoachDecision> _generate(String? localDate) async {
     final now = _now();
     final account = await _client
         .from('user_accounts')
@@ -494,7 +513,7 @@ class SupabaseCoachRepository
       'coach-decide',
       body: {
         'schema_version': '1.0',
-        'local_date': _dateKey(now),
+        'local_date': localDate ?? _dateKey(now),
         'timezone': timezone,
         'idempotency_key': _uuid.v4(),
       },
@@ -554,7 +573,7 @@ class FixtureCoachRepository implements CoachRepository, CoachChatRepository {
   @override
   Future<CoachDecision?> loadLatest() async => null;
   @override
-  Future<CoachDecision> generate() =>
+  Future<CoachDecision> generate({String? localDate}) =>
       throw StateError('Configure Supabase to generate coaching.');
   @override
   Future<Map<String, dynamic>> loadUsage() async => const {

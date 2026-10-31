@@ -697,6 +697,13 @@ DSN is the only identifier reaching the client; the project lives at `sentry.io`
 `resting_heart_rate_bpm`, `heart_rate`, `step_count`, `blood_pressure`, `meal_content`,
 `meal_description`, `food_items`, `ingredients`, `photo_url`, `signed_url`, `image_url`,
 `object_key`, `prompt`, `prompt_text`, `question`, `answer_text`, `answer_payload`.
+Since B5-2 the scrubber (`lib/app/sentry_scrubber.dart`, also set as `beforeBreadcrumb`) drops the
+pain check entirely, key and value, from an event's request, contexts, extra data, tags and from
+every breadcrumb: any key starting `pain_`, `joint_` or `red_flag`, and `area`, `area_state`,
+`severity`, `safety_route`, `hold_outcome`, `red_flags`, `followups`, `cleared_by_clinician`,
+`range_note_code(s)`, `swap_to_name`, `swap_to_slug`. The same words, the ten red-flag codes and the
+database's "Failing row contains (...)" text are replaced inside messages, exception messages and
+strings (`test/sentry_scrubber_test.dart`).
 
 Edge Functions report exceptions through `captureException` in `coach-chat`, `meal-analyze`,
 `meal-media-retention`, `onboarding-plan`, `physique-check` and `privacy-delete-account`. Coach

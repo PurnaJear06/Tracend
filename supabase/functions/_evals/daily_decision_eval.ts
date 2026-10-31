@@ -286,7 +286,7 @@ export type CaseResult = Readonly<{
 
 // Transport failures an eval may retry (EVAL_ATTEMPTS): a laptop that sleeps mid-request
 // times out without any fault in the model or the code. Model answers are never retried.
-const transportFailure = /_(timeout|request_failed|request_failed_status_429)$/;
+const transportFailure = /_(timeout|overloaded|request_failed|request_failed_status_(429|5\d\d))$/;
 
 export async function runCase(
   provider: GatewayDecisionProvider,

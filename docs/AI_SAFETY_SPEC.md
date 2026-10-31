@@ -233,7 +233,11 @@ question:
 - The Coach may not give sets, loads or exercises for a joint that is held, tell the athlete to train
   through a pain of 4 or more in an exercise or through a red flag, or reassure that a red flag is
   harmless (contract requests 2 and 3 in the program plan carry this to the reply guard and the A9
-  screen; until they land the context view `get_readiness_context_v1` is the only reader).
+  screen; until they land, Coach is told through the `readiness` context block built from
+  `get_readiness_context_v1`: the band, the card's answer state, the safety route and its strictness, and the
+  held, limited and watched areas, with fixed rules (never contradict the card; no training talk on a safety
+  route; nothing that loads a held area; the athlete decides and Coach never applies; a deload only as a
+  proposal). That is prompt text, not a reply check: the reply guard does not yet catch a held-area prescription).
 - Missing data lowers what is allowed and never raises it: an exercise with no catalog rating counts
   as moderate on every joint; a report that did not ask the red-flag question is judged by severity
   alone.
@@ -1117,7 +1121,10 @@ routes stay available by settings alone for two weeks after the cutover.
   everything the athlete can see: the answer,
   the follow-up chips, the missing-data notes, the evidence labels and the reasoning chain, in one
   pass. Sentences that warn against a thing ("never go below ...") or
-  describe the athlete's own past ("you lost 0.9 kg a week") are not advice. A reply that breaks
+  describe the athlete's own past ("you lost 0.9 kg a week") are not advice, nor is Coach's own
+  refusal that governs the figure, pace or effort in its clause ("I can't support 800 kcal a day",
+  "10 kg in 4 weeks isn't safe", "intervals are off the table"). The repair quotes the sentences
+  that broke a rule. A reply that breaks
   several rules is repaired once with all of them named.
 - **Numbers check.** Every figure the athlete would read as fact about themselves (kg, kcal, %, g,
   bpm, BMI, dates, minutes and hours above five, and any count above ten or decimal) must appear

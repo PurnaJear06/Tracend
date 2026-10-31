@@ -41,6 +41,35 @@ Deno.test("dates, seasons and training initials are not studies", () => {
   assertEquals(studyMentions("Since 2018 you trained. In March 2026 you began."), []);
   assertEquals(studyMentions("Spring 2026 and Oct 2026 and Week 2027"), []);
   assertEquals(studyMentions("The BMI guidelines and HIIT recommendations"), []);
+  // A follow-up chip from the answer bank (2026-10-24), refused as a study by "Thu" in 2026.
+  assertEquals(studyMentions("Thu 2026-10-15: Chest volume and delts"), []);
+  assertEquals(studyMentions("Mon 2026/10/12, Sat 2026.10.17 and Sun 2026-10-18"), []);
+  // A citation year still counts at the end of a sentence or before a page range.
+  assertEquals(studyMentions("As Maughan 2018. Then more."), [{
+    authors: ["maughan"],
+    year: 2018,
+  }]);
+  assertEquals(studyMentions("Pelland et al. (2026), p. 4"), [{
+    authors: ["pelland"],
+    year: 2026,
+  }]);
+});
+
+// Round 2 (hostile review of #177): a weekday word is an author unless a full date follows it, and
+// a year followed by another year or a date is still a citation year.
+Deno.test("a surname that is also a day, and a year before a range or a date, still cite", () => {
+  const cites = (text: string, authors: string[], year: number) =>
+    assertEquals(studyMentions(text), [{ authors, year }], text);
+  cites("Sun et al. (2020) found more.", ["sun"], 2020);
+  cites("Sun 2020 found more.", ["sun"], 2020);
+  cites("The Fri 2019 trial", ["fri"], 2019);
+  cites("Mon (2021) agrees.", ["mon"], 2021);
+  cites("Wang, Sun 2020 agree.", ["wang", "sun"], 2020);
+  cites("Smith 2019-2021 followed them.", ["smith"], 2019);
+  cites("Schoenfeld 2017/2018 pooled them.", ["schoenfeld"], 2017);
+  cites("Smith & Jones 2019-20 agree.", ["smith", "jones"], 2019);
+  cites("Smith 2026-10-15 showed it.", ["smith"], 2026);
+  assertEquals(studyMentions("Tomorrow 2026-10-15: legs"), []);
 });
 
 Deno.test("a study named in the text matches the shown source by id, title, initials or excerpt", () => {

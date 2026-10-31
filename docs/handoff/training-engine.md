@@ -769,8 +769,9 @@ table; Contract 5 1.1 in the program plan the payload.
   route (`safety_copy.dart`), the persistent line, the swap and range cues (`rules.ts` has the
   cues), and extends the `beforeSend` scrubber test for the `pain_*` keys. (c) Pain keys are only sent
   with an area and the red-flag answer; a refused check-in (22023) leaves the queue's envelope.
-  (d) The Coach contract requests 1 to 3 (context, red-flag screen, reply guard) are open in the
-  program plan; until they land Coach does not know a joint is held.
+  (d) Contract request 1 (context) is built: Coach reads `get_readiness_context_v1` through the `readiness`
+  contributor (see "Coach knows today's readiness card" in [`ai-gateway.md`](./ai-gateway.md)). Requests 2 and 3
+  (red-flag screen, reply guard) are still open: a held joint is enforced by the prompt text alone.
 - **Review round 1 (Opus).** (1) A hold on `urgent` or `clinician_today` keeps the safety route every
   day until the athlete's clearance (the copy says "until you've been seen"); a `clinician` hold gives
   a daily reminder line even with no exercise change; held states carry `hold_outcome`. (2) A stored
@@ -811,6 +812,141 @@ table; Contract 5 1.1 in the program plan the payload.
   `day_adjustments_test.sql`); Deno `joints_test.ts`; Flutter `pain_check_contract_test.dart`.
 - **Not in B5-1.** The app (B5-2), deloads (B5-3), cardio dosing (B5-4), the Coach context
   contributor, the A9 screen and reply guard changes (contract requests), and the eval cases.
+
+**B5-2 (review; pain check, red flags and joint changes, app side; no server change).** Based on B5-1's
+contract (above) and B4-2's card. Words: `lib/features/readiness/safety_copy.dart` (one file, scanned
+by the diagnosis-word test with `readiness_copy.dart`).
+- **Contract.** `SupabaseDayAdjustmentRepository` adds `supports_joint_changes: true` to **every**
+  `get_my_day_adjustment_v1` and every `respond_to_day_adjustment_v1` call (one constant,
+  `_jointChanges`; a contract test pins both). No other code calls those RPCs.
+- **Parser** (`day_adjustment.dart`). `DayAdjustmentKind.jointAdjust`; `JointState` (area, state,
+  severity, `since`, `persistent`, `hold_outcome`), `ExerciseJointOptions` (`joint_options` per
+  exercise), per-change `joint_action` (swap, limit, drop), `swap_to_slug`/`swap_to_name` (a swap
+  missing either is read as no joint action), `range_note_codes` (else the single code). Unknown
+  future kinds stay `unsupportedKind`, unknown joint states and actions are skipped, and any safety
+  route (known or not) is shown, an unknown one with the `urgent` words.
+  `applyTo(workout)` previews a standing accepted answer (swap name with no load, range cues, left-out
+  exercise); with `sets: false` (the logger) set counts stay the plan's, but a left-out exercise is
+  left out either way.
+- **Card** (`day_adjustment_card.dart`, `readiness_copy.dart`). `joint_adjust` has its own title,
+  button, toast and Undo; joint states, hold reminders (`clinician` holds, every day) and the two-week
+  line are said once each; red-flag routes show `safetyWords(route)` and no training button.
+  `routeNeedsAcknowledgement`: `urgent`, `clinician_today` and unknown routes cannot be dismissed
+  without **Got it**.
+- **Referral sheet once** (Today). `SafetyAcknowledgements` (per athlete, local) remembers the day and
+  route acknowledged; `_showSafetyOnce` opens the sheet after a delivered or queued check-in (queued:
+  from the answers by the phone's copy of the rules, `painOutcome`), after a pain report arrives, and on
+  a later day a hold stands. In a workout the referral read in the result sheet is acknowledged for the
+  day.
+- **Check-in** (`check_in_sheet.dart`). Area, optional pattern and the area's red-flag questions
+  (`redFlagCodesFor`); Save stays closed until the area and an answer (a tick or **None of these**) are
+  given; follow-ups for each state in `joint_states` (**Gone** / **Still there**; held: **Yes** with a
+  strength / **Not yet**). Pain keys travel only with an area and the red-flag answer. A clinician
+  clearance for an area chosen again as today's pain goes as `pain_cleared_by_clinician` on that one
+  report. A queued envelope is replayed on launch and whenever the app comes forward; `CheckInQueue`
+  marks a pain check the server refuses (`pain_refused`, `pain_refused_too_old`, `painState`) and
+  `acknowledgeRefusedPain` then sends the rest of the check-in without the pain keys. See "Review
+  fixes" below for what the sheet does when a referral is due or the server refuses.
+- **Workout pain chip** (`pain_check_sheet.dart`, `pain_reporting.dart`, `pain_report_queue.dart`,
+  `pain_check.dart`). `record_pain_check_v1` with an idempotency key and the server's day
+  (`serverDay`); the outcome is computed on the phone by the same table as `private.pain_outcome` (a test
+  pins the table), so a referral shows even when nothing can be sent. A report that cannot be sent
+  waits in `PainReportQueue` (per athlete), is sent again when the app comes forward and after each
+  workout sync, and a 22023 marks it **refused**: it is never dropped, Today says so
+  (`PainNoticeCard`) until **I understand**. Account deletion clears the queue and the
+  acknowledgements.
+- **Logger** (`active_workout_screen.dart`, `workout_draft.dart`). `_alignSets` takes each server row
+  by its order: a row with **no sets** is `ExerciseDraft.leftOut` (page says "Left out today", no
+  set card, nothing logged; the draft carries it with empty `sets`, status `unknown`, never
+  skipped); a `substituted` row takes `performed_name` and `exercise_slug` (`takeIdentity`) and the
+  draft sends `performance_kind`/`performed_name`/`substitution_reason` (`swapFields`); a swap made in
+  the workout (**Use ‹swap›**, only before any set has an entry) is logged the same way and kept in the
+  local draft as `swap_pending` (with its slug) until a server row says it. A name that differs under
+  sets with entries is never relabelled (`takeIdentity` returns a conflict and changes nothing); the
+  sync needs attention instead. Range cues show on a limited exercise.
+- **`syncDraft`** now takes `readRows` and returns what it sent. Both callers pass it (the earlier
+  day's left-over draft, read for the day it was made on; the unfinished-workout save,
+  `get_my_workout_session` for the offered session). `alignPayloadToRows` drops only blank trailing
+  sets beyond the rows (all of them when the rows cannot be read) and never a set with an entry;
+  `completeWithEffort` gets the fitted payload.
+- **Sentry.** `lib/app/sentry_scrubber.dart` (`beforeSend` and `beforeBreadcrumb`) removes the pain
+  check from events and breadcrumbs, by key and by words in strings, and the "Failing row contains"
+  text of a refused row. `main.dart` uses it; the old in-file scrubber is gone.
+- **Safer choices where the brief was open.** A 4 to 6 result sheet can be closed (the athlete stays in
+  charge); 7 or more, any Yes, a held area and a day with a safety route cannot. A refused report is told
+  as "too old" only when the server's message is the date window (`isPainDateRefusal`); any other 22023
+  gets "could not record it as it stands". Follow-up answers carry no red-flag question (the server's
+  `pain_followups` take area, strength and clearance only).
+- **Not done.** The pain keys are not on the Home Screen widget or Live Activity (by design). Today's
+  meals and the Coach decision freshness still use the phone's date (B4-2 follow-up, unchanged).
+- **Tests.** `joint_adjustment_card_test.dart` (joint_adjust accept and Undo, each route, hold reminder,
+  swap, limit, left out, unknown kinds), `pain_check_test.dart` (outcome table, wire, queue),
+  `pain_chip_test.dart`, `today_check_in_sheet_test.dart` and `check_in_queue_test.dart` (red-flag flow
+  online and queued, follow-ups, refusals), `today_pain_notice_test.dart` (notice, referral once per
+  day), `workout_server_rows_test.dart` (left-out and swapped rows, `syncDraft` alignment),
+  `workout_repository_test.dart` (unfinished save fits the rows), `sentry_scrubber_test.dart`,
+  `contract/day_adjustment_rpc_contract_test.dart` and `contract/pain_check_contract_test.dart` on the
+  1.1 fixtures.
+
+**B5-2 review fixes (Codex and a second hostile review of #176).**
+- **Pain queue.** `PainReportQueue` changes storage only through one lock per athlete and by
+  idempotency key: `drain` reads, sends one report, then removes or marks that one report, so a report
+  added during a drain survives, a dismissed refusal stays dismissed, and `PainReportQueue.clearFor`
+  (account deletion) wins over a drain that is waiting on the network. Drains in flight are joined, and
+  each send first checks that the signed-in athlete (`PainReporting.signedInUser`) is still the queue's.
+  `readiness.load()` runs after a drain only when it sent something (`PainQueueState.sent`).
+- **The answer never waits on the network.** `PainReporting.submit` returns at once with the phone's
+  outcome and a `delivery` future; the chip's form closes with it. A send that has not answered after
+  8 seconds is kept in the queue and forgotten again if it lands. The result sheet shows the referral
+  at once; a server that is silent changes nothing but the small "Saved on this phone" line. The
+  check-in sheet closes at once for a referral (the envelope is queued and sent in the background,
+  `CheckInSaved.pending`; Today then reads today again or says it waits); a check-in with no referral
+  waits at most 8 seconds.
+- **Refused check-in.** A 22023 never discards the check-in: the envelope is kept marked
+  (`markPainRefused`), the local referral is still shown, and Today's notice sends the rest without
+  the pain answers when the athlete has read it. Closing the sheet no longer depends on the answer.
+- **Second offline check-in.** An envelope with a pain check is moved to
+  `daily_check_in_pending.earlier.<uid>` (a list) instead of being overwritten, and every earlier
+  envelope is sent first, in order (the last one sent is the day's check-in; a failure holds the later
+  ones back, a refusal does not).
+- **Held area and safety-route day.** The chip's result sheet is the stop sheet (referral or hold line,
+  **Skip this exercise** / **End workout**) when the report routes out, the area is held (today's
+  `joint_states`, or the server's `area_state` when it answers within 1.5 s) or the day has a safety
+  route. `DayAdjustment.jointOptionsFor` is null on a day with a safety route.
+- **Swap and restart.** `swap_pending` and the swap's slug live in the local draft. `takeIdentity` never
+  renames an exercise with entries (round 2 below: the identity is sent with them instead of blocking).
+  A set with entries and no server row is still a conflict: `_rowsConflict`, draft kept, nothing sent,
+  **Needs attention**.
+- **Sentry.** Pain keys go with their values in any text (`pain_area=back`, JSON, query strings), a
+  refused row goes to the end of the line, and `pain_reports` and `record_pain_check*` are redacted.
+- **Smaller.** The chip sends `red_flags: null` ("not asked": it asks 2 of 10; `record_pain_check_v1`
+  takes null and judges by the strength) and the queue keeps that. A successful call whose answer this
+  build cannot read counts as recorded, with the phone's outcome. A report just made always shows its
+  referral (the once-a-day rule is only for what Today opens by itself). "a tear" is now "a ripping
+  feeling" in the Dart and TypeScript question copy.
+
+**B5-2 round 2 fixes.**
+- **One ordered path for check-ins.** The check-in sheet no longer sends its envelope directly: it
+  enqueues it and calls `CheckInQueue.replay`, so every older envelope goes first and this one last
+  (the server counts the last one sent as the day's check-in). `CheckInQueue` takes a lock per
+  athlete, changes one envelope by its key (`clearDelivered`, `markPainRefused`; never a list read
+  before an await), and runs replays one after the other, so a check-in saved while a replay waits
+  survives whether that replay lands or is refused. A refused check-in that a newer one for the same
+  day has replaced is marked `superseded` and is let go, unsent, when the athlete reads the notice
+  (sent late it would become the day's check-in again).
+- **Refusals.** The day's limit on pain reports (`P0001`, "too many pain reports today") on a stored
+  envelope with a pain check is a refusal like 22023 (marked, told, later envelopes go on); another
+  `P0001` is retried. A duplicate idempotency key (`23505`) counts as delivered.
+- **A conflicting row never blocks the workout.** `sync_workout_draft` records `performance_kind`,
+  `performed_name` and the reason as sent (`coalesce` over the stored value; `prescribed` and
+  `substituted` both pass the shape check). A server row of `prescribed` against a swap logged on the
+  phone keeps the swap (`swapPending`); a row of `substituted` against sets logged under the plan's
+  name keeps the plan's identity, which is sent as `performance_kind: prescribed` with the plan's name
+  (`ExerciseDraft.keepsOwnIdentity`, kept in the local draft as `keep_identity`). Only a set with
+  entries that has no server row still needs attention.
+- **Smaller.** `area_state` that is not text reads as `none`; a send that fails with an error keeps
+  the report and the answer; the result sheet opens whatever happens to the delivery; the check-in
+  sheet falls back to "waiting" for any failure and never stays on "Saving".
 
 **B4-2 (review; same-day readiness adjustment, app side).** `lib/features/readiness/` holds the
 parser (`day_adjustment.dart`), repository, one shared controller (`DayAdjustmentController`, owned by
@@ -942,19 +1078,85 @@ and cardio dosing") the boundaries. No app change, no new table, no Edge Functio
   `next_session_targets` twice (through the day adjustment and the deload signals) and the screening
   outcome three times; passing them in would change several signatures. Run EXPLAIN ANALYZE on
   `get_training_guidance_for_v1` before the Coach reads it every turn.
-- **Not built.** The `training-proposals` Edge Function (O7): it needs `supabase/config.toml` and the
-  deploy workflow (lead); until then a rules-suggested deload has no card and an athlete gets one by asking
-  Coach. The Train card and the Cardio row (app); the `readiness` contributor (ai-gateway); eval cases. The
-  contract requests 7 to 9 in the program doc say what each needs.
+- **Not built.** The `readiness` contributor (ai-gateway); eval cases. The contract requests 8 in the
+  program doc says what it needs. (The `training-proposals` function, the Train card and the Cardio row
+  are built: see "B5-3/B5-4 app and function" below.)
 - **In-house numbers needing a coach's review before an external beta:** the half, the cap of 7, the
   thresholds (two lifts, four of seven days, 75%, 28 days, three of four weeks), the stretch-goal mapping,
   the two hard sessions, the 180-minute cap and the five-of-seven-days rule.
 - **Tests that fail without each rule.** pgTAP `deloads_test.sql`, `cardio_dosing_test.sql`; Deno
   `deload_cardio_test.ts` and the deload tests in `coach_proposals/build_test.ts`.
 
+**B5-3/B5-4 app and function (review; branch `claude/train-deload-cardio-ui`).**
+- **`training-proposals` (O7).** `supabase/functions/training-proposals/` (JWT; in `config.toml`,
+  `deploy.yml`, `hotfix.yml`). Body `{schema_version "1.0", kind "deload", local_date}` and nothing else (a
+  `user_id` key makes it 422). The user is `auth.uid()`; the guidance is read through the athlete's own
+  `get_my_training_guidance_v1` with the server day the app sends (22023 -> 422 `wrong_date`) and parsed with the
+  strict `_shared/training/guidance/payload.ts`. `pending` returns that proposal (`created: false`, nothing
+  stored: idempotent); `suggested` stores a pending proposal through `proposeSuggestedDeload`
+  (`_shared/coach_proposals/service.ts`) = `buildSuggestedDeload` (`training.ts`, the same `deloadWeek()` builder
+  as Coach, with the rules' reason sentences and a `DELOAD_SIGNALS` evidence line instead of an athlete's
+  words) + `persist_coach_proposal_v1`; any other status is 409 `not_suggested`; a builder refusal is 409 with its
+  code and plain `reason`; an unreadable guidance or a failed store is 503 without detail. No model call, nothing
+  applied. Two quick taps could store two proposals; the second replaces the first (an expired-by-replacement
+  proposal does not count as a decline) and the app disables the button while one is on its way.
+- **App.** `lib/features/train/guidance/`: `training_guidance.dart` (tolerant parser: a later 1.x reads; an
+  unknown deload status makes `deload` null, unknown reasons are dropped, a suggestion left with no sayable
+  reason, a proposal status with no id, and a suggestion or open proposal on any `safety_route` day all hide the
+  card; `cardio_week` needs `done_min` present, null stays null and is never shown as 0), the repository
+  (`get_my_training_guidance_v1` + `training-proposals`), `TrainingGuidanceController` (the B4-2 server-day
+  pattern: Train passes the hub's `local_today` after each hub load, the shell's `_serverToday` is the fallback
+  and the retry on 22023), `guidance_copy.dart` (all the words), `deload_card.dart`, `cardio_week_sheet.dart`.
+  The card is placed under the readiness card. **See what changes** prepares the proposal when the status is
+  `suggested` (opening it applies nothing), then opens the existing `CoachProposalLoader` in a sheet with
+  `origin: tracend` ("Suggested by Tracend", no AI line) and `allowChange: false` (Change it sends a Coach chat
+  message, so it is not offered here). Approve/Not now/Undo are the existing `respond_to_coach_proposal_v1` /
+  `undo_coach_proposal_v1`; approve and undo announce `PlanChanges`, which reloads the hub and the guidance. The
+  sheet closing reloads the guidance.
+- **Review of PR #178 (guidance 1.2, migration `20261024060425_deload_origin_and_undo_cooldown.sql`).**
+  (H1) The card no longer calls a Coach-made week "Suggested by Tracend": guidance 1.2 adds `deload.proposal_origin`
+  (`tracend` when the proposal's evidence has `DELOAD_SIGNALS`, which only `buildSuggestedDeload` adds; else
+  `coach`; null with no proposal) and `deload.ends_on` (a running week's last day). A pending or running Coach week
+  shows "Proposed by Coach", no rule reasons and no "No AI" line; a missing or unknown origin reads as Coach's. The
+  proposal sheet takes its origin from the proposal's own evidence (`CoachProposal.suggestedByRules`), so the two
+  always agree. The running card says "until <day>". (M1) The rules' deload is stored through `public.persist_suggested_deload_v1` (service role only,
+  same arguments as `persist_coach_proposal_v1`). Under the store lock it refuses with SQLSTATE `TP001` when a
+  pending, unexpired 3.0 proposal with a `training` payload that is not a deload is built on the active plan
+  version, because storing a training proposal expires every open one; one built on an older plan, one that ran
+  out, and an unanswered deload do not block. `training-proposals` maps `TP001` to 409 `other_proposal_pending`
+  and keeps no read of its own, so a Coach proposal stored between a check and the store cannot be expired
+  unseen. The card says "You have a change waiting in Coach. Answer it first." (M2) An undone deload holds new suggestions back 14 days from the day it was undone
+  (`declined_recently`); it is still not the last deload. (L1) The handler answers an unexpected throw with 503 and
+  reports only the fixed name `training_proposals_unexpected` to Sentry. (L2) `persist_coach_proposal_v1` takes
+  `pg_advisory_xact_lock(hashtextextended('tracend.coach_proposal_store:' || p_user_id::text, 0))` (the repo's
+  lock naming) before it replaces an open proposal; the redefinition is the latest earlier definition plus that
+  hunk, found by scanning earlier migrations and pinned by `deload_origin_test.ts`. (L3) The function returns refusal codes only and the
+  app words them (`deloadRefusalLine`); `proposal_notices.dart` words stale and refused answers for a card the rules
+  made (no "Coach", no first person, "Pull down on Train"), and a deload approved on a route day says a lighter week
+  can't start on a day with a referral. (L4) "stalled or slipped"; "Today's readiness reads green, which needs
+  today's check-in." (L5) `prepareDeload` asks `_today()` so a day that rolled over is refreshed first. (L6)
+  `hadUnreadReasons` is gone. (L7) The cardio row is hidden while a past week is on screen. The TS parser
+  (`guidance/payload.ts`) reads 1.2 and refuses an origin on a status with no proposal or an end date off a running
+  week. pgTAP: `deload_origin_test.sql`; `deloads_test.sql` and `cardio_dosing_test.sql` carry the new keys and the
+  undone-deload cool-down.
+- **Decisions.** (a) A `running` status shows a quiet card "A lighter week is on" with **Details and undo**: the
+  brief listed only suggested and pending, but a rules-originated week has no chat message to carry its Undo.
+  (b) The Cardio row sits in "This week" after Training load. It shows "85 of 150 min" or "Not enough Apple Health
+  data", and is absent on a safety-route or `see_professional` day (withheld) and for a cardio week the app cannot
+  read. (c) Easy-only reasons: the payload gives only `vigorous_allowed`, so the sheet lists the four conditions
+  that open hard cardio instead of guessing which one failed. (d) The sheet always carries the note that a denied
+  Apple Health workout permission can read as 0 minutes. (e) The easy heart-rate line in beats per minute is still
+  not shown (needs the C3 profile on Train); the sheet gives the talk test and "about 60% of heart rate reserve" as a
+  guide. (f) The card shows without a selected-day check: a lighter week belongs to the week.
+- **Tests.** Deno `training-proposals/handler_test.ts` and the `proposeSuggestedDeload` test in
+  `coach_proposals/service_test.ts`; Flutter `contract/training_guidance_contract_test.dart` (the three
+  fixtures, later-1.x tolerance, the parameters), `training_guidance_controller_test.dart`,
+  `train_guidance_test.dart` (suggested, pending, running, declined_recently and the other suppressions, safety
+  route, unknown status and reason, failures, cardio met/partial/zero/null/easy-only/hard/unreadable, copy lint).
+
 ## Next agent starts here
 
-B4-2 (the app side of the readiness adjustment) is in review; B5-2 (the pain check in the app) builds on
-B5-1's RPCs and B4-1's; B5-3 and B5-4 (deloads, cardio dosing; server) are in review: the app card and
-cardio row and the `training-proposals` function are what is left of them. B6's server wiring is done (see the B6
+B4-2 (the app side of the readiness adjustment) and B5-2 (the pain check in the app; builds on B5-1's RPCs
+and B4-1's) are live; B5-3 and B5-4 (deloads, cardio dosing) are in review with their app card, cardio row and the
+`training-proposals` function; the Coach contributor is what is left of them. B6's server wiring is done (see the B6
 section). The briefs are in the program doc.

@@ -765,13 +765,14 @@ notice when new data goes to the AI provider, AI_SAFETY_SPEC), and non-judgement
 
 Open, from B4/B5 (none of these files are built in B4-1):
 
-1. **ai-gateway, Coach context:** a volatile `readiness` contributor (Contract 7) rendering today's
+1. **ai-gateway, Coach context (built 2026-10-24, `claude/coach-readiness-context`; the deload signal and cardio week of B5-3/B5-4 (`get_training_guidance_for_v1`, merged in #174) are a follow-up that needs a cost measurement first):** a volatile `readiness` contributor (Contract 7) rendering today's
    band, kind, status, safety route and each joint's state from the service-role reader
    `get_readiness_context_v1(p_user_id, p_local_date)` (built in B5-1, version 1.0: `{schema_version,
    local_date, band, kind, status, available, unavailable_reason, safety_route, triggers, confidence,
    joint_states [{area, state, persistent}], rules_version}`; codes only, never a red-flag code or a
    severity; only the athlete's own today). The athlete-facing payload parser is
-   `_shared/training/readiness/payload.ts` (1.0 and 1.1); the reader's shape is not parsed there yet.
+   `_shared/training/readiness/payload.ts` (1.0 and 1.1); the reader's shape is parsed by
+   `_shared/training/readiness/context_payload.ts`.
 2. **ai-gateway, A9 red-flag screen (B5-1 built the data):** treat today's newest pain report with
    outcome `urgent`, `clinician_today` or `clinician` like a check-in pain of 7 or more (the context
    view's `safety_route` says it), and add `pain_reports` to "pain on record" in the route choice.
@@ -787,8 +788,8 @@ Open, from B4/B5 (none of these files are built in B4-1):
    card.
 6. **research-library (E):** update `bell_2023_deloading` from its CC BY full text; add
    summary-only entries for Finucane 2020, Stiell 1997 and NICE NG59 (B5).
-7. **lead:** if B5-3 uses a `training-proposals` Edge Function, `supabase/config.toml` and the
-   deploy list. B5-3 did not build it (it needs those files): the rules-originated card therefore
+7. **lead (done in the Train-card branch `claude/train-deload-cardio-ui`):** `training-proposals` is in
+   `supabase/config.toml`, `deploy.yml` and `hotfix.yml`. B5-3 did not build it (it needs those files): the rules-originated card therefore
    still has no creator. Until it lands, an athlete gets a deload by asking Coach (the A8 path, now
    limited to one week with loads held), and `get_my_training_guidance_v1` reports `deload.status`
    `suggested` with its reasons for the app to show.
@@ -803,7 +804,7 @@ Open, from B4/B5 (none of these files are built in B4-1):
    false) and are missing when `done_min` is null. The `intensity_or_phase` tool text in
    `coach_chat_provider.ts` still says "weeks (1 to 8)": for `level: deload` the builder uses exactly
    one week, so say so there.
-9. **app (B5-3, B5-4, not built):** a Train card "A lighter week could help" shown when
+9. **app (B5-3, B5-4, built in `claude/train-deload-cardio-ui`; the bpm line is not shown):** a Train card "A lighter week could help" shown when
    `deload.status` is `suggested` (reasons in words; "Suggested by Tracend"), a "Cardio this week" row
    from `cardio_week` with its sheet (a missing `done_min` reads "Connect Apple Health to count your
    cardio"; the easy-cardio heart-rate line comes from the C3 profile using `easy_hr_reserve_max`).
