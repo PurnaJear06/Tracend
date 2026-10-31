@@ -212,7 +212,9 @@ export const evidenceCodeReference = [
   "DATA_CONFIDENCE_HIGH = 14+ evidence points; DATA_CONFIDENCE_LOW = fewer than 7 evidence",
   "points; HEALTH_CONTEXT_AVAILABLE = today's Apple Health summary exists;",
   "APPROVED_PLAN_ACTIVE = the athlete has an approved plan; CHECK_IN_SAFETY_ESCALATION =",
-  "today's check-in reported pain at the safety threshold.",
+  "today's check-in reported pain at the safety threshold; ATHLETE_UNAVAILABLE_TODAY = today's",
+  "check-in says the athlete cannot train today; TRAINING_PAUSED = a break the athlete approved",
+  "covers today.",
 ].join(" ");
 
 // The gateway prompt. Stable text only, so it is one cacheable prefix; the day's context follows
@@ -233,11 +235,15 @@ export const decisionSystemPrompt = [
   "  same-day change; list each change in training.today_adjustments.",
   "- escalate: training.action and nutrition.action are both ESCALATE. Tell the athlete to stop",
   "  today's planned session and seek a qualified clinician; give no training advice.",
+  "- rest_as_chosen: training.action is REST_AS_CHOSEN. The athlete chose to rest today (a break",
+  "  they approved, or today's check-in says they cannot train). Respect it: never suggest today's",
+  "  planned session or any training for today; you may say what helps recovery and the next step.",
   "- Never use REVIEW_PROPOSAL; change_proposals is always an empty array.",
   "",
   "Evidence:",
   "- Cite only codes listed in permitted_evidence, each at most once. Use source",
-  '  "policy_evaluation" for APPROVED_PLAN_ACTIVE and CHECK_IN_SAFETY_ESCALATION and',
+  '  "policy_evaluation" for APPROVED_PLAN_ACTIVE, CHECK_IN_SAFETY_ESCALATION,',
+  "  ATHLETE_UNAVAILABLE_TODAY and TRAINING_PAUSED, and",
   '  "feature_snapshot" for the others. A label is one plain sentence for the athlete.',
   `- Code reference: ${evidenceCodeReference}`,
   "",

@@ -868,3 +868,24 @@ Deno.test("a workout made up on another day answers its own streak", () => {
   // Missed on the 23rd and 30th, then done on the 2nd (a make-up): the newest is a success.
   assertEquals(linesOf({ schedule: readScheduleBody(body) }), []);
 });
+
+Deno.test("days the athlete chose to rest are never behind plan or missed", () => {
+  const rest = (days: string[]) => ({ days: new Set(days), today: null, pauseEnds: null });
+  const behind = parsePlanState(splitPlanPayload(3, ["w-chest-a"]))!;
+  assert(linesOf({ plan: behind }).some((line) => line.startsWith("- Behind plan")));
+  assertEquals(
+    linesOf({ plan: { ...behind, rest: rest(["2026-10-13"]) } }).filter((line) =>
+      line.startsWith("- Behind plan")
+    ),
+    [],
+  );
+  const schedule = readScheduleBody(scheduleBody([
+    finished("2026-09-23"),
+    planned("2026-09-30"),
+    planned("2026-10-07"),
+  ]));
+  const missed = (plan: typeof behind) =>
+    linesOf({ plan, schedule }).filter((line) => line.includes("Planned but not logged"));
+  assertEquals(missed(behind).length, 1);
+  assertEquals(missed({ ...behind, rest: rest(["2026-10-07"]) }), []);
+});

@@ -7,7 +7,8 @@ export type TrainingAction =
   | "ADJUST_TODAY"
   | "GATHER_DATA"
   | "REVIEW_PROPOSAL"
-  | "ESCALATE";
+  | "ESCALATE"
+  | "REST_AS_CHOSEN";
 
 export type NutritionAction =
   | "MAINTAIN_TARGETS"
@@ -63,7 +64,9 @@ export type PolicyOutcome =
   | "maintain_only"
   | "daily_adjustment_only"
   | "request_data"
-  | "escalate";
+  | "escalate"
+  /** A break the athlete approved covers today, or today's check-in says they cannot train. */
+  | "rest_as_chosen";
 
 const rootKeys = [
   "schema_version",
@@ -124,7 +127,14 @@ export function parseCoachDecision(
   if (
     !isRecord(training) ||
     !hasOnlyKeys(training, ["action", "summary", "today_adjustments"]) ||
-    !["PROCEED_AS_PLANNED", "ADJUST_TODAY", "GATHER_DATA", "REVIEW_PROPOSAL", "ESCALATE"].includes(
+    ![
+      "PROCEED_AS_PLANNED",
+      "ADJUST_TODAY",
+      "GATHER_DATA",
+      "REVIEW_PROPOSAL",
+      "ESCALATE",
+      "REST_AS_CHOSEN",
+    ].includes(
       String(training.action),
     ) ||
     !isBoundedText(training.summary) ||
@@ -179,6 +189,14 @@ export function parseCoachDecision(
     ["ADJUST_TODAY", "REVIEW_PROPOSAL"].includes(trainingAction)
   ) {
     throw new Error("policy_requires_maintenance");
+  }
+  // A rest the athlete chose is honoured: on such a day the session is never proceeded with, and
+  // outside one the decision never declares a rest the athlete did not choose.
+  if (policyOutcome === "rest_as_chosen" && trainingAction !== "REST_AS_CHOSEN") {
+    throw new Error("policy_requires_rest_as_chosen");
+  }
+  if (policyOutcome !== "rest_as_chosen" && trainingAction === "REST_AS_CHOSEN") {
+    throw new Error("rest_not_chosen");
   }
   if (
     policyOutcome === "escalate" &&

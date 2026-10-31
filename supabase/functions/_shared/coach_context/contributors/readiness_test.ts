@@ -88,7 +88,37 @@ Deno.test("the parser keeps only what the context renders and ignores keys it do
     safetyRoute: null,
     confidence: "medium",
     jointStates: [{ area: "knee", state: "held", persistent: true }],
+    athleteUnavailable: false,
   });
+});
+
+Deno.test("an unavailable day is a rest the athlete chose: the card never says it changes nothing", async () => {
+  const card = parseReadinessContext(
+    payload({ triggers: ["not_available"], athlete_unavailable: true }),
+    today,
+  );
+  assertEquals(card?.athleteUnavailable, true);
+  const { text } = await rendered(
+    payload({ triggers: ["not_available"], athlete_unavailable: true }),
+  );
+  assertStringIncludes(
+    text,
+    "Rest day: the athlete said they cannot train today. Do not offer today's session.",
+  );
+  assert(!text.includes("changes nothing"), text);
+  // A reader without the flag reads as available; a mistyped flag is not the card.
+  assertEquals(parseReadinessContext(payload(), today)?.athleteUnavailable, false);
+  assertEquals(parseReadinessContext(payload({ athlete_unavailable: "yes" }), today), null);
+});
+
+Deno.test("a safety route still outranks an unavailable day on the card", async () => {
+  const { text } = await rendered(payload({
+    band: "red",
+    safety_route: "urgent",
+    athlete_unavailable: true,
+  }));
+  assertStringIncludes(text, "Safety route: urgent.");
+  assert(!text.includes("Rest day"), text);
 });
 
 Deno.test("the parser refuses a payload that is not exactly the card", () => {
@@ -470,9 +500,9 @@ Deno.test("the contributor is registered right after the plan, volatile, on both
 // new thing the Coach could be shown, so the list below has to be read and changed on purpose.
 Deno.test("the migration's reader returns exactly the keys the context parser knows", async () => {
   const sql = await Deno.readTextFile(
-    new URL("../../../../migrations/20261024060025_pain_checks.sql", import.meta.url),
+    new URL("../../../../migrations/20261101200000_coach_standing_state.sql", import.meta.url),
   );
-  const start = sql.indexOf("create function public.get_readiness_context_v1");
+  const start = sql.indexOf("create or replace function public.get_readiness_context_v1");
   const end = sql.indexOf("revoke all on function public.get_readiness_context_v1");
   assert(start > 0 && end > start, "reader found");
   const body = sql.slice(start, end);
@@ -491,7 +521,13 @@ Deno.test("the migration's reader returns exactly the keys the context parser kn
     "confidence",
     "joint_states",
     "rules_version",
+    "athlete_unavailable",
   ]);
+  // A closed flag computed from the triggers; the trigger list itself still never reaches the model.
+  assertStringIncludes(
+    returned,
+    "'athlete_unavailable', coalesce(presented -> 'triggers' ? 'not_available', false)",
+  );
   // The joint projection carries the area, the state and persistence only, and no red-flag trigger.
   assertStringIncludes(
     returned,

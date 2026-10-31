@@ -57,7 +57,7 @@ select ok(
 select has_function('public'::name, 'prepare_coach_chat_v5', ARRAY['uuid','uuid','text','text','uuid','text'], 'prepare_coach_chat_v5 exists');
 select has_function('public'::name, 'persist_coach_narrative_entry', ARRAY['uuid','text','text','date','uuid[]'], 'persist_coach_narrative_entry exists');
 select has_function('public'::name, 'persist_coach_preference', ARRAY['uuid','text','text','text','text'], 'persist_coach_preference exists');
-select has_function('public'::name, 'persist_coach_session_summary', ARRAY['uuid','date','text','uuid','uuid[]'], 'persist_coach_session_summary exists');
+select hasnt_function('public'::name, 'persist_coach_session_summary', ARRAY['uuid','date','text','uuid','uuid[]'], 'the dead persist_coach_session_summary writer is gone (20261101200000)');
 select has_function('public'::name, 'search_coach_messages', ARRAY['uuid','text','integer'], 'search_coach_messages exists');
 
 select ok(

@@ -159,8 +159,8 @@ set local "request.jwt.claim.sub" =
 -- 9. Brief schema 1.5 with additive staleness fields per metric.
 select is(
   public.get_my_daily_brief(current_date)->>'schema_version',
-  '1.8',
-  '9: brief schema_version is 1.8 (1.8 adds the recovery modes)');
+  '1.9',
+  '9: brief schema_version is 1.9 (1.8 added the recovery modes, 1.9 the availability)');
 select is(
   (public.get_my_daily_brief(current_date)->'computed'->'baselines'
     ->'sleep_minutes'->>'age_days')::integer,

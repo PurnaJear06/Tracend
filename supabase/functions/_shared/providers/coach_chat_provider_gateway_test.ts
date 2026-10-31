@@ -141,8 +141,10 @@ Deno.test("gateway prompt carries the same athlete file as today's path", () => 
   const text = prompt.messages[0].content.map((part) => part.type === "text" ? part.text : "")
     .join("\n");
   const markdown = formatContextAsMarkdown(context, 90_000);
+  // The same sections; the check-ins heading says how many rows the gateway shows (the newest 3,
+  // with the lookup for the rest), so it is compared by its name.
   for (const line of markdown.split("\n").filter((line) => line.startsWith("## "))) {
-    assertStringIncludes(text, line);
+    assertStringIncludes(text, line.startsWith("## Check-ins (") ? "## Check-ins (" : line);
   }
 });
 

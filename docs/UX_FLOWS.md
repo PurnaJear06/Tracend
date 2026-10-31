@@ -554,6 +554,33 @@ a compact snapshot to the app group; the widgets only read it and never call the
 - **Lock Screen numbers are off until chosen** (**Account › Widgets**, §13). Off, the Lock Screen
   widgets show only "Tracend" and "Lock Screen numbers are off" (a lock glyph in the circular one).
 
+### Breaks and rest days the athlete chose (2026-11-01)
+
+A break is approved state, an overlay on the plan (`training_pauses`): no plan version changes, and the
+plan resumes by itself after the break's last day. Today, Train and Coach all read it from one place
+(`availability` in the brief 1.9 and the hub 1.10).
+
+- **Taking a break** (Today, under the session card, and Train) opens a sheet: the start day (today,
+  tomorrow or the day after), the last day (up to 42 days), a summary "Break · 1–15 Nov" and
+  **Confirm**. The athlete's tap is the approval; no model is involved, so it works when AI is down.
+  A refused break says why in plain words (dates in the past, starting more than two days ahead,
+  longer than 42 days, over another break). After Confirm a toast reads "Break set · 1–15 Nov" and
+  the break card's button reads **Undo** while the screen stays open.
+- **On a break:** Today shows "On a break until <day>" in place of the session card, with **End break
+  early** (confirm first). Train shows the break's days as paused (never due, never missed) and the
+  break card where the next session would be; adherence leaves paused sessions out.
+- **A break ahead:** Today shows when it starts, with **Cancel break**.
+- **End break early** ends the break today, so today is available; ending one not begun cancels it.
+- **First day back:** within a week after a break, until the first session is finished, Today shows a
+  "First day back" note (ease in; the plan resumes as it was).
+- **Can't train today:** a check-in that says the athlete cannot train makes the session card a rest
+  day, and the readiness card reads "Rest day: you said you can't train today." After two such
+  check-ins in a row, with no break running or ahead, Today offers "Taking a few days off? Set a
+  break", which opens the same sheet (the athlete taps; nothing is set by itself).
+- **In chat:** "I'm taking 15 days off" can end in a Coach proposal card "Break · 1–15 Nov"; approving
+  it sets the same break, and its **Undo** (seven days) ends it. Coach always knows a running break,
+  today's can't-train check-in and the first day back from its standing state, so it never asks again.
+
 ### Quick check-in
 
 A sheet collects sleep quality, energy, soreness, hunger, mood, pain, availability, and an optional
@@ -1353,6 +1380,9 @@ place a Coach suggestion can be applied, and only the athlete's tap applies it:
   gets no card; Coach replies with the plain reason.
 - The card carries no model or company name (D11). It renders from a proposal the caller has or
   loads one by id (`CoachProposalLoader`); the chat connects a message to a proposal id.
+- A break (`training_pause`) card reads "Break · 1–15 Nov" and "Ends <date>"; approving it reloads Today
+  and Train. A break that no longer fits (its start passed, or another break was set meanwhile) expires
+  with that reason.
 
 ## 11. Weekly Review
 

@@ -80,6 +80,7 @@ Deno.test("the registry holds the goal phase contributor after the screening and
     "watch_outs",
     "coverage_brief",
     "library",
+    "standing_state",
   ]);
 });
 

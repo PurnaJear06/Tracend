@@ -68,7 +68,7 @@ proposal_response_action     accept | reject | request_revision
 workout_session_state        in_progress | completed | abandoned
 health_sync_status           completed | partial | failed
 health_summary_completeness  complete | partial
-policy_outcome               allow | maintain_only | daily_adjustment_only | request_data | escalate
+policy_outcome               allow | maintain_only | daily_adjustment_only | request_data | escalate | rest_as_chosen
 model_run_status             succeeded | failed
 meal_status                  draft | confirmed | discarded
 meal_source                  manual | fixture_analysis | photo_analysis
@@ -717,6 +717,37 @@ session starts it stands as it is. RLS is enabled and forced; the owner reads th
 writes them from the client (`respond_to_day_adjustment_v1` is the only writer). At most 20 answers
 a day. Export and account deletion cover it (cascade).
 
+### `training_pauses` (Coach standing state, migration `20261101200000`)
+
+A training break the athlete approved: a tap on Today or Train (`start_training_pause_v1`, source
+`athlete`) or a Coach `training_pause` proposal they approved (`respond_to_coach_proposal_v1`, source
+`coach`, with `source_proposal_id`). An overlay like `day_adjustments`: no plan version changes, and the
+plan resumes by itself after the break.
+
+| Column | Meaning |
+|---|---|
+| `user_id` | owner (cascade from `user_accounts`) |
+| `start_date`, `end_date` | the first and last day of the break as approved; 1 to 42 days |
+| `reason` | `rest` (a tap on Today or Train), `travel`, `time`, `fatigue`, `illness_recovery`, `injury_caution`, `athlete_request` or `preference` |
+| `note` | the athlete's own words, at most 140 characters, or null |
+| `source`, `source_proposal_id` | `athlete` or `coach`; the approved proposal for a Coach break (composite foreign key with `user_id`) |
+| `created_at` | when it was set |
+| `ended_at`, `ended_on`, `end_reason` | when and on which local day it was ended, and why: `ended_early` (End break early, or cancelled before it began) or `undone` (the proposal's undo); all null while it stands |
+
+A break covers the days from `start_date` to `end_date`, or to the day before `ended_on` when it was
+ended (`private.pause_last_day`); one ended before it began covers none. Rows are never deleted or
+moved: ending one records the end. Breaks never overlap (checked by `private.training_pause_problem` in
+every writer, under a per-athlete lock). RLS is enabled and forced; the owner reads their rows; nobody
+writes them from the client. Every write has an audit event (`training_pause_started`,
+`training_pause_ended`). Export and account deletion cover it (cascade).
+
+`private.availability_on(user, date)` reads it with the day's check-in: `status` is `safety_route`,
+`paused`, `unavailable_today` or `available`, with the break covering the day (or the next one ahead),
+`return_from_pause` (the break that ended in the 7 days before while no session has been finished since:
+the first day back) and `offer_break` (two can't-train check-ins in a row and no break). The daily brief
+(1.9) and the training hub (1.10, with `paused_days` and `adherence.paused_sessions`) carry it, and
+`get_coach_standing_state_v1` gives it to the Coach.
+
 ### `pain_reports` (B5-1, migration `20261024060025`)
 
 The athlete's pain checks (rules `pain-v1`; ALGORITHMS §4, "Pain check, red flags and joint rules").
@@ -1071,6 +1102,9 @@ chain). At most one entry is ongoing (`until is null`). Forced RLS, read-only fo
 ### `coach_session_summaries` (superseded by `coach_notes`)
 
 Nothing writes this table since A10 part 2 (the per-turn summary recycled the Coach's own prose).
+Its writer `persist_coach_session_summary` and the read in `prepare_coach_chat_v5` were removed in
+`20261101200000`; the table stays until a later cleanup migration drops it (two-step rule), and until
+then the privacy export, memory reset and account deletion still cover it.
 Append-only deterministic daily journal entries: `coaching_date`, `summary` (1–2 sentences),
 `thread_id`, and `key_snapshot_ids`. Only the 30 newest entries per user are kept. Forced RLS,
 read-only for authenticated.

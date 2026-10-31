@@ -149,6 +149,22 @@ Requirements:
   one-day plan version because the athlete approved it in chat; it is to move onto the overlay so
   one mechanism remains, and until then the readiness adjustment is not offered on a day Coach has
   already adjusted.
+- **A training break is an approved overlay version** (owner decision, 2026-11-01). A break is a row
+  in `training_pauses`, never a plan version: the athlete approves it with one tap (a Coach
+  `training_pause` proposal through `respond_to_coach_proposal_v1`, or "Taking a break" on Today or
+  Train through `start_training_pause_v1`), the row and an audit event are written, and that row is
+  the "new version" of Architecture rule 3 for a break. The plan stays untouched, so it resumes by
+  itself after the break's last day; ending early (`end_training_pause_v1`) or undoing the proposal
+  (`undo_coach_proposal_v1`, seven days) ends the row and keeps it. One SQL helper,
+  `private.availability_on(user, date)`, answers whether a day is available, unavailable today (the
+  check-in), paused or on a safety route, and every reader uses it: Today, Train, the readiness card,
+  the daily decision and the Coach's standing state.
+- **A rest the athlete chose is honoured by the daily decision.** On a day a break covers, or after a
+  check-in that says the athlete cannot train, the policy outcome is `rest_as_chosen` with the
+  deterministic evidence code `TRAINING_PAUSED` or `ATHLETE_UNAVAILABLE_TODAY`; the only training
+  action it permits is `REST_AS_CHOSEN`, so the decision can never proceed as planned on that day,
+  and `REST_AS_CHOSEN` is refused under any other outcome. Escalation (pain of 7 or more) keeps its
+  precedence.
 - Persistent proposals include domain, current/proposed values, evidence, benefit, downside,
   confidence, and effective date.
 - Unknown fields, invalid ranges, cross-domain actions, policy conflicts, and invalid references are
@@ -272,9 +288,9 @@ In chat Coach may ask for a change, so "I'll be away for two weeks" or "take a d
 in an applied change without Coach ever applying it. The approval invariant (Architecture 2 and 3)
 holds at every step:
 
-1. **The model chooses an intent, nothing else.** A closed list of seven kinds (`temporary_block`,
+1. **The model chooses an intent, nothing else.** A closed list of eight kinds (`temporary_block`,
    `training_schedule`, `exercise_swap`, `intensity_or_phase`, `goal_or_phase`, `nutrition_targets`,
-   `next_session_adjustment`), parameters from closed vocabularies, dates, and a reason from a
+   `next_session_adjustment`, `training_pause`), parameters from closed vocabularies, dates, and a reason from a
    closed list. The parser (`_shared/coach_proposals/intent.ts`) refuses any other key, kind or
    value. A free-text note is kept only if it has no digit; otherwise it is dropped.
 2. **Rules compute every number.** `buildCoachProposal(intent, athleteState)` is pure
@@ -335,6 +351,15 @@ is reported as ended so Coach suggests the next step as a new proposal).
 
 A diet break ends on its date but nutrition does not revert by itself: resuming a deficit is a new
 proposal the athlete approves, so no calorie change happens without a tap.
+
+**A training break (`training_pause`, 2026-11-01).** "I'm taking 15 days off" becomes a proposal card
+"Break · 1–15 Nov". The rules (`_shared/coach_proposals/pause.ts`) check real dates, 1 to 42 days, a
+start from today to two days ahead and no overlap with another break, and build the card; they compute
+no number, so a break needs no profile, weight or logged data (the profile-completeness gate does not
+apply) and the health check never holds one back (a break only rests). Storing and approving re-check the
+dates and the overlap; a break that no longer fits expires with the reason `dates_passed` or
+`pause_overlaps`. Approval writes a `training_pauses` row (an overlay, see §5) and an audit event; undo
+ends it. A break is never a plan version, so nothing has to be restored when it ends.
 
 ### Deloads and cardio dosing (B5-3, B5-4)
 

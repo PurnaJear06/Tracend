@@ -2,6 +2,7 @@
 // proposal (every number computed by rules) or a plain refusal. Nothing here reads a clock, a
 // database or a model.
 import { buildGoalOrPhase } from "./goal.ts";
+import { buildTrainingPause } from "./pause.ts";
 import { buildNutritionTargets } from "./nutrition.ts";
 import {
   buildExerciseSwap,
@@ -28,5 +29,11 @@ export function buildCoachProposal(intent: CoachProposalIntent, state: AthleteSt
       return buildNutritionTargets(intent, state);
     case "next_session_adjustment":
       return buildNextSessionAdjustment(intent, state);
+    case "training_pause":
+      return buildTrainingPause(intent, {
+        today: state.today,
+        screening: state.screening,
+        pauses: state.pauses ?? [],
+      });
   }
 }

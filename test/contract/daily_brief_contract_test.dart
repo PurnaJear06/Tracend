@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/shared/training_availability.dart';
 
 String _readFixture(String name) {
   final file = File('test/contract/fixtures/$name');
@@ -625,6 +626,48 @@ void main() {
       expect(computed.scores.recoveryBreakdown!.weights, isEmpty);
       expect(computed.scores.recoveryBreakdown!.checkInZ, 0);
       expect(computed.todayRaw?.hrvScoredMs, isNull);
+    });
+  });
+
+  group('Daily Brief contract — get_my_daily_brief v1.9 (availability)', () {
+    const fixture = 'daily_brief_v1_9.json';
+
+    test('every v1.8 key is unchanged and availability is added', () {
+      final v18 = _loadFixtureJson('daily_brief_v1_8.json');
+      final v19 = _loadFixtureJson(fixture);
+      expect(v19['schema_version'], '1.9');
+      expect(v19.keys.toSet(), {...v18.keys, 'availability'});
+      for (final key in v18.keys.where((key) => key != 'schema_version')) {
+        expect(v19[key], v18[key], reason: key);
+      }
+      final availability = v19['availability'] as Map<String, dynamic>;
+      expect(availability.keys.toSet(), {
+        'schema_version',
+        'local_date',
+        'status',
+        'unavailable_today',
+        'safety_route',
+        'paused',
+        'pause',
+        'return_from_pause',
+        'offer_break',
+      });
+    });
+
+    test('a can\'t-train day with the break offer parses', () {
+      final brief = DailyBrief.fromJson(_loadFixtureJson(fixture));
+      expect(brief.availability.status, AvailabilityStatus.unavailableToday);
+      expect(brief.availability.unavailableToday, isTrue);
+      expect(brief.availability.offerBreak, isTrue);
+      expect(brief.availability.pause, isNull);
+    });
+
+    test('a v1.8 brief reads as a normal day', () {
+      final brief = DailyBrief.fromJson(
+        _loadFixtureJson('daily_brief_v1_8.json'),
+      );
+      expect(brief.availability.status, AvailabilityStatus.available);
+      expect(brief.availability.offerBreak, isFalse);
     });
   });
 }

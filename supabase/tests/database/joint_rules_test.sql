@@ -303,9 +303,9 @@ select is((select w.day_adjustment_id from public.workout_sessions w
 
 select is((select array(select k from jsonb_object_keys(public.get_readiness_context_v1(pg_temp.u(1),
       (select today from t))) k order by k collate "C")),
-  array['available', 'band', 'confidence', 'joint_states', 'kind', 'local_date', 'rules_version',
-    'safety_route', 'schema_version', 'status', 'triggers', 'unavailable_reason'],
-  'the Coach context view has exactly its twelve keys');
+  array['athlete_unavailable', 'available', 'band', 'confidence', 'joint_states', 'kind', 'local_date',
+    'rules_version', 'safety_route', 'schema_version', 'status', 'triggers', 'unavailable_reason'],
+  'the Coach context view has exactly its thirteen keys (athlete_unavailable since 20261101200000)');
 select is((select array[v ->> 'kind', v ->> 'status', v ->> 'unavailable_reason']
     from (select public.get_readiness_context_v1(pg_temp.u(1), (select today from t)) v) x),
   array['joint_adjust', 'accepted', 'session_started'], 'it shows the answer in force and that the session started');
@@ -413,7 +413,7 @@ insert into r select 'cannot_train', public.get_my_day_adjustment_v1((select tod
 select is((select array[j ->> 'kind', jsonb_array_length(j -> 'options')::text] from r where name = 'cannot_train'),
   array['none', '0'], 'a held knee on a day the athlete cannot train proposes nothing');
 select is((select j ->> 'explanation' from r where name = 'cannot_train'),
-  'You said you can''t train today. Nothing in your plan changes. Your knee is on hold until you''ve had it checked.',
+  'Rest day: you said you can''t train today. Your knee is on hold until you''ve had it checked.',
   'but the day still says the knee is on hold until it has been checked');
 
 -- A swapped exercise keeps its sets and carries no load; a held knee with an easy-cardio day --------------------

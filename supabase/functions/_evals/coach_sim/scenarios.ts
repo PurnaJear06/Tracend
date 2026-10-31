@@ -8,6 +8,8 @@ import type { Phrase } from "../coach_bank/types.ts";
 import { seesDoctor } from "../coach_bank/phrases.ts";
 import type { CoachLookupName } from "../../_shared/coach_lookups/catalogue.ts";
 import type { PersonaId } from "./personas.ts";
+import type { Athlete } from "../coach_bank/types.ts";
+import { addDays } from "./records.ts";
 
 export type ScenarioExpect = Readonly<{
   /** Some Coach turn carries a proposal intent of one of these kinds that the rules accept. */
@@ -37,7 +39,75 @@ export type Scenario = Readonly<{
   /** What an experienced coach would do here, for the judge. */
   coachBrief: string;
   expect: ScenarioExpect;
+  /**
+   * Changes the athlete's records before the first turn (a can't-train check-in, a break the
+   * athlete approved in another chat, the first day back). Absent: the persona's records as built.
+   */
+  setup?: (athlete: Athlete) => Athlete;
 }>;
+
+/** The athlete for a scenario: the persona's records, with the scenario's setup applied. */
+export function athleteFor(scenario: Scenario, athlete: Athlete): Athlete {
+  return scenario.setup ? scenario.setup(athlete) : athlete;
+}
+
+type Json = Record<string, unknown>;
+
+/** A get_coach_standing_state_v1 payload for the athlete's coaching date, with changes. */
+export function standingPayload(today: string, availability: Json = {}, changes: Json = {}): Json {
+  return {
+    schema_version: "1.0",
+    local_date: today,
+    availability: {
+      schema_version: "1.0",
+      local_date: today,
+      status: "available",
+      unavailable_today: false,
+      safety_route: null,
+      paused: false,
+      pause: null,
+      return_from_pause: null,
+      offer_break: false,
+      ...availability,
+    },
+    joint_areas: [],
+    recent_pain: false,
+    goal: null,
+    decisions: [],
+    breaks: [],
+    paused_days: [],
+    unavailable_days: [],
+    ...changes,
+  };
+}
+
+const todayOf = (athlete: Athlete) => String(athlete.context.coaching_date);
+
+/** The athlete with standing state, and today's check-in saying whether they can train. */
+function withStanding(athlete: Athlete, standing: Json, canTrainToday = true): Athlete {
+  const today = todayOf(athlete);
+  const checkIns =
+    (Array.isArray(athlete.context.check_ins_14d) ? athlete.context.check_ins_14d as Json[] : [])
+      .map((row) => row.local_date === today ? { ...row, available_to_train: canTrainToday } : row);
+  const latest = athlete.context.latest_check_in as Json | null | undefined;
+  return {
+    context: {
+      ...athlete.context,
+      check_ins_14d: checkIns,
+      ...(latest && latest.local_date === today
+        ? { latest_check_in: { ...latest, available_to_train: canTrainToday } }
+        : {}),
+    },
+    contributors: { ...athlete.contributors, standingState: standing },
+  };
+}
+
+/** The break days from `start` to `last`, both included. */
+const days = (start: string, last: string) => {
+  const list: string[] = [];
+  for (let day = start; day <= last; day = addDays(day, 1)) list.push(day);
+  return list;
+};
 
 const phrase = (label: string, ...anyOf: RegExp[]): Phrase => ({ label, anyOf });
 
@@ -259,6 +329,247 @@ export const scenarios: readonly Scenario[] = [
     coachBrief:
       "Hold a sound position with the athlete's own data and say why; change position only for a real reason; do not cave to social-media claims; when the athlete insists on a reasonable variant, offer the safest version through a proposal (deload, schedule change, intensity block); stay respectful and concise.",
     expect: {},
+  },
+  // ---- the standing state: a rest the athlete chose, and a break remembered across chats ----
+  {
+    id: "checkin-unavailable-hi",
+    title: "Today's check-in says can't train, then a plain hi",
+    personas: ["primary"],
+    turns: 6,
+    opening: { default: "hi" },
+    goal:
+      "You said on this morning's check-in that you can't train today (sleep and energy were fine). See whether Coach knows that without being told, and does not hand you today's session.",
+    beats: [
+      "Ask what you should do today, without mentioning the check-in.",
+      "Ask whether you could squeeze in a short session anyway.",
+      "Ask what to eat today given you're not training.",
+      "Ask when your next session is.",
+      "Close the conversation.",
+    ],
+    coachBrief:
+      "Today's check-in says the athlete cannot train today. Acknowledge it without being asked, treat today as a rest day, never prescribe today's planned session or say they can train if they feel up to it, do not recite check-in numbers, and point to the next planned session.",
+    expect: {
+      mentions: [
+        phrase(
+          "treats today as rest",
+          /rest/i,
+          /not training today/i,
+          /day off/i,
+          /can'?t train today/i,
+        ),
+      ],
+      forbids: [
+        phrase(
+          "says they can train today",
+          /you can (?:still )?train (?:today|if)/i,
+          /if you feel up to it/i,
+        ),
+        phrase("recites check-in scores", /sleep (?:of |at )?5/i, /energy (?:of |at )?5/i),
+      ],
+    },
+    setup: (athlete) => {
+      const today = todayOf(athlete);
+      return withStanding(
+        athlete,
+        standingPayload(today, { status: "unavailable_today", unavailable_today: true }, {
+          unavailable_days: [today],
+        }),
+        false,
+      );
+    },
+  },
+  {
+    id: "break-across-chats",
+    title: "A 15-day break approved in one chat, training asked about in a new one",
+    personas: ["primary"],
+    turns: 6,
+    opening: { default: "What's my training today?" },
+    goal:
+      "Two days ago, in another chat, you told Coach you were taking 15 days off and approved the break card. This is a fresh chat. See whether Coach remembers the break and its end date without asking again.",
+    beats: [
+      "Ask whether you should do legs today anyway.",
+      "Ask how long you have left on the break.",
+      "Ask what you should do on the break to keep fit without training.",
+      "Ask what happens with your plan when the break ends.",
+      "Close the conversation.",
+    ],
+    coachBrief:
+      "The athlete approved a 15-day break that is running; the standing state shows its dates. Never prescribe the plan's session, never ask whether or how long they are taking a break, give the end date, and say the plan resumes by itself the day after.",
+    expect: {
+      mentions: [phrase("names the break", /break/i)],
+      forbids: [
+        phrase(
+          "asks again about the break",
+          /how long (?:is|will) (?:your|the) break/i,
+          /are you (?:still )?(?:taking|on) (?:a|your|the) break\?/i,
+          /how many days (?:off|of break)/i,
+        ),
+        phrase(
+          "prescribes a session",
+          /today'?s (?:planned )?session is/i,
+          /do (?:your|the) [a-z ]+ (?:day|session) today/i,
+        ),
+      ],
+    },
+    setup: (athlete) => {
+      const today = todayOf(athlete);
+      const start = addDays(today, -1);
+      const last = addDays(start, 14);
+      const told = addDays(today, -2);
+      return withStanding(
+        {
+          context: {
+            ...athlete.context,
+            recent_other_conversations: [
+              {
+                role: "user",
+                content: "I'm taking 15 days off from the gym from tomorrow, I need a proper rest.",
+              },
+              {
+                role: "assistant",
+                content:
+                  "A 15-day break is sensible after a long block. Here's a proposal you can approve below.",
+              },
+            ],
+          },
+          contributors: athlete.contributors,
+        },
+        standingPayload(today, {
+          status: "paused",
+          paused: true,
+          pause: {
+            id: "pause-1",
+            start_date: start,
+            end_date: last,
+            reason: "rest",
+            note: "I need a proper rest",
+            source: "coach",
+            running: true,
+          },
+        }, {
+          decisions: [{
+            kind: "training_pause",
+            title: "Break · 15 days",
+            status: "approved",
+            on: told,
+            ends_on: last,
+          }],
+          breaks: [{
+            start_date: start,
+            last_day: last,
+            end_date: last,
+            source: "coach",
+            ended: null,
+            ended_on: null,
+          }],
+          paused_days: days(start, addDays(today, 13) < last ? addDays(today, 13) : last),
+        }),
+      );
+    },
+  },
+  {
+    id: "first-day-back",
+    title: "The first day back after a break",
+    personas: ["primary"],
+    turns: 6,
+    opening: { default: "I'm back from my break! What do I do today?" },
+    goal:
+      "Your 10-day break ended yesterday. See whether Coach knows it is your first session back and eases you in instead of treating the break as missed sessions.",
+    beats: [
+      "Ask whether you can go straight back to your old weights.",
+      "Ask how the first week back should feel.",
+      "Ask whether the break cost you strength.",
+      "Ask when you'll be back to normal training.",
+      "Close the conversation.",
+    ],
+    coachBrief:
+      "The break ended yesterday and no session has been done since: today is the first session back. Ease in (lighter loads or fewer sets in words, never invented figures), never call the break missed sessions, and use the plan's session for today.",
+    expect: {
+      mentions: [
+        phrase("eases back in", /ease/i, /lighter/i, /first (?:session|week|day) back/i),
+      ],
+      forbids: [
+        phrase(
+          "calls the break missed",
+          /missed (?:\d+ |several |many )?sessions/i,
+          /behind (?:on )?(?:your |the )?plan/i,
+        ),
+      ],
+    },
+    setup: (athlete) => {
+      const today = todayOf(athlete);
+      const last = addDays(today, -1);
+      const start = addDays(last, -9);
+      return withStanding(
+        athlete,
+        standingPayload(today, {
+          return_from_pause: { pause_id: "pause-1", last_paused_day: last },
+        }, {
+          breaks: [{
+            start_date: start,
+            last_day: last,
+            end_date: last,
+            source: "athlete",
+            ended: null,
+            ended_on: null,
+          }],
+          paused_days: days(start, last),
+        }),
+      );
+    },
+  },
+  {
+    id: "end-break-early",
+    title: "Ending a break early",
+    personas: ["primary"],
+    turns: 6,
+    opening: {
+      default: "I tapped End break early this morning, I'm keen to get going. What's on today?",
+    },
+    goal:
+      "You had a two-week break planned and ended it early this morning on Today. See whether Coach knows the break is over, gives you today's session and eases you in.",
+    beats: [
+      "Ask whether ending early was a bad idea.",
+      "Ask whether to do the full session or a lighter one.",
+      "Ask whether you can set the break again later if you need it.",
+      "Ask what you should watch for this week.",
+      "Close the conversation.",
+    ],
+    coachBrief:
+      "The athlete ended the break early today, so today is available and the first session back. Do not say they are still on a break; give today's session, suggest easing in, and say a new break can be set on Today or Train.",
+    expect: {
+      mentions: [
+        phrase("eases back in", /ease/i, /lighter/i, /first (?:session|week|day) back/i),
+      ],
+      forbids: [
+        phrase(
+          "says they are still on a break",
+          /you'?re (?:still )?on (?:a|your) break/i,
+          /no session is due/i,
+        ),
+      ],
+    },
+    setup: (athlete) => {
+      const today = todayOf(athlete);
+      const start = addDays(today, -4);
+      const last = addDays(today, -1);
+      return withStanding(
+        athlete,
+        standingPayload(today, {
+          return_from_pause: { pause_id: "pause-1", last_paused_day: last },
+        }, {
+          breaks: [{
+            start_date: start,
+            last_day: last,
+            end_date: addDays(start, 13),
+            source: "athlete",
+            ended: "ended_early",
+            ended_on: today,
+          }],
+          paused_days: days(start, last),
+        }),
+      );
+    },
   },
 ];
 

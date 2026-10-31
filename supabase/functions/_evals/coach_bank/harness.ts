@@ -13,6 +13,11 @@ import { createTrainingPlanContributor } from "../../_shared/coach_context/contr
 import { createScreeningContributor } from "../../_shared/coach_context/contributors/screening.ts";
 import { createCoverageBriefContributor } from "../../_shared/coach_context/contributors/coverage_brief.ts";
 import { createWatchOutsContributor } from "../../_shared/coach_context/contributors/watch_outs.ts";
+import {
+  createStandingStateContributor,
+  parseStandingState,
+  type StandingStateSource,
+} from "../../_shared/coach_context/contributors/standing_state.ts";
 import { addDays } from "../../_shared/training/schedule/week_ahead.ts";
 import { createConfirmedFactsContributor } from "../../_shared/coach_context/contributors/confirmed_facts.ts";
 import { createCoachNotesContributor } from "../../_shared/coach_context/contributors/coach_notes.ts";
@@ -118,6 +123,11 @@ export type TurnOptions = Readonly<{
 function contributorsOf(athlete: Athlete, options: TurnOptions = {}): CoachContextContributor[] {
   const { context, contributors } = athlete;
   const list: CoachContextContributor[] = [];
+  // The real standing state over the case's payload, read by the plan and the watch-outs too.
+  const standing: StandingStateSource | undefined = contributors.standingState === undefined
+    ? undefined
+    : (_user, localDate) =>
+      Promise.resolve(parseStandingState(contributors.standingState, localDate));
   if (contributors.principles !== false) list.push(coachingPrinciplesContributor);
   const screening = contributors.screening;
   list.push(
@@ -143,7 +153,14 @@ function contributorsOf(athlete: Athlete, options: TurnOptions = {}): CoachConte
     list.push(createNutritionStateContributor(() => Promise.resolve(contributors.nutritionState)));
   }
   if (contributors.trainingPlan) {
-    list.push(createTrainingPlanContributor(() => Promise.resolve(contributors.trainingPlan)));
+    list.push(
+      createTrainingPlanContributor(
+        () => Promise.resolve(contributors.trainingPlan),
+        undefined,
+        undefined,
+        standing,
+      ),
+    );
   }
   if (contributors.goalPhase) {
     list.push(createGoalPhaseContributor(() => Promise.resolve(contributors.goalPhase)));
@@ -154,6 +171,7 @@ function contributorsOf(athlete: Athlete, options: TurnOptions = {}): CoachConte
       planState: () => Promise.resolve(contributors.trainingPlan ?? null),
       facts: () => Promise.resolve(contributors.watchFacts ?? null),
       schedule: () => Promise.resolve(contributors.schedule ?? null),
+      standing,
     }));
   }
   // The real Coverage Brief over the athlete's index (the simulator's personas carry one) or one
@@ -174,6 +192,7 @@ function contributorsOf(athlete: Athlete, options: TurnOptions = {}): CoachConte
       search: options.librarySearch,
     }));
   }
+  if (standing) list.push(createStandingStateContributor(standing));
   return list;
 }
 

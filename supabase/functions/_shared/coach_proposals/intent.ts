@@ -90,6 +90,7 @@ const allowedKeys: Readonly<Record<string, readonly string[]>> = {
   goal_or_phase: ["kind", "reason", "note", "phase", "target_weight_kg", "target_date"],
   nutrition_targets: ["kind", "reason", "note", "direction", "requested_calories"],
   next_session_adjustment: ["kind", "reason", "note", "direction", "session"],
+  training_pause: ["kind", "reason", "note", "start_date", "end_date"],
 };
 
 /** Reads the model's intent object. Anything outside the vocabulary is invalid. */
@@ -229,6 +230,12 @@ export function parseCoachProposalIntent(raw: unknown): IntentResult {
       if (!direction) return bad("direction is not in the vocabulary");
       if (!session) return bad("session must be today or next");
       return { ok: true, intent: { kind, ...common, direction, session } };
+    }
+    case "training_pause": {
+      const startDate = realDate(body.start_date);
+      const endDate = realDate(body.end_date);
+      if (!startDate || !endDate) return bad("dates must be real YYYY-MM-DD dates");
+      return { ok: true, intent: { kind, ...common, startDate, endDate } };
     }
   }
 }

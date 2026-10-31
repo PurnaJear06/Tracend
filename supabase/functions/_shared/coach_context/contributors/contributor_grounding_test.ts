@@ -42,6 +42,7 @@ import runningGuidance from "../../../../../test/contract/fixtures/training_guid
 import { createScreeningContributor } from "./screening.ts";
 import { createTrainingPlanContributor } from "./training_plan.ts";
 import { createWatchOutsContributor } from "./watch_outs.ts";
+import { createStandingStateContributor, parseStandingState } from "./standing_state.ts";
 
 const input = { userId: "u", question: "Status?", localDate: "2026-10-18" };
 
@@ -65,6 +66,7 @@ Deno.test("every contributor that grounds as records has a probe here", () => {
     "coach_notes",
     "watch_outs",
     "coverage_brief",
+    "standing_state",
   ];
   assertEquals(
     Object.entries(contributorGrounding).filter(([, kind]) => kind === "records").map(([id]) => id)
@@ -570,4 +572,56 @@ Deno.test("proposals: dates ground as records; a proposal's title and figures gr
   assertEquals(ungroundedNumbers("You are on a 12-week deload.", inputs.athleteGround!), []);
   assertEquals(ungroundedNumbers("The proposal sets 2350 kcal.", inputs.ground), []);
   assertEquals(ungroundedNumbers("Your target is 2350 kcal.", inputs.athleteGround!), ["2350"]);
+});
+
+Deno.test("standing state: its dates, titles and areas ground; its rule and thresholds do not", async () => {
+  const payload = {
+    schema_version: "1.0",
+    local_date: input.localDate,
+    availability: {
+      schema_version: "1.0",
+      local_date: input.localDate,
+      status: "unavailable_today",
+      unavailable_today: true,
+      safety_route: null,
+      paused: false,
+      pause: {
+        id: "p",
+        start_date: "2026-10-19",
+        end_date: "2026-10-26",
+        reason: "rest",
+        note: null,
+        source: "coach",
+        running: false,
+      },
+      return_from_pause: null,
+      offer_break: false,
+    },
+    joint_areas: [{ area: "knee", state: "held" }],
+    recent_pain: true,
+    goal: { goal_type: "fat_loss", phase: "cut", phase_ends_on: "2026-12-06" },
+    decisions: [{
+      kind: "training_pause",
+      title: "Break · 19–26 Oct",
+      status: "approved",
+      on: "2026-10-17",
+      ends_on: "2026-10-26",
+    }],
+    breaks: [],
+    paused_days: ["2026-10-19"],
+    unavailable_days: ["2026-10-18"],
+  };
+  const state = parseStandingState(payload, input.localDate);
+  assert(state !== null);
+  const block = await blockOf(createStandingStateContributor(() => Promise.resolve(state)));
+  const inputs = probeContributor({
+    id: "standing_state",
+    block,
+    fixture: payload,
+    calculated: [],
+    fixed: ["4|other", "10|other", "7|d", "14|d"],
+  });
+  for (const side of [inputs.ground, inputs.athleteGround!]) {
+    assertEquals(ungroundedNumbers("Your knee has been held for 21 days.", side), ["21"]);
+  }
 });

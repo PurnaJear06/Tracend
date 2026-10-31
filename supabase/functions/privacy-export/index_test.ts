@@ -31,6 +31,7 @@ Deno.test("the export includes the pre-exercise screening answers", () => {
 
 Deno.test("the export includes the same-day adjustments the athlete answered", () => {
   assert(dataTables.includes("day_adjustments"));
+  assert(dataTables.includes("training_pauses"));
 });
 
 Deno.test("the export includes the pain checks the athlete made", () => {

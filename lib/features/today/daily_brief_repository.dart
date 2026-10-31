@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:tracend/shared/training_availability.dart';
+
 import 'computed_metrics.dart';
 
 class DailyBrief {
@@ -16,6 +18,7 @@ class DailyBrief {
     this.plan,
     this.week = const [],
     this.todaySession,
+    this.availability = TrainingAvailability.available,
   });
   final String localDate;
   final Map<String, dynamic>? workout;
@@ -37,6 +40,10 @@ class DailyBrief {
 
   /// Today's latest kept workout session; null when none was started.
   final TodaySession? todaySession;
+
+  /// Whether today is a training day for the athlete: a break, or a check-in
+  /// that said they can't train (brief 1.9). Older briefs read as available.
+  final TrainingAvailability availability;
 
   /// Maps a `get_my_daily_brief` payload. Fields a brief's schema version
   /// does not carry stay null or empty.
@@ -65,6 +72,7 @@ class DailyBrief {
       todaySession: object('today_session') == null
           ? null
           : TodaySession.fromJson(object('today_session')!),
+      availability: TrainingAvailability.fromJson(value['availability']),
     );
   }
 }

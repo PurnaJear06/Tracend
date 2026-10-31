@@ -20,7 +20,9 @@ import 'package:tracend/features/train/guidance/guidance_copy.dart';
 import 'package:tracend/features/train/guidance/training_guidance_controller.dart';
 import 'package:tracend/features/train/offline_safety_notes.dart';
 import 'package:tracend/features/train/train_view_models.dart';
+import 'package:tracend/features/train/training_pause_repository.dart';
 import 'package:tracend/features/train/widgets/action_cards.dart';
+import 'package:tracend/features/train/widgets/break_widgets.dart';
 import 'package:tracend/features/train/widgets/exercise_detail_sheet.dart';
 import 'package:tracend/features/train/widgets/exercise_list_card.dart';
 import 'package:tracend/features/train/widgets/muscle_map.dart';
@@ -38,6 +40,7 @@ import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/plan_changes.dart';
+import 'package:tracend/shared/training_availability.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
@@ -70,8 +73,12 @@ class TrainScreen extends StatefulWidget {
     this.showToday,
     this.onRetryConnection,
     this.pain,
+    this.pauses = const FixtureTrainingPauseRepository(),
     super.key,
   });
+
+  /// Sets and ends breaks ("Taking a break", "End break early").
+  final TrainingPauseRepository pauses;
 
   /// Whether this tab is the one on screen. Opening it again reloads a hub
   /// that is not fresh.
@@ -196,6 +203,11 @@ class _TrainScreenState extends State<TrainScreen> {
 
   BodySide _side = BodySide.front;
 
+  /// A break call is on its way, and the break set a moment ago here (its
+  /// card offers Undo).
+  bool _pauseBusy = false;
+  String? _justSetPauseId;
+
   /// The Live Activity asked for the workout in progress and the hub that
   /// says which workout is today's has not loaded yet.
   bool _resumePending = false;
@@ -301,6 +313,45 @@ class _TrainScreenState extends State<TrainScreen> {
 
   void _planChanged() {
     if (mounted) unawaited(_refresh());
+  }
+
+  /// Reloads the week and tells Today and Coach the plan's days changed.
+  void _breakChanged() {
+    if (!mounted) return;
+    if (widget.planChanges != null) {
+      widget.planChanges!.announce();
+    } else {
+      unawaited(_refresh());
+    }
+  }
+
+  Future<void> _takeBreak() async {
+    final id = await takeBreak(
+      context,
+      today: _today,
+      repository: widget.pauses,
+    );
+    if (id == null || !mounted) return;
+    setState(() => _justSetPauseId = id);
+    _breakChanged();
+  }
+
+  Future<void> _endBreak(TrainingPause pause) async {
+    setState(() => _pauseBusy = true);
+    try {
+      final changed = await endBreak(
+        context,
+        pause: pause,
+        today: _today,
+        repository: widget.pauses,
+        justSet: pause.id == _justSetPauseId,
+      );
+      if (!changed || !mounted) return;
+      setState(() => _justSetPauseId = null);
+      _breakChanged();
+    } finally {
+      if (mounted) setState(() => _pauseBusy = false);
+    }
   }
 
   /// "Try again" on the offline note: the plan is read again, and the app is
@@ -932,11 +983,19 @@ class _TrainScreenState extends State<TrainScreen> {
     ];
     final doneThisWeek = currentWeek.where(hub.isDayCompleted).length;
     final assigned = hub.workouts.any((w) => w.weekday != null);
+    // A day of a break has nothing due, so it does not count as planned.
     final plannedThisWeek = assigned
         ? currentWeek
-              .where((d) => hub.workoutForWeekday(d.weekday) != null)
+              .where(
+                (d) =>
+                    hub.workoutForWeekday(d.weekday) != null &&
+                    !hub.isDayPaused(d),
+              )
               .length
         : hub.plan?.sessionsPerWeek ?? hub.workouts.length;
+    final availability = hub.availability;
+    final breakSet =
+        availability.runningPause != null || availability.upcomingPause != null;
     final attention = _repairs.isNotEmpty || _reconciliations.isNotEmpty;
     final offline = hub.cachedAt != null;
     // The cardio week is the last seven days up to today: it belongs to this
@@ -961,6 +1020,8 @@ class _TrainScreenState extends State<TrainScreen> {
         today: _today,
         statusFor: (date) => hub.isDayCompleted(date)
             ? DayBoxStatus.done
+            : hub.isDayPaused(date)
+            ? DayBoxStatus.paused
             : hub.workoutForWeekday(date.weekday) != null
             ? DayBoxStatus.planned
             : DayBoxStatus.rest,
@@ -1016,11 +1077,23 @@ class _TrainScreenState extends State<TrainScreen> {
         ),
         const SizedBox(height: TracendSpacing.sm),
       ],
+      if (!offline && availability.upcomingPause != null) ...[
+        BreakCard(
+          pause: availability.upcomingPause!,
+          today: _today,
+          busy: _pauseBusy,
+          justSet: availability.upcomingPause!.id == _justSetPauseId,
+          onEnd: () => _endBreak(availability.upcomingPause!),
+        ),
+        const SizedBox(height: TracendSpacing.sm),
+      ],
       _DaySwitcher(
         dayKey: DayBoxesStrip.iso(_selected),
         forward: _forward,
-        child: _dayContent(hub),
+        child: _dayContent(hub, offline: offline),
       ),
+      if (!offline && !breakSet && sameDay(_selected, _today))
+        TakeBreakButton(onPressed: _pauseBusy ? null : _takeBreak),
       const SectionLabel('This week'),
       WeekSummaryCard(
         done: doneThisWeek,
@@ -1052,9 +1125,27 @@ class _TrainScreenState extends State<TrainScreen> {
     ];
   }
 
-  Widget _dayContent(TrainingHubData hub) {
+  Widget _dayContent(TrainingHubData hub, {required bool offline}) {
     final date = _selected;
     final today = _today;
+    // A day of a break: nothing is due, never missed. The running break's card
+    // offers End break early; an older break's day just says so.
+    if (hub.isDayPaused(date) && !hub.isDayCompleted(date)) {
+      final running = hub.availability.runningPause;
+      final covers =
+          running != null &&
+          !date.isBefore(running.startDate) &&
+          !date.isAfter(running.endDate);
+      return covers
+          ? BreakCard(
+              pause: running,
+              today: today,
+              busy: _pauseBusy,
+              justSet: running.id == _justSetPauseId,
+              onEnd: offline ? null : () => _endBreak(running),
+            )
+          : BreakDayCard(date: date, today: today);
+    }
     final planned = hub.workoutForWeekday(date.weekday);
     final workout = planned == null ? null : _forDay(planned, date);
     if (workout == null) {
@@ -1066,7 +1157,9 @@ class _TrainScreenState extends State<TrainScreen> {
         d = d.add(const Duration(days: 1))
       ) {
         final candidate = hub.workoutForWeekday(d.weekday);
-        if (candidate != null && !hub.isDayCompleted(d)) {
+        if (candidate != null &&
+            !hub.isDayCompleted(d) &&
+            !hub.isDayPaused(d)) {
           next = candidate;
           nextDate = d;
           break;

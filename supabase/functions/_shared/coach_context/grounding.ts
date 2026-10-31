@@ -35,6 +35,7 @@ export const contributorGrounding: Readonly<Record<string, ContributorGrounding>
   watch_outs: "records",
   coverage_brief: "records",
   library: "excluded",
+  standing_state: "records",
 });
 
 /** An id nobody declared grounds nothing: a contributor is evidence only once it says so. */

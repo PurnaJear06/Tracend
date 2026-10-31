@@ -2179,6 +2179,93 @@ Tests: `build_test.ts` (the reason and the 2-day edge), `coach_chat_provider_gat
 kinds rule). The pgTAP suite is
 untouched.
 
+## Coach standing state and training breaks (2026-11-01, branch `claude/coach-standing-state`, migration `20261101200000`)
+
+Bug 3 (31 Oct): the owner's check-in said "can't train today" and a new chat's "hi" got today's session,
+because the card ("changes nothing"), the plan and the daily decision all said train; and a 15-day break
+told in an earlier chat had nowhere to live (no proposal kind could hold it, and the profile gate refused
+the one Coach tried). The owner's model: "I tell my coach I'm taking a break, and he remembers it until I'm
+back."
+
+- **Breaks are approved state** (`training_pauses`, an overlay like `day_adjustments`, never a plan
+  version; AI_SAFETY_SPEC §5). Writers: `start_training_pause_v1` and `end_training_pause_v1` (the
+  athlete's taps on Today and Train, no model), and the Coach proposal kind `training_pause` approved
+  through `respond_to_coach_proposal_v1` (row plus audit event; `undo_coach_proposal_v1` ends it within
+  seven days). Validation everywhere (`private.training_pause_problem`, under a per-athlete lock): real
+  dates, 1 to 42 days, a start from today to two days ahead, no overlap with another break. A break
+  running during a temporary block or deload is allowed (only breaks may not overlap). Ending early keeps
+  the row (`ended_on`, `end_reason`); a cancelled or undone break covers no day.
+- **The proposal kind** (`_shared/coach_proposals/pause.ts`): intent `{kind: training_pause, reason,
+  note, params: start_date, end_date}`; reasons gain `rest`. It reads only
+  `get_training_pause_inputs_v1` (the athlete's date, the health check, the breaks), so an incomplete
+  profile never stops it, and the health check never holds one back (persist and approve skip the
+  screening assert for a pause only). Refusal codes `pause_too_long`, `pause_start_too_far`,
+  `pause_start_past`, `pause_overlaps`, `pause_reason_not_allowed`; a store that no longer fits
+  (55000 "the break no longer fits") and an approval that no longer fits (expired `dates_passed` or
+  `pause_overlaps`) are plain reasons. Schema: two enum values added (the kind and the reason), still 0
+  optional properties and 0 unions, 2,842 bytes, `schema_sha` `353191c1149c` (was `274ee4fafead`; the
+  first call after deploy compiles the new grammar once).
+- **One availability helper**, `private.availability_on(user, date, p_safety)`: `safety_route` (only with
+  `p_safety`; it reads the whole card), `paused`, `unavailable_today` or `available`, plus the break,
+  `return_from_pause` (first day back: within 7 days after a break while no session is finished) and
+  `offer_break` (two can't-train check-ins in a row, no break). Readers: brief 1.9 and hub 1.10
+  (`availability`, the hub also `paused_days` and `adherence.paused_sessions`, paused sessions left out
+  of `planned_sessions`); `day_adjustment_compute` (a day in a break offers no readiness change and reads
+  "Rest day: you're on a break, so no session is due today."; a held or limited joint still shapes a
+  session the athlete chooses to do); `prepare_daily_coaching_core`; `get_coach_standing_state_v1`.
+- **Readiness card.** An unavailable day reads "Rest day: you said you can't train today." (was "…Nothing
+  in your plan changes."). `get_readiness_context_v1` adds the closed flag `athlete_unavailable` (still
+  schema 1.0, the parser treats a missing flag as false, so the deploy order does not matter); the Coach
+  block then says "Rest day: the athlete said they cannot train today. Do not offer today's session."
+  and never "changes nothing". The trigger list still never reaches the model.
+- **Daily decision.** New policy outcome `rest_as_chosen` (enum value added) with evidence codes
+  `ATHLETE_UNAVAILABLE_TODAY` and `TRAINING_PAUSED`; permitted actions `REST_AS_CHOSEN`,
+  `MAINTAIN_TARGETS`, `PRIORITIZE_PROTEIN`. `parseCoachDecision` refuses anything but `REST_AS_CHOSEN`
+  under it and `REST_AS_CHOSEN` under any other outcome; the mock words both days; the gateway schema and
+  the system prompt gained the action and the codes; `persist_daily_coaching_result_v2` accepts the
+  codes. Escalation keeps its precedence.
+- **The standing-state block** (`coach_context/contributors/standing_state.ts`, id `standing_state`,
+  volatile, last in the registry, both routes): built by code from `get_coach_standing_state_v1`, never
+  by a model. A fixed rule (it outranks the plan, the readiness card and the daily decision; never ask
+  again; never prescribe a rest day's session), today's line, a break ahead, the first day back, held and
+  limited areas, recent pain (no figure), goal and phase, decisions of 14 days, recent breaks. Budget
+  1,200 characters, hard cap by whole lines from the least important end (the rule and today's line
+  stay). A failed read renders "could not be read" (never silence). The same shared read gives the plan
+  and the watch-outs the rest days: the plan labels today's session "Not prescribed today: … For
+  reference only" on a break or a can't-train day and never lists a break day as due; behind-plan,
+  repeated misses and the due-on-a-bad-day line skip rest days. Grounding `records` (probe test).
+- **Placement and caching.** After the cache breakpoint, right before the question: a check-in or a tap
+  during the day never invalidates the cached athlete file. **Provider-neutral memory** (owner rule,
+  2026-11-01): the block, the breaks and every athlete fact live in our tables and our code builds the
+  text; no vendor memory or session feature and no third-party memory service; prompt caching stays an
+  optional adapter optimisation. `standing_state_test.ts` builds the Anthropic and the OpenAI-compatible
+  requests and finds the block word for word in both (ARCHITECTURE §3.7).
+- **Funded by trimming** (gateway only; the DeepSeek rollback path, which has no lookups, is byte for
+  byte as before): the athlete file shows the newest 3 check-ins with a `check_ins` pointer and the last
+  2 exchanges of other conversations with a `past_messages` pointer. On a realistic file the two lists
+  shrink by 1,688 characters and the labelled block costs 650 to 960: 726 to 1,036 characters less per
+  turn (CONTEXT_BUDGET).
+- **Removed:** the dead `persist_coach_session_summary` writer and `prepare_coach_chat_v5`'s read of
+  `coach_session_summaries` (v9 already stripped the journal). **Open:** the table itself stays; drop it
+  in a later cleanup migration with its export entry, the memory reset's delete and the account
+  boundary's delete (two-step rule).
+- **Redefinitions** (each pinned by `training/standard/coach_standing_state_migration_test.ts`, generated
+  from the same hunks the migration applies): `is_valid_coach_proposal_row`, `coach_proposal_is_current`,
+  `persist_coach_proposal_v1`, `respond_to_coach_proposal_v1`, `undo_coach_proposal_v1`,
+  `get_my_daily_brief`, `get_my_training_hub`, `day_adjustment_explanation`, `day_adjustment_compute`,
+  `get_readiness_context_v1`, `prepare_daily_coaching_core`, `persist_daily_coaching_result_v2`,
+  `prepare_coach_chat_v5`. Existing pgTAP version and wording assertions moved to 1.10 / 1.9 and the new
+  card text.
+- **Simulator scenarios** (not run live): `checkin-unavailable-hi`, `break-across-chats`,
+  `first-day-back`, `end-break-early`, each with a `setup` that seeds the standing state (the bank
+  harness renders the real contributor, plan and watch-outs over it).
+- **Tests:** pgTAP `coach_standing_state_test.sql` (72: table, RLS, privileges, the athlete's taps and
+  every refusal, availability, ending early, the proposal stored, approved, undone and expired on
+  overlap, brief and hub, the card and its Coach view, the standing state, the decision); Deno
+  `pause_test.ts`, `standing_state_test.ts` (content, cap, ordering, provider-neutral, token net down),
+  readiness, plan, watch-outs, decision contract and eval assertions; Flutter `training_pause_test.dart`
+  and the brief/hub contract fixtures.
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in

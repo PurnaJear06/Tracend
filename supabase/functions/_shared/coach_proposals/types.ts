@@ -18,6 +18,7 @@ export const proposalKinds = [
   "goal_or_phase",
   "nutrition_targets",
   "next_session_adjustment",
+  "training_pause",
 ] as const;
 export type ProposalKind = typeof proposalKinds[number];
 
@@ -34,6 +35,7 @@ export const proposalReasons = [
   "diet_fatigue",
   "injury_caution",
   "athlete_request",
+  "rest",
 ] as const;
 export type ProposalReason = typeof proposalReasons[number];
 
@@ -115,6 +117,15 @@ export type CoachProposalIntent =
       kind: "next_session_adjustment";
       direction: SessionDirection;
       session: "today" | "next";
+    }>
+  )
+  | (
+    & Common
+    & Readonly<{
+      /** A break from training: no session is due from startDate to endDate (its last day). */
+      kind: "training_pause";
+      startDate: string;
+      endDate: string;
     }>
   );
 
@@ -221,6 +232,8 @@ export type AthleteState = Readonly<{
   todayWorkoutDone: boolean;
   /** The athlete's message in this turn; used to confirm a figure came from the athlete. */
   athleteMessage?: string;
+  /** Breaks running or ahead (training_pause); none when absent. */
+  pauses?: readonly Readonly<{ startDate: string; lastDay: string }>[];
 }>;
 
 // ---------------------------------------------------------------------------------------------
@@ -294,7 +307,32 @@ export type ProposalPayload = Readonly<{
   training?: TrainingChange;
   nutrition?: NutritionChange;
   goal?: GoalChange;
+  pause?: PauseChange;
 }>;
+
+/**
+ * What approval writes for a break: a row in training_pauses, an overlay that never changes a plan
+ * version. `end_date` is the last day of the break.
+ */
+export type PauseChange = Readonly<{
+  start_date: string;
+  end_date: string;
+  reason: PauseReason;
+  note?: string;
+}>;
+
+/** The reasons a break can carry (training_pauses.reason). */
+export const pauseReasons = [
+  "rest",
+  "travel",
+  "time",
+  "fatigue",
+  "illness_recovery",
+  "injury_caution",
+  "athlete_request",
+  "preference",
+] as const satisfies readonly ProposalReason[];
+export type PauseReason = typeof pauseReasons[number];
 
 /** One line of the card's before or after column: a label and its value. */
 export type DisplayRow = Readonly<{ label: string; value: string }>;
@@ -383,6 +421,11 @@ export const refusalCodes = [
   "plan_changed",
   "screening_changed",
   "evidence_changed",
+  "pause_too_long",
+  "pause_start_too_far",
+  "pause_start_past",
+  "pause_overlaps",
+  "pause_reason_not_allowed",
 ] as const;
 export type RefusalCode = typeof refusalCodes[number];
 

@@ -18,7 +18,13 @@ import { wordSearch } from "./library_search.ts";
 import { personaIds, personas } from "./personas.ts";
 import { addDays, recordsRpc, weekdayOf } from "./records.ts";
 import { estimateRun } from "./run.ts";
-import { conversations, scenarios, selectConversations } from "./scenarios.ts";
+import {
+  athleteFor,
+  conversations,
+  openingFor,
+  scenarios,
+  selectConversations,
+} from "./scenarios.ts";
 
 const primary = personas.find((p) => p.id === "primary")!;
 
@@ -115,7 +121,7 @@ Deno.test("the lookup stand-in answers every lookup in its RPC shape, as the pro
 });
 
 Deno.test("every scenario runs 6-10 messages and the conversations cover every persona", () => {
-  assertEquals(scenarios.length, 8);
+  assertEquals(scenarios.length, 12);
   for (const scenario of scenarios) {
     assert(scenario.turns >= 6 && scenario.turns <= 10, scenario.id);
     assert(scenario.beats.length >= scenario.turns - 2, scenario.id);
@@ -220,4 +226,28 @@ Deno.test("the athlete file's windows end on the coaching date and start days - 
       persona.id,
     );
   }
+});
+
+Deno.test("the standing-state scenarios give Coach the break or the can't-train day in the standing state", async () => {
+  const persona = personas.find((item) => item.id === "primary")!;
+  const cases: [string, string][] = [
+    ["checkin-unavailable-hi", "said on today's check-in that they cannot train today"],
+    ["break-across-chats", "the athlete is on a break from"],
+    ["first-day-back", "Back from a break that ended"],
+    ["end-break-early", "Back from a break that ended"],
+  ];
+  for (const [id, words] of cases) {
+    const scenario = scenarios.find((item) => item.id === id)!;
+    const athlete = athleteFor(scenario, persona.athlete());
+    const contributions = await renderTurn(athlete, openingFor(scenario, "primary"));
+    assertStringIncludes(contributions.texts.standing_state ?? "", words, id);
+  }
+  const unavailable = athleteFor(
+    scenarios.find((item) => item.id === "checkin-unavailable-hi")!,
+    persona.athlete(),
+  );
+  const today = String(unavailable.context.coaching_date);
+  const row = (unavailable.context.check_ins_14d as Record<string, unknown>[])
+    .find((item) => item.local_date === today);
+  if (row) assertEquals(row.available_to_train, false);
 });

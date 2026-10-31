@@ -295,11 +295,11 @@ set local "request.jwt.claim.sub" = 'b3000000-0000-4000-8000-000000000001';
 insert into hub select public.get_my_training_hub(28);
 reset role;
 
-select is((select j->>'schema_version' from hub), '1.9', 'hub schema 1.9');
+select is((select j->>'schema_version' from hub), '1.10', 'hub schema 1.10');
 select is((select array(select k from jsonb_object_keys(j) k order by k collate "C") from hub),
-  array['active_plan', 'adherence', 'completed_day_set', 'computed', 'daily_load', 'local_today',
-    'next_targets', 'period_days', 'progression', 'recent_sessions', 'schema_version',
-    'today_workout', 'workouts'],
+  array['active_plan', 'adherence', 'availability', 'completed_day_set', 'computed', 'daily_load',
+    'local_today', 'next_targets', 'paused_days', 'period_days', 'progression', 'recent_sessions',
+    'schema_version', 'today_workout', 'workouts'],
   'the hub keeps every 1.6 key and adds next_targets');
 select is((select array(select k from jsonb_object_keys(j->'workouts'->0->'exercises'->0) k
     order by k collate "C") from hub),
