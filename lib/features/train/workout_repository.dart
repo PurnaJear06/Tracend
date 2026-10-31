@@ -1,13 +1,13 @@
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/muscle_groups.dart';
 import 'package:tracend/features/train/unfinished_workout.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// What the next session's target does with last time's result.
 enum NextTargetAction {
@@ -1013,7 +1013,7 @@ class SupabaseWorkoutRepository
     try {
       draft = decodeDraft(saved);
     } catch (error) {
-      debugPrint('Non-critical error: workout draft not read: $error');
+      logNonCritical(error, 'workout draft not read');
       return;
     }
     if (draft['session_id'] != workout.sessionId) return;
@@ -1037,7 +1037,7 @@ class SupabaseWorkoutRepository
       if (decodeDraft(saved)['session_id'] != workout.sessionId) return;
       await clearDraft(workout.plannedWorkoutId);
     } catch (error) {
-      debugPrint('Non-critical error: workout draft not removed: $error');
+      logNonCritical(error, 'workout draft not removed');
     }
   }
 
@@ -1232,10 +1232,10 @@ class SupabaseWorkoutRepository
       return discard;
     } on PostgrestException catch (e) {
       if (_isDiscardRefusal(e)) rethrow;
-      debugPrint('Non-critical error: discard waits for the server: ${e.code}');
+      logNonCritical(e, 'discard waits for the server');
       return _queueDiscard(sessionId);
     } catch (e) {
-      debugPrint('Non-critical error: discard waits for a connection: $e');
+      logNonCritical(e, 'discard waits for a connection');
       return _queueDiscard(sessionId);
     }
   }
@@ -1279,15 +1279,13 @@ class SupabaseWorkoutRepository
         await _sendDiscard(id);
       } on PostgrestException catch (e) {
         if (_isDiscardRefusal(e)) {
-          debugPrint('Non-critical error: saved discard refused: ${e.code}');
+          logNonCritical(e, 'saved discard refused');
         } else {
-          debugPrint(
-            'Non-critical error: saved discard still waiting: ${e.code}',
-          );
+          logNonCritical(e, 'saved discard still waiting');
           kept.add(id);
         }
       } catch (e) {
-        debugPrint('Non-critical error: saved discard still waiting: $e');
+        logNonCritical(e, 'saved discard still waiting');
         kept.add(id);
       }
     }
@@ -1338,7 +1336,7 @@ class SupabaseWorkoutRepository
         }
       }
     } catch (e) {
-      debugPrint('Non-critical error: exercise history from device: $e');
+      logNonCritical(e, 'exercise history from device');
       final cached = await _cachedHistory();
       return ExerciseHistoryResult.fromJson({
         'exercises': [
@@ -1376,7 +1374,7 @@ class SupabaseWorkoutRepository
       }
       await _preferences.setString(_historyKey, jsonEncode(cache));
     } catch (e) {
-      debugPrint('Non-critical error: exercise history not saved: $e');
+      logNonCritical(e, 'exercise history not saved');
     }
   }
 

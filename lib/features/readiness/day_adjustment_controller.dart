@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/readiness/day_adjustment_repository.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// Today's same-day adjustment, shared by Today and Train so an answer given
 /// on one shows on the other at once.
@@ -100,7 +101,7 @@ class DayAdjustmentController extends ChangeNotifier {
     } on DayAdjustmentException catch (error) {
       failure = error.failure;
     } on Exception catch (error) {
-      debugPrint('Non-critical error: day adjustment not read: $error');
+      logNonCritical(error, 'day adjustment not read');
       failure = DayAdjustmentFailure.network;
     }
     if (read != _reads) return;
@@ -204,7 +205,7 @@ class DayAdjustmentController extends ChangeNotifier {
     } on DayAdjustmentException catch (error) {
       failure = error.failure;
     } on Exception catch (error) {
-      debugPrint('Non-critical error: day adjustment not answered: $error');
+      logNonCritical(error, 'day adjustment not answered');
       failure = DayAdjustmentFailure.network;
     }
     _busy = false;

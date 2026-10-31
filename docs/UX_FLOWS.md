@@ -144,6 +144,14 @@ sign-in**.
   **Not built yet:** restoring the selected tab and scroll position.
 - Restoring asks Auth whether the account and session still exist; an access token alone stays
   valid for up to an hour after its account is deleted.
+- Coming back to the app (resume) keeps the day right. Train, Meals and Progress reload data older
+  than ten minutes or from another day, and a tab opened again reloads data older than a minute.
+  Past midnight Train and Meals move to the new today unless the athlete picked another day;
+  Train's **Start** never sends a day that is over (it reloads and asks again). Today also pulls
+  the night's Apple Health data (at most every 30 minutes), delivers check-ins that waited for a
+  connection (one per answer day; a check-in the server refuses for good is dropped and the
+  athlete is told), and the device time zone is stored again. Coach's starter questions reload.
+  Today's session card opens Train on today.
 - If Auth refuses the session (deleted account, revoked session, or a refused refresh token), the
   app signs out on this device and shows sign-in, never a connection error. A lost connection
   keeps the session and shows **Connection needed** with **Retry**.

@@ -115,3 +115,33 @@ Device check after install: delete a throwaway account → sign-in screen with "
 deleted."; reopening lands on sign-in. To check the stale-session path, delete a throwaway account
 from the dashboard while signed in to it on the phone, then reopen the app: sign-in within a few
 seconds, never "Connection needed".
+
+## Resume, day rollover and Sentry privacy (2026-10-31, branch `claude/resume-rollover-sentry`)
+
+From the pre-beta QA audit (groups B and C; app only, no migration, needs a reinstall).
+
+- **One place for resume.** `lib/shared/app_lifecycle.dart`: `LoadStamp` (when and for which phone
+  day data loaded; stale after 10 minutes or on another day), `ResumeObserver` (resume callback)
+  and `localDayKey`. Train, Meals, Progress, Coach and Today use them; a later offline-start
+  change builds on the same helper.
+- **Train** reloads on resume (stale or new day) and when its tab is opened again (older than one
+  minute), drops a hub reply that a newer load replaced, moves the selection to the new today
+  unless the athlete picked another day, and `Start` after midnight reloads instead of sending the
+  old `p_local_date`. Today's "Save workout" reloads it (`WorkoutLogChanges`); Today's session card
+  selects today; "This week" counts the current week whichever week the strip shows.
+- **Meals** follow today across midnight unless a day was picked; a reply for a day no longer
+  shown is dropped. **Progress** reloads its brief and goal with the measurements (refresh,
+  weigh-in, resume, tab). **Coach** reloads its context status and starter questions.
+- **Today** resume: Apple Health auto-sync (30-minute throttle) and health history reload, and
+  the check-in replay. The queue (`check_in_queue.dart`) is a list keyed by answer day; the old
+  single entry (`daily_check_in_pending[.uid]`) is moved into it on first read. A final refusal
+  (22023, 22P02, 23514, P0001) drops that day, shows a note and reports to Sentry by code; other
+  failures keep the day and stop the replay. The gate stores the device time zone on resume.
+- **Sentry** (`lib/app/sentry_scrubber.dart`, `lib/shared/diagnostics.dart`): see SECURITY_PRIVACY
+  §Telemetry. 153 `debugPrint('Non-critical error: $e')` calls now use `logNonCritical`; gate
+  refresh failures reach Sentry through `reportNonCritical`.
+- **Edge:** the meal-vision providers and the handler throw or log a fixed code, never a parser
+  message that quotes the model. The legacy Groq and Gemini paths stay: the gateway path shares
+  their candidate validation and they are the fallback when no route is set.
+- Device check: background on Meals and Train overnight, resume: both show the new day; check in
+  offline on two days, resume online: both arrive.

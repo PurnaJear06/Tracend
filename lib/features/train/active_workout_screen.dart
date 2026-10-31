@@ -23,6 +23,7 @@ import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/features/workout_hr/set_heart_rate_recorder.dart';
 import 'package:tracend/features/workout_hr/watch_workout_prompt.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/home_widgets/lock_screen_numbers.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
@@ -272,7 +273,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         localDate: widget.sessionDate,
       );
     } catch (e) {
-      debugPrint('Non-critical error: workout session not loaded: $e');
+      logNonCritical(e, 'workout session not loaded');
       _sync = _Sync.offline;
     }
     if (server != null && server['state'] == 'completed') {
@@ -374,7 +375,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         _serverStartedAt ??= await _serverStartOf(id);
       }
     } catch (e) {
-      debugPrint('Non-critical error: workout start waits: $e');
+      logNonCritical(e, 'workout start waits');
       _sessionId ??= 'pending-$_idempotencyKey';
       _sync = _Sync.offline;
     }
@@ -428,13 +429,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       return true;
     } on PostgrestException catch (e) {
       if (e.code == '55000') {
-        debugPrint('Non-critical error: earlier workout already settled: $e');
+        logNonCritical(e, 'earlier workout already settled');
         return true;
       }
-      debugPrint('Non-critical error: earlier workout kept on the phone: $e');
+      logNonCritical(e, 'earlier workout kept on the phone');
       return false;
     } catch (e) {
-      debugPrint('Non-critical error: earlier workout kept on the phone: $e');
+      logNonCritical(e, 'earlier workout kept on the phone');
       return false;
     }
   }
@@ -551,7 +552,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       );
       return session != null && session['session_id'] == id ? session : null;
     } catch (e) {
-      debugPrint('Non-critical error: session not read back: $e');
+      logNonCritical(e, 'session not read back');
       return null;
     }
   }
@@ -613,7 +614,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _alerts.enabled =
           preferences.restTimerAlertsEnabled && preferences.isAuthorized;
     } catch (e) {
-      debugPrint('Non-critical error: rest alerts stay in the app: $e');
+      logNonCritical(e, 'rest alerts stay in the app');
       _alerts.enabled = false;
     }
   }
@@ -622,7 +623,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     try {
       _targetsOnLockScreen = await widget.lockScreenNumbers();
     } catch (e) {
-      debugPrint('Non-critical error: lock screen choice not read: $e');
+      logNonCritical(e, 'lock screen choice not read');
       _targetsOnLockScreen = false;
     }
   }
@@ -640,7 +641,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       // The pre-filled kg and reps may now come from the history.
       _syncActivity();
     } catch (e) {
-      debugPrint('Non-critical error: exercise history not loaded: $e');
+      logNonCritical(e, 'exercise history not loaded');
       if (mounted) setState(() => _historyStatus = HistoryStatus.unavailable);
     }
   }
@@ -777,7 +778,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         _rowsAligned = false;
         _serverStartedAt = await _serverStartOf(id);
       } catch (e) {
-        debugPrint('Non-critical error: workout start still waits: $e');
+        logNonCritical(e, 'workout start still waits');
         if (mounted) setState(() => _sync = _Sync.offline);
         return _Sync.offline;
       }
@@ -842,11 +843,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       );
       return _Sync.saved;
     } on PostgrestException catch (e) {
-      debugPrint('Non-critical error: workout sync refused: ${e.code}');
+      logNonCritical(e, 'workout sync refused');
       _refusalCode = e.code;
       return e.code == '22023' && !_timingRefused ? null : _Sync.attention;
     } catch (e) {
-      debugPrint('Non-critical error: workout sync waits: $e');
+      logNonCritical(e, 'workout sync waits');
       return _Sync.offline;
     }
   }
@@ -1127,7 +1128,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     try {
       await _save().timeout(_pressSaveWait, onTimeout: () => null);
     } catch (e) {
-      debugPrint('Non-critical error: saving a button press failed: $e');
+      logNonCritical(e, 'saving a button press failed');
     }
   }
 
@@ -1384,7 +1385,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         workoutId: widget.workout.id,
       );
     } catch (e) {
-      debugPrint('Non-critical error: discard refused: $e');
+      logNonCritical(e, 'discard refused');
       _closed = false;
       await _save();
       if (mounted) {
@@ -1472,7 +1473,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         sessionEffort: effort,
       );
     } catch (e) {
-      debugPrint('Non-critical error: workout finish waits: $e');
+      logNonCritical(e, 'workout finish waits');
       if (!mounted) return;
       setState(() {
         _finishing = false;

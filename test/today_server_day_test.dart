@@ -297,7 +297,7 @@ void main() {
     await _checkInWithPain7(tester);
     // Offline: queued, with the server's day on the envelope.
     expect(
-      preferences.getString('daily_check_in_pending'),
+      preferences.getString(CheckInQueue.queueStorageKey),
       contains('"local_date":"2026-10-02"'),
     );
     expect(find.text('Got it'), findsNothing);

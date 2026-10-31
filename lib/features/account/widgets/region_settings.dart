@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/region_repository.dart';
 import 'package:tracend/features/account/widgets/account_widgets.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_sheet.dart';
@@ -50,7 +51,7 @@ class _RegionSettingsState extends State<RegionSettings> {
         });
       }
     } catch (error) {
-      debugPrint('Non-critical error: country not read: $error');
+      logNonCritical(error, 'country not read');
       if (mounted) setState(() => _unreadable = true);
     }
   }
@@ -97,7 +98,7 @@ class _RegionSettingsState extends State<RegionSettings> {
       final stored = await widget.repository.save(pick.code);
       if (mounted) setState(() => _region = stored);
     } catch (error) {
-      debugPrint('Non-critical error: country not saved: $error');
+      logNonCritical(error, 'country not saved');
       if (mounted) {
         TracendToast.show(
           context,

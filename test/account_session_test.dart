@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -11,6 +12,7 @@ import 'package:shared_preferences_platform_interface/shared_preferences_async_p
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/account/widgets/account_sheets.dart';
 import 'package:tracend/features/auth/account_session.dart';
@@ -161,8 +163,8 @@ void main() {
     );
     SharedPreferences.setMockInitialValues({
       SharedPreferencesCoachThreadMemory.storageKey: 'thread-1',
-      CheckInQueue.storageKeyFor(_userId): '{}',
-      CheckInQueue.storageKeyFor(_otherUserId): '{}',
+      CheckInQueue.queueStorageKeyFor(_userId): '{}',
+      CheckInQueue.queueStorageKeyFor(_otherUserId): '{}',
     });
   });
 
@@ -227,9 +229,9 @@ void main() {
       legacy.getString(SharedPreferencesCoachThreadMemory.storageKey),
       isNull,
     );
-    expect(legacy.getString(CheckInQueue.storageKeyFor(_userId)), isNull);
+    expect(legacy.getString(CheckInQueue.queueStorageKeyFor(_userId)), isNull);
     expect(
-      legacy.getString(CheckInQueue.storageKeyFor(_otherUserId)),
+      legacy.getString(CheckInQueue.queueStorageKeyFor(_otherUserId)),
       isNotNull,
     );
   }
@@ -247,7 +249,10 @@ void main() {
       legacy.getString(SharedPreferencesCoachThreadMemory.storageKey),
       isNull,
     );
-    expect(legacy.getString(CheckInQueue.storageKeyFor(_userId)), isNotNull);
+    expect(
+      legacy.getString(CheckInQueue.queueStorageKeyFor(_userId)),
+      isNotNull,
+    );
   }
 
   late FakeWorkoutActivityBridge liveActivity;
@@ -407,6 +412,10 @@ void main() {
     testWidgets('a lost connection keeps the session and offers Retry', (
       tester,
     ) async {
+      final reported = <NonCriticalFailure>[];
+      final previousSink = failureSink;
+      failureSink = (failure, _) => reported.add(failure);
+      addTearDown(() => failureSink = previousSink);
       final server = _Server();
       server.routes['GET /auth/v1/user'] = () =>
           Future.error(http.ClientException('offline'));
@@ -418,6 +427,9 @@ void main() {
       await pumpGate(tester, server);
 
       expect(find.text('Connection needed'), findsOneWidget);
+      // The failure reaches Sentry by its type, never its text.
+      expect(reported.single.what, 'Account state not loaded');
+      expect(reported.single.detail, 'AuthRetryableFetchException');
       expect(server.client.auth.currentSession, isNotNull);
       expect(liveActivity.calls, isEmpty);
       expect(homeWidgets.calls, isEmpty);
@@ -583,6 +595,38 @@ void main() {
         await tester.pump(const Duration(seconds: 1));
       }
     }
+
+    testWidgets('coming back to the front stores the device time zone again', (
+      tester,
+    ) async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('com.tracend.app/time_zone'),
+            (call) async => 'Asia/Kolkata',
+          );
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(
+              const MethodChannel('com.tracend.app/time_zone'),
+              null,
+            ),
+      );
+      server
+        ..answer('GET /rest/v1/user_accounts', 200, {
+          'onboarding_state': 'in_progress',
+          'timezone': 'UTC',
+        })
+        ..answer('POST /rest/v1/rpc/set_my_timezone', 200, <String, Object>{});
+      await openSignedIn(tester);
+      const store = 'POST /rest/v1/rpc/set_my_timezone';
+      expect(server.requests.where((route) => route == store), hasLength(1));
+
+      // The phone crossed a time zone while the app slept.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await settle(tester);
+
+      expect(server.requests.where((route) => route == store), hasLength(2));
+    });
 
     testWidgets('the athlete signing out empties the widgets once', (
       tester,

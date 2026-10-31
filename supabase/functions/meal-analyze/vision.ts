@@ -257,10 +257,8 @@ export async function analyzeMealWithGateway(
   const usage = mealUsage(gatewayRoute, result.model, result.usage);
   try {
     return { ...usage, candidates: validMealCandidates(result.json as Record<string, unknown>) };
-  } catch (error) {
-    throw new MealVisionBilledError(
-      error instanceof Error ? error.message : "meal_vision_response_invalid",
-      usage,
-    );
+  } catch {
+    // A fixed code: a parser's message can quote the model's text.
+    throw new MealVisionBilledError("meal_vision_response_invalid", usage);
   }
 }

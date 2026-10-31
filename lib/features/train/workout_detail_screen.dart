@@ -15,6 +15,7 @@ import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/features/workout_hr/set_heart_rate_line.dart';
 import 'package:tracend/features/workout_hr/set_heart_rate_repository.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_sheet.dart';
@@ -342,7 +343,7 @@ class _SummaryContentState extends State<_SummaryContent> {
       final report = await load(sessionId);
       if (mounted) setState(() => _heartRate = report);
     } catch (error) {
-      debugPrint('Non-critical error: set heart rate not loaded: $error');
+      logNonCritical(error, 'set heart rate not loaded');
     }
   }
 
@@ -476,7 +477,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
           logged.completed &&
           sameDay(_sessionDay(session), _date);
     } catch (error) {
-      debugPrint('Non-critical error: workout state: $error');
+      logNonCritical(error, 'workout state');
       return false;
     }
   }

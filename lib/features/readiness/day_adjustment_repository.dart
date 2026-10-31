@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/readiness/day_adjustment.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// Why a read or an answer did not go through.
 enum DayAdjustmentFailure {
@@ -92,7 +93,7 @@ class SupabaseDayAdjustmentRepository implements DayAdjustmentRepository {
     try {
       value = await _rpc(function, params);
     } on PostgrestException catch (error) {
-      debugPrint('Non-critical error: day adjustment: $error');
+      logNonCritical(error, 'day adjustment');
       throw DayAdjustmentException(switch (error.code) {
         '22023' => refused,
         '55000' => DayAdjustmentFailure.unavailable,

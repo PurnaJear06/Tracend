@@ -447,6 +447,13 @@ Mobile analytics are minimized and disabled for sensitive-screen content. Crash 
 navigation parameters, text fields, and network bodies. Sentry is active in Flutter and Edge
 Functions with a `beforeSend` scrubber that redacts health values, meal content, photo URLs and
 prompts; a report may carry the account ID and device and app details, never name or email.
+In Flutter (`lib/app/sentry_scrubber.dart`) the scrubber also covers exception values, `extra`,
+contexts and breadcrumbs; the app's prints are not breadcrumbs (`enablePrintBreadcrumbs` is off);
+a `beforeBreadcrumb` drops console crumbs and cuts HTTP crumbs to method, status and address
+without a query; an event that cannot be scrubbed is dropped. The app logs a handled failure
+with `logNonCritical` (type and code only, never `$e`: a Postgres error carries the failing row),
+and `reportNonCritical` sends such a failure to Sentry by type and code. A test forbids
+interpolating an exception into `debugPrint`.
 
 Audit events record access and changes using opaque IDs and action codes, not copies of sensitive
 content.

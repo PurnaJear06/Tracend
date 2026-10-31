@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 
 /// Performs the `save_daily_check_in` RPC for a replayed envelope.
@@ -12,46 +13,82 @@ typedef CheckInSend =
       Map<String, dynamic> payload,
     );
 
-/// Outcome of a replay attempt.
-enum CheckInReplayOutcome {
-  /// Nothing was pending (or the stored envelope was too old to parse) —
-  /// nothing was sent and nothing remains stored.
-  none,
+/// A queued check-in the server refused for good: it is dropped, and the
+/// athlete is told.
+class CheckInRefusal {
+  const CheckInRefusal(this.localDate, this.error);
 
-  /// A pending envelope was delivered and cleared.
-  delivered,
+  /// The day the check-in was answered.
+  final String localDate;
+  final PostgrestException error;
+}
 
-  /// A pending envelope exists but delivery failed; it stays stored for the
-  /// next launch.
-  retained,
+/// What one replay did with the queue.
+class CheckInReplay {
+  const CheckInReplay({
+    this.delivered = const [],
+    this.retained = const [],
+    this.refused = const [],
+  });
+
+  /// Days whose check-in the server accepted; each is cleared.
+  final List<String> delivered;
+
+  /// Days whose check-in could not be sent (offline, a server error); each
+  /// stays queued for the next resume or launch.
+  final List<String> retained;
+
+  /// Check-ins the server refused for good; each is dropped.
+  final List<CheckInRefusal> refused;
+
+  bool get deliveredAny => delivered.isNotEmpty;
 }
 
 /// Pending-check-in replay queue.
 ///
 /// The check-in sheet persists the full check-in envelope to
 /// SharedPreferences before attempting the RPC, so a completed check-in
-/// survives a lost connection or app restart. Until this queue existed that
-/// envelope was written and never read again: the sheet's promise "It will
-/// need a connection to sync" was never kept, and the check-in was silently
-/// lost once the sheet closed.
+/// survives a lost connection or app restart. Today replays the queue at
+/// launch and every time the app comes back to the front.
 ///
-/// The envelope stores the answer day's `local_date` and `timezone` next to
-/// the payload: a check-in belongs to the day it was answered, so a replay on
-/// a later launch must never re-date it to today.
+/// The queue is keyed by the answer day's `local_date`: a check-in belongs to
+/// the day it was answered, so a replay on a later day never re-dates it to
+/// today, and a check-in from Monday waits beside Tuesday's instead of being
+/// overwritten by it. Answering the same day again replaces that day's entry.
 ///
-/// The envelope is kept per athlete, so a check-in waiting for one account is
+/// The queue is kept per athlete, so a check-in waiting for one account is
 /// never sent under another signed in on the same phone, and survives its own
 /// athlete's sign-out until they return.
 class CheckInQueue {
   CheckInQueue(this._preferences, {String? userId})
-    : _key = userId == null ? legacyStorageKey : storageKeyFor(userId);
+    : _key = userId == null ? queueStorageKey : queueStorageKeyFor(userId),
+      _singleSlotKeys = [
+        if (userId != null) singleSlotKeyFor(userId),
+        singleSlotKey,
+      ];
   final SharedPreferences _preferences;
   final String _key;
 
-  /// Builds before per-athlete envelopes kept one for the device.
-  static const legacyStorageKey = 'daily_check_in_pending';
+  /// Where earlier builds kept their one envelope: the athlete's own key,
+  /// then the device-wide one older builds used.
+  final List<String> _singleSlotKeys;
 
-  static String storageKeyFor(String userId) => '$legacyStorageKey.$userId';
+  /// The keyed list for a phone with no signed-in athlete.
+  static const queueStorageKey = 'daily_check_in_queue';
+
+  static String queueStorageKeyFor(String userId) => '$queueStorageKey.$userId';
+
+  /// Builds that kept one envelope per device used this key, and one per
+  /// athlete used `singleSlotKeyFor`. Both are moved into the keyed list.
+  static const singleSlotKey = 'daily_check_in_pending';
+
+  static String singleSlotKeyFor(String userId) => '$singleSlotKey.$userId';
+
+  /// A refusal that retrying cannot change: the server read the check-in and
+  /// said no (22023 invalid parameter, 22P02 bad text, 23514 check violation,
+  /// P0001 a rule such as the pain-report limit). A lost connection, a server
+  /// error or a sign-in that lapsed (42501) is not one.
+  static const finalRefusalCodes = {'22023', '22P02', '23514', 'P0001'};
 
   /// Persist a check-in envelope for possible replay, returning the generated
   /// idempotency key. The same key serves both the immediate save attempt and
@@ -62,75 +99,152 @@ class CheckInQueue {
     required String timezone,
   }) async {
     final key = newIdempotencyKey();
-    await _preferences.setString(
-      _key,
-      jsonEncode({
-        'idempotency_key': key,
-        'local_date': localDate,
-        'timezone': timezone,
-        'payload': payload,
-      }),
-    );
+    final entries = await _read();
+    entries[localDate] = {
+      'idempotency_key': key,
+      'local_date': localDate,
+      'timezone': timezone,
+      'payload': payload,
+    };
+    await _write(entries);
     return key;
   }
 
-  /// Remove the pending envelope after an immediately-successful inline save.
-  Future<void> clear() => _preferences.remove(_key);
+  /// Remove the envelope of [localDate] after an immediately-successful inline
+  /// save. A newer answer for the same day (another key) stays.
+  Future<void> clear({
+    required String localDate,
+    required String idempotencyKey,
+  }) async {
+    final entries = await _read();
+    final entry = entries[localDate];
+    if (entry == null || entry['idempotency_key'] != idempotencyKey) return;
+    entries.remove(localDate);
+    await _write(entries);
+  }
 
-  /// Replay the pending envelope, if any.
+  /// The days with a check-in waiting, oldest first.
+  Future<List<String>> pendingDays() async =>
+      (await _read()).keys.toList()..sort();
+
+  /// Replay every pending envelope, oldest day first.
   ///
   /// [send] performs the actual `save_daily_check_in` RPC and returns whether
-  /// the server accepted the check-in. Any throw from [send] keeps the
-  /// envelope stored for the next launch. A stored envelope that predates
-  /// this format is discarded as stale.
-  Future<CheckInReplayOutcome> replay(CheckInSend send) async {
-    await _adoptLegacy();
-    final stored = _preferences.getString(_key);
-    if (stored == null) return CheckInReplayOutcome.none;
-    final Map<String, dynamic> envelope;
-    try {
-      envelope = Map<String, dynamic>.from(jsonDecode(stored) as Map);
-    } on FormatException {
-      await _preferences.remove(_key);
-      return CheckInReplayOutcome.none;
-    }
-    final key = envelope['idempotency_key'];
-    final localDate = envelope['local_date'];
-    final timezone = envelope['timezone'];
-    final payload = envelope['payload'];
-    if (key is! String ||
-        localDate is! String ||
-        timezone is! String ||
-        payload is! Map) {
-      await _preferences.remove(_key);
-      return CheckInReplayOutcome.none;
-    }
-    try {
-      final delivered = await send(
-        localDate,
-        timezone,
-        key,
-        Map<String, dynamic>.from(payload),
-      );
-      if (delivered) {
-        await _preferences.remove(_key);
-        return CheckInReplayOutcome.delivered;
+  /// the server accepted the check-in. An accepted one is cleared. A
+  /// `PostgrestException` whose code is in [finalRefusalCodes] drops that
+  /// envelope and is reported back; any other throw keeps it for the next
+  /// resume or launch and stops the replay, since the rest would fail the
+  /// same way.
+  Future<CheckInReplay> replay(CheckInSend send) async {
+    final entries = await _read();
+    final days = entries.keys.toList()..sort();
+    final delivered = <String>[];
+    final retained = <String>[];
+    final refused = <CheckInRefusal>[];
+    var stopped = false;
+    for (final day in days) {
+      if (stopped) {
+        retained.add(day);
+        continue;
       }
-      return CheckInReplayOutcome.retained;
-    } on Exception {
-      return CheckInReplayOutcome.retained;
+      final entry = entries[day]!;
+      try {
+        final accepted = await send(
+          day,
+          entry['timezone'] as String,
+          entry['idempotency_key'] as String,
+          Map<String, dynamic>.from(entry['payload'] as Map),
+        );
+        if (accepted) {
+          delivered.add(day);
+          await _drop(day, entry['idempotency_key'] as String);
+        } else {
+          retained.add(day);
+          stopped = true;
+        }
+      } on PostgrestException catch (error) {
+        if (finalRefusalCodes.contains(error.code)) {
+          refused.add(CheckInRefusal(day, error));
+          await _drop(day, entry['idempotency_key'] as String);
+        } else {
+          retained.add(day);
+          stopped = true;
+        }
+      } on Exception {
+        retained.add(day);
+        stopped = true;
+      }
+    }
+    return CheckInReplay(
+      delivered: delivered,
+      retained: retained,
+      refused: refused,
+    );
+  }
+
+  /// Removes [localDate]'s envelope if it is still the one with [key]; a
+  /// newer answer saved while the replay ran stays.
+  Future<void> _drop(String localDate, String key) =>
+      clear(localDate: localDate, idempotencyKey: key);
+
+  /// The keyed list, after moving any single envelope an earlier build kept
+  /// into it. An envelope that cannot be read, or that predates the stored
+  /// format, is discarded as stale.
+  Future<Map<String, Map<String, dynamic>>> _read() async {
+    final entries = _decodeList(_preferences.getString(_key));
+    var moved = false;
+    for (final oldKey in _singleSlotKeys) {
+      final stored = _preferences.getString(oldKey);
+      if (stored == null) continue;
+      final entry = _decodeEnvelope(stored);
+      if (entry != null) {
+        entries.putIfAbsent(entry['local_date'] as String, () => entry);
+      }
+      await _preferences.remove(oldKey);
+      moved = true;
+    }
+    if (moved) await _write(entries);
+    return entries;
+  }
+
+  Future<void> _write(Map<String, Map<String, dynamic>> entries) =>
+      entries.isEmpty
+      ? _preferences.remove(_key)
+      : _preferences.setString(_key, jsonEncode(entries));
+
+  Map<String, Map<String, dynamic>> _decodeList(String? stored) {
+    final entries = <String, Map<String, dynamic>>{};
+    if (stored == null) return entries;
+    try {
+      final decoded = jsonDecode(stored);
+      if (decoded is! Map) return entries;
+      for (final entry in decoded.values) {
+        final valid = entry is Map ? _validEnvelope(entry) : null;
+        if (valid != null) entries[valid['local_date'] as String] = valid;
+      }
+    } on FormatException {
+      return entries;
+    }
+    return entries;
+  }
+
+  Map<String, dynamic>? _decodeEnvelope(String stored) {
+    try {
+      final decoded = jsonDecode(stored);
+      return decoded is Map ? _validEnvelope(decoded) : null;
+    } on FormatException {
+      return null;
     }
   }
 
-  /// An envelope from an older build belongs to whoever was signed in then;
-  /// the first athlete to open Today takes it, as before.
-  Future<void> _adoptLegacy() async {
-    if (_key == legacyStorageKey) return;
-    final legacy = _preferences.getString(legacyStorageKey);
-    if (legacy == null) return;
-    if (_preferences.getString(_key) == null) {
-      await _preferences.setString(_key, legacy);
+  Map<String, dynamic>? _validEnvelope(Map<dynamic, dynamic> raw) {
+    final entry = Map<String, dynamic>.from(raw);
+    if (entry['idempotency_key'] is! String ||
+        entry['local_date'] is! String ||
+        entry['timezone'] is! String ||
+        entry['payload'] is! Map) {
+      return null;
     }
-    await _preferences.remove(legacyStorageKey);
+    return entry;
   }
 }

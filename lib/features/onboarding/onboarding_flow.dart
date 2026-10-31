@@ -12,6 +12,7 @@ import 'package:tracend/features/onboarding/onboarding_proposal_view.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_screening.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
@@ -641,7 +642,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       }
       _restoreFailed = false;
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       _restoreFailed = true;
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -661,7 +662,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       );
       return stored.outcome == ScreeningOutcome.seeProfessional ? stored : null;
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       return null;
     }
   }
@@ -699,7 +700,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         unawaited(_loadBaseline());
       }
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
     }
   }
 
@@ -721,7 +722,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _baselineSent = true;
       if (mounted) setState(() => _baseline = baseline);
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
     } finally {
       if (mounted) setState(() => _baselineBusy = false);
     }
@@ -736,7 +737,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     try {
       await _loadBaseline().timeout(_baselineWait);
     } on TimeoutException catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
     }
   }
 
@@ -773,7 +774,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       });
       if (_healthImport == 'connected') unawaited(_loadBaseline());
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (!mounted) return;
       setState(() {
         _healthBusy = false;
@@ -843,7 +844,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       }
       await _follow(generation);
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) _showGenerationFailure();
     }
   }
@@ -896,7 +897,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         generation = await widget.repository.loadGeneration() ?? generation;
       }
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted && run == _pollRun) _showGenerationFailure();
     }
   }
@@ -932,7 +933,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     } catch (error) {
       if (!mounted) return;
       if (!_showPlanRefusal(error)) {
-        debugPrint('Non-critical error: $error');
+        logNonCritical(error);
         setState(() {
           _saving = false;
           _error =
@@ -1014,7 +1015,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         payload: _payload,
       );
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (!mounted) return;
       setState(() {
         _saving = false;
@@ -1056,7 +1057,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       if (!mounted || run != _questionsRun) return;
       if (_showPlanRefusal(error)) return;
       // Questions are optional: without them the plan is built from the answers.
-      debugPrint('Non-critical error: $error');
+      logNonCritical(error);
       setState(() => _asking = false);
       await _buildPlan();
     }
@@ -1144,7 +1145,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         _returnToReview = false;
       });
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (!mounted) return;
       setState(() {
         _error =
@@ -1246,7 +1247,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     } on OnboardingProposalStale {
       if (mounted) _showProposalExpired();
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (!mounted) return;
       setState(() {
         _error = 'Your response was not saved. Nothing has changed; try again.';

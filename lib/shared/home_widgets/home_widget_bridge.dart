@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:tracend/app/breadcrumbs.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// The native channel for the Home Screen and Lock Screen widgets
 /// (`ios/Runner/Native/HomeWidgetBridge.swift`). The app calls `write`,
@@ -107,7 +108,7 @@ class MethodChannelHomeWidgetBridge implements HomeWidgetBridge {
     try {
       result = await homeWidgetChannel.invokeMethod<T>(method, arguments);
     } on PlatformException catch (e) {
-      debugPrint('Non-critical error: home widgets $method failed: ${e.code}');
+      logNonCritical(e, 'home widgets $method failed');
     } on MissingPluginException {
       debugPrint('Non-critical error: home widgets $method unavailable');
     }

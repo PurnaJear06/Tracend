@@ -326,6 +326,14 @@ on any refusal, bounds the deletion wait with server confirmation and **Check ag
 pending check-in per athlete, and lets a stopped deletion be claimed again (additive migration).
 Needs a reinstall. See [`docs/handoff/account-session.md`](./handoff/account-session.md).
 
+Resume and day rollover, Sentry privacy (2026-10-31, branch `claude/resume-rollover-sentry`, in
+review): QA audit groups B and C. Train, Meals, Progress, Coach and Today refresh on resume and
+when their tab is opened again, follow a new day, and Train's Start never sends an old day; the
+check-in queue is keyed by day and replays on resume; the Flutter Sentry scrubber now covers
+exception values, extra and breadcrumbs and the app no longer logs exception text; the meal-vision
+paths throw fixed codes. App only, needs a reinstall. See
+[`docs/handoff/account-session.md`](./handoff/account-session.md).
+
 ## Shipped baseline
 
 - iOS-only Flutter app backed by Supabase Auth, PostgreSQL/RLS, Storage, and nine Edge Functions.

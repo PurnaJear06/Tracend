@@ -18,6 +18,8 @@ import 'package:tracend/features/coach/widgets/coach_message_bubble.dart';
 import 'package:tracend/features/coach/widgets/coach_thinking_indicator.dart';
 import 'package:tracend/features/coach/widgets/fact_suggestion_chip.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/shared/app_lifecycle.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/coach_draft_requests.dart';
 import 'package:tracend/shared/plan_changes.dart';
@@ -103,11 +105,19 @@ class CoachScreen extends StatefulWidget {
   State<CoachScreen> createState() => _CoachScreenState();
 }
 
-class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
+class _CoachScreenState extends State<CoachScreen> {
   static const _uuid = Uuid();
   final _composer = TextEditingController();
   final _scroll = ScrollController();
   Future<List<CoachContextSource>>? _contextStatus;
+
+  /// When the context status (and the starter questions that follow it) last
+  /// loaded.
+  late final LoadStamp _contextLoaded = LoadStamp(widget.now);
+  late final ResumeObserver _resume = ResumeObserver(_resumed);
+
+  /// Opening the tab again reloads a context status older than this.
+  static const _reselectAfter = Duration(minutes: 1);
   CoachChatRepository? get _chat => widget.repository is CoachChatRepository
       ? widget.repository as CoachChatRepository
       : null;
@@ -189,7 +199,7 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
     try {
       await consent.load();
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
     }
     if (!mounted) return;
     await showAiCoachingConsentSheet(context, consent);
@@ -201,12 +211,25 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
     widget.aiConsent?.addListener(_consentChanged);
     widget.draftRequests?.addListener(_takeDraft);
     _takeDraft();
-    if (widget.repository is CoachContextRepository) {
-      _contextStatus = (widget.repository as CoachContextRepository)
-          .loadContextStatus();
-    }
-    WidgetsBinding.instance.addObserver(this);
+    _loadContextStatus();
+    _resume.attach();
     _restoreChat();
+  }
+
+  /// What Coach can see, and so which starter questions fit ("Why don't I
+  /// have a plan yet?" gives way once a plan is approved).
+  void _loadContextStatus() {
+    final repository = widget.repository;
+    if (repository is! CoachContextRepository) return;
+    _contextLoaded.mark();
+    _contextStatus = (repository as CoachContextRepository).loadContextStatus();
+  }
+
+  void _reloadContextStatus({Duration? within}) {
+    if (!_contextLoaded.isEmpty && !_contextLoaded.isStale(within: within)) {
+      return;
+    }
+    setState(_loadContextStatus);
   }
 
   /// Puts a question another screen left into the composer: in an empty box,
@@ -235,19 +258,21 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
       oldWidget.aiConsent?.removeListener(_consentChanged);
       widget.aiConsent?.addListener(_consentChanged);
     }
-    if (widget.active && !oldWidget.active) _startFreshIfStale();
+    if (widget.active && !oldWidget.active) {
+      _startFreshIfStale();
+      _reloadContextStatus(within: _reselectAfter);
+    }
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && widget.active) {
-      _startFreshIfStale();
-    }
+  void _resumed() {
+    if (!mounted || !widget.active) return;
+    _startFreshIfStale();
+    _reloadContextStatus();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    _resume.detach();
     widget.aiConsent?.removeListener(_consentChanged);
     widget.draftRequests?.removeListener(_takeDraft);
     _composer.dispose();
@@ -311,7 +336,7 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
       });
       _showNewest();
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(() {
           _loadingChat = false;
@@ -376,7 +401,7 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
         _showNewest();
       }
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(() {
           _loadingChat = false;
@@ -444,7 +469,7 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
         setState(() => _threads = threads);
       }
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
     }
   }
 
@@ -687,7 +712,7 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
         _confirming = null;
       });
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(() {
           _confirming = null;
@@ -741,7 +766,7 @@ class _CoachScreenState extends State<CoachScreen> with WidgetsBindingObserver {
         );
       }
     } catch (e, stackTrace) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       unawaited(Sentry.captureException(e, stackTrace: stackTrace));
       if (!mounted) return;
       setState(() {

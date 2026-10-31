@@ -1,6 +1,6 @@
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/goals/goal_target.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// A target the server refused, with a message that can be shown as is.
 class GoalTargetException implements Exception {
@@ -73,7 +73,7 @@ class SupabaseGoalTargetRepository implements GoalTargetRepository {
         },
       );
     } on PostgrestException catch (error) {
-      debugPrint('Non-critical error: $error');
+      logNonCritical(error);
       // 22023 carries a plain-language reason (for example a weight below the
       // healthy range); anything else is a connection or session problem.
       throw GoalTargetException(goalTargetErrorMessage(error));

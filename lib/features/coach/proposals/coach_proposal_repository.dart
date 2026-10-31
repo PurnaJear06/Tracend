@@ -1,6 +1,6 @@
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/coach/proposals/coach_proposal.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// A proposal answer the server refused, with a message that can be shown as
 /// is.
@@ -51,7 +51,7 @@ class SupabaseCoachProposalRepository implements CoachProposalRepository {
         params: {'p_proposal_id': ?id},
       );
     } on PostgrestException catch (error) {
-      debugPrint('Non-critical error: $error');
+      logNonCritical(error);
       throw CoachProposalException(coachProposalErrorMessage(error));
     }
     return CoachProposal.listFromJson(value);
@@ -80,7 +80,7 @@ class SupabaseCoachProposalRepository implements CoachProposalRepository {
     try {
       value = await _client.rpc(function, params: params);
     } on PostgrestException catch (error) {
-      debugPrint('Non-critical error: $error');
+      logNonCritical(error);
       throw CoachProposalException(coachProposalErrorMessage(error));
     }
     final answer = CoachProposalAnswer.fromJson(value);

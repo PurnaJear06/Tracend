@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
@@ -6,6 +5,7 @@ import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 
 /// Auth's codes for a session that can never be used again: its user was
@@ -77,13 +77,16 @@ class LocalAccountData {
       }
       await _preferences.clear(allowList: owned);
     } catch (e) {
-      debugPrint('Non-critical error: athlete preferences not cleared: $e');
+      logNonCritical(e, 'athlete preferences not cleared');
     }
     await _removeLegacy({
       SharedPreferencesCoachThreadMemory.storageKey,
       // An older build's envelope belonged to the last athlete signed in.
-      CheckInQueue.legacyStorageKey,
-      if (userId != null) CheckInQueue.storageKeyFor(userId),
+      CheckInQueue.singleSlotKey,
+      if (userId != null) ...{
+        CheckInQueue.singleSlotKeyFor(userId),
+        CheckInQueue.queueStorageKeyFor(userId),
+      },
     });
   }
 
@@ -101,7 +104,7 @@ class LocalAccountData {
     try {
       await _preferences.clear(allowList: _widgetChoiceKeys(userId));
     } catch (e) {
-      debugPrint('Non-critical error: widget setting not cleared: $e');
+      logNonCritical(e, 'widget setting not cleared');
     }
   }
 
@@ -117,7 +120,7 @@ class LocalAccountData {
         await legacy.remove(key);
       }
     } catch (e) {
-      debugPrint('Non-critical error: athlete preferences not cleared: $e');
+      logNonCritical(e, 'athlete preferences not cleared');
     }
   }
 }
@@ -141,7 +144,7 @@ Future<void> endRejectedSession(
   } catch (e) {
     // The stored session is removed before Auth is told; only that call
     // failed.
-    debugPrint('Non-critical error: $e');
+    logNonCritical(e);
   }
 }
 
@@ -158,7 +161,7 @@ Future<void> signOutAthlete(
   try {
     await client.auth.signOut();
   } catch (e) {
-    debugPrint('Non-critical error: $e');
+    logNonCritical(e);
     await client.auth.signOut(scope: SignOutScope.local);
   }
 }

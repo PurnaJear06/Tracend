@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/account/privacy_export_repository.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
 
 /// Permanent account deletion, the body of a Tracend sheet: the account
@@ -84,7 +85,7 @@ class _AccountDeletionSheetState extends State<AccountDeletionSheet> {
         setState(() => _error = 'Your account password was not accepted.');
       }
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(() {
           _unconfirmed = false;
@@ -231,7 +232,7 @@ class _PrivacyExportSheetState extends State<PrivacyExportSheet> {
         setState(() => _error = 'Your account password was not accepted.');
       }
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(
           () =>
@@ -264,7 +265,7 @@ class _PrivacyExportSheetState extends State<PrivacyExportSheet> {
         );
       }
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(
           () => _error = 'The secure download could not be opened. Try again.',

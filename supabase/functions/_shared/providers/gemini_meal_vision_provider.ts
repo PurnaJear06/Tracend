@@ -181,11 +181,9 @@ export async function analyzeMealImage(
     };
     try {
       return { ...usage, candidates: parseGeminiCandidates(payload) };
-    } catch (error) {
-      throw new MealVisionBilledError(
-        error instanceof Error ? error.message : "meal_vision_response_invalid",
-        usage,
-      );
+    } catch {
+      // A fixed code: the parser's own message quotes the model's text.
+      throw new MealVisionBilledError("meal_vision_response_invalid", usage);
     }
   } finally {
     clearTimeout(timeout);

@@ -1,5 +1,5 @@
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// Remembers the Coach conversation the user last had open, so the next
 /// launch reopens it instead of whichever thread changed most recently.
@@ -25,7 +25,7 @@ class SharedPreferencesCoachThreadMemory implements CoachThreadMemory {
       );
       return preferences.getString(storageKey);
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       return null;
     }
   }
@@ -38,7 +38,7 @@ class SharedPreferencesCoachThreadMemory implements CoachThreadMemory {
         threadId,
       );
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
     }
   }
 }

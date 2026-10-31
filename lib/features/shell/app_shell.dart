@@ -156,6 +156,13 @@ class _AppShellState extends State<AppShell> {
   /// the plan, the targets and the goal.
   final _planChanges = PlanChanges();
 
+  /// Announces a workout Today saved from an unfinished session, so Train
+  /// reloads its week.
+  final _workoutLogs = WorkoutLogChanges();
+
+  /// Counts the taps on Today's session card; Train then selects today.
+  final _showTrainToday = ValueNotifier<int>(0);
+
   /// Writes Today's snapshot for the widgets and keeps the Lock Screen choice.
   late final TodayWidgetPublisher _widgetPublisher = TodayWidgetPublisher(
     bridge: widget.homeWidgets,
@@ -179,6 +186,8 @@ class _AppShellState extends State<AppShell> {
     unawaited(_widgetPublisher.dispose());
     _checkInGate.dispose();
     _planChanges.dispose();
+    _workoutLogs.dispose();
+    _showTrainToday.dispose();
     _dayAdjustment?.dispose();
     _coachDrafts.dispose();
     super.dispose();
@@ -296,6 +305,12 @@ class _AppShellState extends State<AppShell> {
     _selectTab(2);
   }
 
+  /// Today's session card: Train opens on today, not on the day last viewed.
+  void _openTrainToday() {
+    _showTrainToday.value++;
+    _selectTab(1);
+  }
+
   /// "Check in" from a screen other than Today: Today owns the sheet.
   void _openCheckIn() {
     _selectTab(0);
@@ -352,7 +367,8 @@ class _AppShellState extends State<AppShell> {
         brief: _brief,
         nutrition: _nutrition,
         onOpenNutrition: () => _selectTab(3),
-        onOpenTrain: () => _selectTab(1),
+        onOpenTrain: _openTrainToday,
+        workoutLogs: _workoutLogs,
         aiConsent: widget.aiConsent,
         checkInGate: _checkInGate,
         planChanges: _planChanges,
@@ -373,6 +389,9 @@ class _AppShellState extends State<AppShell> {
         dayAdjustment: _dayAdjustment,
         onTalkToCoach: _talkToCoach,
         onCheckIn: _openCheckIn,
+        active: _selectedIndex == 1,
+        workoutLogs: _workoutLogs,
+        showToday: _showTrainToday,
       ),
       () => CoachScreen(
         key: const ValueKey('tab_coach'),
@@ -389,6 +408,7 @@ class _AppShellState extends State<AppShell> {
         repository: _nutrition,
         coach: _coach,
         planChanges: _planChanges,
+        active: _selectedIndex == 3,
       ),
       () => ProgressScreen(
         key: const ValueKey('tab_progress'),
@@ -399,6 +419,7 @@ class _AppShellState extends State<AppShell> {
         brief: _brief,
         physique: _physique,
         goalTargets: _goalTargets,
+        active: _selectedIndex == 4,
       ),
     ];
 

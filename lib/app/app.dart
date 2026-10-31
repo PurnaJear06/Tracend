@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/auth/phase_2_gate.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 class TracendApp extends StatefulWidget {
   const TracendApp({required this.environment, this.themeMode, super.key});
@@ -31,7 +32,7 @@ class _TracendAppState extends State<TracendApp> {
       if (stored == null) return;
       await _controller.setMode(_modeFromName(stored), persist: false);
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       // Preferences are unavailable in some widget-test hosts.
     }
   }
@@ -80,7 +81,7 @@ class TracendThemeController extends ChangeNotifier {
           value.name,
         );
       } catch (e) {
-        debugPrint('Non-critical error: $e');
+        logNonCritical(e);
         // The selected mode still applies for the current process.
       }
     }

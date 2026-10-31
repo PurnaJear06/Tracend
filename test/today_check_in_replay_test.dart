@@ -61,7 +61,7 @@ void main() {
     expect(sentDates, ['2026-09-05']);
     expect(
       (await SharedPreferences.getInstance()).getString(
-        'daily_check_in_pending',
+        CheckInQueue.queueStorageKey,
       ),
       isNull,
     );
@@ -99,7 +99,7 @@ void main() {
 
     expect(
       (await SharedPreferences.getInstance()).getString(
-        'daily_check_in_pending',
+        CheckInQueue.queueStorageKey,
       ),
       isNotNull,
     );

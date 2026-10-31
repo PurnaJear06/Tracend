@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_sheet.dart';
 import 'package:tracend/shared/widgets/tracend_toast.dart';
@@ -164,7 +165,7 @@ class _CheckInSheetState extends State<_CheckInSheet> {
       'note': _note.text.trim(),
     };
     // The envelope is queued before the RPC so the check-in survives a lost
-    // connection; Today retries it on the next launch via CheckInQueue.
+    // connection; Today retries it on resume and at launch via CheckInQueue.
     final preferences = await SharedPreferences.getInstance();
     final queue = CheckInQueue(
       preferences,
@@ -197,10 +198,13 @@ class _CheckInSheetState extends State<_CheckInSheet> {
         delivered = true;
       }
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
     }
-    // An undelivered envelope stays queued; Today replays it next launch.
-    if (delivered) await queue.clear();
+    // An undelivered envelope stays queued; Today replays it when the app
+    // comes back to the front.
+    if (delivered) {
+      await queue.clear(localDate: localDate, idempotencyKey: idempotencyKey);
+    }
     if (!mounted) return;
     if (delivered) {
       unawaited(TracendHaptics.success());

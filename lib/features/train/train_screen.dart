@@ -26,6 +26,8 @@ import 'package:tracend/features/train/widgets/week_summary_card.dart';
 import 'package:tracend/features/train/widgets/workout_hero.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/app_lifecycle.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
@@ -52,8 +54,22 @@ class TrainScreen extends StatefulWidget {
     this.dayAdjustment,
     this.onTalkToCoach,
     this.onCheckIn,
+    this.active = true,
+    this.workoutLogs,
+    this.showToday,
     super.key,
   });
+
+  /// Whether this tab is the one on screen. Opening it again reloads a hub
+  /// that is not fresh.
+  final bool active;
+
+  /// Announces a workout logged elsewhere (Today's "Save workout"), so the
+  /// hub counts it.
+  final Listenable? workoutLogs;
+
+  /// Counts the taps on Today's session card: Train then selects today.
+  final ValueListenable<int>? showToday;
 
   /// Today's same-day readiness adjustment, shared with Today. Null without a
   /// backend, where there is none.
@@ -99,6 +115,9 @@ class _Readiness {
 }
 
 class _TrainScreenState extends State<TrainScreen> {
+  /// A tab opened again reloads a hub older than this.
+  static const _reselectAfter = Duration(minutes: 1);
+
   /// Weeks the strip can page back; the hub carries 28 days.
   static const _weeksBack = 3;
 
@@ -128,6 +147,17 @@ class _TrainScreenState extends State<TrainScreen> {
   late DateTime _weekStart;
   bool _forward = true;
 
+  /// The selected day follows today, across midnight, until the athlete picks
+  /// another day.
+  bool _followsToday = true;
+
+  /// When the hub last arrived, and for which phone day.
+  late final LoadStamp _loaded = LoadStamp(_clock);
+  late final ResumeObserver _resume = ResumeObserver(_reloadIfStale);
+
+  /// Which hub load started last; an older reply is dropped.
+  int _hubLoads = 0;
+
   HealthkitCompletionCandidate? _candidate;
   bool _healthkitBusy = false;
 
@@ -154,6 +184,9 @@ class _TrainScreenState extends State<TrainScreen> {
     _loadHub();
     _fetchCandidate();
     widget.planChanges?.addListener(_planChanged);
+    widget.workoutLogs?.addListener(_planChanged);
+    widget.showToday?.addListener(_showToday);
+    _resume.attach();
     final requests = widget.workoutRequests;
     if (requests != null) {
       _resumePending = requests.value > 0;
@@ -163,9 +196,43 @@ class _TrainScreenState extends State<TrainScreen> {
 
   @override
   void dispose() {
+    _resume.detach();
     widget.planChanges?.removeListener(_planChanged);
+    widget.workoutLogs?.removeListener(_planChanged);
+    widget.showToday?.removeListener(_showToday);
     widget.workoutRequests?.removeListener(_workoutRequested);
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(TrainScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.active && widget.active) {
+      _reloadIfStale(within: _reselectAfter);
+    }
+  }
+
+  /// Coming back to the app or to this tab reloads a hub that is old or
+  /// belongs to a day that is over, and moves the selection to the new today
+  /// unless the athlete picked another day.
+  void _reloadIfStale({Duration? within}) {
+    if (!mounted || _hubLoading && _hub == null) return;
+    if (_loaded.isStale(within: within)) unawaited(_refresh());
+  }
+
+  /// The hub on screen was loaded on an earlier day than the phone's today.
+  bool get _dayRolledOver {
+    final day = _loaded.day;
+    return day != null && day != localDayKey(_clock());
+  }
+
+  /// Today's session card: the selection goes to today, and the hub is
+  /// reloaded if its day is over.
+  void _showToday() {
+    if (!mounted) return;
+    _followsToday = true;
+    _select(_today);
+    _reloadIfStale(within: _reselectAfter);
   }
 
   void _workoutRequested() {
@@ -189,7 +256,7 @@ class _TrainScreenState extends State<TrainScreen> {
     try {
       draft = await _source.loadDraft(workout.id);
     } catch (error) {
-      debugPrint('Non-critical error: workout draft not read: $error');
+      logNonCritical(error, 'workout draft not read');
     }
     if (draft == null || !mounted || ActiveWorkoutScreen.isOpen) return;
     _select(today);
@@ -205,6 +272,7 @@ class _TrainScreenState extends State<TrainScreen> {
   // ---------------------------------------------------------------------------
 
   Future<void> _loadHub() async {
+    final load = ++_hubLoads;
     if (mounted) setState(() => _hubLoading = true);
     final source = _source;
     List<WorkoutRepairCandidate>? repairs;
@@ -216,7 +284,7 @@ class _TrainScreenState extends State<TrainScreen> {
                 .where((c) => !_respondedRepairSessionIds.contains(c.sessionId))
                 .toList();
       } catch (error) {
-        debugPrint('Non-critical error: repair candidates: $error');
+        logNonCritical(error, 'repair candidates');
       }
     }
     if (source is WorkoutReconciliationRepository) {
@@ -227,22 +295,24 @@ class _TrainScreenState extends State<TrainScreen> {
                 .where((r) => !_respondedReconciliationIds.contains(r.id))
                 .toList();
       } catch (error) {
-        debugPrint('Non-critical error: workout matches: $error');
+        logNonCritical(error, 'workout matches');
       }
     }
     try {
       final hub = await _loadHubData();
-      if (!mounted) return;
-      final hadHub = _hub != null;
+      if (!mounted || load != _hubLoads) return;
+      _loaded.mark();
       setState(() {
         _hub = hub;
         _hubError = null;
         _hubLoading = false;
         if (repairs != null) _repairs = repairs;
         if (reconciliations != null) _reconciliations = reconciliations;
-        if (!hadHub && hub.localToday != null) {
-          _selected = normalizedDate(hub.localToday!);
-          _weekStart = mondayOf(_selected);
+        if (_followsToday && hub.localToday != null) {
+          final today = normalizedDate(hub.localToday!);
+          if (!sameDay(today, _selected)) _candidate = null;
+          _selected = today;
+          _weekStart = mondayOf(today);
         }
         // The readiness numbers were read for the phone's day: read them
         // again for the server's when the two differ.
@@ -258,9 +328,9 @@ class _TrainScreenState extends State<TrainScreen> {
         unawaited(widget.dayAdjustment?.load(localToday: hub.localToday));
       }
     } catch (error) {
-      debugPrint('Train: training hub failed: $error');
+      logNonCritical(error, 'Train: training hub failed');
       _resumePending = false;
-      if (!mounted) return;
+      if (!mounted || load != _hubLoads) return;
       setState(() {
         _hubError = error;
         _hubLoading = false;
@@ -307,7 +377,7 @@ class _TrainScreenState extends State<TrainScreen> {
         final status = await health.loadStatus();
         connected = ReadinessLine.isHealthConnected(status.state);
       } catch (error) {
-        debugPrint('Non-critical error: health status: $error');
+        logNonCritical(error, 'health status');
       }
     }
     String? verdict;
@@ -317,7 +387,7 @@ class _TrainScreenState extends State<TrainScreen> {
         verdict = decision.finalDecision;
       }
     } catch (error) {
-      debugPrint('Non-critical error: coach decision: $error');
+      logNonCritical(error, 'coach decision');
     }
     return _Readiness(
       line: ReadinessLine.from(
@@ -339,7 +409,7 @@ class _TrainScreenState extends State<TrainScreen> {
       if (!mounted || !sameDay(requested, _selected)) return;
       setState(() => _candidate = candidate);
     } catch (error) {
-      debugPrint('Non-critical error: Apple Health candidate: $error');
+      logNonCritical(error, 'Apple Health candidate');
     }
   }
 
@@ -361,6 +431,7 @@ class _TrainScreenState extends State<TrainScreen> {
 
   void _select(DateTime date) {
     final day = normalizedDate(date);
+    _followsToday = sameDay(day, _today);
     if (sameDay(day, _selected)) return;
     setState(() {
       _forward = day.isAfter(_selected);
@@ -452,6 +523,22 @@ class _TrainScreenState extends State<TrainScreen> {
     }
   }
 
+  /// A start the athlete asked for on this screen. If the day changed since
+  /// the hub loaded, the screen still believes the old day is today: it
+  /// reloads instead of sending that day's date.
+  Future<void> _startChosen(PlannedWorkout planned, DateTime date) async {
+    if (_dayRolledOver) {
+      TracendToast.show(
+        context,
+        'A new day has started. Check today’s workout, then start it.',
+        icon: CupertinoIcons.calendar,
+      );
+      await _refresh();
+      return;
+    }
+    await _start(planned, date);
+  }
+
   void _openExercise(PlannedWorkout workout, PlannedExercise exercise) =>
       showExerciseDetailSheet(
         context,
@@ -483,7 +570,7 @@ class _TrainScreenState extends State<TrainScreen> {
     if (!mounted || action == null) return;
     switch (action) {
       case WorkoutOverviewAction.start:
-        await _start(_planned(workout), date);
+        await _startChosen(_planned(workout), date);
       case WorkoutOverviewAction.viewSummary:
         _viewSummary(workout, date);
     }
@@ -507,7 +594,7 @@ class _TrainScreenState extends State<TrainScreen> {
       });
       await _loadHub();
     } catch (error) {
-      debugPrint('Train: Apple Health completion failed: $error');
+      logNonCritical(error, 'Train: Apple Health completion failed');
       if (!mounted) return;
       setState(() => _healthkitBusy = false);
       TracendToast.show(
@@ -548,7 +635,7 @@ class _TrainScreenState extends State<TrainScreen> {
       });
       await _loadHub();
     } catch (error) {
-      debugPrint('Train: workout repair failed: $error');
+      logNonCritical(error, 'Train: workout repair failed');
       if (!mounted) return;
       TracendToast.show(
         context,
@@ -585,7 +672,7 @@ class _TrainScreenState extends State<TrainScreen> {
       if (accept && _reachable(item.localDate)) _select(item.localDate);
       await _loadHub();
     } catch (error) {
-      debugPrint('Train: workout match response failed: $error');
+      logNonCritical(error, 'Train: workout match response failed');
       if (!mounted) return;
       setState(() => _busyReconciliationId = null);
       TracendToast.show(
@@ -689,13 +776,16 @@ class _TrainScreenState extends State<TrainScreen> {
       monotony: hub.load?.trainingMonotony,
       localToday: hub.localToday,
     );
-    final week = [
-      for (var i = 0; i < 7; i++) _weekStart.add(Duration(days: i)),
+    // "This week" is the current week, whichever week the strip shows.
+    final currentWeek = [
+      for (var i = 0; i < 7; i++) _currentWeek.add(Duration(days: i)),
     ];
-    final doneThisWeek = week.where(hub.isDayCompleted).length;
+    final doneThisWeek = currentWeek.where(hub.isDayCompleted).length;
     final assigned = hub.workouts.any((w) => w.weekday != null);
     final plannedThisWeek = assigned
-        ? week.where((d) => hub.workoutForWeekday(d.weekday) != null).length
+        ? currentWeek
+              .where((d) => hub.workoutForWeekday(d.weekday) != null)
+              .length
         : hub.plan?.sessionsPerWeek ?? hub.workouts.length;
     final attention = _repairs.isNotEmpty || _reconciliations.isNotEmpty;
     return [
@@ -844,7 +934,7 @@ class _TrainScreenState extends State<TrainScreen> {
           onOpenOverview: () => _openOverview(workout, date, done: done),
           onStart: widget.dayAdjustment?.busy ?? false
               ? null
-              : () => _start(_planned(workout), date),
+              : () => _startChosen(_planned(workout), date),
           onViewSummary: () => _viewSummary(workout, date),
           onOpenMuscles: () => showMusclesSheet(context, workout: workout),
           healthkitCandidate: candidate,
@@ -854,7 +944,7 @@ class _TrainScreenState extends State<TrainScreen> {
               : () => _autoComplete(candidate),
           onHealthkitManual: candidate == null
               ? null
-              : () => _start(
+              : () => _startChosen(
                   _planned(workout),
                   normalizedDate(candidate.localDate),
                 ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/goals/goal_target.dart';
 import 'package:tracend/features/goals/goal_target_repository.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
 
 enum _Kind { weight, bodyFat, physique }
@@ -146,7 +147,7 @@ class _GoalTargetSheetState extends State<GoalTargetSheet> {
         });
       }
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(() {
           _saving = false;

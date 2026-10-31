@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/brand/tracend_mark.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
 
 /// Email sign-in for the private beta: the brand mark, "Sign in to Tracend",
@@ -68,7 +69,7 @@ class _OwnerAuthScreenState extends State<OwnerAuthScreen> {
         () => _error = authErrorMessage(error, createAccount: _createAccount),
       );
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       setState(() {
         _error =
             'Sign-in could not be completed. Check the connection and try again.';

@@ -18,6 +18,8 @@ import 'package:tracend/features/progress/widgets/weekly_review_widgets.dart';
 import 'package:tracend/features/progress/widgets/weight_trend_card.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/app_lifecycle.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
@@ -68,8 +70,13 @@ class ProgressScreen extends StatefulWidget {
     this.goalTargets = const FixtureGoalTargetRepository(),
     this.now = DateTime.now,
     this.pickPhoto = _pickWithImagePicker,
+    this.active = true,
     super.key,
   });
+
+  /// Whether this tab is the one on screen. Opening it again reloads data
+  /// that is not fresh.
+  final bool active;
   final ProgressRepository repository;
   final TrainingHubRepository? training;
   final DailyBriefRepository? brief;
@@ -104,9 +111,17 @@ class _ProgressScreenState extends State<ProgressScreen> {
   String? _activeSet;
   final Set<String> _capturedPoses = {};
   bool _hasConsent = false;
-  late final Future<DailyBrief> _brief;
-  late final Future<String?> _goal;
+  late Future<DailyBrief> _brief;
+  late Future<String?> _goal;
   late Future<_PhysiqueState> _physique;
+
+  /// When the screen's data last arrived; the brief and goal behind the
+  /// weight card are loaded again with it (see [_reloadWeightContext]).
+  late final LoadStamp _loaded = LoadStamp(widget.now);
+  late final ResumeObserver _resume = ResumeObserver(_reloadIfStale);
+
+  /// A tab opened again reloads data older than this.
+  static const _reselectAfter = Duration(minutes: 1);
 
   /// A failed action, shown next to where it was started until dismissed or
   /// the next action starts. Toasts only confirm what succeeded; an error is
@@ -118,7 +133,40 @@ class _ProgressScreenState extends State<ProgressScreen> {
   void initState() {
     super.initState();
     _reload();
+    _reloadWeightContext();
     _physique = _loadPhysique();
+    _resume.attach();
+  }
+
+  @override
+  void dispose() {
+    _resume.detach();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(ProgressScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.active && widget.active) {
+      _reloadIfStale(within: _reselectAfter);
+    }
+  }
+
+  /// Coming back to the app or to this tab reloads everything on the screen
+  /// when it is old or from another day.
+  void _reloadIfStale({Duration? within}) {
+    if (!mounted || !_loaded.isStale(within: within)) return;
+    setState(() {
+      _reload();
+      _reloadWeightContext();
+      _physique = _loadPhysique();
+    });
+  }
+
+  /// The brief (its trend and rate of change) and the active goal behind the
+  /// weight card. They describe the measurements, so they are loaded again
+  /// with them: on pull to refresh, after a weigh-in and on resume.
+  void _reloadWeightContext() {
     _brief = (widget.brief ?? const FixtureDailyBriefRepository()).load(
       widget.now(),
     );
@@ -142,6 +190,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
               Future<TrainingHubData?>.value(),
         ]).then((v) async {
           final training = v[5] as TrainingHubData?;
+          _loaded.mark();
           return (
             measurements: v[0] as List<BodyMeasurement>,
             summary: v[1] as ProgressSummary,
@@ -166,7 +215,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
           .loadExerciseHistory(keys.values.toList());
       return liftNewBests(hub, keys, history);
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       return const {};
     }
   }
@@ -175,6 +224,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     setState(() {
       _problem = null;
       _reload();
+      _reloadWeightContext();
       _physique = _loadPhysique();
     });
     // A failed reload shows the error card; the refresh only waits for it.
@@ -207,7 +257,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     try {
       latest = await widget.physique.loadLatestAnalysis();
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
     }
     return (provider: await provider, latest: latest);
   }
@@ -424,7 +474,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
         _ProblemArea.weeklyReview,
       );
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (!mounted) return;
       _showProblem(
         'Could not start the weekly review. Try again.',
@@ -458,11 +508,14 @@ class _ProgressScreenState extends State<ProgressScreen> {
     try {
       await widget.repository.saveMeasurement(result);
       if (!mounted) return;
-      setState(_reload);
+      setState(() {
+        _reload();
+        _reloadWeightContext();
+      });
       unawaited(TracendHaptics.success());
       TracendToast.show(context, 'Weigh-in saved');
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (!mounted) return;
       _showProblem(
         'Could not save measurement. Check your connection and try again.',
@@ -486,7 +539,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       await widget.repository.grantPhotoStorageConsent();
       _hasConsent = true;
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         _showProblem('Could not save consent. Try again.', _ProblemArea.photos);
       }
@@ -519,7 +572,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     try {
       photo = await widget.pickPhoto(source);
     } on PlatformException catch (e) {
-      debugPrint('Progress photo pick failed: ${e.code}');
+      logNonCritical(e, 'Progress photo pick failed');
       return (captured: false, error: progressPhotoPickMessage(e.code));
     }
     if (photo == null) return (captured: false, error: null);
@@ -541,7 +594,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       // Keep the open set and its finished poses: the capture sheet still
       // shows them, so a retry must upload into the same set rather than
       // start a second, partial one.
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       unawaited(Sentry.captureException(e, stackTrace: stackTrace));
       return (
         captured: false,
@@ -599,7 +652,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
         builder: (_) => PrivatePhotoViewer(urls: urls),
       );
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         _showProblem(
           'Could not open private photos. Try again.',
@@ -622,7 +675,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     try {
       await widget.repository.deletePhotoSet(set);
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         _showProblem(
           'Could not delete the photo set. Try again.',

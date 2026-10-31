@@ -15,6 +15,7 @@ import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/shell/app_shell.dart';
 import 'package:tracend/shared/brand/tracend_intro.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
 import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
@@ -162,8 +163,10 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
           _onboardingComplete = complete;
         });
       }
-    } catch (e) {
-      debugPrint('Non-critical error: $e');
+    } catch (e, stackTrace) {
+      // Seen in Sentry by type and code: a gate that cannot load the account
+      // leaves the athlete on "Connection needed".
+      reportNonCritical(e, stackTrace, 'Account state not loaded');
       if (ended()) return;
       setState(() {
         _error =
@@ -206,6 +209,11 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_widgetEraser.retryPending());
+      // Travel changes the device's zone while the app sleeps: the server's
+      // local dates follow the stored zone, so it is stored again now.
+      if (_authenticated && widget.environment.hasSupabaseConfiguration) {
+        unawaited(AccountTimeZone.supabase(_client).sync());
+      }
     }
   }
 
