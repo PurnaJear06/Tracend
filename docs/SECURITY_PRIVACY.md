@@ -450,7 +450,9 @@ prompts; a report may carry the account ID and device and app details, never nam
 In Flutter (`lib/app/sentry_scrubber.dart`) the scrubber also covers exception values, `extra`,
 contexts and breadcrumbs; the app's prints are not breadcrumbs (`enablePrintBreadcrumbs` is off);
 a `beforeBreadcrumb` drops console crumbs and cuts HTTP crumbs to method, status and address
-without a query; an event that cannot be scrubbed is dropped. The app logs a handled failure
+with the URL reduced to its origin and a route template (ids, numbers, filenames and everything
+after `/object/` are placeholders); an exception value is reduced to its type and code
+(`network` for a lost connection), never forwarded as text; an event that cannot be scrubbed is dropped. The app logs a handled failure
 with `logNonCritical` (type and code only, never `$e`: a Postgres error carries the failing row),
 and `reportNonCritical` sends such a failure to Sentry by type and code. A test forbids
 interpolating an exception into `debugPrint`.

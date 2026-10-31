@@ -53,19 +53,63 @@ class LoadStamp {
   }
 }
 
-/// Calls [onResume] each time the app comes back to the front. The single
-/// place a screen listens for it: attach in `initState`, detach in `dispose`.
+/// Work that must finish before the screens refresh on resume. The gate holds
+/// the time-zone sync here: the server's local dates follow the stored zone,
+/// so a screen that refreshed first would read the old `local_today` and mark
+/// it fresh. A slow or failed sync never holds a refresh longer than
+/// [timeout].
+class ResumeGate {
+  ResumeGate._();
+
+  /// The longest a refresh waits for held work.
+  static const timeout = Duration(seconds: 5);
+
+  static Future<void>? _pending;
+
+  /// The held work, or null when the screens may refresh at once.
+  static Future<void>? get pending => _pending;
+
+  /// Holds the resume refresh until [work] completes, fails or times out. Call
+  /// it from a lifecycle observer registered before the screens', so it runs
+  /// before theirs.
+  static void hold(Future<void> work) {
+    late final Future<void> held;
+    held = work.timeout(timeout).catchError((Object _) {}).whenComplete(() {
+      if (identical(_pending, held)) _pending = null;
+    });
+    _pending = held;
+  }
+}
+
+/// Calls [onResume] each time the app comes back to the front, once the work
+/// the [ResumeGate] holds has finished. The single place a screen listens for
+/// it: attach in `initState`, detach in `dispose`.
 class ResumeObserver with WidgetsBindingObserver {
   ResumeObserver(this.onResume);
 
   final VoidCallback onResume;
+  bool _attached = false;
 
-  void attach() => WidgetsBinding.instance.addObserver(this);
+  void attach() {
+    _attached = true;
+    WidgetsBinding.instance.addObserver(this);
+  }
 
-  void detach() => WidgetsBinding.instance.removeObserver(this);
+  void detach() {
+    _attached = false;
+    WidgetsBinding.instance.removeObserver(this);
+  }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) onResume();
+    if (state != AppLifecycleState.resumed) return;
+    final pending = ResumeGate.pending;
+    if (pending == null) {
+      onResume();
+      return;
+    }
+    pending.then((_) {
+      if (_attached) onResume();
+    });
   }
 }

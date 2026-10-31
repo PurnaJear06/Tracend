@@ -359,4 +359,64 @@ void main() {
     expect(await replayCount(athleteA), 1);
     expect(await replayCount(athleteA), 0);
   });
+
+  group('moving the single slot into the keyed list', () {
+    const legacy = {
+      'idempotency_key': 'legacy-key',
+      'local_date': '2026-10-01',
+      'timezone': 'Asia/Kolkata',
+      'payload': {'energy': 3},
+    };
+
+    test('a write that fails keeps the old entry for the next read', () async {
+      SharedPreferences.setMockInitialValues({
+        CheckInQueue.singleSlotKey: jsonEncode(legacy),
+      });
+      final real = await SharedPreferences.getInstance();
+
+      final failing = CheckInQueue(_FailingWrites(real));
+      await failing.pendingDays();
+      expect(real.getString(CheckInQueue.singleSlotKey), isNotNull);
+      expect(real.getString(CheckInQueue.queueStorageKey), isNull);
+
+      final healthy = CheckInQueue(real);
+      expect(await healthy.pendingDays(), ['2026-10-01']);
+      expect(real.getString(CheckInQueue.singleSlotKey), isNull);
+      expect(await stored(), contains('2026-10-01'));
+    });
+
+    test(
+      'an interruption after the write repeats without a duplicate',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          CheckInQueue.singleSlotKey: jsonEncode(legacy),
+          CheckInQueue.queueStorageKey: jsonEncode({'2026-10-01': legacy}),
+        });
+        final queue = await buildQueue();
+        expect(await queue.pendingDays(), ['2026-10-01']);
+        final preferences = await SharedPreferences.getInstance();
+        expect(preferences.getString(CheckInQueue.singleSlotKey), isNull);
+        expect((await stored()).keys, ['2026-10-01']);
+      },
+    );
+  });
+}
+
+/// Preferences whose writes fail, as when the disk is full.
+class _FailingWrites implements SharedPreferences {
+  _FailingWrites(this._inner);
+
+  final SharedPreferences _inner;
+
+  @override
+  String? getString(String key) => _inner.getString(key);
+
+  @override
+  Future<bool> setString(String key, String value) async => false;
+
+  @override
+  Future<bool> remove(String key) => _inner.remove(key);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

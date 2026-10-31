@@ -25,6 +25,7 @@ import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
@@ -626,6 +627,45 @@ void main() {
       await settle(tester);
 
       expect(server.requests.where((route) => route == store), hasLength(2));
+    });
+
+    testWidgets('the screens refresh only after the time-zone sync ended', (
+      tester,
+    ) async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('com.tracend.app/time_zone'),
+            (call) async => 'Asia/Kolkata',
+          );
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(
+              const MethodChannel('com.tracend.app/time_zone'),
+              null,
+            ),
+      );
+      server
+        ..answer('GET /rest/v1/user_accounts', 200, {
+          'onboarding_state': 'in_progress',
+          'timezone': 'UTC',
+        })
+        ..answer('POST /rest/v1/rpc/set_my_timezone', 200, <String, Object>{});
+      await openSignedIn(tester);
+
+      // A screen listening for the resume, attached after the gate.
+      var refreshes = 0;
+      final screen = ResumeObserver(() => refreshes++)..attach();
+      addTearDown(screen.detach);
+      final stored = Completer<http.Response>();
+      server.routes['POST /rest/v1/rpc/set_my_timezone'] = () => stored.future;
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await settle(tester);
+      expect(refreshes, 0);
+
+      stored.complete(http.Response('{}', 200));
+      await settle(tester);
+      expect(refreshes, 1);
     });
 
     testWidgets('the athlete signing out empties the widgets once', (

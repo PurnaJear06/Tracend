@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/shared/app_lifecycle.dart';
@@ -65,6 +67,59 @@ void main() {
     observer.detach();
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    expect(resumes, 1);
+  });
+
+  testWidgets('ResumeObserver waits for the work the gate holds', (
+    tester,
+  ) async {
+    var resumes = 0;
+    final observer = ResumeObserver(() => resumes++)..attach();
+    addTearDown(observer.detach);
+    final sync = Completer<void>();
+    ResumeGate.hold(sync.future);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(resumes, 0);
+
+    sync.complete();
+    await tester.pump();
+    expect(resumes, 1);
+  });
+
+  testWidgets('a sync that never ends holds a refresh no longer than the '
+      'timeout', (tester) async {
+    var resumes = 0;
+    final observer = ResumeObserver(() => resumes++)..attach();
+    addTearDown(observer.detach);
+    ResumeGate.hold(Completer<void>().future);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump(ResumeGate.timeout - const Duration(seconds: 1));
+    expect(resumes, 0);
+
+    await tester.pump(const Duration(seconds: 2));
+    expect(resumes, 1);
+  });
+
+  testWidgets('a failed sync still lets the refresh run, and a detached '
+      'observer is not called', (tester) async {
+    var resumes = 0;
+    final observer = ResumeObserver(() => resumes++)..attach();
+    final failing = Completer<void>();
+    ResumeGate.hold(failing.future);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    observer.detach();
+    failing.completeError(StateError('offline'));
+    await tester.pump();
+    expect(resumes, 0);
+
+    final second = ResumeObserver(() => resumes++)..attach();
+    addTearDown(second.detach);
+    final other = Completer<void>();
+    ResumeGate.hold(other.future);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    other.completeError(StateError('offline'));
+    await tester.pump();
     expect(resumes, 1);
   });
 }
