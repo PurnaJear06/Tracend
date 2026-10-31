@@ -1959,45 +1959,39 @@ From the first simulator run on the production Coach model (`claude-haiku-5-5` o
 production gateway path; #154, report `docs/reviews/2026-10-31-coach-simulation.md` on that
 branch). No migration, no schema change (0 optional, 0 unions), no new model call.
 
-1. **A load the athlete writes in rep notation grounds the reply** (`coach_safety/numbers_check.ts`).
-   "My old bench was 115 for 5" and "so RDL is 112.5 x 6" gave those figures the unit "other", so
-   the reply's "115 kg x 5" and "112.5 kg x 6" were `numbers_not_grounded` twice and two turns ended
-   in the data summary. A figure is now a load when an exercise is within two words before it and
-   `x N` or `for N` follows (a count of 1 to 30 with no unit of its own); it matches the same figure
-   in kg or lb, in either direction, and nothing else (review fix: no match with "115 points", no
-   "120 x 80 mmHg" or "115 x 30 cm", no load without an exercise beside it).
-2. **A half-minute rest is advice** (same file). "Take 2 to 2.5 min between sets" was refused for
-   "2.5". A rest of up to five minutes in whole or half minutes is exempt only with rest wording
-   right beside it ("rest 2.5 min", "min between sets"; review fix: "2.5 minutes of sprints" is
-   checked) and never when the wording gives it to the athlete's past ("your rest was 2.5 min").
-3. **ISSN names a sentence-case title** (`library/mentions.ts`). "The ISSN position stand (Guest et
-   al. 2021)" was `citation_not_retrieved` although `guest_2021_caffeine` was shown: its title is
-   "International society of sports nutrition position stand: ...", whose capitalised runs give no
-   initials. The organisation's initials now come from the two to six words before the document kind
-   ("position stand") in the title's name part, in any case, and nothing else. Review fix: initials
-   that match several shown sources name none, so "the ISSN position stand (Guest et al. 2021)"
-   names only the stand its author and year pick and no other stand's figures ground it.
-4. **A block asked for too early says when to ask** (`coach_proposals/refusals.ts`, `training.ts`). A
+Held back after review (2026-10-31): three guard relaxations the simulator suggested, a load in rep
+notation grounding a kg or lb figure ("bench 115 for 5"), a half-minute rest exempt as advice ("2 to
+2.5 min between sets") and an organisation's initials naming a sentence-case title ("the ISSN
+position stand"), were reverted before merge. Two review rounds (Codex, then an Opus adversarial
+pass) kept finding false negatives: a lifting load grounded a body weight ("squat 80 x 5" grounded
+"You weigh 80 kg"), "Heart rate recovery 4.5 min" and an invented study rest passed as rest advice,
+and "the ISSN position stand on creatine" named the shown caffeine stand. Those three refusals fail
+closed (the turn ends in the data summary, 3 of 43 turns in run 1), so the guards stay as on main.
+A later change needs a load flag on both sides (lift word in the same clause and rep notation,
+never a bare kg figure), rest wording in advice form with no claim or past wording anywhere in the
+sentence, and an initials mention that must agree with the year and topic beside it.
+
+1. **A block asked for too early says when to ask** (`coach_proposals/refusals.ts`, `training.ts`). A
    travel block asked for on a Friday for Monday is refused (`block_start_too_far`: a block starts
    on approval, at most 2 days ahead). The reason now names the first day it can be asked for ("Ask
    for it again from 17 Oct.") instead of "closer to the start date". An instruction telling the
    model the 2-day limit was tried and dropped: Haiku still sent the intent in 4 of 4 turns.
-5. **Which kind changes what the plan trains** (proposal rules in `coach_chat_provider.ts`).
+2. **Which kind changes what the plan trains** (proposal rules in `coach_chat_provider.ts`).
    "Change my plan so the bench moves" became a `training_schedule` with the plan's own week
    (`no_change`). The rules now say `training_schedule` changes only days, session length and weeks
    (the plan's own week is refused) and that `focus` is the kind for a stalled lift, more strength or
    size. Instructions stay under `instructionsMaxChars`.
 
-Confirmed by a re-run of the 8 affected conversations with these changes applied locally (USD
-0.74): data summaries 3 of 24 turns before, 0 of 24 after; the supplement conversations now cite.
+A re-run of the 8 affected conversations with all five changes applied (USD 0.74) took data
+summaries from 3 of 24 turns to 0; with the three guard changes held back, those 3 stay.
 
 Not fixed here (in the report): a model `proposal_intent` with two items (a focus and a swap in
 one) is `invalid_intent` and the reply keeps only its last sentence; replies over the bank's
 length (21 of 43); Haiku misreading which lift a target belongs to (front squat target given to the
 back squat); the expert judge's mean of about 2.7 of 5, mostly for no concrete change when asked.
 
-Tests: `numbers_check_test.ts` (three), `mentions_test.ts` (one), `build_test.ts` (the reason and
-the 2-day edge), `coach_chat_provider_gateway_test.ts` (the kinds rule). The pgTAP suite is
+Tests: `build_test.ts` (the reason and the 2-day edge), `coach_chat_provider_gateway_test.ts` (the
+kinds rule). The pgTAP suite is
 untouched.
 
 ## Next agent starts here

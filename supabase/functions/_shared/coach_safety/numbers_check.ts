@@ -13,22 +13,19 @@
 //   2. A rounded larger figure (100 or more, written with trailing zeros: "1,800", "2,000")
 //      matches a given number within half its rounding step, but never by more than 5%.
 //   3. The units must agree: "12 weeks" never matches 11.8 kg, and "0.9 kg" never matches
-//      0.93%. A given number with no unit after it (a table cell) matches any unit. A load in
-//      rep notation with no unit ("115 for 5", "112.5 x 6") matches the same figure in kg or lb.
+//      0.93%. A given number with no unit after it (a table cell) matches any unit.
 //   4. A date written as YYYY-MM-DD must be a date in the given text; "Oct 4" or "4 Oct" must
 //      match a month and day of one.
 // Figures that carry no claim about the athlete are not checked (the allow-list): list numbers,
 // ordinals, clock times, years, whole numbers up to ten with no measurement unit, and the
 // prescription numbers a coach gives as advice (sets, reps, rest seconds, effort scales,
-// "3x8", up to 30 reps and 10 sets, a rest of up to five minutes in whole or half minutes), and the length of a session item in a plan: a round number
+// "3x8", up to 30 reps and 10 sets), and the length of a session item in a plan: a round number
 // of minutes (10 to 90, in fives) that states how long to do a named activity ("30 min easy
 // walk", "walk for 20-30 minutes", "walk 20 min after dinner", "a 45-minute session"). Like rest
 // seconds, it is advice about what to do, not a claim about the athlete. It never covers a
 // duration said of the athlete's past or their own data ("your walk was 30 min", "you did a 30
 // minute walk yesterday"), a duration with no activity beside it ("you slept 450 minutes"), a
 // dose over time ("walk 45 minutes a day"), or anything over 90 minutes.
-
-import { isLiftWord } from "../training/goal_phase/weight_figures.ts";
 
 export type GivenNumber = Readonly<{ value: number; unit: string }>;
 
@@ -130,8 +127,6 @@ type Token = Readonly<{
   raw: string;
   before: string;
   after: string;
-  /** The rest of the figure's line after it, up to 80 characters (rest wording, read further). */
-  tail: string;
   /** The unit class that follows the number: a known unit, "other" (some word), or "" (none). */
   unit: string;
 }>;
@@ -154,52 +149,11 @@ const unitClasses: readonly (readonly [RegExp, string])[] = [
 ];
 const bmiBefore = /\bbmi\b[^.\d]{0,24}$/;
 
-// A load written in rep notation with no unit of its own ("bench 115 for 5", "RDL 112.5 x 6",
-// "bench 100x5"): the figure is a lifting load, in the athlete's unit. Fails closed, like the weight
-// guard's load rule (training/goal_phase/weight_figures.ts): an exercise name or catalog slug must be
-// within two words before the figure, and right after it "x N" or "for N" with a bare count of 1 to
-// 30 (a range "for 5-6" too) that carries no unit of its own. "120 x 80 mmHg", "115 x 30 cm" and
-// "walked 115 for 30 minutes" are not loads.
-const repCount =
-  /^\s*(?:[x×]\s*|for\s+)(\d+)(?:\s*(?:-|–|to)\s*(\d+))?(?!\d|[.,]\d|\s*(?:-|–|to)\s*\d)(?!\s*-?\s*(?:%|percent|kg|kilos?|lbs?|pounds?|kcal|cal|g\b|grams?|mg\b|ml\b|min|mins?|minutes?|sec|secs?|seconds?|s\b|h\b|hrs?|hours?|wks?|weeks?|days?|months?|years?|steps?|bpm|ms\b|cm\b|mm\b|mmhg\b|km\b|m\b|miles?|points?|pts\b))/;
-const loadSkipWords = new Set([
-  "a",
-  "at",
-  "is",
-  "was",
-  "my",
-  "your",
-  "the",
-  "on",
-  "of",
-  "with",
-  "did",
-]);
-
-function liftBefore(before: string): boolean {
-  const sentence = before.split(/[.!?;:\n]/).at(-1) ?? "";
-  const words = sentence.toLowerCase().split(/[^a-z0-9']+/).filter((word) =>
-    word !== "" && !loadSkipWords.has(word)
-  );
-  return words.slice(-2).some(isLiftWord);
-}
-
-function isLoadNotation(before: string, after: string): boolean {
-  const count = repCount.exec(after);
-  if (!count) return false;
-  const counts = [count[1], count[2]].filter((n): n is string => n !== undefined).map(Number);
-  return counts.every((n) => n >= 1 && n <= 30) && liftBefore(before);
-}
-
 function unitOf(before: string, after: string): string {
   if (bmiBefore.test(before)) return "bmi";
   for (const [pattern, unit] of unitClasses) if (pattern.test(after)) return unit;
-  if (isLoadNotation(before, after)) return "load";
   return /^\s*[a-z]/.test(after) ? "other" : "";
 }
-
-/** The units a lifting load is written in. */
-const loadUnits: ReadonlySet<string> = new Set(["kg", "lb", "load"]);
 
 function tokensOf(text: string): Token[] {
   const found: Token[] = [];
@@ -212,7 +166,6 @@ function tokensOf(text: string): Token[] {
     const before = text.slice(Math.max(0, match.index - 28), match.index).toLowerCase();
     // What follows is read to the end of the figure's line only.
     const after = text.slice(end, end + 28).toLowerCase().split("\n")[0];
-    const tail = text.slice(end, end + 80).toLowerCase().split("\n")[0];
     // The unit is read within the figure's own line: "BMI" ending the line before ("Latest
     // reading and BMI" then "74.8 kg") is not this figure's unit. A figure alone on its line takes
     // the label that ends the line before ("Your BMI:" then "35").
@@ -225,7 +178,6 @@ function tokensOf(text: string): Token[] {
       raw: match[0],
       before,
       after,
-      tail,
       unit: unitOf(alone ? before : line, rangeEnd.exec(after)?.[1] ?? after),
     });
   }
@@ -315,26 +267,6 @@ function isSessionItemLength(token: Token, after: string): boolean {
   return activityAfterMinutes.test(after) || activityBeforeMinutes.test(token.before);
 }
 
-// Rest wording right beside the figure: "rest 2.5 min", "rest for 2 to 2.5 minutes" before it, or
-// "min rest", "minutes of recovery", "min between (Romanian deadlift) sets" after it. Anything else
-// ("2.5 minutes of sprints", "the protocol lasts 2.5 minutes") is checked.
-const restBefore =
-  /\b(?:rest|recover|recovery)\s+(?:for\s+|of\s+)?(?:about\s+|around\s+|roughly\s+|up to\s+)?(?:\d+(?:\.\d+)?\s*(?:-|–|to)\s*)?$/;
-const restAfter =
-  /^\s*-?\s*(?:minutes?|mins?)\b\s*(?:(?:of\s+)?(?:rest|recovery)\b|between\s+(?:[a-z'-]+\s+){0,3}?(?:sets?|rounds?|efforts?|intervals?)\b)/;
-
-/**
- * Whether a figure of minutes is a rest between sets given as advice: up to five minutes, in whole
- * or half minutes, with rest wording right beside it ("rest 2.5 min", "2 to 2.5 min between
- * sets"), never said of the athlete's own past or records.
- */
-function isRestLength(token: Token): boolean {
-  if (token.value > 5 || !Number.isInteger(token.value * 2)) return false;
-  if (describesTheAthlete(token.before)) return false;
-  const tail = rangeEnd.exec(token.tail)?.[1] ?? token.tail;
-  return restBefore.test(token.before) || restAfter.test(tail);
-}
-
 /** Whether the figure is a claim about the athlete that must come from the given text. */
 function mustBeGrounded(token: Token): boolean {
   const range = rangeEnd.exec(token.after);
@@ -342,7 +274,6 @@ function mustBeGrounded(token: Token): boolean {
   const integer = token.decimals === 0;
   if (measurementUnit.test(after) || measuredBefore.test(token.before)) return true;
   if (minuteUnit.test(after) && isSessionItemLength(token, after)) return false;
-  if (minuteUnit.test(after) && isRestLength(token)) return false;
   if (timeUnit.test(after)) return !(integer && token.value <= 5);
   if (scaleBefore.test(token.before)) return !(integer && token.value <= 10);
   if (timesAfter.test(token.after) || timesBefore.test(token.before)) {
@@ -357,16 +288,9 @@ function mustBeGrounded(token: Token): boolean {
   return token.value > 10;
 }
 
-/**
- * Units agree when the reply's is the given number's, or either has no unit at all. A load in rep
- * notation agrees with the same figure in kg or lb ("115 for 5" in the athlete's message grounds
- * "115 kg x 5" in the reply, and "112.5 kg" in a lookup grounds "112.5 x 6").
- */
+/** Units agree when the reply's is the given number's, or either has no unit at all. */
 function unitsAgree(token: Token, given: GivenNumber): boolean {
   if (given.unit === "" || token.unit === "") return true;
-  if (token.unit === "load" || given.unit === "load") {
-    return loadUnits.has(token.unit) && loadUnits.has(given.unit);
-  }
   const known = token.unit !== "" && token.unit !== "other";
   return known ? given.unit === token.unit : given.unit === token.unit || given.unit === "other";
 }

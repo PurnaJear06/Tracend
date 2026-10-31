@@ -28,9 +28,9 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   ("0.26 kg a week" read as a 26 kg body weight, "Thu 2026-10-15" as a study, refusals read as
   advice), not truncation or the schema. Handoff:
   [`ai-gateway.md`](./handoff/ai-gateway.md). Coach simulation fixes (2026-10-31, branch
-  `claude/coach-sim-fixes`): a load in rep notation and a half-minute rest ground the reply, ISSN
-  names a sentence-case title, a too-early block says when to ask, `focus` is the kind for a
-  stalled lift; data summaries in the affected conversations 3 of 24 turns to 0.
+  `claude/coach-sim-fixes`): a too-early block says when to ask, `focus` is the kind for a stalled
+  lift; three guard relaxations (rep-notation loads, half-minute rests, sentence-case ISSN) were
+  held back after review found false negatives, so those refusals still fail closed.
 - training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
   sources; nothing reads it until B2). Phase 3 round 1 merged (2026-10-17): B2 templates and
   fractional volume (#127), B6 screening gate (#128, migration 26). Round 2 merged (2026-10-17): B3 progression from logged sets, hub 1.7 (#132); B7 goal phase review,
