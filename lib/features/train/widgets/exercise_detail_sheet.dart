@@ -75,7 +75,9 @@ class ExerciseDetailBody extends StatelessWidget {
               TrainStatTile(label: 'Today', value: '${formatKg(load)} kg'),
             TrainStatTile(
               label: 'Sets × reps',
-              value: '${exercise.setCount} × ${_compactReps(exercise)}',
+              value: exercise.leftOut
+                  ? 'Left out'
+                  : '${exercise.setCount} × ${_compactReps(exercise)}',
             ),
             TrainStatTile(label: 'Rest', value: restText(exercise.restSeconds)),
           ],

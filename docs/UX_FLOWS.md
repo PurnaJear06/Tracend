@@ -447,9 +447,24 @@ Reading order:
    three choices, each one tap). **Talk to Coach** opens Coach with a question in the box that the
    athlete sends, or not. An earlier accepted answer that the rules no longer back is named ("Your
    check-in changed." or "New sleep or recovery data came in.") and stays in force until the athlete
-   answers again, as `start_workout` applies it. A safety route (pain of 7 or more today) shows the
-   referral card and, once after the check-in is saved, a sheet with **Got it**; no training button,
-   and it stands over any stored answer, also after the session started. With AI coaching
+   answers again, as `start_workout` applies it. A safety route shows the referral card and a sheet
+   with **Got it**; no training button, and it stands over any stored answer, also after the
+   session started. The routes (B5-2) are `pain_referral` (check-in pain of 7 or more), `urgent`
+   ("Get medical help now", names the emergency number), `clinician_today` ("Get this checked today")
+   and `clinician` ("See a doctor or physio"); a route this build does not know reads as `urgent`.
+   The sheet opens when the check-in is saved (also from the answers alone when the check-in is
+   queued offline), when a pain report from a workout arrives, and on every later day an area stays
+   held, once per day and route: it is remembered per athlete once **Got it** is tapped, and for
+   `urgent` and `clinician_today` it cannot be closed any other way. **Joint changes (B5-2):** the
+   kind `joint_adjust` ("Easier on your joints today", **Use these changes**, **Train as planned**,
+   Undo like the others) shows a swap ("Use Machine chest press instead", no starting weight), a
+   pain-free range cue for a limited exercise, or an exercise left out; the same changes ride on the
+   other kinds. Each held, limited or watched area is named ("Your knee needs a lighter touch this
+   week."), a hold on a `clinician` outcome keeps its reminder every day, and pain that has lasted two
+   weeks adds "Please see a physio or doctor." **Pain reports that have not arrived:** a notice at
+   the top of Today says a pain report waits on the phone (Tracend records one only for today or
+   yesterday, so it must be sent within a day; **Try again**), or that Tracend refused one as too old
+   and did not record it (**Report it again**, **I understand**). It is never dropped silently. With AI coaching
    off the note says no daily decision is generated and where to turn it on; with no decision it
    says to tap Sync. **Open in Train** (and the header) goes to Train. With no workout it reads
    **Rest day** and names the next planned session.
@@ -514,8 +529,26 @@ question starts at 3. Pain is **No pain** (0) or **Some pain**, which asks "How 
 10?" and will not save until a strength is chosen; it is stored as `pain_severity` 0–10. The note's
 counter appears only in its last 100 characters. **Save check-in** is pinned below the questions,
 so it is always on screen. Saving shows "Check-in saved", or, offline, that it is saved on this
-device and will sync when online. Pain location questions and the safety boundary remain future
-work. Save updates Today and recomputes only when necessary.
+device and will sync when online. Save updates Today and recomputes only when necessary.
+
+**Pain check (B5-2).** After **Some pain** and a strength, three more answers are required before
+Save opens, each with its own message: **Where is it?** (Knee, Lower back, Shoulder, Somewhere
+else), **When does it hurt?** (only when I move or train it, even at rest; optional) and **Do any of
+these apply?**, the area's red-flag questions as ticks plus **None of these** ("Choose any that
+apply, or None of these."). The payload carries `pain_area`, `pain_pattern`, `pain_red_flags`
+(sorted codes; empty for None of these) next to `pain_severity`, and nothing when the athlete says
+no pain. For an area already held, limited or on watch, a question comes first: "Last time you noted
+knee pain. How is it today?" (**Gone**, **Still there** with a strength) or, for a held area, "Has a
+doctor or physio cleared you to train your shoulder?" (**Yes** with a strength from 0, **Not yet**);
+these go as `pain_followups`. The phone works the strictest referral out from the answers by the same
+rules as the server, so the sheet closes at once for a referral and the referral opens on Today
+without waiting for the network (the check-in is sent in the background; a check-in with no
+referral waits at most 8 seconds, then waits on the phone). If the server refuses the pain answers
+(22023) the check-in is kept marked, the referral is still shown, and Today tells the athlete (too
+old, or "could not record it as it stands") before the rest of it is sent without the pain answers.
+A referral for a report just made is shown even when the same route was read earlier that day. An
+area a doctor or physio cleared, chosen again as today's pain, is one report that carries the
+clearance.
 
 ### Evidence detail
 
@@ -673,10 +706,36 @@ exercise with sets left, and a "Swipe for ‹next›" hint sits at the foot of e
   **First log** mark, its reps left (**2 left**, **5+ left**, or **Reps left** to add; a set
   logged before reps left were asked shows what its RPE meant, 10 − RPE, RPE 5 or below as **5+**,
   without writing it) and undo. Undo clears that set's reps left and its times.
-- Tools: **Pain or discomfort** stays a visible chip (**Pain noted** in caution when on). **Fill
+- Tools: **Pain or discomfort** stays a visible chip (**Pain noted** in caution when on); it opens
+  the pain check (below). **Fill
   reps left**, and a ⋯ menu with **Mark as skipped** (**Unmark skipped** once skipped; an action
   sheet titled with the exercise name, with **Keep logging**). Logging a set on a skipped exercise
   unmarks it.
+
+**Pain check on an exercise (B5-2).** **Pain or discomfort** opens a sheet: **Where?** (the joint
+the exercise loads, when it can be told, is preselected), **How strong right now?** 1 to 10, **Was it
+sharp or sudden, or did you feel a pop?** and **Any numbness or tingling?** (Yes or No; all four are
+required). The report goes to Tracend with an idempotency key and the server's date; offline it is
+kept on the phone and sent again whenever the app comes forward or a workout syncs (a day at most;
+see Today). The exercise is flagged so the next target holds it. The answer sheet says what to do:
+**Keep it light** for 1 to 3 (**Continue**); **Stop this exercise for today** for 4 to 6, offering
+**Use ‹swap›** (the swap the day's options already named, so it works offline and only before a set
+has an entry) or **Skip this exercise**; **Stop this exercise** with the referral for 7 or more or a
+Yes (**Skip this exercise**, **End workout**; it cannot be dismissed), and the same sheet, with the
+hold line ("Your shoulder is on hold until you've had it checked.") or the day's referral, when the
+area is already held or the day has a safety route: no swap and no keep going then. The sheet is
+shown at once from the phone's rules; a server that is slow or silent only adds the line "Saved on
+this phone". The referral read there is not opened again on Today that day. A swap is logged as a substituted performance for pain.
+
+**Joint changes in the logger (B5-2).** `start_workout` is the authority for the rows. An exercise
+the server left out for a joint has no set rows: its page says **Left out today** with no set to
+log, the list says "left out today because of a sore joint", and nothing is logged or sent for it.
+An exercise the server swapped shows and logs the swap's name (`performed_name`), with "Swapped for
+a sore joint" and the line "Choose a weight you can lift for the reps with 3 or more left." (no
+starting weight). A limited exercise shows its pain-free range cue ("Keep it pain-free"). Logging
+follows the server's row by its order. A saved draft sent late (an earlier day's, or an unfinished
+workout saved from Today) reads the session's rows first and drops only blank trailing sets beyond
+them; a set with entries is never dropped.
 
 **Reps left (reps in reserve).** Optional on every set: "How many more reps could you do?" with
 one row of 0, 1, 2, 3, 4 and 5+ and the legend "0 nothing left · 5+ five or more" (VoiceOver
@@ -842,6 +901,9 @@ confirmation actions. The tab reads top to bottom:
   and read as "2 sets of 6 to 8 reps, down from 3 sets"), the hero and list count the lighter total,
   and the workout overview says "Lighter today: 12 of 16 sets" (or "Weights held today"). Starting the
   workout uses those sets and held weights; an easy-cardio answer leaves the strength sets as planned.
+  Joint changes (B5-2) show on the exercise: the swap's name in place of the original, the
+  pain-free range cue under the line, or "Left out today" (read by VoiceOver as "left out today
+  because of a sore joint").
 - **Readiness line.** One sentence about state, never advice: "Recovery is excellent." (80+),
   "Recovery is good." (65+), "Recovery is moderate." (50+), "Recovery is low today." (35+),
   "Recovery is poor today.", "Building your baseline." with no score, and "Connect Apple Health to
@@ -1160,7 +1222,8 @@ preference?** prompt, which saves a durable preference only on **Save** (**Dismi
 The **same-day readiness adjustment** (coaching platform, chunk B4) is not a persistent change, so
 it does not use this flow: it is a one-tap, same-day, reversible choice shown on Today (§5) and
 Train (§7), with Undo until the workout starts and no confirm sheet. Its server side is built
-(B4-1) and so is the app side (B4-2).
+(B4-1) and so is the app side (B4-2). The joint changes and the pain check (B5) use the same card
+and the same one tap (B5-2).
 
 ### 10.1 Coach proposal card (A8)
 
