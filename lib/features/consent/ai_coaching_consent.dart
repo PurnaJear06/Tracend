@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/tracend_sheet.dart';
 
 /// The notice the athlete answers is server data (`get_current_ai_notice`):
@@ -76,7 +77,7 @@ Future<AiNotice> loadCurrentAiNotice(Future<Object?> Function() fetch) async {
   try {
     response = await fetch();
   } catch (e) {
-    debugPrint('Non-critical error: $e');
+    logNonCritical(e);
     throw const AiNoticeUnavailable();
   }
   final notice = AiNotice.fromJson(response);
@@ -268,7 +269,7 @@ class _AiCoachingNoticeSectionState extends State<AiCoachingNoticeSection> {
     try {
       await widget.controller!.load();
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
     } finally {
       if (mounted) setState(() => _retrying = false);
     }
@@ -348,7 +349,7 @@ class _AiCoachingConsentScreenState extends State<AiCoachingConsentScreen> {
       await widget.controller.record(granted: granted);
       widget.onDecided();
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(
           () => _error =
@@ -457,7 +458,7 @@ class _AiCoachingConsentSheetState extends State<_AiCoachingConsentSheet> {
       await widget.controller.record(granted: granted);
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(
           () => _error =

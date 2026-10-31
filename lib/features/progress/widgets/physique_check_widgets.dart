@@ -4,6 +4,7 @@ import 'package:tracend/features/consent/widgets/ai_notice_panel.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
@@ -160,7 +161,7 @@ class _PhysiqueCheckSheetState extends State<PhysiqueCheckSheet> {
       final notice = await _repository.loadNotice();
       if (mounted) setState(() => _notice = notice);
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
     }
   }
 
@@ -173,7 +174,7 @@ class _PhysiqueCheckSheetState extends State<PhysiqueCheckSheet> {
     try {
       notice = await _repository.loadNotice();
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) _fail(PhysiqueCheckError.failed);
       return;
     }
@@ -199,7 +200,7 @@ class _PhysiqueCheckSheetState extends State<PhysiqueCheckSheet> {
         granted: true,
       );
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(() {
           _busy = false;
@@ -240,7 +241,7 @@ class _PhysiqueCheckSheetState extends State<PhysiqueCheckSheet> {
         _fail(e.error);
       }
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) _fail(PhysiqueCheckError.failed);
     }
   }
@@ -256,7 +257,7 @@ class _PhysiqueCheckSheetState extends State<PhysiqueCheckSheet> {
         _phase = _Phase.consent;
       });
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) _fail(PhysiqueCheckError.failed);
     }
   }
@@ -296,7 +297,7 @@ class _PhysiqueCheckSheetState extends State<PhysiqueCheckSheet> {
         _phase = _Phase.saved;
       });
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(() {
           _busy = false;
@@ -325,7 +326,7 @@ class _PhysiqueCheckSheetState extends State<PhysiqueCheckSheet> {
         _busy = false;
       });
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(() {
           _busy = false;

@@ -6,9 +6,9 @@ import 'package:flutter/widgets.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/keychain_session_storage.dart';
-import 'package:tracend/app/sentry_scrubber.dart';
 import 'package:tracend/app/app.dart';
 import 'package:tracend/app/environment.dart';
+import 'package:tracend/app/sentry_scrubber.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,8 +27,12 @@ Future<void> main() async {
           options.dsn = environment.sentryDsn;
           options.tracesSampleRate = 0.1;
           options.attachStacktrace = true;
-          options.beforeSend = scrubSentryEvent;
-          options.beforeBreadcrumb = scrubSentryBreadcrumb;
+          // The app's prints and the SDK's own HTTP bodies are free text: a
+          // health value or a meal could ride in them. Only the named
+          // breadcrumbs (AppBreadcrumbs) and scrubbed events leave the phone.
+          options.enablePrintBreadcrumbs = false;
+          options.beforeBreadcrumb = scrubBreadcrumb;
+          options.beforeSend = scrubEvent;
         },
         appRunner: () async {
           if (environment.hasSupabaseConfiguration) {

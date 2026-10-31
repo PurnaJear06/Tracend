@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/breadcrumbs.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 class NotificationPreferences {
   const NotificationPreferences({
@@ -123,9 +123,9 @@ class MethodChannelRestAlertScheduler implements RestAlertScheduler {
           }) ==
           true;
     } on PlatformException catch (e) {
-      debugPrint('Non-critical error: rest alert not scheduled: ${e.code}');
+      logNonCritical(e, 'rest alert not scheduled');
     } on MissingPluginException catch (e) {
-      debugPrint('Non-critical error: rest alert not scheduled: $e');
+      logNonCritical(e, 'rest alert not scheduled');
     }
     AppBreadcrumbs.workout(
       'Rest alert scheduled',
@@ -139,9 +139,9 @@ class MethodChannelRestAlertScheduler implements RestAlertScheduler {
     try {
       await notificationChannel.invokeMethod<void>('cancelRestAlert');
     } on PlatformException catch (e) {
-      debugPrint('Non-critical error: rest alert not cancelled: ${e.code}');
+      logNonCritical(e, 'rest alert not cancelled');
     } on MissingPluginException catch (e) {
-      debugPrint('Non-critical error: rest alert not cancelled: $e');
+      logNonCritical(e, 'rest alert not cancelled');
     }
   }
 }
@@ -182,7 +182,7 @@ class SupabaseNotificationRepository implements NotificationRepository {
         restTimerAlertsEnabled: device.restTimerAlertsEnabled,
       );
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       return device;
     }
   }
@@ -216,7 +216,7 @@ class SupabaseNotificationRepository implements NotificationRepository {
       await _store.save(updated);
       return updated;
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       await _device.configure(
         dailyCheckIn: previous.dailyCheckIn,
         weeklyReview: previous.weeklyReview,
@@ -245,7 +245,7 @@ class SupabaseNotificationRepository implements NotificationRepository {
               ),
       );
     } catch (e) {
-      debugPrint('Non-critical error: notification permission not synced: $e');
+      logNonCritical(e, 'notification permission not synced');
     }
   }
 }

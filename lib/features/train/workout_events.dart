@@ -8,7 +8,7 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 
 /// Something that happened in the active workout. [at] is when it happened,
@@ -186,7 +186,7 @@ class WorkoutEventHub {
         try {
           answer = await handler(sent.command);
         } catch (e) {
-          debugPrint('Non-critical error: workout command failed: $e');
+          logNonCritical(e, 'workout command failed');
         }
       }
       _unhandled.remove(sent.handled);

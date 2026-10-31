@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/auth/account_session.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// Where a deletion stands, as far as the server has confirmed it.
 enum AccountDeletionOutcome {
@@ -105,7 +106,7 @@ class SupabaseAccountDeletionRepository implements AccountDeletionRepository {
       }
     } catch (e) {
       // Unanswered or refused: the server's state decides below.
-      debugPrint('Non-critical error: account deletion request: $e');
+      logNonCritical(e, 'account deletion request');
     }
     for (var check = 0; check < checks; check++) {
       if (check > 0) await Future<void>.delayed(checkInterval);
@@ -150,7 +151,7 @@ class SupabaseAccountDeletionRepository implements AccountDeletionRepository {
           .order('requested_at', ascending: false)
           .limit(1);
     } catch (e) {
-      debugPrint('Non-critical error: deletion state not read: $e');
+      logNonCritical(e, 'deletion state not read');
       return AccountDeletionOutcome.unconfirmed;
     }
     if (rows.isEmpty) return null;

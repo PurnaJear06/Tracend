@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 /// One finished workout, as `get_my_watch_workout_status_v1` lists it: the
@@ -105,7 +106,7 @@ class SupabaseWatchWorkoutPromptSource implements WatchWorkoutPromptSource {
       );
       return WatchWorkoutStatus.tryParse(value)?.suggestsWatchWorkout ?? false;
     } catch (e) {
-      debugPrint('Non-critical error: Watch workout status not read: $e');
+      logNonCritical(e, 'Watch workout status not read');
       return false;
     }
   }
@@ -125,7 +126,7 @@ class SupabaseWatchWorkoutPromptSource implements WatchWorkoutPromptSource {
     try {
       await write();
     } catch (e) {
-      debugPrint('Non-critical error: Watch workout answer not stored: $e');
+      logNonCritical(e, 'Watch workout answer not stored');
     }
   }
 }

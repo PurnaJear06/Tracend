@@ -258,7 +258,7 @@ void main() {
       expect(sent.last.containsKey('pain_area'), isFalse);
       expect(sent.last['energy'], 3);
       expect(
-        preferences.getString(CheckInQueue.storageKeyFor('athlete-1')),
+        preferences.getString(CheckInQueue.queueStorageKeyFor('athlete-1')),
         isNull,
       );
     });

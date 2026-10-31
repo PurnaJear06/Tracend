@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:tracend/features/train/guidance/training_guidance.dart';
 import 'package:tracend/features/train/guidance/training_guidance_repository.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// Today's training guidance for Train: whether a lighter week could help and
 /// how the week's cardio stands.
@@ -83,7 +84,7 @@ class TrainingGuidanceController extends ChangeNotifier {
     } on TrainingGuidanceException catch (error) {
       failure = error.failure;
     } on Object catch (error) {
-      debugPrint('Non-critical error: training guidance not read: $error');
+      logNonCritical(error, 'training guidance not read');
       failure = TrainingGuidanceFailure.network;
     }
     if (read != _reads) return;
@@ -163,7 +164,7 @@ class TrainingGuidanceController extends ChangeNotifier {
     } on Object catch (error) {
       // Anything else, an Error included, still ends the request: the card
       // must never be left waiting on a tap that cannot finish.
-      debugPrint('Non-critical error: lighter week not prepared: $error');
+      logNonCritical(error, 'lighter week not prepared');
       failure = TrainingGuidanceFailure.network;
     } finally {
       _preparing = false;

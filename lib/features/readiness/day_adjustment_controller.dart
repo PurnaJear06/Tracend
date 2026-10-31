@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/readiness/day_adjustment_repository.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// Today's same-day adjustment, shared by Today and Train so an answer given
 /// on one shows on the other at once.
@@ -18,6 +19,7 @@ class DayAdjustmentController extends ChangeNotifier {
     required this.repository,
     DateTime Function()? clock,
     this.serverToday,
+    this.onAnswered,
   }) : _clock = clock ?? DateTime.now;
 
   final DayAdjustmentRepository repository;
@@ -26,6 +28,10 @@ class DayAdjustmentController extends ChangeNotifier {
   /// Asks the server for its own today (the hub's `local_today`). Null when
   /// there is nothing to ask, as without a backend.
   final Future<DateTime?> Function()? serverToday;
+
+  /// Called with every adjustment the server gave (a read or an answer), so
+  /// the phone can keep its sore-area notes for a launch with no connection.
+  final void Function(DayAdjustment adjustment)? onAnswered;
 
   /// An adjustment older than this, or from another day, is read again when
   /// the athlete comes back.
@@ -100,7 +106,7 @@ class DayAdjustmentController extends ChangeNotifier {
     } on DayAdjustmentException catch (error) {
       failure = error.failure;
     } on Exception catch (error) {
-      debugPrint('Non-critical error: day adjustment not read: $error');
+      logNonCritical(error, 'day adjustment not read');
       failure = DayAdjustmentFailure.network;
     }
     if (read != _reads) return;
@@ -109,12 +115,21 @@ class DayAdjustmentController extends ChangeNotifier {
     if (adjustment != null) {
       _current = adjustment;
       _loadedAt = _clock();
+      _remember(adjustment);
     } else if (failure == DayAdjustmentFailure.wrongDate ||
         failure == DayAdjustmentFailure.unreadable) {
       // What was shown no longer describes today.
       _current = null;
     }
     notifyListeners();
+  }
+
+  void _remember(DayAdjustment adjustment) {
+    try {
+      onAnswered?.call(adjustment);
+    } catch (error) {
+      logNonCritical(error, 'day adjustment not remembered');
+    }
   }
 
   void _learn(DateTime day) {
@@ -201,10 +216,11 @@ class DayAdjustmentController extends ChangeNotifier {
       _loadedAt = _clock();
       _loadFailure = null;
       taken = true;
+      _remember(answer);
     } on DayAdjustmentException catch (error) {
       failure = error.failure;
     } on Exception catch (error) {
-      debugPrint('Non-critical error: day adjustment not answered: $error');
+      logNonCritical(error, 'day adjustment not answered');
       failure = DayAdjustmentFailure.network;
     }
     _busy = false;

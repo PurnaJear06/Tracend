@@ -11,6 +11,7 @@ import 'package:tracend/features/readiness/choice_widgets.dart';
 import 'package:tracend/features/readiness/pain_check.dart';
 import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_sheet.dart';
 import 'package:tracend/shared/widgets/tracend_toast.dart';
@@ -138,7 +139,7 @@ const checkInScales = [
 ];
 
 /// How the send of a saved check-in ended.
-enum _Sent { delivered, waiting, painRefused }
+enum _Sent { delivered, waiting, painRefused, refused }
 
 class _CheckInSheet extends StatefulWidget {
   const _CheckInSheet({
@@ -291,7 +292,7 @@ class _CheckInSheetState extends State<_CheckInSheet> {
       await _saveNow();
     } on Object catch (error) {
       // Whatever went wrong, the sheet is not left saving for good.
-      debugPrint('Non-critical error: check-in not saved: $error');
+      logNonCritical(error, 'check-in not saved');
       if (mounted) setState(() => _saving = false);
     }
   }
@@ -339,6 +340,7 @@ class _CheckInSheetState extends State<_CheckInSheet> {
     } else {
       TracendToast.show(context, switch (result) {
         _Sent.painRefused => chipNotRecorded,
+        _Sent.refused => 'This check-in could not be saved.',
         _ when withPain => painQueuedToast,
         _ =>
           'Check-in saved on this device. It will sync when you are '
@@ -352,8 +354,8 @@ class _CheckInSheetState extends State<_CheckInSheet> {
   /// older envelope that waits goes first and this one last (the server counts
   /// the last one sent as the day's check-in). A delivered check-in leaves the
   /// queue; one whose pain answers the server refuses stays, marked, so the
-  /// athlete is told and the rest of it is not lost; anything else waits to be
-  /// replayed. Never throws, and does not need the sheet to be open.
+  /// athlete is told and the rest of it is not lost; one the server refuses
+  /// for good is dropped; anything else waits to be replayed. Never throws, and does not need the sheet to be open.
   Future<_Sent> _persistAndSend(
     Map<String, dynamic> payload,
     String localDate,
@@ -367,19 +369,23 @@ class _CheckInSheetState extends State<_CheckInSheet> {
             ? Supabase.instance.client.auth.currentUser?.id
             : null,
       );
-      await queue.enqueue(
+      final key = await queue.enqueue(
         payload: payload,
         localDate: localDate,
         timezone: timezone,
       );
-      final outcome = await queue.replay(_send);
-      return switch (outcome) {
-        CheckInReplayOutcome.delivered => _Sent.delivered,
-        CheckInReplayOutcome.painRefused => _Sent.painRefused,
+      final replay = await queue.replay(_send);
+      for (final refusal in replay.refused) {
+        reportNonCritical(refusal.error, null, 'Check-in refused');
+      }
+      return switch (replay.fates[key]) {
+        CheckInFate.delivered => _Sent.delivered,
+        CheckInFate.painRefused => _Sent.painRefused,
+        CheckInFate.refused => _Sent.refused,
         _ => _Sent.waiting,
       };
     } on Object catch (error) {
-      debugPrint('Non-critical error: check-in waits: $error');
+      logNonCritical(error, 'check-in waits');
       return _Sent.waiting;
     }
   }

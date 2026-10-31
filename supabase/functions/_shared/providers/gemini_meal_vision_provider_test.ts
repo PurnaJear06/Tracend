@@ -1,5 +1,5 @@
-import { assertRejects } from "jsr:@std/assert@1.0.13";
-import { analyzeMealImage } from "./gemini_meal_vision_provider.ts";
+import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.13";
+import { analyzeMealImage, MealVisionBilledError } from "./gemini_meal_vision_provider.ts";
 
 Deno.test("meal vision fails closed until every live gate is enabled", async () => {
   await assertRejects(
@@ -65,4 +65,38 @@ Deno.test("meal vision refuses to run without its prices", async () => {
     "meal_vision_configuration_invalid",
   );
   if (called) throw new Error("the provider was called without prices");
+});
+
+Deno.test("meal vision never carries the model's text in a parse failure", async () => {
+  const error = await assertRejects(
+    () =>
+      analyzeMealImage(
+        new Uint8Array([1]),
+        "image/jpeg",
+        () =>
+          Promise.resolve(
+            new Response(JSON.stringify({
+              candidates: [{
+                content: { parts: [{ text: "Sorry, SECRET-DISH-TEXT is not JSON" }] },
+              }],
+              usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+            })),
+          ),
+        {
+          get: (name) =>
+            ({
+              GEMINI_API_KEY: "test-key",
+              GEMINI_PAID_DATA_TERMS_ACCEPTED: "true",
+              MEAL_VISION_ENABLED: "true",
+              MEAL_VISION_MODEL_EVALUATED: "true",
+              MEAL_VISION_MODEL: "gemini-3.5-flash",
+              MEAL_VISION_INPUT_COST_PER_MILLION_USD: "1",
+              MEAL_VISION_OUTPUT_COST_PER_MILLION_USD: "1",
+            })[name],
+        },
+      ),
+    MealVisionBilledError,
+  );
+  assertEquals(error.message, "meal_vision_response_invalid");
+  assertEquals(error.usage.outputUnits, 5);
 });

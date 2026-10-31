@@ -1,6 +1,6 @@
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 
 /// Whether the signed-in athlete allows numbers on the Lock Screen (Account ›
@@ -16,7 +16,7 @@ Future<bool> readLockScreenNumbers() async {
         ) ??
         false;
   } catch (e) {
-    debugPrint('Non-critical error: lock screen choice not read: $e');
+    logNonCritical(e, 'lock screen choice not read');
     return false;
   }
 }

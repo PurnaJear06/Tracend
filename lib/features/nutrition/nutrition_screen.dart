@@ -13,7 +13,9 @@ import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/nutrition/widgets/meal_cards.dart';
 import 'package:tracend/features/nutrition/widgets/nutrition_insight_card.dart';
 import 'package:tracend/features/nutrition/widgets/nutrition_sheets.dart';
+import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/widgets/date_pill_strip.dart';
@@ -81,8 +83,17 @@ class NutritionScreen extends StatefulWidget {
     this.coach = const FixtureCoachRepository(),
     this.pickPhoto = _pickWithImagePicker,
     this.planChanges,
+    this.active = true,
+    this.clock = DateTime.now,
     super.key,
   });
+
+  /// Whether this tab is the one on screen. Opening it again reloads data
+  /// that is not fresh.
+  final bool active;
+
+  /// The phone's clock, for the day Meals opens on and follows.
+  final DateTime Function() clock;
 
   /// Reloads the targets when a Coach proposal changed them.
   final PlanChanges? planChanges;
@@ -95,8 +106,18 @@ class NutritionScreen extends StatefulWidget {
 }
 
 class _NutritionScreenState extends State<NutritionScreen> {
-  DateTime _date = DateTime.now();
+  late DateTime _date = widget.clock();
+
+  /// Set once the athlete picks another day than today. Until then the
+  /// screen follows today, across midnight.
+  bool _pickedDate = false;
   bool _loading = true;
+
+  /// When the day's data last arrived, and which load started last: a reply
+  /// for a day that is no longer shown is dropped.
+  late final LoadStamp _loaded = LoadStamp(widget.clock);
+  late final ResumeObserver _resume = ResumeObserver(_reloadIfStale);
+  int _loads = 0;
   bool _working = false;
   String? _error;
 
@@ -130,12 +151,48 @@ class _NutritionScreenState extends State<NutritionScreen> {
     _refresh();
     _loadMealPhotoNotice();
     widget.planChanges?.addListener(_planChanged);
+    _resume.attach();
   }
 
   @override
   void dispose() {
+    _resume.detach();
     widget.planChanges?.removeListener(_planChanged);
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(NutritionScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.active && widget.active) {
+      _reloadIfStale(within: _reselectAfter);
+    }
+  }
+
+  /// A tab opened again reloads data older than this.
+  static const _reselectAfter = Duration(minutes: 1);
+
+  /// Coming back to the app or to this tab. Past midnight the screen moves to
+  /// the new today unless the athlete picked another day, so a meal logged in
+  /// the morning is filed under the morning's date. Data that is old, or
+  /// belongs to another day than the one shown, is loaded again.
+  void _reloadIfStale({Duration? within}) {
+    if (!mounted) return;
+    final now = widget.clock();
+    if (!_pickedDate && !isSameLocalDay(_date, now)) {
+      setState(() {
+        _date = now;
+        _decision = widget.coach.loadLatest();
+      });
+      unawaited(_refresh());
+      return;
+    }
+    if (_loaded.isStale(today: localDayKey(_date), within: within)) {
+      setState(() {
+        _decision = widget.coach.loadLatest();
+      });
+      unawaited(_refresh());
+    }
   }
 
   void _planChanged() {
@@ -154,7 +211,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
       if (mounted) setState(() => _mealPhotoNotice = notice);
     } catch (e) {
       // The sheet then offers no off switch; the photo flow loads it again.
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
     } finally {
       if (mounted) setState(() => _noticeLoading = false);
     }
@@ -172,7 +229,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
         granted: false,
       );
     } catch (error, stackTrace) {
-      debugPrint('Non-critical error: $error');
+      logNonCritical(error);
       unawaited(Sentry.captureException(error, stackTrace: stackTrace));
       if (mounted) {
         TracendToast.show(
@@ -193,6 +250,11 @@ class _NutritionScreenState extends State<NutritionScreen> {
   }
 
   Future<void> _refresh() async {
+    // The day this load is for. If the athlete moves to another day, or a
+    // newer load starts, before the reply arrives, the reply is dropped: it
+    // must never show one day's meals under another day's date.
+    final requested = _date;
+    final load = ++_loads;
     setState(() {
       _loading = true;
       _error = null;
@@ -200,45 +262,47 @@ class _NutritionScreenState extends State<NutritionScreen> {
     try {
       final values = await Future.wait([
         widget.repository.loadTargets(),
-        widget.repository.loadSummary(_date),
-        widget.repository.loadMeals(_date),
+        widget.repository.loadSummary(requested),
+        widget.repository.loadMeals(requested),
         if (widget.repository is NutritionScheduleRepository)
-          (widget.repository as NutritionScheduleRepository).loadSchedule(_date)
+          (widget.repository as NutritionScheduleRepository).loadSchedule(
+            requested,
+          )
         else
           Future.value(
             const NutritionSchedule(title: 'Meal schedule', items: []),
           ),
       ]);
-      if (!mounted) return;
+      if (!mounted || load != _loads) return;
+      _loaded.mark(day: localDayKey(requested));
       setState(() {
         _targets = values[0] as NutritionTargets?;
         _summary = values[1] as NutritionSummary;
         _meals = values[2] as List<MealEntry>;
         _schedule = values[3] as NutritionSchedule;
-        _loadedDate = _date;
+        _loadedDate = requested;
       });
     } catch (e) {
-      debugPrint('Non-critical error: $e');
-      if (mounted) {
+      logNonCritical(e);
+      if (mounted && load == _loads) {
         setState(
           () => _error = 'Nutrition data is unavailable. Pull to retry.',
         );
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && load == _loads) setState(() => _loading = false);
     }
   }
 
   Future<void> _selectDate(DateTime candidate) async {
-    final today = DateTime.now();
+    final today = widget.clock();
     final todayOnly = DateTime(today.year, today.month, today.day);
     if (candidate.isAfter(todayOnly)) return;
-    if (candidate.year == _date.year &&
-        candidate.month == _date.month &&
-        candidate.day == _date.day) {
-      return;
-    }
-    setState(() => _date = candidate);
+    if (isSameLocalDay(candidate, _date)) return;
+    setState(() {
+      _date = candidate;
+      _pickedDate = !isSameLocalDay(candidate, today);
+    });
     await _refresh();
   }
 
@@ -259,13 +323,10 @@ class _NutritionScreenState extends State<NutritionScreen> {
   }
 
   bool get _isToday {
-    final today = DateTime.now();
-    return _date.year == today.year &&
-        _date.month == today.month &&
-        _date.day == today.day;
+    return isSameLocalDay(_date, widget.clock());
   }
 
-  bool get _isCurrentWeek => mondayOf(_date) == mondayOf(DateTime.now());
+  bool get _isCurrentWeek => mondayOf(_date) == mondayOf(widget.clock());
 
   String get _dateLabel => friendlyDate(_date);
 
@@ -276,7 +337,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
         subtitle: 'It counts toward your totals as soon as you confirm it.',
         scrollable: false,
         builder: (_) => ManualMealSheet(
-          initialMealType: mealType ?? defaultMealType(DateTime.now()),
+          initialMealType: mealType ?? defaultMealType(widget.clock()),
           onSave: (input) => _saveManualMeal(scheduled, input),
         ),
       );
@@ -310,12 +371,12 @@ class _NutritionScreenState extends State<NutritionScreen> {
         );
       }
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       final bool written;
       try {
         written = await repository.isMealSaved(input.idempotencyKey);
       } catch (lookup) {
-        debugPrint('Non-critical error: $lookup');
+        logNonCritical(lookup);
         if (mounted) unawaited(_refresh());
         throw const MealSaveOutcomeUnknown();
       }
@@ -411,7 +472,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
   }
 
   void _photoFailed(MealPhotoFailure failure, StackTrace stackTrace) {
-    debugPrint('Meal photo failed: $failure');
+    logNonCritical(failure, 'Meal photo failed');
     unawaited(Sentry.captureException(failure, stackTrace: stackTrace));
     if (mounted) {
       setState(() {
@@ -461,7 +522,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
         successMessage: 'Meal logged',
       );
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       const message =
           'Draft could not be opened. Retry or delete it and enter the meal manually.';
       if (mounted) {
@@ -505,7 +566,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
       }
       await _refresh();
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(() => _error = failureMessage);
       }
@@ -548,7 +609,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
       context,
       title: 'Log a meal',
       builder: (_) => LogMealSheet(
-        initialMealType: defaultMealType(DateTime.now()),
+        initialMealType: defaultMealType(widget.clock()),
         photosAvailable: photos,
         photoAiGranted: _mealPhotoNotice?.granted ?? false,
       ),
@@ -571,7 +632,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
     final theme = Theme.of(context).textTheme;
     final showData = _showsLoadedDay;
     final nextMeal = _isToday && showData ? _schedule?.nextMeal : null;
-    final today = DateTime.now();
+    final today = widget.clock();
     final todayOnly = DateTime(today.year, today.month, today.day);
     final timeline = buildNutritionTimeline(
       _schedule?.items ?? const [],
@@ -829,7 +890,7 @@ class _MealPhotoNoticeSheetState extends State<_MealPhotoNoticeSheet> {
         granted: true,
       );
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(() {
           _busy = false;

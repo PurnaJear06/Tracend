@@ -72,6 +72,9 @@ export type MealAnalyzeDependencies = Readonly<{
 const unbilled =
   /^(meal_vision_disabled|meal_vision_configuration_invalid|meal_image_invalid|meal_vision_request_failed|meal_vision_busy$)/;
 
+// The failure codes the providers throw: lower-case words, colons between a code and its detail.
+const fixedFailureCode = /^[a-z][a-z0-9_]*(:[a-z0-9_]+)*$/;
+
 export async function handleMealAnalyze(
   body: unknown,
   dependencies: MealAnalyzeDependencies,
@@ -108,10 +111,14 @@ export async function handleMealAnalyze(
   let result: MealVisionResult;
   try {
     result = await dependencies.analyze(image, draft.contentType, consent.provider);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (error instanceof MealVisionBilledError) {
-      await store.recordUsage(error.usage, Math.round(now() - started));
+  } catch (thrown) {
+    // Only a code of this function's own reaches the logs and Sentry; any
+    // other message could quote the photo's answer.
+    const raw = thrown instanceof Error ? thrown.message : "";
+    const message = fixedFailureCode.test(raw) ? raw : "meal_vision_unexpected_error";
+    const error = message === raw && thrown instanceof Error ? thrown : new Error(message);
+    if (thrown instanceof MealVisionBilledError) {
+      await store.recordUsage(thrown.usage, Math.round(now() - started));
     } else if (!unbilled.test(message)) {
       store.keepBudget();
     }
@@ -124,6 +131,7 @@ export async function handleMealAnalyze(
     dependencies.report(error, mealId);
     log.error("meal_analysis_unavailable", {
       detail: message,
+      error_name: thrown instanceof Error ? thrown.name : "unknown",
       latency_ms: Math.round(now() - started),
     });
     return reply(503, { error: "meal_analysis_unavailable" });

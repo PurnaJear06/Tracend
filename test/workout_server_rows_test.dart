@@ -414,6 +414,31 @@ void main() {
       );
       handle.dispose();
     });
+
+    testWidgets('a day that has not begun (22023) closes with a message and '
+        'keeps the logged sets on this phone', (tester) async {
+      final handle = tester.ensureSemantics();
+      final server = _Server({1: 3, 2: 3})..startRefusal = 'offline';
+      await _openPushed(tester, server);
+      await _doneSet(tester, 1);
+      server.startRefusal = '22023';
+      await tester.tap(find.text('Done set 2'));
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pumpAndSettle();
+      expect(find.byType(ActiveWorkoutScreen), findsNothing);
+      expect(
+        find.text('This day has not started yet. Open the workout on the day.'),
+        findsOneWidget,
+      );
+      expect(server.syncs, isEmpty);
+      final kept = await server.loadDraft('upper-a');
+      expect(kept, isNotNull, reason: 'the sets wait for the left-over path');
+      expect(
+        ((decodeDraft(kept!)['exercises'] as List).first as Map)['sets'],
+        contains(containsPair('completed', true)),
+      );
+      handle.dispose();
+    });
   });
 
   testWidgets('a fresh start takes the set rows the server made', (

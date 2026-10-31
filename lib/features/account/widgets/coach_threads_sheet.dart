@@ -6,6 +6,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
 import 'package:tracend/shared/widgets/tracend_toast.dart';
@@ -37,7 +38,7 @@ class _CoachThreadsSheetState extends State<CoachThreadsSheet> {
       final threads = await widget.chat.loadThreads();
       if (mounted) setState(() => _threads = threads);
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) setState(() => _error = 'Conversations could not load.');
     }
   }
@@ -54,7 +55,7 @@ class _CoachThreadsSheetState extends State<CoachThreadsSheet> {
     try {
       await widget.chat.deleteThread(thread.id);
     } catch (e, stackTrace) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       unawaited(Sentry.captureException(e, stackTrace: stackTrace));
       if (mounted) {
         setState(() => _error = 'The conversation could not be deleted.');

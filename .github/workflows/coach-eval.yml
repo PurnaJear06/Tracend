@@ -9,7 +9,7 @@ name: Coach Eval
 # AI_COACH_CHAT_* settings (live_model.ts). Every Coach change must pass the answer bank
 # (docs/TESTING_STRATEGY.md).
 #
-# Two parts:
+# Three parts:
 #   - Answer bank (supabase/functions/_evals/coach_bank/): about 100 synthetic athletes, each run
 #     3 times against the real model, graded by code. Safety categories allow zero failures; the
 #     others report a pass rate against a threshold. Its deterministic half (graders, red-flag
@@ -18,6 +18,23 @@ name: Coach Eval
 #     dead ends, latency, spend and the prompt cache. Each run makes 17 calls unless `max_calls`
 #     or the `EVAL_MAX_CALLS` variable says otherwise: one prompt from each category, rotating
 #     prompts and athletes; "all" runs every prompt for every athlete.
+#   - Simulated athletes (supabase/functions/_evals/coach_sim/, Run workflow with `simulate`, which
+#     runs only them): four personas with months of synthetic records talk to Coach for 2-3
+#     messages (default 3, fitted to the cap so every conversation runs) in eight scenarios (a
+#     bench plateau and a programme change, a cut, a travel week, "what did I do last Tuesday", a
+#     knee that feels off, a supplement and its research, a follow-up, pushback). Each turn is
+#     graded by code, an expert-coach judge and, for cited research, a claim-support judge, on a
+#     model other than the Coach's. Report only: the job fails on a harness error, never on
+#     quality. A harness error is a failed preflight (one tiny request to each model in the mode
+#     the run uses), more than 20% of Coach turns ending in a provider error, a judge with no
+#     verdicts, or an athlete model that cannot continue. `sim_filter` picks conversations
+#     ("primary", "knee-off", "primary/bench-plateau"); `sim_max_turns` caps the messages (the run
+#     lowers it, and then how many replies are judged, until the estimate fits 85% of
+#     `EVAL_SIM_MAX_USD`, repository variable, default 3; it prints the estimate first and stops at
+#     the cap). Here it runs on the eval router only; the production Coach model is used when the
+#     router lists it, else Sonnet 5.5 plays and the report says so. To run it on the production
+#     Claude route, run coach_sim/run.ts locally without EVAL_BASE_URL, with the AI_COACH_CHAT_*
+#     settings and ANTHROPIC_API_KEY (docs/reviews/2026-10-31-coach-simulation.md, Reproduce).
 #   The library retrieval evaluation (no model, no spend) is library-eval.yml.
 #
 # The model is called as before: by default DeepSeek (`DEEPSEEK_API_KEY` secret). Set the
@@ -46,6 +63,23 @@ on:
         description: Comma-separated parts of case ids to run (empty runs the whole bank)
         required: false
         default: ""
+      simulate:
+        description: Run only the simulated-athlete conversations (report only, eval router)
+        type: boolean
+        required: false
+        default: false
+      sim_filter:
+        description: Comma-separated parts of conversation ids, personas or scenarios (empty runs all)
+        required: false
+        default: ""
+      sim_coach_model:
+        description: Router model id that plays the Coach in the simulator (empty uses the production model, else the EVAL_SIM_COACH_MODEL variable)
+        required: false
+        default: ""
+      sim_max_turns:
+        description: Athlete messages per simulated conversation at most (1-10; the run may lower it to fit the cap)
+        required: false
+        default: "3"
 
 permissions:
   contents: read
@@ -53,6 +87,7 @@ permissions:
 jobs:
   coach-eval:
     name: Coach chat live evaluation
+    if: ${{ !inputs.simulate }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     concurrency:
@@ -108,4 +143,47 @@ jobs:
         with:
           name: coach-eval-report
           path: eval-report
+          retention-days: 30
+
+  coach-simulator:
+    name: Coach simulated athletes
+    if: ${{ inputs.simulate }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: "2.9.0"
+
+      - name: Run the simulated athletes
+        env:
+          EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
+          EVAL_BASE_URL: ${{ vars.EVAL_BASE_URL }}
+          EVAL_MODEL: ${{ vars.EVAL_MODEL }}
+          EVAL_COACH_MODEL: ${{ inputs.sim_coach_model || vars.EVAL_SIM_COACH_MODEL }}
+          EVAL_ATHLETE_MODEL: ${{ vars.EVAL_SIM_ATHLETE_MODEL }}
+          EVAL_JUDGE_MODEL: ${{ vars.EVAL_SIM_JUDGE_MODEL }}
+          EVAL_MAX_USD: ${{ vars.EVAL_SIM_MAX_USD || '3' }}
+          EVAL_SIM_FILTER: ${{ inputs.sim_filter }}
+          EVAL_SIM_MAX_TURNS: ${{ inputs.sim_max_turns || '3' }}
+          EVAL_REPORT_DIR: sim-report
+        run: |
+          if [ -z "$EVAL_BASE_URL" ]; then
+            echo '::error::The simulator runs only on the eval router here: set the EVAL_BASE_URL variable.'
+            exit 2
+          fi
+          host=$(printf '%s' "$EVAL_BASE_URL" | sed -E 's#^https?://([^/]+).*#\1#')
+          deno run --allow-env --allow-net="$host" --allow-read --allow-write \
+            supabase/functions/_evals/coach_sim/run.ts
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coach-simulation-report
+          path: sim-report
           retention-days: 30

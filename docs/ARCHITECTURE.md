@@ -69,7 +69,18 @@ Cloudflare Pages) talks only to the three session-less waitlist functions.
   the iOS Keychain (SECURITY_PRIVACY §7).
 - `HealthDataSource` wraps the pinned `health` Flutter plugin. The adapter is read-only for MVP and
   exposes only normalized internal sample types.
-- The approved plan and in-progress workout are cached locally for degraded and offline use.
+- The approved plan and in-progress workout are cached locally for degraded and offline use. The
+  plan is the last `get_my_training_hub` that loaded (`lib/features/train/training_hub_cache.dart`),
+  kept per athlete in the app's preferences with the athlete's id and the save time, replaced on
+  every successful Train load, and removed on sign-out, a refused session and account deletion.
+  When the account check cannot finish (no connection, or six seconds without an answer) and a copy
+  exists, the gate opens the shell in offline mode (`lib/features/auth/phase_2_gate.dart`,
+  `AppShell.offline`): Train shows the copy marked offline, the other tabs say they need a
+  connection, and a resume or **Try again** checks the account again and leaves the mode. Only the
+  hub for the default 28-day window is kept; other windows (and Progress) are never served from it.
+  Finished workouts and left-over drafts are sent by the repository (`sendWaiting`) when an account
+  check succeeds and after each hub load, without the logger; a workout whose plan was copied
+  meanwhile is found again by its place and exercises.
 - Feature widgets use [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md), Dynamic Type, VoiceOver, Reduced
   Motion, safe areas, and state restoration.
 - The client may contain the Supabase project URL and publishable key. It must never contain

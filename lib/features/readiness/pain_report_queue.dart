@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tracend/features/readiness/pain_check.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// A pain report from a workout that waits on this phone until it can be sent.
 @immutable
@@ -272,7 +273,7 @@ class PainReportQueue {
             );
           }
         } on Object catch (error) {
-          debugPrint('Non-critical error: pain report waits: $error');
+          logNonCritical(error, 'pain report waits');
         }
       }
     }

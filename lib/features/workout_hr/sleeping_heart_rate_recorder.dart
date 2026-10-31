@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/breadcrumbs.dart';
@@ -6,6 +5,7 @@ import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/workout_hr/heart_rate_reader.dart';
 import 'package:tracend/features/workout_hr/set_heart_rate_summary.dart';
 import 'package:tracend/features/workout_hr/sleeping_heart_rate.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// Saves nights of sleeping heart rate for the signed-in athlete.
 abstract interface class SleepingHeartRateRepository {
@@ -122,7 +122,7 @@ class SleepingHeartRateRecorder {
         data: {'nights': saved},
       );
     } catch (e) {
-      debugPrint('Non-critical error: sleeping heart rate not saved: $e');
+      logNonCritical(e, 'sleeping heart rate not saved');
     }
   }
 

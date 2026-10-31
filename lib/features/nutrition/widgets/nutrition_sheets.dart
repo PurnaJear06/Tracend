@@ -9,6 +9,7 @@ import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 import 'package:uuid/uuid.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// What the manual meal sheet asks to save. [idempotencyKey] belongs to this
 /// meal as entered: a save that is repeated unchanged repeats the key.
@@ -282,7 +283,7 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
       await widget.onSave(result);
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (!mounted) return;
       setState(() {
         _failedSave = result;
@@ -426,7 +427,7 @@ class _CandidateSheetState extends State<CandidateSheet> {
       await widget.onDiscard();
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(() {
           _discarding = false;

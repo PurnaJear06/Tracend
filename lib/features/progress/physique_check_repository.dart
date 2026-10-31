@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/consent/photo_ai_notice.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 export 'package:tracend/features/consent/photo_ai_notice.dart';
 
@@ -267,7 +267,7 @@ class SupabasePhysiqueCheckRepository implements PhysiqueCheckRepository {
           ? label
           : null;
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       return null;
     }
   }
@@ -333,7 +333,7 @@ class SupabasePhysiqueCheckRepository implements PhysiqueCheckRepository {
     } on TimeoutException {
       throw const PhysiqueCheckException(PhysiqueCheckError.failed);
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       throw const PhysiqueCheckException(PhysiqueCheckError.failed);
     }
     final data = response.data;

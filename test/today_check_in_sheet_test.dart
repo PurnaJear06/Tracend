@@ -307,10 +307,10 @@ void main() {
         findsOneWidget,
       );
       final preferences = await SharedPreferences.getInstance();
-      final outcome = await CheckInQueue(
+      final replay = await CheckInQueue(
         preferences,
       ).replay((date, zone, key, payload) async => true);
-      expect(outcome, CheckInReplayOutcome.delivered);
+      expect(replay.deliveredAny, isTrue);
     });
 
     testWidgets('Save stays reachable at 320pt with 2× text', (tester) async {

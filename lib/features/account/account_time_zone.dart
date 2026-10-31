@@ -1,6 +1,6 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// Keeps `user_accounts.timezone` equal to the device's IANA time zone, so the
 /// server's local dates (onboarding, the Coach, check-ins, approval) match the
@@ -48,7 +48,7 @@ class AccountTimeZone {
       if (await _storedZone() == device) return;
       await _storeZone(device);
     } catch (error) {
-      debugPrint('Non-critical error: time zone not stored: $error');
+      logNonCritical(error, 'time zone not stored');
     }
   }
 }

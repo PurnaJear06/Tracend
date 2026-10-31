@@ -380,6 +380,26 @@ void main() {
       expect(_text(deloadTitle), findsNothing);
       expect(_text(cardioTitle), findsNothing);
     });
+
+    testWidgets('a saved plan shown when the server cannot be reached keeps '
+        'no lighter-week card and no cardio row from the last answer', (
+      tester,
+    ) async {
+      final harness = await _pump(tester, suggestedJson());
+      expect(_text(deloadTitle), findsOneWidget);
+      expect(_text(cardioTitle), findsOneWidget);
+
+      harness.hub.hub = trainHub(
+        cachedAt: trainNow().subtract(const Duration(days: 1)),
+      );
+      harness.planChanges.announce();
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Offline.'), findsOneWidget);
+      expect(harness.controller.current, isNotNull, reason: 'kept, not shown');
+      expect(_text(deloadTitle), findsNothing);
+      expect(_text(cardioTitle), findsNothing);
+    });
   });
 
   group('Cardio this week', () {

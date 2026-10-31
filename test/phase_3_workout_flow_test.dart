@@ -263,6 +263,14 @@ class _Repository implements WorkoutRepository {
   }
 
   @override
+  Future<void> savePendingFinish(
+    String workoutId,
+    PendingWorkoutFinish finish,
+  ) async {
+    pending = finish;
+  }
+
+  @override
   Future<PendingWorkoutFinish?> loadPendingFinish(String workoutId) async =>
       pending;
 

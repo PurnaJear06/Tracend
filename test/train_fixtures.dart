@@ -213,7 +213,10 @@ TrainingHubData trainHub({
   Set<DateTime>? completed,
   bool withPlan = true,
   List<PlannedWorkout>? workouts,
+  DateTime? localToday,
+  DateTime? cachedAt,
 }) => TrainingHubData(
+  cachedAt: cachedAt,
   planTitle: 'Strength foundation',
   plan: withPlan
       ? ActivePlanSummary(
@@ -227,7 +230,7 @@ TrainingHubData trainHub({
               'smallest weight step next time.',
         )
       : null,
-  localToday: trainToday,
+  localToday: localToday ?? trainToday,
   workouts: workouts ?? [upperA, upperB, lowerA, lowerB],
   recentSessions:
       sessions ??

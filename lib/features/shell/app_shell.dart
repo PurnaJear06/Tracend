@@ -21,6 +21,7 @@ import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_screen.dart';
 import 'package:tracend/features/goals/goal_target_repository.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
+import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/readiness/day_adjustment_repository.dart';
 import 'package:tracend/features/readiness/pain_check.dart';
@@ -28,6 +29,7 @@ import 'package:tracend/features/readiness/pain_reporting.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/features/progress/progress_screen.dart';
 import 'package:tracend/features/shell/floating_tab_bar.dart';
+import 'package:tracend/features/shell/offline_tabs.dart';
 import 'package:tracend/features/today/check_in_gate.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
@@ -52,6 +54,8 @@ class AppShell extends StatefulWidget {
     this.homeWidgets = const MethodChannelHomeWidgetBridge(),
     this.widgetEraser,
     this.userId,
+    this.offline = false,
+    this.onRetryConnection,
     super.key,
   });
 
@@ -83,6 +87,16 @@ class AppShell extends StatefulWidget {
   /// The signed-in athlete, whose Lock Screen widget choice the widgets
   /// follow; null without a backend.
   final String? userId;
+
+  /// The app is open on the plan this phone saved because the account could
+  /// not be checked. Train works from the saved plan and the workout can be
+  /// logged; Today, Coach, Meals and Progress say they need a connection.
+  /// The app opens on Train.
+  final bool offline;
+
+  /// Checks the connection again; the gate leaves offline mode when it
+  /// works. Null where the app is never offline.
+  final Future<void> Function()? onRetryConnection;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -138,12 +152,13 @@ class AppShellRepositories {
 }
 
 class _AppShellState extends State<AppShell> {
-  int _selectedIndex = 0;
+  /// Today is the launch tab, Train when the app opens offline.
+  late int _selectedIndex = widget.offline ? 1 : 0;
 
   /// Tabs opened at least once. A tab is built, and so starts its reads, the
   /// first time it is selected and stays built after that so it keeps its
-  /// scroll position and state. Today is the launch tab.
-  final _opened = <int>{0};
+  /// scroll position and state.
+  late final Set<int> _opened = {_selectedIndex};
   late final WorkoutRepository _workouts;
   late final HealthRepository _health;
   late final CoachRepository _coach;
@@ -177,6 +192,13 @@ class _AppShellState extends State<AppShell> {
   /// the plan, the targets and the goal.
   final _planChanges = PlanChanges();
 
+  /// Announces a workout Today saved from an unfinished session, so Train
+  /// reloads its week.
+  final _workoutLogs = WorkoutLogChanges();
+
+  /// Counts the taps on Today's session card; Train then selects today.
+  final _showTrainToday = ValueNotifier<int>(0);
+
   /// Writes Today's snapshot for the widgets and keeps the Lock Screen choice.
   late final TodayWidgetPublisher _widgetPublisher = TodayWidgetPublisher(
     bridge: widget.homeWidgets,
@@ -193,6 +215,14 @@ class _AppShellState extends State<AppShell> {
   final _workoutRequests = ValueNotifier<int>(0);
 
   @override
+  void didUpdateWidget(AppShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The connection is back: the screens that showed the saved plan or said
+    // they need a connection load for real.
+    if (oldWidget.offline && !widget.offline) _planChanges.announce();
+  }
+
+  @override
   void dispose() {
     _widgetTaps.dispose();
     _workoutRequests.dispose();
@@ -200,10 +230,27 @@ class _AppShellState extends State<AppShell> {
     unawaited(_widgetPublisher.dispose());
     _checkInGate.dispose();
     _planChanges.dispose();
+    _workoutLogs.dispose();
+    _showTrainToday.dispose();
     _dayAdjustment?.dispose();
     _guidance?.dispose();
     _coachDrafts.dispose();
     super.dispose();
+  }
+
+  /// Keeps what the server says about sore areas beside the saved plan, so
+  /// Train can still say it with no connection.
+  void _keepSafetyNotes(DayAdjustment adjustment) {
+    final workouts = _workouts;
+    final owner = _signedInAtStart;
+    if (workouts is SavedSafetyNotesRepository && owner != null) {
+      unawaited(
+        (workouts as SavedSafetyNotesRepository).saveSafetyNotes(
+          adjustment,
+          userId: owner,
+        ),
+      );
+    }
   }
 
   /// Opens what a tap asked for: the tab of a widget (`tracend://today`,
@@ -222,9 +269,14 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
+  /// The athlete this shell opened for. A day adjustment that answers after
+  /// another athlete signed in is kept for this one or not at all.
+  late final String? _signedInAtStart;
+
   @override
   void initState() {
     super.initState();
+    _signedInAtStart = widget.userId;
     widget.homeWidgets.listenForTab(_openRequestedTab);
     unawaited(_openRequestedTab());
     final injected = widget.repositories;
@@ -235,6 +287,7 @@ class _AppShellState extends State<AppShell> {
             ? SupabaseWorkoutRepository(
                 Supabase.instance.client,
                 SharedPreferencesAsync(),
+                loggerOpen: () => ActiveWorkoutScreen.isOpen,
               )
             : FixtureWorkoutRepository());
     _health =
@@ -290,6 +343,7 @@ class _AppShellState extends State<AppShell> {
         : DayAdjustmentController(
             repository: dayAdjustments,
             serverToday: _serverToday,
+            onAnswered: _keepSafetyNotes,
           );
     final guidance =
         injected?.guidance ??
@@ -332,7 +386,8 @@ class _AppShellState extends State<AppShell> {
     final hub = await (source as TrainingHubRepository).loadTrainingHub(
       periodDays: 7,
     );
-    return hub.localToday;
+    // A saved copy names the phone's day, not the server's.
+    return hub.cachedAt == null ? hub.localToday : null;
   }
 
   /// "Talk to Coach" on the readiness card: opens Coach with [question] in the
@@ -342,11 +397,19 @@ class _AppShellState extends State<AppShell> {
     _selectTab(2);
   }
 
+  /// Today's session card: Train opens on today, not on the day last viewed.
+  void _openTrainToday() {
+    _showTrainToday.value++;
+    _selectTab(1);
+  }
+
   /// "Check in" from a screen other than Today: Today owns the sheet.
   void _openCheckIn() {
     _selectTab(0);
     _checkInGate.checkIn();
   }
+
+  Future<void> _retryConnection() async => widget.onRetryConnection?.call();
 
   /// Account opened from a screen without its own route to it (Train's
   /// "Connect Apple Health"). Today's avatar opens the same screen.
@@ -385,30 +448,46 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
+  Widget _offlineTab(String key, String title, String needs) => OfflineTab(
+    key: ValueKey(key),
+    title: title,
+    needs: needs,
+    onOpenTrain: () => _selectTab(1),
+    onRetry: _retryConnection,
+  );
+
   @override
   Widget build(BuildContext context) {
     final destinations = <Widget Function()>[
-      () => TodayScreen(
-        key: const ValueKey('tab_today'),
-        environment: widget.environment,
-        onSignOut: widget.onSignOut,
-        workouts: _workouts,
-        health: _health,
-        coach: _coach,
-        brief: _brief,
-        nutrition: _nutrition,
-        onOpenNutrition: () => _selectTab(3),
-        onOpenTrain: () => _selectTab(1),
-        aiConsent: widget.aiConsent,
-        checkInGate: _checkInGate,
-        planChanges: _planChanges,
-        widgetPublisher: _widgetPublisher,
-        widgetTaps: _widgetTaps,
-        dayAdjustment: _dayAdjustment,
-        onTalkToCoach: _talkToCoach,
-        pain: _pain,
-        userId: widget.userId,
-      ),
+      () => widget.offline
+          ? OfflineToday(
+              key: const ValueKey('tab_today_offline'),
+              onOpenTrain: () => _selectTab(1),
+              onOpenAccount: _openAccount,
+              onRetry: _retryConnection,
+            )
+          : TodayScreen(
+              key: const ValueKey('tab_today'),
+              environment: widget.environment,
+              onSignOut: widget.onSignOut,
+              workouts: _workouts,
+              health: _health,
+              coach: _coach,
+              brief: _brief,
+              nutrition: _nutrition,
+              onOpenNutrition: () => _selectTab(3),
+              onOpenTrain: _openTrainToday,
+              workoutLogs: _workoutLogs,
+              aiConsent: widget.aiConsent,
+              checkInGate: _checkInGate,
+              planChanges: _planChanges,
+              widgetPublisher: _widgetPublisher,
+              widgetTaps: _widgetTaps,
+              dayAdjustment: _dayAdjustment,
+              onTalkToCoach: _talkToCoach,
+              pain: _pain,
+              userId: widget.userId,
+            ),
       () => TrainScreen(
         key: const ValueKey('tab_train'),
         repository: _workouts,
@@ -423,34 +502,46 @@ class _AppShellState extends State<AppShell> {
         proposals: _proposals,
         onTalkToCoach: _talkToCoach,
         onCheckIn: _openCheckIn,
+        active: _selectedIndex == 1,
+        workoutLogs: _workoutLogs,
+        showToday: _showTrainToday,
+        onRetryConnection: widget.offline ? _retryConnection : null,
         pain: _pain,
       ),
-      () => CoachScreen(
-        key: const ValueKey('tab_coach'),
-        active: _selectedIndex == 2,
-        repository: _coach,
-        aiConsent: widget.aiConsent,
-        proposals: _proposals,
-        planChanges: _planChanges,
-        memory: _memory,
-        draftRequests: _coachDrafts,
-      ),
-      () => NutritionScreen(
-        key: const ValueKey('tab_nutrition'),
-        repository: _nutrition,
-        coach: _coach,
-        planChanges: _planChanges,
-      ),
-      () => ProgressScreen(
-        key: const ValueKey('tab_progress'),
-        repository: _progress,
-        training: _workouts is TrainingHubRepository
-            ? _workouts as TrainingHubRepository
-            : null,
-        brief: _brief,
-        physique: _physique,
-        goalTargets: _goalTargets,
-      ),
+      () => widget.offline
+          ? _offlineTab('tab_coach_offline', 'Coach', 'Coach')
+          : CoachScreen(
+              key: const ValueKey('tab_coach'),
+              active: _selectedIndex == 2,
+              repository: _coach,
+              aiConsent: widget.aiConsent,
+              proposals: _proposals,
+              planChanges: _planChanges,
+              memory: _memory,
+              draftRequests: _coachDrafts,
+            ),
+      () => widget.offline
+          ? _offlineTab('tab_nutrition_offline', 'Meals', 'Meals')
+          : NutritionScreen(
+              key: const ValueKey('tab_nutrition'),
+              repository: _nutrition,
+              coach: _coach,
+              planChanges: _planChanges,
+              active: _selectedIndex == 3,
+            ),
+      () => widget.offline
+          ? _offlineTab('tab_progress_offline', 'Progress', 'Progress')
+          : ProgressScreen(
+              key: const ValueKey('tab_progress'),
+              repository: _progress,
+              training: _workouts is TrainingHubRepository
+                  ? _workouts as TrainingHubRepository
+                  : null,
+              brief: _brief,
+              physique: _physique,
+              goalTargets: _goalTargets,
+              active: _selectedIndex == 4,
+            ),
     ];
 
     final tabs = [

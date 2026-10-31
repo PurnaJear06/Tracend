@@ -26,11 +26,15 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   (2026-10-24, branch `claude/coach-response-validity`, in review): 22% of bank answers fell back
   as `provider_response_invalid`, now 3%; causes were parser and validator false positives
   ("0.26 kg a week" read as a 26 kg body weight, "Thu 2026-10-15" as a study, refusals read as
-  advice), not truncation or the schema. Handoff:
-  [`ai-gateway.md`](./handoff/ai-gateway.md). Coach simulation fixes (2026-10-31, branch
-  `claude/coach-sim-fixes`): a too-early block says when to ask, `focus` is the kind for a stalled
-  lift; three guard relaxations (rep-notation loads, half-minute rests, sentence-case ISSN) were
-  held back after review found false negatives, so those refusals still fail closed.
+  advice), not truncation or the schema. Coach simulator (eval only, `claude/coach-simulator`,
+  #154): simulated athletes with months of synthetic records talk to Coach in eight scenarios on
+  the production gateway path, graded by code, an expert-coach judge and a claim-support judge
+  (RAG audit P1-3), report only. First run on the production model (2026-10-31, Haiku 5.5 on
+  Anthropic directly, USD 1.97 in two runs): `docs/reviews/2026-10-31-coach-simulation.md`; fixes
+  in #187: a too-early block says when to ask, `focus` is the kind for a stalled lift; three guard
+  relaxations (rep-notation loads, half-minute rests, sentence-case ISSN) were held back after
+  review found false negatives, so those refusals still fail closed. Handoff:
+  [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
   sources; nothing reads it until B2). Phase 3 round 1 merged (2026-10-17): B2 templates and
   fractional volume (#127), B6 screening gate (#128, migration 26). Round 2 merged (2026-10-17): B3 progression from logged sets, hub 1.7 (#132); B7 goal phase review,
@@ -386,6 +390,36 @@ request had no timeout. The fix (in review) validates the session with Auth on l
 on any refusal, bounds the deletion wait with server confirmation and **Check again**, stores the
 pending check-in per athlete, and lets a stopped deletion be claimed again (additive migration).
 Needs a reinstall. See [`docs/handoff/account-session.md`](./handoff/account-session.md).
+
+Resume and day rollover, Sentry privacy (2026-10-31, branch `claude/resume-rollover-sentry`, in
+review): QA audit groups B and C. Train, Meals, Progress, Coach and Today refresh on resume and
+when their tab is opened again, follow a new day, and Train's Start never sends an old day; the
+check-in queue is keyed by day and replays on resume; the Flutter Sentry scrubber now covers
+exception values, extra and breadcrumbs and the app no longer logs exception text; the meal-vision
+paths throw fixed codes. App only, needs a reinstall. See
+[`docs/handoff/account-session.md`](./handoff/account-session.md).
+
+Offline cold start (2026-10-31, branch `claude/offline-cold-start`, stacked on #184, in review):
+QA finding M-G5, resolved by the owner in favour of ARCHITECTURE (cache for offline). The last
+loaded training hub is kept per athlete on the phone; a launch with a stored session and no
+connection opens the app from it, on Train, with an "Offline. Showing your saved plan from <date>"
+note, and the workout can be started, logged and finished from it (the start and finish wait on the
+phone and are sent when the connection returns). Today, Coach, Meals and Progress say they need a
+connection. No session means sign-in; a session with no saved plan still shows "Connection
+needed". App only, needs a reinstall. See [`docs/handoff/account-session.md`](./handoff/account-session.md).
+Round 1 review fixes: a workout started offline against a plan that was copied meanwhile (new
+workout ids) moves to its copy and is sent, or is kept with a clear message; waiting finishes are
+sent by the app when it reconnects, without opening the workout; Train offline says what was last
+known about sore areas, or that holds cannot be checked offline; a sign-out during a hub load can
+no longer bring the saved plan back; Progress never shows the saved copy.
+Round 2 review fixes: an account switch during a hung workout start never moves or sends the
+earlier athlete's workout in the new account; a sync refused because the workout was finished
+meanwhile opens it as completed; a finish with no match in the plan is kept on the phone and reported;
+sore-area notes are saved only for the athlete they came for.
+Round 3 review fixes (after merging #181 to #183): an earlier day's unfinished sets are sent on that
+day, never today's; a stalled send no longer holds the workout screen (bounded wait, no second
+writer); Train on a saved plan hides the lighter-week card and cardio row; an interrupted plan-copy
+move keeps the saved finish.
 
 ## Shipped baseline
 

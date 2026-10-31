@@ -6,6 +6,7 @@ import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_screening.dart';
 import 'package:tracend/features/onboarding/screening_form.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// Reopens the health check after onboarding. The athlete's own updated
 /// answers are the only way a limit on the plan's effort lifts: the server
@@ -59,7 +60,7 @@ class _HealthCheckScreenState extends State<HealthCheckScreen> {
         _loading = false;
       });
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e, 'health check not loaded');
       if (mounted) {
         setState(() {
           _loading = false;
@@ -101,7 +102,7 @@ class _HealthCheckScreenState extends State<HealthCheckScreen> {
         _saved = true;
       });
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e, 'health check not saved');
       if (mounted) {
         setState(
           () => _error =

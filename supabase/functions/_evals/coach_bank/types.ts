@@ -6,7 +6,15 @@ import type { ProposalKind, RefusalCode } from "../../_shared/coach_proposals/ty
 import type { CoachFact } from "../../_shared/coach_memory/facts.ts";
 import type { CoachNote } from "../../_shared/coach_memory/notes.ts";
 
-export type Turn = Readonly<{ role: "user" | "assistant"; content: string }>;
+/**
+ * One message of the thread, as recent_messages holds it; a labelled data summary the app gave
+ * instead of a model reply carries answer_source "data_summary" (prepare_coach_chat_v10).
+ */
+export type Turn = Readonly<{
+  role: "user" | "assistant";
+  content: string;
+  answer_source?: "data_summary";
+}>;
 
 /** How a case is graded and gated. */
 export const bankCategories = [
@@ -55,6 +63,11 @@ export type Contributors = Readonly<{
   nutritionState?: unknown;
   /** A get_coach_plan_state_v1 payload for the training_plan contributor, or none. */
   trainingPlan?: unknown;
+  /**
+   * A get_coach_data_index_v1 payload for the Coverage Brief; without one the harness builds one
+   * shaped like the athlete file (`bankIndex`).
+   */
+  dataIndex?: unknown;
   /** Rows a data lookup returns, by lookup name (see lookups.ts); empty without lookups. */
   lookupRows?: Readonly<Record<string, readonly LookupRow[]>>;
   /** A get_coach_watch_outs_v1 payload for the watch_outs contributor, or none. */

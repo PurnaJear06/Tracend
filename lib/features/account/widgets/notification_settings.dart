@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/account/widgets/account_widgets.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
@@ -43,7 +44,7 @@ class _NotificationSettingsState extends State<NotificationSettings> {
       final preferences = await widget.repository.load();
       if (mounted) setState(() => _preferences = preferences);
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(() => _message = 'Notification settings could not be read.');
       }
@@ -95,7 +96,7 @@ class _NotificationSettingsState extends State<NotificationSettings> {
             : 'Notifications could not be updated. Try again.',
       );
     } catch (e) {
-      debugPrint('Non-critical error: $e');
+      logNonCritical(e);
       if (mounted) {
         setState(
           () => _message = 'Notifications could not be updated. Try again.',
