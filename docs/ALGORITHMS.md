@@ -803,21 +803,25 @@ reasons    performance_drop   at least 2 different exercises whose current B3 ta
 
 suppressed no suggestion while a temporary block or deload runs (block_running); under
            see_professional (screening); within 28 days of the end of the last deload
-           (recent_deload); within 14 days of a deload proposal the athlete declined or let run out
-           (declined_recently); when fewer than 3 of the last 4 weeks had a completed session
+           (recent_deload); within 14 days of a deload proposal the athlete declined, let run out, or
+           undid after approving it (declined_recently; the 14 days count from the day it was
+           undone); when fewer than 3 of the last 4 weeks had a completed session
            (not_enough_training); no plan (no_plan); and on a day with a safety route
            (safety_route), which the guidance reads from the day adjustment. A pending proposal is
            withheld on a safety-route day too (no proposal_id), and cannot be approved on it (55000)
-status     running    a deload block is the active plan version (proposal_id)
+status     running    a deload block is the active plan version (proposal_id, ends_on = its last day)
            pending    an open, unexpired deload proposal built on the current plan version
                       (proposal_id), unless screening, a safety route or another running block makes
                       it unapprovable
+origin     proposal_origin (1.2): "tracend" when the open or running proposal carries the
+           DELOAD_SIGNALS evidence that only the rules' own suggestion (training-proposals) adds,
+           else "coach" (the athlete asked Coach); null with no proposal
            suggested  at least one reason and nothing suppresses it
            not_due    otherwise
 ```
 
 Notes. The athlete can always ask for a deload; the asking is not gated (§10). An undone deload never ran
-and is not counted as the last one; a block ended early ends on the day it was ended (the block-ended event's day) and stays ended that day; a block past its last day
+and is not counted as the last one, but it holds new suggestions back for 14 days like a declined one; a block ended early ends on the day it was ended (the block-ended event's day) and stays ended that day; a block past its last day
 that the hourly job has not ended yet is not "running" and holds the plan (`block_running`). A deload
 block is recognised by `intensity_level: "deload"` in its stored proposal payload, or, for a block approved
 before that key existed, by the title "Deload until <date>". "Opt-in" for the block-end offer (owner

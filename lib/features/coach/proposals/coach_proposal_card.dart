@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/proposals/coach_proposal.dart';
 import 'package:tracend/features/coach/proposals/coach_proposal_repository.dart';
+import 'package:tracend/features/coach/proposals/proposal_notices.dart';
 import 'package:tracend/shared/ai_provider_names.dart';
 import 'package:tracend/shared/widgets/evidence_accordion.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
@@ -24,11 +25,22 @@ class CoachProposalCard extends StatefulWidget {
     required this.repository,
     this.onPlanChanged,
     this.onChangeIt,
+    this.origin,
+    this.allowChange = true,
     super.key,
   });
 
   final CoachProposal proposal;
   final CoachProposalRepository repository;
+
+  /// Who started the proposal; it sets the card's first line. Left out, the
+  /// proposal says it itself: one that carries the rules' evidence is
+  /// Tracend's, any other is Coach's.
+  final CoachProposalOrigin? origin;
+
+  /// Whether "Change it" is offered. It sends a follow-up message in the Coach
+  /// chat, so a card shown outside the chat turns it off.
+  final bool allowChange;
 
   /// A plan, nutrition target or goal version was written or restored, so the
   /// screens that show them should reload.
@@ -48,6 +60,12 @@ class _CoachProposalCardState extends State<CoachProposalCard> {
   bool _busy = false;
   String? _error;
   String? _notice;
+
+  CoachProposalOrigin get _origin =>
+      widget.origin ??
+      (_proposal.suggestedByRules
+          ? CoachProposalOrigin.tracend
+          : CoachProposalOrigin.coach);
 
   @override
   void didUpdateWidget(CoachProposalCard oldWidget) {
@@ -89,7 +107,7 @@ class _CoachProposalCardState extends State<CoachProposalCard> {
       };
       if (status == CoachProposalStatus.expired &&
           action == CoachProposalAction.approve) {
-        _notice = _staleNotice(answer.reason);
+        _notice = proposalStaleNotice(answer.reason, _origin);
       }
       await _refresh(status, answer);
       if (!mounted) return;
@@ -102,7 +120,7 @@ class _CoachProposalCardState extends State<CoachProposalCard> {
       }
     } on CoachProposalException catch (error) {
       if (!await _settledByServer(action) && mounted) {
-        setState(() => _error = error.message);
+        setState(() => _error = proposalErrorNotice(error, _origin));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -136,7 +154,7 @@ class _CoachProposalCardState extends State<CoachProposalCard> {
       }
     } on CoachProposalException catch (error) {
       if (!await _settledByServer(null) && mounted) {
-        setState(() => _error = error.message);
+        setState(() => _error = proposalErrorNotice(error, _origin));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -197,15 +215,6 @@ class _CoachProposalCardState extends State<CoachProposalCard> {
     });
   }
 
-  static String _staleNotice(String? reason) => switch (reason) {
-    'expired' =>
-      'This proposal expired before it was approved, so nothing changed.',
-    'block_over' || 'block_running' =>
-      'Your plan moved on while this was open, so nothing changed. Ask Coach again.',
-    _ =>
-      'Your plan changed since Coach proposed this, so nothing was applied. Ask Coach again.',
-  };
-
   @override
   Widget build(BuildContext context) {
     final proposal = _proposal;
@@ -224,7 +233,11 @@ class _CoachProposalCardState extends State<CoachProposalCard> {
             runSpacing: TracendSpacing.xs,
             children: [
               StatusChip(
-                label: 'Proposed by Coach · $aiProvenanceLine',
+                label: switch (_origin) {
+                  CoachProposalOrigin.coach =>
+                    'Proposed by Coach · $aiProvenanceLine',
+                  CoachProposalOrigin.tracend => 'Suggested by Tracend',
+                },
                 icon: CupertinoIcons.checkmark_shield,
               ),
               StatusChip(
@@ -320,15 +333,17 @@ class _CoachProposalCardState extends State<CoachProposalCard> {
                     child: const Text('Not now'),
                   ),
                 ),
-                const SizedBox(width: TracendSpacing.xs),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _busy
-                        ? null
-                        : () => _answer(CoachProposalAction.change),
-                    child: const Text('Change it'),
+                if (widget.allowChange) ...[
+                  const SizedBox(width: TracendSpacing.xs),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _busy
+                          ? null
+                          : () => _answer(CoachProposalAction.change),
+                      child: const Text('Change it'),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ] else if (proposal.canUndo) ...[
@@ -484,6 +499,8 @@ class CoachProposalLoader extends StatefulWidget {
     required this.repository,
     this.onPlanChanged,
     this.onChangeIt,
+    this.origin,
+    this.allowChange = true,
     super.key,
   });
 
@@ -491,6 +508,8 @@ class CoachProposalLoader extends StatefulWidget {
   final CoachProposalRepository repository;
   final VoidCallback? onPlanChanged;
   final ValueChanged<CoachProposal>? onChangeIt;
+  final CoachProposalOrigin? origin;
+  final bool allowChange;
 
   @override
   State<CoachProposalLoader> createState() => _CoachProposalLoaderState();
@@ -543,6 +562,8 @@ class _CoachProposalLoaderState extends State<CoachProposalLoader> {
         repository: widget.repository,
         onPlanChanged: widget.onPlanChanged,
         onChangeIt: widget.onChangeIt,
+        origin: widget.origin,
+        allowChange: widget.allowChange,
       );
     },
   );

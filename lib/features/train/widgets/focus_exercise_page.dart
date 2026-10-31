@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/train_view_models.dart';
 import 'package:tracend/features/train/widgets/muscle_map.dart';
 import 'package:tracend/features/train/widgets/rir_picker.dart';
 import 'package:tracend/features/train/widgets/set_row.dart';
+import 'package:tracend/features/train/widgets/train_parts.dart' show TrainNote;
 import 'package:tracend/features/train/workout_draft.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
@@ -232,8 +234,10 @@ class _FocusExercisePageState extends State<FocusExercisePage>
         ),
         const SizedBox(height: TracendSpacing.xxs),
         Text(
-          '${exercise.setCount} sets of ${exercise.repMin == exercise.repMax ? exercise.repMin : '${exercise.repMin}–${exercise.repMax}'}'
-          ' · RPE ${formatKg(exercise.targetRpe)}',
+          draft.leftOut
+              ? leftOutLine
+              : '${draft.sets.length} sets of ${exercise.repMin == exercise.repMax ? exercise.repMin : '${exercise.repMin}–${exercise.repMax}'}'
+                    ' · RPE ${formatKg(exercise.targetRpe)}',
           style: text.bodyMedium?.copyWith(color: colors.textSecondary),
         ),
         if (muscles.isNotEmpty)
@@ -336,9 +340,12 @@ class _FocusExercisePageState extends State<FocusExercisePage>
           const SizedBox(height: TracendSpacing.md),
           dots,
           const SizedBox(height: TracendSpacing.md),
-          if (widget.readOnly)
+          if (draft.leftOut)
+            _leftOutNote(context)
+          else if (widget.readOnly)
             ..._readOnlyBody(context, logged)
           else ...[
+            ..._jointNotes(context),
             _card(context, current),
             const SizedBox(height: TracendSpacing.sm),
             _primaryAction(context, current),
@@ -402,6 +409,41 @@ class _FocusExercisePageState extends State<FocusExercisePage>
         ],
       ),
     );
+  }
+
+  /// An exercise left out today for a sore joint: nothing to log.
+  Widget _leftOutNote(BuildContext context) => TrainNote(
+    icon: CupertinoIcons.minus_circle,
+    label: leftOutLine,
+    text:
+        '${widget.draft.exercise.asPlanned.name} is not in today\'s session, '
+        'because of a sore joint. Nothing is logged for it.',
+  );
+
+  /// What a sore joint asks of this exercise today: the gentler exercise it
+  /// was swapped for, and the pain-free range cues.
+  List<Widget> _jointNotes(BuildContext context) {
+    final exercise = widget.draft.exercise;
+    final swapped = exercise.swappedFrom;
+    final cues = rangeNoteLines(exercise.rangeNoteCodes);
+    return [
+      if (swapped != null) ...[
+        TrainNote(
+          icon: CupertinoIcons.arrow_2_squarepath,
+          label: 'Swapped for a sore joint',
+          text: '${exercise.name} instead of ${swapped.name}. $swapLoadLine',
+        ),
+        const SizedBox(height: TracendSpacing.sm),
+      ],
+      if (cues.isNotEmpty) ...[
+        TrainNote(
+          icon: CupertinoIcons.hand_raised,
+          label: 'Keep it pain-free',
+          text: cues.join(' '),
+        ),
+        const SizedBox(height: TracendSpacing.sm),
+      ],
+    ];
   }
 
   List<Widget> _readOnlyBody(BuildContext context, List<Widget> logged) {

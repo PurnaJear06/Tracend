@@ -23,7 +23,7 @@ class ExerciseListCard extends StatelessWidget {
           key: ValueKey('exercise-row-${workout.exercises[i].order}'),
           leading: ExerciseIndexTile(number: i + 1),
           title: workout.exercises[i].name,
-          subtitle: exerciseLine(workout.exercises[i]),
+          subtitle: exerciseSubtitle(workout.exercises[i]),
           trailing: _wasSets(workout.exercises[i]),
           semanticLabel:
               '${workout.exercises[i].name}, '
@@ -56,6 +56,7 @@ Widget? _wasSets(PlannedExercise exercise) {
 
 /// The exercise line in words VoiceOver reads naturally.
 String exerciseSpeech(PlannedExercise exercise) {
+  if (exercise.leftOut) return 'left out today because of a sore joint';
   final planned = exercise.plannedSetCount;
   final sets =
       '${exercise.setCount} sets of ${repRange(exercise)} reps'

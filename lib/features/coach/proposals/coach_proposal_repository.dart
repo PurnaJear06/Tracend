@@ -5,8 +5,23 @@ import 'package:tracend/features/coach/proposals/coach_proposal.dart';
 /// A proposal answer the server refused, with a message that can be shown as
 /// is.
 class CoachProposalException implements Exception {
-  const CoachProposalException(this.message);
+  const CoachProposalException(
+    this.message, {
+    this.stale = false,
+    this.safetyRouteDay = false,
+  });
+
+  /// [message] is worded for a Coach proposal. A card that is not Coach's words
+  /// the failure itself (`proposalErrorNotice`).
   final String message;
+
+  /// The proposal can no longer be answered (55000): answered already, or the
+  /// plan or health check moved on.
+  final bool stale;
+
+  /// A lighter week was refused because today routes out (a pain referral or a
+  /// red flag): it cannot be approved on such a day.
+  final bool safetyRouteDay;
   @override
   String toString() => 'CoachProposalException: $message';
 }
@@ -18,12 +33,31 @@ const _connectionMessage =
 /// the proposal can no longer be answered (it was answered already, or the
 /// health check changed), anything else is a connection or session problem.
 String coachProposalErrorMessage(PostgrestException error) {
+  if (_onSafetyRouteDay(error)) return safetyRouteDayNotice;
   if (error.code == '55000') {
     return 'This change can no longer be applied. Ask Coach again and it '
         'will start from your latest plan.';
   }
   return _connectionMessage;
 }
+
+/// The server refuses to approve a deload on a day with a safety route and
+/// says so in its message.
+bool _onSafetyRouteDay(PostgrestException error) =>
+    error.code == '55000' && error.message.contains('safety route');
+
+/// What to tell the athlete when a lighter week is refused on a day that
+/// routes out.
+const safetyRouteDayNotice =
+    "A lighter week can't start on a day with a referral. Follow the advice "
+    'on Today first.';
+
+CoachProposalException _failure(PostgrestException error) =>
+    CoachProposalException(
+      coachProposalErrorMessage(error),
+      stale: error.code == '55000',
+      safetyRouteDay: _onSafetyRouteDay(error),
+    );
 
 /// Reads and answers Coach proposals. Approving is the athlete's act alone:
 /// no model answer reaches these calls.
@@ -55,7 +89,7 @@ class SupabaseCoachProposalRepository implements CoachProposalRepository {
       );
     } on PostgrestException catch (error) {
       debugPrint('Non-critical error: $error');
-      throw CoachProposalException(coachProposalErrorMessage(error));
+      throw _failure(error);
     } on Exception catch (error) {
       // A lost connection or a timeout is a connection message too.
       debugPrint('Non-critical error: $error');
@@ -88,7 +122,7 @@ class SupabaseCoachProposalRepository implements CoachProposalRepository {
       value = await _client.rpc(function, params: params);
     } on PostgrestException catch (error) {
       debugPrint('Non-critical error: $error');
-      throw CoachProposalException(coachProposalErrorMessage(error));
+      throw _failure(error);
     } on Exception catch (error) {
       // The answer may still have been written: the card reads the proposal
       // again after any error.
