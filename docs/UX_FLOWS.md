@@ -923,6 +923,31 @@ confirmation actions. The tab reads top to bottom:
   and read as "2 sets of 6 to 8 reps, down from 3 sets"), the hero and list count the lighter total,
   and the workout overview says "Lighter today: 12 of 16 sets" (or "Weights held today"). Starting the
   workout uses those sets and held weights; an easy-cardio answer leaves the strength sets as planned.
+- **A lighter week (B5-3).** Under the readiness card, when the rules suggest one (`suggested`) or an open
+  proposal waits (`pending`): a card "A lighter week could help" with the chip "Suggested by Tracend", the
+  reasons in words (two or more lifts stalled or slipped; readiness low on four or more of the days checked in this
+  past week; most of a block trained), what a lighter week is (the same sessions on the same days, half the
+  sets, weights held, effort 7 or lower, the regular plan back after the week), "Calculated by Tracend from your
+  logged sessions and check-ins. No AI." and "Nothing changes until you approve it." One button, **See what
+  changes**, prepares the proposal (nothing is applied) and opens it in a sheet as the Coach proposal card of
+  §10.1 with **Approve** (confirm sheet, "You can undo it for 7 days"), **Not now** and, after approval,
+  **Undo**; there is no **Change it** here. A running lighter week stays as a quiet card, "A lighter week is on
+  until Sat 31 Oct", with **Details and undo**. Only the rules' own suggestion says "Suggested by Tracend" and
+  gives reasons; a lighter week the athlete asked Coach for shows "Proposed by Coach" with no rule reasons, on
+  the card and in its sheet. While another change waits in Coach, the button answers "You have a change waiting
+  in Coach. Answer it first." and stores nothing. After **Undo** the week is gone and no new one is suggested for
+  14 days. No card on a day with a safety route, under a health check that says to see a
+  professional, within 28 days of the last deload, for 14 days after a declined one, or for a status this
+  version cannot read. Heart rate decides nothing; the words name no condition.
+- **Cardio this week (B5-4).** A row in "This week" after Training load: "85 of 150 min", or "Not enough Apple
+  Health data" when fewer than 5 of the last 7 days have data (never a 0). It opens a sheet: the minutes against
+  150 with a bar and "N min to go" or "You have reached the weekly guideline.", the note that every minute counts
+  as moderate (a workout record has no intensity), up to 300 for fat loss and recomposition, whether hard cardio
+  is open today (up to 2 sessions, each hard minute counts double, about 3 hours from lifting) or "Easy cardio
+  only today" with the four conditions that open it, the talk test ("Easy means you can talk in full sentences")
+  with the heart-rate-reserve share as a guide only, a note that a denied Apple Health workout permission can
+  read as 0 minutes, and "Calculated by Tracend from your Apple Health workouts. No AI." The row is absent on a
+  safety-route day and under `see_professional`.
   Joint changes (B5-2) show on the exercise: the swap's name in place of the original, the
   pain-free range cue under the line, or "Left out today" (read by VoiceOver as "left out today
   because of a sore joint").
@@ -1238,6 +1263,9 @@ it does not use this flow: it is a one-tap, same-day, reversible choice shown on
 Train (§7), with Undo until the workout starts and no confirm sheet. Its server side is built
 (B4-1) and so is the app side (B4-2). The joint changes and the pain check (B5) use the same card
 and the same one tap (B5-2).
+A lighter week the rules suggest (§7) is a persistent change, so it does
+use this flow: the Train card opens the §10.1 proposal card ("Suggested by Tracend" in place of "Proposed by
+Coach"), created by the `training-proposals` function only when the athlete taps **See what changes**.
 
 ### 10.1 Coach proposal card (A8)
 

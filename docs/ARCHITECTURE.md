@@ -388,7 +388,7 @@ history.
 
 ### Edge Functions
 
-Fourteen functions, each in its own directory under `supabase/functions/` (`_shared`, `_tests` and
+Fifteen functions, each in its own directory under `supabase/functions/` (`_shared`, `_tests` and
 `_evals` hold shared code, tests and evals):
 
 ```text
@@ -403,6 +403,7 @@ onboarding-propose-plan  JWT    Phase-2 mock, kept for installed older builds
 physique-check           JWT    owner-only physique check
 privacy-delete-account   JWT    account deletion
 privacy-export           JWT    encrypted export
+training-proposals       JWT    the deload the rules suggest, stored for the athlete to answer
 waitlist-confirm         none   website double opt-in
 waitlist-join            none   website signup
 waitlist-unsubscribe     none   website unsubscribe

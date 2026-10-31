@@ -344,7 +344,7 @@ engine (confidence and rest), which Coach shows as fixed sentences in the plan c
 
 **Planned (Phases 2–4, B1–B6):** coach-grade rule data, templates by goal, days and experience,
 progression from the sets actually logged, deloads, cardio dosing, and a screening gate. Deloads
-and cardio dosing are built on the server (B5-3, B5-4); their screens follow.
+and cardio dosing are built on the server (B5-3, B5-4) and shown on Train (a lighter-week card, a Cardio this week row).
 
 ### 5.4 Coaching decisions
 

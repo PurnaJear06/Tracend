@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/coach/proposals/coach_proposal_repository.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/readiness/day_adjustment_card.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
@@ -12,6 +13,10 @@ import 'package:tracend/features/readiness/pain_reporting.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/train/active_workout_screen.dart';
+import 'package:tracend/features/train/guidance/cardio_week_sheet.dart';
+import 'package:tracend/features/train/guidance/deload_card.dart';
+import 'package:tracend/features/train/guidance/guidance_copy.dart';
+import 'package:tracend/features/train/guidance/training_guidance_controller.dart';
 import 'package:tracend/features/train/train_view_models.dart';
 import 'package:tracend/features/train/widgets/action_cards.dart';
 import 'package:tracend/features/train/widgets/exercise_detail_sheet.dart';
@@ -54,6 +59,8 @@ class TrainScreen extends StatefulWidget {
     this.planChanges,
     this.workoutRequests,
     this.dayAdjustment,
+    this.guidance,
+    this.proposals,
     this.onTalkToCoach,
     this.onCheckIn,
     this.active = true,
@@ -86,6 +93,14 @@ class TrainScreen extends StatefulWidget {
   /// Today's same-day readiness adjustment, shared with Today. Null without a
   /// backend, where there is none.
   final DayAdjustmentController? dayAdjustment;
+
+  /// Today's training guidance: the lighter-week card and the cardio row. Null
+  /// without a backend, where there is none.
+  final TrainingGuidanceController? guidance;
+
+  /// Answers the lighter week's proposal. The lighter-week card needs both
+  /// this and [guidance].
+  final CoachProposalRepository? proposals;
 
   /// Opens Coach with the readiness card's question in the box.
   final ValueChanged<String>? onTalkToCoach;
@@ -357,6 +372,7 @@ class _TrainScreenState extends State<TrainScreen> {
     // A saved copy names the phone's day, which is not the server's to teach.
     if (hub.localToday != null && hub.cachedAt == null) {
       unawaited(widget.dayAdjustment?.load(localToday: hub.localToday));
+      unawaited(widget.guidance?.load(localToday: hub.localToday));
     }
   }
 
@@ -775,15 +791,15 @@ class _TrainScreenState extends State<TrainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final readiness = widget.dayAdjustment;
+    final listenables = <Listenable>[?widget.dayAdjustment, ?widget.guidance];
     return Material(
       type: MaterialType.transparency,
       // The shared adjustment answers on Today as well: the day's sets and
-      // held weights follow it here at once.
-      child: readiness == null
+      // held weights follow it here at once. The guidance feeds the cardio row.
+      child: listenables.isEmpty
           ? _buildPage(context)
           : ListenableBuilder(
-              listenable: readiness,
+              listenable: Listenable.merge(listenables),
               builder: (context, _) => _buildPage(context),
             ),
     );
@@ -867,6 +883,11 @@ class _TrainScreenState extends State<TrainScreen> {
         : hub.plan?.sessionsPerWeek ?? hub.workouts.length;
     final attention = _repairs.isNotEmpty || _reconciliations.isNotEmpty;
     final offline = hub.cachedAt != null;
+    // The cardio week is the last seven days up to today: it belongs to this
+    // week's summary only, never to a past week the athlete paged back to.
+    final cardio = sameDay(_weekStart, _currentWeek)
+        ? widget.guidance?.current?.cardioWeek
+        : null;
     return [
       if (!sameDay(_weekStart, _currentWeek))
         _WeekCaption(
@@ -911,6 +932,12 @@ class _TrainScreenState extends State<TrainScreen> {
           onCheckIn: widget.onCheckIn,
           onTalkToCoach: widget.onTalkToCoach ?? (_) {},
         ),
+      if (widget.guidance != null && widget.proposals != null)
+        DeloadCard(
+          controller: widget.guidance!,
+          proposals: widget.proposals!,
+          onPlanChanged: widget.planChanges?.announce,
+        ),
       if (attention) ...[
         AttentionGroup(
           repairs: _repairs,
@@ -938,6 +965,10 @@ class _TrainScreenState extends State<TrainScreen> {
         planned: plannedThisWeek,
         loadLabel: load.rowLabel,
         onLoadTap: () => showTrainingLoadSheet(context, model: load),
+        cardioLabel: cardio == null ? null : cardioRowValue(cardio),
+        onCardioTap: cardio == null
+            ? null
+            : () => showCardioWeekSheet(context, week: cardio),
         historyLabel: hub.recentSessions.isEmpty
             ? null
             : historyLabel(hub.recentSessions),
