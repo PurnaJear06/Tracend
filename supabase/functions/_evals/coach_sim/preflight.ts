@@ -7,8 +7,8 @@
 import { type RouterFetchOptions, routerModelFetch } from "../live_model.ts";
 import { excerpt, type WireError } from "./diagnostics.ts";
 import { normalizedModelId } from "../live_model.ts";
-import { routerChat } from "./router_client.ts";
-import { type ChatMode, chatModes, describeMode, jsonObjectIn } from "./wire.ts";
+import { type RouterChat, routerChat } from "./router_client.ts";
+import { type ChatMode, chatModes, describeMode, jsonObjectIn, messagesMode } from "./wire.ts";
 
 export type PreflightRole = "coach" | "athlete" | "judge";
 
@@ -185,6 +185,45 @@ export async function preflightChat(
     }
   }
   return { role: input.role, wanted: input.model, working: null, attempts };
+}
+
+/**
+ * A model on Claude's Messages API (the direct run): one tiny JSON-asking request through the
+ * client the run uses. The Coach's probe checks the key and the model id; its turns then go
+ * through the gateway's own Claude request.
+ */
+export async function preflightDirect(
+  chat: RouterChat,
+  role: PreflightRole,
+  model: string,
+  secrets: readonly string[],
+): Promise<PreflightResult> {
+  const result = await chat({
+    model,
+    system: probeSystem,
+    user: probeUser,
+    maxTokens: probeMaxTokens,
+    json: true,
+    source: role,
+  });
+  const ok = result.ok && jsonObjectIn(result.text) !== null;
+  const attempt: PreflightAttempt = {
+    model,
+    mode: messagesMode,
+    ok,
+    status: result.ok ? 200 : result.status,
+    detail: result.ok
+      ? ok
+        ? `reply ${excerpt(result.text, [...secrets])}`
+        : `no JSON object in the reply: ${excerpt(result.text, [...secrets])}`
+      : `${result.kind}: ${result.body}`,
+  };
+  return {
+    role,
+    wanted: model,
+    working: ok ? { model, mode: messagesMode } : null,
+    attempts: [attempt],
+  };
 }
 
 /**

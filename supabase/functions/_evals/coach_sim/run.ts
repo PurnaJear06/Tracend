@@ -9,11 +9,15 @@
 // nothing, so it must not look green. Every failed call records its HTTP status and the first 300
 // characters of the redacted body in simulation.json.
 //
-// Only in GitHub Actions (coach-eval.yml, Run workflow with `simulate`): it needs EVAL_BASE_URL and
-// EVAL_API_KEY, the eval router. Optional: EVAL_SIM_FILTER (comma-separated parts of conversation
+// Two backends. The eval router (coach-eval.yml, Run workflow with `simulate`): EVAL_BASE_URL and
+// EVAL_API_KEY. Or, run locally without EVAL_BASE_URL, Claude directly: the Coach on the
+// production route the AI_COACH_CHAT_* settings give (AI_COACH_CHAT_PROVIDER=anthropic and the
+// model, output tokens, timeout and EVALUATED that production sets) through the same gateway path
+// and timing, with ANTHROPIC_API_KEY, and the athlete (Haiku) and the judges (Sonnet when the cap
+// allows) on the Messages API with that key. Optional: EVAL_SIM_FILTER (comma-separated parts of conversation
 // ids, personas or scenarios), EVAL_SIM_MAX_TURNS (default 3, at most 10; lowered to fit the cap, never below 2), EVAL_MAX_USD (default
 // 3), EVAL_CONCURRENCY (default 3), EVAL_COACH_MODEL, EVAL_ATHLETE_MODEL, EVAL_JUDGE_MODEL (any
-// router model id; the judge must differ from the Coach) and EVAL_REPORT_DIR.
+// model id the backend serves; the judge must differ from the Coach) and EVAL_REPORT_DIR.
 import type { TokenCounts } from "../../_shared/ai/models.ts";
 import {
   buildCoachChatGatewayPrompt,
@@ -21,13 +25,22 @@ import {
 } from "../../_shared/providers/coach_chat_provider_gateway.ts";
 import { classifyQuestion } from "../../_shared/providers/coach_chat_provider.ts";
 import { renderTurn } from "../coach_bank/harness.ts";
+import { anthropicMessagesUrl } from "../../_shared/ai/adapters/anthropic.ts";
 import {
+  type CoachGenerateFactory,
   knownPrice,
   priceTokens,
   productionCoachModel,
+  type RouterGateway,
   routerGatewayFromEnv,
   routerModelEntry,
 } from "../live_model.ts";
+import {
+  anthropicChat,
+  type AnthropicGateway,
+  anthropicGatewayFromEnv,
+  anthropicModels,
+} from "./anthropic_client.ts";
 import { summariseErrors } from "./diagnostics.ts";
 import { assertDistinctJudge, judgeMaxTokens } from "./judges.ts";
 import {
@@ -35,6 +48,7 @@ import {
   idCandidates,
   preflightChat,
   preflightCoach,
+  preflightDirect,
   type PreflightResult,
   renderPreflight,
 } from "./preflight.ts";
@@ -48,6 +62,7 @@ import {
   judgePreferences,
   pickModel,
   pickModels,
+  type RouterChat,
   routerChat,
   structuredMode,
 } from "./router_client.ts";
@@ -198,29 +213,32 @@ const coachModes: readonly ChatMode[] = [structuredMode, ...chatModes];
 /** Coach models tried, in order, when the production model has no working request at the router. */
 const coachFallbacks: readonly string[] = ["claude-sonnet-5-5"];
 
-async function main(): Promise<void> {
-  const env = (name: string) => Deno.env.get(name)?.trim() || undefined;
-  const routed = await routerGatewayFromEnv();
-  if ("error" in routed) {
-    console.error(routed.error);
-    Deno.exit(2);
-  }
-  const conversations = selectConversations(env("EVAL_SIM_FILTER"));
-  if (conversations.length === 0) {
-    console.error("EVAL_SIM_FILTER matched no conversation.");
-    Deno.exit(2);
-  }
-  const requestedTurns = integer(env("EVAL_SIM_MAX_TURNS"), 3, 1, maxTurnsLimit);
-  const maxUsd = Number(env("EVAL_MAX_USD") ?? "3");
-  const reportDir = env("EVAL_REPORT_DIR") ??
-    `.tooling/coach-evals/simulation-${new Date().toISOString().replace(/[:.]/g, "-")}`;
-  await Deno.mkdir(reportDir, { recursive: true });
+/** Where the run's models answer: the eval router, or Claude's API directly. */
+type Backend = Readonly<{
+  /** The model ids the backend serves, empty when it could not list them. */
+  available: readonly string[];
+  /** The host, for the report. */
+  endpoint: string;
+  coachCheck: PreflightResult;
+  coachChoice: string;
+  production: boolean;
+  /** The first preflight line: what the backend says about the Coach model. */
+  listing: string;
+  preflightChat: (role: "athlete" | "judge", model: string) => Promise<PreflightResult>;
+  chat: (modes: ReadonlyMap<string, ChatMode>) => RouterChat;
+  generateFor: (played: Readonly<{ model: string; mode: ChatMode }>) => CoachGenerateFactory;
+}>;
 
-  // One tiny request per model, in the mode the run will use; the other modes and spellings are
-  // tried when it fails. A model with no working request stops the run before it spends anything.
+/**
+ * The eval router: the Coach is asked with the answer schema enforced (structured output) first,
+ * as production asks Claude, and in the plainer modes when the router does not take that; the
+ * other spellings of the model id are tried too.
+ */
+async function routerBackend(
+  routed: RouterGateway,
+  coachNamed: boolean,
+): Promise<Backend> {
   const route = { baseUrl: routed.baseUrl, apiKey: routed.apiKey };
-  // The Coach is asked with the answer schema enforced (structured output) first, as production
-  // asks Claude, and in the plainer modes when the router does not take that.
   const coachProbe = { ...route, schema: coachChatGatewaySchema(), modes: coachModes };
   let coachCheck = await preflightCoach({
     ...coachProbe,
@@ -232,7 +250,7 @@ async function main(): Promise<void> {
   // The production model is asked for first. When the router has no working request for it (it
   // answered 502 for hours on 2026-10-18) and nobody named a Coach model, the run is played by
   // the next model on the list instead of not running; the report says so on its first line.
-  if (coachCheck.working === null && !env("EVAL_COACH_MODEL") && routed.production) {
+  if (coachCheck.working === null && !coachNamed && routed.production) {
     const fallback = pickModel(routed.available, coachFallbacks, [routed.coachModel]);
     if (fallback) {
       const second = await preflightCoach({
@@ -252,11 +270,83 @@ async function main(): Promise<void> {
       }
     }
   }
-  let coachModel = coachCheck.working?.model ?? routed.coachModel;
+  return {
+    available: routed.available,
+    endpoint: new URL(routed.baseUrl).host,
+    coachCheck,
+    coachChoice,
+    production,
+    listing: `The router's listing for \`${wanted}\`: ${await routerModelEntry(
+      routed.baseUrl,
+      routed.apiKey,
+      wanted,
+    )}`,
+    preflightChat: (role, model) => preflightChat({ ...route, role, model }),
+    chat: (modes) =>
+      routerChat(routed.baseUrl, routed.apiKey, {
+        modeFor: (model) => modes.get(model) ?? defaultChatMode,
+      }),
+    generateFor: routed.generateFor,
+  };
+}
+
+/**
+ * Claude's API directly (no router): the Coach on the production route the AI_COACH_CHAT_*
+ * settings give, through the gateway's own Claude request; the athlete and the judges on the
+ * Messages API with the same key.
+ */
+async function anthropicBackend(direct: AnthropicGateway): Promise<Backend> {
+  const chat = anthropicChat(direct.apiKey);
+  const secrets = [direct.apiKey];
+  return {
+    available: anthropicModels,
+    endpoint: new URL(anthropicMessagesUrl).host,
+    coachCheck: await preflightDirect(chat, "coach", direct.coachModel, secrets),
+    coachChoice: direct.choice,
+    production: direct.production,
+    listing:
+      `The Coach route: ${direct.coachRoute.providerLabel} \`${direct.coachModel}\`, ${direct.coachRoute.maxOutputTokens} output tokens, ${direct.coachRoute.timeoutMs} ms per attempt (production gateway path, Anthropic directly).`,
+    preflightChat: (role, model) => preflightDirect(chat, role, model, secrets),
+    chat: () => chat,
+    generateFor: () => direct.generateWith,
+  };
+}
+
+async function main(): Promise<void> {
+  const env = (name: string) => Deno.env.get(name)?.trim() || undefined;
+  let backend: Backend;
+  if (env("EVAL_BASE_URL")) {
+    const routed = await routerGatewayFromEnv();
+    if ("error" in routed) {
+      console.error(routed.error);
+      Deno.exit(2);
+    }
+    backend = await routerBackend(routed, Boolean(env("EVAL_COACH_MODEL")));
+  } else {
+    const direct = anthropicGatewayFromEnv();
+    if ("error" in direct) {
+      console.error(direct.error);
+      Deno.exit(2);
+    }
+    backend = await anthropicBackend(direct);
+  }
+  const conversations = selectConversations(env("EVAL_SIM_FILTER"));
+  if (conversations.length === 0) {
+    console.error("EVAL_SIM_FILTER matched no conversation.");
+    Deno.exit(2);
+  }
+  const requestedTurns = integer(env("EVAL_SIM_MAX_TURNS"), 3, 1, maxTurnsLimit);
+  const maxUsd = Number(env("EVAL_MAX_USD") ?? "3");
+  const reportDir = env("EVAL_REPORT_DIR") ??
+    `.tooling/coach-evals/simulation-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  await Deno.mkdir(reportDir, { recursive: true });
+
+  const { coachCheck, coachChoice, production, available } = backend;
+  let coachModel = coachCheck.working?.model ?? coachCheck.wanted;
   // When the router cannot list its models, the athlete is the Coach's model, which it serves.
   const athleteModel = env("EVAL_ATHLETE_MODEL") ??
-    (routed.available.length
-      ? pickModel(routed.available, athletePreferences, [coachModel]) ?? coachModel
+    (available.length
+      ? pickModel(available, athletePreferences, [coachModel]) ?? coachModel
       : coachModel);
   const sizes = await promptTokensByPersona(conversations);
   const promptTokens = (persona: PersonaId) => sizes.get(persona) ?? 10_000;
@@ -271,7 +361,7 @@ async function main(): Promise<void> {
   // so: the conversations all run, graded by code.
   const judgeCandidates = env("EVAL_JUDGE_MODEL")
     ? [env("EVAL_JUDGE_MODEL")!]
-    : pickModels(routed.available, judgePreferences, [coachModel]);
+    : pickModels(available, judgePreferences, [coachModel]);
   let judgeModel: string | null = env("EVAL_JUDGE_MODEL") ??
     judgeCandidates.find((candidate) => sizeFor(candidate).fits) ?? null;
   try {
@@ -285,19 +375,15 @@ async function main(): Promise<void> {
     : `no judge among ${
       judgeCandidates.join(", ")
     } fits the USD ${maxUsd} cap with every conversation running`;
-  const athleteCheck = await preflightChat({ ...route, role: "athlete", model: athleteModel });
+  const athleteCheck = await backend.preflightChat("athlete", athleteModel);
   const judgeCheck: PreflightResult | null = judgeModel === null
     ? null
     : judgeModel === athleteModel
     ? { ...athleteCheck, role: "judge" }
-    : await preflightChat({ ...route, role: "judge", model: judgeModel });
+    : await backend.preflightChat("judge", judgeModel);
   const checks = [coachCheck, athleteCheck, ...(judgeCheck ? [judgeCheck] : [])];
   const preflight = [
-    `The router's listing for \`${wanted}\`: ${await routerModelEntry(
-      routed.baseUrl,
-      routed.apiKey,
-      wanted,
-    )}`,
+    backend.listing,
     ...renderPreflight(checks),
   ];
   console.log(["Preflight:", ...preflight].join("\n"));
@@ -357,7 +443,7 @@ async function main(): Promise<void> {
     [
       `Coach: ${coachModel} (${coachChoice}).`,
       `Athlete: ${athleteModel}. Judges: ${judgeModel ?? `off (${judgeNote})`}.`,
-      `Router models listed: ${routed.available.length || "none"}.`,
+      `Models listed: ${available.length || "none"} (${backend.endpoint}).`,
       `${conversations.length} conversations, up to ${fit.turns} Coach turns. Estimated cost USD ${
         fit.estimateUsd.toFixed(4)
       } at list prices${
@@ -367,14 +453,26 @@ async function main(): Promise<void> {
     ].join("\n"),
   );
 
+  // The estimate is printed before any Coach turn; a run whose smallest size is estimated over the
+  // cap itself does not start (one that fits only past capShare still runs and the cap stops it).
+  if (fit.estimateUsd > maxUsd) {
+    const message = `The estimate USD ${
+      fit.estimateUsd.toFixed(4)
+    } exceeds the USD ${maxUsd} cap at the smallest size. The run did not start.`;
+    await Deno.writeTextFile(
+      `${reportDir}/simulation.md`,
+      ["# Coach simulation: over the cap", "", message, "", sizing].join("\n"),
+    );
+    console.error(message);
+    Deno.exit(2);
+  }
+
   const result = await simulate({
-    coach: routed.generateFor(played),
+    coach: backend.generateFor(played),
     coachModel,
     athleteModel,
     judgeModel,
-    chat: routerChat(routed.baseUrl, routed.apiKey, {
-      modeFor: (model) => modes.get(model) ?? defaultChatMode,
-    }),
+    chat: backend.chat(modes),
     conversations,
     maxTurns: fit.maxTurns,
     judgeEvery: fit.judgeEvery,
@@ -390,7 +488,7 @@ async function main(): Promise<void> {
     athleteModel,
     judgeModel,
     judgeNote,
-    endpoint: new URL(routed.baseUrl).host,
+    endpoint: backend.endpoint,
     maxUsd,
     maxTurns: fit.maxTurns,
     estimateUsd: fit.estimateUsd,

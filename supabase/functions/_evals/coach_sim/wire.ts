@@ -11,6 +11,11 @@ export type ChatMode = Readonly<{
    * production asks Claude) instead of a bare JSON object. Only the Coach has a schema.
    */
   structured?: boolean;
+  /**
+   * Claude's Messages API directly (no router): the Coach through the production gateway's own
+   * Claude request, the athlete and the judges with JSON asked in the prompt.
+   */
+  messages?: boolean;
 }>;
 
 export const defaultChatMode: ChatMode = Object.freeze({
@@ -25,6 +30,13 @@ export const structuredMode: ChatMode = Object.freeze({
   structured: true,
 });
 
+/** The direct run's one mode: Claude's Messages API with Anthropic's key (anthropic_client.ts). */
+export const messagesMode: ChatMode = Object.freeze({
+  responseFormat: false,
+  maxTokensField: "max_tokens",
+  messages: true,
+});
+
 /** The modes tried in order when a call fails: the run's own mode first. */
 export const chatModes: readonly ChatMode[] = [
   defaultChatMode,
@@ -34,13 +46,15 @@ export const chatModes: readonly ChatMode[] = [
 ];
 
 export const describeMode = (mode: ChatMode) =>
-  `${
-    mode.structured
-      ? "structured output (response_format json_schema)"
-      : mode.responseFormat
-      ? "JSON mode (response_format)"
-      : "plain text, JSON asked in the prompt"
-  }, ${mode.maxTokensField}`;
+  mode.messages
+    ? "Claude Messages API (Anthropic directly)"
+    : `${
+      mode.structured
+        ? "structured output (response_format json_schema)"
+        : mode.responseFormat
+        ? "JSON mode (response_format)"
+        : "plain text, JSON asked in the prompt"
+    }, ${mode.maxTokensField}`;
 
 /**
  * The JSON object in a model's text: the whole text, or the first fenced block, or the outermost
