@@ -34,6 +34,14 @@ Deno.test("photo issues lower confidence", () => {
   assertEquals(parsed.ok && parsed.result.development_priorities[0].confidence, "medium");
 });
 
+Deno.test("a dark set's repeated or extra issues keep the first three distinct ones", () => {
+  const parsed = parsePhysiqueResult(
+    reply({ photo_issues: ["lighting", "blur", "lighting", "framing", "pose", "mismatch"] }),
+  );
+  assertEquals(parsed.ok && parsed.result.photo_issues, ["lighting", "blur", "framing"]);
+  assertEquals(parsed.ok && parsed.result.development_priorities[0].confidence, "low");
+});
+
 Deno.test("any broken rule rejects the whole reply", () => {
   const cases: [string, string][] = [
     ["not json", "not_json"],
