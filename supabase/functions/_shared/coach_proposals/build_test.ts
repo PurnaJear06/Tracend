@@ -10,7 +10,8 @@ import type { ProgressionTarget } from "../training/progression/targets.ts";
 import { buildCoachProposal } from "./build.ts";
 import { parseCoachProposalIntent } from "./intent.ts";
 import { refusals } from "./refusals.ts";
-import { addDays } from "./common.ts";
+import { addDays, shortDate } from "./common.ts";
+import { maxBlockStartLeadDays } from "./training.ts";
 import { baseAnswers, planFor, stateFixture, today, weightReadings } from "./fixtures.ts";
 import { nutritionBasis } from "./nutrition.ts";
 import type {
@@ -235,9 +236,17 @@ Deno.test("a block refuses bad dates, a long block, a far start and a running bl
     refusalOf(buildCoachProposal(block(today, addDays(today, 60)), state)).code,
     "block_too_long",
   );
+  // Coach simulation 2026-10-31: the refusal says the first day the block can be asked for.
+  const tooFar = refusalOf(buildCoachProposal(block(addDays(today, 5), addDays(today, 12)), state));
+  assertEquals(tooFar.code, "block_start_too_far");
   assertEquals(
-    refusalOf(buildCoachProposal(block(addDays(today, 5), addDays(today, 12)), state)).code,
-    "block_start_too_far",
+    tooFar.reason,
+    `A block starts as soon as you approve it. Ask for it again from ${
+      shortDate(addDays(today, 5 - maxBlockStartLeadDays))
+    }.`,
+  );
+  assert(
+    buildCoachProposal(block(addDays(today, maxBlockStartLeadDays), addDays(today, 6)), state).ok,
   );
   const running = stateFixture({
     plan: planFor([1, 3, 5], { blockEndsOn: "2026-10-25", blockKind: "temporary_block" }),

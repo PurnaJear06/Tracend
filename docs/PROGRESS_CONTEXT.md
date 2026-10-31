@@ -31,7 +31,10 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   the production gateway path, graded by code, an expert-coach judge and a claim-support judge
   (RAG audit P1-3), report only. First run on the production model (2026-10-31, Haiku 5.5 on
   Anthropic directly, USD 1.97 in two runs): `docs/reviews/2026-10-31-coach-simulation.md`; fixes
-  in #187. Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
+  in #187: a too-early block says when to ask, `focus` is the kind for a stalled lift; three guard
+  relaxations (rep-notation loads, half-minute rests, sentence-case ISSN) were held back after
+  review found false negatives, so those refusals still fail closed. Handoff:
+  [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
   sources; nothing reads it until B2). Phase 3 round 1 merged (2026-10-17): B2 templates and
   fractional volume (#127), B6 screening gate (#128, migration 26). Round 2 merged (2026-10-17): B3 progression from logged sets, hub 1.7 (#132); B7 goal phase review,

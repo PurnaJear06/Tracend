@@ -2138,6 +2138,47 @@ and a hyphenated unit ("an 800-calorie diet") are read; a figure followed by die
 daily total. (5) The cardio minutes done now read "85 minutes done of 150 minutes ...", so 85 grounds as minutes only
 ("resting heart rate 85 bpm" no longer passes on it). The context budget grows by 13 characters.
 
+## Coach simulation fixes (2026-10-31, branch `claude/coach-sim-fixes`)
+
+From the first simulator run on the production Coach model (`claude-haiku-5-5` on Anthropic,
+production gateway path; #154, report `docs/reviews/2026-10-31-coach-simulation.md` on that
+branch). No migration, no schema change (0 optional, 0 unions), no new model call.
+
+Held back after review (2026-10-31): three guard relaxations the simulator suggested, a load in rep
+notation grounding a kg or lb figure ("bench 115 for 5"), a half-minute rest exempt as advice ("2 to
+2.5 min between sets") and an organisation's initials naming a sentence-case title ("the ISSN
+position stand"), were reverted before merge. Two review rounds (Codex, then an Opus adversarial
+pass) kept finding false negatives: a lifting load grounded a body weight ("squat 80 x 5" grounded
+"You weigh 80 kg"), "Heart rate recovery 4.5 min" and an invented study rest passed as rest advice,
+and "the ISSN position stand on creatine" named the shown caffeine stand. Those three refusals fail
+closed (the turn ends in the data summary, 3 of 43 turns in run 1), so the guards stay as on main.
+A later change needs a load flag on both sides (lift word in the same clause and rep notation,
+never a bare kg figure), rest wording in advice form with no claim or past wording anywhere in the
+sentence, and an initials mention that must agree with the year and topic beside it.
+
+1. **A block asked for too early says when to ask** (`coach_proposals/refusals.ts`, `training.ts`). A
+   travel block asked for on a Friday for Monday is refused (`block_start_too_far`: a block starts
+   on approval, at most 2 days ahead). The reason now names the first day it can be asked for ("Ask
+   for it again from 17 Oct.") instead of "closer to the start date". An instruction telling the
+   model the 2-day limit was tried and dropped: Haiku still sent the intent in 4 of 4 turns.
+2. **Which kind changes what the plan trains** (proposal rules in `coach_chat_provider.ts`).
+   "Change my plan so the bench moves" became a `training_schedule` with the plan's own week
+   (`no_change`). The rules now say `training_schedule` changes only days, session length and weeks
+   (the plan's own week is refused) and that `focus` is the kind for a stalled lift, more strength or
+   size. Instructions stay under `instructionsMaxChars`.
+
+A re-run of the 8 affected conversations with all five changes applied (USD 0.74) took data
+summaries from 3 of 24 turns to 0; with the three guard changes held back, those 3 stay.
+
+Not fixed here (in the report): a model `proposal_intent` with two items (a focus and a swap in
+one) is `invalid_intent` and the reply keeps only its last sentence; replies over the bank's
+length (21 of 43); Haiku misreading which lift a target belongs to (front squat target given to the
+back squat); the expert judge's mean of about 2.7 of 5, mostly for no concrete change when asked.
+
+Tests: `build_test.ts` (the reason and the 2-day edge), `coach_chat_provider_gateway_test.ts` (the
+kinds rule). The pgTAP suite is
+untouched.
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in

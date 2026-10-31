@@ -112,10 +112,10 @@ export const refusals = {
       "block_too_long",
       `A temporary block can last up to ${days} days. For longer, change your weekly schedule.`,
     ),
-  blockStartTooFar: () =>
+  blockStartTooFar: (askFrom: string) =>
     refuse(
       "block_start_too_far",
-      "A block starts as soon as you approve it. Ask again closer to the start date.",
+      `A block starts as soon as you approve it. Ask for it again from ${shortDate(askFrom)}.`,
     ),
   blockActive: (endsOn: string) =>
     refuse(

@@ -774,6 +774,22 @@ Deno.test("proposals are offered only when asked for, in the rules; the schema a
   );
 });
 
+// Coach simulation 2026-10-31: "change my plan so the bench moves" became a training_schedule with
+// the plan's own week (no_change). The rules now say which kind changes what the plan trains.
+Deno.test("the proposal rules say which kind changes what the plan trains", () => {
+  const rules = buildCoachChatGatewayPrompt(
+    "Change my plan so the bench moves",
+    rich(),
+    "general",
+    undefined,
+    undefined,
+    undefined,
+    true,
+  ).system.map((part) => part.type === "text" ? part.text : "").join("");
+  assertStringIncludes(rules, "the plan's own week is refused");
+  assertStringIncludes(rules, "Use focus for a stalled lift, more strength or size.");
+});
+
 Deno.test("the model's intent is handed on in the engine's shape and is not part of the stored answer", async () => {
   const fake = fakeFetch(() => claudeAnswer(answer({ proposal_intent: modelIntent })));
   const generation = await generateCoachChatViaGateway({
