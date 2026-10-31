@@ -40,6 +40,9 @@ function oneOf<T extends string>(list: readonly T[], value: unknown): T | null {
   return typeof value === "string" ? list.find((item) => item === value) ?? null : null;
 }
 
+/** The length of a new week when the athlete gives none, as the Coach instructions say. */
+export const defaultScheduleWeeks = 8;
+
 function wholeBetween(value: unknown, low: number, high: number): number | null {
   return typeof value === "number" && Number.isInteger(value) && value >= low && value <= high
     ? value
@@ -113,7 +116,11 @@ export function parseCoachProposalIntent(raw: unknown): IntentResult {
       return { ok: true, intent: { kind, ...common, setting, startDate, endDate } };
     }
     case "training_schedule": {
-      const weeks = wholeBetween(body.weeks, 1, 12);
+      // A length the athlete did not give is the rules' default, not the model's choice: the model
+      // copies only figures the athlete wrote, so it leaves weeks out (bank, 2026-10-24).
+      const weeks = body.weeks === undefined
+        ? defaultScheduleWeeks
+        : wholeBetween(body.weeks, 1, 12);
       if (weeks === null) return bad("weeks must be a whole number from 1 to 12");
       const daysPerWeek = body.days_per_week === undefined
         ? undefined

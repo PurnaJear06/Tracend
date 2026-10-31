@@ -1763,6 +1763,82 @@ Tests: `test/coach_thread_switching_test.dart`, `test/coach_restored_order_test.
 `test/coach_proposal_card_test.dart`, `test/coach_proposal_repository_test.dart`, `test/phase_2_flow_test.dart`
 ("an answer to the plan whose reply is lost"), `test/nutrition_lost_reply_test.dart`, `test/health_sync_key_test.dart`.
 
+## Coach answers that fell back as invalid (2026-10-24, branch `claude/coach-response-validity`)
+
+The answer bank on the production route (`claude-haiku-5-5`, 4,096 output tokens, 30 s) had 64 of
+268 model runs (22%) end `provider_response_invalid`. Every call returned HTTP 200 with
+`stop_reason` `end_turn` and schema-valid JSON: nothing was truncated and the schema (0 optionals,
+0 unions) was not the cause. Each failure was the reply check or the answer contract refusing a
+good reply twice, because the repair could not see what was wrong. Root causes, each fixed in
+deterministic code with a captured-shape test:
+
+- **Weight guard read inside a number** (`weight_figures.ts`): "0.26 kg a week" matched as 26 kg,
+  under every athlete's healthy floor, so any reply that stated the weekly trend failed. The figure
+  now starts at the start of a number; every real body weight is still read (fail-closed rule
+  unchanged). Fixing it alone took invalid answers from 22% to 12% (one-repeat run).
+- **A weekday before a date read as a study** (`library/mentions.ts`): "Thu 2026-10-15" was the
+  study "Thu 2026". A year that opens a date is not a citation year; weekday abbreviations are not
+  authors.
+- **The numbers check read across lines** (`numbers_check.ts`): a figure took its unit from the line
+  before ("... and BMI" then "74.8 kg" was a BMI), and a range lost its unit when a line break fell
+  inside the window ("1.4 to 2.0 g per kg"). Figures that passed alone failed once the reply's
+  reasoning steps were joined to it.
+- **Refusals read as advice** (`reply_guard.ts`): "I can't support 800 kcal a day", "Losing 10 kg
+  in 4 weeks isn't safe", "intervals are off the table", "until that's done". Exemptions added
+  only where the refusal governs the match in its own clause (a first-person refusal verb with the
+  figure as its object, never with above, over, other than, only or but between; the floor named
+  after the figure; a judgement after a loss over weeks; a ruled-out predicate after an effort word;
+  a done-claim after until/once/when). New adversarial rows show what still flags.
+- **The repair did not name the sentence**: the check now returns the sentences that broke a rule
+  (never logged) and the repair quotes them, escaped and marked untrusted. A follow-up chip in the
+  athlete's voice ("Show me what I logged") is then rewritten instead of kept.
+- **Contract stricter than the model's natural shape**: a reasoning step citing the library source
+  its evidence cites is accepted (the app does not show the id); a new week with no length the
+  athlete gave gets the rules' 8 weeks (spec A8: rules compute every number).
+- **`safety_state`** was not defined for the model, which marked declined floor requests and
+  precautionary doctor mentions as `limited`. The instructions now define `allowed` as any turn
+  Coach coaches (25,495 of 25,500 instruction characters; legacy request digests re-recorded).
+
+| Bank (2 repeats, 292 runs) | Before (ee9ef6e) | After |
+|---|---|---|
+| Model answers (gate 97%) | 77.9% (64 invalid) | 97.2% (8 invalid) |
+| Safety failures | 22 | 15 |
+| floors_actions pass | 10% | 50% |
+| length / screening pass | 25% / 69% | 100% / 88% |
+| Domain coverage | 46% | 45% |
+
+Left (evidence in the PR): the 8 remaining invalid answers are mostly model-computed figures or
+dates the numbers check rightly refuses (a protein range in grams worked out from body weight, a
+lookup's own date range); the calorie guard still flags Coach describing the athlete's own logged
+640 kcal ("The 640 kcal on ... comes from a partial day") and reasoning steps written as
+imperatives. Over-caution (3 of 3) is the deterministic red-flag screen, fail-closed by design.
+`clear-take-medication` and `clear-avoid-dizziness-cutting` still get `limited` from the model.
+Domain coverage (45%) and `training_today` routines are model behaviour, not validity.
+
+**Round 2 (hostile review of #177): safety before validity.** Every exemption that could not be an
+exact allowlist was narrowed until 40 adversarial replies the first round passed now flag. A calorie
+refusal counts only as "I can't|won't|don't <support|recommend|...|tell you to eat|help you plan>
+<figure> [a day] [even ...|for a week|for you]" ending its sentence; a judgement after a figure or a
+pace must end its clause and is never negated ("isn't safe" counts, "is not dangerous" and "isn't
+below your floor" do not, "safe" alone never); a ruled-out effort word must be the subject and only
+the effort cap uses it; none counts in a question or before a but/yet/so/though/however/for clause.
+"Set" no longer excuses a figure after a negation. Main's "Losing 2 kg a week is not dangerous" hole
+is closed too. Study mentions: a weekday is an author unless a full date follows ("Sun et al. 2020"
+cites again). Numbers: a range's unit comes from its own line, and a figure alone on its line keeps
+the BMI label above it. Every guard reads digits of any script as ASCII (`_shared/ascii_digits.ts`),
+and a decimal with a whole part of 1 to 9 also reads its fraction as a weight unless it is a rate
+("Week 2.45 kg ..." fails closed). The repair says to remove advice and never refer back to it; the
+wording advice for a refusal only when the sentence is one. Instructions trimmed to 25,199 of 25,500.
+One-repeat bank after round 2: model answers 96.1%, safety failures 2 (clear-take-medication
+`limited`, one screening fallback), floors_actions 80%. Not done: non-English daily cues in the
+calorie guard, and "I wouldn't advise less than 800 kcal a day" (a false flag).
+
+**Daily coaching (Sonnet) `anthropic_request_failed`, 2026-10-20 00:08 to 00:14 UTC:** all five
+were HTTP **401** (`ai_call` logs, `http_status` 401, about 300 ms each): the Anthropic key the
+Edge Functions held was rejected for those minutes. No deploy happened between 2026-10-18 and
+2026-10-23, and the same code succeeded before and after (06:33 UTC, HTTP 200), so it is not a
+request-shape bug. A retry cannot fix a 401.
+
 ## Coach knows today's readiness card; daily coaching retries a busy provider (2026-10-24, branch `claude/coach-readiness-context`)
 
 **Readiness contributor.** `_shared/coach_context/contributors/readiness.ts` (volatile, right after the training
