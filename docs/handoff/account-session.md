@@ -135,16 +135,27 @@ From the pre-beta QA audit (groups B and C; app only, no migration, needs a rein
   succeeded.
 - **Today** resume: Apple Health auto-sync (30-minute throttle) and health history reload, and
   the check-in replay. The queue (`check_in_queue.dart`) is a list keyed by answer day; the old
-  single entry (`daily_check_in_pending[.uid]`) is moved into it on first read. A final refusal
-  (22023, 22P02, 23514, P0001) drops that day, shows a note and reports to Sentry by code; other
-  failures keep the day and stop the replay. The old single entry is moved only after the keyed list
+  single entry (`daily_check_in_pending[.uid]`) is moved into it on first read. After the merge with
+  the pain check (B5-2) it also holds the pain-check rules: an envelope with a pain check is moved to
+  the `earlier` list instead of being replaced, and a replay returns `CheckInReplay` (days delivered
+  or retained, refusals, and a `CheckInFate` per idempotency key). A final refusal (22023, 22P02,
+  23514, or P0001 "too many pain reports") drops that day, shows a note and reports to Sentry by
+  code, unless the envelope carries a pain check: that one stays, marked, until the athlete reads the
+  notice (a red flag is never dropped silently). Other failures, another P0001 included, keep the day
+  and stop the replay. The old single entry is moved only after the keyed list
   was written; its keys are removed after that write succeeded, so an interruption repeats safely.
   The gate stores the device time zone on resume and holds the screens' resume refresh
-  (`ResumeGate`, 5 s timeout) until the sync ended, so they never read the old `local_today`.
+  (`ResumeGate`, 5 s timeout) until the sync ended, so they never read the old `local_today`. A
+  sync that succeeds after the timeout refreshes the attached screens a second time (they loaded
+  with the old zone); a failed one does not.
 - **Sentry** (`lib/app/sentry_scrubber.dart`, `lib/shared/diagnostics.dart`): see SECURITY_PRIVACY
   §Telemetry: request and breadcrumb URLs keep an origin and a route template only (no Storage
   path, id or filename), and an exception value is its type and code (`network` for a lost
-  connection), never free text. 153 `debugPrint('Non-critical error: $e')` calls now use `logNonCritical`; gate
+  connection), never free text. One scrubber serves both this work and the pain check
+  (`scrubEvent`/`scrubBreadcrumb`/`scrubText`): the pain keys are dropped whole, the sensitive keys are
+  redacted by name part, a value in text goes whole (an unquoted multi-word value to the end of the
+  line, a quoted one up to its unescaped closing quote or the end of the line, a pain value too), and
+  an event's tags are scrubbed. 153 `debugPrint('Non-critical error: $e')` calls now use `logNonCritical`; gate
   refresh failures reach Sentry through `reportNonCritical`.
 - **Edge:** the meal-vision providers and the handler throw or log a fixed code, never a parser
   message that quotes the model. The legacy Groq and Gemini paths stay: the gateway path shares

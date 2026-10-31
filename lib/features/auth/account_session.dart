@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
+import 'package:tracend/features/readiness/pain_report_queue.dart';
+import 'package:tracend/features/readiness/safety_acknowledgements.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/diagnostics.dart';
@@ -86,8 +88,22 @@ class LocalAccountData {
       if (userId != null) ...{
         CheckInQueue.singleSlotKeyFor(userId),
         CheckInQueue.queueStorageKeyFor(userId),
+        CheckInQueue.earlierKeyFor(userId),
+        SafetyAcknowledgements.storageKeyFor(userId),
       },
     });
+    if (userId != null) await _clearPainReports(userId);
+  }
+
+  /// Empties the pain reports kept for [userId], behind the same lock as every
+  /// other change to them, so a send that is still waiting on the network
+  /// cannot write them back.
+  Future<void> _clearPainReports(String userId) async {
+    try {
+      await PainReportQueue.clearFor(await _legacyPreferences(), userId);
+    } catch (e) {
+      logNonCritical(e, 'pain reports not cleared');
+    }
   }
 
   /// Forgets what belongs to the session rather than the athlete: the open

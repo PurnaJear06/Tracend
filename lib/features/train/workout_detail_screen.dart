@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
+import 'package:tracend/features/readiness/pain_reporting.dart';
 import 'package:tracend/features/train/active_workout_screen.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/widgets/exercise_detail_sheet.dart';
@@ -423,6 +424,7 @@ Future<bool> startWorkout(
   required PlannedWorkout workout,
   required WorkoutRepository repository,
   DateTime? sessionDate,
+  PainReporting? pain,
 }) async {
   unawaited(TracendHaptics.heavy());
   final completed = await Navigator.of(context).push<bool>(
@@ -432,6 +434,7 @@ Future<bool> startWorkout(
         workout: workout,
         repository: repository,
         sessionDate: sessionDate,
+        pain: pain,
       ),
     ),
   );
@@ -447,6 +450,7 @@ class WorkoutDetailScreen extends StatefulWidget {
     this.workout,
     this.sessionDate,
     this.dayAdjustment,
+    this.pain,
     super.key,
   });
   final WorkoutRepository? repository;
@@ -457,6 +461,9 @@ class WorkoutDetailScreen extends StatefulWidget {
   /// accepted answer changed; Start waits while an answer is on its way, and
   /// the adjustment is read again when the workout screen closes.
   final DayAdjustmentController? dayAdjustment;
+
+  /// Sends the pain check made during the workout.
+  final PainReporting? pain;
 
   @override
   State<WorkoutDetailScreen> createState() => _WorkoutDetailScreenState();
@@ -512,6 +519,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       workout: _adjustment?.applyTo(_workout, sets: false) ?? _workout,
       repository: _repository,
       sessionDate: widget.sessionDate,
+      pain: widget.pain,
     );
     if (readiness != null) unawaited(readiness.load());
     if (completed && mounted) navigator.pop(true);

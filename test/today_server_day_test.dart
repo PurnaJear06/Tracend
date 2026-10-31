@@ -67,7 +67,7 @@ Map<String, dynamic> _painDay() => adjustmentJson(
   status: 'none',
   band: 'red',
   triggers: const ['pain_severe'],
-  safetyRoute: 'pain_referral',
+  safetyRoute: 'clinician_today',
 );
 
 Future<void> _settle(WidgetTester tester) async {
@@ -126,6 +126,8 @@ Future<void> _checkInWithPain7(WidgetTester tester) async {
 
   await choose('Pain: Some pain');
   await choose('Pain 7 of 10');
+  await choose('Where is it?: Knee');
+  await choose('Do any of these apply?: None of these');
   await tester.tap(find.text('Save check-in'));
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 500));
@@ -268,7 +270,7 @@ void main() {
     await _settle(tester);
     await _checkInWithPain7(tester);
     expect(sent, ['2026-10-02'], reason: "not the phone's 1 October");
-    expect(find.text("Don't train through this pain"), findsWidgets);
+    expect(find.text('Get this checked today'), findsWidgets);
     expect(find.text('Got it'), findsOneWidget);
     handle.dispose();
   });
@@ -300,9 +302,16 @@ void main() {
       preferences.getString(CheckInQueue.queueStorageKey),
       contains('"local_date":"2026-10-02"'),
     );
+    // The phone works the referral out from the answers and says it at once,
+    // without waiting for the connection; it cannot be closed without Got it.
+    expect(find.text('Get this checked today'), findsWidgets);
+    expect(find.text('Got it'), findsOneWidget);
+    await tester.tap(find.text('Got it'));
+    await tester.pumpAndSettle();
     expect(find.text('Got it'), findsNothing);
 
-    // The next launch replays it under that day and says what it found.
+    // The next launch replays it under that day; the referral already read
+    // that day is not opened again.
     online = true;
     sent.clear();
     await tester.pumpWidget(const SizedBox.shrink());
@@ -320,7 +329,8 @@ void main() {
     );
     await _settle(tester);
     expect(sent, ['2026-10-02']);
-    expect(find.text('Got it'), findsOneWidget);
+    expect(find.text('Got it'), findsNothing);
+    expect(find.text('Get this checked today'), findsWidgets);
     handle.dispose();
   });
 

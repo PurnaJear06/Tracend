@@ -57,7 +57,8 @@ class LoadStamp {
 /// the time-zone sync here: the server's local dates follow the stored zone,
 /// so a screen that refreshed first would read the old `local_today` and mark
 /// it fresh. A slow or failed sync never holds a refresh longer than
-/// [timeout].
+/// [timeout]; if it succeeds after that, the observers refresh a second time,
+/// since what they loaded in the meantime followed the old zone.
 class ResumeGate {
   ResumeGate._();
 
@@ -66,6 +67,9 @@ class ResumeGate {
 
   static Future<void>? _pending;
 
+  /// What the observers run when held work succeeds after [timeout].
+  static final _late = <VoidCallback>{};
+
   /// The held work, or null when the screens may refresh at once.
   static Future<void>? get pending => _pending;
 
@@ -73,11 +77,22 @@ class ResumeGate {
   /// it from a lifecycle observer registered before the screens', so it runs
   /// before theirs.
   static void hold(Future<void> work) {
+    var timedOut = false;
     late final Future<void> held;
-    held = work.timeout(timeout).catchError((Object _) {}).whenComplete(() {
-      if (identical(_pending, held)) _pending = null;
-    });
+    held = work
+        .timeout(timeout, onTimeout: () => timedOut = true)
+        .catchError((Object _) {})
+        .whenComplete(() {
+          if (identical(_pending, held)) _pending = null;
+        });
     _pending = held;
+    work.then((_) {
+      if (timedOut) {
+        for (final refresh in _late.toList()) {
+          refresh();
+        }
+      }
+    }, onError: (Object _) {});
   }
 }
 
@@ -92,11 +107,13 @@ class ResumeObserver with WidgetsBindingObserver {
 
   void attach() {
     _attached = true;
+    ResumeGate._late.add(onResume);
     WidgetsBinding.instance.addObserver(this);
   }
 
   void detach() {
     _attached = false;
+    ResumeGate._late.remove(onResume);
     WidgetsBinding.instance.removeObserver(this);
   }
 

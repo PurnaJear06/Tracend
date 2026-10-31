@@ -23,6 +23,8 @@ import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
+import 'package:tracend/features/readiness/pain_report_queue.dart';
+import 'package:tracend/features/readiness/safety_acknowledgements.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/app_lifecycle.dart';
@@ -166,6 +168,11 @@ void main() {
       SharedPreferencesCoachThreadMemory.storageKey: 'thread-1',
       CheckInQueue.queueStorageKeyFor(_userId): '{}',
       CheckInQueue.queueStorageKeyFor(_otherUserId): '{}',
+      CheckInQueue.earlierKeyFor(_userId): '[]',
+      CheckInQueue.earlierKeyFor(_otherUserId): '[]',
+      PainReportQueue.storageKeyFor(_userId): '[]',
+      PainReportQueue.storageKeyFor(_otherUserId): '[]',
+      SafetyAcknowledgements.storageKeyFor(_userId): '[]',
     });
   });
 
@@ -231,8 +238,23 @@ void main() {
       isNull,
     );
     expect(legacy.getString(CheckInQueue.queueStorageKeyFor(_userId)), isNull);
+    expect(legacy.getString(CheckInQueue.earlierKeyFor(_userId)), isNull);
+    expect(
+      legacy.getString(CheckInQueue.earlierKeyFor(_otherUserId)),
+      isNotNull,
+    );
     expect(
       legacy.getString(CheckInQueue.queueStorageKeyFor(_otherUserId)),
+      isNotNull,
+    );
+    // A pain report and the referrals read go with the account too.
+    expect(legacy.getString(PainReportQueue.storageKeyFor(_userId)), isNull);
+    expect(
+      legacy.getString(SafetyAcknowledgements.storageKeyFor(_userId)),
+      isNull,
+    );
+    expect(
+      legacy.getString(PainReportQueue.storageKeyFor(_otherUserId)),
       isNotNull,
     );
   }
@@ -254,6 +276,7 @@ void main() {
       legacy.getString(CheckInQueue.queueStorageKeyFor(_userId)),
       isNotNull,
     );
+    expect(legacy.getString(PainReportQueue.storageKeyFor(_userId)), isNotNull);
   }
 
   late FakeWorkoutActivityBridge liveActivity;

@@ -66,10 +66,16 @@ class SupabaseDayAdjustmentRepository implements DayAdjustmentRepository {
       '${day.month.toString().padLeft(2, '0')}-'
       '${day.day.toString().padLeft(2, '0')}';
 
+  /// This build shows and applies joint changes (a swap, a pain-free range,
+  /// an exercise left out). It says so on every read and on every answer: a
+  /// client that said it on one and not the other would preview one session
+  /// and store another.
+  static const _jointChanges = {'supports_joint_changes': true};
+
   @override
   Future<DayAdjustment> load(DateTime localToday) => _call(
     'get_my_day_adjustment_v1',
-    {'local_date': _date(localToday)},
+    {'local_date': _date(localToday), ..._jointChanges},
     refused: DayAdjustmentFailure.wrongDate,
   );
 
@@ -82,6 +88,7 @@ class SupabaseDayAdjustmentRepository implements DayAdjustmentRepository {
     'local_date': _date(localToday),
     'accept': accept,
     if (chosen != null) 'chosen_kind': chosen.wire,
+    ..._jointChanges,
   }, refused: DayAdjustmentFailure.refused);
 
   Future<DayAdjustment> _call(

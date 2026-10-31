@@ -48,7 +48,7 @@ export const redFlagQuestions: Readonly<Record<RedFlagCode, RedFlagQuestion>> = 
   },
   pop_or_sudden: {
     areas: everyArea,
-    question: "It started with a pop, a tear or a sudden sharp pain",
+    question: "It started with a pop, a ripping feeling or a sudden sharp pain",
   },
   cannot_bear_or_move: {
     areas: everyArea,
