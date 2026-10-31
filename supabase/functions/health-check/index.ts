@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.8";
+import { supabaseSecretKey } from "../_shared/supabase_keys.ts";
 
 const headers = { "Content-Type": "application/json" };
 const reply = (status: number, body: Record<string, unknown>) =>
@@ -10,7 +11,7 @@ Deno.serve(async (request) => {
   }
 
   const url = Deno.env.get("SUPABASE_URL");
-  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const key = supabaseSecretKey();
   const version = Deno.env.get("FUNCTION_BUILD_VERSION") ?? "0.0.0";
 
   if (!url || !key) {

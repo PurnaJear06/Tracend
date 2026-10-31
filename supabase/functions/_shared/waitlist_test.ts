@@ -42,6 +42,13 @@ Deno.test("settings list every missing secret and trim trailing slashes", () => 
   assert(!("missing" in settings));
   assertEquals(settings.siteUrl, "https://tracend.pages.dev");
   assertEquals(settings.supabaseUrl, "https://ref.supabase.co");
+  assertEquals(settings.serviceRoleKey, "service");
+  const { SUPABASE_SERVICE_ROLE_KEY: _legacy, ...rest } = env;
+  const switched = readSettings((name) => ({ ...rest, TRACEND_SUPABASE_SECRET_KEY: "new" })[name]);
+  assert(!("missing" in switched));
+  assertEquals(switched.serviceRoleKey, "new");
+  const noKey = readSettings((name) => rest[name]);
+  assert("missing" in noKey && noKey.missing.join() === "SUPABASE_SERVICE_ROLE_KEY");
 });
 
 Deno.test("the client address prefers Cloudflare's header, then the first forwarded hop", () => {

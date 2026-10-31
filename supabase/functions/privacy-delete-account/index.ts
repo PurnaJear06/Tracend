@@ -106,9 +106,10 @@ export async function listAccountStorage(client: StorageListingClient, userId: s
 
 // Counts only: the event carries no user id, key or path.
 export function reportUnsafeKeys(unsafe: number): void {
-  captureException(new Error(`account_deletion_unsafe_keys_${unsafe}`), {
+  captureException(new Error("account_deletion_unsafe_keys"), {
     functionName: "privacy-delete-account",
     failureCode: "unsafe_storage_key",
+    count: unsafe,
   });
 }
 

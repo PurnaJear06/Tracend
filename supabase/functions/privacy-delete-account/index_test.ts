@@ -164,7 +164,8 @@ Deno.test("the unsafe-key report to Sentry carries no user id", () => {
   }
   assertEquals(sent.length, 1);
   const event = JSON.parse(sent[0]);
-  assertEquals(event.exception.values[0].value, "account_deletion_unsafe_keys_2");
+  assertEquals(event.exception.values[0].value, "unsafe_storage_key");
+  assertEquals(event.extra.count, 2);
   assertEquals(event.user, undefined);
   assert(!sent[0].includes("userId"));
 });
