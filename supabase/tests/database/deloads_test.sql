@@ -251,7 +251,8 @@ select ok(not private.is_deload_proposal('intensity_or_phase', '{"nutrition":{}}
 -- No plan -------------------------------------------------------------------------------------------------------------
 
 select is(pg_temp.d(42), jsonb_build_object('status', 'not_due', 'reasons', '[]'::jsonb,
-    'last_ended_on', null, 'weeks_since', null, 'proposal_id', null, 'suppressed_by', 'no_plan'),
+    'last_ended_on', null, 'weeks_since', null, 'proposal_id', null, 'proposal_origin', null, 'ends_on', null,
+    'suppressed_by', 'no_plan'),
   'an athlete with no plan has nothing to deload');
 
 -- A healthy athlete: nothing due ------------------------------------------------------------------------------------
@@ -259,8 +260,9 @@ select is(pg_temp.d(42), jsonb_build_object('status', 'not_due', 'reasons', '[]'
 select pg_temp.make_athlete(1, 3, 14);
 select pg_temp.sessions(1, array[1, 3, 6, 9, 11, 13, 16, 19, 23]);
 select is(pg_temp.d(1), jsonb_build_object('status', 'not_due', 'reasons', '[]'::jsonb,
-    'last_ended_on', null, 'weeks_since', 2, 'proposal_id', null, 'suppressed_by', null),
-  'a steady athlete in week 2 of a plan is not due, and the answer has exactly its six keys');
+    'last_ended_on', null, 'weeks_since', 2, 'proposal_id', null, 'proposal_origin', null, 'ends_on', null,
+    'suppressed_by', null),
+  'a steady athlete in week 2 of a plan is not due, and the answer has exactly its eight keys');
 
 -- performance_drop: two different exercises heading down ------------------------------------------------------------
 
@@ -440,7 +442,7 @@ select is(pg_temp.d(26) -> 'weeks_since', '4'::jsonb,
   'and the weeks since count from the later of the plan''s start and the deload''s end (28 days: 4 weeks)');
 select is(pg_temp.d(26) ->> 'last_ended_on', ((select today from t) - 28)::text, 'with its end reported');
 
--- An undone deload never ran.
+-- An undone deload never ran, but the athlete took it back: new suggestions wait 14 days from that day.
 select pg_temp.make_athlete(27);
 select pg_temp.stall_both(27);
 insert into p select 'undone', pg_temp.block(27, 'intensity', 'deload', 'Deload until 31 Oct', 6);
@@ -449,7 +451,8 @@ select pg_temp.as_user(pg_temp.u(27)::text);
 set local role authenticated;
 select public.undo_coach_proposal_v1((select id from p where name = 'undone'));
 reset role;
-select is(pg_temp.d(27) ->> 'status', 'suggested', 'an undone deload does not suppress');
+select is(pg_temp.d(27) ->> 'status', 'not_due', 'an undone deload holds the next suggestion back');
+select is(pg_temp.d(27) ->> 'suppressed_by', 'declined_recently', 'as a declined one does');
 select is(pg_temp.d(27) -> 'last_ended_on', 'null'::jsonb, 'and is not the last deload');
 
 -- A moderate-effort block is not a deload.

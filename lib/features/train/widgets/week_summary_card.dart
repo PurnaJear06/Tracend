@@ -4,13 +4,16 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 
 /// "This week": workouts done of planned as a count and pips, then the
-/// Training load row and the History row, each opening its sheet.
+/// Training load row, the Cardio row and the History row, each opening its
+/// sheet.
 class WeekSummaryCard extends StatelessWidget {
   const WeekSummaryCard({
     required this.done,
     required this.planned,
     required this.loadLabel,
     required this.onLoadTap,
+    this.cardioLabel,
+    this.onCardioTap,
     this.historyLabel,
     this.onHistoryTap,
     super.key,
@@ -20,6 +23,11 @@ class WeekSummaryCard extends StatelessWidget {
   final int planned;
   final String loadLabel;
   final VoidCallback onLoadTap;
+
+  /// For example "85 of 150 min"; the row hides when Tracend has no cardio
+  /// figures to show (a day with a safety route, a version it cannot read).
+  final String? cardioLabel;
+  final VoidCallback? onCardioTap;
 
   /// For example "6 workouts in 4 weeks"; the row hides without history.
   final String? historyLabel;
@@ -103,6 +111,14 @@ class WeekSummaryCard extends StatelessWidget {
             value: loadLabel,
             onTap: onLoadTap,
           ),
+          if (cardioLabel != null && onCardioTap != null) ...[
+            _Separator(color: colors.borderHairline),
+            _SummaryRow(
+              title: 'Cardio this week',
+              value: cardioLabel!,
+              onTap: onCardioTap!,
+            ),
+          ],
           if (historyLabel != null && onHistoryTap != null) ...[
             _Separator(color: colors.borderHairline),
             _SummaryRow(

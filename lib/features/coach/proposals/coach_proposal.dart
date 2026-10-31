@@ -119,6 +119,16 @@ class ProposalEvidence {
   final String label;
 }
 
+/// Who started a proposal, for the card's first line.
+enum CoachProposalOrigin {
+  /// The athlete asked Coach in chat; Coach's reply led to it.
+  coach,
+
+  /// Tracend's rules suggested it from the athlete's own data (a lighter
+  /// week). No model took part, so the card names none.
+  tracend,
+}
+
 /// A change Coach proposed: rules computed every number in it, and nothing
 /// is applied until the athlete approves. Reads `get_my_coach_proposals_v1`.
 class CoachProposal {
@@ -295,6 +305,11 @@ class CoachProposal {
       _ => friendlyDate(day, now: reference),
     };
   }
+
+  /// Tracend's rules made this proposal, not Coach: only the rules' own
+  /// suggestion (a lighter week) carries this evidence code.
+  bool get suggestedByRules =>
+      evidence.any((item) => item.code == 'DELOAD_SIGNALS');
 
   /// The message the app sends when the athlete taps "Change it".
   String get changeRequestMessage =>
