@@ -10,6 +10,7 @@ import {
 } from "../onboarding/catalog.ts";
 import { catalogV2BySlug, loadStepKgFor } from "../onboarding/catalog_v2.ts";
 import { moderateEffortRpe } from "../onboarding/policy.ts";
+import { capsEffortToModerate } from "../training/screening/outcome.ts";
 import {
   deloadHoldsLoad,
   deloadRpe,
@@ -533,9 +534,11 @@ export function buildIntensityOrPhase(
   }
 
   if (intent.level !== undefined) {
-    if (state.screening === "moderate_until_cleared" && intent.level !== "deload") {
+    if (capsEffortToModerate(state.screening) && intent.level !== "deload") {
       return refusals.noChange(
-        "Your plan is already held to moderate effort by your health check.",
+        state.screening === "unscreened"
+          ? "Your plan is already held to moderate effort until you answer the health check."
+          : "Your plan is already held to moderate effort by your health check.",
       );
     }
     const deload = intent.level === "deload";
@@ -588,8 +591,10 @@ export function buildIntensityOrPhase(
 
   // A focus phase: the week rebuilt for strength or size, for a number of weeks.
   const focus = intent.focus!;
-  if (focus === "strength" && state.screening === "moderate_until_cleared") {
-    return refusals.screeningCapsIntensity();
+  if (focus === "strength" && capsEffortToModerate(state.screening)) {
+    return state.screening === "unscreened"
+      ? refusals.screeningUnanswered()
+      : refusals.screeningCapsIntensity();
   }
   const goal = focus === "strength" ? "strength" : "muscle_gain";
   if (state.goal?.goalType === goal) {

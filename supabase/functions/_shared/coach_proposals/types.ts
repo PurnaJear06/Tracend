@@ -6,7 +6,7 @@
 import type { AvoidablePattern, EquipmentItem, ExperienceLevel } from "../onboarding/catalog.ts";
 import type { DailyActivity, Goal, Sex } from "../onboarding/answers.ts";
 import type { Muscle } from "../onboarding/catalog.ts";
-import type { ScreeningOutcome } from "../training/screening/outcome.ts";
+import type { ScreeningGate } from "../training/screening/outcome.ts";
 import type { GoalPhaseSummary, GoalTarget } from "../training/goal_phase/types.ts";
 import type { ProgressionTarget } from "../training/progression/targets.ts";
 
@@ -219,7 +219,8 @@ export type AthleteState = Readonly<{
   /** The athlete's local date (YYYY-MM-DD). */
   today: string;
   profile: StateProfile;
-  screening: ScreeningOutcome;
+  /** The health check gate: a stored outcome, or unscreened (never answered). */
+  screening: ScreeningGate;
   plan: StatePlan | null;
   nutrition: StateNutrition | null;
   goal: StateGoal | null;
@@ -356,7 +357,7 @@ export type ProposalBasis = Readonly<{
   training_version_id: string | null;
   nutrition_version_id: string | null;
   goal_id: string | null;
-  screening: ScreeningOutcome;
+  screening: ScreeningGate;
   /**
    * The change-eligibility gates the build required (nutrition_change, training_change). Approval
    * runs them again and expires the proposal when one no longer passes.
@@ -386,6 +387,7 @@ export type CoachProposal = Readonly<{
 export const refusalCodes = [
   "screening_see_professional",
   "screening_caps_intensity",
+  "screening_unanswered",
   "no_active_plan",
   "no_active_nutrition",
   "no_active_goal",

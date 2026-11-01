@@ -114,6 +114,7 @@ select ok(has_function_privilege('authenticated', 'public.get_my_training_guidan
 
 select pg_temp.cleared(1);
 select pg_temp.cleared(19);
+select pg_temp.cleared(20);
 select pg_temp.cleared(25);
 select pg_temp.summaries(1, array[0, 1, 2, 3, 4, 5, 6]);
 select pg_temp.workout(1, 5, 'WALKING', 30);
@@ -275,8 +276,10 @@ select is(pg_temp.week(31) ->> 'vigorous_sessions_max', '2', 'the weekly cap doe
 
 select is(pg_temp.week(33) ->> 'vigorous_allowed', 'false',
   'with no screening row the athlete is not cleared for hard cardio');
-select is(private.current_screening_outcome(pg_temp.u(33)), 'cleared',
-  'while the screening outcome itself still reads cleared for an athlete never screened');
+select is(private.current_screening_outcome(pg_temp.u(33)), 'unscreened',
+  'the screening outcome of an athlete never screened is unscreened, never cleared');
+select is(pg_temp.week(33) ->> 'vigorous_sessions_max', '0',
+  'so the weekly hard-cardio cap is 0, as under moderate_until_cleared');
 select pg_temp.cleared(34);
 select is(pg_temp.week(34) ->> 'vigorous_allowed', 'true', 'a cleared row opens it');
 

@@ -385,8 +385,9 @@ builder.
 - **M-G3:** the legacy path is closed. Revoked from `public`, `anon`, `authenticated`:
   `respond_to_onboarding_proposal` (v1), `create_fixture_meal`, `confirm_fixture_meal`,
   `confirm_fixture_meal_v2`, `persist_coach_preference` (the service role keeps the last; nothing
-  calls it). `user_accounts.onboarding_state` can no longer be inserted or updated by the app role:
-  approval already sets `completed` inside `respond_to_onboarding_proposal_v2`, and the new trigger
+  calls it). `user_accounts.onboarding_state` is no longer written by the app (its grant stayed
+  for older builds until `20261102074318`, below): approval already sets `completed` inside
+  `respond_to_onboarding_proposal_v2`, and the new trigger
   `onboarding_drafts_mark_started` moves `not_started` to `in_progress` with the first draft, so the
   app's second write in `saveDraft` is gone. Checked first: no caller in `lib/` or Edge Functions;
   production grants read-only (all five were executable by `authenticated`, none by `anon`).
@@ -452,3 +453,47 @@ fixture meals as the table owner and confirm through `confirm_analyzed_meal`. De
 `onboarding_progress_repository_test.dart`, `nutrition_forms_test.dart`, `progress_forms_test.dart`,
 and additions to `phase_2_flow_test.dart`, `account_session_test.dart`, `account_screen_test.dart`,
 `owner_auth_message_test.dart`, `goal_target_test.dart` and the contract tests.
+
+## Pre-beta audit: onboarding safety floors and direct writes (2026-11-02)
+
+Branch `claude/onboarding-safety-floors`, migration `20261102074318_onboarding_safety_floors.sql`.
+From the pre-beta audit of `4421da9` (B5a, B5b, security finding 5).
+
+- **B5a, healthy-weight floors at onboarding.** Onboarding now applies the floors Coach and the goal
+  screen already apply (`goalPhaseThresholds`, `healthyFloorWeightKg`). In `nutritionPolicy`, at a
+  BMI (to one decimal) under 19.5 a goal with a deficit (fat loss, recomposition, aesthetic) is
+  planned at maintenance (`healthyWeightHold`); the plan carries the note "Calories start at
+  maintenance rather than a deficit, because your BMI is 16.5, below the healthy range." and a fixed
+  maintenance nutrition rationale, and the calculation records `healthy_weight_hold` and `bmi`. A
+  target under BMI 18.5 is dropped when the answers are parsed (`targetBelowHealthyFloorKg`), so
+  the snapshot's `target_weight_kg` is null and approval stores no target; the plan says "No target
+  weight is set: 40 kg is under the healthy range for your height, which starts at 50.4 kg (BMI
+  18.5)." The goal type stays the athlete's choice. Approval re-checks both in SQL
+  (`private.onboarding_floor_violation`, the policy's maintenance formula with 5 kcal for its
+  rounding); a proposal that breaks one is recorded as expired (audit reason `target_below_healthy_floor`,
+  `deficit_near_healthy_floor` or `answers_incomplete`), and the app builds a fresh plan. The app's
+  target slider starts at the floor (rounded up to the half kilo) and says "Lowest healthy target
+  for your height: 50.5 kg"; a sub-floor target restored from an older draft is shown and saved at
+  the floor. The policy version stays `onboarding-policy-v2` (only athletes under the floors get a
+  different plan; the expiry at approval covers proposals built before).
+- **B5b, direct writes.** `user_goals`: column grants for exactly what the app writes (insert
+  `user_id`, `goal_type`, `priority`, `status`; update `goal_type`), policies that keep those rows
+  the caller's own drafts; details, targets, phases and activation stay in the definer functions.
+  `user_accounts.onboarding_state`: insert and update revoked (build 920 only reads it).
+  A missing screening is **unscreened**, never cleared: `private.current_screening_outcome` returns
+  `unscreened` (rank 1, with `moderate_until_cleared`); `assert_screening_allows` refuses an
+  onboarding plan until the check is answered; `hold_plan_to_screening` caps restored plans at
+  effort 7; the cardio week's hard-cardio cap is 0. `onboarding-plan` answers 422
+  `onboarding_answers_incomplete` `missing: ["screening"]` with no row, which build 920 opens at the
+  health check. Coach: the screening contributor renders an `unscreened` block with the moderate
+  rule and a suggestion to answer the health check; the reply guard applies the moderate cap; Coach
+  proposals read `unscreened` (`screeningGates`, `capsEffortToModerate`) and refuse a strength block
+  with `screening_unanswered`. `get_my_screening_v1` keeps its answer (`screened: false`, outcome
+  `cleared`), which build 920 reads.
+- **Finding 5.** `get_healthkit_completion_candidate(date)` revoked from `public` and `anon`.
+  `safety_floors_test.sql` fails if any `public` function is executable by `anon`, or a `public`
+  security definer function with a user uuid argument is executable by `authenticated`.
+- **Owner step before merging:** production has no screening rows at all (checked read-only
+  2026-11-02: 1 completed account, 1 in progress, 0 screenings). Answer **Account › Plan › Health
+  check** once on build 920 first, or after the deploy Coach treats the owner as unscreened (moderate
+  effort cap, the stronger Coach route, strength blocks refused) until it is answered.

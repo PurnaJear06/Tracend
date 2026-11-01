@@ -306,7 +306,8 @@ holds at every step:
    of body weight a week; a cut, or any calorie reduction below maintenance, at BMI under 19.5; a
    target weight under BMI 18.5; a cut after a run of loss that already calls for a maintenance
    period or a diet break (the goal phase review, B7); any change under `see_professional`; a
-   strength phase or raised intensity under `moderate_until_cleared`; a weight older than 14 days;
+   strength phase or raised intensity under `moderate_until_cleared` or while the health check is
+   unanswered (`screening_unanswered`); a weight older than 14 days;
    a plan change while a temporary block runs.
 4. **Eligibility gates the moves that push harder.** A calorie cut below maintenance and a new fat-loss
    phase need `evaluate_change_eligibility` to pass for nutrition (14 weight days, 80% logging, trend
@@ -399,6 +400,13 @@ settings are in §10.4.
   finite rule name. The formulas and sources are in ALGORITHMS.md §9.
   - **Calories:** a goal window around maintenance, with a floor of the larger of BMR and
     1,200 kcal (female) or 1,500 kcal (male or unspecified), and a ceiling of 6,000 kcal.
+  - **Healthy-weight floors (2026-11-02), the same as Coach and the goal screen:** at a BMI (to one
+    decimal) under 19.5 a goal with a deficit (fat loss, recomposition, aesthetic) starts at
+    maintenance instead, and the plan says why in plain words ("Calories start at maintenance
+    rather than a deficit, because your BMI is 16.5, below the healthy range."), with a fixed
+    maintenance nutrition rationale whatever the plan wrote. A target weight under BMI 18.5 for the
+    athlete's height is never carried into the plan or stored: the plan is built without a target
+    and says so, and the app's target slider starts at that floor. Nothing names a condition.
   - **Macros:** protein 1.6–2.2 g/kg (2.6 g/kg in a deficit), fat 20–35% of calories and at least
     0.5 g/kg, and a macro sum within 5% of calories.
   - **Storable:** the absolute nutrition bounds equal the database check, so a valid plan is
@@ -477,7 +485,11 @@ settings are in §10.4.
     fallback reason.
   - Every billed call counts toward the AI budget, including empty or cut-off answers and the
     repair attempt.
-- **Approval:** `respond_to_onboarding_proposal_v2` inserts exactly the approved workouts and
+- **Approval:** `respond_to_onboarding_proposal_v2` first checks the healthy-weight floors again on
+  the answers the plan was built from (`private.onboarding_floor_violation`: no target under BMI
+  18.5, and under BMI 19.5 no calories below the lower maintenance estimate, recomputed in SQL from
+  the same formula). A plan that breaks one is recorded as expired and reported, never approved,
+  and the app builds a fresh one under the floors. It then inserts exactly the approved workouts and
   exercises, and activates the goal, profile and onboarding weight, in one transaction, dated with
   the athlete's local date at approval (`user_accounts.timezone`, set by the app through
   `set_my_timezone`). Approval copies starting loads to `planned_exercises`. The profile keeps the
@@ -495,8 +507,11 @@ exclusions below. Regular exercise with a known condition and no clearance gives
 `moderate_until_cleared`: the rules plan caps intensity (no strength emphasis, at least 3 reps in
 reserve, no vigorous conditioning). A model never sets, changes or overrides the outcome, and the
 screening makes no diagnosis. The answers, outcome and date are stored in
-`onboarding_screenings`; no row (an account or app build from before the screening) reads as
-`cleared`.
+`onboarding_screenings`. No row (it was skipped, or the account predates the screening) is
+**unscreened**, never cleared (2026-11-02): no onboarding plan is built (`onboarding-plan` asks for
+the health check) or stored or approved (55000), and everywhere else unscreened carries the
+`moderate_until_cleared` effort cap, with wording that asks the athlete to answer the health check
+rather than to get clearance. The signed-in role cannot mark onboarding complete itself.
 
 **Red-flag screen in Coach chat (A9).** Before any Coach model call a deterministic screen
 (`_shared/coach_safety/red_flags.ts`) reads the athlete's message and, with the daily policy's
@@ -1199,8 +1214,9 @@ routes stay available by settings alone for two weeks after the cutover.
   near-failure sets, no vigorous conditioning: HIIT, sprints and intervals are out even when worded
   "moderate") and recommends clearance; `see_professional` means no training prescriptions of any
   kind (sets, reps, RPE, loads, durations, steps, a programme or frequency, exercises to do) and a
-  recommendation to get clearance first; the reply guard enforces both. No screening row reads as
-  cleared and renders nothing. **A lookup that fails, times out or returns a value the code does
+  recommendation to get clearance first; the reply guard enforces both. No screening row renders
+  an `unscreened` block with the moderate rule and a suggestion to answer the health check
+  (2026-11-02); it is never read as cleared. **A lookup that fails, times out or returns a value the code does
   not know fails closed:** the block says the outcome is unknown, Coach is told to apply the
   `moderate_until_cleared` restrictions, and the guard enforces them (a host report of a failed or
   timed-out screening contributor does the same). The reply guard (`_shared/coach_safety/reply_guard.ts`)

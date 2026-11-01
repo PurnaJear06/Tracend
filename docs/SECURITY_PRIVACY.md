@@ -428,13 +428,20 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
 - Cross-table foreign-key ownership is validated in constraints or transactional functions.
 - Storage paths and policies are user/purpose bound.
 - Edge Functions validate the JWT and requested resource even when using secret/service-role access.
-- An RPC granted to `authenticated` that takes a target user id refuses any id but the caller's
-  unless the caller is the service role. None remains: `persist_coach_preference` is service role
-  only since 2026-10-31.
+- No security definer function in `public` that takes a user id is executable by `authenticated`
+  (`persist_coach_preference` is service role only since 2026-10-31), and no `public` function is
+  executable by `anon` (`get_healthkit_completion_candidate(date)` was the last, revoked
+  2026-11-02). `safety_floors_test.sql` checks the whole catalogue, so a new function created
+  without its revoke fails CI. The `private` schema has no usage grant for the app roles.
 - The first-generation onboarding approval and the fixture-meal functions are closed to the app
-  roles, and `user_accounts.onboarding_state` cannot be written by the signed-in role: approval
-  sets `completed` inside `respond_to_onboarding_proposal_v2` (which enforces the health check) and
-  the database moves `not_started` to `in_progress` with the first draft.
+  roles, and `user_accounts.onboarding_state` cannot be written by the signed-in role (revoked
+  2026-11-02, once the installed build stopped writing it): approval sets `completed` inside
+  `respond_to_onboarding_proposal_v2` (which enforces the health check and the healthy-weight
+  floors) and the database moves `not_started` to `in_progress` with the first draft. An athlete
+  with no screening row is unscreened, never cleared, so skipping the health check gives no plan.
+- `user_goals` takes only the onboarding draft from the client: insert of `user_id`, `goal_type`,
+  `priority`, `status` and update of `goal_type`, on the caller's own `draft` rows. Targets,
+  phases and activation go through the definer functions that check the floors and audit.
 - Tables in the `private` schema (invites, waitlist, AI budget limits, research library) are not
   exposed by the Data API and have no client grants.
 - Queue messages carry opaque resource IDs and workers reauthorize ownership and consent at

@@ -129,7 +129,7 @@ function contributorsOf(athlete: Athlete, options: TurnOptions = {}): CoachConte
     : (_user, localDate) =>
       Promise.resolve(parseStandingState(contributors.standingState, localDate));
   if (contributors.principles !== false) list.push(coachingPrinciplesContributor);
-  const screening = contributors.screening;
+  const screening = contributors.screening === undefined ? "cleared" : contributors.screening;
   list.push(
     createScreeningContributor(() =>
       screening === "unreadable"

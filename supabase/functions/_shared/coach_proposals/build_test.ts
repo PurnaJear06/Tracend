@@ -1180,6 +1180,13 @@ Deno.test("a strength phase is capped by the screening and needs training eviden
   );
   assertEquals(capped.code, "screening_caps_intensity");
   assertStringIncludes(capped.reason, "moderate");
+  // A health check never answered is never cleared: the same cap, with a reason that says so.
+  const unanswered = refusalOf(
+    buildCoachProposal(intent, stateFixture({ screening: "unscreened" })),
+  );
+  assertEquals(unanswered.code, "screening_unanswered");
+  assertStringIncludes(unanswered.reason, "haven't answered the health check");
+  assert(!unanswered.reason.includes("professional"), "no clearance is implied");
   const unproven = stateFixture({
     eligibility: { ...stateFixture().eligibility, trainingEligible: false, trainingDetail: "none" },
   });

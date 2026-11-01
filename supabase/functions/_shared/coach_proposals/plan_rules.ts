@@ -9,6 +9,7 @@ import {
   validRulesPlan,
 } from "../onboarding/generate.ts";
 import { buildOnboardingProposal } from "../onboarding/plan_contract.ts";
+import { capsEffortToModerate } from "../training/screening/outcome.ts";
 import { isoWeekday } from "./common.ts";
 import { answersFromState } from "./common.ts";
 import { refusals } from "./refusals.ts";
@@ -35,7 +36,14 @@ export function rulesTraining(
 ): RulesTraining | Extract<BuildResult, { ok: false }> {
   const weight = state.goalPhase.currentWeightKg ?? trainingOnlyWeightKg;
   const answers = answersFromState(state, weight, overrides);
-  const policies = policiesFor(answers, exerciseCatalogV1, null, null, state.screening);
+  // A never-answered health check holds effort like moderate_until_cleared. see_professional is
+  // refused before any plan is built, so it never reaches the rules plan.
+  const screening = capsEffortToModerate(state.screening)
+    ? "moderate_until_cleared"
+    : state.screening === "see_professional"
+    ? "see_professional"
+    : "cleared";
+  const policies = policiesFor(answers, exerciseCatalogV1, null, null, screening);
   let built;
   try {
     built = validRulesPlan(policies);

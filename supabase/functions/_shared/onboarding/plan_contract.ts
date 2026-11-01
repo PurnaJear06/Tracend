@@ -8,6 +8,8 @@ import {
 import type { HealthHistory } from "./health_history.ts";
 import type { ScreeningOutcome } from "../training/screening/outcome.ts";
 import { type LiftEstimate, startingLoadKg, strengthRatios } from "./strength.ts";
+import { healthyFloorWeightKg } from "../training/goal_phase/bmi.ts";
+import { goalPhaseThresholds } from "../training/goal_phase/thresholds.ts";
 import {
   allowedExercises,
   type AvoidablePattern,
@@ -575,6 +577,12 @@ export function requiredNotes(plan: OnboardingPlan, policies: PlanPolicies): str
         "Moderate effort until a professional clears you: every set stops 3 or more reps short, no heavy or hard conditioning.",
       ]
       : []),
+    ...(nutrition.healthyWeightHold ? [healthyWeightHoldNote(nutrition.bmi)] : []),
+    ...(answers.targetBelowHealthyFloorKg === undefined ? [] : [
+      `No target weight is set: ${answers.targetBelowHealthyFloorKg} kg is under the healthy range for your height, which starts at ${
+        healthyFloorWeightKg(answers.heightCm)
+      } kg (BMI ${goalPhaseThresholds.bmiHealthyFloor.value}).`,
+    ]),
     ...(avoided.length ? [`Leaves out, as you asked: ${avoided.join(", ")}.`] : []),
     ...(training.priorityMinimums.length
       ? [
@@ -626,6 +634,23 @@ export function requiredNotes(plan: OnboardingPlan, policies: PlanPolicies): str
       : []),
   ];
 }
+
+/**
+ * Why a deficit goal starts at maintenance (NutritionPolicy.healthyWeightHold). Plain BMI wording,
+ * the same Coach uses when it declines a cut; it names no condition.
+ */
+export function healthyWeightHoldNote(bmi: number): string {
+  const position = bmi < goalPhaseThresholds.bmiHealthyFloor.value
+    ? "below the healthy range"
+    : "close to the bottom of the healthy range";
+  return `Calories start at maintenance rather than a deficit, because your BMI is ${
+    bmi.toFixed(1)
+  }, ${position}.`;
+}
+
+/** The nutrition rationale a plan carries while NutritionPolicy.healthyWeightHold applies. */
+export const healthyWeightHoldRationale =
+  "Maintenance calories, because your BMI is close to or below the bottom of the healthy range, with protein and fat inside the safe ranges and carbohydrate from the rest.";
 
 /** What deterministic code knows is missing, before the model's own list. */
 export function requiredMissingInformation(health: HealthSummary | null): string[] {
@@ -729,6 +754,9 @@ export function buildOnboardingProposal(
         floor_applied: policies.nutrition.floorApplied,
         ceiling_kcal: policies.nutrition.ceilingKcal,
         ceiling_applied: policies.nutrition.ceilingApplied,
+        ...(policies.nutrition.healthyWeightHold
+          ? { healthy_weight_hold: true, bmi: policies.nutrition.bmi }
+          : {}),
         protein_range_g: policies.nutrition.protein,
         ...(policies.health ? { health: policies.health } : {}),
         ...(policies.history ? { health_history: policies.history } : {}),
@@ -749,7 +777,10 @@ export function buildOnboardingProposal(
       protein_g: plan.nutrition.protein_g,
       carbohydrate_g: plan.nutrition.carbohydrate_g,
       fat_g: plan.nutrition.fat_g,
-      rationale: plan.nutrition.rationale,
+      // Deterministic wording while the hold applies, whatever the plan said about a deficit.
+      rationale: policies.nutrition.healthyWeightHold
+        ? healthyWeightHoldRationale
+        : plan.nutrition.rationale,
     },
     evidence: [
       {

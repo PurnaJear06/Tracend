@@ -117,6 +117,8 @@ Deno.test("the inputs payload is read strictly", () => {
     screening: "see_professional",
     pauses: [{ startDate: "2026-10-25", lastDay: "2026-11-02" }],
   });
+  // A never-answered health check reads as unscreened; a break is never held back by it.
+  assertEquals(parsePauseInputs({ ...good, screening: "unscreened" })?.screening, "unscreened");
   assertEquals(parsePauseInputs({ ...good, schema_version: "2.0" }), null);
   assertEquals(parsePauseInputs({ ...good, screening: "maybe" }), null);
   assertEquals(parsePauseInputs({ ...good, pauses: [{ start_date: "soon" }] }), null);
