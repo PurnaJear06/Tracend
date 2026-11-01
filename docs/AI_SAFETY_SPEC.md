@@ -406,7 +406,10 @@ settings are in §10.4.
     rather than a deficit, because your BMI is 16.5, below the healthy range."), with a fixed
     maintenance nutrition rationale whatever the plan wrote. A target weight under BMI 18.5 for the
     athlete's height is never carried into the plan or stored: the plan is built without a target
-    and says so, and the app's target slider starts at that floor. Nothing names a condition.
+    and says so, and the app's target slider starts at that floor. Nothing names a condition. The
+    model's prompt carries the held window (0%) and a line saying calories are held at maintenance
+    and why; a plan whose text still claims a deficit, a cut or weight loss is refused
+    (`deficit_claim_while_held`), repaired once, then replaced by the rules plan.
   - **Macros:** protein 1.6–2.2 g/kg (2.6 g/kg in a deficit), fat 20–35% of calories and at least
     0.5 g/kg, and a macro sum within 5% of calories.
   - **Storable:** the absolute nutrition bounds equal the database check, so a valid plan is
@@ -511,7 +514,10 @@ screening makes no diagnosis. The answers, outcome and date are stored in
 **unscreened**, never cleared (2026-11-02): no onboarding plan is built (`onboarding-plan` asks for
 the health check) or stored or approved (55000), and everywhere else unscreened carries the
 `moderate_until_cleared` effort cap, with wording that asks the athlete to answer the health check
-rather than to get clearance. The signed-in role cannot mark onboarding complete itself.
+rather than to get clearance. The signed-in role cannot mark onboarding complete itself. The cap is
+not applied retroactively to an already-approved active plan: changing a plan's targets needs the
+athlete's approval (Architecture 3), so a plan approved before the change keeps its effort until it
+is next changed (a Coach proposal, a restored plan or a new plan, which all apply the cap).
 
 **Red-flag screen in Coach chat (A9).** Before any Coach model call a deterministic screen
 (`_shared/coach_safety/red_flags.ts`) reads the athlete's message and, with the daily policy's

@@ -1,5 +1,5 @@
 begin;
-select plan(48);
+select plan(55);
 
 -- 20261102074318: the healthy-weight floors at onboarding approval, the narrowed direct writes, a
 -- missing screening read as unscreened, and the function reach of the app roles. Grants are checked
@@ -94,6 +94,16 @@ select is(private.onboarding_floor_violation(
 select is(private.onboarding_floor_violation(
     (select snapshot -> 'answers' from floors_payload) - 'height_cm', '{"calories":1450}'),
   'answers_incomplete', 'answers without a height fail closed');
+select is(private.onboarding_floor_violation(
+    (select snapshot -> 'answers' from floors_payload) || '{"height_cm":200,"weight_kg":77.8}',
+    '{"calories":1300}'),
+  null, 'BMI exactly 19.45 rounds up to 19.5, as the Deno bmiOf does: no hold');
+select is(private.onboarding_floor_violation(
+    (select snapshot -> 'answers' from floors_payload) - 'daily_activity', '{"calories":1450}'),
+  'answers_incomplete', 'under BMI 19.5, answers without a daily activity fail closed');
+select is(private.onboarding_floor_violation(
+    (select snapshot -> 'answers' from floors_payload) - 'birth_year', '{"calories":1450}'),
+  'answers_incomplete', 'and so do answers without a birth year');
 select ok(not has_function_privilege('authenticated',
   'private.onboarding_floor_violation(jsonb, jsonb)', 'execute'), 'the rule is private');
 
@@ -239,10 +249,23 @@ select throws_ok($$insert into public.user_goals(user_id, goal_type, priority, s
 select throws_ok($$update public.user_goals set details = '{"target_weight_kg":35}'
   where user_id = 'f1000000-0000-4000-8000-000000000004'$$,
   '42501', null, 'a target cannot be written past set_goal_target_v1');
+select throws_ok($$insert into public.user_goals(user_id, goal_type, priority, status, details)
+  values ('f1000000-0000-4000-8000-000000000004', 'fat_loss', 1, 'draft', '{"target_weight_kg":35}')$$,
+  '42501', null, 'a draft goal cannot be inserted with details');
+select throws_ok($$insert into public.user_goals(user_id, goal_type, priority, status, activated_at)
+  values ('f1000000-0000-4000-8000-000000000004', 'fat_loss', 1, 'draft', now())$$,
+  '42501', null, 'nor with an activation time');
 select throws_ok($$update public.user_accounts set onboarding_state = 'completed'
   where id = 'f1000000-0000-4000-8000-000000000004'$$,
   '42501', null, 'onboarding cannot be marked complete by the app');
+set local "request.jwt.claim.sub" = 'f1000000-0000-4000-8000-000000000003';
+select lives_ok($$update public.user_goals set goal_type = 'strength'
+  where user_id = 'f1000000-0000-4000-8000-000000000003' and status = 'active'$$,
+  'an update aimed at the active goal raises nothing');
 reset role;
+select is((select goal_type::text from public.user_goals
+  where user_id = 'f1000000-0000-4000-8000-000000000003' and status = 'active'), 'fat_loss',
+  'but changes no row: only drafts are writable');
 select is((select onboarding_state::text from public.user_accounts
   where id = 'f1000000-0000-4000-8000-000000000004'), 'in_progress', 'it stays in progress');
 

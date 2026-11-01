@@ -489,7 +489,14 @@ From the pre-beta audit of `4421da9` (B5a, B5b, security finding 5).
   rule and a suggestion to answer the health check; the reply guard applies the moderate cap; Coach
   proposals read `unscreened` (`screeningGates`, `capsEffortToModerate`) and refuse a strength block
   with `screening_unanswered`. `get_my_screening_v1` keeps its answer (`screened: false`, outcome
-  `cleared`), which build 920 reads.
+  `cleared`), which build 920 reads. **Not retroactive:** an already-approved active plan keeps its
+  effort; the cap applies to the next plan, Coach proposal or restored plan, because a durable plan
+  change needs the athlete's approval.
+- **Model text while held:** the onboarding prompt prints the held window (0% to 0%) and a line that
+  calories are held at maintenance and why (and that no target is set when the athlete's was under
+  the floor). `validateOnboardingPlan` refuses a plan whose text claims a deficit, a cut or weight
+  loss while held (`deficit_claim_while_held`; "rather than a deficit" and similar are allowed), so
+  both model paths repair once and then fall back to the rules plan.
 - **Finding 5.** `get_healthkit_completion_candidate(date)` revoked from `public` and `anon`.
   `safety_floors_test.sql` fails if any `public` function is executable by `anon`, or a `public`
   security definer function with a user uuid argument is executable by `authenticated`.

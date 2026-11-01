@@ -85,6 +85,7 @@ export const onboardingPlanValidationRules = [
   "macro_sum_mismatch",
   "source_not_retrieved",
   "source_not_listed",
+  "deficit_claim_while_held",
 ] as const;
 export type OnboardingPlanValidationRule = typeof onboardingPlanValidationRules[number];
 
@@ -400,6 +401,41 @@ export class PlanBlockedByScreeningError extends Error {
 const between = (value: number, [low, high]: readonly [number, number]) =>
   value >= low && value <= high;
 
+/** Every text the athlete reads in a plan, as one string the text checks read. */
+export function planText(plan: OnboardingPlan): string {
+  return [
+    plan.title,
+    plan.assessment,
+    ...plan.assumptions,
+    ...plan.missing_information,
+    ...plan.kept_from_current_plan,
+    ...plan.changed_from_current_plan,
+    plan.progression,
+    plan.rationale,
+    plan.expected_benefit,
+    plan.downside,
+    plan.nutrition.rationale,
+    ...plan.workouts.flatMap((workout) => [
+      workout.name,
+      workout.objective,
+      workout.warm_up,
+      workout.cool_down,
+      ...workout.exercises.map((exercise) => exercise.notes),
+    ]),
+  ].join("\n");
+}
+
+// A deficit, a cut or weight loss, after the phrases that say there is none are taken out.
+const noDeficit =
+  /\b(?:no|not a|not in a|rather than a|instead of a|without a)\s+(?:calorie\s+)?deficit\b/gi;
+const deficitClaim =
+  /\b(?:deficit|calorie cut|cutting phase|cut phase|lose weight|losing weight|weight loss|weight-loss|eat less|below maintenance|under maintenance|lose (?:about |around |up to )?\d|kg (?:a|per) week)\b/i;
+
+/** The plan's text claims a deficit or weight loss while NutritionPolicy.healthyWeightHold applies. */
+export function claimsDeficitWhileHeld(plan: OnboardingPlan, nutrition: NutritionPolicy): boolean {
+  return nutrition.healthyWeightHold && deficitClaim.test(planText(plan).replace(noDeficit, ""));
+}
+
 /** Throws OnboardingPlanValidationError on the first rule the plan breaks. */
 export function validateOnboardingPlan(plan: OnboardingPlan, policies: PlanPolicies): void {
   const { answers, training, nutrition } = policies;
@@ -512,6 +548,8 @@ export function validateOnboardingPlan(plan: OnboardingPlan, policies: PlanPolic
   if (Math.abs(macroCalories - food.calories) > nutrition.macroTolerance * food.calories) {
     fail("macro_sum_mismatch", "$.nutrition");
   }
+  // Calories are held at maintenance: no text may promise a deficit or weight loss.
+  if (claimsDeficitWhileHeld(plan, nutrition)) fail("deficit_claim_while_held", "$");
 }
 
 export type PlanOrigin = Readonly<{

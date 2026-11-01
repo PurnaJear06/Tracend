@@ -1,10 +1,18 @@
 // B5a: onboarding applies the healthy-weight floors Coach and the goal screen already apply. Under
 // BMI 19.5 a goal with a deficit starts at maintenance, and a target weight under BMI 18.5 is
 // never carried into the plan (so approval never stores it).
-import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
+import { assert, assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert@1.0.14";
 import { answersSnapshot, parseOnboardingAnswers } from "./answers.ts";
 import { goalCalorieAdjustments, nutritionPolicy } from "./policy.ts";
-import { buildOnboardingProposal, healthyWeightHoldRationale } from "./plan_contract.ts";
+import {
+  buildOnboardingProposal,
+  claimsDeficitWhileHeld,
+  healthyWeightHoldRationale,
+  type OnboardingPlan,
+  OnboardingPlanValidationError,
+  validateOnboardingPlan,
+} from "./plan_contract.ts";
+import { onboardingSystemPrompt } from "./generate.ts";
 import { buildRulesPlan } from "./rules_plan.ts";
 import { answersFor, policiesFor } from "./test_helpers.ts";
 import { goalPhaseThresholds } from "../training/goal_phase/thresholds.ts";
@@ -52,6 +60,8 @@ Deno.test("the threshold is Coach's: BMI rounded to one decimal, below 19.5", ()
   assertEquals(atThreshold.bmi, 19.5);
   assertEquals(atThreshold.healthyWeightHold, false);
   assert(atThreshold.calories[0] < atThreshold.tdeeKcal[0], "a deficit is allowed again");
+  // An exact tie, 77.8 kg at 200 cm (BMI 19.45), rounds up here and in SQL alike.
+  assertEquals(nutritionPolicy({ ...underweight, heightCm: 200, weightKg: 77.8 }).bmi, 19.5);
   const below = nutritionPolicy({ ...underweight, weightKg: 52.9 });
   assertEquals(below.bmi, 19.4);
   assertEquals(below.healthyWeightHold, true);
@@ -138,4 +148,59 @@ Deno.test("a target at or above the floor is kept, and other snapshots are uncha
   const none = parseOnboardingAnswers("beginner", payload, 2026);
   assert(none.ok);
   assertEquals("target_below_healthy_floor_kg" in answersSnapshot(none.answers), false);
+});
+
+Deno.test("the model is told the held window, never the goal's deficit", () => {
+  const prompt = onboardingSystemPrompt(policiesFor(underweight));
+  assertStringIncludes(prompt, "goal adjustment 0% to 0%");
+  assert(!prompt.includes("-25%"), "the fat-loss deficit is not offered");
+  assertStringIncludes(
+    prompt,
+    "Calories are held at maintenance: the athlete's BMI is 16.5, under 19.5, so Tracend sets no calorie deficit for this goal.",
+  );
+  const usual = onboardingSystemPrompt(policiesFor(answersFor({ goal: "fat_loss" })));
+  assertStringIncludes(usual, "goal adjustment -25% to -10%");
+  assert(!usual.includes("held at maintenance"));
+});
+
+Deno.test("the model is told no target is set when the athlete's was under the floor", () => {
+  const parsed = parseOnboardingAnswers("beginner", { ...payload, target_weight_kg: 40 }, 2026);
+  assert(parsed.ok);
+  assertStringIncludes(
+    onboardingSystemPrompt(policiesFor(parsed.answers)),
+    "the plan sets no target weight",
+  );
+});
+
+Deno.test("while held, a plan whose text claims a deficit or weight loss is rejected", () => {
+  const policies = policiesFor(underweight);
+  const plan = buildRulesPlan(policies) as OnboardingPlan;
+  validateOnboardingPlan(plan, policies);
+  for (
+    const claim of [
+      "A moderate deficit for steady fat loss.",
+      "You should lose about 0.4 kg a week.",
+      "Calories sit below maintenance.",
+      "Steady weight loss over the block.",
+    ]
+  ) {
+    const claiming = { ...plan, expected_benefit: claim };
+    assert(claimsDeficitWhileHeld(claiming, policies.nutrition), claim);
+    const error = assertThrows(
+      () => validateOnboardingPlan(claiming, policies),
+      OnboardingPlanValidationError,
+    );
+    assertEquals(error.rule, "deficit_claim_while_held");
+  }
+  const honest = { ...plan, assessment: "Maintenance calories rather than a deficit for now." };
+  validateOnboardingPlan(honest, policies);
+  // Without the hold the same words are an ordinary fat-loss plan.
+  const usual = policiesFor(answersFor({ goal: "fat_loss" }));
+  assertEquals(
+    claimsDeficitWhileHeld(
+      { ...buildRulesPlan(usual), expected_benefit: "A moderate deficit." },
+      usual.nutrition,
+    ),
+    false,
+  );
 });

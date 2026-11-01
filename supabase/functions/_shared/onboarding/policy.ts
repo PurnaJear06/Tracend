@@ -109,6 +109,8 @@ export type NutritionPolicy = Readonly<{
    * (coach_proposals limitRefusal). respond_to_onboarding_proposal_v2 checks it again.
    */
   healthyWeightHold: boolean;
+  /** The goal window around maintenance actually applied (the hold raises a deficit to 0). */
+  adjustment: readonly [number, number];
   protein: readonly [number, number];
   /** Minimum fat in grams at a given calorie target. */
   fatMinG: (calories: number) => number;
@@ -171,6 +173,7 @@ export function nutritionPolicy(answers: OnboardingAnswers): NutritionPolicy {
     ceilingApplied,
     bmi: roundedBmi,
     healthyWeightHold,
+    adjustment: [adjustLow, adjustHigh],
     protein: [proteinLow, proteinHigh],
     fatMinG: (calories) =>
       Math.max(
