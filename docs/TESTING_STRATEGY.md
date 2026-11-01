@@ -47,6 +47,11 @@ accepted as a permanent retry.
 - **pgTAP (22 tests):** EWMA computation with normal and outlier data, cold-start NULL return,
   recovery score at known inputs, ACWR ratio, change eligibility gate outcomes, cross-user RLS on
   `user_baselines` and `metric_baseline_history`. File: `feature_engine_baseline_test.sql`.
+- **Baseline history (30 tests):** one trail row per user, metric and observation day; repeated
+  recomputes write nothing, a new day adds one row, a revised day rewrites its row and every later
+  one, a removed reading removes its row, same-day weigh-ins keep the latest entry; the brief
+  and baselines are the same with the trail cleared; deleting an athlete with a 21,000-row trail is
+  one indexed pass. File: `baseline_history_dedupe_test.sql`.
 - **Reference parity (2026-09-08, Pass 5; hardened 2026-09-09):** the independent Dart reference
   (`test/reference/recovery_reference.dart`, written from ALGORITHMS.md, not from SQL) and the
   shared oracle fixtures (`test/reference/fixtures/*.json`, 15 on 2026-10-15). Two assertion layers: (1) every

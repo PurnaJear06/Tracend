@@ -114,6 +114,12 @@ cutover runbook (checked 2026-11-01). One line per stream; the lead updates thes
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 
+**Baseline history dedupe (2026-11-02, branch `claude/baseline-history-dedupe`, migration `20261102041737`, PR open):**
+pre-beta audit P1-1. `metric_baseline_history` gets one row per user, metric and observation day; every recompute used
+to write the whole trail again (157,165 rows, 76 MB, one athlete). The migration clears the old trail and rebuilds it,
+drops the `prior_baseline_id` self-reference that made account deletion quadratic, and adds a unique key. Baselines and
+scores are unchanged. Server only, no reinstall. Details: "Baseline history dedupe" in [`backend.md`](./handoff/backend.md).
+
 **Lost replies and thread switching (2026-10-24, branch `claude/lost-replies-thread-switch`, PR open):** QA audit groups E
 and F, app only. Coach: the latest conversation open wins and a failed open restores the previous chat; New conversation
 keeps the Continue row; a conversation loads its newest 200 messages; a follow-up tapped while Coach is busy waits
