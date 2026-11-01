@@ -135,7 +135,7 @@ select is(
   '9: repeated recomputes (brief, older day, direct) add no rows');
 
 select set_eq(
-  $$select id, ctid::text from public.metric_baseline_history
+  $$select id, ctid::text as tuple from public.metric_baseline_history
     where user_id = 'b1d00000-0000-4000-8000-00000000000a'$$,
   $$select id, tuple from history_before$$,
   '10: repeated recomputes rewrite no row (every tuple is where it was)');
