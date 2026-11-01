@@ -10,6 +10,11 @@ select no_plan();
 insert into auth.users(id, role)
 select ('b5300000-0000-4000-8000-0000000000' || lpad(n::text, 2, '0'))::uuid, 'authenticated'
 from generate_series(1, 60) n;
+-- These athletes answered the health check as cleared; a missing check is unscreened, never
+-- cleared (20261102074318).
+insert into public.onboarding_screenings(user_id, exercises_regularly, known_disease, symptoms, outcome)
+select u.id, true, false, false, 'cleared' from auth.users u
+where not exists (select 1 from public.onboarding_screenings s where s.user_id = u.id);
 
 create function pg_temp.u(p_n integer) returns uuid language sql as $$
   select ('b5300000-0000-4000-8000-0000000000' || lpad(p_n::text, 2, '0'))::uuid

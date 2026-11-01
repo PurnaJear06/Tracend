@@ -64,6 +64,8 @@ Deno.test("a payload that leaves out something the rules need yields no state", 
   assertEquals(broken((i) => Reflect.deleteProperty(i.profile, "birth_year")), null);
   assertEquals(broken((i) => (i.profile.sex = "robot")), null);
   assertEquals(broken((i) => (i.screening = "maybe")), null);
+  // The database's value for a health check never answered is read, never taken as cleared.
+  assertEquals(broken((i) => (i.screening = "unscreened"))?.screening, "unscreened");
   assertEquals(broken((i) => (i.profile.training_days = [])), null);
   assertEquals(broken((i) => Reflect.deleteProperty(i, "eligibility")), null);
   assertEquals(broken((i) => (i.plan.workouts[0].exercises = [])), null);

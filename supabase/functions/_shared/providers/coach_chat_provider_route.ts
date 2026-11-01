@@ -19,7 +19,7 @@
 //     drift): that is a multi-domain judgement.
 // A follow-up turn is not a signal: it is not a harder question, and most turns of a conversation
 // are follow-ups.
-import { screeningStateOf } from "../coach_context/contributors/screening.ts";
+import { type ScreeningState, screeningStateOf } from "../coach_context/contributors/screening.ts";
 import { proposalsContributorId } from "../coach_context/contributors/proposals.ts";
 import { watchOutsContributorId } from "../coach_context/contributors/watch_outs.ts";
 import type { CoachContributions } from "../coach_context/host.ts";
@@ -29,8 +29,8 @@ import type { AiRoute } from "../ai/types.ts";
 export const strongWatchOutDecisions = 2;
 
 export type RouteSignals = Readonly<{
-  /** The health check outcome; anything but "cleared" counts. */
-  screening: "cleared" | "moderate_until_cleared" | "see_professional" | "unknown";
+  /** The health check outcome; anything but "cleared" (unscreened and unknown too) counts. */
+  screening: ScreeningState;
   /**
    * Pain on record (today's or yesterday's check-in, or a pain-flagged exercise in the last 14
    * days). "unknown" when the contributor that reads it failed or timed out or could not read its

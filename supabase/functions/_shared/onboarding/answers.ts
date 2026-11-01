@@ -12,6 +12,7 @@ import {
   type ScreeningAnswers,
   screeningSnapshot,
 } from "../training/screening/screening.ts";
+import { healthyFloorWeightKg } from "../training/goal_phase/bmi.ts";
 
 // The reviewed onboarding answers an onboarding plan is built from, parsed
 // from onboarding_drafts.payload. Old drafts (before 2026-10) lack the body,
@@ -108,7 +109,14 @@ export type OnboardingAnswers = Readonly<{
   age: number;
   heightCm: number;
   weightKg: number;
+  /** Null without a target, and when the target was under the healthy floor (below). */
   targetWeightKg: number | null;
+  /**
+   * The target the athlete gave when it was under the healthy-weight floor for their height (BMI
+   * 18.5, healthyFloorWeightKg); absent otherwise. Such a target is never stored: the plan is
+   * built without one and says why, as set_goal_target_v1 and Coach refuse it.
+   */
+  targetBelowHealthyFloorKg?: number;
   dailyActivity: DailyActivity;
   /** ISO weekdays, 1 = Monday, ascending and unique. */
   trainingWeekdays: readonly number[];
@@ -133,7 +141,7 @@ export type OnboardingAnswers = Readonly<{
   revisionNote: string;
   /**
    * The pre-exercise screening answers (B6). Absent for drafts from app builds that do not ask;
-   * the plan then reads as cleared (Contract 8).
+   * the stored screening decides the plan either way (onboarding-plan).
    */
   screening?: ScreeningAnswers;
 }>;
@@ -239,9 +247,13 @@ export function parseOnboardingAnswers(
     missing.push("weight_kg");
   }
   const target = typeof payload.target_weight_kg === "number" ? payload.target_weight_kg : null;
-  const targetWeightKg = within(target, answerLimits.minWeightKg, answerLimits.maxWeightKg)
+  const givenTargetKg = within(target, answerLimits.minWeightKg, answerLimits.maxWeightKg)
     ? Math.round(target * 10) / 10
     : null;
+  const targetFloorKg = healthyFloorWeightKg(heightCm);
+  const targetBelowFloor = givenTargetKg !== null && targetFloorKg !== null &&
+    givenTargetKg < targetFloorKg;
+  const targetWeightKg = targetBelowFloor ? null : givenTargetKg;
   const dailyActivity = dailyActivities.find((item) => item === payload.daily_activity);
   if (!dailyActivity) missing.push("daily_activity");
   const weekdays = Array.isArray(payload.training_weekdays)
@@ -296,6 +308,7 @@ export function parseOnboardingAnswers(
       heightCm: heightCm!,
       weightKg: Math.round(weightKg! * 10) / 10,
       targetWeightKg,
+      ...(targetBelowFloor ? { targetBelowHealthyFloorKg: givenTargetKg! } : {}),
       dailyActivity: dailyActivity!,
       trainingWeekdays: weekdays,
       sessionMinutes: sessionMinutes!,
@@ -330,6 +343,10 @@ export function answersSnapshot(answers: OnboardingAnswers): Record<string, unkn
     height_cm: answers.heightCm,
     weight_kg: answers.weightKg,
     target_weight_kg: answers.targetWeightKg,
+    // Only when it happened, so snapshots (and their hashes) of every other draft stay as they were.
+    ...(answers.targetBelowHealthyFloorKg === undefined
+      ? {}
+      : { target_below_healthy_floor_kg: answers.targetBelowHealthyFloorKg }),
     daily_activity: answers.dailyActivity,
     training_weekdays: answers.trainingWeekdays,
     session_minutes: answers.sessionMinutes,

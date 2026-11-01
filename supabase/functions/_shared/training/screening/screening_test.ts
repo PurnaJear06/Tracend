@@ -69,9 +69,9 @@ Deno.test("a current symptom stops the plan even after a clearance", () => {
   );
 });
 
-Deno.test("an athlete never screened reads as cleared", () => {
-  assertEquals(screeningOutcomeOf(undefined), "cleared");
-  assertEquals(screeningOutcomeOf(null), "cleared");
+Deno.test("an athlete never screened is unscreened, never cleared", () => {
+  assertEquals(screeningOutcomeOf(undefined), "unscreened");
+  assertEquals(screeningOutcomeOf(null), "unscreened");
   assertEquals(screeningOutcomeOf(answers({ knownDisease: true })), "moderate_until_cleared");
 });
 

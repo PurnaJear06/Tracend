@@ -410,6 +410,20 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   static double _half(double kg) => (kg * 2).round() / 2;
 
+  /// The lowest target weight Tracend sets: BMI 18.5 at the athlete's height,
+  /// as the server rounds it, then up to the next half kilo on the slider. The
+  /// server sets no target below it.
+  double get _targetFloorKg {
+    final metres = _heightCm.round() / 100;
+    final floor = ((18.5 * metres * metres * 10).round() / 10 * 2).ceil() / 2;
+    return floor < _minWeightKg ? _minWeightKg : floor;
+  }
+
+  /// The target as shown and saved: never under the healthy floor.
+  double? get _targetShownKg => _targetWeightKg == null
+      ? null
+      : _half(_targetWeightKg!).clamp(_targetFloorKg, _maxWeightKg);
+
   /// The four answers once every question shown has been answered.
   ScreeningAnswers? get _screeningAnswers => ScreeningAnswers.fromChoices(
     exercisesRegularly: _exercisesRegularly,
@@ -433,9 +447,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       'birth_year': _birthYearValue,
       'height_cm': _heightCm.round(),
       'weight_kg': _half(_weightKg),
-      'target_weight_kg': _targetWeightKg == null
-          ? null
-          : _half(_targetWeightKg!),
+      'target_weight_kg': _targetShownKg,
       'daily_activity': _dailyActivity,
       'training_weekdays': weekdays,
       // Read by builds before 2026-10 as a day count.
@@ -1964,19 +1976,24 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               setState(() => _targetWeightKg = on ? _weightKg : null),
           title: const Text('I have a target weight'),
         ),
-        if (_targetWeightKg != null) ...[
+        if (_targetShownKg case final target?) ...[
           Text(
-            'Target: ${_weightLabel(_targetWeightKg!)}',
+            'Target: ${_weightLabel(target)}',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           _Stepper(
             label: 'Target weight',
-            value: _half(_targetWeightKg!).clamp(_minWeightKg, _maxWeightKg),
-            min: _minWeightKg,
+            value: target,
+            min: _targetFloorKg,
             max: _maxWeightKg,
             step: 0.5,
             format: _weightLabel,
             onChanged: (value) => setState(() => _targetWeightKg = value),
+          ),
+          Text(
+            'Lowest healthy target for your height: '
+            '${_weightLabel(_targetFloorKg)}',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ],
@@ -2410,9 +2427,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   List<_ReviewRow> _reviewRows() {
     final weekdays = _weekdays.toList()..sort();
     final days = weekdays.map((day) => onboardingWeekdayLabels[day - 1]);
-    final target = _targetWeightKg == null
+    final target = _targetShownKg == null
         ? ''
-        : ' → ${_weightLabel(_targetWeightKg!)}';
+        : ' → ${_weightLabel(_targetShownKg!)}';
     String orNone(String value) => value.trim().isEmpty ? 'None' : value.trim();
     return [
       _ReviewRow(

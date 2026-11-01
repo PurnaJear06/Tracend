@@ -8,6 +8,8 @@ import {
 import type { HealthHistory } from "./health_history.ts";
 import type { ScreeningOutcome } from "../training/screening/outcome.ts";
 import { type LiftEstimate, startingLoadKg, strengthRatios } from "./strength.ts";
+import { healthyFloorWeightKg } from "../training/goal_phase/bmi.ts";
+import { goalPhaseThresholds } from "../training/goal_phase/thresholds.ts";
 import {
   allowedExercises,
   type AvoidablePattern,
@@ -83,6 +85,7 @@ export const onboardingPlanValidationRules = [
   "macro_sum_mismatch",
   "source_not_retrieved",
   "source_not_listed",
+  "deficit_claim_while_held",
 ] as const;
 export type OnboardingPlanValidationRule = typeof onboardingPlanValidationRules[number];
 
@@ -398,6 +401,41 @@ export class PlanBlockedByScreeningError extends Error {
 const between = (value: number, [low, high]: readonly [number, number]) =>
   value >= low && value <= high;
 
+/** Every text the athlete reads in a plan, as one string the text checks read. */
+export function planText(plan: OnboardingPlan): string {
+  return [
+    plan.title,
+    plan.assessment,
+    ...plan.assumptions,
+    ...plan.missing_information,
+    ...plan.kept_from_current_plan,
+    ...plan.changed_from_current_plan,
+    plan.progression,
+    plan.rationale,
+    plan.expected_benefit,
+    plan.downside,
+    plan.nutrition.rationale,
+    ...plan.workouts.flatMap((workout) => [
+      workout.name,
+      workout.objective,
+      workout.warm_up,
+      workout.cool_down,
+      ...workout.exercises.map((exercise) => exercise.notes),
+    ]),
+  ].join("\n");
+}
+
+// A deficit, a cut or weight loss, after the phrases that say there is none are taken out.
+const noDeficit =
+  /\b(?:no|not a|not in a|rather than a|instead of a|without a)\s+(?:calorie\s+)?deficit\b/gi;
+const deficitClaim =
+  /\b(?:deficit|calorie cut|cutting phase|cut phase|lose weight|losing weight|weight loss|weight-loss|eat less|below maintenance|under maintenance|lose (?:about |around |up to )?\d|kg (?:a|per) week)\b/i;
+
+/** The plan's text claims a deficit or weight loss while NutritionPolicy.healthyWeightHold applies. */
+export function claimsDeficitWhileHeld(plan: OnboardingPlan, nutrition: NutritionPolicy): boolean {
+  return nutrition.healthyWeightHold && deficitClaim.test(planText(plan).replace(noDeficit, ""));
+}
+
 /** Throws OnboardingPlanValidationError on the first rule the plan breaks. */
 export function validateOnboardingPlan(plan: OnboardingPlan, policies: PlanPolicies): void {
   const { answers, training, nutrition } = policies;
@@ -510,6 +548,8 @@ export function validateOnboardingPlan(plan: OnboardingPlan, policies: PlanPolic
   if (Math.abs(macroCalories - food.calories) > nutrition.macroTolerance * food.calories) {
     fail("macro_sum_mismatch", "$.nutrition");
   }
+  // Calories are held at maintenance: no text may promise a deficit or weight loss.
+  if (claimsDeficitWhileHeld(plan, nutrition)) fail("deficit_claim_while_held", "$");
 }
 
 export type PlanOrigin = Readonly<{
@@ -575,6 +615,12 @@ export function requiredNotes(plan: OnboardingPlan, policies: PlanPolicies): str
         "Moderate effort until a professional clears you: every set stops 3 or more reps short, no heavy or hard conditioning.",
       ]
       : []),
+    ...(nutrition.healthyWeightHold ? [healthyWeightHoldNote(nutrition.bmi)] : []),
+    ...(answers.targetBelowHealthyFloorKg === undefined ? [] : [
+      `No target weight is set: ${answers.targetBelowHealthyFloorKg} kg is under the healthy range for your height, which starts at ${
+        healthyFloorWeightKg(answers.heightCm)
+      } kg (BMI ${goalPhaseThresholds.bmiHealthyFloor.value}).`,
+    ]),
     ...(avoided.length ? [`Leaves out, as you asked: ${avoided.join(", ")}.`] : []),
     ...(training.priorityMinimums.length
       ? [
@@ -626,6 +672,23 @@ export function requiredNotes(plan: OnboardingPlan, policies: PlanPolicies): str
       : []),
   ];
 }
+
+/**
+ * Why a deficit goal starts at maintenance (NutritionPolicy.healthyWeightHold). Plain BMI wording,
+ * the same Coach uses when it declines a cut; it names no condition.
+ */
+export function healthyWeightHoldNote(bmi: number): string {
+  const position = bmi < goalPhaseThresholds.bmiHealthyFloor.value
+    ? "below the healthy range"
+    : "close to the bottom of the healthy range";
+  return `Calories start at maintenance rather than a deficit, because your BMI is ${
+    bmi.toFixed(1)
+  }, ${position}.`;
+}
+
+/** The nutrition rationale a plan carries while NutritionPolicy.healthyWeightHold applies. */
+export const healthyWeightHoldRationale =
+  "Maintenance calories, because your BMI is close to or below the bottom of the healthy range, with protein and fat inside the safe ranges and carbohydrate from the rest.";
 
 /** What deterministic code knows is missing, before the model's own list. */
 export function requiredMissingInformation(health: HealthSummary | null): string[] {
@@ -729,6 +792,9 @@ export function buildOnboardingProposal(
         floor_applied: policies.nutrition.floorApplied,
         ceiling_kcal: policies.nutrition.ceilingKcal,
         ceiling_applied: policies.nutrition.ceilingApplied,
+        ...(policies.nutrition.healthyWeightHold
+          ? { healthy_weight_hold: true, bmi: policies.nutrition.bmi }
+          : {}),
         protein_range_g: policies.nutrition.protein,
         ...(policies.health ? { health: policies.health } : {}),
         ...(policies.history ? { health_history: policies.history } : {}),
@@ -749,7 +815,10 @@ export function buildOnboardingProposal(
       protein_g: plan.nutrition.protein_g,
       carbohydrate_g: plan.nutrition.carbohydrate_g,
       fat_g: plan.nutrition.fat_g,
-      rationale: plan.nutrition.rationale,
+      // Deterministic wording while the hold applies, whatever the plan said about a deficit.
+      rationale: policies.nutrition.healthyWeightHold
+        ? healthyWeightHoldRationale
+        : plan.nutrition.rationale,
     },
     evidence: [
       {

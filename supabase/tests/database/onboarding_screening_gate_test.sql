@@ -61,6 +61,11 @@ begin
 end $$;
 
 select pg_temp.athlete(('b6a00000-0000-4000-8000-00000000000' || n)::uuid) from generate_series(1, 8) n;
+-- Athletes 1 to 5 answered the health check as cleared before their plan was built. A missing check
+-- is unscreened and stores no plan (section 6, 20261102074318).
+insert into public.onboarding_screenings(user_id, exercises_regularly, known_disease, symptoms, outcome)
+select ('b6a00000-0000-4000-8000-00000000000' || n)::uuid, true, false, false, 'cleared'
+from generate_series(1, 5) n;
 create temporary table p(name text primary key, id uuid);
 grant all on p to authenticated;
 
@@ -168,15 +173,16 @@ select is(public.record_screening_v1(true, false, false) ->> 'outcome', 'cleared
   'answering the same again changes nothing');
 reset role;
 
--- 6. An athlete with no screening row is unaffected --------------------------------------------------------
+-- 6. An athlete with no screening row is unscreened, never cleared ---------------------------------------
 
-insert into p select 'seven', pg_temp.proposal('b6a00000-0000-4000-8000-000000000007', repeat('a', 64));
+select throws_ok($$select pg_temp.proposal('b6a00000-0000-4000-8000-000000000007', repeat('a', 64))$$,
+  '55000', 'the health check must be answered first',
+  'no plan is stored for an athlete who never answered the health check');
 set local role authenticated;
 set local "request.jwt.claim.sub" = 'b6a00000-0000-4000-8000-000000000007';
 select is(public.get_my_screening_v1() ->> 'screened', 'false', 'no row reads as not screened');
-select is(public.get_my_screening_v1() ->> 'outcome', 'cleared', 'and as cleared');
-select is(public.respond_to_onboarding_proposal_v2((select id from p where name = 'seven'), 'accept') ->> 'status',
-  'accepted', 'the plan is approved as before the screening existed');
+select is(public.get_my_screening_v1() ->> 'outcome', 'cleared',
+  'with the outcome installed builds read beside screened false (they ask the check again)');
 reset role;
 
 -- 7. A moderate athlete approves a plan built as moderate -----------------------------------------------------

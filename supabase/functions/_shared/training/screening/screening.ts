@@ -1,4 +1,4 @@
-import type { ScreeningOutcome } from "./outcome.ts";
+import type { ScreeningGate, ScreeningOutcome } from "./outcome.ts";
 
 // The pre-exercise screening gate (coaching platform Contract 8, chunk B6). Four plain questions
 // asked before the first plan; the outcome only caps the plan's intensity or stops plan building.
@@ -34,11 +34,11 @@ export function screeningOutcome(answers: ScreeningAnswers): ScreeningOutcome {
 }
 
 /**
- * The outcome for an athlete who may never have been screened (an app build that does not ask, or
- * plans made before B6): missing answers read as cleared (Contract 8).
+ * The gate for an athlete who may never have been screened (an app build that does not ask, or an
+ * account from before B6): missing answers are unscreened, never cleared.
  */
-export function screeningOutcomeOf(answers: ScreeningAnswers | null | undefined): ScreeningOutcome {
-  return answers ? screeningOutcome(answers) : "cleared";
+export function screeningOutcomeOf(answers: ScreeningAnswers | null | undefined): ScreeningGate {
+  return answers ? screeningOutcome(answers) : "unscreened";
 }
 
 export type ScreeningParse =

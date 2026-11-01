@@ -4,6 +4,11 @@ select plan(19);
 insert into auth.users(id, role) values
   ('f3000000-0000-4000-8000-000000000001', 'authenticated'),
   ('f3000000-0000-4000-8000-000000000002', 'authenticated');
+-- These athletes answered the health check as cleared; a missing check is unscreened, never
+-- cleared (20261102074318).
+insert into public.onboarding_screenings(user_id, exercises_regularly, known_disease, symptoms, outcome)
+select u.id, true, false, false, 'cleared' from auth.users u
+where not exists (select 1 from public.onboarding_screenings s where s.user_id = u.id);
 
 -- One notice for every purpose ----------------------------------------------------------
 

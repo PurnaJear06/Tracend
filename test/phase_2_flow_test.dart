@@ -1286,6 +1286,35 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('a target weight never goes under the healthy floor', (
+      tester,
+    ) async {
+      // A draft from an older build: 45 kg with a 40 kg target at 165 cm.
+      final draft = _draft('about');
+      final repository = _FakeOnboardingRepository(
+        draft: OnboardingDraft(
+          path: draft.path,
+          currentSection: draft.currentSection,
+          payload: {...draft.payload, 'weight_kg': 45, 'target_weight_kg': 40},
+        ),
+      );
+      await _pump(tester, repository);
+      await tester.pumpAndSettle();
+      // BMI 18.5 at 165 cm is 50.4 kg, so the lowest half kilo is 50.5 kg.
+      expect(find.text('Target: 50.5 kg'), findsOneWidget);
+      expect(
+        find.text('Lowest healthy target for your height: 50.5 kg'),
+        findsOneWidget,
+      );
+      final decrease = find.byTooltip('Decrease target weight');
+      await tester.ensureVisible(decrease);
+      await tester.tap(decrease);
+      await tester.pumpAndSettle();
+      expect(find.text('Target: 50.5 kg'), findsOneWidget);
+      await _continue(tester);
+      expect(repository.savedPayload!['target_weight_kg'], 50.5);
+    });
+
     testWidgets('rejecting asks first; one tap approves once', (tester) async {
       final repository = _FakeOnboardingRepository(
         draft: _draft('proposal'),

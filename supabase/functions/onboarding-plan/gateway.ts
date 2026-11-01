@@ -22,6 +22,7 @@ import {
   OnboardingPlanValidationError,
   parseOnboardingPlan,
   type PlanPolicies,
+  planText,
   validateOnboardingPlan,
 } from "../_shared/onboarding/plan_contract.ts";
 import {
@@ -310,29 +311,6 @@ export function preparePlan(
     return unusable(gatewayRoute, ceilingUsd, "onboarding_plan");
   }
   return { kind: "ready", prepared: { policies, system, user, ceilingUsd } };
-}
-
-function planText(plan: OnboardingPlan): string {
-  return [
-    plan.title,
-    plan.assessment,
-    ...plan.assumptions,
-    ...plan.missing_information,
-    ...plan.kept_from_current_plan,
-    ...plan.changed_from_current_plan,
-    plan.progression,
-    plan.rationale,
-    plan.expected_benefit,
-    plan.downside,
-    plan.nutrition.rationale,
-    ...plan.workouts.flatMap((workout) => [
-      workout.name,
-      workout.objective,
-      workout.warm_up,
-      workout.cool_down,
-      ...workout.exercises.map((exercise) => exercise.notes),
-    ]),
-  ].join("\n");
 }
 
 /** The shown sources as the mention check reads them: the label and the author text of each excerpt. */
