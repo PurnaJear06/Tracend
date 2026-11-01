@@ -343,9 +343,17 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
   server; the athlete then signs in with the password.
 - A forgotten password is reset in the app with a code. **Forgot password?** calls Auth's recover
   endpoint; the athlete types the code from the email with a new password (`verifyOTP` with type
-  `recovery`, then `updateUser`). The screen reads the same whether or not the email has an account,
-  including when Auth refuses a repeat request within a minute (which it does only for an existing
-  account). Leaving after the code was accepted signs that session out. The Reset password email
+  `recovery`, then `updateUser`). What the app reveals about an address: Auth answers an unknown
+  address at once with nothing sent, so every answer only an existing account can get is shown as
+  "code sent" (the per-address email limit `over_email_send_rate_limit`, `email_address_not_authorized`
+  and any 5xx, such as a mail that could not be sent); its code is logged, codes only. Shown as they
+  are, because they apply to every address alike: the per-request limit (`over_request_rate_limit`,
+  "Too many requests"), an invalid address and a lost connection. The app's screens therefore never
+  say whether an account exists; Auth's own API still answers a direct caller differently (a 429 or
+  500 only for an existing account), which the app cannot change. The accepted code signs the phone
+  in, so a persisted `tracend.password_reset_pending` mark is set before the code is checked and
+  cleared once the new password is saved or the reset is left; a launch that finds it ends that
+  session on the phone first. Leaving after the code was accepted signs that session out. The Reset password email
   template must show `{{ .Token }}` (`docs/BETA_OPERATIONS.md` step 9), and leaked-password
   protection is on in Auth (owner step); a password found in a breach is refused with its own
   message. A confirmation email can be sent again from sign-in, at most once a minute.
@@ -490,14 +498,15 @@ located no frame is sent. A provider failure keeps its short code and HTTP statu
 `health-sync` answers a batch the database refuses (SQLSTATE class 22 or 23, or `P0002`) with 422
 `health_sync_rejected` and the SQLSTATE, and a warning log line; the hourly limit (54000) with 429
 `health_sync_limit`; anything else with 503 `health_sync_unavailable`. The last two write an error
-log line and a Sentry event, both with the SQLSTATE only. The app tries a 503 again and never a 4xx.
+log line and a Sentry event, both with the SQLSTATE only. The app tries a 5xx again and never a 4xx, from the function or from Supabase's relay.
 The app names the signed-in athlete on its events by the account ID (the Supabase user id, never
 the email): it is set when the gate lets an account in (online or from the saved plan) and cleared
 on every signed-out transition, deletion included. The scrubber keeps the user's id and drops every
 other user field (email, name, IP address). A load that keeps failing is reported once: the daily
 brief, the training hub, an Apple Health sync and the coaching decision send one event (type and
-code) at the third failure in a row; a success starts the count again, and a lost connection is not
-counted.
+code) at the third failure in a row; a success starts the count again, a lost connection is not
+counted, only the load whose result is shown counts (once per request), and every change of account
+starts all counts again.
 In Flutter (`lib/app/sentry_scrubber.dart`) the scrubber also covers exception values, `extra`,
 contexts and breadcrumbs; the app's prints are not breadcrumbs (`enablePrintBreadcrumbs` is off);
 a `beforeBreadcrumb` drops console crumbs and cuts HTTP crumbs to method, status and address

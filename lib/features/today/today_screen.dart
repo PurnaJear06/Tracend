@@ -721,19 +721,25 @@ class _TodayScreenState extends State<TodayScreen> {
     final future = widget.brief.load(day);
     future.then(
       (brief) {
-        noteLoadSuccess('Today: daily brief');
+        // Only the newest load is shown, so only it counts; loads that share
+        // one request (SharedDailyBriefRepository) count it once.
         if (!mounted || load != _briefLoads) return;
+        noteLoadSuccess(_briefLoad);
         _lastBrief = brief;
         _briefLoadedAt = widget.clock();
         _updateGate();
         unawaited(_publishWidgets(brief));
       },
       onError: (Object error, StackTrace stackTrace) {
-        noteLoadFailure(error, stackTrace, 'Today: daily brief');
+        if (!mounted || load != _briefLoads) return;
+        noteLoadFailure(error, stackTrace, _briefLoad);
       },
     );
     return future;
   }
+
+  /// The name a run of failed brief loads is reported under.
+  static const _briefLoad = 'Today: daily brief';
 
   /// Newest publish wins: targets can arrive after the brief, and a slow
   /// older publish must not overwrite a newer one.

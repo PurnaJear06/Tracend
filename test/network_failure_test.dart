@@ -90,6 +90,27 @@ void main() {
       expect(reported, isEmpty);
     });
 
+    test('another account starts the count again', () {
+      final previous = athleteSink;
+      athleteSink = (_) {};
+      addTearDown(() {
+        athleteSink = previous;
+        identifyAthlete(null);
+      });
+      identifyAthlete('athlete-a');
+      noteLoadFailure(refused, null, 'Today: daily brief');
+      noteLoadFailure(refused, null, 'Today: daily brief');
+      identifyAthlete('athlete-a');
+      expect(loadFailuresInARow('Today: daily brief'), 2);
+
+      identifyAthlete('athlete-b');
+      expect(loadFailuresInARow('Today: daily brief'), 0);
+      noteLoadFailure(refused, null, 'Today: daily brief');
+      identifyAthlete(null);
+      expect(loadFailuresInARow('Today: daily brief'), 0);
+      expect(reported, isEmpty);
+    });
+
     test('no signal is not counted', () {
       for (var i = 0; i < 5; i++) {
         noteLoadFailure(

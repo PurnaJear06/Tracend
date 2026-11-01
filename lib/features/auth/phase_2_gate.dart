@@ -9,6 +9,7 @@ import 'package:tracend/features/account/account_time_zone.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/auth/account_session.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
+import 'package:tracend/features/auth/password_reset_flow.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
@@ -159,6 +160,19 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     String? userId;
     try {
       final client = _client;
+      // A password reset the app was closed during: its code signed the
+      // phone in, but no new password was saved. That session ends here,
+      // before anything opens, and the athlete signs in again.
+      if (client.auth.currentSession != null &&
+          await PasswordResetMarker().takeUnfinished()) {
+        // The session leaves this phone at once; telling Auth needs the
+        // network, so the launch does not wait for it.
+        unawaited(
+          client.auth
+              .signOut(scope: SignOutScope.local)
+              .catchError((Object e) => logNonCritical(e)),
+        );
+      }
       final session = client.auth.currentSession;
       if (session == null) {
         // A widget snapshot a failed clear left behind goes now.
@@ -286,7 +300,9 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   /// the gate's transient state (loading, a connection error) goes with the
   /// session, so nothing hides sign-in. Repeated events change nothing more.
   void _showSignedOut() {
+    // The next account starts with no Sentry user and no load counts.
     identifyAthlete(null);
+    resetLoadFailures();
     if (!mounted) return;
     _sessionsEnded++;
     setState(() {

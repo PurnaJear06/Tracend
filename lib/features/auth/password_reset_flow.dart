@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
@@ -35,6 +36,46 @@ class ResendCooldown extends ChangeNotifier {
   void dispose() {
     _timer?.cancel();
     super.dispose();
+  }
+}
+
+/// Marks a password reset between an accepted code and a saved password. The
+/// accepted code signs the phone in, so a reset the app was closed during
+/// would open the account with no new password chosen: the gate's next
+/// account check ends that session instead (`Phase2Gate`).
+class PasswordResetMarker {
+  PasswordResetMarker([SharedPreferencesAsync? preferences])
+    : _preferences = preferences ?? SharedPreferencesAsync();
+
+  static const key = 'tracend.password_reset_pending';
+
+  final SharedPreferencesAsync _preferences;
+
+  /// Set before the code is checked. Throws when it cannot be stored, and
+  /// the code is then not sent.
+  Future<void> mark() => _preferences.setBool(key, true);
+
+  /// Cleared once the new password is saved, or the reset is left. Never
+  /// throws.
+  Future<void> clear() async {
+    try {
+      await _preferences.remove(key);
+    } catch (e) {
+      logNonCritical(e, 'password reset mark not cleared');
+    }
+  }
+
+  /// Whether a reset was left unfinished; the mark is cleared as it is read.
+  /// Never throws: a mark that cannot be read counts as none.
+  Future<bool> takeUnfinished() async {
+    try {
+      if (await _preferences.getBool(key) != true) return false;
+    } catch (e) {
+      logNonCritical(e, 'password reset mark not read');
+      return false;
+    }
+    await clear();
+    return true;
   }
 }
 
@@ -80,6 +121,7 @@ class _PasswordResetFlowState extends State<PasswordResetFlow> {
   final _codeController = TextEditingController();
   final _passwordController = TextEditingController();
   final _cooldown = ResendCooldown();
+  final _marker = PasswordResetMarker();
 
   /// The address the code was asked for; null until then.
   String? _email;
@@ -112,7 +154,7 @@ class _PasswordResetFlowState extends State<PasswordResetFlow> {
       await widget.auth.resetPasswordForEmail(email);
       _codeSent(email);
     } on AuthException catch (error) {
-      if (_emailLimit(error)) {
+      if (_readsAsSent(error)) {
         _codeSent(email);
       } else if (mounted) {
         setState(
@@ -129,13 +171,23 @@ class _PasswordResetFlowState extends State<PasswordResetFlow> {
     }
   }
 
-  /// Auth's limit on emails (one a minute to an address, and a cap an hour)
-  /// is checked only for an address with an account: an unknown address is
-  /// answered at once with nothing sent. So this refusal reads as sent, and
-  /// the screen is the same either way. A limit on requests applies to
-  /// everyone and is said as it is.
-  static bool _emailLimit(AuthException error) =>
-      error.code == 'over_email_send_rate_limit';
+  /// Auth answers an unknown address at once with nothing sent, so a refusal
+  /// that only an address with an account can get reads as sent, and the
+  /// screen is the same either way: the email limit (one a minute to an
+  /// address, a cap an hour), an address the email sender will not deliver
+  /// to (`email_address_not_authorized`) and a server failure (5xx, a mail
+  /// that could not be sent). Its code is logged. A limit on requests, an
+  /// invalid address and a lost connection apply to everyone and are said as
+  /// they are.
+  static bool _readsAsSent(AuthException error) {
+    final status = int.tryParse(error.statusCode ?? '');
+    final hidden =
+        error.code == 'over_email_send_rate_limit' ||
+        error.code == 'email_address_not_authorized' ||
+        (status != null && status >= 500);
+    if (hidden) logNonCritical(error, 'password reset code refused');
+    return hidden;
+  }
 
   void _codeSent(String email) {
     if (!mounted) return;
@@ -165,7 +217,7 @@ class _PasswordResetFlowState extends State<PasswordResetFlow> {
       _newCodeSent();
     } on AuthException catch (error) {
       if (!mounted) return;
-      if (_emailLimit(error)) {
+      if (_readsAsSent(error)) {
         _newCodeSent();
       } else {
         if (isAuthRateLimit(error)) _cooldown.start();
@@ -196,6 +248,18 @@ class _PasswordResetFlowState extends State<PasswordResetFlow> {
     try {
       if (!_verified) {
         try {
+          await _marker.mark();
+        } catch (e) {
+          logNonCritical(e, 'password reset not marked');
+          if (mounted) {
+            setState(
+              () => _error =
+                  'Password reset could not start on this phone. Try again.',
+            );
+          }
+          return;
+        }
+        try {
           final verified = await widget.auth.verifyOTP(
             type: OtpType.recovery,
             email: email,
@@ -205,6 +269,8 @@ class _PasswordResetFlowState extends State<PasswordResetFlow> {
             throw const AuthException('No session for the code.');
           }
         } on AuthException catch (error) {
+          // No session was made: nothing is left to end.
+          await _marker.clear();
           if (mounted) setState(() => _error = _codeFailure(error));
           return;
         }
@@ -219,6 +285,7 @@ class _PasswordResetFlowState extends State<PasswordResetFlow> {
         if (mounted) setState(() => _error = _passwordFailure(error));
         return;
       }
+      await _marker.clear();
       widget.onPasswordChanged();
     } catch (e) {
       logNonCritical(e, 'password not reset');
@@ -238,6 +305,7 @@ class _PasswordResetFlowState extends State<PasswordResetFlow> {
         logNonCritical(e);
       }
     }
+    await _marker.clear();
     widget.onCancel();
   }
 

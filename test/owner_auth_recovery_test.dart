@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
+import 'package:tracend/features/auth/password_reset_flow.dart';
 
 const _email = 'athlete@example.com';
 
@@ -124,9 +128,17 @@ void main() {
   late int authenticated;
 
   setUp(() {
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
     auth = _FakeAuth();
     authenticated = 0;
   });
+
+  /// Whether this phone marks a reset whose code was accepted but whose
+  /// password is not saved yet.
+  Future<bool?> marked(WidgetTester tester) => tester.runAsync<bool?>(
+    () => SharedPreferencesAsync().getBool(PasswordResetMarker.key),
+  );
 
   Future<void> pump(WidgetTester tester, {Size size = const Size(390, 844)}) {
     tester.view.physicalSize = size;
@@ -184,6 +196,7 @@ void main() {
         'update new-password-1',
       ]);
       expect(authenticated, 1);
+      expect(await marked(tester), isNull);
     });
 
     testWidgets('asking for a code reads the same whether or not the email '
@@ -211,6 +224,35 @@ void main() {
       );
     });
 
+    for (final (name, refusal) in [
+      (
+        'a server failure',
+        const AuthApiException(
+          'Error sending recovery email',
+          statusCode: '500',
+          code: 'unexpected_failure',
+        ),
+      ),
+      (
+        'an address the sender refuses',
+        const AuthApiException(
+          'Email address not authorized',
+          statusCode: '400',
+          code: 'email_address_not_authorized',
+        ),
+      ),
+    ]) {
+      testWidgets('$name reads the same as a sent code', (tester) async {
+        auth.resetError = refusal;
+        await askForCode(tester);
+        expect(find.text('Check your email'), findsOneWidget);
+        expect(
+          find.textContaining('If an account uses $_email, we sent it a code.'),
+          findsOneWidget,
+        );
+      });
+    }
+
     testWidgets('a wrong or expired code says so and saves nothing', (
       tester,
     ) async {
@@ -230,6 +272,7 @@ void main() {
       );
       expect(auth.calls.where((call) => call.startsWith('update')), isEmpty);
       expect(authenticated, 0);
+      expect(await marked(tester), isNull);
     });
 
     testWidgets('too many code attempts say to wait', (tester) async {
@@ -291,11 +334,14 @@ void main() {
         find.text('Choose a password different from your old one.'),
         findsOneWidget,
       );
+      // Closed now, the next launch would end this session (Phase2Gate).
+      expect(await marked(tester), isTrue);
 
       await tap(tester, 'Back to sign in');
       await tester.pumpAndSettle();
 
       expect(auth.calls.last, 'signOut local');
+      expect(await marked(tester), isNull);
       expect(find.text('Sign in to Tracend'), findsOneWidget);
       expect(authenticated, 0);
     });

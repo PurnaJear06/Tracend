@@ -307,12 +307,14 @@ class SupabaseHealthRepository
         );
         noteLoadSuccess(_syncLoad);
         return;
-      } on FunctionsHttpException catch (error, stackTrace) {
+      } on FunctionException catch (error, stackTrace) {
         lastError = error;
         lastStack = stackTrace;
-        // A batch the server refused (422) or the hourly limit (429) gets the
-        // same answer a moment later: only a server fault is tried again.
-        if (error.status < 500) break;
+        // A 4xx from the function or from Supabase's relay in front of it (a
+        // refused batch, the hourly limit, a session refused) gets the same
+        // answer a moment later: it is not tried again. A server fault (5xx)
+        // and a request that never arrived (status 0) are.
+        if (error.status >= 400 && error.status < 500) break;
       } catch (error, stackTrace) {
         lastError = error;
         lastStack = stackTrace;

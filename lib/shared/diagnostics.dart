@@ -90,10 +90,21 @@ void _toSentryUser(String? userId) {
   );
 }
 
+/// The account the app's events and load counts belong to.
+String? _athlete;
+
 /// Names the signed-in athlete on the app's Sentry events by their account
 /// id (the Supabase user id, never the email), so one tester's failures can
 /// be found; null when the session ends. `scrubEvent` keeps the id alone.
-void identifyAthlete(String? userId) => athleteSink(userId);
+/// Another account (or none) starts every load's count again, so one
+/// athlete's failures never add to the next one's.
+void identifyAthlete(String? userId) {
+  if (userId != _athlete) {
+    _athlete = userId;
+    resetLoadFailures();
+  }
+  athleteSink(userId);
+}
 
 /// How many times in a row each named load has failed.
 final _loadFailures = <String, int>{};
@@ -107,6 +118,10 @@ const repeatedLoadFailure = 3;
 /// screen that keeps failing for an athlete is seen without an event for each
 /// retry; the others are only logged. No signal is not a fault: a network
 /// failure is logged and leaves the count as it was.
+///
+/// Callers note only the request whose result is used: a load superseded
+/// by a newer one is not counted, and a request several callers share is
+/// counted once.
 void noteLoadFailure(Object error, StackTrace? stackTrace, String what) {
   if (isNetworkFailure(error)) {
     logNonCritical(error, what);
@@ -125,6 +140,10 @@ void noteLoadFailure(Object error, StackTrace? stackTrace, String what) {
 /// failures.
 void noteLoadSuccess(String what) => _loadFailures.remove(what);
 
-/// Forgets every run of failures, between tests.
-@visibleForTesting
+/// Forgets every run of failures: on every change of account, and between
+/// tests.
 void resetLoadFailures() => _loadFailures.clear();
+
+/// How many times in a row the load named [what] has failed.
+@visibleForTesting
+int loadFailuresInARow(String what) => _loadFailures[what] ?? 0;

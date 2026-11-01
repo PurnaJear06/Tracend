@@ -169,6 +169,28 @@ void main() {
     });
   }
 
+  test("a 4xx from Supabase's relay is not sent again; a 5xx is", () async {
+    http.Response relay(http.Request request, int status) => http.Response(
+      '{"msg":"relay"}',
+      status,
+      headers: {'content-type': 'application/json', 'x-relay-error': 'true'},
+      request: request,
+    );
+    final (refused, refusedKeys) = await _client(
+      (request) => relay(request, 429),
+    );
+    await expectLater(_repository(refused).connectAndSync(), throwsException);
+    expect(refusedKeys, hasLength(1));
+
+    var failures = 1;
+    final (faulty, faultyKeys) = await _client((request) {
+      if (failures-- > 0) return relay(request, 502);
+      return _json(request, 200, <String, Object>{});
+    });
+    await _repository(faulty).connectAndSync();
+    expect(faultyKeys, hasLength(2));
+  });
+
   test(
     'a sync that keeps being refused reaches Sentry once, by its code',
     () async {
