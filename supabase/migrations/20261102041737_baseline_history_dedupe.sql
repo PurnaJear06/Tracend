@@ -19,12 +19,15 @@
 --   3. observation_date is required and unique per user and metric. The unique key replaces the old
 --      (user_id, metric_name, observation_date desc) index, which it covers.
 --   4. compute_user_baselines (latest definition 20261004160000_recovery_modes.sql) collects the trail
---      during the fold and writes it once per metric: a new day adds its row, a day already stored with
---      the same value is left alone, and a day whose value changed (Apple revises today's readings
---      through the day) is rewritten. Two weigh-ins on one day are one row, the state after the later
---      one. Each row now records the observation count and the baseline spread after that observation,
---      as documented (it recorded the whole call's count and the Winsor scale). The baseline itself,
---      user_baselines and every score are computed exactly as before; nothing reads the trail back.
+--      during the fold and reconciles it once per metric: a day no longer observed loses its row (HealthKit
+--      re-sends the last days), and only rows that differ from the fold are written (a new day, a revised
+--      day and every later day it moved). A repeated call writes and locks nothing. A fold for an earlier
+--      day than the trail's newest (the 06:00 recompute of yesterday, a past brief) leaves the trail alone.
+--      Two weigh-ins on one day are one row, the state after the later one; same-day weigh-ins now fold
+--      in entry order (created_at, then id), so that row is always the same entry. Each row records the
+--      observation count and the baseline spread after that observation, as documented (it recorded the
+--      whole call's count and the Winsor scale). user_baselines and every score are computed as before,
+--      except that same-day weigh-in order no longer varies; nothing reads the trail back.
 --   5. Every athlete with computed metrics gets the trail rebuilt by one call at their latest computed
 --      day, which is what their next brief would do.
 --
@@ -88,6 +91,8 @@ declare
   trail_winsorized boolean[];
   trail_rejected boolean[];
   trail_lambdas numeric[];
+  trail_end date;
+  trail_current boolean;
 begin
   if target_user_id is null
     or not exists(select 1 from public.user_accounts where id = target_user_id)
@@ -160,15 +165,20 @@ begin
           and sleep_minutes between 1 and 960;
         raw_arr := values_arr;
       when 'weight_kg' then
-        select array_agg(w.weight_kg order by w.measured_on),
-               array_agg(w.measured_on order by w.measured_on)
+        -- Weigh-ins on one day fold in the order they were entered
+        -- (created_at, then id), so the day's last entry is always the
+        -- same one. Identical same-day entries still count once.
+        select array_agg(w.weight_kg order by w.measured_on, w.entered_at, w.entry_id),
+               array_agg(w.measured_on order by w.measured_on, w.entered_at, w.entry_id)
         into values_arr, dates_arr
         from (
-          select measured_on, weight_kg
-          from public.body_measurements
-          where user_id = target_user_id and measured_on <= target_date
-          union
-          select local_date, weight_kg
+          (select distinct on (measured_on, weight_kg)
+             measured_on, weight_kg, created_at as entered_at, id as entry_id
+           from public.body_measurements
+           where user_id = target_user_id and measured_on <= target_date
+           order by measured_on, weight_kg, created_at desc, id desc)
+          union all
+          select local_date, weight_kg, last_synced_at, id
           from public.daily_health_summaries
           where user_id = target_user_id and source_scope = 'healthkit'
             and local_date <= target_date and weight_kg is not null
@@ -176,7 +186,6 @@ begin
               select measured_on from public.body_measurements
               where user_id = target_user_id
             )
-          order by measured_on
         ) w
         where w.weight_kg between 30 and 300;
         raw_arr := values_arr;
@@ -192,7 +201,25 @@ begin
         raw_arr := values_arr;
     end case;
 
+    -- The trail is the fold at the athlete's newest day. A fold for an
+    -- earlier day (the 06:00 recompute of yesterday, a past brief) leaves
+    -- it alone: rows past the fold's last foldable day mean a newer fold
+    -- wrote it. Resting HR folds through the day before target_date.
+    trail_end := case when _metric_name = 'resting_hr_bpm'
+      then target_date - 1 else target_date end;
+    trail_current := not exists (
+      select 1 from public.metric_baseline_history h
+      where h.user_id = target_user_id
+        and h.metric_name = _metric_name
+        and h.observation_date > trail_end
+    );
+
     if values_arr is null or array_length(values_arr, 1) < 3 then
+      -- Below three observations there is no fold, so no trail.
+      if trail_current then
+        delete from public.metric_baseline_history h
+        where h.user_id = target_user_id and h.metric_name = _metric_name;
+      end if;
       insert into public.user_baselines (
         user_id, metric_name, baseline_value, spread, n_observations,
         confidence, last_observation_date
@@ -283,46 +310,71 @@ begin
       trail_lambdas := trail_lambdas || lambda;
     end loop;
 
-    -- One history row per user, metric and observation day. A day already
-    -- in the trail with the same value is left alone, so a repeated call
-    -- writes nothing; a new day adds its row; a day whose value changed
-    -- since (Apple revises today's readings through the day) is rewritten.
-    -- Two weigh-ins on one day are one row: the state after the last.
-    insert into public.metric_baseline_history (
-      user_id, metric_name, baseline_value, spread, n_observations,
-      observation_date, raw_value, was_winsorized, was_outlier_rejected,
-      lambda_used, engine_version
-    )
-    select target_user_id, _metric_name, o.baseline_value, o.spread,
-      o.n_observations::integer, o.observation_date, o.raw_value,
-      o.was_winsorized, o.was_outlier_rejected, o.lambda_used, 'baseline-v2'
-    from (
-      select distinct on (t.observation_date) t.*
-      from unnest(dates_arr, raw_arr, trail_baselines, trail_spreads,
-                  trail_winsorized, trail_rejected, trail_lambdas)
-        with ordinality as t(observation_date, raw_value, baseline_value,
-                             spread, was_winsorized, was_outlier_rejected,
-                             lambda_used, n_observations)
-      order by t.observation_date, t.n_observations desc
-    ) o
-    where not exists (
-      select 1 from public.metric_baseline_history h
+    -- One history row per user, metric and observation day, matching this
+    -- fold: a day no longer observed (HealthKit re-sends recent days) loses
+    -- its row, and a row is written only where it differs from the fold
+    -- (a new day, a revised day and the later days it moved). A repeated
+    -- call writes and locks nothing. Two weigh-ins on one day are one row:
+    -- the state after the later one.
+    if trail_current then
+      delete from public.metric_baseline_history h
       where h.user_id = target_user_id
         and h.metric_name = _metric_name
-        and h.observation_date = o.observation_date
-        and h.raw_value is not distinct from o.raw_value
-    )
-    on conflict (user_id, metric_name, observation_date) do update set
-      baseline_value = excluded.baseline_value,
-      spread = excluded.spread,
-      n_observations = excluded.n_observations,
-      raw_value = excluded.raw_value,
-      was_winsorized = excluded.was_winsorized,
-      was_outlier_rejected = excluded.was_outlier_rejected,
-      lambda_used = excluded.lambda_used,
-      engine_version = excluded.engine_version
-    where public.metric_baseline_history.raw_value
-      is distinct from excluded.raw_value;
+        and h.observation_date <> all(dates_arr);
+
+      insert into public.metric_baseline_history (
+        user_id, metric_name, baseline_value, spread, n_observations,
+        observation_date, raw_value, was_winsorized, was_outlier_rejected,
+        lambda_used, engine_version
+      )
+      select target_user_id, _metric_name, o.baseline_value, o.spread,
+        o.n_observations::integer, o.observation_date, o.raw_value,
+        o.was_winsorized, o.was_outlier_rejected, o.lambda_used, 'baseline-v2'
+      from (
+        select distinct on (t.observation_date) t.*
+        from unnest(dates_arr, raw_arr, trail_baselines, trail_spreads,
+                    trail_winsorized, trail_rejected, trail_lambdas)
+          with ordinality as t(observation_date, raw_value, baseline_value,
+                               spread, was_winsorized, was_outlier_rejected,
+                               lambda_used, n_observations)
+        order by t.observation_date, t.n_observations desc
+      ) o
+      where not exists (
+        select 1 from public.metric_baseline_history h
+        where h.user_id = target_user_id
+          and h.metric_name = _metric_name
+          and h.observation_date = o.observation_date
+          and (h.baseline_value, h.spread, h.n_observations, h.raw_value,
+               h.was_winsorized, h.was_outlier_rejected, h.lambda_used,
+               h.engine_version)
+            is not distinct from
+              (o.baseline_value, o.spread, o.n_observations::integer,
+               o.raw_value, o.was_winsorized, o.was_outlier_rejected,
+               o.lambda_used, 'baseline-v2'::text)
+      )
+      on conflict (user_id, metric_name, observation_date) do update set
+        baseline_value = excluded.baseline_value,
+        spread = excluded.spread,
+        n_observations = excluded.n_observations,
+        raw_value = excluded.raw_value,
+        was_winsorized = excluded.was_winsorized,
+        was_outlier_rejected = excluded.was_outlier_rejected,
+        lambda_used = excluded.lambda_used,
+        engine_version = excluded.engine_version
+      where (public.metric_baseline_history.baseline_value,
+             public.metric_baseline_history.spread,
+             public.metric_baseline_history.n_observations,
+             public.metric_baseline_history.raw_value,
+             public.metric_baseline_history.was_winsorized,
+             public.metric_baseline_history.was_outlier_rejected,
+             public.metric_baseline_history.lambda_used,
+             public.metric_baseline_history.engine_version)
+        is distinct from
+          (excluded.baseline_value, excluded.spread, excluded.n_observations,
+           excluded.raw_value, excluded.was_winsorized,
+           excluded.was_outlier_rejected, excluded.lambda_used,
+           excluded.engine_version);
+    end if;
 
     baseline := public.compute_winsorized_ewma(values_arr, n_obs);
     spread := spread_ewma;

@@ -1,14 +1,16 @@
 -- Baseline history dedupe (migration 20261102041737, pre-beta audit P1-1):
 -- metric_baseline_history holds one row per user, metric and observation
--- day. Repeated recomputes (brief, Coach, decision, cron) write nothing; a
--- new day adds exactly its row; a revised day is rewritten in place; two
--- weigh-ins on one day are one row. The trail never feeds back: baselines
--- and the brief's metrics are the same with or without it, and a trail
--- rebuilt from scratch is the same trail. Deleting an athlete with a long
--- trail is one indexed pass (no table references the history any more).
+-- day, matching the newest fold. Repeated recomputes (brief, Coach,
+-- decision, the recompute of an earlier day) write nothing; a new day adds
+-- its row; a revised day rewrites its row and the later rows it moved; a
+-- day no longer observed loses its row; same-day weigh-ins are one row,
+-- the latest entry. The trail never feeds back: baselines and the brief's
+-- metrics are the same with or without it, and a trail rebuilt from
+-- scratch is the same trail. Deleting an athlete with a long trail is one
+-- indexed pass (no table references the history any more).
 
 begin;
-select plan(24);
+select plan(30);
 
 insert into auth.users(id, role) values
   ('b1d00000-0000-4000-8000-00000000000a', 'authenticated'),
@@ -30,12 +32,20 @@ select 'b1d00000-0000-4000-8000-00000000000a', current_date - d, 'Asia/Kolkata',
   14 + (d % 3) * 0.5
 from generate_series(1, 10) as d;
 
--- Three weigh-in days; the day three days ago has two weigh-ins.
-insert into public.body_measurements(user_id, measured_on, source, weight_kg) values
-  ('b1d00000-0000-4000-8000-00000000000a', current_date - 9, 'manual', 80.0),
-  ('b1d00000-0000-4000-8000-00000000000a', current_date - 6, 'manual', 80.4),
-  ('b1d00000-0000-4000-8000-00000000000a', current_date - 3, 'manual', 81.0),
-  ('b1d00000-0000-4000-8000-00000000000a', current_date - 3, 'manual', 80.6);
+-- Three weigh-in days. Six days ago: two entries made at the same moment
+-- (the higher id is the later). Three days ago: two entries an hour apart.
+insert into public.body_measurements(
+  id, user_id, measured_on, source, weight_kg, created_at) values
+  ('b1d00000-0000-4000-8000-0000000000e0', 'b1d00000-0000-4000-8000-00000000000a',
+   current_date - 9, 'manual', 80.0, now()),
+  ('b1d00000-0000-4000-8000-0000000000e2', 'b1d00000-0000-4000-8000-00000000000a',
+   current_date - 6, 'manual', 80.2, now()),
+  ('b1d00000-0000-4000-8000-0000000000e1', 'b1d00000-0000-4000-8000-00000000000a',
+   current_date - 6, 'manual', 80.4, now()),
+  ('b1d00000-0000-4000-8000-0000000000e4', 'b1d00000-0000-4000-8000-00000000000a',
+   current_date - 3, 'manual', 81.0, now() - interval '1 hour'),
+  ('b1d00000-0000-4000-8000-0000000000e3', 'b1d00000-0000-4000-8000-00000000000a',
+   current_date - 3, 'manual', 80.6, now());
 
 -- 1-4. The table's shape --------------------------------------------------
 
@@ -88,11 +98,13 @@ select set_eq(
   '6: history rows carry the real observation days');
 
 select is(
-  (select n_observations from public.metric_baseline_history
+  (select string_agg((observation_date - current_date) || ':' || n_observations
+                     || ':' || raw_value, ',' order by observation_date)
+   from public.metric_baseline_history
    where user_id = 'b1d00000-0000-4000-8000-00000000000a'
-     and metric_name = 'weight_kg' and observation_date = current_date - 3),
-  4,
-  '7: two weigh-ins on one day are one row, the state after the later one');
+     and metric_name = 'weight_kg'),
+  '-9:1:80.00,-6:3:80.20,-3:5:80.60',
+  '7: same-day weigh-ins are one row, the state after the latest entry (created_at, then id)');
 
 select is(
   (select count(*)::int
@@ -182,12 +194,12 @@ select is(
   0,
   '15: prior_baseline_id is no longer written');
 
+-- 16-20. A new day adds exactly its row ------------------------------------
+
 drop table history_before;
 create temp table history_before as
-select h.id, h.ctid::text as tuple from public.metric_baseline_history h
+select h.id, h.metric_name, h.ctid::text as tuple from public.metric_baseline_history h
 where h.user_id = 'b1d00000-0000-4000-8000-00000000000a';
-
--- 16-19. A new day adds exactly its row ---------------------------------------
 
 insert into public.daily_health_summaries(
   user_id, local_date, timezone, present_types, source_refs, source_checksum,
@@ -218,19 +230,46 @@ select is(
 select ok(
   (select bool_and(h.ctid::text = b.tuple)
    from history_before b
-   join public.metric_baseline_history h on h.id = b.id),
-  '18: the new day leaves every earlier row untouched');
+   join public.metric_baseline_history h on h.id = b.id
+   where b.metric_name <> 'hrv_sdnn_ms'),
+  '18: the new HRV day leaves the other metrics'' rows untouched');
+
+create temp table trail_now as
+select metric_name, observation_date, baseline_value, spread, n_observations,
+  raw_value, was_winsorized, was_outlier_rejected, lambda_used, engine_version
+from public.metric_baseline_history
+where user_id = 'b1d00000-0000-4000-8000-00000000000a';
+delete from public.metric_baseline_history
+where user_id = 'b1d00000-0000-4000-8000-00000000000a';
+select public.compute_daily_metrics(
+  'b1d00000-0000-4000-8000-00000000000a', current_date, 'Asia/Kolkata');
+select set_eq(
+  $$select metric_name, observation_date, baseline_value, spread, n_observations,
+      raw_value, was_winsorized, was_outlier_rejected, lambda_used, engine_version
+    from public.metric_baseline_history
+    where user_id = 'b1d00000-0000-4000-8000-00000000000a'$$,
+  $$select * from trail_now$$,
+  '19: after the new day the trail is the trail a rebuild writes');
+drop table trail_now;
+
+drop table history_before;
+create temp table history_before as
+select h.id, h.metric_name, h.observation_date, h.ctid::text as tuple
+from public.metric_baseline_history h
+where h.user_id = 'b1d00000-0000-4000-8000-00000000000a';
 
 select public.compute_daily_metrics(
   'b1d00000-0000-4000-8000-00000000000a', current_date, 'Asia/Kolkata');
+select public.compute_daily_metrics(
+  'b1d00000-0000-4000-8000-00000000000a', current_date - 1, 'Asia/Kolkata');
 
-select is(
-  (select count(*)::int from public.metric_baseline_history
-   where user_id = 'b1d00000-0000-4000-8000-00000000000a'),
-  43,
-  '19: computing the new day again adds nothing');
+select set_eq(
+  $$select id, ctid::text as tuple from public.metric_baseline_history
+    where user_id = 'b1d00000-0000-4000-8000-00000000000a'$$,
+  $$select id, tuple from history_before$$,
+  '20: today again and yesterday''s recompute write nothing');
 
--- 20-21. A revised day is rewritten in place ----------------------------------
+-- 21. A revised reading today rewrites its day's row ------------------------
 
 update public.daily_health_summaries set hrv_value_ms = 52.0
 where user_id = 'b1d00000-0000-4000-8000-00000000000a'
@@ -245,15 +284,122 @@ select is(
    where user_id = 'b1d00000-0000-4000-8000-00000000000a'
      and observation_date = current_date),
   '1:52.00',
-  '20: a revised reading rewrites its day''s row, still one row');
+  '21: a revised reading rewrites its day''s row, still one row');
 
-select ok(
-  (select bool_and(h.ctid::text = b.tuple)
+-- 22-23. A revised older day rewrites its row and every later row -----------
+
+drop table history_before;
+create temp table history_before as
+select h.id, h.metric_name, h.observation_date, h.ctid::text as tuple
+from public.metric_baseline_history h
+where h.user_id = 'b1d00000-0000-4000-8000-00000000000a';
+
+update public.daily_health_summaries set hrv_value_ms = 50.0
+where user_id = 'b1d00000-0000-4000-8000-00000000000a'
+  and local_date = current_date - 5;
+
+select public.compute_daily_metrics(
+  'b1d00000-0000-4000-8000-00000000000a', current_date, 'Asia/Kolkata');
+
+select is(
+  (select count(*)::int
    from history_before b
-   join public.metric_baseline_history h on h.id = b.id),
-  '21: the revision leaves every earlier row untouched');
+   join public.metric_baseline_history h on h.id = b.id
+   where b.metric_name = 'hrv_sdnn_ms'
+     and b.observation_date >= current_date - 5
+     and h.ctid::text <> b.tuple
+     and h.observation_date = b.observation_date),
+  6,
+  '22: revising five days ago rewrites that row and the five later HRV rows');
 
--- 22-24. Deleting an athlete with a long trail is linear ----------------------
+create temp table trail_now as
+select metric_name, observation_date, baseline_value, spread, n_observations,
+  raw_value, was_winsorized, was_outlier_rejected, lambda_used, engine_version
+from public.metric_baseline_history
+where user_id = 'b1d00000-0000-4000-8000-00000000000a';
+delete from public.metric_baseline_history
+where user_id = 'b1d00000-0000-4000-8000-00000000000a';
+select public.compute_daily_metrics(
+  'b1d00000-0000-4000-8000-00000000000a', current_date, 'Asia/Kolkata');
+select set_eq(
+  $$select metric_name, observation_date, baseline_value, spread, n_observations,
+      raw_value, was_winsorized, was_outlier_rejected, lambda_used, engine_version
+    from public.metric_baseline_history
+    where user_id = 'b1d00000-0000-4000-8000-00000000000a'$$,
+  $$select * from trail_now$$,
+  '23: after the older revision no row is stale (the trail a rebuild writes)');
+drop table trail_now;
+
+-- 24-26. An observation that goes away takes its row with it ----------------
+
+update public.daily_health_summaries
+set hrv_value_ms = null, hrv_metric = null, hrv_unit = null,
+    present_types = array['resting_heart_rate', 'sleep']
+where user_id = 'b1d00000-0000-4000-8000-00000000000a'
+  and local_date = current_date - 7;
+
+select public.compute_daily_metrics(
+  'b1d00000-0000-4000-8000-00000000000a', current_date, 'Asia/Kolkata');
+
+select is(
+  (select count(*)::int || ':' || count(*) filter (where observation_date = current_date - 7)
+   from public.metric_baseline_history
+   where user_id = 'b1d00000-0000-4000-8000-00000000000a'
+     and metric_name = 'hrv_sdnn_ms'),
+  '10:0',
+  '24: a removed HRV reading removes its row');
+
+create temp table trail_now as
+select metric_name, observation_date, baseline_value, spread, n_observations,
+  raw_value, was_winsorized, was_outlier_rejected, lambda_used, engine_version
+from public.metric_baseline_history
+where user_id = 'b1d00000-0000-4000-8000-00000000000a';
+delete from public.metric_baseline_history
+where user_id = 'b1d00000-0000-4000-8000-00000000000a';
+select public.compute_daily_metrics(
+  'b1d00000-0000-4000-8000-00000000000a', current_date, 'Asia/Kolkata');
+select set_eq(
+  $$select metric_name, observation_date, baseline_value, spread, n_observations,
+      raw_value, was_winsorized, was_outlier_rejected, lambda_used, engine_version
+    from public.metric_baseline_history
+    where user_id = 'b1d00000-0000-4000-8000-00000000000a'$$,
+  $$select * from trail_now$$,
+  '25: after the removal the trail is the trail a rebuild writes');
+drop table trail_now;
+
+update public.daily_health_summaries set respiratory_rate_bpm = null
+where user_id = 'b1d00000-0000-4000-8000-00000000000a'
+  and local_date <= current_date - 3;
+
+select public.compute_daily_metrics(
+  'b1d00000-0000-4000-8000-00000000000a', current_date, 'Asia/Kolkata');
+
+select is(
+  (select count(*)::int from public.metric_baseline_history
+   where user_id = 'b1d00000-0000-4000-8000-00000000000a'
+     and metric_name = 'resp_rate_bpm'),
+  0,
+  '26: below three observations the metric has no fold and no trail');
+
+-- 27. Still nothing written on repeats ----------------------------------------
+
+drop table history_before;
+create temp table history_before as
+select h.id, h.ctid::text as tuple from public.metric_baseline_history h
+where h.user_id = 'b1d00000-0000-4000-8000-00000000000a';
+
+select public.compute_daily_metrics(
+  'b1d00000-0000-4000-8000-00000000000a', current_date, 'Asia/Kolkata');
+select public.compute_user_baselines(
+  'b1d00000-0000-4000-8000-00000000000a', current_date - 2);
+
+select set_eq(
+  $$select id, ctid::text as tuple from public.metric_baseline_history
+    where user_id = 'b1d00000-0000-4000-8000-00000000000a'$$,
+  $$select id, tuple from history_before$$,
+  '27: after all the changes, repeats still write nothing');
+
+-- 28-30. Deleting an athlete with a long trail is linear ----------------------
 
 -- About eight years of daily history for all seven metrics: 21,000 rows.
 -- With the old self-reference each deleted row scanned the table again
@@ -271,19 +417,19 @@ select is(
   (select count(*)::int from public.metric_baseline_history
    where user_id = 'b1d00000-0000-4000-8000-00000000000b'),
   21000,
-  '22: the long trail is in place');
+  '28: the long trail is in place');
 
 set local statement_timeout = '30s';
 select lives_ok(
   $$delete from auth.users where id = 'b1d00000-0000-4000-8000-00000000000b'$$,
-  '23: deleting the athlete finishes well inside the timeout');
+  '29: deleting the athlete finishes well inside the timeout');
 set local statement_timeout = 0;
 
 select is(
   (select count(*)::int from public.metric_baseline_history
    where user_id = 'b1d00000-0000-4000-8000-00000000000b'),
   0,
-  '24: the deleted athlete''s trail is gone');
+  '30: the deleted athlete''s trail is gone');
 
 select * from finish();
 rollback;

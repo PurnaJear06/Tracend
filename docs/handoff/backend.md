@@ -501,13 +501,17 @@ privacy were recorded.
   column stays, unwritten), clears the old trail (no row had a day to key it by), makes
   `observation_date` required and unique per user and metric, and rebuilds each athlete's trail with
   one call at their latest computed day. `compute_user_baselines` collects the trail during the fold
-  and writes it in one statement per metric: new days only, a day rewritten only when its value
-  changed, two weigh-ins on a day as one row. Rows now carry the count and spread after their own
-  observation (the doc's meaning). Baselines, scores and the brief are unchanged: nothing reads the
-  trail except the export. pgTAP `baseline_history_dedupe_test.sql`: repeated computes write no row
-  (tuple positions unchanged), a new day adds one, a revision rewrites one, the brief and baselines
-  match with the trail cleared, a rebuilt trail matches, and deleting an athlete with 21,000 rows
-  finishes inside a 30 s timeout.
+  and reconciles it per metric: days no longer observed are deleted, and only rows that differ from
+  the fold are written (a new day, a revised day and the later days it moved; Codex round 1 caught
+  that a raw-value-only check left later rows stale). A fold for an earlier day than the trail's
+  newest (yesterday's 06:00 recompute, a past brief) leaves it alone. Same-day weigh-ins fold in
+  entry order (created_at, then id), so the day's row is always the latest entry. Rows carry the
+  count and spread after their own observation (the doc's meaning). Baselines, scores and the brief
+  are unchanged: nothing reads the trail except the export. pgTAP `baseline_history_dedupe_test.sql`
+  (30): repeated computes write no row (tuple positions unchanged), a new day adds one, revising an
+  older day rewrites it and every later row, a removed reading removes its row, each state equals a
+  rebuild, the brief and baselines match with the trail cleared, and deleting an athlete with 21,000
+  rows finishes inside a 30 s timeout.
 - **Not done:** skipping the whole recompute when nothing changed. `user_baselines` keeps no record of
   the day it was computed for, and the resting-HR fold depends on that day, so a skip would need a new
   column and staleness rules; with no history writes left, a repeat costs reads and seven upserts.

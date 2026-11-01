@@ -1297,9 +1297,11 @@ observation day (UNIQUE (user_id, metric_name, observation_date), date required)
 baseline value, spread and observation count after that day's observation, the raw value, whether it
 was winsorized (clamped to ±3 × spread) or rejected as an outlier (beyond 5 × spread), the λ used
 (3-day half-life for the first eight observations, then 14-day), engine version, and creation time.
-A recompute writes only new days, and rewrites a day only when its value changed (Apple revises
-today's readings through the day); two weigh-ins on one day are one row, the state after the later
-one. Nothing reads the trail back: baselines and scores come from the source data. No table
+The trail matches the fold at the athlete's newest day: a recompute deletes days no longer
+observed (HealthKit re-sends recent days) and writes only rows that differ (a new day, a revised day
+and the later days it moved), so a repeat writes nothing; a fold for an earlier day leaves the trail
+alone. Two weigh-ins on one day are one row, the state after the later entry (created_at, then id).
+Nothing reads the trail back: baselines and scores come from the source data. No table
 references it, so an account deletion removes it in one indexed pass. `prior_baseline_id` is no
 longer written or constrained (20261102041737) and is dropped by a later migration. Forced RLS,
 read-only for authenticated.
