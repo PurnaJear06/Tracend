@@ -499,8 +499,10 @@ privacy were recorded.
   self-reference made account deletion quadratic, and the export neared its 16 MiB cap.
 - **Done:** migration `20261102041737_baseline_history_dedupe.sql` drops the self-reference (the
   column stays, unwritten), clears the old trail (no row had a day to key it by), makes
-  `observation_date` required and unique per user and metric, and rebuilds each athlete's trail with
-  one call at their latest computed day. `compute_user_baselines` collects the trail during the fold
+  `observation_date` required and unique per user and metric, and rebuilds the trail of every athlete
+  with a baseline, computed metrics or a weigh-in with one call at their local today. A per-athlete
+  transaction advisory lock (`tracend.compute_user_baselines:<user>`) keeps two overlapping folds
+  for different days from deleting each other's rows (Codex round 2). `compute_user_baselines` collects the trail during the fold
   and reconciles it per metric: days no longer observed are deleted, and only rows that differ from
   the fold are written (a new day, a revised day and the later days it moved; Codex round 1 caught
   that a raw-value-only check left later rows stale). A fold for an earlier day than the trail's

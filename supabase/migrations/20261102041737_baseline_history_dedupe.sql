@@ -15,7 +15,10 @@
 --      indexed pass. Nothing reads the column (the export copies it as it is); a later cleanup migration
 --      drops it, after this one is live (the two-step rule).
 --   2. The old trail is cleared. Its rows have no day to key them by, so none of them is a row the fixed
---      function would keep; step 5 writes the trail again from the athlete's own data.
+--      function would keep; step 5 writes the trail again from the athlete's own data. Clearing is safe
+--      under the additive rule: the trail is derived data (recomputed from daily_health_summaries and
+--      body_measurements), the app never reads it (only the privacy export does, by its columns), and
+--      no column, type or RPC that build 920 or a deployed function uses changes.
 --   3. observation_date is required and unique per user and metric. The unique key replaces the old
 --      (user_id, metric_name, observation_date desc) index, which it covers.
 --   4. compute_user_baselines (latest definition 20261004160000_recovery_modes.sql) collects the trail
@@ -28,8 +31,8 @@
 --      observation count and the baseline spread after that observation, as documented (it recorded the
 --      whole call's count and the Winsor scale). user_baselines and every score are computed as before,
 --      except that same-day weigh-in order no longer varies; nothing reads the trail back.
---   5. Every athlete with computed metrics gets the trail rebuilt by one call at their latest computed
---      day, which is what their next brief would do.
+--   5. Every athlete who could have a trail (a baseline row, computed metrics or a weigh-in) gets it
+--      rebuilt by one call at their local today, the day their next brief folds through.
 --
 -- Deploy: steps 1 to 3 take the table lock for well under a second (the table is empty from step 2 on),
 -- and step 5 is one fold per athlete (one in production today). The app's history writes wait for the
@@ -98,6 +101,12 @@ begin
     or not exists(select 1 from public.user_accounts where id = target_user_id)
   then raise exception 'account not found' using errcode = 'P0002';
   end if;
+
+  -- One fold per athlete at a time: two overlapping recomputes for
+  -- different days could otherwise both judge the trail current, and the
+  -- earlier day's fold would delete the newer day's rows.
+  perform pg_advisory_xact_lock(
+    hashtextextended('tracend.compute_user_baselines:' || target_user_id::text, 0));
 
   for _metric_name in
     select unnest(array['hrv_sdnn_ms','resting_hr_bpm','sleep_minutes','weight_kg','resp_rate_bpm',
@@ -407,13 +416,15 @@ end $$;
 
 do $$
 declare
-  latest record;
+  athlete uuid;
 begin
-  for latest in
-    select m.user_id, max(m.local_date) as local_date
-    from public.daily_computed_metrics m
-    group by m.user_id
+  for athlete in
+    select b.user_id from public.user_baselines b
+    union
+    select m.user_id from public.daily_computed_metrics m
+    union
+    select w.user_id from public.body_measurements w
   loop
-    perform public.compute_user_baselines(latest.user_id, latest.local_date);
+    perform public.compute_user_baselines(athlete, private.local_date_for(athlete));
   end loop;
 end $$;

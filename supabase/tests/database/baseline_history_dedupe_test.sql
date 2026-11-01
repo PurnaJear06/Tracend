@@ -10,7 +10,7 @@
 -- indexed pass (no table references the history any more).
 
 begin;
-select plan(30);
+select plan(31);
 
 insert into auth.users(id, role) values
   ('b1d00000-0000-4000-8000-00000000000a', 'authenticated'),
@@ -74,6 +74,12 @@ select is(
          and (i.indkey::int2[])[0:cardinality(c.conkey) - 1] <@ c.conkey)),
   0,
   '4: every foreign key on the history leads an index (cascade deletes stay indexed)');
+
+select ok(
+  (select prosrc from pg_catalog.pg_proc
+   where oid = 'public.compute_user_baselines(uuid, date)'::regprocedure)
+    like '%pg_advisory_xact_lock(%hashtextextended(''tracend.compute_user_baselines:'' || target_user_id::text, 0))%',
+  '4b: one fold per athlete at a time (a per-athlete transaction advisory lock)');
 
 -- 5-8. The first compute writes one row per observation day ---------------
 
