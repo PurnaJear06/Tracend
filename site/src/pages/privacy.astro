@@ -4,20 +4,21 @@ import { CONTACT_EMAIL } from '../config';
 ---
 <Doc title="Privacy · Tracend" description="What Tracend collects in the app and on this website, how AI features use it with your consent, who processes it, and how to export or delete it.">
   <h1>Privacy</h1>
-  <p class="doc-date">Last updated 15 October 2026</p>
+  <p class="doc-date">Last updated 2 November 2026</p>
   <p class="doc-lede">The short version: we use your data to coach you and to run the beta, nothing else. No AI feature receives your data until you agree, and the app names the company it uses before you do. We never sell your data or use it for ads. You can export everything or delete your account from the app at any time.</p>
 
   <h2>Who we are</h2>
-  <p>Tracend is a personal trainer app for iPhone, best with Apple Watch, in a private, invite-only beta. This page covers the app, this website and the beta waitlist. For anything about your data, email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.</p>
+  <p>Tracend is a personal trainer app for iPhone, best with Apple Watch, in a private, invite-only beta. This page covers the app, this website and the beta waitlist. Tracend decides how and why your data is used, which makes us its controller.</p>
+  <p>For anything about your data, including a complaint, write to our grievance contact at <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>. We reply within a few days and settle a complaint within one month.</p>
 
   <h2>What we collect in the app</h2>
   <ul>
     <li><strong>Your account:</strong> your email address and a password you choose. We don&rsquo;t store the password in readable form, and we don&rsquo;t ask for your name.</li>
     <li><strong>Your profile and goal:</strong> what you tell us when you set up, such as your goal, age, sex, height, weight, training days, equipment, current lifts, limits, movements to avoid and diet notes.</li>
     <li><strong>Your training:</strong> the plans you approve, and your workouts with sets, reps, loads and effort.</li>
-    <li><strong>Apple Health data you allow:</strong> steps, active energy, sleep, workouts, weight, resting heart rate, heart rate variability (HRV) and breathing rate. You choose each type in iOS, and the app works without it.</li>
+    <li><strong>Apple Health data you allow:</strong> steps, active energy, sleep, workouts, weight, resting heart rate, heart rate during your workouts, heart rate while you sleep, heart rate variability (HRV) and breathing rate. Sleeping heart rate is worked out on your phone, and only one summary per night leaves it. You choose each type in iOS, and the app works without it.</li>
     <li><strong>Food:</strong> the meals you log, and meal photos if you take them.</li>
-    <li><strong>Progress:</strong> weight, body measurements, morning check-ins and progress photos.</li>
+    <li><strong>Progress:</strong> weight, body measurements, morning check-ins, pain you report and progress photos.</li>
     <li><strong>Coach:</strong> the messages you send the Coach and its replies.</li>
     <li><strong>Your choices:</strong> each consent you give or withdraw, when, and which notice you saw.</li>
     <li><strong>Crash and performance reports:</strong> technical details when the app or our servers hit an error or run slowly.</li>
@@ -41,6 +42,10 @@ import { CONTACT_EMAIL } from '../config';
   </ul>
   <p>We rely on your consent, which you can withdraw at any time. We never sell your data, share it for advertising, or use Apple Health data for marketing.</p>
 
+  <h2>Your health data, only with your explicit consent</h2>
+  <p>Your Apple Health data, check-ins, pain reports, body measurements and photos are health data. When you set up the app, you agree to us using them with a tick box of its own, separate from accepting the terms, and the app records which version of this notice you agreed to. We use them only to coach you and to keep the app working, as this page describes.</p>
+  <p>You can withdraw this consent by deleting your account, or by emailing us. Tracend can&rsquo;t coach you without it, so withdrawing ends your use of the app.</p>
+
   <h2>AI features, only with your consent</h2>
   <p>Some features use an AI model run by another company. Before a feature sends anything, the app shows a notice that says what it sends, which company receives it and where that company processes it, and asks you to agree. If you say no, nothing is sent.</p>
   <ul>
@@ -56,7 +61,7 @@ import { CONTACT_EMAIL } from '../config';
   <h2>Who processes your data for us</h2>
   <ul>
     <li><strong>Supabase</strong> (Singapore) hosts the app&rsquo;s accounts, database, photos and server code, and stores the waitlist.</li>
-    <li><strong>Anthropic</strong> (United States), <strong>DeepSeek</strong> (China) and <strong>Groq</strong> (United States) run the AI models behind the features above, and only for features you agreed to. Each feature&rsquo;s notice names the company it uses.</li>
+    <li><strong>Anthropic</strong> (United States) runs the AI models behind Coach chat and the daily decision. Other features, and any feature we move, can use Anthropic, <strong>Groq</strong> (United States) or <strong>DeepSeek</strong> (China). Each feature uses one company at a time, named in that feature&rsquo;s notice, and only after you agree to it. Moving a feature to another company always shows you a new notice and asks you again first, and a new company is added here before it receives anything.</li>
     <li><strong>Sentry</strong> (United States) receives crash, error and performance reports. A report can carry your account ID and device and app details, never your name or email. Health values, meal content, photo links and prompts are stripped before it is sent.</li>
     <li><strong>GitHub</strong> runs our deployments and stores encrypted database backups (the newest 30).</li>
     <li><strong>Cloudflare</strong> hosts this website, which means it receives standard request data such as your IP address and browser, and runs Turnstile, the bot check on the join form, which looks at your browser and IP address to tell people from bots.</li>
@@ -97,5 +102,5 @@ import { CONTACT_EMAIL } from '../config';
   <p>Questions about your data or this policy: <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.</p>
 
   <h2>Changes</h2>
-  <p>If this policy changes, we update this page and the date at the top. If a change affects how we use your email, we tell you by email first. If an AI feature changes what it sends or which company receives it, the app shows a new notice and asks for your consent again before sending anything.</p>
+  <p>If this policy changes, we update this page and the date at the top, and the app asks you to agree again before you carry on. If a change affects how we use your email, we tell you by email first. If an AI feature changes what it sends or which company receives it, the app shows a new notice and asks for your consent again before sending anything.</p>
 </Doc>

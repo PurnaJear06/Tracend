@@ -199,7 +199,7 @@ jobs:
           ASTRO_TELEMETRY_DISABLED: "1"
         run: |
           npm run build
-          for page in index privacy/index terms/index confirm/index unsubscribe/index 404; do
+          for page in index privacy/index terms/index beta-terms/index confirm/index unsubscribe/index 404; do
             test -s "dist/$page.html" || { echo "::error::Missing dist/$page.html"; exit 1; }
           done
 

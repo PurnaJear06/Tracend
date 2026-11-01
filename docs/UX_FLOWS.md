@@ -94,7 +94,7 @@ Account
 ├── Widgets (health numbers on the Lock Screen)
 ├── AI coach: AI coaching, AI usage this month, What Coach remembers, Coach conversations
 ├── Region: Country (optional)
-└── Privacy: Export data, Consent history, Delete account
+└── Privacy: Export data, Consent history, Privacy notice, Beta terms, Delete account
 ```
 
 The daily decision appears on Today (the session card's coach note), on Train (the readiness line's
@@ -136,7 +136,16 @@ sign-in**.
 
 ### Returning user
 
-`Launch → Restore session → Today`
+`Launch → Restore session → (Terms and privacy, when a page changed) → Today`
+
+- **Terms and privacy again.** When the newest `terms`, `privacy` or `health_data` grant of an
+  onboarded athlete is older than the page version this build shows (or missing, or withdrawn),
+  a blocking **Terms and privacy** screen opens after the account check and before the AI
+  coaching question and the app: **Please agree again to carry on.**, the same three unticked rows
+  and links as onboarding, **Agree and continue** (enabled once all three are ticked; it records
+  the outdated agreements at the versions shown), then **Sign out** and **Delete account** (the
+  Account deletion sheet). A lookup that fails, and a launch that opens the saved plan offline,
+  open the app without asking; the next launch checks again. Nothing is recorded without the tap.
 
 - Restore selected tab, scroll position, and safe in-progress drafts. Today the app opens on Today,
   or on Train when a tapped widget asked for it (below); an unfinished workout draft and an unsent
@@ -190,11 +199,17 @@ sign-in**.
 4. If excluded, stop plan generation and show appropriate professional guidance. Today an
    excluded answer shows the inline message "Tracend cannot create a plan for clinical nutrition,
    pregnancy, acute injury, or rehabilitation needs." and nothing is built.
-5. Accept terms and privacy notice: **I accept the private-beta terms** and **I have read the
-   privacy notice**, as check rows in a grouped list on the same step as the age question. The
-   hosted terms and privacy pages exist on the site, but the app does not link the rows to them
-   yet. That is acceptable only for the owner-only beta and is a public-release blocker
-   (SECURITY_PRIVACY.md §15). No legal text lives in the app.
+5. Accept terms and privacy notice, and agree to health-data use: three separate, unticked check
+   rows in a grouped list on the same step as the age question. **I accept the private-beta
+   terms** with a **Read the beta terms** link (`https://tracend.pages.dev/beta-terms/`), **I have
+   read the privacy notice** with a **Read the privacy notice** link
+   (`https://tracend.pages.dev/privacy/`), and **I agree to Tracend using my health data** with
+   the detail "My Apple Health data, check-ins, pain reports, body measurements and photos, used to
+   coach me as the privacy notice describes." A link opens the page in the in-app browser (Safari
+   if that cannot open; a toast gives the address if neither can) and never ticks its row; the row
+   and the link are separate VoiceOver elements. Continue needs all three. The step records
+   `terms`, `privacy` and `health_data` grants at the page versions this build shows
+   (`LegalNotices`, `lib/features/consent/legal_consent.dart`). No legal text lives in the app.
 6. **Health check** (B6), its own step right after the boundary and terms and before anything else
    is asked, so an athlete who should see a professional first learns it at once. Four plain
    yes/no questions, with no diagnosis and the note that this is not a medical check. (1) Do you exercise regularly now (about 30 minutes or more, at least 3
@@ -1518,8 +1533,9 @@ Account is one iOS inset-grouped settings page:
   only picks which national guidelines Coach can cite and that the plan's numbers do not change. A
   failed save keeps the old choice and shows a toast; an unreadable country shows "Could not be read
   · open to try again". With nothing chosen the app behaves as it did before the row existed.
-- **Privacy:** **Export data**, **Consent history** and **Delete account**, then **Sign out** at
-  the foot.
+- **Privacy:** **Export data**, **Consent history**, **Privacy notice** and **Beta terms** (each
+  opens its hosted page in the in-app browser) and **Delete account**, then **Sign out** at the
+  foot.
 
 Sheets use the Tracend sheet, confirmations the destructive confirm, transient results a toast,
 and loading the brand loader.
@@ -1567,8 +1583,8 @@ remain available. Today that row appears only in a build without a backend.
 Privacy screens show consent by purpose, provider disclosure, photo retention controls, connected
 data, export, and deletion.
 
-**Consent history** is read-only: the latest `consent_records` entry per purpose (Terms of use,
-Privacy policy, AI coaching, Progress photo storage, Progress photo AI analysis, Meal photo AI
+**Consent history** is read-only: the latest `consent_records` entry per purpose (Beta terms,
+Privacy policy, Health data, AI coaching, Progress photo storage, Progress photo AI analysis, Meal photo AI
 analysis, Notifications). Each row leads with the choice and its date ("Granted 2 Sep 2026"); the
 notice version and where it was made ("Version ai-coaching-v1 · iOS app", or "Set up during
 testing" for owner-development records) are secondary text. Purposes without a record say "No

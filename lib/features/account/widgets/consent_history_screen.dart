@@ -57,8 +57,9 @@ class _ConsentHistoryScreenState extends State<ConsentHistoryScreen> {
   }
 
   static const _purposeLabels = <String, String>{
-    'terms': 'Terms of use',
+    'terms': 'Beta terms',
     'privacy': 'Privacy policy',
+    'health_data': 'Health data',
     'ai_coaching': 'AI coaching',
     'progress_photo_storage': 'Progress photo storage',
     'progress_photo_ai': 'Progress photo AI analysis',

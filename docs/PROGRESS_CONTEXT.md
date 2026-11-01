@@ -108,7 +108,7 @@ cutover runbook (checked 2026-11-01). One line per stream; the lead updates thes
   remote sign-out returns to the gate, reminders leave the phone on sign-out, body-fat target floor
   (5% men, 12% women or unknown), Progress and Meals form fixes. Handoff:
   [`onboarding.md`](./handoff/onboarding.md).
-- website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
+- website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Beta terms and consent (2026-11-02, `claude/beta-terms-consent`, migration `20261102143719`, in review): app beta terms at `/beta-terms/` (a draft for a lawyer), privacy page fixes (controller and grievance contact, workout and sleeping heart rate, explicit health-data consent, processor wording), onboarding rows that open both pages plus a separate `health_data` consent, Account links, page versions = "Last updated" dates kept equal to `LegalNotices` by a test, and a launch screen that asks onboarded athletes again when a page changes (fails open; the owner sees it once after installing). Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
@@ -278,7 +278,8 @@ Decided by the owner on 2026-10-16:
   leave the phone.
 
 Known gaps found:
-- The app's terms and privacy checkboxes don't link to the site pages.
+- Fixed on `claude/beta-terms-consent` (2026-11-02, in review): the terms and privacy rows link to
+  the site pages, and the app has its own beta terms.
 
 **Website and waitlist (2026-10-13):** the public website (`site/`, Astro, Cloudflare Pages at
 https://tracend.pages.dev) and a double opt-in waitlist on the production project (three

@@ -60,6 +60,27 @@ The 2026-07-03 tabletop rehearsal used a hypothetical leaked worker secret. The 
 path is function disablement, secret rotation, Cron/Vault update, unauthenticated rejection
 verification, and retention-worker smoke.
 
+## Changing the beta terms or the privacy notice
+
+The app's legal pages are `site/src/pages/beta-terms.astro` and `site/src/pages/privacy.astro`.
+Each page's version is its "Last updated" date. In one PR:
+
+1. Edit the page and set its "Last updated" date to the day it goes live.
+2. Set the matching constant in `LegalNotices` (`lib/features/consent/legal_consent.dart`) to the
+   same date in ISO form (`termsVersion` or `privacyVersion`; health-data consent follows the
+   privacy notice). `test/legal_versions_test.dart` fails in CI until the page and the constant
+   agree.
+3. Merge. The deploy publishes the page; then install the app built from that `main` commit.
+   On its next launch every onboarded athlete whose grant is older sees **Terms and privacy** and
+   agrees again (or signs out, or deletes the account) before the app opens. Git history keeps
+   every earlier version of each page, and `consent_records.notice_version` says which one each
+   athlete agreed to.
+
+A wording fix that changes nothing an athlete agreed to still changes the date, and so asks
+everyone again; batch such fixes. The website terms (`terms.astro`) cover only the site and the
+waitlist and are not asked for in the app. The beta terms are a draft written without a lawyer;
+have them reviewed before inviting anyone outside the owner.
+
 ## TestFlight external beta checklist
 
 Today the beta is owner-only: signed release builds go straight to the owner's iPhone
@@ -86,7 +107,8 @@ Work through this list in order once the paid Apple Developer Program is active.
      compliance for every build.
 4. **Create the app record.** App Store Connect > Apps > New App: iOS, the Tracend name (it must be
    free on the App Store), primary language, bundle ID `com.tracend.app`, a SKU. Then:
-   - privacy policy URL `https://tracend.pages.dev/privacy/` and a support URL;
+   - privacy policy URL `https://tracend.pages.dev/privacy/` and a support URL (the app's beta
+     terms are at `https://tracend.pages.dev/beta-terms/`);
    - the age rating questionnaire, answered so the rating is 18+ (Tracend is for adults).
 5. **Fill in App Privacy (nutrition labels)** to match `site/src/pages/privacy.astro`. Mark every
    type "Linked to you", purpose App Functionality, not used for tracking:

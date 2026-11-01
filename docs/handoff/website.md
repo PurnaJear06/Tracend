@@ -1,12 +1,12 @@
 # Website and Waitlist Handoff
 
-**As of:** 2026-10-15
+**As of:** 2026-11-02
 
 ## State
 
 - `site/` is the public website: Astro 7 static, graphite + lime, Archivo, GSAP motion with app
-  screen replicas carrying labelled example data. Pages: home, privacy, terms, confirm,
-  unsubscribe, 404. `site/PRODUCT.md` holds the claim rules.
+  screen replicas carrying labelled example data. Pages: home, privacy, terms, beta-terms,
+  confirm, unsubscribe, 404. `site/PRODUCT.md` holds the claim rules.
 - Hosting: Cloudflare Pages project `tracend`, https://tracend.pages.dev (free). A custom domain
   later changes `SITE_URL` in `site-deploy.yml`, the `WAITLIST_SITE_URL` secret and the Turnstile
   widget's hostnames.
@@ -25,8 +25,21 @@
   live, and the Watch wording is "For iPhone, best with Apple Watch" (never Watch-only).
   `site/PRODUCT.md` carries the claim rules. The TestFlight checklist is in
   `docs/BETA_OPERATIONS.md`.
+- 2026-11-02 (`claude/beta-terms-consent`): `beta-terms.astro` holds the app's beta terms (beta
+  status, 18+ and the excluded groups, not medical advice, injury risk, AI can be wrong, data,
+  fair use, feedback, suspension, deletion, no warranty, liability "to the extent the law allows",
+  changes re-asked in the app, Indian law, contact). It is a draft for a lawyer to review. The
+  privacy page names Tracend as controller with a grievance contact (`CONTACT_EMAIL`, complaints
+  settled within one month), lists workout and sleeping heart rate, adds a section on explicit
+  health-data consent, says Anthropic runs Coach chat and the daily decision and that features
+  can also use Groq or DeepSeek, each named in its notice, and that a change re-asks in the app.
+  The website terms link to the beta terms; both footers link all three pages. **Editing
+  `beta-terms.astro` or `privacy.astro` now changes a version the app asks for:** bump its date
+  and `LegalNotices` together (BETA_OPERATIONS.md, "Changing the beta terms or the privacy
+  notice"); `test/legal_versions_test.dart` enforces it.
 - Follow-up after the Phase 2 cutover plus its 2-week rollback window: remove DeepSeek and Groq
-  from the processor list in `site/src/pages/privacy.astro` and update its date. A new AI company
+  from the processor list in `site/src/pages/privacy.astro`, update its date and `LegalNotices.privacyVersion`
+  (athletes are asked again). A new AI company
   needs a processor-list entry before any notice names it.
 - Account deletion keeps the email's `private.signup_invites` row and any
   `private.waitlist_signups` row; the privacy page says so (removed on request). A code change to

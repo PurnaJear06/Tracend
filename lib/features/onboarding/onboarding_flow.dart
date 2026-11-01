@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/consent/legal_consent.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
@@ -270,8 +271,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   OnboardingProposal? _approved;
   bool _adult = false;
   bool _needsClinicalSupport = false;
-  bool _terms = false;
-  bool _privacy = false;
+
+  /// The terms, privacy and health-data rows ticked; all three are needed.
+  final _legal = <LegalConsent>{};
   bool? _aiChoice;
 
   /// The health check answers; null until answered. The clearance question is
@@ -1151,7 +1153,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   bool _isStepValid() => switch (_step) {
-    _eligibilityStep => _adult && !_needsClinicalSupport && _terms && _privacy,
+    _eligibilityStep =>
+      _adult &&
+          !_needsClinicalSupport &&
+          _legal.length == LegalConsent.values.length,
     _screeningStep =>
       _screeningAnswers != null &&
           _screeningOutcome != ScreeningOutcome.seeProfessional,
@@ -1601,19 +1606,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         ],
       ),
       const SizedBox(height: TracendSpacing.lg),
-      TracendGroupedList(
-        children: [
-          CheckRow(
-            title: 'I accept the private-beta terms',
-            checked: _terms,
-            onChanged: (value) => setState(() => _terms = value),
-          ),
-          CheckRow(
-            title: 'I have read the privacy notice',
-            checked: _privacy,
-            onChanged: (value) => setState(() => _privacy = value),
-          ),
-        ],
+      LegalConsentRows(
+        checked: _legal,
+        onChanged: (consent, value) => setState(() {
+          if (value) {
+            _legal.add(consent);
+          } else {
+            _legal.remove(consent);
+          }
+        }),
       ),
     ],
   );

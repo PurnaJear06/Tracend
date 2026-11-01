@@ -20,6 +20,7 @@ import 'package:tracend/features/auth/account_session.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/auth/phase_2_gate.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/consent/legal_consent.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/health/health_baseline.dart';
@@ -572,7 +573,16 @@ void main() {
           'onboarding_state': 'completed',
         })
         ..answer('GET /rest/v1/onboarding_drafts', 200, <Object>[])
-        ..answer('GET /rest/v1/consent_records', 200, <Object>[]);
+        // Current terms, privacy and health-data grants, and no AI answer:
+        // the AI coaching question is what an onboarded athlete sees next.
+        ..answer('GET /rest/v1/consent_records', 200, [
+          for (final consent in LegalConsent.values)
+            {
+              'consent_type': consent.type,
+              'notice_version': consent.version,
+              'action': 'granted',
+            },
+        ]);
       await _storeSession(
         server.client,
         DateTime.now().add(const Duration(minutes: 50)),
