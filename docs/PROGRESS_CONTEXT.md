@@ -8,9 +8,9 @@ sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
 **Current priority (2026-10-15): the coaching platform program.** Plan, contracts and board:
 [`docs/plans/coaching-platform-2026-10/README.md`](./plans/coaching-platform-2026-10/README.md).
 Iteration 1 (Phase 0 + Phase 1) is live. Iteration 2 (Phase 2: A3–A7, D1, C2, B1) is merged
-(2026-10-16). Coach chat and the daily decision run on Claude (Anthropic); meal photos and the
-physique check still run on Groq, and onboarding uses its rules plan, until the owner finishes the
-cutover runbook (checked 2026-11-01). One line per stream; the lead updates these lines when a chunk merges.
+(2026-10-16). Every AI feature runs on Claude (Anthropic): Coach chat and the daily decision,
+and since 2026-11-01 meal photos (`claude-haiku-5-5`) and the physique check (`claude-sonnet-5-5`),
+with both v2 photo notices published; Groq receives nothing. Onboarding uses its rules plan. One line per stream; the lead updates these lines when a chunk merges.
 
 <!-- PROGRAM:coaching-platform-2026-10 -->
 - program: P0 (contracts, migration-order CI check) live (#102).
