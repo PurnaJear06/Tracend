@@ -5,8 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:tracend/app/keychain_session_storage.dart';
 import 'package:tracend/app/app.dart';
+import 'package:tracend/app/auth_options.dart';
+import 'package:tracend/app/keychain_session_storage.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/sentry_scrubber.dart';
 
@@ -39,8 +40,8 @@ Future<void> main() async {
             await Supabase.initialize(
               url: environment.supabaseUrl,
               publishableKey: environment.supabasePublishableKey,
-              authOptions: FlutterAuthClientOptions(
-                localStorage: KeychainSessionStorage(
+              authOptions: tracendAuthOptions(
+                KeychainSessionStorage(
                   persistSessionKey: KeychainSessionStorage.sessionKeyFor(
                     environment.supabaseUrl,
                   ),

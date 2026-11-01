@@ -539,10 +539,12 @@ class _TrainScreenState extends State<TrainScreen> {
         : Future<List<WorkoutReconciliation>?>.value();
     TrainingHubData? loadedHub;
     Object? failure;
+    StackTrace? failureStack;
     try {
       loadedHub = await _loadHubData();
-    } catch (error) {
+    } catch (error, stackTrace) {
       failure = error;
+      failureStack = stackTrace;
     }
     final repairs = (await repairsLoad)
         ?.where((c) => !_respondedRepairSessionIds.contains(c.sessionId))
@@ -551,7 +553,7 @@ class _TrainScreenState extends State<TrainScreen> {
         ?.where((r) => !_respondedReconciliationIds.contains(r.id))
         .toList();
     if (loadedHub == null) {
-      logNonCritical(failure!, 'Train: training hub failed');
+      noteLoadFailure(failure!, failureStack, 'Train: training hub');
       _resumePending = false;
       _resumeTarget = null;
       if (!mounted || load != _hubLoads) return;
@@ -564,6 +566,8 @@ class _TrainScreenState extends State<TrainScreen> {
       return;
     }
     final hub = loadedHub;
+    // The phone's copy answers when the server could not: no success.
+    if (hub.cachedAt == null) noteLoadSuccess('Train: training hub');
     if (!mounted || load != _hubLoads) return;
     _loaded.mark();
     setState(() {

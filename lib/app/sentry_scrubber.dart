@@ -287,7 +287,8 @@ Breadcrumb? scrubBreadcrumb(Breadcrumb? crumb, Hint hint) {
 /// The event Sentry may send, scrubbed in place: the request (reduced to its
 /// method, route template and scrubbed body), contexts, `extra`, tags, the
 /// message (its template and parameters are dropped), every exception value
-/// (reduced to its type and code) and every breadcrumb. An event that cannot
+/// (reduced to its type and code), the user (reduced to the account id) and
+/// every breadcrumb. An event that cannot
 /// be scrubbed is dropped, never sent as it was.
 SentryEvent? scrubEvent(SentryEvent event, Hint hint) {
   try {
@@ -334,6 +335,10 @@ SentryEvent? scrubEvent(SentryEvent event, Hint hint) {
           ? _failureLabel(thrown)
           : null;
     }
+    // The account id alone names the athlete: never an email, a name or an
+    // address, whatever set them.
+    final userId = event.user?.id;
+    event.user = userId == null ? null : SentryUser(id: userId);
     final breadcrumbs = event.breadcrumbs;
     if (breadcrumbs != null) {
       event.breadcrumbs = [

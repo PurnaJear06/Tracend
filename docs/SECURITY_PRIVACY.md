@@ -335,6 +335,20 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
   (`KeychainSessionStorage`, `first_unlock_this_device`, never synced or backed up). A build that
   finds a session in preferences moves it, checks it reads back, then deletes the old copy; a fresh
   install clears anything a deleted install left in the Keychain.
+- A session starts only from the password sign-in or from a password reset code typed into the app.
+  The auth client never takes a session from a link (`detectSessionInUri` off,
+  `lib/app/auth_options.dart`): `tracend://` links only switch tabs, so a crafted link or QR code
+  carrying another account's tokens cannot sign the phone into that account
+  (`test/auth_link_session_test.dart`). The sign-up confirmation link confirms the email on the
+  server; the athlete then signs in with the password.
+- A forgotten password is reset in the app with a code. **Forgot password?** calls Auth's recover
+  endpoint; the athlete types the code from the email with a new password (`verifyOTP` with type
+  `recovery`, then `updateUser`). The screen reads the same whether or not the email has an account,
+  including when Auth refuses a repeat request within a minute (which it does only for an existing
+  account). Leaving after the code was accepted signs that session out. The Reset password email
+  template must show `{{ .Token }}` (`docs/BETA_OPERATIONS.md` step 9), and leaked-password
+  protection is on in Auth (owner step); a password found in a breach is refused with its own
+  message. A confirmation email can be sent again from sign-in, at most once a minute.
 - Capture an Apple-provided name only on first authorization when present; do not require or infer a
   legal name.
 - Store secrets in environment-specific secret management, never source control, mobile bundles,
@@ -473,6 +487,17 @@ has no spaces except a leading `async ` or `new `, and a frame whose file is not
 module (`file:`, `ext:`, `https:`, `node:`, `jsr:`, `npm:`) is dropped; if the header cannot be
 located no frame is sent. A provider failure keeps its short code and HTTP status (for example
 `meal_vision_request_failed:503:overloaded`) only when the text is a code. Reporting never throws. A report may carry the account ID and device and app details, never name or email.
+`health-sync` answers a batch the database refuses (SQLSTATE class 22 or 23, or `P0002`) with 422
+`health_sync_rejected` and the SQLSTATE, and a warning log line; the hourly limit (54000) with 429
+`health_sync_limit`; anything else with 503 `health_sync_unavailable`. The last two write an error
+log line and a Sentry event, both with the SQLSTATE only. The app tries a 503 again and never a 4xx.
+The app names the signed-in athlete on its events by the account ID (the Supabase user id, never
+the email): it is set when the gate lets an account in (online or from the saved plan) and cleared
+on every signed-out transition, deletion included. The scrubber keeps the user's id and drops every
+other user field (email, name, IP address). A load that keeps failing is reported once: the daily
+brief, the training hub, an Apple Health sync and the coaching decision send one event (type and
+code) at the third failure in a row; a success starts the count again, and a lost connection is not
+counted.
 In Flutter (`lib/app/sentry_scrubber.dart`) the scrubber also covers exception values, `extra`,
 contexts and breadcrumbs; the app's prints are not breadcrumbs (`enablePrintBreadcrumbs` is off);
 a `beforeBreadcrumb` drops console crumbs and cuts HTTP crumbs to method, status and address
@@ -602,7 +627,8 @@ phone; the widgets never call the network and hold no token.
   then get a fresh snapshot without numbers). Leftover temporary files of an interrupted write are
   deleted on every write and clear.
 - **Deep links.** `tracend://today` and `tracend://train` only switch tab; the native side accepts
-  nothing else, and Flutter's own deep-link routing is off (`FlutterDeepLinkingEnabled` = NO). A
+  nothing else, Flutter's own deep-link routing is off (`FlutterDeepLinkingEnabled` = NO), and the
+  auth client reads no session from a link (section 7). A
   request waits a minute for the app and then expires.
 - **Telemetry.** Sentry breadcrumbs (`home_widgets`) carry the method name only, never the
   snapshot.
@@ -712,6 +738,9 @@ history.
 ### Deletion
 
 - Fresh password authentication and the exact phrase `DELETE` are required.
+- Deletion is offered in Account and, beside **Sign out**, during onboarding, through the same
+  sheet, so someone who stops before their plan (screened out, or changing their mind) can remove
+  their saved answers, health check and Apple Health summaries.
 - Account deletion requires explicit confirmation and revokes active sessions promptly.
 - Meal images, progress photos, and export packages are removed before the Auth user: every object
   recorded for the account plus every object in the account's folders

@@ -594,6 +594,27 @@ void main() {
       expect(find.text('Connection needed'), findsOneWidget);
     });
 
+    testWidgets('Sentry names the athlete by account id until the session '
+        'ends', (tester) async {
+      final athletes = <String?>[];
+      final previous = athleteSink;
+      athleteSink = athletes.add;
+      addTearDown(() => athleteSink = previous);
+      final client = await startSupabase(tester);
+      await cache.save(_userId, _hubJson(), savedThreeDaysAgo);
+
+      await pumpGate(tester);
+      expect(athletes, [_userId]);
+
+      backend.online = true;
+      await tester.runAsync(
+        () => client.auth.signOut(scope: SignOutScope.local),
+      );
+      await tester.pumpAndSettle();
+      expect(athletes, [_userId, null]);
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
+    });
+
     testWidgets('no stored session shows sign-in', (tester) async {
       await startSupabase(tester, signedIn: false);
       await cache.save(_userId, _hubJson(), savedThreeDaysAgo);

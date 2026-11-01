@@ -1,7 +1,53 @@
 # Account Session and Deletion Handoff
 
-**Status:** the deletion recovery fix below shipped (2026-10-02). Invite and waitlist removal on
+**Status:** auth and account safety from the pre-beta audit (2026-11-01, branch
+`claude/auth-account-safety`) is in review; it needs a reinstall and the owner's Auth dashboard
+steps. The deletion recovery fix below shipped (2026-10-02). Invite and waitlist removal on
 deletion is live (#110); SQL only, no reinstall.
+
+## Pre-beta audit: auth and account safety (2026-11-01)
+
+Audit of `origin/main` 4421da9, findings B2, B4, P1-7 and P1-4.
+
+- **B2, link sessions off.** `supabase_flutter` 2.18.3 read a session from any incoming link
+  (`detectSessionInUri` defaulted to true; gotrue 2.27.3 takes the `access_token` path even in
+  PKCE mode), so a `tracend://` link carrying another account's tokens would have signed the phone
+  into that account silently. `lib/app/auth_options.dart` (`tracendAuthOptions`, used by
+  `main.dart`) turns it off; nothing in the app used auth links (password sign-in only; the sign-up
+  confirmation link confirms on the server; widget and Live Activity links go through
+  `SceneDelegate` → `HomeWidgetBridge`, not app_links). `test/auth_link_session_test.dart` plays a
+  token link on the app_links event channel: the library default signs in, the app's options make
+  no request and keep the session.
+- **B4, forgotten password and lost confirmation email.** `lib/features/auth/password_reset_flow.dart`:
+  **Forgot password?** → email → `resetPasswordForEmail` → code + new password →
+  `verifyOTP(type: recovery)` → `updateUser(password)` → the gate opens the app. A code, not a link,
+  because B2 turns link sessions off and the client uses PKCE. The screen is the same whether or not
+  the email has an account: Auth's per-address email limit (`over_email_send_rate_limit`) is only
+  reached by an existing account, so it reads as sent; the per-request limit
+  (`over_request_rate_limit`) applies to everyone and is said as it is. A refused password keeps the
+  accepted code; leaving after the code signs that session out locally. **Resend email**
+  (`resend(type: signup)`) shows after sign-up (waits a minute) and after an `email_not_confirmed`
+  sign-in. `OwnerAuthScreen` takes an optional `GoTrueClient` for tests
+  (`test/owner_auth_recovery_test.dart`).
+- **P1-7, deletion during onboarding.** Onboarding's header has **Account options** beside **Sign
+  out** (two text buttons overflow at 320 pt and 2x text), offering **Delete account** through the
+  shared `showAccountDeletion` (`account_sheets.dart`, now also used by Account). The gate passes a
+  `SupabaseAccountDeletionRepository`. Tests in `test/phase_2_flow_test.dart`; the 2x layout tests
+  now include the button.
+- **P1-4, observability.** `health-sync` moved into `handler.ts`: refused batches (SQLSTATE class
+  22/23, `P0002`) stay 422 `health_sync_rejected` with `code`; 54000 is 429 `health_sync_limit`;
+  anything else is 503 `health_sync_unavailable`; 429 and 503 log an error line and send a
+  codes-only Sentry event. The app retries a 5xx and stops at a 4xx. The app's Sentry events carry
+  the account id (`identifyAthlete` in `diagnostics.dart`, set by the gate, cleared on every
+  signed-out transition); `scrubEvent` keeps only the id. `noteLoadFailure` / `noteLoadSuccess`
+  report a load at its third failure in a row (daily brief, training hub, Apple Health sync,
+  coaching decision); a lost connection (now including `FunctionsFetchException`) is not counted.
+- **Owner steps** (`docs/BETA_OPERATIONS.md` step 9): paste the Reset password template with
+  `{{ .Token }}`, keep the OTP expiry at 3600 s and length 6, set the Site URL, and turn on
+  leaked-password protection. Until the template is changed, the reset email carries only a link
+  and the in-app code step cannot be completed.
+- **Deploy order:** none required. The 503/429 split is safe for build 920: its client retries every
+  failure and shows the raw error, as before.
 
 ## Invite and waitlist rows on deletion (2026-10-15)
 

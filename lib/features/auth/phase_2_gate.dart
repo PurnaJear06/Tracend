@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
+import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/account/account_time_zone.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/auth/account_session.dart';
@@ -243,6 +244,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     await aiConsent.load();
     if (ended()) return;
     _userId = userId;
+    identifyAthlete(userId);
     // Workouts finished or logged with no signal go to the server now,
     // whichever screen is open.
     unawaited(_workouts().sendWaiting());
@@ -269,6 +271,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
       SupabaseAiCoachingConsentRepository(_client),
     );
     _userId = userId;
+    identifyAthlete(userId);
     setState(() {
       _authenticated = true;
       _onboardingComplete = true;
@@ -283,6 +286,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   /// the gate's transient state (loading, a connection error) goes with the
   /// session, so nothing hides sign-in. Repeated events change nothing more.
   void _showSignedOut() {
+    identifyAthlete(null);
     if (!mounted) return;
     _sessionsEnded++;
     setState(() {
@@ -448,7 +452,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
       );
     }
     if (!_authenticated) {
-      return OwnerAuthScreen(onAuthenticated: _refresh);
+      return OwnerAuthScreen(onAuthenticated: _refresh, auth: _client.auth);
     }
     final aiConsent = _aiConsent!;
     final health = _health ??= SupabaseHealthRepository(
@@ -463,6 +467,10 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
         health: health,
         healthBaseline: _baselineSource(),
         onSignOut: _signOut,
+        deletion: SupabaseAccountDeletionRepository(
+          _client,
+          localData: _localData,
+        ),
       );
     }
     // Accounts created before the question existed, and anyone asked again

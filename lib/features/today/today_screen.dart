@@ -719,13 +719,19 @@ class _TodayScreenState extends State<TodayScreen> {
     final day = _briefDay();
     _briefRequestedFor = _dateKey(day);
     final future = widget.brief.load(day);
-    future.then((brief) {
-      if (!mounted || load != _briefLoads) return;
-      _lastBrief = brief;
-      _briefLoadedAt = widget.clock();
-      _updateGate();
-      unawaited(_publishWidgets(brief));
-    }, onError: (_) {});
+    future.then(
+      (brief) {
+        noteLoadSuccess('Today: daily brief');
+        if (!mounted || load != _briefLoads) return;
+        _lastBrief = brief;
+        _briefLoadedAt = widget.clock();
+        _updateGate();
+        unawaited(_publishWidgets(brief));
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        noteLoadFailure(error, stackTrace, 'Today: daily brief');
+      },
+    );
     return future;
   }
 
@@ -929,7 +935,11 @@ class _TodayScreenState extends State<TodayScreen> {
 
   Future<void> _makeDecisionCurrent() {
     final check = _decisionChain.then((_) => _checkDecision());
-    _decisionChain = check.then<void>((_) {}, onError: (_) {});
+    _decisionChain = check.then<void>(
+      (_) => noteLoadSuccess('Today: coaching decision'),
+      onError: (Object error, StackTrace stackTrace) =>
+          noteLoadFailure(error, stackTrace, 'Today: coaching decision'),
+    );
     return check;
   }
 
