@@ -1292,11 +1292,17 @@ than 3 observations `cold_start`, 3–6 `low`, 7–13 `medium`, 14 or more `high
 
 ### `metric_baseline_history`
 
-Append-only per-observation trail written by `compute_user_baselines`: metric, baseline value,
-spread and observation count after the observation, observation date, raw value, whether it was
-winsorized (clamped to ±3 × spread) or rejected as an outlier (beyond 5 × spread), the λ used
-(3-day half-life for the first eight observations, then 14-day), `prior_baseline_id` (linked list),
-engine version, and creation time. Forced RLS, read-only for authenticated.
+Per-observation trail written by `compute_user_baselines`: one row per user, metric and
+observation day (UNIQUE (user_id, metric_name, observation_date), date required), holding the
+baseline value, spread and observation count after that day's observation, the raw value, whether it
+was winsorized (clamped to ±3 × spread) or rejected as an outlier (beyond 5 × spread), the λ used
+(3-day half-life for the first eight observations, then 14-day), engine version, and creation time.
+A recompute writes only new days, and rewrites a day only when its value changed (Apple revises
+today's readings through the day); two weigh-ins on one day are one row, the state after the later
+one. Nothing reads the trail back: baselines and scores come from the source data. No table
+references it, so an account deletion removes it in one indexed pass. `prior_baseline_id` is no
+longer written or constrained (20261102041737) and is dropped by a later migration. Forced RLS,
+read-only for authenticated.
 
 ### `daily_computed_metrics`
 
