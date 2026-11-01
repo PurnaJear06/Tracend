@@ -92,7 +92,8 @@ actors, and the app does not show them as separate coach personas.
    email/password Supabase Auth mode in ADR 0002 may be used until Apple Developer Program
    capabilities are available.
 2. User confirms they are 18 or older.
-3. User reads and accepts the private-beta terms and privacy notice.
+3. User reads and accepts the private-beta terms and privacy notice, and separately gives explicit
+   consent to Tracend processing their health data.
 4. User separately chooses whether to connect HealthKit and whether to upload meal or progress
    photos.
 5. The app remains usable with reduced capability when optional permissions are denied.
@@ -102,9 +103,11 @@ invite-only, and production Auth sign-ups are switched off. The public website
 (https://tracend.pages.dev) runs a double opt-in waitlist. Joining it grants no app access; the
 owner invites confirmed signups.
 
-The website hosts the privacy policy and terms pages. The onboarding checkboxes do not link to
-them yet. That is acceptable for the owner-only beta and blocks any wider release
-(SECURITY_PRIVACY.md §15).
+The website hosts the privacy notice, the app's beta terms (`/beta-terms/`) and the website terms.
+The onboarding rows link to the beta terms and the privacy notice, and Account links to both at any
+time. A page's version is its "Last updated" date; the app records consent against it, and an
+onboarded athlete whose grant is older is asked again at launch before the app opens
+(UX_FLOWS.md §3, BETA_OPERATIONS.md).
 
 AI processing has its own consent, separate from the terms: one notice for AI coaching (Coach chat,
 daily decisions and the onboarding plan), one for meal photos and one for the physique check. Each
@@ -551,7 +554,6 @@ Live progress is in [PROGRESS_CONTEXT.md](./PROGRESS_CONTEXT.md). These requirem
 built yet:
 
 - Sign in with Apple (section 4.1);
-- links from the onboarding terms and privacy checkboxes to the hosted pages (section 4.1);
 - imperial display (the database stores the preference; the app shows metric only);
 - a screen to review a persistent change proposal after onboarding (section 4.8); and
 - decision feedback ratings (section 5.6).

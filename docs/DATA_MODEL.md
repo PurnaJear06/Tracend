@@ -57,8 +57,8 @@ unit_system                  metric | imperial
 onboarding_state             not_started | in_progress | completed
 onboarding_path              beginner | experienced
 experience_level             beginner | intermediate | advanced
-consent_type                 terms | privacy | progress_photo_storage | progress_photo_ai |
-                             notifications | ai_coaching | meal_photo_ai
+consent_type                 terms | privacy | health_data | progress_photo_storage |
+                             progress_photo_ai | notifications | ai_coaching | meal_photo_ai
 consent_action               granted | withdrawn
 goal_type                    fat_loss | muscle_gain | recomposition | strength | aesthetic
 goal_status                  draft | active | superseded
@@ -136,6 +136,13 @@ Append-only records: consent type, notice version, action (`granted` or `withdra
 type. Clients may insert only `user_id`, `consent_type`, `notice_version`, `action` and `source`;
 `created_at` always takes its default. At most 100 records a day per user. HealthKit permission is
 held by iOS, not here.
+
+`terms`, `privacy` and `health_data` (explicit consent to health-data processing, migration
+`20261102143719_health_data_consent_type.sql`) carry the "Last updated" date of the page they were
+given against as `notice_version` (ISO, for example `2026-11-02`; `health_data` uses the privacy
+notice's). Records from before 2026-11-02 carry `2026-07-01`, a version that was never published.
+The app treats a missing, withdrawn or older grant as outdated and asks again; a newer one counts.
+Onboarding approval on the server still checks only that `terms` and `privacy` are granted.
 
 ### `ai_consent_notices` and `ai_notice_current`
 

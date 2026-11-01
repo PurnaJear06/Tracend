@@ -212,7 +212,7 @@ void main() {
         expect(tester.takeException(), isNull);
         await tester.drag(
           find.byType(Scrollable).first,
-          const Offset(0, -4500),
+          const Offset(0, -6000),
         );
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);

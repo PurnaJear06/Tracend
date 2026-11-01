@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
+import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/account/account_time_zone.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/auth/account_session.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/consent/legal_consent.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
@@ -70,6 +72,12 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
 
   /// An account check is running.
   bool _checking = false;
+
+  /// The terms, privacy and health-data agreements an onboarded athlete
+  /// gives again before the app opens, because this build shows newer pages
+  /// than they agreed to. Empty when the check could not run: the app opens
+  /// and the next launch asks again.
+  Set<LegalConsent> _legalOutdated = const {};
   AiCoachingConsentController? _aiConsent;
 
   /// One Apple Health repository for onboarding and the app; its state is
@@ -242,6 +250,10 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     // leaves the app open; the screens that ask retry it themselves.
     await aiConsent.load();
     if (ended()) return;
+    final legalOutdated = complete
+        ? await _loadLegalOutdated(client)
+        : const <LegalConsent>{};
+    if (ended()) return;
     _userId = userId;
     // Workouts finished or logged with no signal go to the server now,
     // whichever screen is open.
@@ -255,8 +267,25 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     setState(() {
       _authenticated = true;
       _onboardingComplete = complete;
+      _legalOutdated = legalOutdated;
       _offline = false;
     });
+  }
+
+  /// The agreements to ask for again. A lookup that fails never locks an
+  /// onboarded athlete out: it asks for none, and the next launch checks
+  /// again. Nothing is ever recorded here.
+  Future<Set<LegalConsent>> _loadLegalOutdated(SupabaseClient client) async {
+    try {
+      return await SupabaseLegalConsentRepository(client).loadOutdated();
+    } catch (e, stackTrace) {
+      if (isNetworkFailure(e)) {
+        logNonCritical(e, 'Legal consent not checked');
+      } else {
+        reportNonCritical(e, stackTrace, 'Legal consent not checked');
+      }
+      return const {};
+    }
   }
 
   /// Opens the app on the plan this phone saved for [userId], when it has
@@ -288,6 +317,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     setState(() {
       _authenticated = false;
       _onboardingComplete = false;
+      _legalOutdated = const {};
       _offline = false;
       _userId = null;
       _error = null;
@@ -463,6 +493,20 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
         health: health,
         healthBaseline: _baselineSource(),
         onSignOut: _signOut,
+      );
+    }
+    // Newer beta terms or privacy notice than the athlete agreed to: they
+    // agree again, sign out or delete the account before anything else.
+    if (_legalOutdated.isNotEmpty) {
+      return LegalConsentScreen(
+        repository: SupabaseLegalConsentRepository(_client),
+        outdated: _legalOutdated,
+        onAgreed: () => setState(() => _legalOutdated = const {}),
+        onSignOut: _signOut,
+        deletion: SupabaseAccountDeletionRepository(
+          _client,
+          localData: _localData,
+        ),
       );
     }
     // Accounts created before the question existed, and anyone asked again

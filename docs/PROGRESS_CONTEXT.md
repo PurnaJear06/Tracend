@@ -8,9 +8,9 @@ sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
 **Current priority (2026-10-15): the coaching platform program.** Plan, contracts and board:
 [`docs/plans/coaching-platform-2026-10/README.md`](./plans/coaching-platform-2026-10/README.md).
 Iteration 1 (Phase 0 + Phase 1) is live. Iteration 2 (Phase 2: A3–A7, D1, C2, B1) is merged
-(2026-10-16). Coach chat and the daily decision run on Claude (Anthropic); meal photos and the
-physique check still run on Groq, and onboarding uses its rules plan, until the owner finishes the
-cutover runbook (checked 2026-11-01). One line per stream; the lead updates these lines when a chunk merges.
+(2026-10-16). Every AI feature runs on Claude (Anthropic): Coach chat and the daily decision,
+and since 2026-11-01 meal photos (`claude-haiku-5-5`) and the physique check (`claude-sonnet-5-5`),
+with both v2 photo notices published; Groq receives nothing. Onboarding uses its rules plan. One line per stream; the lead updates these lines when a chunk merges.
 
 <!-- PROGRAM:coaching-platform-2026-10 -->
 - program: P0 (contracts, migration-order CI check) live (#102).
@@ -108,7 +108,7 @@ cutover runbook (checked 2026-11-01). One line per stream; the lead updates thes
   remote sign-out returns to the gate, reminders leave the phone on sign-out, body-fat target floor
   (5% men, 12% women or unknown), Progress and Meals form fixes. Handoff:
   [`onboarding.md`](./handoff/onboarding.md).
-- website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
+- website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Beta terms and consent (2026-11-02, `claude/beta-terms-consent`, migration `20261102143719`, in review): app beta terms at `/beta-terms/` (a draft for a lawyer), privacy page fixes (controller and grievance contact, workout and sleeping heart rate, explicit health-data consent, processor wording), onboarding rows that open both pages plus a separate `health_data` consent, Account links, page versions = "Last updated" dates kept equal to `LegalNotices` by a test, and a launch screen that asks onboarded athletes again when a page changes (fails open; the owner sees it once after installing). Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
@@ -278,7 +278,8 @@ Decided by the owner on 2026-10-16:
   leave the phone.
 
 Known gaps found:
-- The app's terms and privacy checkboxes don't link to the site pages.
+- Fixed on `claude/beta-terms-consent` (2026-11-02, in review): the terms and privacy rows link to
+  the site pages, and the app has its own beta terms.
 
 **Website and waitlist (2026-10-13):** the public website (`site/`, Astro, Cloudflare Pages at
 https://tracend.pages.dev) and a double opt-in waitlist on the production project (three

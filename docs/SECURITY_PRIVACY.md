@@ -77,7 +77,12 @@ the athlete's notice names, like the rest of the Coach context.
 
 Consent choices are separate and versioned for:
 
-- private-beta terms and privacy notice;
+- private-beta terms and privacy notice (`terms`, `privacy`), each versioned by its hosted page's
+  "Last updated" date (`LegalNotices` in the app); an onboarded athlete whose grant is older is
+  asked again at launch before the app opens, and a failed lookup never locks them out;
+- explicit consent to processing health data: Apple Health data, check-ins, pain reports, body
+  measurements and photos (`health_data`, its own unticked onboarding row, versioned with the
+  privacy notice), as GDPR Art. 9(2)(a) and India's SPDI Rules 2011 Rule 5 expect;
 - AI coaching: sending the athlete's Tracend data to the AI provider for Coach chat answers, daily
   decisions and the onboarding plan (`ai_coaching`; a decline is stored as `withdrawn`, and a grant
   of an older notice version is asked again);
@@ -741,7 +746,8 @@ history.
 
 ### Consent withdrawal
 
-Withdrawal is narrower than account deletion. HealthKit withdrawal stops sync; photo-AI withdrawal
+Withdrawal is narrower than account deletion. Health-data consent (`health_data`) is withdrawn by
+deleting the account or by email, since Tracend cannot coach without it. HealthKit withdrawal stops sync; photo-AI withdrawal
 stops new analysis and removes provider-processing eligibility. Existing source records are handled
 according to the notice and user deletion controls.
 
@@ -794,10 +800,11 @@ Before inviting testers:
   its step and error code only, because the error message can contain the photo's storage path;
 - provider data controls are recorded and configured;
 - athlete- and public-facing AI wording follows D11 (Planned, Phase 2 / A7);
-- **public-release blocker:** the hosted terms and privacy notice must be linked from the
-  onboarding Terms and Privacy checkboxes before any other tester or a public release. The pages
-  exist on the website (`site/src/pages/privacy.astro`, `terms.astro`), but the in-app checkboxes
-  do not link to them yet. This is acceptable only for the owner-only private beta; and
+- the hosted beta terms and privacy notice are linked from the onboarding rows and from Account
+  (`site/src/pages/beta-terms.astro`, `privacy.astro`); health data has its own explicit consent
+  (`health_data`); each page's version is its "Last updated" date, kept equal to `LegalNotices` in
+  the app by `test/legal_versions_test.dart`, and a newer version asks onboarded athletes again
+  at launch. The beta terms are a draft: have a lawyer review them before outside testers; and
 - the owner completes at least two weeks of dogfooding before broader invitations.
 
 The full TestFlight checklist is in [BETA_OPERATIONS.md](./BETA_OPERATIONS.md). Public App Store

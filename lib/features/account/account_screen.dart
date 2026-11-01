@@ -22,6 +22,7 @@ import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/consent/legal_consent.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/health/health_status_card.dart';
@@ -276,6 +277,18 @@ class _AccountScreenState extends State<AccountScreen> {
                   subtitle: 'Your privacy and AI choices, with dates',
                   leading: const TracendRowIcon(icon: CupertinoIcons.lock),
                   onTap: _openConsentHistory,
+                ),
+                TracendListRow(
+                  title: 'Privacy notice',
+                  subtitle: 'What Tracend collects and why',
+                  leading: const TracendRowIcon(icon: CupertinoIcons.doc_text),
+                  onTap: () => openLegalPage(context, LegalNotices.privacyUrl),
+                ),
+                TracendListRow(
+                  title: 'Beta terms',
+                  subtitle: 'The terms you agreed to',
+                  leading: const TracendRowIcon(icon: CupertinoIcons.doc_text),
+                  onTap: () => openLegalPage(context, LegalNotices.termsUrl),
                 ),
                 TracendListRow(
                   title: 'Delete account',

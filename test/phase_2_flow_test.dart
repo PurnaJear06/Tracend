@@ -91,6 +91,7 @@ void main() {
     await _tapText(tester, 'I am 18 or older');
     await _tapText(tester, 'I accept the private-beta terms');
     await _tapText(tester, 'I have read the privacy notice');
+    await _tapText(tester, 'I agree to Tracend using my health data');
     await _continue(tester);
     await _passScreening(tester);
 
@@ -220,6 +221,7 @@ void main() {
       await _tapText(tester, 'I am 18 or older');
       await _tapText(tester, 'I accept the private-beta terms');
       await _tapText(tester, 'I have read the privacy notice');
+      await _tapText(tester, 'I agree to Tracend using my health data');
       await _continue(tester);
       expect(find.text('A quick health check.'), findsOneWidget);
       return repository;
@@ -497,6 +499,7 @@ void main() {
     await _tapText(tester, 'I am 18 or older');
     await _tapText(tester, 'I accept the private-beta terms');
     await _tapText(tester, 'I have read the privacy notice');
+    await _tapText(tester, 'I agree to Tracend using my health data');
     await _continue(tester);
     await _passScreening(tester);
 
@@ -1191,6 +1194,7 @@ void main() {
     await _tapText(tester, 'I am 18 or older');
     await _tapText(tester, 'I accept the private-beta terms');
     await _tapText(tester, 'I have read the privacy notice');
+    await _tapText(tester, 'I agree to Tracend using my health data');
     await _continue(tester);
     await _answerScreening(tester, [true, false, false]);
     await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
