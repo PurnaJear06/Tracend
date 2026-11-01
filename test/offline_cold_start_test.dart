@@ -16,6 +16,7 @@ import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/auth/account_session.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
+import 'package:tracend/features/auth/password_reset_flow.dart';
 import 'package:tracend/features/auth/phase_2_gate.dart';
 import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
@@ -592,6 +593,41 @@ void main() {
       await pumpGate(tester);
 
       expect(find.text('Connection needed'), findsOneWidget);
+    });
+
+    testWidgets('Sentry names the athlete by account id until the session '
+        'ends', (tester) async {
+      final athletes = <String?>[];
+      final previous = athleteSink;
+      athleteSink = athletes.add;
+      addTearDown(() => athleteSink = previous);
+      final client = await startSupabase(tester);
+      await cache.save(_userId, _hubJson(), savedThreeDaysAgo);
+
+      await pumpGate(tester);
+      expect(athletes, [_userId]);
+
+      backend.online = true;
+      await tester.runAsync(
+        () => client.auth.signOut(scope: SignOutScope.local),
+      );
+      await tester.pumpAndSettle();
+      expect(athletes, [_userId, null]);
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
+    });
+
+    testWidgets('a password reset left after its code was accepted ends that '
+        'session at launch', (tester) async {
+      final client = await startSupabase(tester);
+      await cache.save(_userId, _hubJson(), savedThreeDaysAgo);
+      await preferences.setBool(PasswordResetMarker.key, true);
+
+      await pumpGate(tester);
+
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
+      expect(find.text('Upper body A'), findsNothing);
+      expect(client.auth.currentSession, isNull);
+      expect(await preferences.getBool(PasswordResetMarker.key), isNull);
     });
 
     testWidgets('no stored session shows sign-in', (tester) async {

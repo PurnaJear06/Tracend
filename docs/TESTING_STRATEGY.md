@@ -736,9 +736,23 @@ every breadcrumb: any key starting `pain_`, `joint_` or `red_flag`, and `area`, 
 database's "Failing row contains (...)" text are replaced inside messages, exception messages and
 strings (`test/sentry_scrubber_test.dart`). A value after a sensitive or pain key in text goes whole:
 an unquoted multi-word value to the end of the line, a quoted one up to its unescaped closing quote.
+The scrubber keeps the user's account id and drops its other fields. The gate sets that id and
+clears it when the session ends (`test/offline_cold_start_test.dart`); a load failing three times
+in a row reports once, by code, and a lost connection is not counted
+(`test/network_failure_test.dart`, `test/health_sync_key_test.dart`).
 
-Edge Functions report exceptions through `captureException` in `coach-chat`, `meal-analyze`,
-`meal-media-retention`, `onboarding-plan`, `physique-check` and `privacy-delete-account`. Coach
+**Auth (Flutter):** `test/auth_link_session_test.dart` delivers a `tracend://` link carrying
+another account's tokens on the app-links channel: with the library default it signs the phone in
+(proving the harness), with the app's options no request is made and the session stays as it was.
+`test/owner_auth_recovery_test.dart` drives the in-app password reset (code and new password, a
+wrong or expired code, a refused password kept without the used code, leaving signs a verified
+session out, the minute between codes, the same screen whether or not the email has an account)
+and **Resend email** after sign-up or an unconfirmed sign-in, with a fake Auth client.
+
+Edge Functions report exceptions through `captureException` in `coach-chat`, `health-sync`,
+`meal-analyze`, `meal-media-retention`, `onboarding-plan`, `physique-check` and
+`privacy-delete-account`. `health-sync/handler_test.ts` pins its answers (422 with the SQLSTATE,
+429, 503) and that its log lines and reports hold no payload or database message. Coach
 events add `runtime=edge`, provider, model, context kind, sanitized failure code, attempt, finish
 reason, and initial/repair validation-rule tags plus a bounded stack string. Successful and failed
 requests log one sanitized attempt summary with outcome, finite rule/path, limits/counts, latency,

@@ -134,6 +134,19 @@ account** segmented control, filled **Email** and **Password** fields and one pi
 (**Sign in** or **Create account**). The development copy is one small line: **Private beta: email
 sign-in**.
 
+- **Forgot password?** (under **Sign in**) opens **Reset your password** in place: the email from
+  sign-in, **Send code** and **Back to sign in**. Next, **Check your email** says "If an account uses
+  <email>, we sent it a code", the same whether or not one does (a request Auth refuses for coming
+  too often reads the same), and asks for **Code from the email** and **New password**. **Set new
+  password** checks the code, saves the password and opens the app signed in. A wrong or expired
+  code says so and saves nothing; a refused password (too weak, found in a data breach, the same as
+  the old one) keeps the accepted code and asks for another password. **Send a new code** waits a
+  minute between codes. **Back to sign in** after the code was accepted signs that session out. No
+  link is involved: the code is typed into the app.
+- After **Create account**, **Check your email to confirm your account.** comes with **Resend
+  email**, which waits a minute between emails (**Resend email in 42s**); a sign-in refused because
+  the email is not confirmed offers it too. A resend Auth refuses says to wait a minute.
+
 ### Returning user
 
 `Launch → Restore session → Today`
@@ -178,7 +191,8 @@ sign-in**.
   sign-in. When Auth says the account no longer exists, its local data is removed.
 - Resolve deep links only after authentication and authorization. The only links the app handles
   are the widgets' `tracend://today` and `tracend://train` (§5, Widgets): they switch to that tab and do nothing else, the request waits a minute for the app
-  and then expires, and Flutter's own deep-link routing is off.
+  and then expires, and Flutter's own deep-link routing is off. No link ever signs the phone in:
+  the auth client does not read sessions from links.
 
 ## 4. Onboarding
 
@@ -283,7 +297,10 @@ Eligibility → AI coaching → Path → Goal
   older build continues at **About you**. **Saved answers that fail to load** show **Your answers
   did not load.** with **Try again**; nothing is saved until they load, so defaults never overwrite
   them.
-  **Sign out** stays available on every step, including while saved answers load.
+  **Sign out** stays available on every step, including while saved answers load. Beside it,
+  **Account options** (an ellipsis button) offers **Delete account**, which opens the same deletion
+  sheet as Account (password, `DELETE`, a destructive confirm) and signs out once it settles, so
+  someone who stops during setup can remove what they saved.
 - **Goal:** nothing is preselected; each goal has a one-line description.
 - **Inputs:** use visible labels and a short rationale for sensitive fields. Height,
   weight, target weight and session length are sliders with − and + buttons for exact values,

@@ -204,6 +204,9 @@ class _TrainScreenState extends State<TrainScreen> {
   /// Which hub load started last; an older reply is dropped.
   int _hubLoads = 0;
 
+  /// The name a run of failed hub loads is reported under.
+  static const _hubLoad = 'Train: training hub';
+
   HealthkitCompletionCandidate? _candidate;
   bool _healthkitBusy = false;
 
@@ -539,10 +542,12 @@ class _TrainScreenState extends State<TrainScreen> {
         : Future<List<WorkoutReconciliation>?>.value();
     TrainingHubData? loadedHub;
     Object? failure;
+    StackTrace? failureStack;
     try {
       loadedHub = await _loadHubData();
-    } catch (error) {
+    } catch (error, stackTrace) {
       failure = error;
+      failureStack = stackTrace;
     }
     final repairs = (await repairsLoad)
         ?.where((c) => !_respondedRepairSessionIds.contains(c.sessionId))
@@ -551,10 +556,14 @@ class _TrainScreenState extends State<TrainScreen> {
         ?.where((r) => !_respondedReconciliationIds.contains(r.id))
         .toList();
     if (loadedHub == null) {
-      logNonCritical(failure!, 'Train: training hub failed');
       _resumePending = false;
       _resumeTarget = null;
-      if (!mounted || load != _hubLoads) return;
+      if (!mounted || load != _hubLoads) {
+        logNonCritical(failure!, 'Train: training hub (superseded)');
+        return;
+      }
+      // Only the load whose result is shown counts.
+      noteLoadFailure(failure!, failureStack, _hubLoad);
       setState(() {
         _hubError = failure;
         _hubLoading = false;
@@ -565,6 +574,8 @@ class _TrainScreenState extends State<TrainScreen> {
     }
     final hub = loadedHub;
     if (!mounted || load != _hubLoads) return;
+    // The phone's copy answers when the server could not: no success.
+    if (hub.cachedAt == null) noteLoadSuccess(_hubLoad);
     _loaded.mark();
     setState(() {
       _show(hub);

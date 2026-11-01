@@ -318,6 +318,15 @@ codes and numbers only, the repository license is proprietary (view only), and t
 migration is prepared with a no-change helper and an owner runbook:
 [`docs/handoff/supabase-key-migration.md`](./handoff/supabase-key-migration.md).
 
+**Pre-beta audit: auth and account safety (2026-11-01, branch `claude/auth-account-safety`, in
+review):** links never create a session (B2); **Forgot password?** resets in the app with an emailed
+code and **Resend email** sends the confirmation again (B4; owner pastes the Reset password template
+with `{{ .Token }}` and turns on leaked-password protection, `docs/BETA_OPERATIONS.md` step 9);
+**Delete account** during onboarding (P1-7); `health-sync` answers 422/429/503 and reports server
+faults by code, app Sentry events carry the account id, and a load failing three times in a row is
+reported once (P1-4). Needs a reinstall. Handoff:
+[`account-session.md`](./handoff/account-session.md).
+
 **Privacy export, deletion and retention fixes (2026-10-24, QA audit group D):** the export now
 carries every table with a `user_id` (Coach threads and messages included) in pages of 1000, with a
 test that fails on a table that is neither exported nor excluded; account deletion pages its file

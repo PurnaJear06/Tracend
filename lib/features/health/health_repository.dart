@@ -276,7 +276,8 @@ class SupabaseHealthRepository
     DateTime start,
     DateTime now,
   ) async {
-    Exception? lastException;
+    Object? lastError;
+    StackTrace? lastStack;
     // One key for the whole sync: an attempt whose reply was lost may have
     // been written, and the server returns it for a repeated key.
     final idempotencyKey = _uuid.v4();
@@ -285,7 +286,7 @@ class SupabaseHealthRepository
         await Future<void>.delayed(Duration(seconds: attempt * attempt));
       }
       try {
-        final response = await _client.functions.invoke(
+        await _client.functions.invoke(
           'health-sync',
           body: {
             'schema_version': '1.0',
@@ -304,17 +305,28 @@ class SupabaseHealthRepository
             'workouts': healthWorkoutReferences(result.samples),
           },
         );
-        if (response.status >= 200 && response.status < 300) return;
-        final detail = response.data is Map
-            ? (response.data as Map)['error'] ?? '${response.status}'
-            : '${response.status}';
-        lastException = _HealthSyncException(detail.toString());
-      } catch (error) {
-        lastException = _HealthSyncException(healthSyncFailureMessage(error));
+        noteLoadSuccess(_syncLoad);
+        return;
+      } on FunctionException catch (error, stackTrace) {
+        lastError = error;
+        lastStack = stackTrace;
+        // A 4xx from the function or from Supabase's relay in front of it (a
+        // refused batch, the hourly limit, a session refused) gets the same
+        // answer a moment later: it is not tried again. A server fault (5xx)
+        // and a request that never arrived (status 0) are.
+        if (error.status >= 400 && error.status < 500) break;
+      } catch (error, stackTrace) {
+        lastError = error;
+        lastStack = stackTrace;
       }
     }
-    throw lastException ?? _HealthSyncException('Sync failed.');
+    final failure = lastError!;
+    noteLoadFailure(failure, lastStack, _syncLoad);
+    throw _HealthSyncException(healthSyncFailureMessage(failure));
   }
+
+  /// The name a run of failed syncs is reported under.
+  static const _syncLoad = 'Apple Health sync';
 
   String _dateKey(DateTime value) =>
       '${value.year.toString().padLeft(4, '0')}-'
