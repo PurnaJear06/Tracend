@@ -107,13 +107,22 @@ class LocalAccountData {
           CheckInQueue.queueStorageKeyFor(userId),
           CheckInQueue.earlierKeyFor(userId),
           SafetyAcknowledgements.storageKeyFor(userId),
-          ...(await _store.getKeys()).where(
-            (key) => WorkoutLocalKeys.owns(userId, key),
-          ),
         },
       });
     } catch (e) {
       logNonCritical(e, 'athlete health cache not cleared');
+    }
+    if (userId != null) {
+      // Listing the keys can fail on its own; the ones named above are gone.
+      try {
+        await _store.removeAll(
+          (await _store.getKeys()).where(
+            (key) => WorkoutLocalKeys.owns(userId, key),
+          ),
+        );
+      } catch (e) {
+        logNonCritical(e, 'athlete workout cache not cleared');
+      }
     }
     if (userId != null) await _clearPainReports(userId);
   }

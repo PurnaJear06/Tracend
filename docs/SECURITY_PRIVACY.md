@@ -454,7 +454,10 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
 - **Shared phone.** "Checked in today" and "Not today" are kept per athlete (the key holds the
   athlete's id; the one key earlier builds used for every account is ignored and removed). Sign-out,
   a session Auth refused and account deletion remove them, with the workouts waiting for their
-  heart rate, so another account on the same phone is asked for its own morning check-in.
+  heart rate, so another account on the same phone is asked for its own morning check-in. The
+  waiting list is kept for the whole phone, so it cannot be kept for one athlete: the heart-rate
+  summary of a workout finished just before signing out is dropped and never reaches Tracend
+  (the workout and its sets are unaffected).
   `test/local_data_privacy_test.dart` lists every key the app writes as per athlete, phone-wide
   and kept, or ending with the session, and fails when a file starts storing something unlisted or
   a key outlives a sign-out or a deletion.

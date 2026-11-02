@@ -11,7 +11,7 @@ class SafetyAcknowledgements {
   final String _key;
 
   static const storageKey = 'safety_acknowledged';
-  static const _kept = 14;
+  static const kept = 14;
 
   static String storageKeyFor(String userId) => '$storageKey.$userId';
 
@@ -27,7 +27,7 @@ class SafetyAcknowledgements {
     keys.add(key);
     await _store.setStringList(
       _key,
-      keys.length > _kept ? keys.sublist(keys.length - _kept) : keys,
+      keys.length > kept ? keys.sublist(keys.length - kept) : keys,
     );
   }
 }

@@ -241,6 +241,52 @@ void main() {
     });
   });
 
+  test('signing out keeps the athlete\'s own queue, pain reports and drafts '
+      'for their return', () async {
+    final client = SupabaseClient('https://example.supabase.co', 'anon');
+    await signOutAthlete(client, LocalAccountData(), _a);
+
+    for (final key in [
+      CheckInQueue.queueStorageKeyFor(_a),
+      CheckInQueue.earlierKeyFor(_a),
+      PainReportQueue.storageKeyFor(_a),
+      SafetyAcknowledgements.storageKeyFor(_a),
+      '${WorkoutLocalKeys.draftPrefix(_a)}workout-1',
+      '${WorkoutLocalKeys.finishPrefix(_a)}workout-1',
+      WorkoutLocalKeys.discards(_a),
+      WorkoutLocalKeys.exerciseHistory(_a),
+    ]) {
+      expect(await store.getString(key), isNotNull, reason: key);
+    }
+    // The saved plan is the one thing of the athlete's that goes.
+    expect(await store.getString(TrainingHubCache.keyFor(_a)), isNull);
+  });
+
+  test('a deletion whose listing fails still removes the named keys', () async {
+    final healthy = LocalHealthFiles.instance;
+    LocalHealthFiles.instance = FailingHealthFiles(
+      healthy,
+      failWrites: false,
+      failListing: true,
+    );
+
+    await LocalAccountData().clear(_a);
+    LocalHealthFiles.instance = healthy;
+
+    for (final key in [
+      CheckInQueue.queueStorageKeyFor(_a),
+      CheckInQueue.earlierKeyFor(_a),
+      PainReportQueue.storageKeyFor(_a),
+      SafetyAcknowledgements.storageKeyFor(_a),
+    ]) {
+      expect(await store.getString(key), isNull, reason: key);
+    }
+    expect(
+      await store.getString(CheckInQueue.queueStorageKeyFor(_b)),
+      isNotNull,
+    );
+  });
+
   test('every file that stores something on the phone is classified above', () {
     final found =
         <String>{

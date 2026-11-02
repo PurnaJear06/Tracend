@@ -137,6 +137,34 @@ void main() {
       expect(await files.names(), ['b.hc']);
     });
 
+    test('keep odd keys apart in a real folder, and read them back', () async {
+      final store = LocalHealthStore(files: NativeLocalHealthFiles());
+      final keys = {
+        'workout_draft_11111111-1111-4111-8111-111111111111_w1',
+        'safety_acknowledged.athlete-1',
+        '2026-10-02:urgent/with space',
+        'a%2Fb',
+        '.hidden',
+        'ünïcode 💪',
+        'x' * 150,
+      };
+      for (final key in keys) {
+        await store.setString(key, 'value of $key');
+      }
+
+      expect(await store.getKeys(), keys);
+      for (final key in keys) {
+        expect(await store.getString(key), 'value of $key', reason: key);
+      }
+      expect(
+        folder.listSync().map((entity) => entity.uri.pathSegments.last),
+        everyElement(isNot(contains('/'))),
+      );
+      await store.removeAll(keys);
+      expect(await store.getKeys(), isEmpty);
+      expect(folder.listSync(), isEmpty);
+    });
+
     test('are not used when the folder cannot be prepared, and tried again '
         'next time', () async {
       final files = NativeLocalHealthFiles();

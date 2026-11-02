@@ -1,5 +1,6 @@
 import Flutter
 import Foundation
+import os
 
 /// The folder where the app keeps what it caches of an athlete's health:
 /// pain reports, check-ins, workout drafts, the plan and the Coach's last
@@ -13,9 +14,12 @@ import Foundation
 enum LocalHealthStoreFiles {
   static let directoryName = "TracendHealthCache"
 
-  /// The folder, created when missing. It is checked to be excluded from
-  /// backups on every call, and nothing is stored in it when that cannot be
-  /// done.
+  /// Set once this run has found the folder excluded from backups.
+  private static let verified = OSAllocatedUnfairLock(initialState: false)
+
+  /// The folder, created when missing. Its exclusion from backups is set and
+  /// checked once per run, and nothing is stored in it while that has not
+  /// succeeded: every call tries again until it does.
   static func directory() throws -> URL {
     let support = try FileManager.default.url(
       for: .applicationSupportDirectory,
@@ -24,6 +28,7 @@ enum LocalHealthStoreFiles {
       create: true
     )
     var folder = support.appendingPathComponent(directoryName, isDirectory: true)
+    if verified.withLock({ $0 }) { return folder }
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     var values = URLResourceValues()
     values.isExcludedFromBackup = true
@@ -32,6 +37,7 @@ enum LocalHealthStoreFiles {
     let stored = URL(fileURLWithPath: folder.path, isDirectory: true)
     guard try stored.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true
     else { throw CocoaError(.fileWriteUnknown) }
+    verified.withLock { $0 = true }
     return stored
   }
 

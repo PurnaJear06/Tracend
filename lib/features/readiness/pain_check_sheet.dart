@@ -282,7 +282,11 @@ class _PainResult extends StatelessWidget {
             return Padding(
               padding: const EdgeInsets.only(top: TracendSpacing.sm),
               child: Text(
-                delivery.refused ? chipNotRecorded : chipQueued,
+                !delivery.kept
+                    ? chipNotSaved
+                    : delivery.refused
+                    ? chipNotRecorded
+                    : chipQueued,
                 style: textTheme.bodySmall?.copyWith(
                   color: colors.textSecondary,
                 ),

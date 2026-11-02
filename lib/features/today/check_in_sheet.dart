@@ -10,6 +10,8 @@ import 'package:tracend/features/readiness/choice_widgets.dart';
 import 'package:tracend/features/readiness/pain_check.dart';
 import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
+import 'package:tracend/features/train/workout_repository.dart'
+    show newIdempotencyKey;
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/local_health_store.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
@@ -35,9 +37,15 @@ class CheckInSaved {
   final String? referralRoute;
 
   /// Set when the sheet closed at once, for a referral, while the check-in was
-  /// still on its way: completes with whether Tracend has it. The referral
-  /// never waits for the network.
+  /// still on its way: completes with whether Tracend has it, or throws
+  /// [CheckInNotSaved] when it was kept nowhere. The referral never waits for
+  /// the network.
   final Future<bool>? pending;
+}
+
+/// The check-in could be neither kept on this phone nor sent.
+class CheckInNotSaved implements Exception {
+  const CheckInNotSaved();
 }
 
 /// Opens the daily check-in sheet. [sender] replaces the
@@ -139,7 +147,7 @@ const checkInScales = [
 ];
 
 /// How the send of a saved check-in ended.
-enum _Sent { delivered, waiting, painRefused, refused }
+enum _Sent { delivered, waiting, painRefused, refused, notSaved }
 
 class _CheckInSheet extends StatefulWidget {
   const _CheckInSheet({
@@ -322,7 +330,10 @@ class _CheckInSheetState extends State<_CheckInSheet> {
         CheckInSaved(
           delivered: false,
           referralRoute: route,
-          pending: sending.then((result) => result == _Sent.delivered),
+          pending: sending.then((result) {
+            if (result == _Sent.notSaved) throw const CheckInNotSaved();
+            return result == _Sent.delivered;
+          }),
         ),
       );
       return;
@@ -334,6 +345,16 @@ class _CheckInSheetState extends State<_CheckInSheet> {
       // The send goes on; the envelope waits on the phone meanwhile.
     }
     if (!mounted) return;
+    if (result == _Sent.notSaved) {
+      // Nothing was kept: the sheet stays open with the answers, to try again.
+      TracendToast.show(
+        context,
+        chipNotSaved,
+        icon: CupertinoIcons.exclamationmark_circle,
+      );
+      setState(() => _saving = false);
+      return;
+    }
     if (result == _Sent.delivered) {
       unawaited(TracendHaptics.success());
       TracendToast.show(context, 'Check-in saved');
@@ -341,6 +362,7 @@ class _CheckInSheetState extends State<_CheckInSheet> {
       TracendToast.show(context, switch (result) {
         _Sent.painRefused => chipNotRecorded,
         _Sent.refused => 'This check-in could not be saved.',
+        _Sent.notSaved => chipNotSaved,
         _ when withPain => painQueuedToast,
         _ =>
           'Check-in saved on this device. It will sync when you are '
@@ -361,18 +383,25 @@ class _CheckInSheetState extends State<_CheckInSheet> {
     String localDate,
     String timezone,
   ) async {
+    final CheckInQueue queue;
+    final String key;
     try {
-      final queue = CheckInQueue(
+      queue = CheckInQueue(
         const LocalHealthStore(),
         userId: widget.environment.hasSupabaseConfiguration
             ? Supabase.instance.client.auth.currentUser?.id
             : null,
       );
-      final key = await queue.enqueue(
+      key = await queue.enqueue(
         payload: payload,
         localDate: localDate,
         timezone: timezone,
       );
+    } on Object catch (error) {
+      logNonCritical(error, 'check-in not kept');
+      return _sendWithoutQueue(payload, localDate, timezone);
+    }
+    try {
       final replay = await queue.replay(_send);
       for (final refusal in replay.refused) {
         reportNonCritical(refusal.error, null, 'Check-in refused');
@@ -386,6 +415,31 @@ class _CheckInSheetState extends State<_CheckInSheet> {
     } on Object catch (error) {
       logNonCritical(error, 'check-in waits');
       return _Sent.waiting;
+    }
+  }
+
+  /// The check-in could not be kept on the phone, so it is sent once as it
+  /// is: delivered, refused for good, or not saved anywhere.
+  Future<_Sent> _sendWithoutQueue(
+    Map<String, dynamic> payload,
+    String localDate,
+    String timezone,
+  ) async {
+    try {
+      final accepted = await _send(
+        localDate,
+        timezone,
+        newIdempotencyKey(),
+        payload,
+      );
+      return accepted ? _Sent.delivered : _Sent.notSaved;
+    } on PostgrestException catch (error) {
+      return CheckInQueue.isFinalRefusal(error)
+          ? _Sent.refused
+          : _Sent.notSaved;
+    } on Object catch (error) {
+      logNonCritical(error, 'check-in not sent');
+      return _Sent.notSaved;
     }
   }
 

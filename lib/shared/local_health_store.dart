@@ -116,7 +116,12 @@ class NativeLocalHealthFiles implements LocalHealthFiles {
   @override
   Future<String?> read(String name) async {
     final file = await _file(name);
-    return await file.exists() ? file.readAsString() : null;
+    try {
+      return await file.exists() ? await file.readAsString() : null;
+    } on PathNotFoundException {
+      // Removed between the check and the read.
+      return null;
+    }
   }
 
   @override

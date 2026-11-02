@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -357,7 +356,7 @@ void main() {
     test('a write that fails keeps the old entry for the next read', () async {
       await seedHealthCache({CheckInQueue.singleSlotKey: jsonEncode(legacy)});
       final healthy = LocalHealthFiles.instance;
-      LocalHealthFiles.instance = _FailingWrites(healthy);
+      LocalHealthFiles.instance = FailingHealthFiles(healthy);
 
       await CheckInQueue(store).pendingDays();
       expect(await store.getString(CheckInQueue.singleSlotKey), isNotNull);
@@ -367,6 +366,25 @@ void main() {
       expect(await CheckInQueue(store).pendingDays(), ['2026-10-01']);
       expect(await store.getString(CheckInQueue.singleSlotKey), isNull);
       expect(await stored(), contains('2026-10-01'));
+    });
+
+    test('a delete that fails does not block a new check-in', () async {
+      await seedHealthCache({CheckInQueue.singleSlotKey: jsonEncode(legacy)});
+      final healthy = LocalHealthFiles.instance;
+      LocalHealthFiles.instance = FailingHealthFiles(
+        healthy,
+        failWrites: false,
+        failDeletes: true,
+      );
+
+      final queue = CheckInQueue(store);
+      await queue.enqueue(
+        payload: _payload,
+        localDate: '2026-10-02',
+        timezone: 'Asia/Kolkata',
+      );
+
+      expect(await queue.pendingDays(), ['2026-10-01', '2026-10-02']);
     });
 
     test(
@@ -858,24 +876,4 @@ void main() {
       expect(await stored(), isEmpty);
     });
   });
-}
-
-/// Files whose writes fail, as when the disk is full.
-class _FailingWrites implements LocalHealthFiles {
-  _FailingWrites(this._inner);
-
-  final LocalHealthFiles _inner;
-
-  @override
-  Future<String?> read(String name) => _inner.read(name);
-
-  @override
-  Future<void> write(String name, String contents) =>
-      throw const FileSystemException('disk full');
-
-  @override
-  Future<void> delete(String name) => _inner.delete(name);
-
-  @override
-  Future<List<String>> names() => _inner.names();
 }

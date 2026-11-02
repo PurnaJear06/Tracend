@@ -16,6 +16,7 @@ class PainDelivery {
     required this.sent,
     this.refused = false,
     this.tooOld = false,
+    this.kept = true,
     this.areaState,
   });
 
@@ -32,6 +33,10 @@ class PainDelivery {
 
   /// For a refusal: the report is older than the server records.
   final bool tooOld;
+
+  /// For a report that was not sent: it is kept on this phone. False when it
+  /// could not be kept either, and the athlete is told to report it again.
+  final bool kept;
 
   /// `held`, `limited`, `watch` or `none`, when the server said.
   final String? areaState;
@@ -117,23 +122,24 @@ class PainReporting {
     } on TimeoutException {
       // The attempt goes on; the report is kept meanwhile, and forgotten
       // again if the attempt lands.
-      await _keep(report);
+      final kept = await _keep(report);
       unawaited(_forgetWhenSent(report, attempt));
-      return PainDelivery(outcome: local, sent: false);
+      return PainDelivery(outcome: local, sent: false, kept: kept);
     } on PainCheckException catch (error) {
       final refused = error.failure == PainCheckFailure.refused;
-      await _keep(report, refused: refused, tooOld: error.tooOld);
+      final kept = await _keep(report, refused: refused, tooOld: error.tooOld);
       return PainDelivery(
         outcome: local,
         sent: false,
         refused: refused,
         tooOld: error.tooOld,
+        kept: kept,
       );
     } on Object catch (error) {
       // Whatever went wrong, the report is kept and the answer stands.
       logNonCritical(error, 'pain report waits');
-      await _keep(report);
-      return PainDelivery(outcome: local, sent: false);
+      final kept = await _keep(report);
+      return PainDelivery(outcome: local, sent: false, kept: kept);
     }
   }
 
@@ -154,15 +160,18 @@ class PainReporting {
     }
   }
 
-  Future<void> _keep(
+  /// Whether the report is now kept on the phone.
+  Future<bool> _keep(
     PainReport report, {
     bool refused = false,
     bool tooOld = false,
   }) async {
     try {
       await _queue().add(report, refused: refused, tooOld: tooOld);
+      return true;
     } on Exception catch (error) {
       logNonCritical(error, 'pain report not kept');
+      return false;
     }
   }
 

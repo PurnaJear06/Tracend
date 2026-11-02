@@ -12,6 +12,8 @@ import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/today/check_in_sheet.dart';
 import 'package:tracend/shared/local_health_store.dart';
 
+import 'memory_health_files.dart';
+
 const _environment = AppEnvironment(
   name: 'test',
   supabaseUrl: '',
@@ -312,6 +314,44 @@ void main() {
         preferences,
       ).replay((date, zone, key, payload) async => true);
       expect(replay.deliveredAny, isTrue);
+    });
+
+    testWidgets('a check-in that cannot be kept on the phone is sent as it is, '
+        'and delivered', (tester) async {
+      final recorder = _Recorder();
+      await _open(tester, recorder);
+      LocalHealthFiles.instance = FailingHealthFiles(LocalHealthFiles.instance);
+      await _save(tester);
+
+      expect(recorder.payloads, hasLength(1));
+      expect(find.text('Check-in saved'), findsOneWidget);
+      expect(find.text('Daily check-in'), findsNothing);
+    });
+
+    testWidgets('a check-in kept nowhere says so and stays open to try '
+        'again', (tester) async {
+      CheckInSaved? saved;
+      var closed = false;
+      await _openWith(
+        tester,
+        (date, zone, key, payload) async {
+          throw Exception('offline');
+        },
+        onSaved: (result) {
+          saved = result;
+          closed = true;
+        },
+      );
+      LocalHealthFiles.instance = FailingHealthFiles(LocalHealthFiles.instance);
+      await _save(tester);
+
+      expect(find.text('Not saved. Try again.'), findsOneWidget);
+      expect(find.text('Daily check-in'), findsOneWidget);
+      expect(closed, isFalse);
+      expect(saved, isNull);
+      expect(await const LocalHealthStore().getKeys(), isEmpty);
+      // The sheet is not left saving: the athlete can try again.
+      expect(find.text('Save check-in'), findsOneWidget);
     });
 
     testWidgets('Save stays reachable at 320pt with 2× text', (tester) async {

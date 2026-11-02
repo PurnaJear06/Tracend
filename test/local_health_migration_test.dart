@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +12,8 @@ import 'package:tracend/features/train/training_hub_cache.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/local_health_migration.dart';
 import 'package:tracend/shared/local_health_store.dart';
+
+import 'memory_health_files.dart';
 
 const _user = '11111111-1111-4111-8111-111111111111';
 
@@ -112,22 +114,20 @@ void main() {
     );
   });
 
-  test('a copy the store already holds is the newer one', () async {
-    await store.setString(CheckInQueue.queueStorageKeyFor(_user), 'newer');
+  test('a copy the store already holds is the newer one, and the old key '
+      'goes', () async {
+    await store.setString(TrainingHubCache.keyFor(_user), 'newer');
 
     await moveHealthCachesToStore(preferences: preferences);
 
-    expect(
-      await store.getString(CheckInQueue.queueStorageKeyFor(_user)),
-      'newer',
-    );
-    expect((await SharedPreferences.getInstance()).getKeys(), isEmpty);
+    expect(await store.getString(TrainingHubCache.keyFor(_user)), 'newer');
+    expect(await preferences.getString(TrainingHubCache.keyFor(_user)), isNull);
   });
 
   test('a key that cannot be written stays in preferences for the next '
       'launch', () async {
     final healthy = LocalHealthFiles.instance;
-    LocalHealthFiles.instance = _FailingWrites(healthy);
+    LocalHealthFiles.instance = FailingHealthFiles(healthy);
 
     await moveHealthCachesToStore(preferences: preferences);
 
@@ -145,6 +145,143 @@ void main() {
     expect(await store.getString(TrainingHubCache.keyFor(_user)), '{"v":1}');
     expect(legacy.getKeys(), isEmpty);
     expect(await preferences.getBool(healthStoreMovedKey), isTrue);
+  });
+
+  group('when the store holds a key that preferences still hold too', () {
+    // A first move that stopped part way, then something saved offline.
+    String envelope(String day, String key, {bool pain = false}) => jsonEncode({
+      'idempotency_key': key,
+      'local_date': day,
+      'timezone': 'Asia/Kolkata',
+      'payload': {'energy': 3, if (pain) 'pain_area': 'knee'},
+    });
+
+    String report(String key, {bool refused = false}) =>
+        jsonEncode({'idempotency_key': key, 'refused': refused});
+
+    test('check-ins waiting for different days both survive', () async {
+      final key = CheckInQueue.queueStorageKeyFor(_user);
+      SharedPreferences.setMockInitialValues({
+        key: jsonEncode({
+          '2026-10-30': jsonDecode(envelope('2026-10-30', 'old')),
+        }),
+      });
+      await store.setString(
+        key,
+        jsonEncode({'2026-10-31': jsonDecode(envelope('2026-10-31', 'new'))}),
+      );
+
+      await moveHealthCachesToStore(preferences: preferences);
+
+      final kept = jsonDecode((await store.getString(key))!) as Map;
+      expect(kept.keys, unorderedEquals(['2026-10-30', '2026-10-31']));
+      expect(await CheckInQueue(store, userId: _user).pendingDays(), [
+        '2026-10-30',
+        '2026-10-31',
+      ]);
+    });
+
+    test('an older check-in with a pain check that a newer answer for its '
+        'day replaced goes to the earlier ones, as the queue does', () async {
+      final key = CheckInQueue.queueStorageKeyFor(_user);
+      SharedPreferences.setMockInitialValues({
+        key: jsonEncode({
+          '2026-10-31': jsonDecode(envelope('2026-10-31', 'old', pain: true)),
+        }),
+      });
+      await store.setString(
+        key,
+        jsonEncode({'2026-10-31': jsonDecode(envelope('2026-10-31', 'new'))}),
+      );
+
+      await moveHealthCachesToStore(preferences: preferences);
+
+      final earlier =
+          jsonDecode(
+                (await store.getString(CheckInQueue.earlierKeyFor(_user)))!,
+              )
+              as List;
+      expect(earlier.map((e) => (e as Map)['idempotency_key']), ['old']);
+      final day = jsonDecode((await store.getString(key))!) as Map;
+      expect((day['2026-10-31'] as Map)['idempotency_key'], 'new');
+    });
+
+    test('earlier check-ins and pain reports are joined by idempotency key, '
+        'the store\'s copy of one both hold standing', () async {
+      final earlierKey = CheckInQueue.earlierKeyFor(_user);
+      final painKey = PainReportQueue.storageKeyFor(_user);
+      SharedPreferences.setMockInitialValues({
+        earlierKey: jsonEncode([jsonDecode(envelope('2026-10-29', 'a'))]),
+        painKey: jsonEncode([
+          jsonDecode(report('r1')),
+          jsonDecode(report('r2')),
+        ]),
+      });
+      await store.setString(
+        earlierKey,
+        jsonEncode([jsonDecode(envelope('2026-10-30', 'b'))]),
+      );
+      await store.setString(
+        painKey,
+        jsonEncode([
+          jsonDecode(report('r2', refused: true)),
+          jsonDecode(report('r3')),
+        ]),
+      );
+
+      await moveHealthCachesToStore(preferences: preferences);
+
+      List<Object?> keys(String? json) => [
+        for (final item in jsonDecode(json!) as List)
+          (item as Map)['idempotency_key'],
+      ];
+      expect(keys(await store.getString(earlierKey)), ['a', 'b']);
+      expect(keys(await store.getString(painKey)), ['r1', 'r2', 'r3']);
+      final pain = jsonDecode((await store.getString(painKey))!) as List;
+      expect((pain[1] as Map)['refused'], isTrue);
+    });
+
+    test('queued discards and referrals read are joined', () async {
+      final discards = WorkoutLocalKeys.discards(_user);
+      final referrals = SafetyAcknowledgements.storageKeyFor(_user);
+      SharedPreferences.setMockInitialValues({
+        referrals: ['2026-10-29:urgent'],
+      });
+      await preferences.setStringList(discards, ['s1', 's2']);
+      await store.setStringList(discards, ['s2', 's3']);
+      await store.setStringList(referrals, ['2026-10-30:urgent']);
+
+      await moveHealthCachesToStore(preferences: preferences);
+
+      expect(await store.getStringList(discards), ['s1', 's2', 's3']);
+      expect(await store.getStringList(referrals), [
+        '2026-10-29:urgent',
+        '2026-10-30:urgent',
+      ]);
+    });
+
+    test(
+      'a draft, the plan and the history keep the store\'s newer copy',
+      () async {
+        for (final key in [
+          '${WorkoutLocalKeys.draftPrefix(_user)}workout-1',
+          TrainingHubCache.keyFor(_user),
+          WorkoutLocalKeys.exerciseHistory(_user),
+        ]) {
+          await store.setString(key, 'newer');
+        }
+
+        await moveHealthCachesToStore(preferences: preferences);
+
+        for (final key in [
+          '${WorkoutLocalKeys.draftPrefix(_user)}workout-1',
+          TrainingHubCache.keyFor(_user),
+          WorkoutLocalKeys.exerciseHistory(_user),
+        ]) {
+          expect(await store.getString(key), 'newer', reason: key);
+        }
+      },
+    );
   });
 
   test('knows every key the caches write', () {
@@ -176,24 +313,4 @@ void main() {
       expect(asyncHealthKeyPrefixes.any(key.startsWith), isTrue, reason: key);
     }
   });
-}
-
-/// Files whose writes fail, as when the disk is full.
-class _FailingWrites implements LocalHealthFiles {
-  _FailingWrites(this._inner);
-
-  final LocalHealthFiles _inner;
-
-  @override
-  Future<String?> read(String name) => _inner.read(name);
-
-  @override
-  Future<void> write(String name, String contents) =>
-      throw const FileSystemException('disk full');
-
-  @override
-  Future<void> delete(String name) => _inner.delete(name);
-
-  @override
-  Future<List<String>> names() => _inner.names();
 }

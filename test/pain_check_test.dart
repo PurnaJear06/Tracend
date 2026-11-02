@@ -13,6 +13,7 @@ import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/shared/local_health_store.dart';
 
 import 'day_adjustment_fixtures.dart';
+import 'memory_health_files.dart';
 import 'pain_fakes.dart';
 
 PainReport _report({
@@ -588,6 +589,17 @@ void main() {
         expect(server.reports.last.idempotencyKey, 'key-1');
       },
     );
+
+    test('a report that cannot be kept either says so', () async {
+      server.failure = PainCheckFailure.retry;
+      LocalHealthFiles.instance = FailingHealthFiles(LocalHealthFiles.instance);
+
+      final delivery = await reporting.submit(_report(severity: 5)).delivery;
+
+      expect(delivery.sent, isFalse);
+      expect(delivery.kept, isFalse);
+      expect((await reporting.state()).isEmpty, isTrue);
+    });
 
     test('a refusal is kept, not forgotten', () async {
       server.failure = PainCheckFailure.refused;

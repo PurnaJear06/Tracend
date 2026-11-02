@@ -259,7 +259,12 @@ class CheckInQueue {
       logNonCritical(error, 'earlier check-in not moved');
       return;
     }
-    await _store.removeAll(stored);
+    try {
+      await _store.removeAll(stored);
+    } on Exception catch (error) {
+      // The keyed list holds them; a failed delete is repeated next time.
+      logNonCritical(error, 'earlier check-in not removed');
+    }
   }
 
   /// The keyed list: each day's waiting envelope.

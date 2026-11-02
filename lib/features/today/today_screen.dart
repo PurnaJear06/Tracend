@@ -1006,6 +1006,15 @@ class _TodayScreenState extends State<TodayScreen> {
     bool delivered;
     try {
       delivered = await pending;
+    } on CheckInNotSaved {
+      if (mounted) {
+        TracendToast.show(
+          context,
+          chipNotSaved,
+          icon: CupertinoIcons.exclamationmark_circle,
+        );
+      }
+      return;
     } on Exception catch (error) {
       logNonCritical(error, 'check-in send ended badly');
       delivered = false;
