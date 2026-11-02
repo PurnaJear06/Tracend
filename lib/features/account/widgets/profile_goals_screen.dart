@@ -103,7 +103,7 @@ class ProfileGoalsScreen extends StatelessWidget {
                 },
               ),
               const AccountFootnote(
-                'These come from the onboarding answers you approved. Nothing about your plan changes without your approval.',
+                'These come from the onboarding answers you approved. To change them, use Change my setup in Account; nothing about your plan changes without your approval.',
               ),
             ],
           );

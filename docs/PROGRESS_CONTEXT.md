@@ -1,6 +1,6 @@
 # Tracend Current State
 
-**As of:** 2026-11-01
+**As of:** 2026-11-02
 
 **Lifecycle:** owner-only private beta; not approved for public production. Production Auth
 sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
@@ -108,6 +108,16 @@ cutover runbook (checked 2026-11-01). One line per stream; the lead updates thes
   remote sign-out returns to the gate, reminders leave the phone on sign-out, body-fat target floor
   (5% men, 12% women or unknown), Progress and Meals form fixes. Handoff:
   [`onboarding.md`](./handoff/onboarding.md).
+- onboarding: Change my setup and the starting meal schedule (2026-11-02, branch
+  `claude/change-setup-meal-schedule`, migration `20261102224851`, in review). **Account › Plan ›
+  Change my setup** reopens the onboarding Review with the approved answers, builds a new proposal
+  through the existing generation (AI when consented and routed, rules otherwise) and replaces the
+  plan only on approval; leaving changes nothing; the health check and safety floors apply as in
+  onboarding; no server change was needed for a re-run (pgTAP pins it). A new athlete also gets a
+  starting meal schedule (breakfast, lunch, snack, dinner, split from the approved calories and
+  protein) when targets are approved, so Today's food rail and Coach's "next meal" have an answer;
+  `activate_my_nutrition_schedule` is dropped. Needs an app reinstall for Change my setup; the
+  schedule needs only the migration. Handoff: [`onboarding.md`](./handoff/onboarding.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.

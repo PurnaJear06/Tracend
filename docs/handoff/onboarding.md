@@ -452,3 +452,58 @@ fixture meals as the table owner and confirm through `confirm_analyzed_meal`. De
 `onboarding_progress_repository_test.dart`, `nutrition_forms_test.dart`, `progress_forms_test.dart`,
 and additions to `phase_2_flow_test.dart`, `account_session_test.dart`, `account_screen_test.dart`,
 `owner_auth_message_test.dart`, `goal_target_test.dart` and the contract tests.
+
+## Change my setup and the starting meal schedule (2026-11-02)
+
+Branch `claude/change-setup-meal-schedule`, migration `20261102224851_starter_meal_schedule.sql`
+(additive). From the pre-beta new-user audit of `4421da9`, findings 4 and 7.
+
+**Change my setup (P1-6).** After approval nothing in the app could change training days, session
+length, equipment or goal without a Coach proposal (which needs AI consent and has no equipment
+kind), and Profile and goals was read-only. **Account › Plan › Change my setup** reopens the
+onboarding Review:
+
+- `OnboardingFlow(currentSetup: …)` is the whole change to the flow. It opens at Review with the
+  given answers, skips the saved-draft restore, titles itself "Change my setup", leaves the route on
+  back at Review, and calls `onCompleted` the moment the plan is approved (no "You're set." page).
+  The proposal view takes `replacesPlan`: "Your new plan" and "Approving it replaces your current
+  plan". Everything else (steps, the coach's questions, generation, polling, approve, request
+  changes, reject) is the onboarding code unchanged.
+- `current_setup.dart` reads the approved answers (`SupabaseCurrentSetup`): the profile, the active
+  goal and its target weight, the newest weight, the stored health check, and the saved draft only
+  for what approval does not keep. `currentSetupDraft` is the pure merge. A draft the athlete edited
+  and abandoned never wins over what was approved, and the follow-up answers and revision note of an
+  earlier build start empty.
+- Account hands in the onboarding repository, the Apple Health source and `PlanChanges`; on approval
+  it announces the change (Today, Train and Meals reload) and shows "Your new plan is active."
+- AI or rules is the server's decision, as in onboarding: the `onboarding-plan` Edge Function uses
+  the gateway route when the athlete has consent and the route is on, and the rules plan otherwise.
+
+**Server: nothing needed changing for a re-run**, and `change_setup_rerun_test.sql` (30 checks) pins
+it. The checked path: `onboarding_drafts` stays writable by a completed athlete and saving does not
+reopen onboarding (the trigger only moves `not_started`); `claim_onboarding_generation` builds a new
+generation for new answers, and for answers whose plan was approved (it reuses only a pending
+proposal); persisting a proposal and the pending generation change nothing about the active plan;
+`respond_to_onboarding_proposal_v2` supersedes the active plan version, targets and goal, creates
+the new ones from the proposal, keeps the old version's workouts, updates the profile and writes
+`onboarding_proposal_accept`; the account stays `completed`; the health-check gate refuses a new
+plan and a pending approval once the outcome is "see a professional". The healthy-weight floors are
+in the plan builder (policy) for every generation, and in approval itself from PR #195.
+
+**Known limits.** Approval makes a new goal, so a body-fat or physique target and any training phase
+on the old goal are not carried over (the target weight is, from the answers); the Review step says
+so. The old plan version stays as history, and Coach proposals still pending on it go stale at their
+own approval. Goal changes via a Coach proposal are unchanged.
+
+**Starting meal schedule (P1-11).** New athletes never had a meal schedule: it was seeded only for
+the accounts of July, and `activate_my_nutrition_schedule` had no caller. Now approving nutrition
+targets (an onboarding approval or an approved Coach change) gives an athlete with no active
+schedule a starting one, by a trigger on `nutrition_target_sets` that fires only for a target set
+with a source proposal. Breakfast 08:00, Lunch 13:00, Snack 16:30 (optional), Dinner 19:30, each with
+the approved calories and protein split 25/30/15/30%; reminders off; version marked `starter`. A
+newly approved target rewrites the starter's amounts in place; the owner's confirmed schedule is
+never touched. `breakfast` joins the slot names; `activate_my_nutrition_schedule` is dropped (nothing
+called it, and it let an athlete replace their schedule with no approval). No account is backfilled:
+a read of production found every account with approved targets already has a schedule. There is no
+way for an athlete to edit the schedule yet; that needs its own approval flow. Tests:
+`starter_meal_schedule_test.sql` (32 checks), `test/starter_schedule_test.dart`.

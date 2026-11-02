@@ -145,6 +145,21 @@ The experienced user provides the beginner information plus:
 Tracend preserves valid current practices where possible, identifies gaps or conflicts, and proposes
 either continuation or a revised plan. The user approves the result.
 
+### 4.3a Changing the setup after approval
+
+An athlete can change their training days, session length, equipment, goal or any other onboarding
+answer without AI: **Account › Change my setup** reopens the onboarding Review with the approved
+answers and builds a new proposal through the same generation and approval path (the AI route when
+the athlete has AI consent and the route is on, Tracend's rules plan otherwise). Nothing changes
+until the athlete approves the proposal; approving it creates a new plan version and an audit
+event, and leaving earlier changes nothing. The health check and the safety floors apply as in
+onboarding.
+
+A new athlete also gets a starting meal schedule (breakfast, lunch, a snack and dinner, with the
+approved calories and protein split between them) when their targets are approved, so Today's food
+rail and Coach can say what is next. It is a starting point; logging a meal when it is eaten is
+what counts.
+
 ### 4.4 Daily coaching loop
 
 1. The user sees today's scheduled workout and current nutrition targets.

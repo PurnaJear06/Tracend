@@ -808,9 +808,24 @@ time, and effective date. Exactly one target set is active per user.
 
 Reviewed meal schedules are versioned independently of macro targets. Exactly one schedule version
 is active per owner. Ordered items store slot, label, local time, window minutes, planned foods,
-optional flag, and reminder preference. Activation supersedes the prior version transactionally and
-writes an audit event. Confirmed meals may reference their schedule item; planned items never
-contribute to consumed totals.
+optional flag, and reminder preference. The slot names are `breakfast`, `pre_workout`,
+`post_workout`, `lunch`, `snack`, `dinner` and `optional_curd`. Confirmed meals may reference their
+schedule item; planned items never contribute to consumed totals.
+
+**The starting schedule.** An athlete with no active schedule gets one when nutrition targets are
+approved (an onboarding approval or an approved Coach change; the trigger fires only for a target
+set that carries its source proposal). `private.sync_starter_meal_schedule` creates a version
+marked `starter` (`nutrition_schedule_versions.starter`), titled "Starting meal schedule", with
+four items: Breakfast 08:00, Lunch 13:00, Snack 16:30 (optional) and Dinner 19:30, each with a 60
+minute window and reminders off. Each item's one food line, "Meal target", reads "about N kcal and
+N g protein": 25%, 30%, 15% and 30% of the approved calories (to the nearest 10) and protein (to
+the nearest 5 g), by `private.starter_schedule_items`. The times are local clock times, judged on
+the athlete's own clock like every schedule. While the active version is still the starter, a newly
+approved target set rewrites the amounts in place (so a meal already logged keeps its slot); a
+schedule that is not the starter, such as the owner's confirmed one, is never touched. Creation
+writes the `nutrition.schedule.activated` audit event with `starter: true`. There is no
+athlete-facing way to edit the schedule yet; `activate_my_nutrition_schedule`, which replaced it
+from raw JSON with no approval, was removed.
 
 `get_my_nutrition_schedule(target_date)` (1.0) gives each item a `status`: `logged` (a confirmed
 meal references it), `upcoming`, `due` (within `window_minutes` either side of `local_time`), then

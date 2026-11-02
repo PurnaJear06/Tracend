@@ -18,11 +18,15 @@ class OnboardingProposalView extends StatelessWidget {
     required this.onApprove,
     required this.onRequestRevision,
     required this.onReject,
+    this.replacesPlan = false,
     this.error,
     super.key,
   });
 
   final OnboardingProposal proposal;
+
+  /// The athlete already has an active plan, which approval replaces.
+  final bool replacesPlan;
   final bool saving;
   final String? error;
   final VoidCallback onApprove;
@@ -36,10 +40,15 @@ class OnboardingProposalView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Your starting plan', style: text.headlineMedium),
+        Text(
+          replacesPlan ? 'Your new plan' : 'Your starting plan',
+          style: text.headlineMedium,
+        ),
         const SizedBox(height: TracendSpacing.xs),
         Text(
-          'Review it before it starts. You can ask for changes.',
+          replacesPlan
+              ? 'Review it before it starts. Approving it replaces your current plan; until then nothing changes.'
+              : 'Review it before it starts. You can ask for changes.',
           style: text.bodyLarge,
         ),
         const SizedBox(height: TracendSpacing.md),

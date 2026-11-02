@@ -41,6 +41,7 @@ class OnboardingFlow extends StatefulWidget {
     this.aiConsent,
     this.health,
     this.healthBaseline,
+    this.currentSetup,
     this.onSignOut,
     this.pollInterval = const Duration(seconds: 3),
     this.pollTimeout = const Duration(seconds: 150),
@@ -61,6 +62,13 @@ class OnboardingFlow extends StatefulWidget {
 
   /// The athlete's usual months from Apple Health, read after Connect.
   final HealthBaselineSource? healthBaseline;
+
+  /// Set when an athlete who finished onboarding changes their setup: the
+  /// flow opens at Review with these approved answers, goes back to the screen
+  /// that opened it instead of to an earlier step, and calls [onCompleted] as
+  /// soon as the new plan is approved. The active plan stays as it is until
+  /// then.
+  final OnboardingDraft? currentSetup;
   final Future<void> Function()? onSignOut;
   final Duration pollInterval;
 
@@ -370,6 +378,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   int get _currentYear => widget.currentYear ?? DateTime.now().year;
 
+  String get _title =>
+      widget.currentSetup == null ? 'Set up Tracend' : 'Change my setup';
+
   @override
   void initState() {
     super.initState();
@@ -517,9 +528,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   Future<void> _restore() async {
     var resumeGeneration = false;
     try {
-      final draft = await widget.repository.loadDraft().timeout(
-        const Duration(seconds: 15),
-      );
+      final draft =
+          widget.currentSetup ??
+          await widget.repository.loadDraft().timeout(
+            const Duration(seconds: 15),
+          );
       if (draft != null) {
         final payload = draft.payload;
         _path = draft.path;
@@ -1262,6 +1275,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       }
       if (!mounted) return;
       if (accepted) {
+        if (widget.currentSetup != null) {
+          widget.onCompleted();
+          return;
+        }
         setState(() {
           _approved = proposal;
           _proposal = null;
@@ -1378,10 +1395,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   Widget build(BuildContext context) {
     if (_loading || _restoreFailed) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('Set up Tracend'),
-          actions: _signOutAction(),
-        ),
+        appBar: AppBar(title: Text(_title), actions: _signOutAction()),
         body: SafeArea(
           child: Center(
             child: _loading
@@ -1412,11 +1426,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     }
     if (_approved != null) return _done(_approved!);
     final onPlan = _step == _proposalStep;
+    // Changing a setup starts at Review: back from there leaves the flow.
     final canGoBack =
-        _step > _eligibilityStep && (!onPlan || _proposal == null) && !_saving;
+        _step > _eligibilityStep &&
+        (!onPlan || _proposal == null) &&
+        !_saving &&
+        !(widget.currentSetup != null && _step == _reviewStep);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Set up Tracend'),
+        title: Text(_title),
         leading: canGoBack
             ? IconButton(
                 tooltip: 'Previous section',
@@ -2522,8 +2540,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _heading(
-          'Review before building.',
-          'Your plan is built from these answers and checked against Tracend\'s safety ranges.',
+          widget.currentSetup == null
+              ? 'Review before building.'
+              : 'Review your setup.',
+          widget.currentSetup == null
+              ? 'Your plan is built from these answers and checked against Tracend\'s safety ranges.'
+              : 'Change what is different, then build a new plan. Your current plan stays active until you approve the new one.',
         ),
         TracendCard(
           child: Column(
@@ -2546,7 +2568,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         ],
         const SizedBox(height: TracendSpacing.md),
         Text(
-          'Building creates a proposal only. Nothing starts until you approve it.',
+          widget.currentSetup == null
+              ? 'Building creates a proposal only. Nothing starts until you approve it.'
+              : 'Building creates a proposal only. Nothing starts until you approve it. A new plan starts fresh: your body-fat and physique targets are cleared, and you can set them again in Progress.',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       ],
@@ -2558,6 +2582,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     if (proposal != null) {
       return OnboardingProposalView(
         proposal: proposal,
+        replacesPlan: widget.currentSetup != null,
         saving: _saving,
         error: _error,
         onApprove: () => _respond('accept'),

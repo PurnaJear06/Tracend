@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/app.dart';
 import 'package:tracend/app/environment.dart';
@@ -22,12 +23,17 @@ import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/health/health_status_card.dart';
+import 'package:tracend/features/onboarding/current_setup.dart';
+import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
+import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 import 'package:tracend/shared/formatting.dart';
+import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
@@ -55,6 +61,10 @@ class AccountScreen extends StatefulWidget {
     this.screening,
     this.aiConsent,
     this.widgetPublisher,
+    this.onboarding,
+    this.currentSetup,
+    this.healthBaseline,
+    this.planChanges,
     super.key,
   });
 
@@ -85,6 +95,16 @@ class AccountScreen extends StatefulWidget {
   /// set up, and then the Widgets section does not show.
   final TodayWidgetPublisher? widgetPublisher;
 
+  /// What "Change my setup" builds a new plan through, and where it reads the
+  /// approved answers. Null uses the signed-in athlete's, and without a
+  /// backend the row does not show.
+  final OnboardingRepository? onboarding;
+  final CurrentSetupSource? currentSetup;
+  final HealthBaselineSource? healthBaseline;
+
+  /// Told when a new plan is approved, so Today, Train and Meals reload.
+  final PlanChanges? planChanges;
+
   @override
   State<AccountScreen> createState() => _AccountScreenState();
 }
@@ -94,11 +114,14 @@ class _AccountScreenState extends State<AccountScreen> {
   late Future<Map<String, dynamic>> _profile;
   late Future<HealthSyncStatus> _health;
   bool _signingOut = false;
+  bool _openingSetup = false;
 
   @override
   void initState() {
     super.initState();
-    _aiUsage = widget.coach.loadUsage();
+    // Read when the AI coach section scrolls into view; a failure before then
+    // is not an unhandled error.
+    _aiUsage = widget.coach.loadUsage()..ignore();
     _profile = _loadIdentity();
     _health = widget.health.loadStatus();
   }
@@ -174,6 +197,17 @@ class _AccountScreenState extends State<AccountScreen> {
                   leading: const TracendRowIcon(icon: CupertinoIcons.person),
                   onTap: _openProfileGoals,
                 ),
+                if (configured || widget.currentSetup != null)
+                  TracendListRow(
+                    title: 'Change my setup',
+                    subtitle: _openingSetup
+                        ? 'Loading your answers…'
+                        : 'Training days, session length, equipment or goal',
+                    leading: const TracendRowIcon(
+                      icon: CupertinoIcons.slider_horizontal_3,
+                    ),
+                    onTap: _openingSetup ? null : _changeSetup,
+                  ),
                 if (configured || widget.screening != null)
                   TracendListRow(
                     title: 'Health check',
@@ -344,6 +378,56 @@ class _AccountScreenState extends State<AccountScreen> {
       builder: (_) => ProfileGoalsScreen(data: _loadProfileGoals()),
     ),
   );
+
+  /// Reopens the onboarding Review with the approved answers. The athlete
+  /// edits them and builds a new plan the usual way; the active plan changes
+  /// only when they approve it, and leaving changes nothing.
+  Future<void> _changeSetup() async {
+    setState(() => _openingSetup = true);
+    final OnboardingDraft setup;
+    try {
+      setup =
+          await (widget.currentSetup ??
+                  SupabaseCurrentSetup(Supabase.instance.client))
+              .load();
+    } catch (error) {
+      logNonCritical(error);
+      if (!mounted) return;
+      setState(() => _openingSetup = false);
+      TracendToast.show(
+        context,
+        'Your answers did not load. Check the connection and try again.',
+        icon: CupertinoIcons.exclamationmark_triangle,
+      );
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _openingSetup = false);
+    final approved = await Navigator.of(context).push<bool>(
+      CupertinoPageRoute(
+        builder: (routeContext) => OnboardingFlow(
+          repository:
+              widget.onboarding ??
+              SupabaseOnboardingRepository(Supabase.instance.client),
+          currentSetup: setup,
+          aiConsent: widget.aiConsent,
+          health: widget.health,
+          healthBaseline:
+              widget.healthBaseline ??
+              (widget.environment.hasSupabaseConfiguration
+                  ? SupabaseHealthBaselineSource(
+                      Supabase.instance.client,
+                      SharedPreferencesAsync(),
+                    )
+                  : null),
+          onCompleted: () => Navigator.of(routeContext).pop(true),
+        ),
+      ),
+    );
+    if (approved != true || !mounted) return;
+    widget.planChanges?.announce();
+    TracendToast.show(context, 'Your new plan is active.');
+  }
 
   Future<void> _openHealthCheck() => Navigator.of(context).push<void>(
     CupertinoPageRoute(
