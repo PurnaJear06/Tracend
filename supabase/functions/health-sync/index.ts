@@ -31,6 +31,11 @@ Deno.serve(async (request) => {
     summary_payload: payload.summaries,
     workout_payload: payload.workouts,
   });
+  // The athlete has no current health-data consent (SQLSTATE P0403): expected
+  // until they agree in the app, so it is neither a rejection nor an error.
+  if (error?.code === "P0403") {
+    return reply(403, { error: "health_consent_required" });
+  }
   if (error || !data) {
     return reply(422, { error: "health_sync_rejected" });
   }

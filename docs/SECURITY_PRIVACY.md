@@ -82,7 +82,14 @@ Consent choices are separate and versioned for:
   asked again at launch before the app opens, and a failed lookup never locks them out;
 - explicit consent to processing health data: Apple Health data, check-ins, pain reports, body
   measurements and photos (`health_data`, its own unticked onboarding row, versioned with the
-  privacy notice), as GDPR Art. 9(2)(a) and India's SPDI Rules 2011 Rule 5 expect;
+  privacy notice), as GDPR Art. 9(2)(a) and India's SPDI Rules 2011 Rule 5 expect. The server
+  enforces it: every Apple Health write (`persist_health_sync_v2` behind `health-sync`,
+  `save_health_history`, `persist_set_heart_rate_v1`, `persist_sleeping_heart_rate_v1`) refuses with
+  SQLSTATE `P0403` when the athlete's newest `health_data` record is missing or `withdrawn` (any
+  notice version counts; a new version is asked again by the app). `health-sync` answers 403
+  `health_consent_required`. The app reads nothing from Apple Health while the agreements are
+  outdated or could not be checked (a failed lookup opens the app with Apple Health off and checks
+  again at the next foreground);
 - AI coaching: sending the athlete's Tracend data to the AI provider for Coach chat answers, daily
   decisions and the onboarding plan (`ai_coaching`; a decline is stored as `withdrawn`, and a grant
   of an older notice version is asked again);

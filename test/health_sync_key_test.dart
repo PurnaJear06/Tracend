@@ -50,7 +50,113 @@ class _Source implements HealthDataSource {
       );
 }
 
+class _CountingSource extends _Source {
+  var reads = 0;
+
+  @override
+  Future<HealthReadResult> read(DateTime start, DateTime end) {
+    reads++;
+    return super.read(start, end);
+  }
+}
+
+Future<SupabaseClient> _client(
+  http.Response Function(http.Request) answer,
+) async {
+  final client = SupabaseClient(
+    'https://tracend-test.supabase.co',
+    'publishable-test',
+    httpClient: MockClient((request) async => answer(request)),
+    authOptions: const AuthClientOptions(autoRefreshToken: false),
+  );
+  await client.auth.setInitialSession(
+    jsonEncode({
+      'access_token': _accessToken(),
+      'expires_in': 3600,
+      'refresh_token': 'refresh-test',
+      'token_type': 'bearer',
+      'user': {
+        'id': _userId,
+        'aud': 'authenticated',
+        'role': 'authenticated',
+        'app_metadata': <String, dynamic>{},
+        'user_metadata': <String, dynamic>{},
+        'created_at': '2026-10-01T00:00:00Z',
+      },
+    }),
+  );
+  return client;
+}
+
 void main() {
+  setUp(() {
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
+  });
+
+  test(
+    'while consent is unknown or outdated nothing is read or sent',
+    () async {
+      var requests = 0;
+      final source = _CountingSource();
+      var allowed = false;
+      final repository = SupabaseHealthRepository(
+        await _client((request) {
+          if (request.url.path == '/functions/v1/health-sync') requests++;
+          return http.Response('{}', 200, request: request);
+        }),
+        SharedPreferencesAsync(),
+        source: source,
+        heartRateReader: _Reader(),
+        syncAllowed: () => allowed,
+      );
+
+      await repository.sync();
+      await repository.connectAndSync();
+      expect(source.reads, 0);
+      expect(requests, 0);
+
+      allowed = true;
+      await repository.sync();
+      expect(source.reads, 1);
+      expect(requests, 1);
+    },
+  );
+
+  test('a server refusal for consent is quiet, final and sends the window '
+      'again later', () async {
+    var requests = 0;
+    var consented = false;
+    final repository = SupabaseHealthRepository(
+      await _client((request) {
+        if (request.url.path != '/functions/v1/health-sync') {
+          return http.Response('{}', 404, request: request);
+        }
+        requests++;
+        return consented
+            ? http.Response('{}', 200, request: request)
+            : http.Response(
+                '{"error":"health_consent_required"}',
+                403,
+                headers: {'content-type': 'application/json'},
+                request: request,
+              );
+      }),
+      SharedPreferencesAsync(),
+      source: _Source(),
+      heartRateReader: _Reader(),
+    );
+
+    final refused = await repository.sync();
+    expect(requests, 1, reason: 'a refusal is not retried');
+    expect(refused.lastSuccessfulSync, isNull, reason: 'the last sync stays');
+
+    consented = true;
+    final accepted = await repository.sync();
+    expect(requests, 2);
+    expect(accepted.lastSuccessfulSync, isNotNull);
+  });
+
   test('every attempt of one sync repeats its key, and the next sync '
       'makes a new one', () async {
     SharedPreferencesAsyncPlatform.instance =

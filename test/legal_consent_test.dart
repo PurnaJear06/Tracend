@@ -668,16 +668,58 @@ void main() {
       expect(baseline.refreshes, 1);
     });
 
-    testWidgets('a lookup that fails reads Apple Health: an earlier version '
-        'was agreed to', (tester) async {
+    testWidgets('a lookup that fails opens the app with Apple Health off, '
+        'until a later check finds current agreements', (tester) async {
       final baseline = _Baseline();
+      var failing = true;
       final server = _Server(
-        legal: () async => _json(500, {'message': 'down'}),
+        legal: () async => failing
+            ? _json(500, {'message': 'down'})
+            : _json(200, [
+                _row('health_data', LegalNotices.privacyVersion),
+                _row('privacy', LegalNotices.privacyVersion),
+                _row('terms', LegalNotices.termsVersion),
+              ]),
       );
       await openGate(tester, server, baseline: baseline);
 
       expect(find.byType(LegalConsentScreen), findsNothing);
+      expect(find.byType(AiCoachingConsentScreen), findsOneWidget);
+      expect(baseline.refreshes, 0);
+
+      // Still failing at the next foreground: still off, still open.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await settle(tester);
+      expect(baseline.refreshes, 0);
+      expect(find.byType(LegalConsentScreen), findsNothing);
+
+      failing = false;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await settle(tester);
       expect(baseline.refreshes, 1);
+      expect(find.byType(LegalConsentScreen), findsNothing);
+      expect(server.inserted, isEmpty);
+    });
+
+    testWidgets('a later check that finds outdated agreements asks for them', (
+      tester,
+    ) async {
+      final baseline = _Baseline();
+      var failing = true;
+      final server = _Server(
+        legal: () async => failing
+            ? _json(500, {'message': 'down'})
+            : _json(200, [_row('terms', '2026-07-01')]),
+      );
+      await openGate(tester, server, baseline: baseline);
+      expect(find.byType(AiCoachingConsentScreen), findsOneWidget);
+
+      failing = false;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await settle(tester);
+
+      expect(find.byType(LegalConsentScreen), findsOneWidget);
+      expect(baseline.refreshes, 0);
     });
 
     testWidgets('current agreements open the app', (tester) async {
@@ -710,10 +752,11 @@ void main() {
     testWidgets('a lookup with no signal opens the app and records nothing', (
       tester,
     ) async {
+      final baseline = _Baseline();
       final server = _Server(
         legal: () async => throw http.ClientException('offline'),
       );
-      await openGate(tester, server);
+      await openGate(tester, server, baseline: baseline);
       // The client retries a read that found no signal before it fails.
       for (var second = 0; second < 25; second++) {
         await tester.runAsync(
@@ -724,6 +767,7 @@ void main() {
 
       expect(find.byType(LegalConsentScreen), findsNothing);
       expect(find.byType(AiCoachingConsentScreen), findsOneWidget);
+      expect(baseline.refreshes, 0);
       expect(server.requests, isNot(contains('POST /rest/v1/consent_records')));
     });
 

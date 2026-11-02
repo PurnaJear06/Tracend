@@ -76,6 +76,13 @@ Each page's version is its "Last updated" date. In one PR:
    every earlier version of each page, and `consent_records.notice_version` says which one each
    athlete agreed to.
 
+The server stores Apple Health only for an athlete whose newest `health_data` consent record is a
+grant (any version). After the migration `20261102213907_health_data_consent_enforced.sql`
+deploys, an installed build 920 cannot sync Apple Health: `health-sync` answers 403
+`health_consent_required` until the new build is installed and the athlete agrees on the **Terms
+and privacy** screen. Nothing is lost: the sync does not move its last-sync mark, so the next sync
+sends the same window again. Install the new build soon after the deploy.
+
 A wording fix that changes nothing an athlete agreed to still changes the date, and so asks
 everyone again; batch such fixes. The website terms (`terms.astro`) cover only the site and the
 waitlist and are not asked for in the app. The beta terms are a draft written without a lawyer;

@@ -245,7 +245,11 @@ v1 approval now refuses 2.0 proposals.
   `terms`, `privacy` and `health_data` at `LegalNotices` versions (the pages' "Last updated"
   dates) unless that version or a newer one is already granted. `Phase2Gate` asks onboarded
   athletes again at launch when a grant is older (`LegalConsentScreen`, with Sign out and Delete
-  account); a failed lookup opens the app and the next launch retries. Apple Health is read only
+  account); a failed lookup opens the app with Apple Health off (`syncAllowed` on
+  `SupabaseHealthRepository`, so no HealthKit read or upload) and the next foreground retries.
+  The server refuses Apple Health writes without a current-or-older `health_data` grant
+  (`P0403`; `health-sync` answers 403 `health_consent_required`); the app treats that as not
+  consented, quietly, without moving the last-sync mark. Apple Health is read only
   once the agreements are current: the gate starts the monthly history upload after the re-consent
   screen, and a saved draft past the first step whose agreements are missing or outdated restarts
   at the agreements (`loadOutdatedLegalConsents`) before any Apple Health read or plan resume; a

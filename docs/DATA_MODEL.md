@@ -143,6 +143,10 @@ given against as `notice_version` (ISO, for example `2026-11-02`; `health_data` 
 notice's). Records from before 2026-11-02 carry `2026-07-01`, a version that was never published.
 The app treats a missing, withdrawn or older grant as outdated and asks again; a newer one counts.
 Onboarding approval on the server still checks only that `terms` and `privacy` are granted.
+`private.health_data_consent_granted(user)` (migration `20261102213907_health_data_consent_enforced.sql`)
+is true when the newest `health_data` record is a grant of any version; the Apple Health write
+functions (`persist_health_sync_v2`, `save_health_history`, `persist_set_heart_rate_v1`,
+`persist_sleeping_heart_rate_v1`) raise SQLSTATE `P0403` without it.
 
 ### `ai_consent_notices` and `ai_notice_current`
 
