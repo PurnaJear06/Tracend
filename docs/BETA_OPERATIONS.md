@@ -116,9 +116,31 @@ Work through this list in order once the paid Apple Developer Program is active.
 9. **Make Supabase Auth email work for outsiders.** Supabase's built-in email only reaches the
    project team. In Dashboard > Authentication > Emails > SMTP Settings, set custom SMTP with the
    Gmail account the waitlist already uses (`smtp.gmail.com`, port 465, the same app password).
-   Set the Site URL and the redirect URLs the app's auth links use (Authentication > URL
-   Configuration). Then sign up with an invited address outside the team and check that the
-   email arrives and its link works.
+   Set the Site URL to `https://tracend.pages.dev` (Authentication > URL Configuration): a sign-up
+   confirmation link confirms the email and lands there. The app takes no session from a link, so
+   it needs no redirect URL. Then:
+   - **Reset password email.** The app resets a forgotten password with a code typed into the app,
+     and Supabase's default template only has a link. In Authentication > Emails > Templates >
+     Reset password, set the subject to `Your Tracend password reset code` and the body to:
+
+     ```html
+     <h2>Reset your Tracend password</h2>
+     <p>Enter this code in the Tracend app, with your new password:</p>
+     <p style="font-size:28px;font-weight:bold;letter-spacing:6px;">{{ .Token }}</p>
+     <p>The code works once and expires in one hour. If you did not ask to reset your password,
+     ignore this email: your password stays the same.</p>
+     ```
+
+     Keep `{{ .ConfirmationURL }}` out of it: opening that link would use up the code.
+   - **Code settings.** In Authentication > Sign In / Providers > Email, keep Email OTP Expiration at
+     3600 seconds (the template says one hour) and Email OTP Length at 6.
+   - **Leaked-password protection.** Turn on the setting that refuses passwords found in known
+     breaches (Authentication > Passwords). The app says "This password has appeared in a data
+     breach" when Auth refuses one.
+   - **Check.** Sign up with an invited address outside the team and check that the confirmation
+     email arrives, its link confirms the address and **Resend email** sends another. Then use
+     **Forgot password?** on that account: the code arrives, **Set new password** signs in, and the
+     old password no longer works.
 10. **Open the gate in Supabase.** Turn production sign-ups back on (Dashboard > Authentication >
     Sign In / Providers > Allow new users to sign up). The invite-only trigger still refuses any
     email that has no row in `private.signup_invites`, so add each tester before they sign up:

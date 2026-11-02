@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
+import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/account/account_time_zone.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/auth/account_session.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
+import 'package:tracend/features/auth/password_reset_flow.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
@@ -93,6 +95,10 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   /// saved plan, when it has one.
   static const _waitForNetwork = Duration(seconds: 6);
 
+  /// The unfinished-reset mark was looked at: only the session restored at
+  /// launch can belong to it.
+  bool _resetChecked = false;
+
   /// Every change to this phone's reminders runs in turn, so a restore can
   /// never land after the cancel that ended its session.
   Future<void> _reminderQueue = Future<void>.value();
@@ -158,6 +164,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     String? userId;
     try {
       final client = _client;
+      await _endUnfinishedReset(client);
       final session = client.auth.currentSession;
       if (session == null) {
         // A widget snapshot a failed clear left behind goes now.
@@ -208,6 +215,32 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     }
   }
 
+  /// A password reset the app was closed during: its code signed the phone
+  /// in, but no new password was saved. Looked at once, at launch. A session
+  /// restored with the mark set ends here, before anything opens, and the
+  /// athlete signs in again; the mark stays until a later launch finds no
+  /// session, so a session whose removal failed or was cut short is ended
+  /// again. A mark with no session (the app died before the code was
+  /// accepted, or the session is already gone) is cleared, so it can never
+  /// end a later sign-in.
+  Future<void> _endUnfinishedReset(SupabaseClient client) async {
+    if (_resetChecked) return;
+    _resetChecked = true;
+    final marker = PasswordResetMarker();
+    if (!await marker.isSet()) return;
+    if (client.auth.currentSession == null) {
+      await marker.clear();
+      return;
+    }
+    // The session leaves this phone at once; telling Auth needs the
+    // network, so the launch does not wait for it.
+    unawaited(
+      client.auth
+          .signOut(scope: SignOutScope.local)
+          .catchError((Object e) => logNonCritical(e)),
+    );
+  }
+
   /// Asks Auth whether the account and session still exist, then opens the
   /// app on the account's state. Throws when that cannot be done; a session
   /// Auth refused is ended here.
@@ -243,6 +276,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     await aiConsent.load();
     if (ended()) return;
     _userId = userId;
+    identifyAthlete(userId);
     // Workouts finished or logged with no signal go to the server now,
     // whichever screen is open.
     unawaited(_workouts().sendWaiting());
@@ -269,6 +303,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
       SupabaseAiCoachingConsentRepository(_client),
     );
     _userId = userId;
+    identifyAthlete(userId);
     setState(() {
       _authenticated = true;
       _onboardingComplete = true;
@@ -283,6 +318,9 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   /// the gate's transient state (loading, a connection error) goes with the
   /// session, so nothing hides sign-in. Repeated events change nothing more.
   void _showSignedOut() {
+    // The next account starts with no Sentry user and no load counts.
+    identifyAthlete(null);
+    resetLoadFailures();
     if (!mounted) return;
     _sessionsEnded++;
     setState(() {
@@ -448,7 +486,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
       );
     }
     if (!_authenticated) {
-      return OwnerAuthScreen(onAuthenticated: _refresh);
+      return OwnerAuthScreen(onAuthenticated: _refresh, auth: _client.auth);
     }
     final aiConsent = _aiConsent!;
     final health = _health ??= SupabaseHealthRepository(
@@ -463,6 +501,10 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
         health: health,
         healthBaseline: _baselineSource(),
         onSignOut: _signOut,
+        deletion: SupabaseAccountDeletionRepository(
+          _client,
+          localData: _localData,
+        ),
       );
     }
     // Accounts created before the question existed, and anyone asked again

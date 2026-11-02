@@ -121,6 +121,12 @@ cutover runbook (checked 2026-11-01). One line per stream; the lead updates thes
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 
+**Baseline history dedupe (2026-11-02, branch `claude/baseline-history-dedupe`, migration `20261102041737`, PR open):**
+pre-beta audit P1-1. `metric_baseline_history` gets one row per user, metric and observation day; every recompute used
+to write the whole trail again (157,165 rows, 76 MB, one athlete). The migration clears the old trail and rebuilds it,
+drops the `prior_baseline_id` self-reference that made account deletion quadratic, and adds a unique key. Baselines and
+scores are unchanged. Server only, no reinstall. Details: "Baseline history dedupe" in [`backend.md`](./handoff/backend.md).
+
 **Lost replies and thread switching (2026-10-24, branch `claude/lost-replies-thread-switch`, PR open):** QA audit groups E
 and F, app only. Coach: the latest conversation open wins and a failed open restores the previous chat; New conversation
 keeps the Continue row; a conversation loads its newest 200 messages; a follow-up tapped while Coach is busy waits
@@ -324,6 +330,15 @@ guard enforces it; the `coach-eval` and `onboarding-eval` labels are gone), Edge
 codes and numbers only, the repository license is proprietary (view only), and the Supabase key
 migration is prepared with a no-change helper and an owner runbook:
 [`docs/handoff/supabase-key-migration.md`](./handoff/supabase-key-migration.md).
+
+**Pre-beta audit: auth and account safety (2026-11-01, branch `claude/auth-account-safety`, in
+review):** links never create a session (B2); **Forgot password?** resets in the app with an emailed
+code and **Resend email** sends the confirmation again (B4; owner pastes the Reset password template
+with `{{ .Token }}` and turns on leaked-password protection, `docs/BETA_OPERATIONS.md` step 9);
+**Delete account** during onboarding (P1-7); `health-sync` answers 422/429/503 and reports server
+faults by code, app Sentry events carry the account id, and a load failing three times in a row is
+reported once (P1-4). Needs a reinstall. Handoff:
+[`account-session.md`](./handoff/account-session.md).
 
 **Privacy export, deletion and retention fixes (2026-10-24, QA audit group D):** the export now
 carries every table with a `user_id` (Coach threads and messages included) in pages of 1000, with a
