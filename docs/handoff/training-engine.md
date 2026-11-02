@@ -1244,6 +1244,38 @@ one-line swap applies to them.
 `next_session_targets` is still computed twice per guidance read (about 25 ms each): passing it in would change
 several signatures, and the saving is small now.
 
+## Training counts (2026-11-02, branch `claude/training-counts`, migration `20261102194352_training_counts.sql`)
+
+Three findings of the beta audit (health-math P1-2, new-user P1-3, finecomb F1), one PR.
+
+- **Compliant lifters kept losing load.** `progression_decision` set the reps-left target to `round(10 - RPE)`,
+  so RPE 7.5 (the beginner compound default, shown as "about 2-3 reps left") became 3. A set logged at 2 reps
+  left held, the athlete repeated the reps, and on the third session the stall rule cut the load (squat 60 kg x
+  10 three times -> 57.5 kg x 8). The target is now the band's hard edge, `floor(10 - RPE)` (RPE 7: 3, 7.5: 2,
+  8: 2, 8.5: 1), and a session that followed a hold (worked out by the same function from the sessions before
+  it, with the days between them) is a stall only when reps per set fell, not when they repeated what the hold
+  asked. The exercise sheet now says "about 2-3 reps left" for RPE 7.5 too (it said 3).
+- **A new plan started behind.** Nothing checked when the plan began: approve on Thursday and Monday to
+  Wednesday were missed on Today, Train ("Monday, missed"), Progress ("0 of 48"), the first weekly review
+  (about 25%) and the Coach's "undone earlier this week". `private.training_started_on` (the first effective
+  date of any version ever active) is now the start of every planned count: the brief's week, hub 1.11
+  (`training_started_on`, and `planned_sessions` leaves out earlier sessions), the weekly review (also leaves
+  out rest days now, as #191 does for the hub; nothing due reads 100%), Coach plan state 1.4 and the Coach
+  contributor's undone list, and Train (a neutral "Before your plan" card, a rest box in the strip, not counted
+  in "This week").
+- **"Mark complete" from Apple Health could save a workout twice.** `healthkit_auto_complete_workout` now takes
+  `start_workout`'s day lock before its check and returns the existing session on a repeat; Train also ignores a
+  second tap while the first is in flight.
+
+Tests: pgTAP `training_counts_test.sql` (band edges, the squat path, holds and stalls, the start date in the
+brief, hub, weekly review and plan state, a Coach change keeping the start, the Apple Health repeat and lock);
+Deno `training_counts_migration_test.ts` (each redefinition is its latest earlier definition plus the hunks) and
+`training_plan_test.ts`; Flutter hub 1.11 contract, Train before-plan day, exercise sheet band.
+
+Left alone: the Coach context's "Pace over 28 days" line (`coach_calculations.ts`) still divides by four weeks;
+it is labelled as a 28-day figure. Finishing a still-open server session after an Apple Health completion of the
+same workout (finecomb F1 point 2) and `complete_workout_v2` without a save-by window (point 3) are not covered.
+
 ## Next agent starts here
 
 B4-2 (the app side of the readiness adjustment) and B5-2 (the pain check in the app; builds on B5-1's RPCs

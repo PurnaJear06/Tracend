@@ -675,13 +675,17 @@ Deno.test("no migration after this one's predecessors defines these functions ag
     // day_adjustment_compute once for the "day already done" check (training_day_integrity_test.ts
     // pins that definition against this one's), and the coach-standing-state migration replaces
     // day_adjustment_compute and day_adjustment_explanation once for a rest the athlete chose
-    // (coach_standing_state_migration_test.ts pins both); every other function stays untouched.
+    // (coach_standing_state_migration_test.ts pins both), and the training-counts migration replaces
+    // progression_decision once for the effort band's hard edge (training_counts_migration_test.ts pins
+    // that definition against this one's); every other function stays untouched.
     const allowed = name === "20261024060325_deload_cardio_review_fixes.sql"
       ? ["next_session_targets"]
       : name === "20261024090000_training_day_integrity.sql"
       ? ["day_adjustment_compute"]
       : name === "20261101200000_coach_standing_state.sql"
       ? ["day_adjustment_compute", "day_adjustment_explanation"]
+      : name === "20261102194352_training_counts.sql"
+      ? ["progression_decision"]
       : [];
     for (
       const fn of [

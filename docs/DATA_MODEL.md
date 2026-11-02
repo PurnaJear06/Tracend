@@ -757,6 +757,16 @@ days with its area and date). A day in a break adds the readiness trigger `pause
 `day_adjustments.triggers` allows, and offers no readiness choice; a held or limited joint's own change
 still does.
 
+**The first day of training (migration `20261102194352`).** `private.training_started_on(user)` is the
+earliest effective date of any plan version that was ever active (`active` or `superseded`), so a Coach
+change or a new block keeps the first plan's start. A day before it is neither due nor missed, like a rest
+day the athlete chose: the brief's `week` does not plan it (1.9, no shape change), the training hub 1.11
+leaves its sessions out of `adherence.planned_sessions` and returns the date as `training_started_on`, the
+weekly review's `planned_sessions` start at it and leave out rest days without a logged session (a week
+with nothing due reads `adherence_percent` 100, not a missing plan; snapshots name
+`weekly-deterministic-v2`), and `get_coach_plan_state_v1` 1.4 returns it so the Coach never calls such a
+session undone.
+
 ### `pain_reports` (B5-1, migration `20261024060025`)
 
 The athlete's pain checks (rules `pain-v1`; ALGORITHMS §4, "Pain check, red flags and joint rules").
