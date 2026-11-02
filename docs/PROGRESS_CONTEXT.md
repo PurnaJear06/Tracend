@@ -1,6 +1,6 @@
 # Tracend Current State
 
-**As of:** 2026-11-01
+**As of:** 2026-11-02
 
 **Lifecycle:** owner-only private beta; not approved for public production. Production Auth
 sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
@@ -309,6 +309,16 @@ orphan sweep, row and size caps) and PR 4a (AI budget reservations, a USD 10 glo
 failed-call cost, list-price defaults) and PR 4b (meal-photo AI notice enforced by meal-analyze,
 AI notice v5; needs the new build) and PR 5 (Keychain session storage, SHA-pinned actions,
 read-only workflow tokens) are in review. Workstream state:
+[`docs/handoff/security-hardening.md`](./handoff/security-hardening.md).
+
+**On-device data (2026-11-02, branch `claude/local-data-privacy`, in review; needs the new build):**
+pain reports, check-ins, workout drafts, exercise history, the saved plan, referrals read and the
+Coach thread id moved out of `UserDefaults` (copied by iCloud and computer backups) into files
+under Application Support, excluded from backups (they were copied by both before); the
+first launch moves the old keys. "Checked in today" and "Not today" are per athlete and removed on
+sign-out, a refused session and deletion (a second account on the phone was shown as checked in);
+a test lists every key the app writes. The app switcher shows the launch screen instead of the
+last screen. Details and the owner's phone check:
 [`docs/handoff/security-hardening.md`](./handoff/security-hardening.md).
 
 **Security hardening round 2 (2026-10-31, branch `claude/security-hardening-license`, in review):** no

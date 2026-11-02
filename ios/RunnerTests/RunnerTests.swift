@@ -448,4 +448,31 @@ final class WorkoutActivityStateTests: XCTestCase {
       ["button": "done", "exercise_order": 1, "set_number": 2]
     )
   }
+
+  /// The health cache folder is out of iCloud and computer backups, and a
+  /// file written into it is out of them too and holds what was written.
+  func testTheHealthCacheFolderIsExcludedFromBackups() throws {
+    let folder = try LocalHealthStoreFiles.directory()
+    XCTAssertEqual(
+      try folder.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup,
+      true
+    )
+    let name = "test-\(UUID().uuidString).hc"
+    try LocalHealthStoreFiles.write(name: name, contents: "{\"pain\":1}")
+    defer { try? FileManager.default.removeItem(at: folder.appendingPathComponent(name)) }
+    XCTAssertEqual(
+      try String(contentsOf: folder.appendingPathComponent(name), encoding: .utf8),
+      "{\"pain\":1}"
+    )
+  }
+
+  /// Only plain names the app made are written: nothing hidden, and nothing
+  /// outside the folder.
+  func testTheHealthCacheRefusesNamesThatLeaveTheFolder() {
+    XCTAssertTrue(LocalHealthStoreFiles.isValid(name: "workout_draft_1.hc"))
+    XCTAssertFalse(LocalHealthStoreFiles.isValid(name: ""))
+    XCTAssertFalse(LocalHealthStoreFiles.isValid(name: ".hidden"))
+    XCTAssertFalse(LocalHealthStoreFiles.isValid(name: "../escape.hc"))
+    XCTAssertThrowsError(try LocalHealthStoreFiles.write(name: "a/b.hc", contents: "x"))
+  }
 }

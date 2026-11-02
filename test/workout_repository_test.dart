@@ -4,14 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
-import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/unfinished_workout.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 const _url = 'https://tracend-test.supabase.co';
 const _userId = '11111111-1111-4111-8111-111111111111';
@@ -112,17 +110,14 @@ Map<String, dynamic> _sentSet(Map<String, dynamic> call) {
 
 void main() {
   late _Server server;
-  late SharedPreferencesAsync preferences;
+  const store = LocalHealthStore();
   late SupabaseWorkoutRepository repository;
   late List<Breadcrumb> breadcrumbs;
 
   setUp(() async {
-    SharedPreferencesAsyncPlatform.instance =
-        InMemorySharedPreferencesAsync.empty();
-    preferences = SharedPreferencesAsync();
     server = _Server();
     await server.client.auth.setInitialSession(jsonEncode(_session()));
-    repository = SupabaseWorkoutRepository(server.client, preferences);
+    repository = SupabaseWorkoutRepository(server.client, store);
     breadcrumbs = [];
     AppBreadcrumbs.sink = breadcrumbs.add;
     await repository.saveDraft(_workoutId, jsonEncode(_draft()));
@@ -953,7 +948,7 @@ void main() {
       answerHistory();
       await repository.loadExerciseHistory(['squat']);
 
-      final keys = await preferences.getKeys();
+      final keys = await store.getKeys();
       expect(
         keys.where((key) => WorkoutLocalKeys.owns(_userId, key)),
         containsAll([

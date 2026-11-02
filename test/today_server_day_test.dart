@@ -12,6 +12,7 @@ import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 import 'day_adjustment_fixtures.dart';
 
@@ -82,7 +83,7 @@ Future<void> _pump(
   required _Brief brief,
   required DayAdjustmentController controller,
   CheckInSend? sender,
-  SharedPreferences? preferences,
+  LocalHealthStore? preferences,
   AppEnvironment environment = _offline,
 }) async {
   await tester.pumpWidget(
@@ -209,7 +210,7 @@ Future<_Coach> _grantAndCheck(
   List<String> missingData = const [],
 }) async {
   SharedPreferences.setMockInitialValues({});
-  final preferences = await SharedPreferences.getInstance();
+  const preferences = LocalHealthStore();
   final coach = _Coach(decisionDay, missingData: missingData);
   final consent = AiCoachingConsentController(
     FixtureAiCoachingConsentRepository(AiCoachingChoice.declined),
@@ -252,7 +253,7 @@ void main() {
       'shows the referral', (tester) async {
     final handle = tester.ensureSemantics();
     SharedPreferences.setMockInitialValues({});
-    final preferences = await SharedPreferences.getInstance();
+    const preferences = LocalHealthStore();
     final repository = FakeDayAdjustmentRepository(_noCheckIn());
     final sent = <String>[];
     await _pump(
@@ -279,7 +280,7 @@ void main() {
       'replays under it', (tester) async {
     final handle = tester.ensureSemantics();
     SharedPreferences.setMockInitialValues({});
-    final preferences = await SharedPreferences.getInstance();
+    const preferences = LocalHealthStore();
     final repository = FakeDayAdjustmentRepository(_noCheckIn());
     final sent = <String>[];
     var online = false;
@@ -299,7 +300,7 @@ void main() {
     await _checkInWithPain7(tester);
     // Offline: queued, with the server's day on the envelope.
     expect(
-      preferences.getString(CheckInQueue.queueStorageKey),
+      await preferences.getString(CheckInQueue.queueStorageKey),
       contains('"local_date":"2026-10-02"'),
     );
     // The phone works the referral out from the answers and says it at once,
@@ -337,7 +338,7 @@ void main() {
   group('the brief follows the server day in either order', () {
     testWidgets('the day arrives before the brief does', (tester) async {
       SharedPreferences.setMockInitialValues({});
-      final preferences = await SharedPreferences.getInstance();
+      const preferences = LocalHealthStore();
       final brief = _Brief()..gated = true;
       await _pump(
         tester,
@@ -357,7 +358,7 @@ void main() {
 
     testWidgets('the brief arrives before the day does', (tester) async {
       SharedPreferences.setMockInitialValues({});
-      final preferences = await SharedPreferences.getInstance();
+      const preferences = LocalHealthStore();
       final brief = _Brief();
       final repository = FakeDayAdjustmentRepository(_noCheckIn())
         ..loadGate = Completer<void>();
@@ -385,7 +386,7 @@ void main() {
       tester,
     ) async {
       SharedPreferences.setMockInitialValues({});
-      final preferences = await SharedPreferences.getInstance();
+      const preferences = LocalHealthStore();
       final nutrition = _Nutrition();
       await tester.pumpWidget(
         MaterialApp(
@@ -415,7 +416,7 @@ void main() {
       'meals are not read again when the phone and the server agree',
       (tester) async {
         SharedPreferences.setMockInitialValues({});
-        final preferences = await SharedPreferences.getInstance();
+        const preferences = LocalHealthStore();
         final nutrition = _Nutrition();
         final controller = DayAdjustmentController(
           repository: FakeDayAdjustmentRepository(_noCheckIn()),
@@ -533,7 +534,7 @@ void main() {
       tester,
     ) async {
       SharedPreferences.setMockInitialValues({});
-      final preferences = await SharedPreferences.getInstance();
+      const preferences = LocalHealthStore();
       var phone = DateTime(2026, 10, 1, 23, 50);
       var serverDay = DateTime(2026, 10, 1);
       final controller = DayAdjustmentController(

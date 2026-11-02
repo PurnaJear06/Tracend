@@ -419,6 +419,50 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
 - Rotate credentials after exposure, staff change, or scheduled policy interval.
 - Never place secrets or production data in test fixtures.
 
+### On-device health caches and the app switcher (2026-11-02)
+
+- **What is kept.** To work with no connection the app keeps, per athlete, pain reports and
+  check-ins waiting to be sent (red-flag answers included), the referrals the athlete has read,
+  workout drafts, saved finishes and queued discards, the exercise history, the saved plan and its
+  sore-area notes, and the id of the Coach thread last open. These are health data and never go to
+  iCloud or a computer backup.
+- **Where.** One small store, `LocalHealthStore` (`lib/shared/local_health_store.dart`): one file
+  per key in `Application Support/TracendHealthCache`, written by the native side
+  (`ios/Runner/Native/LocalHealthStoreBridge.swift`). The folder is excluded from iCloud Backup and
+  Finder/iTunes backups (`isExcludedFromBackup`, checked on every write; when it cannot be set,
+  nothing is written) and each file is written atomically with
+  `NSFileProtectionCompleteUntilFirstUserAuthentication`, the class `UserDefaults` had. They are no
+  longer in `UserDefaults` (`SharedPreferences`), whose plist both backups copy.
+- **Locked phone.** The class is "until first unlock", not complete protection, on purpose: the
+  workout Live Activity's "Log set" button runs in the app's process with the phone locked
+  (`RestActivityIntents`) and the logger saves the workout draft then, which a complete-protection
+  file would refuse. What this adds over `UserDefaults` is the removal from backups; the files
+  are as readable on a locked phone after first unlock as the preferences were. Nothing else
+  reads these files in the background: the app has no other background modes, HealthKit
+  background delivery or background fetch, and the widgets read only their own snapshot (§10).
+  A later change that keeps only foreground data (everything but the workout draft, its saved
+  finish and queued discard) could move those keys to complete protection.
+- **Moving from preferences.** The first launch of a build with the store (`main.dart`) copies
+  every old key into the store, then removes it from preferences (`moveHealthCachesToStore`);
+  a key that cannot be written stays for the next launch. Backups made by earlier builds still hold
+  the old plist until newer backups replace them; the app cannot remove them.
+- **Still in preferences, with no health values:** Apple Health sync state (the last sync time,
+  which data types exist, a sync error code, the month the usual months were sent), the nights the
+  sleeping heart rate has settled (dates), the workouts waiting for their heart rate to be read
+  (session id and set times), the Lock Screen numbers choice, the Watch-prompt choice, the theme, the day
+  marks below, and the notification choices (native `UserDefaults`).
+- **Shared phone.** "Checked in today" and "Not today" are kept per athlete (the key holds the
+  athlete's id; the one key earlier builds used for every account is ignored and removed). Sign-out,
+  a session Auth refused and account deletion remove them, with the workouts waiting for their
+  heart rate, so another account on the same phone is asked for its own morning check-in.
+  `test/local_data_privacy_test.dart` lists every key the app writes as per athlete, phone-wide
+  and kept, or ending with the session, and fails when a file starts storing something unlisted or
+  a key outlives a sign-out or a deletion.
+- **App switcher.** While the app is not active, `SceneDelegate` covers the window with the launch
+  screen's colour and logo (`sceneWillResignActive`; removed in `sceneDidBecomeActive`), so the
+  switcher's snapshot never shows physique photos, pain answers or a Coach chat. System sheets such
+  as Face ID make the app inactive too; the cover is just there while they are.
+
 ## 9. Multi-User Isolation
 
 - RLS is the mandatory default-deny authorization boundary for every exposed user-owned table and

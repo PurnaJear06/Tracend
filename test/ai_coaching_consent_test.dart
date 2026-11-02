@@ -4,7 +4,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
@@ -16,6 +15,7 @@ import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 class _Memory implements CoachThreadMemory {
   @override
@@ -333,8 +333,6 @@ void main() {
     tester,
   ) async {
     await _tall(tester);
-    SharedPreferences.setMockInitialValues({});
-    final preferences = await SharedPreferences.getInstance();
     final consent = AiCoachingConsentController(
       FixtureAiCoachingConsentRepository(),
     );
@@ -349,7 +347,7 @@ void main() {
           ),
           coach: coach,
           brief: _EmptyBrief(),
-          queueFactory: () => CheckInQueue(preferences),
+          queueFactory: () => CheckInQueue(const LocalHealthStore()),
           checkInSender: (localDate, timezone, key, payload) async => true,
           aiConsent: consent,
         ),

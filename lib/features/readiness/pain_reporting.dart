@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/readiness/pain_check.dart';
 import 'package:tracend/features/readiness/pain_report_queue.dart';
 import 'package:tracend/features/readiness/safety_acknowledgements.dart';
 import 'package:tracend/shared/diagnostics.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 /// How a report the athlete just made fared on its way to Tracend.
 @immutable
@@ -87,8 +87,8 @@ class PainReporting {
   /// How long a send is waited for before the report is kept for later.
   final Duration sendTimeout;
 
-  Future<PainReportQueue> _queue() async => PainReportQueue(
-    await SharedPreferences.getInstance(),
+  PainReportQueue _queue() => PainReportQueue(
+    const LocalHealthStore(),
     userId: userId,
     signedInUser: signedInUser,
   );
@@ -147,7 +147,7 @@ class PainReporting {
       return;
     }
     try {
-      await (await _queue()).remove(report.idempotencyKey);
+      await _queue().remove(report.idempotencyKey);
       unawaited(readiness?.load());
     } on Exception catch (error) {
       logNonCritical(error, 'sent pain report kept');
@@ -160,7 +160,7 @@ class PainReporting {
     bool tooOld = false,
   }) async {
     try {
-      await (await _queue()).add(report, refused: refused, tooOld: tooOld);
+      await _queue().add(report, refused: refused, tooOld: tooOld);
     } on Exception catch (error) {
       logNonCritical(error, 'pain report not kept');
     }
@@ -170,7 +170,7 @@ class PainReporting {
   /// readiness is read again only when something was sent.
   Future<PainQueueState> drain() async {
     try {
-      final state = await (await _queue()).drain(repository);
+      final state = await _queue().drain(repository);
       if (state.sent > 0) unawaited(readiness?.load());
       return state;
     } on Exception catch (error) {
@@ -182,22 +182,21 @@ class PainReporting {
   /// Reports waiting or refused, without sending anything.
   Future<PainQueueState> state() async {
     try {
-      return (await _queue()).state;
+      return await _queue().state();
     } on Exception {
       return const PainQueueState();
     }
   }
 
   /// The athlete has read that refused reports were not recorded.
-  Future<void> dismissRefused() async => (await _queue()).dismissRefused();
+  Future<void> dismissRefused() => _queue().dismissRefused();
 
   /// The athlete has answered the referral for [route] on [localDate]
   /// (`YYYY-MM-DD`), so Today does not show it again for that day.
   Future<void> acknowledge(String localDate, String route) async {
     try {
-      final preferences = await SharedPreferences.getInstance();
       await SafetyAcknowledgements(
-        preferences,
+        const LocalHealthStore(),
         userId: userId,
       ).acknowledge(SafetyAcknowledgements.keyOf(localDate, route));
     } on Exception catch (error) {

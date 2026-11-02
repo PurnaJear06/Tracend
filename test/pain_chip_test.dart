@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/readiness/day_adjustment.dart';
@@ -15,6 +14,7 @@ import 'package:tracend/features/readiness/safety_acknowledgements.dart';
 import 'package:tracend/features/train/active_workout_screen.dart';
 import 'package:tracend/features/train/workout_draft.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 import 'day_adjustment_fixtures.dart';
 import 'live_activity/fake_workout_activity_bridge.dart';
@@ -217,7 +217,6 @@ class _Harness {
 }
 
 Future<void> _open(WidgetTester tester, _Harness h) async {
-  SharedPreferences.setMockInitialValues({});
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -370,9 +369,11 @@ void main() {
     await tester.tap(find.text('Skip this exercise'));
     await tester.pumpAndSettle();
     // Read here, so Today does not open the same referral again.
-    final preferences = await SharedPreferences.getInstance();
     expect(
-      SafetyAcknowledgements(preferences, userId: 'athlete-1').isAcknowledged(
+      await SafetyAcknowledgements(
+        const LocalHealthStore(),
+        userId: 'athlete-1',
+      ).isAcknowledged(
         SafetyAcknowledgements.keyOf('2026-10-02', 'clinician_today'),
       ),
       isTrue,
@@ -434,9 +435,10 @@ void main() {
     expect(state.refused, hasLength(1));
     expect(state.waiting, isEmpty);
     // Kept on the phone as refused, with the report's own answers.
-    final preferences = await SharedPreferences.getInstance();
     final stored = jsonDecode(
-      preferences.getString(PainReportQueue.storageKeyFor('athlete-1'))!,
+      (await const LocalHealthStore().getString(
+        PainReportQueue.storageKeyFor('athlete-1'),
+      ))!,
     );
     expect((stored as List).single, containsPair('refused', true));
     expect(stored.single, containsPair('severity', 6));
@@ -493,9 +495,11 @@ void main() {
       await tester.tap(find.text('Skip this exercise'));
       await tester.pumpAndSettle();
       expect(find.text('Pain noted'), findsOneWidget);
-      final preferences = await SharedPreferences.getInstance();
       expect(
-        SafetyAcknowledgements(preferences, userId: 'athlete-1').isAcknowledged(
+        await SafetyAcknowledgements(
+          const LocalHealthStore(),
+          userId: 'athlete-1',
+        ).isAcknowledged(
           SafetyAcknowledgements.keyOf('2026-10-02', 'clinician_today'),
         ),
         isTrue,

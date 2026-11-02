@@ -13,8 +13,10 @@ import 'package:tracend/features/readiness/pain_reporting.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 import 'day_adjustment_fixtures.dart';
+import 'memory_health_files.dart';
 import 'pain_fakes.dart';
 
 /// What Today says about a pain report that has not reached Tracend, and the
@@ -93,7 +95,7 @@ Future<void> _pump(
   CheckInSend? sender,
   AppEnvironment environment = _live,
 }) async {
-  final preferences = await SharedPreferences.getInstance();
+  const preferences = LocalHealthStore();
   await tester.pumpWidget(
     MaterialApp(
       theme: ThemeData(
@@ -222,7 +224,7 @@ void main() {
     testWidgets('a check-in whose pain answers the server refused is told, '
         'then sent without them', (tester) async {
       SharedPreferences.setMockInitialValues({});
-      final preferences = await SharedPreferences.getInstance();
+      const preferences = LocalHealthStore();
       await CheckInQueue(preferences, userId: 'athlete-1').enqueue(
         payload: const {
           'energy': 3,
@@ -258,7 +260,9 @@ void main() {
       expect(sent.last.containsKey('pain_area'), isFalse);
       expect(sent.last['energy'], 3);
       expect(
-        preferences.getString(CheckInQueue.queueStorageKeyFor('athlete-1')),
+        await preferences.getString(
+          CheckInQueue.queueStorageKeyFor('athlete-1'),
+        ),
         isNull,
       );
     });
@@ -283,8 +287,8 @@ void main() {
         await tester.pump(const Duration(seconds: 1));
       }
       expect(find.text('Got it'), findsNothing);
-      final preferences = await SharedPreferences.getInstance();
-      expect(preferences.getStringList('safety_acknowledged.athlete-1'), [
+      const preferences = LocalHealthStore();
+      expect(await preferences.getStringList('safety_acknowledged.athlete-1'), [
         '2026-10-02:clinician_today',
       ]);
     });
@@ -292,7 +296,7 @@ void main() {
     testWidgets('a report just made shows its referral even when that route '
         'was read earlier today', (tester) async {
       final handle = tester.ensureSemantics();
-      SharedPreferences.setMockInitialValues({
+      await seedHealthCache({
         'safety_acknowledged.athlete-1': ['2026-10-02:clinician_today'],
       });
       final h = _Harness(_route('clinician_today'));
@@ -335,7 +339,7 @@ void main() {
     testWidgets('a hold that stands the next day is shown again that day', (
       tester,
     ) async {
-      SharedPreferences.setMockInitialValues({
+      await seedHealthCache({
         'safety_acknowledged.athlete-1': ['2026-10-02:clinician_today'],
       });
       final h = _Harness(
@@ -373,10 +377,10 @@ void main() {
 
   test('a report keeps its idempotency key through the queue', () async {
     SharedPreferences.setMockInitialValues({});
-    final preferences = await SharedPreferences.getInstance();
+    const preferences = LocalHealthStore();
     final queue = PainReportQueue(preferences, userId: 'athlete-1');
     await queue.add(_report(key: 'same'));
     await queue.add(_report(key: 'same'));
-    expect(queue.state.waiting, hasLength(1));
+    expect((await queue.state()).waiting, hasLength(1));
   });
 }

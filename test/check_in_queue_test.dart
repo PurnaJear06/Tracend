@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
+import 'package:tracend/shared/local_health_store.dart';
+
+import 'memory_health_files.dart';
 
 const _payload = {
   'sleep_quality': 4,
@@ -19,15 +22,14 @@ const _payload = {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  const store = LocalHealthStore();
 
   Future<CheckInQueue> buildQueue({String? userId}) async {
-    final preferences = await SharedPreferences.getInstance();
-    return CheckInQueue(preferences, userId: userId);
+    return CheckInQueue(store, userId: userId);
   }
 
   Future<Map<String, dynamic>> stored({String? userId}) async {
-    final preferences = await SharedPreferences.getInstance();
-    final raw = preferences.getString(
+    final raw = await store.getString(
       userId == null
           ? CheckInQueue.queueStorageKey
           : CheckInQueue.queueStorageKeyFor(userId),
@@ -49,7 +51,6 @@ void main() {
   test(
     'enqueue persists the envelope with the answer day, not today',
     () async {
-      SharedPreferences.setMockInitialValues({});
       final queue = await buildQueue();
       final key = await queue.enqueue(
         payload: _payload,
@@ -66,7 +67,6 @@ void main() {
 
   test('two days wait side by side, and answering a day again replaces '
       'that day only', () async {
-    SharedPreferences.setMockInitialValues({});
     final queue = await buildQueue();
     await queue.enqueue(
       payload: _payload,
@@ -91,7 +91,6 @@ void main() {
 
   test('replay delivers every pending day as recorded, oldest first, and '
       'clears them', () async {
-    SharedPreferences.setMockInitialValues({});
     final queue = await buildQueue();
     await queue.enqueue(
       payload: _payload,
@@ -121,7 +120,6 @@ void main() {
   test(
     'replay retains an envelope when delivery fails and stops there',
     () async {
-      SharedPreferences.setMockInitialValues({});
       final queue = await buildQueue();
       for (final day in ['2026-10-26', '2026-10-27']) {
         await queue.enqueue(
@@ -144,7 +142,6 @@ void main() {
   test(
     'replay retains the envelope when send throws a transient error',
     () async {
-      SharedPreferences.setMockInitialValues({});
       final queue = await buildQueue();
       await queue.enqueue(
         payload: _payload,
@@ -161,7 +158,6 @@ void main() {
   );
 
   test('a lapsed sign-in or a server error is not a final refusal', () async {
-    SharedPreferences.setMockInitialValues({});
     final queue = await buildQueue();
     await queue.enqueue(
       payload: _payload,
@@ -180,7 +176,6 @@ void main() {
 
   test('a final refusal drops that day, reports it, and the rest still '
       'go through', () async {
-    SharedPreferences.setMockInitialValues({});
     final queue = await buildQueue();
     for (final day in ['2026-10-25', '2026-10-27']) {
       await queue.enqueue(
@@ -208,7 +203,6 @@ void main() {
   });
 
   test('replay is a no-op when nothing is pending', () async {
-    SharedPreferences.setMockInitialValues({});
     final queue = await buildQueue();
     final days = <String>[];
     final replay = await queue.replay(recording(days));
@@ -219,7 +213,7 @@ void main() {
 
   test('replay discards an envelope from the first format, without date '
       'fields', () async {
-    SharedPreferences.setMockInitialValues({
+    await seedHealthCache({
       CheckInQueue.singleSlotKey: jsonEncode({
         'idempotency_key': '7e7d8f27-6d93-4ef7-a331-e0332b16850d',
         'payload': {'energy': 3},
@@ -229,14 +223,12 @@ void main() {
     final days = <String>[];
     await queue.replay(recording(days));
     expect(days, isEmpty);
-    final preferences = await SharedPreferences.getInstance();
-    expect(preferences.getString(CheckInQueue.singleSlotKey), isNull);
+    expect(await store.getString(CheckInQueue.singleSlotKey), isNull);
     expect(await stored(), isEmpty);
   });
 
   test('clearDelivered removes the envelope with that key, but not a newer '
       'answer for the same day', () async {
-    SharedPreferences.setMockInitialValues({});
     final queue = await buildQueue();
     final first = await queue.enqueue(
       payload: _payload,
@@ -268,7 +260,7 @@ void main() {
     test(
       'moves into the keyed list, so nothing queued today is lost',
       () async {
-        SharedPreferences.setMockInitialValues({
+        await seedHealthCache({
           CheckInQueue.singleSlotKeyFor(athleteA): envelope(
             '2026-10-30',
             'old-key',
@@ -282,9 +274,8 @@ void main() {
           timezone: 'Asia/Kolkata',
         );
         expect(await queue.pendingDays(), ['2026-10-30', '2026-10-31']);
-        final preferences = await SharedPreferences.getInstance();
         expect(
-          preferences.getString(CheckInQueue.singleSlotKeyFor(athleteA)),
+          await store.getString(CheckInQueue.singleSlotKeyFor(athleteA)),
           isNull,
         );
         final migrated =
@@ -295,7 +286,7 @@ void main() {
     );
 
     test('is replayed with its recorded key', () async {
-      SharedPreferences.setMockInitialValues({
+      await seedHealthCache({
         CheckInQueue.singleSlotKeyFor(athleteA): envelope(
           '2026-10-30',
           'old-key',
@@ -313,7 +304,7 @@ void main() {
 
     test('the device-wide slot of the oldest builds goes to the first '
         'athlete only', () async {
-      SharedPreferences.setMockInitialValues({
+      await seedHealthCache({
         CheckInQueue.singleSlotKey: envelope('2026-10-01', 'legacy-key'),
       });
       var sent = 0;
@@ -327,12 +318,7 @@ void main() {
 
       await replayAs(athleteA);
       expect(sent, 1);
-      expect(
-        (await SharedPreferences.getInstance()).getString(
-          CheckInQueue.singleSlotKey,
-        ),
-        isNull,
-      );
+      expect(await store.getString(CheckInQueue.singleSlotKey), isNull);
       await replayAs(athleteB);
       expect(sent, 1);
     });
@@ -341,7 +327,6 @@ void main() {
   test('one athlete\'s pending check-in is never sent for another', () async {
     const athleteA = '11111111-1111-4111-8111-111111111111';
     const athleteB = '22222222-2222-4222-8222-222222222222';
-    SharedPreferences.setMockInitialValues({});
     await (await buildQueue(userId: athleteA)).enqueue(
       payload: const {'energy': 3},
       localDate: '2026-10-02',
@@ -370,33 +355,30 @@ void main() {
     };
 
     test('a write that fails keeps the old entry for the next read', () async {
-      SharedPreferences.setMockInitialValues({
-        CheckInQueue.singleSlotKey: jsonEncode(legacy),
-      });
-      final real = await SharedPreferences.getInstance();
+      await seedHealthCache({CheckInQueue.singleSlotKey: jsonEncode(legacy)});
+      final healthy = LocalHealthFiles.instance;
+      LocalHealthFiles.instance = _FailingWrites(healthy);
 
-      final failing = CheckInQueue(_FailingWrites(real));
-      await failing.pendingDays();
-      expect(real.getString(CheckInQueue.singleSlotKey), isNotNull);
-      expect(real.getString(CheckInQueue.queueStorageKey), isNull);
+      await CheckInQueue(store).pendingDays();
+      expect(await store.getString(CheckInQueue.singleSlotKey), isNotNull);
+      expect(await store.getString(CheckInQueue.queueStorageKey), isNull);
 
-      final healthy = CheckInQueue(real);
-      expect(await healthy.pendingDays(), ['2026-10-01']);
-      expect(real.getString(CheckInQueue.singleSlotKey), isNull);
+      LocalHealthFiles.instance = healthy;
+      expect(await CheckInQueue(store).pendingDays(), ['2026-10-01']);
+      expect(await store.getString(CheckInQueue.singleSlotKey), isNull);
       expect(await stored(), contains('2026-10-01'));
     });
 
     test(
       'an interruption after the write repeats without a duplicate',
       () async {
-        SharedPreferences.setMockInitialValues({
+        await seedHealthCache({
           CheckInQueue.singleSlotKey: jsonEncode(legacy),
           CheckInQueue.queueStorageKey: jsonEncode({'2026-10-01': legacy}),
         });
         final queue = await buildQueue();
         expect(await queue.pendingDays(), ['2026-10-01']);
-        final preferences = await SharedPreferences.getInstance();
-        expect(preferences.getString(CheckInQueue.singleSlotKey), isNull);
+        expect(await store.getString(CheckInQueue.singleSlotKey), isNull);
         expect((await stored()).keys, ['2026-10-01']);
       },
     );
@@ -417,7 +399,6 @@ void main() {
     };
 
     Future<CheckInQueue> queued() async {
-      SharedPreferences.setMockInitialValues({});
       final queue = await buildQueue();
       await queue.enqueue(
         payload: withPain,
@@ -438,7 +419,7 @@ void main() {
 
     test('waits, with its pain keys, until it is sent', () async {
       final queue = await queued();
-      expect(queue.painState, CheckInPainState.waiting);
+      expect(await queue.painState(), CheckInPainState.waiting);
       Map<String, dynamic>? sent;
       final replay = await queue.replay((date, zone, key, payload) async {
         sent = payload;
@@ -446,7 +427,7 @@ void main() {
       });
       expect(replay.retained, ['2026-10-02']);
       expect(sent!['pain_red_flags'], ['locks_gives_way']);
-      expect(queue.painState, CheckInPainState.waiting);
+      expect(await queue.painState(), CheckInPainState.waiting);
     });
 
     test('a refusal (22023) is kept, marked, and not sent again', () async {
@@ -465,14 +446,13 @@ void main() {
       final first = await queue.replay(counting);
       expect(first.fates.values, [CheckInFate.painRefused]);
       expect(first.refused, isEmpty, reason: 'told by the notice, not dropped');
-      expect(queue.painState, CheckInPainState.refused);
+      expect(await queue.painState(), CheckInPainState.refused);
       await queue.replay(counting);
       expect(calls, 1, reason: 'a refusal is not retried every launch');
       expect(await queue.pendingDays(), ['2026-10-02']);
     });
 
     test('a refusal without pain keys is dropped and reported', () async {
-      SharedPreferences.setMockInitialValues({});
       final queue = await buildQueue();
       await queue.enqueue(
         payload: const {'energy': 3, 'pain_severity': 0},
@@ -481,7 +461,7 @@ void main() {
       );
       final replay = await queue.replay(refuse);
       expect(replay.refused.single.localDate, '2026-10-02');
-      expect(queue.painState, CheckInPainState.none);
+      expect(await queue.painState(), CheckInPainState.none);
       expect(await queue.pendingDays(), isEmpty);
     });
 
@@ -499,7 +479,7 @@ void main() {
         expect(sent!.keys.where((key) => key.startsWith('pain_')), [
           'pain_severity',
         ]);
-        expect(queue.painState, CheckInPainState.none);
+        expect(await queue.painState(), CheckInPainState.none);
         expect(await stored(), isEmpty);
       },
     );
@@ -512,7 +492,7 @@ void main() {
         await queue.acknowledgeRefusedPain((date, zone, key, payload) async {
           throw Exception('offline');
         });
-        expect(queue.painState, CheckInPainState.none);
+        expect(await queue.painState(), CheckInPainState.none);
         Map<String, dynamic>? sent;
         final replay = await queue.replay((date, zone, key, payload) async {
           sent = payload;
@@ -536,7 +516,6 @@ void main() {
     };
 
     test('does not overwrite a red flag: both go, the earlier first', () async {
-      SharedPreferences.setMockInitialValues({});
       final queue = await buildQueue();
       await queue.enqueue(
         payload: {
@@ -553,7 +532,7 @@ void main() {
         localDate: '2026-10-24',
         timezone: 'Asia/Kolkata',
       );
-      expect(queue.painState, CheckInPainState.waiting);
+      expect(await queue.painState(), CheckInPainState.waiting);
 
       final sent = <Map<String, dynamic>>[];
       final replay = await queue.replay((date, zone, key, payload) async {
@@ -563,16 +542,14 @@ void main() {
       expect(replay.delivered, ['2026-10-24', '2026-10-24']);
       expect(sent.first['pain_red_flags'], ['bladder_bowel_saddle']);
       expect(sent.last.containsKey('pain_area'), isFalse);
-      expect(queue.painState, CheckInPainState.none);
-      final preferences = await SharedPreferences.getInstance();
+      expect(await queue.painState(), CheckInPainState.none);
       expect(
-        preferences.getKeys().where((k) => k.contains('check_in')),
+        (await store.getKeys()).where((k) => k.contains('check_in')),
         isEmpty,
       );
     });
 
     test('the later one waits while the earlier cannot be sent', () async {
-      SharedPreferences.setMockInitialValues({});
       final queue = await buildQueue();
       await queue.enqueue(
         payload: {
@@ -601,11 +578,10 @@ void main() {
         reason: 'the later one would supersede it',
       );
       expect(attempts.single['pain_area'], 'knee');
-      expect(queue.painState, CheckInPainState.waiting);
+      expect(await queue.painState(), CheckInPainState.waiting);
     });
 
     test('a check-in without a pain check is replaced as before', () async {
-      SharedPreferences.setMockInitialValues({});
       final queue = await buildQueue();
       for (final energy in [1, 5]) {
         await queue.enqueue(
@@ -623,7 +599,6 @@ void main() {
     });
 
     test('an earlier refusal is told and its check-in still goes', () async {
-      SharedPreferences.setMockInitialValues({});
       final queue = await buildQueue();
       await queue.enqueue(
         payload: {
@@ -661,18 +636,17 @@ void main() {
       final replay = await queue.replay(server);
       expect(replay.delivered, ['2026-10-24']);
       expect(sent.map((e) => e.$1), ['2026-10-24']);
-      expect(queue.painState, CheckInPainState.refused);
-      expect(queue.painRefusedTooOld, isTrue);
+      expect(await queue.painState(), CheckInPainState.refused);
+      expect(await queue.painRefusedTooOld(), isTrue);
 
       await queue.acknowledgeRefusedPain(server);
-      expect(queue.painState, CheckInPainState.none);
+      expect(await queue.painState(), CheckInPainState.none);
       expect(sent.map((e) => e.$1), ['2026-10-24', '2026-10-20']);
       expect(sent.last.$2['energy'], 1, reason: 'the rest of it was sent');
       expect(sent.last.$2.containsKey('pain_area'), isFalse);
     });
 
     test('a refusal that is not about the date is said so', () async {
-      SharedPreferences.setMockInitialValues({});
       final queue = await buildQueue();
       final key = await queue.enqueue(
         payload: {
@@ -685,8 +659,8 @@ void main() {
         timezone: 'Asia/Kolkata',
       );
       await queue.markPainRefused(key, tooOld: false);
-      expect(queue.painState, CheckInPainState.refused);
-      expect(queue.painRefusedTooOld, isFalse);
+      expect(await queue.painState(), CheckInPainState.refused);
+      expect(await queue.painRefusedTooOld(), isFalse);
     });
   });
 
@@ -714,7 +688,6 @@ void main() {
         );
 
     test('a check-in saved meanwhile survives when the first lands', () async {
-      SharedPreferences.setMockInitialValues({});
       final queue = await buildQueue();
       final first = await save(queue, pain);
       final gate = Completer<void>();
@@ -734,9 +707,7 @@ void main() {
       final waiting = (await stored())['2026-10-24'] as Map;
       expect(waiting['idempotency_key'], second, reason: 'not wiped');
       expect(
-        (await SharedPreferences.getInstance()).getString(
-          CheckInQueue.earlierKeyFor(''),
-        ),
+        await store.getString(CheckInQueue.earlierKeyFor('')),
         isNull,
         reason: 'the first one was delivered and went',
       );
@@ -745,7 +716,6 @@ void main() {
     test(
       'a check-in saved meanwhile survives when the first is refused',
       () async {
-        SharedPreferences.setMockInitialValues({});
         final queue = await buildQueue();
         final first = await save(queue, pain);
         final gate = Completer<void>();
@@ -768,12 +738,15 @@ void main() {
         final waiting = (await stored())['2026-10-24'] as Map;
         expect(waiting['idempotency_key'], second);
         expect(waiting.containsKey('pain_refused'), isFalse);
-        expect(queue.painState, CheckInPainState.refused, reason: 'the first');
+        expect(
+          await queue.painState(),
+          CheckInPainState.refused,
+          reason: 'the first',
+        );
       },
     );
 
     test('replays run one after the other, each envelope once', () async {
-      SharedPreferences.setMockInitialValues({});
       final queue = await buildQueue();
       final key = await save(queue, pain);
       final gate = Completer<void>();
@@ -802,7 +775,6 @@ void main() {
     test(
       'a refused check-in that a newer one replaced is not sent later',
       () async {
-        SharedPreferences.setMockInitialValues({});
         final queue = await buildQueue();
         await save(queue, {...pain, 'energy': 1});
         Future<bool> refuse(
@@ -825,17 +797,20 @@ void main() {
         });
         expect(replay.delivered, ['2026-10-24']);
         expect(sent, [second]);
-        expect(queue.painState, CheckInPainState.refused, reason: 'still told');
+        expect(
+          await queue.painState(),
+          CheckInPainState.refused,
+          reason: 'still told',
+        );
 
         await queue.acknowledgeRefusedPain((date, zone, key, payload) async {
           sent.add(key);
           return true;
         });
         expect(sent, [second], reason: 'the older one would become the last');
-        expect(queue.painState, CheckInPainState.none);
-        final preferences = await SharedPreferences.getInstance();
+        expect(await queue.painState(), CheckInPainState.none);
         expect(
-          preferences.getKeys().where((k) => k.contains('check_in')),
+          (await store.getKeys()).where((k) => k.contains('check_in')),
           isEmpty,
         );
       },
@@ -843,7 +818,6 @@ void main() {
 
     test('the day\'s limit on pain reports is a refusal: told, and the later '
         'check-in goes on', () async {
-      SharedPreferences.setMockInitialValues({});
       final queue = await buildQueue();
       final first = await save(queue, pain);
       final second = await save(queue, {'pain_severity': 0});
@@ -860,23 +834,21 @@ void main() {
       });
       expect(replay.delivered, ['2026-10-24']);
       expect(sent, [first, second]);
-      expect(queue.painState, CheckInPainState.refused);
-      expect(queue.painRefusedTooOld, isFalse);
+      expect(await queue.painState(), CheckInPainState.refused);
+      expect(await queue.painRefusedTooOld(), isFalse);
     });
 
     test('another P0001 is just retained', () async {
-      SharedPreferences.setMockInitialValues({});
       final queue = await buildQueue();
       await save(queue, pain);
       final replay = await queue.replay((date, zone, key, payload) async {
         throw const PostgrestException(message: 'busy', code: 'P0001');
       });
       expect(replay.retained, ['2026-10-24']);
-      expect(queue.painState, CheckInPainState.waiting);
+      expect(await queue.painState(), CheckInPainState.waiting);
     });
 
     test('a duplicate key means the server has it: delivered', () async {
-      SharedPreferences.setMockInitialValues({});
       final queue = await buildQueue();
       await save(queue, {'pain_severity': 0});
       final replay = await queue.replay((date, zone, key, payload) async {
@@ -888,21 +860,22 @@ void main() {
   });
 }
 
-/// Preferences whose writes fail, as when the disk is full.
-class _FailingWrites implements SharedPreferences {
+/// Files whose writes fail, as when the disk is full.
+class _FailingWrites implements LocalHealthFiles {
   _FailingWrites(this._inner);
 
-  final SharedPreferences _inner;
+  final LocalHealthFiles _inner;
 
   @override
-  String? getString(String key) => _inner.getString(key);
+  Future<String?> read(String name) => _inner.read(name);
 
   @override
-  Future<bool> setString(String key, String value) async => false;
+  Future<void> write(String name, String contents) =>
+      throw const FileSystemException('disk full');
 
   @override
-  Future<bool> remove(String key) => _inner.remove(key);
+  Future<void> delete(String name) => _inner.delete(name);
 
   @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+  Future<List<String>> names() => _inner.names();
 }

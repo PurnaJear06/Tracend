@@ -30,6 +30,7 @@ import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 import 'day_adjustment_fixtures.dart';
 import 'home_widgets/fake_home_widget_bridge.dart';
@@ -426,14 +427,13 @@ class _SwitchingRepository extends FixtureWorkoutRepository
 
 void main() {
   late _Backend backend;
-  late SharedPreferencesAsync preferences;
+  const preferences = LocalHealthStore();
   late TrainingHubCache cache;
 
   setUp(() {
     SharedPreferencesAsyncPlatform.instance =
         InMemorySharedPreferencesAsync.empty();
     SharedPreferences.setMockInitialValues({});
-    preferences = SharedPreferencesAsync();
     cache = TrainingHubCache(preferences);
     backend = _Backend();
     SupabaseWorkoutRepository.forgetSending();

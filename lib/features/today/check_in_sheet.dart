@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
@@ -12,6 +11,7 @@ import 'package:tracend/features/readiness/pain_check.dart';
 import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/shared/diagnostics.dart';
+import 'package:tracend/shared/local_health_store.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_sheet.dart';
 import 'package:tracend/shared/widgets/tracend_toast.dart';
@@ -362,9 +362,8 @@ class _CheckInSheetState extends State<_CheckInSheet> {
     String timezone,
   ) async {
     try {
-      final preferences = await SharedPreferences.getInstance();
       final queue = CheckInQueue(
-        preferences,
+        const LocalHealthStore(),
         userId: widget.environment.hasSupabaseConfiguration
             ? Supabase.instance.client.auth.currentUser?.id
             : null,

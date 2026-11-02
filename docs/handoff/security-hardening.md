@@ -294,3 +294,56 @@ again), and run a physique check (its notice is unchanged).
 - **Supabase key migration prep.** Helper `_shared/supabase_keys.ts` (new secret first, legacy key as
   fallback; no behavior change today) and the owner's runbook:
   [`supabase-key-migration.md`](./supabase-key-migration.md).
+
+## On-device data (2026-11-02, branch `claude/local-data-privacy`; needs the new build)
+
+Three audit findings (P1-9, P1-10, P1-13), one PR. App only: no migration, no Edge Function.
+
+- **Shared-phone marks (P1-9).** "Checked in today" and "Not today" were kept under two keys for
+  every account, and nothing removed them, so a second account on the phone (or a new one after a
+  deletion) opened as already checked in. They are now per athlete (`CheckInMarks`, the key holds the
+  athlete's id), and sign-out, a refused session and account deletion remove them
+  (`LocalAccountData.forgetCheckInMarks`), together with the two old global keys. The same sweep found
+  `tracend.set_heart_rate.pending` (workouts waiting for their heart rate) kept for the whole phone;
+  it is now removed on sign-out too, and `tracend.sleeping_heart_rate.final.<id>` goes with a
+  deleted account. `test/local_data_privacy_test.dart` lists every key the app writes as per athlete,
+  phone-wide and kept, or ending with the session, runs sign-out, a refused session and a deletion,
+  and fails when a file starts storing something it does not list.
+- **Health caches out of `UserDefaults` (P1-10).** Pain reports (red-flag answers), check-ins,
+  referrals read, workout drafts, saved finishes, queued discards, exercise history, the saved plan
+  with its sore-area notes and the Coach thread id moved from `SharedPreferences`, whose plist iCloud
+  Backup and Finder backups copy, to `LocalHealthStore`: files in
+  `Application Support/TracendHealthCache`, excluded from backups (checked on every write) and written
+  with `NSFileProtectionCompleteUntilFirstUserAuthentication` by
+  `ios/Runner/Native/LocalHealthStoreBridge.swift`. Dart reads,
+  lists and removes the files itself; only the write goes through the channel. No new package.
+  The first launch (`moveHealthCachesToStore`, called from `main.dart`) copies every old key and
+  then removes it; a key that cannot be written stays for the next launch.
+  - **Protection class (differs from the audit's suggestion).** Until first unlock, not
+    complete protection: the workout Live Activity's "Log set" button runs in the app's process with
+    the phone locked and the logger then saves the workout draft; a complete-protection file would
+    refuse that write and the set would be lost if the app were killed. The gain over `UserDefaults`
+    is the removal from iCloud and computer backups; the class is the one preferences had. Only the
+    draft, saved finish and queued discard keys need the looser class; the rest could move to
+    complete protection later, at the cost of a second class in the native write.
+  - **Queues.** `CheckInQueue`, `PainReportQueue` and `SafetyAcknowledgements` read asynchronously
+    now (`painState()`, `painRefusedTooOld()`, `PainReportQueue.state()` and
+    `isAcknowledged` are futures). Their locks, keys and replay order are unchanged, and the offline
+    tests (queued check-ins and pain reports, workout drafts after a kill and relaunch) pass on the
+    new store. A referral that cannot be checked against what was read is shown instead of skipped.
+  - **Tests.** Every test starts with an in-memory copy of the store's files
+    (`test/flutter_test_config.dart`, `test/memory_health_files.dart`).
+    `test/local_health_store_test.dart` covers the store and the native files over a mocked channel;
+    `test/local_health_migration_test.dart` covers the move. Swift: two tests added to
+    `RunnerTests.swift` (backup exclusion, names); they are not run in CI.
+- **App switcher cover (P1-13).** `SceneDelegate` adds a view with the launch screen's colour and
+  logo over the window in `sceneWillResignActive` and removes it in `sceneDidBecomeActive`; the
+  widget link handling is untouched.
+- **Owner check after install (build from the merged `main`):** open the app-switcher with Today,
+  Progress (a photo) and Coach open: each card shows the launch screen. Come back: the screen is
+  as it was. Kill the app during a workout with a set done and a rest running, reopen: the draft is
+  there. Lock the phone with the workout's Live Activity showing, press Log set on the Lock Screen,
+  unlock and kill the app: the set is still logged on reopening. Turn on aeroplane mode, save a check-in, kill, reopen with a connection: it syncs. Sign out
+  and sign in with another account the same day: the check-in bar shows. Settings, Face ID prompts and
+  the photo picker still open. A backup made before this build keeps the old preferences until a
+  newer one replaces it.
