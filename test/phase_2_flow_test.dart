@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/consent/legal_consent.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
@@ -1657,6 +1658,87 @@ void main() {
       },
     );
 
+    group('a saved draft without the current agreements', () {
+      const missing = {LegalConsent.healthData};
+
+      testWidgets('past the first step restarts at the agreements, with no '
+          'Apple Health read and no plan', (tester) async {
+        final repository = _FakeOnboardingRepository(
+          draft: _experiencedDraft('questions', {'health_import': 'connected'}),
+          generations: [_succeeded],
+        )..legalOutdated = missing;
+        final baseline = _FakeBaseline(const HealthBaseline(months: 11));
+        final health = _FakeHealth(status: _connected);
+        await _pump(
+          tester,
+          repository,
+          healthBaseline: baseline,
+          health: health,
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('I agree to Tracend using my health data'),
+          findsOneWidget,
+        );
+        expect(find.text('Allow AI coaching?'), findsNothing);
+        expect(baseline.loads, 0);
+        expect(health.statusLoads, 0);
+        expect(repository.askCalls, 0);
+        expect(repository.startCalls, 0);
+
+        await _tapText(tester, 'I am 18 or older');
+        await _tapText(tester, 'I accept the private-beta terms');
+        await _tapText(tester, 'I have read the privacy notice');
+        await _tapText(tester, 'I agree to Tracend using my health data');
+        await _continue(tester);
+        await tester.pumpAndSettle();
+
+        // The agreements are recorded first; only then is Apple Health read.
+        expect(repository.eligibilityCalls, 1);
+        expect(health.statusLoads, 1);
+        expect(find.text('A quick health check.'), findsOneWidget);
+      });
+
+      testWidgets('on the plan step does not resume the plan', (tester) async {
+        final repository = _FakeOnboardingRepository(
+          draft: _draft('proposal'),
+          generations: [_running, _succeeded],
+        )..legalOutdated = missing;
+        await _pump(tester, repository);
+        await tester.pumpAndSettle();
+
+        expect(find.text('I accept the private-beta terms'), findsOneWidget);
+        expect(find.text('Building your plan'), findsNothing);
+        expect(find.text('Your starting plan'), findsNothing);
+        expect(repository.startCalls, 0);
+      });
+
+      testWidgets('a lookup that fails offers a retry and reads nothing', (
+        tester,
+      ) async {
+        final repository = _FakeOnboardingRepository(draft: _draft('review'))
+          ..failingLegalLoads = 1;
+        final health = _FakeHealth(status: _connected);
+        await _pump(tester, repository, health: health);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Try again'), findsOneWidget);
+        expect(health.statusLoads, 0);
+
+        await _tapText(tester, 'Try again');
+        expect(find.text('Review before building.'), findsOneWidget);
+      });
+
+      testWidgets('with the current agreements a draft resumes as saved', (
+        tester,
+      ) async {
+        await _pump(tester, _FakeOnboardingRepository(draft: _draft('review')));
+
+        expect(find.text('Review before building.'), findsOneWidget);
+      });
+    });
+
     testWidgets(
       'an edited answer drops the follow-up answers it no longer fits',
       (tester) async {
@@ -2022,9 +2104,13 @@ class _FakeHealth implements HealthRepository {
   HealthHistory history;
   bool connectThrows;
   int connectCalls = 0;
+  int statusLoads = 0;
 
   @override
-  Future<HealthSyncStatus> loadStatus() async => status;
+  Future<HealthSyncStatus> loadStatus() async {
+    statusLoads++;
+    return status;
+  }
 
   @override
   Future<HealthHistory> loadHistory() async => history;
@@ -2270,6 +2356,22 @@ class _FakeOnboardingRepository implements OnboardingRepository {
   @override
   Future<void> recordEligibilityAndConsent({required bool eligible}) async {
     eligibilityCalls++;
+    legalOutdated = const {};
+  }
+
+  /// The agreements the server lacks at this build's versions.
+  Set<LegalConsent> legalOutdated = const {};
+
+  /// How many agreement lookups fail before one succeeds.
+  int failingLegalLoads = 0;
+
+  @override
+  Future<Set<LegalConsent>> loadOutdatedLegalConsents() async {
+    if (failingLegalLoads > 0) {
+      failingLegalLoads--;
+      throw Exception('offline');
+    }
+    return legalOutdated;
   }
 
   /// What the server answers to the health check; by default the outcome the

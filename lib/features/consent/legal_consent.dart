@@ -125,13 +125,16 @@ class SupabaseLegalConsentRepository implements LegalConsentRepository {
 /// open. A page that opens nowhere says where it lives.
 Future<void> openLegalPage(BuildContext context, Uri url) async {
   var opened = false;
-  try {
-    opened = await launchUrl(url, mode: LaunchMode.inAppBrowserView);
-    if (!opened) {
-      opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+  for (final mode in const [
+    LaunchMode.inAppBrowserView,
+    LaunchMode.externalApplication,
+  ]) {
+    try {
+      opened = await launchUrl(url, mode: mode);
+    } catch (e) {
+      logNonCritical(e, 'Legal page not opened');
     }
-  } catch (e) {
-    logNonCritical(e, 'Legal page not opened');
+    if (opened) break;
   }
   if (opened || !context.mounted) return;
   TracendToast.show(

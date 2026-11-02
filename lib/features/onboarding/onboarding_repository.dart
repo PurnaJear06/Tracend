@@ -469,6 +469,10 @@ abstract interface class OnboardingRepository implements ScreeningRepository {
   /// unless this version (or a newer one) is already granted. Approval writes
   /// the rest of the profile.
   Future<void> recordEligibilityAndConsent({required bool eligible});
+
+  /// The agreements not yet granted at this build's versions. A saved draft
+  /// past the first step resumes there only when this is empty.
+  Future<Set<LegalConsent>> loadOutdatedLegalConsents();
   Future<void> saveGoal(String goal);
 
   /// Starts (or returns) the plan generation for the saved draft.
@@ -571,6 +575,13 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
     );
     await legal.grant(await legal.loadOutdated());
   }
+
+  @override
+  Future<Set<LegalConsent>> loadOutdatedLegalConsents() =>
+      SupabaseLegalConsentRepository(
+        _client,
+        callTimeout: callTimeout,
+      ).loadOutdated();
 
   @override
   Future<void> saveGoal(String goal) async {

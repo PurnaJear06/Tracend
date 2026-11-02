@@ -35,6 +35,7 @@ class Phase2Gate extends StatefulWidget {
     this.liveActivity = const MethodChannelWorkoutActivityBridge(),
     this.homeWidgets = const MethodChannelHomeWidgetBridge(),
     this.notifications = const MethodChannelNotificationRepository(),
+    this.healthBaseline,
     super.key,
   });
 
@@ -55,6 +56,10 @@ class Phase2Gate extends StatefulWidget {
   /// a signed-out phone, or the next athlete's, gets none of them.
   final NotificationRepository notifications;
   final LocalAccountData? localData;
+
+  /// The athlete's usual months from Apple Health, unless a test provides
+  /// one.
+  final HealthBaselineSource? healthBaseline;
 
   @override
   State<Phase2Gate> createState() => _Phase2GateState();
@@ -258,11 +263,14 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     // Workouts finished or logged with no signal go to the server now,
     // whichever screen is open.
     unawaited(_workouts().sendWaiting());
-    // The usual months a later plan review compares with, and the saved
-    // reminder choices back on this phone; neither blocks.
+    // The saved reminder choices back on this phone; this never blocks. The
+    // usual months a later plan review compares with are read from Apple
+    // Health only with the health-data agreement current (or a lookup that
+    // could not run, which asks for none: the athlete agreed to an earlier
+    // version). Otherwise they wait for the athlete's agreement.
     if (complete) {
-      unawaited(_baselineSource().refreshIfDue());
       unawaited(_restoreReminders(client));
+      if (legalOutdated.isEmpty) unawaited(_baselineSource().refreshIfDue());
     }
     setState(() {
       _authenticated = true;
@@ -286,6 +294,13 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
       }
       return const {};
     }
+  }
+
+  /// The athlete agreed again: the app opens, and the Apple Health read that
+  /// waited for the agreement starts.
+  void _legalAgreed() {
+    setState(() => _legalOutdated = const {});
+    unawaited(_baselineSource().refreshIfDue());
   }
 
   /// Opens the app on the plan this phone saved for [userId], when it has
@@ -431,6 +446,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   );
 
   HealthBaselineSource _baselineSource() => _baseline ??=
+      widget.healthBaseline ??
       SupabaseHealthBaselineSource(_client, SharedPreferencesAsync());
 
   @override
@@ -501,7 +517,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
       return LegalConsentScreen(
         repository: SupabaseLegalConsentRepository(_client),
         outdated: _legalOutdated,
-        onAgreed: () => setState(() => _legalOutdated = const {}),
+        onAgreed: _legalAgreed,
         onSignOut: _signOut,
         deletion: SupabaseAccountDeletionRepository(
           _client,

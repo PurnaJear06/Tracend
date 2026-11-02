@@ -145,7 +145,9 @@ sign-in**.
   and links as onboarding, **Agree and continue** (enabled once all three are ticked; it records
   the outdated agreements at the versions shown), then **Sign out** and **Delete account** (the
   Account deletion sheet). A lookup that fails, and a launch that opens the saved plan offline,
-  open the app without asking; the next launch checks again. Nothing is recorded without the tap.
+  open the app without asking (the athlete agreed to an earlier version); the next launch checks
+  again. Nothing is recorded without the tap. While the screen is open nothing is read from Apple
+  Health or uploaded: the monthly history upload starts after **Agree and continue**.
 
 - Restore selected tab, scroll position, and safe in-progress drafts. Today the app opens on Today,
   or on Train when a tapped widget asked for it (below); an unfinished workout draft and an unsent

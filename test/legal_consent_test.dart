@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -17,6 +18,7 @@ import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/auth/phase_2_gate.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/consent/legal_consent.dart';
+import 'package:tracend/features/health/health_baseline.dart';
 import 'package:url_launcher_platform_interface/link.dart';
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 
@@ -39,6 +41,9 @@ class _Launcher extends UrlLauncherPlatform {
   /// Whether the platform reports the page as opened.
   var opens = true;
 
+  /// Modes whose launch throws instead of answering.
+  final throwing = <PreferredLaunchMode>{};
+
   @override
   LinkDelegate? get linkDelegate => null;
 
@@ -48,6 +53,9 @@ class _Launcher extends UrlLauncherPlatform {
   @override
   Future<bool> launchUrl(String url, LaunchOptions options) async {
     launched.add((url, options.mode));
+    if (throwing.contains(options.mode)) {
+      throw PlatformException(code: 'no_browser');
+    }
     return opens;
   }
 }
@@ -65,6 +73,17 @@ class _Repository implements LegalConsentRepository {
     if (fails) throw const PostgrestException(message: 'down', code: '500');
     granted.add(consents);
   }
+}
+
+/// Counts the Apple Health reads the gate starts.
+class _Baseline implements HealthBaselineSource {
+  var refreshes = 0;
+
+  @override
+  Future<HealthBaseline?> load() async => null;
+
+  @override
+  Future<void> refreshIfDue() async => refreshes++;
 }
 
 class _Notifications implements NotificationRepository {
@@ -358,6 +377,47 @@ void main() {
     });
   });
 
+  group('a browser that throws', () {
+    Future<void> openPrivacy(WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.light,
+          home: Scaffold(
+            body: ListView(
+              children: [
+                LegalConsentRows(checked: const {}, onChanged: (_, _) {}),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Read the privacy notice'));
+      await tester.pump();
+    }
+
+    testWidgets('in the in-app browser still opens in Safari', (tester) async {
+      launcher.throwing.add(PreferredLaunchMode.inAppBrowserView);
+      await openPrivacy(tester);
+
+      expect(launcher.launched.map((launch) => launch.$2), [
+        PreferredLaunchMode.inAppBrowserView,
+        PreferredLaunchMode.externalApplication,
+      ]);
+      expect(find.textContaining('The page did not open'), findsNothing);
+    });
+
+    testWidgets('in both says where the page lives', (tester) async {
+      launcher.throwing.addAll(PreferredLaunchMode.values);
+      await openPrivacy(tester);
+
+      expect(
+        find.text('The page did not open. It is at tracend.pages.dev/privacy/'),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 3));
+    });
+  });
+
   testWidgets('Account opens both pages at any time', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -479,7 +539,11 @@ void main() {
   // What opens after the gate's legal check stands for the app: the AI
   // coaching question, which the scripted server leaves unanswered.
   group('the gate asks again after a page changes', () {
-    Future<void> openGate(WidgetTester tester, _Server server) async {
+    Future<void> openGate(
+      WidgetTester tester,
+      _Server server, {
+      HealthBaselineSource? baseline,
+    }) async {
       await _storeSession(server.client);
       await tester.pumpWidget(
         MaterialApp(
@@ -490,6 +554,7 @@ void main() {
             liveActivity: FakeWorkoutActivityBridge(),
             homeWidgets: FakeHomeWidgetBridge(),
             notifications: _Notifications(),
+            healthBaseline: baseline,
           ),
         ),
       );
@@ -547,6 +612,72 @@ void main() {
       ]);
       expect(find.byType(LegalConsentScreen), findsNothing);
       expect(find.byType(AiCoachingConsentScreen), findsOneWidget);
+    });
+
+    testWidgets('no Apple Health read starts before the athlete agrees', (
+      tester,
+    ) async {
+      final baseline = _Baseline();
+      final server = _Server(
+        legal: () async => _json(200, [
+          _row('terms', '2026-07-01'),
+          _row('privacy', '2026-07-01'),
+        ]),
+      );
+      await openGate(tester, server, baseline: baseline);
+
+      expect(find.byType(LegalConsentScreen), findsOneWidget);
+      expect(baseline.refreshes, 0);
+
+      await _tickAll(tester);
+      await tester.tap(find.text('Agree and continue'));
+      await settle(tester);
+
+      expect(find.byType(LegalConsentScreen), findsNothing);
+      expect(baseline.refreshes, 1);
+    });
+
+    testWidgets('a health-data grant withdrawn keeps Apple Health unread', (
+      tester,
+    ) async {
+      final baseline = _Baseline();
+      final server = _Server(
+        legal: () async => _json(200, [
+          _row('health_data', LegalNotices.privacyVersion, action: 'withdrawn'),
+          _row('privacy', LegalNotices.privacyVersion),
+          _row('terms', LegalNotices.termsVersion),
+        ]),
+      );
+      await openGate(tester, server, baseline: baseline);
+
+      expect(find.byType(LegalConsentScreen), findsOneWidget);
+      expect(baseline.refreshes, 0);
+    });
+
+    testWidgets('current agreements read Apple Health on open', (tester) async {
+      final baseline = _Baseline();
+      final server = _Server(
+        legal: () async => _json(200, [
+          _row('health_data', LegalNotices.privacyVersion),
+          _row('privacy', LegalNotices.privacyVersion),
+          _row('terms', LegalNotices.termsVersion),
+        ]),
+      );
+      await openGate(tester, server, baseline: baseline);
+
+      expect(baseline.refreshes, 1);
+    });
+
+    testWidgets('a lookup that fails reads Apple Health: an earlier version '
+        'was agreed to', (tester) async {
+      final baseline = _Baseline();
+      final server = _Server(
+        legal: () async => _json(500, {'message': 'down'}),
+      );
+      await openGate(tester, server, baseline: baseline);
+
+      expect(find.byType(LegalConsentScreen), findsNothing);
+      expect(baseline.refreshes, 1);
     });
 
     testWidgets('current agreements open the app', (tester) async {
