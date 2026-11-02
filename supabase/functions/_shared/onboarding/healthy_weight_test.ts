@@ -80,7 +80,7 @@ Deno.test("a held plan says why, in plain words, and carries the maintenance rat
     assumptions[0],
     "Calories start at maintenance rather than a deficit, because your BMI is 16.5, below the healthy range.",
   );
-  assertEquals(proposal.nutrition.rationale, healthyWeightHoldRationale);
+  assertEquals(proposal.nutrition.rationale, healthyWeightHoldRationale("fat_loss"));
   assert((proposal.nutrition.calories as number) >= 1449, "no deficit");
   const calculation = proposal.training.calculation as Record<string, unknown>;
   assertEquals(calculation.healthy_weight_hold, true);
@@ -101,7 +101,7 @@ Deno.test("an athlete above the threshold gets the usual plan, with no hold keys
   });
   const calculation = proposal.training.calculation as Record<string, unknown>;
   assertEquals("healthy_weight_hold" in calculation, false);
-  assert(proposal.nutrition.rationale !== healthyWeightHoldRationale);
+  assert(proposal.nutrition.rationale !== healthyWeightHoldRationale("fat_loss"));
 });
 
 const payload = {
@@ -182,6 +182,7 @@ Deno.test("while held, a plan whose text claims a deficit or weight loss is reje
       "You should lose about 0.4 kg a week.",
       "Calories sit below maintenance.",
       "Steady weight loss over the block.",
+      "Losing fat while keeping muscle.",
     ]
   ) {
     const claiming = { ...plan, expected_benefit: claim };
@@ -203,4 +204,25 @@ Deno.test("while held, a plan whose text claims a deficit or weight loss is reje
     ),
     false,
   );
+});
+
+Deno.test("a held rules plan names no fat loss for any deficit goal", () => {
+  for (const goal of ["fat_loss", "recomposition", "aesthetic"] as const) {
+    const policies = policiesFor({ ...underweight, goal });
+    assertEquals(policies.nutrition.healthyWeightHold, true, goal);
+    const plan = buildRulesPlan(policies);
+    assertEquals(claimsDeficitWhileHeld(plan, policies.nutrition), false, goal);
+    validateOnboardingPlan(plan, policies);
+  }
+});
+
+Deno.test("a held goal whose range reaches above maintenance says so", () => {
+  assertStringIncludes(
+    healthyWeightHoldRationale("aesthetic"),
+    "Maintenance calories or a little above",
+  );
+  const aesthetic = nutritionPolicy({ ...underweight, goal: "aesthetic" });
+  assert(aesthetic.calories[1] > aesthetic.calories[0], "a small surplus stays allowed");
+  assert(!healthyWeightHoldRationale("fat_loss").includes("a little above"));
+  assert(!healthyWeightHoldRationale("recomposition").includes("a little above"));
 });

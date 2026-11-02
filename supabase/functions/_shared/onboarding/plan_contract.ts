@@ -1,4 +1,4 @@
-import type { DailyActivity, OnboardingAnswers } from "./answers.ts";
+import type { DailyActivity, Goal, OnboardingAnswers } from "./answers.ts";
 import {
   activityFromSteps,
   type HealthSummary,
@@ -20,6 +20,7 @@ import {
 import {
   confidenceCap,
   estimateWorkoutMinutes,
+  goalCalorieAdjustments,
   nutritionBounds,
   type NutritionPolicy,
   onboardingPolicyVersion,
@@ -429,7 +430,7 @@ export function planText(plan: OnboardingPlan): string {
 const noDeficit =
   /\b(?:no|not a|not in a|rather than a|instead of a|without a)\s+(?:calorie\s+)?deficit\b/gi;
 const deficitClaim =
-  /\b(?:deficit|calorie cut|cutting phase|cut phase|lose weight|losing weight|weight loss|weight-loss|eat less|below maintenance|under maintenance|lose (?:about |around |up to )?\d|kg (?:a|per) week)\b/i;
+  /\b(?:deficit|fat loss|fat-loss|lose fat|losing fat|burn fat|burning fat|calorie cut|cutting phase|cut phase|lose weight|losing weight|weight loss|weight-loss|eat less|below maintenance|under maintenance|lose (?:about |around |up to )?\d|kg (?:a|per) week)\b/i;
 
 /** The plan's text claims a deficit or weight loss while NutritionPolicy.healthyWeightHold applies. */
 export function claimsDeficitWhileHeld(plan: OnboardingPlan, nutrition: NutritionPolicy): boolean {
@@ -686,9 +687,16 @@ export function healthyWeightHoldNote(bmi: number): string {
   }, ${position}.`;
 }
 
-/** The nutrition rationale a plan carries while NutritionPolicy.healthyWeightHold applies. */
-export const healthyWeightHoldRationale =
-  "Maintenance calories, because your BMI is close to or below the bottom of the healthy range, with protein and fat inside the safe ranges and carbohydrate from the rest.";
+/**
+ * The nutrition rationale a plan carries while NutritionPolicy.healthyWeightHold applies. A goal
+ * whose range reaches above maintenance keeps that small surplus, and the wording says so.
+ */
+export function healthyWeightHoldRationale(goal: Goal): string {
+  const level = goalCalorieAdjustments[goal][1] > 0
+    ? "Maintenance calories or a little above"
+    : "Maintenance calories";
+  return `${level}, because your BMI is close to or below the bottom of the healthy range, with protein and fat inside the safe ranges and carbohydrate from the rest.`;
+}
 
 /** What deterministic code knows is missing, before the model's own list. */
 export function requiredMissingInformation(health: HealthSummary | null): string[] {
@@ -817,7 +825,7 @@ export function buildOnboardingProposal(
       fat_g: plan.nutrition.fat_g,
       // Deterministic wording while the hold applies, whatever the plan said about a deficit.
       rationale: policies.nutrition.healthyWeightHold
-        ? healthyWeightHoldRationale
+        ? healthyWeightHoldRationale(policies.answers.goal)
         : plan.nutrition.rationale,
     },
     evidence: [
