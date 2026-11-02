@@ -632,10 +632,10 @@ Initial private-beta defaults:
   before migrations; Supabase does not provide the Pro daily-backup guarantee;
 - Pro Plan database: Supabase daily backups with the plan's current seven-day availability, plus an
   independent pre-release logical export where permitted;
-- Storage objects: the private `progress-photos` bucket is backed up every night as an encrypted
-  archive in the private backups repository (newest 30; an empty bucket still stores an empty archive, so old archives age out); meal photos are
-  not, because they are deleted about 7 days after capture; database backups contain metadata but
-  not Storage bytes; and
+- Storage objects: not backed up yet. Database backups contain metadata but not Storage bytes. A
+  photo backup must live in a store with lifecycle deletion so a deleted account's photos leave it
+  within 30 days (planned: encrypted, Cloudflare R2, 30-day lifecycle rule); the private backups
+  repository cannot give that guarantee. Meal photos are deleted about 7 days after capture; and
 - provider content: shortest available approved retention, documented per provider.
 
 Every production deploy takes an AES-256 encrypted logical backup before migrating, restores it in

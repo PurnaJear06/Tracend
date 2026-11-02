@@ -6,38 +6,35 @@ privacy rules in `SECURITY_PRIVACY.md`.
 ## Backups on Supabase Free
 
 Free Supabase has no daily backups of its own. `nightly-backup.yml` runs at 19:17 UTC every night
-(and by hand from Actions > Nightly Backup > Run workflow) and stores two kinds of encrypted
-backup in the private `Tracend-backups` repository, the newest 30 of each:
+(and by hand from Actions > Nightly Backup > Run workflow) and stores an encrypted database backup
+in the private `Tracend-backups` repository, the newest 30:
+`database-backup-<stamp>.tar.gz.enc` holds roles, schema and data, restore-drilled into a
+throwaway database before it is stored. Every merge to `main` makes one too.
 
-- `database-backup-<stamp>.tar.gz.enc`: roles, schema and data, restore-drilled into a throwaway
-  database before it is stored. Every merge to `main` makes one too.
-- `photo-backup-<stamp>.tar.gz.enc`: the private `progress-photos` bucket. Every night adds one (an empty
-  bucket adds an archive with no files), so a deleted account's photos leave the backups within
-  30 nights, as its database rows do. Meal photos (`meal-images`) are not backed up: the app deletes them about 7 days after
-  they are taken. `account-exports` holds short-lived export files, also not backed up.
+**Photos are not backed up yet.** Progress photos (the private `progress-photos` bucket) are in no
+backup: database dumps hold their metadata, not the bytes. Meal photos (`meal-images`) are
+deleted about 7 days after capture and `account-exports` hold short-lived files, so neither needs
+one. A photo backup in the private backups repository was built and removed from this PR: that
+repository's history is force-pushed but GitHub keeps old objects, so a deleted account's photos
+could not be guaranteed to leave within 30 nights. The follow-up is an encrypted photo backup to a
+store with lifecycle deletion: Cloudflare R2 (already on the account, free tier 10 GB) with a
+30-day lifecycle rule. You create the bucket and a key scoped to that bucket only; the key goes
+in as a GitHub secret, never in the repository. Until then a lost bucket loses the photos.
 
 A failed night emails the repository owner (GitHub sends this for any failed scheduled run). Look
 at Actions > Nightly Backup once a week while the beta runs, and open the backups repository
-after the first night to check the new files.
+after the first night to check the new file.
 
-**Size.** The backups repository holds 30 photo archives. GitHub recommends staying under 1 GB
-per repository and rejects a file over 100 MiB, so the photo backup warns at 25 MiB and
-`store-backup.sh` refuses an archive over 90 MiB. At the beta's size that is far away. When the
-warning appears, move photo backups to object storage (Cloudflare R2 is on the existing
-Cloudflare account; its free tier holds 10 GB) with its own access key kept as a GitHub secret.
-
-**Restore.** Decrypt with the passphrase from the `BACKUP_ARCHIVE_PASSPHRASE` secret, then unpack:
+**Restore.** Decrypt with the passphrase from the `BACKUP_ARCHIVE_PASSPHRASE` secret:
 
 ```sh
 read -s BACKUP_ARCHIVE_PASSPHRASE
 export BACKUP_ARCHIVE_PASSPHRASE
-openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in photo-backup-<stamp>.tar.gz.enc \
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in database-backup-<stamp>.tar.gz.enc \
   -pass env:BACKUP_ARCHIVE_PASSPHRASE | tar -xzf - -C <empty-directory>
 unset BACKUP_ARCHIVE_PASSPHRASE
 ```
 
-The photos come out under the paths Storage used (`<account id>/<file>`). Upload them back with
-`./scripts/supabase.sh storage cp --experimental --linked -r <directory> ss:///progress-photos`.
 The restore drill in `deploy.yml` (`docs/CI_CD_DEPLOYMENT.md`, Backup contract) is the tested way to restore a database backup.
 
 Optional: a second owner-controlled copy of both backups, kept encrypted on the external SSD and

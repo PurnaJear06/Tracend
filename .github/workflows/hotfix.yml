@@ -38,11 +38,36 @@ jobs:
     needs: dry-run
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 5
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # A nightly backup that started before this hotfix must not dump across a migration.
+      # Bounded: after 20 minutes the hotfix stops here, before changing production.
+      - name: Wait for a running nightly backup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for attempt in $(seq 1 40); do
+            running=0
+            for status in queued in_progress waiting pending requested; do
+              count=$(gh run list --workflow nightly-backup.yml --status "$status" --json databaseId --jq length)
+              running=$((running + count))
+            done
+            if [ "$running" -eq 0 ]; then
+              exit 0
+            fi
+            echo "A nightly backup is running; waiting ($attempt of 40)."
+            sleep 30
+          done
+          echo "::error::A nightly backup is still running after 20 minutes. Rerun the hotfix once it ends."
+          exit 1
 
       - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
         with:

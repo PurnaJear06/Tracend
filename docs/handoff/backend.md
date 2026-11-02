@@ -484,20 +484,22 @@ unaffected until the next device or TestFlight build.
   permission text that names what is read and where it goes. `scripts/app-version.sh` counts to
   the newest `origin/main` commit the checkout contains. In release mode `Phase2Gate` shows "This
   build is missing its server settings" instead of the demo.
-- **Rollback.** `scripts/rollback-function.sh` redeploys the newest release tag whose bundle of one function (its folder plus the files it
-  imports) differs from main, using that tag's whole `supabase/functions` tree, and verifies it live (`--dry-run`, `--list`, `--to`).
-  `hotfix.yml` never shared its logic and is unchanged. The nightly and deploy workflows check each
-  other (skip, and wait up to 20 minutes before migrating) instead of sharing a concurrency group.
+- **Rollback.** `scripts/rollback-function.sh` redeploys the newest release tag whose bundle of
+  one function differs from main, using that tag's whole `supabase/functions` tree, and verifies it
+  live (`--dry-run`, `--list`, `--to`, `--force`). The bundle is the function's entrypoint
+  followed through relative imports, `deno.json`, and the function's stanza in
+  `supabase/config.toml`. `hotfix.yml` never shared its logic and is unchanged by it.
 - **Nightly backups.** `nightly-backup.yml` and the reusable `database-backup.yml` (also called by
-  `deploy.yml`) run the dump, restore drill, encryption and storage once, in one place, plus the
-  `progress-photos` bucket (`scripts/backup-progress-photos.sh`, `encrypt-backup.sh`).
-  `store-backup.sh` keeps database and photo backups as separate kinds (30 each) and refuses a
-  file over 90 MiB. Photos are stored every night, not only when changed, so a deleted account's
-  photos leave the backups within 30 nights.
+  `deploy.yml`) run the dump, restore drill, encryption and storage once, in one place. The
+  nightly skips while `deploy.yml` or `hotfix.yml` runs; both of those wait up to 20 minutes for a
+  running nightly before they migrate (no shared concurrency group, which would let a queued
+  nightly replace a queued deploy). Progress photos are not backed up: a photo backup was built
+  and removed because the private repository cannot guarantee deleted photos leave within 30
+  nights. Follow-up: encrypted backup to Cloudflare R2 with a 30-day lifecycle rule (owner
+  creates the bucket and a scoped key).
 - **Check after the merge:** run Actions > Nightly Backup once by hand, then confirm a
-  `database-backup-*` and (if any progress photo exists) a `photo-backup-*` file in the private
-  backups repository, and that the next merge's Deploy run still passes its backup job. Neither
-  workflow was run before the merge.
+  `database-backup-*` file in the private backups repository, and that the next merge's Deploy run
+  still passes its backup job. Neither workflow was run before the merge.
 
 ## Restore drill compares privileges (2026-10-15)
 

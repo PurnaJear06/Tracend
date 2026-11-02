@@ -60,11 +60,40 @@ commit() { # message  (commits everything with the next day's date)
 tag() { git -C "$repo" tag "$1" && git -C "$repo" push -q origin "$1"; }
 run() { bash "$repo/scripts/rollback-function.sh" "$@"; }
 
+# Knobs the tests change one at a time; write_files writes them out.
+foo_jwt=true
+foo_comment="first"
+foo_json=1
+foo_unimported=1
+write_config() {
+  mkdir -p "$repo/supabase"
+  cat >"$repo/supabase/config.toml" <<TOML
+[api]
+port = 54321
+
+# $foo_comment
+[functions.foo]
+verify_jwt = $foo_jwt
+
+[functions.bar]
+verify_jwt = true
+entrypoint = "./functions/bar/main.ts"
+
+[functions.baz]
+verify_jwt = true
+TOML
+}
+
 write_files() { # a-version inner-version foo-version bar-version
+  write_config
+  printf '{"v": %s}\n' "$foo_json" >"$fns/foo/data.json"
+  printf 'export const golden = %s;\n' "$foo_unimported" >"$fns/foo/legacy_harness.ts"
+  printf '{"golden": %s}\n' "$foo_unimported" >"$fns/foo/legacy_golden.json"
+  printf 'import "../_shared/b.ts";\nconsole.log(%s);\n' "$4" >"$fns/bar/main.ts"
   printf 'import { inner } from "./a_inner.ts";\nexport const a = %s;\n' "$1" >"$fns/_shared/a.ts"
   printf 'export const inner = %s;\n' "$2" >"$fns/_shared/a_inner.ts"
   printf 'export const b = 1;\n' >"$fns/_shared/b.ts"
-  printf 'import { a } from "../_shared/a.ts";\nimport "./helper.ts";\nconsole.log(%s);\n' "$3" >"$fns/foo/index.ts"
+  printf 'import { a } from "../_shared/a.ts";\nimport "./helper.ts";\nimport data from "./data.json" with { type: "json" };\nconsole.log(%s, data);\n' "$3" >"$fns/foo/index.ts"
   printf 'export const helper = 1;\n' >"$fns/foo/helper.ts"
   printf 'import { b } from "../_shared/b.ts";\nconsole.log(%s);\n' "$4" >"$fns/bar/index.ts"
 }
@@ -96,6 +125,46 @@ expect_out "a dry run deploys nothing" "Dry run: nothing will be deployed." run 
 if [ "$(git -C "$repo" worktree list | wc -l | tr -d ' ')" = "1" ]; then pass "a dry run leaves no worktree behind"; else fail "a dry run left a worktree"; fi
 if [ ! -e "$repo/.tooling" ]; then pass "a dry run creates no scratch directory"; else fail "a dry run created .tooling"; fi
 if run foo --dry-run | grep -q "bar/index.ts"; then fail "the diff must list only foo's bundle"; else pass "the diff lists only foo's bundle"; fi
+
+# 1b. Config-only changes: the function's own stanza counts (a verify_jwt regression can be
+# rolled back), comments and other functions' stanzas do not.
+foo_jwt=false
+write_files 1 2 2 3
+commit "foo verify_jwt flipped (config only)"
+expect_out "a config-only change to the function's stanza moves the target" \
+  "Rolling back foo to v2026.10.04-1000" run foo --dry-run
+expect_out "the diff names the config stanza" "config.toml#functions.foo" run foo --dry-run
+foo_jwt=true
+write_files 1 2 2 3
+commit "foo verify_jwt back"
+foo_comment="a different comment"
+write_files 1 2 2 3
+commit "comment-only config change"
+expect_out "a comment-only config change does not move the target" "Rolling back foo to v2026.10.02-1000" run foo --dry-run
+if run bar --dry-run | grep -q "functions.foo"; then fail "another function's stanza must not appear"; else pass "another function's stanza does not appear"; fi
+
+# 1c. Only what the entrypoint reaches is bundled: files in the folder that nothing imports do
+# not count, imported JSON does.
+foo_unimported=2
+write_files 1 2 2 3
+commit "unimported harness and golden data changed"
+expect_out "unimported files in the folder do not move the target" "Rolling back foo to v2026.10.02-1000" run foo --dry-run
+if run foo --dry-run | grep -q "legacy_"; then fail "unimported files must not appear in the diff"; else pass "unimported files do not appear in the diff"; fi
+foo_json=2
+write_files 1 2 2 3
+commit "imported JSON changed"
+expect_out "imported JSON counts as part of the bundle" "foo/data.json" run foo --dry-run
+foo_json=1
+write_files 1 2 2 3
+commit "imported JSON back"
+
+# 1d. A config entrypoint replaces index.ts as the seed: bar's index.ts is not reached, main.ts is.
+printf 'console.log("not bundled, %s");\n' "changed" >"$fns/bar/index.ts"
+commit "bar index.ts changed, but bar's entrypoint is main.ts"
+expect_out "a file that is not the configured entrypoint does not count" "Rolling back bar to v2026.10.03-1000" run bar --dry-run
+write_files 1 2 2 7
+commit "bar main.ts changed"
+expect_out "the configured entrypoint's files count" "bar/main.ts" run bar --dry-run
 
 # 2. A file that is not reachable from the function and a test file do not count as a change.
 printf 'export const unrelated = 1;\n' >"$fns/_shared/unrelated.ts"

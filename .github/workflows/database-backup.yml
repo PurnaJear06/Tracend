@@ -2,13 +2,11 @@ name: Database Backup
 
 # The one copy of the production backup. deploy.yml calls it before every migration, and
 # nightly-backup.yml runs it every night, so a quiet week still has a recent restore point.
-# Free Supabase has no daily backups of its own and its Storage files are in no dump.
+# Free Supabase has no daily backups of its own, and its Storage files are in no dump.
 #
-# `database`: dump roles, schema and data, restore them into a throwaway local Supabase, compare
-# privileges with the migrations, then store the encrypted dump in the private backups repository
-# (the newest 30). `photos` (nightly only): store the encrypted progress-photo bucket there too
-# (an empty bucket stores an archive with no files, so retention keeps advancing). Meal photos are
-# not backed up: the app deletes them about 7 days after they are taken.
+# Dump roles, schema and data, restore them into a throwaway local Supabase, compare privileges
+# with the migrations, then store the encrypted dump in the private backups repository (the newest
+# 30). Progress photos are not backed up here yet (docs/CI_CD_DEPLOYMENT.md, Backup contract).
 on:
   workflow_call:
     inputs:
@@ -16,11 +14,6 @@ on:
         description: Commit whose scripts and migrations run
         required: true
         type: string
-      photos:
-        description: Also back up the progress-photo bucket
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -248,53 +241,3 @@ jobs:
           bash scripts/restore-privileges.sh compare \
             "$RUNNER_TEMP/privileges-migrations.tsv" \
             "$RUNNER_TEMP/applied-migrations.txt"
-
-  photos:
-    name: Progress Photo Backup
-    # After the database job: both write the same backups repository.
-    needs: database
-    if: ${{ !cancelled() && inputs.photos }}
-    runs-on: ubuntu-latest
-    environment: production
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ inputs.sha }}
-
-      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
-        with:
-          version: "2.101.0"
-
-      # The download's own output is never shown: Storage names hold account IDs and this log
-      # is public. The script prints only counts and the archive's name.
-      - name: Download and encrypt the progress photos
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          BACKUP_ARCHIVE_PASSPHRASE: ${{ secrets.BACKUP_ARCHIVE_PASSPHRASE }}
-          SUPABASE_CLI: supabase
-        run: |
-          supabase link --project-ref qsfzzsjenopqqqhvpyaw
-          bash scripts/backup-progress-photos.sh "$RUNNER_TEMP/photo-backup"
-
-      - name: Store the encrypted photo backup in the private backups repository
-        env:
-          BACKUP_REPO: ${{ vars.BACKUP_REPO }}
-          BACKUP_REPO_DEPLOY_KEY: ${{ secrets.BACKUP_REPO_DEPLOY_KEY }}
-        run: |
-          shopt -s nullglob
-          files=("$RUNNER_TEMP"/photo-backup/photo-backup-*.tar.gz.enc)
-          test "${#files[@]}" -eq 1 || {
-            echo "::error::Expected exactly one photo backup archive."
-            exit 1
-          }
-          test -n "$BACKUP_REPO" && test -n "$BACKUP_REPO_DEPLOY_KEY" || {
-            echo "::error::The BACKUP_REPO variable and BACKUP_REPO_DEPLOY_KEY secret must be configured."
-            exit 1
-          }
-          for _ in 1 2 3; do
-            bash scripts/store-backup.sh "${files[0]}" && exit 0
-            sleep 60
-          done
-          exit 1

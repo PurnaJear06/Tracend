@@ -184,42 +184,29 @@ never be committed or uploaded unencrypted anywhere, and the backups repository 
 dump, integrity check, isolated restore drill, encryption (`scripts/encrypt-backup.sh`), storage
 in the backups repository, and the restored-privilege comparison. `deploy.yml` calls it with the
 merged commit before any migration. `nightly-backup.yml` (cron `17 19 * * *`, also
-`workflow_dispatch`, `main` only) calls it with `photos: true`, so a quiet week still has a restore
-point less than a day old. The nightly workflow has its own concurrency group, `nightly-backup`: sharing
+`workflow_dispatch`, `main` only) calls it, so a quiet week still has a restore point less than a
+day old. The nightly workflow has its own concurrency group, `nightly-backup`: sharing
 `production-deploy` would let a queued nightly replace a queued deploy. Instead the two check each
 other with `gh run list`: the nightly's first job skips the night (with a notice) when `deploy.yml`
-is running or queued, since a deploy takes its own backup, and the deploy's migration job waits up
-to 20 minutes for a running nightly backup before it migrates, then fails before changing
+or `hotfix.yml` is running or queued, since a deploy takes its own backup, and the migration job of
+each waits up to 20 minutes for a running nightly backup before it migrates, then fails before changing
 production (rerun it once the backup ends), so a dump is never taken across a migration. When a nightly
 run and a deploy reach the backups repository together, the loser's push is refused, so the store
 steps fetch again and retry up to three times. Both workflows pass
 `scripts/check-workflow-credentials.sh`: their triggers (`workflow_call`, `schedule`,
 `workflow_dispatch`, and a `workflow_run` limited to `main`) are not untrusted ones.
 
-### Progress photos
+### Progress photos are not backed up yet
 
-Storage object bytes are outside PostgreSQL logical dumps, so the nightly run's `photos` job backs
-up the private `progress-photos` bucket with `scripts/backup-progress-photos.sh`. The Supabase CLI
-reads the bucket with the project's own API keys, fetched through `SUPABASE_ACCESS_TOKEN`, so no
-service key is stored. The script counts the stored photos in the database first (an empty bucket skips
-the download but still stores an archive with no files, so retention keeps advancing and archives
-holding deleted photos age out), downloads the bucket, checks the number of files against that count, archives and
-encrypts it exactly as the database backup is, and names it `photo-backup-<stamp>.tar.gz.enc`.
-`store-backup.sh` keeps database and photo backups as two kinds, each pruned to the newest 30.
-Every night's archive is stored, not only a changed one, so a deleted account's photos leave the
-backups within 30 nights, as its database rows do. Neither the download's output nor any Storage
-path is printed: the paths hold account IDs and the run log is public.
-Meal photos are deliberately left out (the app deletes them about 7 days after capture), as are
-the short-lived `account-exports`.
-
-The private backups repository suits beta-sized photo sets. `store-backup.sh` refuses any file over
-90 MiB (GitHub rejects files over 100 MiB) and the photo job warns from 25 MiB, because 30 copies
-of a large archive would pass GitHub's 1 GB repository guideline. When that warning shows, move
-photo backups to Cloudflare R2 (already on the account; free tier 10 GB) with an access key as a
-GitHub secret; nothing else in the pipeline changes. Artifacts are not an option: they are
-downloadable by any signed-in GitHub user on a public repository.
-`scripts/test-backup-progress-photos.sh` covers the script (empty bucket, round trip, failed and
-short downloads, withheld output) with a stub CLI.
+Storage object bytes are outside PostgreSQL logical dumps, so the `progress-photos` bucket is in
+no backup (the database backups cover Storage metadata only). A photo backup into the private
+backups repository was built and dropped: its history is force-pushed but GitHub keeps old
+objects, so a deleted account's photos could not be guaranteed to leave within 30 nights. The
+follow-up is an encrypted photo backup (`scripts/encrypt-backup.sh`) to a store with lifecycle
+deletion: Cloudflare R2 with a 30-day lifecycle rule, in a bucket and with a bucket-scoped key
+that the owner creates and adds as GitHub secrets. Meal photos are deleted about 7 days after
+capture and `account-exports` are short-lived, so neither needs a backup. Artifacts are not an
+option: they are downloadable by any signed-in GitHub user on a public repository.
 
 Any backup, restore-drill or restored-privilege failure stops the deployment before production
 mutation.
@@ -312,8 +299,11 @@ Agents must not deploy manually unless GitHub Actions is unavailable or the owne
   previous **release tag** (`v…` from `deploy.yml`, `hf-v…` from `hotfix.yml`), not from a
   commit found through the function's folder history: on merge history that picks the pull
   request's own commit. The default target is the newest release tag whose bundle of that function
-  differs from `origin/main`'s: the function's folder plus every file it imports, followed through
-  relative imports into `_shared` (tests excluded). A release that changed only another function
+  differs from `origin/main`'s: the function's entrypoint (`index.ts`, or the entrypoint named in
+  `supabase/config.toml`) followed through relative imports into `_shared` (tests excluded; JSON
+  is included only when imported), `deno.json`, and the function's `[functions.<name>]` stanza of
+  `supabase/config.toml`, so a config-only regression such as `verify_jwt` can be rolled back.
+  Files in the folder that nothing imports (golden data, harnesses) are not part of the bundle. A release that changed only another function
   is skipped, and with no differing release the script refuses and asks for `--to`. `--to <tag>`
   picks a release, and refuses one with an identical bundle unless `--force`. `--list [function]`
   shows the recent tags and whether their code matches `origin/main`. The tag's whole `supabase/functions` tree is checked out in a temporary worktree, so

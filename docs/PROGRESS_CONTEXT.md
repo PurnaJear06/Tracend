@@ -535,11 +535,12 @@ longer names an amount. App only, needs a reinstall. See
   Store Connect key). A release build without Supabase settings says so instead of running the
   demo. Owner steps are in `docs/BETA_OPERATIONS.md` (not done yet: paid Apple team, App Store
   Connect record, widget App ID, upload key, demo account).
-- `nightly-backup.yml` backs up the database (restore-drilled) and the progress photos every night
-  into the private backups repository, through the same `database-backup.yml` that every deploy
-  calls. Meal photos are not backed up by design.
-- `scripts/rollback-function.sh` rolls an Edge Function back to the previous release tag with its
-  whole `supabase/functions` tree, and checks it live.
+- `nightly-backup.yml` backs up the database (restore-drilled) every night into the private
+  backups repository, through the same `database-backup.yml` that every deploy calls. Progress
+  photos are not backed up yet (follow-up: encrypted backup to Cloudflare R2 with a 30-day
+  lifecycle rule, bucket and key from the owner); meal photos are deleted after about 7 days.
+- `scripts/rollback-function.sh` rolls an Edge Function back to the newest release whose bundle of it
+  differs from main, with that release's whole `supabase/functions` tree, and checks it live.
 - Each checkout builds in its own folder. The device installer refuses an app bundle without its
   fonts and asset manifests, and CI checks the same on its iOS build.
 

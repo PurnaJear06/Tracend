@@ -1,12 +1,11 @@
 name: Nightly Backup
 
 # Backs up production every night, so a quiet week still has a recent restore point (deploy.yml
-# only backs up when something merges). Runs the same workflow as every deploy, plus the
-# progress photos. A failed run emails the repository owner. Start one by hand from
+# only backs up when something merges). Runs the same workflow as every deploy. A failed run emails the repository owner. Start one by hand from
 # Actions > Nightly Backup > Run workflow.
 #
-# It skips itself while a deploy is running or queued: a deploy takes its own backup before it
-# migrates. And deploy.yml waits for a running nightly backup before it migrates, so a dump is
+# It skips itself while a deploy or hotfix is running or queued: a deploy takes its own backup
+# before it migrates. And deploy.yml and hotfix.yml wait for a running nightly backup before they migrate, so a dump is
 # never taken across a migration. Neither shares the production-deploy concurrency group, because
 # a queued nightly would replace a queued deploy there.
 on:
@@ -23,7 +22,7 @@ permissions:
 
 jobs:
   guard:
-    name: Skip while a deploy runs
+    name: Skip while a deploy or hotfix runs
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -39,12 +38,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           busy=0
-          for status in queued in_progress waiting pending requested; do
-            count=$(gh run list --workflow deploy.yml --status "$status" --json databaseId --jq length)
-            busy=$((busy + count))
+          for workflow in deploy.yml hotfix.yml; do
+            for status in queued in_progress waiting pending requested; do
+              count=$(gh run list --workflow "$workflow" --status "$status" --json databaseId --jq length)
+              busy=$((busy + count))
+            done
           done
           if [ "$busy" -gt 0 ]; then
-            echo "::notice::A deploy is running or queued. It takes its own backup, so tonight's run is skipped."
+            echo "::notice::A deploy or hotfix is running or queued. It takes its own backup, so tonight's run is skipped."
             echo "deploying=true" >> "$GITHUB_OUTPUT"
           else
             echo "deploying=false" >> "$GITHUB_OUTPUT"
@@ -57,5 +58,4 @@ jobs:
     uses: ./.github/workflows/database-backup.yml
     with:
       sha: ${{ github.sha }}
-      photos: true
     secrets: inherit

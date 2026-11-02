@@ -48,9 +48,6 @@ jobs:
       - name: Backup storage script tests
         run: bash scripts/test-store-backup.sh
 
-      - name: Progress photo backup script tests
-        run: bash scripts/test-backup-progress-photos.sh
-
       - name: Restore privilege check script tests
         run: bash scripts/test-restore-privileges.sh
 

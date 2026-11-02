@@ -118,30 +118,6 @@ else
 fi
 if store "$r" "$f1" BACKUP_KEEP=0 >/dev/null 2>&1; then fail "BACKUP_KEEP=0 must fail"; else pass "BACKUP_KEEP=0 fails"; fi
 
-# 9b. Photo backups: kept and pruned apart from the database backups.
-make_photo_backup() { # stamp body
-  local file="$base/in/photo-backup-$1.tar.gz.enc"
-  printf 'Salted__%s' "$2" >"$file"
-  printf '%s' "$file"
-}
-r="$(new_remote photos)"
-store "$r" "$(make_backup 2026-10-05T010000 db)" BACKUP_KEEP=2 >/dev/null
-store "$r" "$(make_photo_backup 2026-10-05T020000 p1)" BACKUP_KEEP=2 >/dev/null
-expect_eq "a photo backup is stored next to the database backup" \
-  "database-backup-2026-10-05T010000.tar.gz.enc photo-backup-2026-10-05T020000.tar.gz.enc " "$(remote_backups "$r")"
-store "$r" "$(make_photo_backup 2026-10-06T020000 p2)" BACKUP_KEEP=2 >/dev/null
-store "$r" "$(make_photo_backup 2026-10-07T020000 p3)" BACKUP_KEEP=2 >/dev/null
-expect_eq "photo retention prunes only photo backups and keeps the database backup" \
-  "database-backup-2026-10-05T010000.tar.gz.enc photo-backup-2026-10-06T020000.tar.gz.enc photo-backup-2026-10-07T020000.tar.gz.enc " "$(remote_backups "$r")"
-store "$r" "$(make_backup 2026-10-08T010000 db2)" BACKUP_KEEP=2 >/dev/null
-store "$r" "$(make_backup 2026-10-09T010000 db3)" BACKUP_KEEP=2 >/dev/null
-expect_eq "database retention leaves the photo backups alone" \
-  "database-backup-2026-10-08T010000.tar.gz.enc database-backup-2026-10-09T010000.tar.gz.enc photo-backup-2026-10-06T020000.tar.gz.enc photo-backup-2026-10-07T020000.tar.gz.enc " "$(remote_backups "$r")"
-if store "$r" "$(make_photo_backup 2026-10-01T020000 old)" BACKUP_KEEP=2 >/dev/null 2>&1; then fail "a photo backup older than the retained window must fail"; else pass "a photo backup older than the retained window fails"; fi
-big="$(make_photo_backup 2026-10-11T020000 "$(printf 'x%.0s' $(seq 1 200))")"
-if store "$r" "$big" BACKUP_MAX_BYTES=100 >/dev/null 2>&1; then fail "a file over BACKUP_MAX_BYTES must fail"; else pass "a file over BACKUP_MAX_BYTES fails"; fi
-expect_eq "the oversize file is not stored" "4" "$(git --git-dir="$r" ls-tree --name-only main backups/ | grep -c .)"
-
 # 10. Deploy key and host key handling, with a stub ssh so nothing touches the network: the key
 # file is private (mode 600), ends with a newline even when the secret lost it, and is never
 # printed; host keys are checked strictly against exactly GitHub's three published fingerprints

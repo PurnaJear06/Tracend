@@ -81,11 +81,14 @@ git fetch -q --tags origin main || die "cannot fetch origin"
 functions_tree() { git rev-parse --verify -q "$1:supabase/functions" || true; }
 
 # The files that make up one function's deployed bundle at a git ref, one "path blob" line each:
-# every non-test file in its folder, the functions-wide deno.json, and every file reached by
-# following relative imports (from, import, export ... from, import()) from those. Nothing is
+# its entrypoint (index.ts, or the entrypoint named in supabase/config.toml), the deno.json and
+# import map files, and every file reached by following relative imports (from, import,
+# export ... from, import(), new URL) from those, plus its [functions.<name>] stanza of
+# supabase/config.toml. Files in the folder that nothing imports are not part of it. Nothing is
 # checked out: files are read from the git objects.
 bundle_files() { # ref function
   python3 -I - "$repo_root" "$1" "$2" <<'BUNDLE_PY'
+import hashlib
 import posixpath
 import re
 import subprocess
@@ -93,7 +96,10 @@ import sys
 
 repo, ref, name = sys.argv[1:4]
 base = "supabase/functions"
-specifier = re.compile(r"""(?:\bfrom\s*|\bimport\s*\(?\s*)["'](\.{1,2}/[^"']+)["']""")
+specifier = re.compile(
+    r"""(?:\bfrom\s*|\bimport\s*\(?\s*|\bnew\s+URL\(\s*)["'](\.{1,2}/[^"']+)["']"""
+)
+header = re.compile(r"^\s*\[\[?([^\]]+)\]\]?\s*(?:#.*)?$")
 
 
 def git(*args):
@@ -106,7 +112,7 @@ def is_test(path):
 
 # One listing gives every path and blob at the ref; file contents come from one cat-file process.
 blobs = {}
-for line in git("ls-tree", "-r", ref, base).stdout.decode().splitlines():
+for line in git("ls-tree", "-r", ref, base, "supabase/config.toml").stdout.decode().splitlines():
     meta, path = line.split("\t", 1)
     blobs[path] = meta.split()[2]
 reader = subprocess.Popen(
@@ -123,9 +129,32 @@ def read(sha):
     return data.decode("utf-8", "replace")
 
 
-pending = [p for p in blobs if p.startswith(f"{base}/{name}/") and not is_test(p)]
-if f"{base}/deno.json" in blobs:
-    pending.append(f"{base}/deno.json")
+# The function's stanza of supabase/config.toml (comments and blank lines dropped): verify_jwt,
+# entrypoint, import_map and the like decide how it is deployed and who may call it.
+stanza = []
+if "supabase/config.toml" in blobs:
+    inside = False
+    for line in read(blobs["supabase/config.toml"]).splitlines():
+        match = header.match(line)
+        if match:
+            table = match.group(1).strip()
+            inside = table == f"functions.{name}" or table.startswith(f"functions.{name}.")
+        if inside:
+            text = line.split("#", 1)[0].strip() if not line.lstrip().startswith("[") else line.strip()
+            if text:
+                stanza.append(text)
+config_text = "\n".join(stanza)
+entrypoint = f"{base}/{name}/index.ts"
+seeds = [f"{base}/deno.json", f"{base}/{name}/deno.json"]
+for key, value in re.findall(r'^\s*(entrypoint|import_map)\s*=\s*"([^"]+)"', config_text, re.M):
+    target = posixpath.normpath(posixpath.join("supabase", value))
+    if key == "entrypoint":
+        entrypoint = target
+    else:
+        seeds.append(target)
+# Only what the entrypoint reaches is deployed: files in the folder that nothing imports (golden
+# data, harnesses) are not part of the bundle.
+pending = [entrypoint] + [p for p in seeds if p in blobs]
 seen = {}
 while pending:
     path = pending.pop()
@@ -143,6 +172,8 @@ reader.stdin.close()
 reader.wait()
 for path in sorted(seen):
     print(path, seen[path])
+if config_text:
+    print(f"supabase/config.toml#functions.{name}", hashlib.sha1(config_text.encode()).hexdigest())
 BUNDLE_PY
 }
 
