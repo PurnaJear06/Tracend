@@ -5,6 +5,8 @@ import 'package:tracend/features/coach/coach_labels.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/widgets/coach_reply_text.dart';
 import 'package:tracend/features/coach/widgets/reasoning_chain_card.dart';
+import 'package:tracend/features/feedback/feedback_rating.dart';
+import 'package:tracend/shared/beta_diagnostic.dart';
 import 'package:tracend/shared/widgets/evidence_accordion.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
@@ -32,11 +34,16 @@ class CoachMessageBubble extends StatelessWidget {
     required this.message,
     this.onSendFollowUp,
     this.onRetry,
+    this.feedback,
     super.key,
   });
 
   final CoachMessage message;
   final void Function(String prompt)? onSendFollowUp;
+
+  /// Rates the reply (useful, unclear, incorrect, unsafe). Null where there
+  /// is no backend, and then the reply shows no rating.
+  final FeedbackRatingRepository? feedback;
 
   /// Asks the question again. Offered on a data summary that ends the
   /// conversation.
@@ -53,6 +60,7 @@ class CoachMessageBubble extends StatelessWidget {
           message: message,
           onSendFollowUp: onSendFollowUp,
           onRetry: onRetry,
+          feedback: feedback,
         );
 }
 
@@ -116,11 +124,13 @@ class _CoachReply extends StatelessWidget {
     required this.message,
     required this.onSendFollowUp,
     required this.onRetry,
+    required this.feedback,
   });
 
   final CoachMessage message;
   final void Function(String prompt)? onSendFollowUp;
   final VoidCallback? onRetry;
+  final FeedbackRatingRepository? feedback;
 
   @override
   Widget build(BuildContext context) {
@@ -220,6 +230,14 @@ class _CoachReply extends StatelessWidget {
                     onPressed: () => onSendFollowUp?.call(prompt),
                   ),
               ],
+            ),
+          ],
+          if (feedback != null) ...[
+            const SizedBox(height: TracendSpacing.xs),
+            FeedbackRatingBar(
+              repository: feedback!,
+              subject: FeedbackSubject.coachReply,
+              subjectId: message.id,
             ),
           ],
           if (onRetry != null) ...[
@@ -382,11 +400,14 @@ class CoachDiagnosticLine extends StatelessWidget {
   final String text;
 
   @override
-  Widget build(BuildContext context) => SelectableText(
-    text,
-    style: Theme.of(
-      context,
-    ).textTheme.bodySmall?.copyWith(color: context.tracendColors.textSecondary),
+  Widget build(BuildContext context) => BetaDiagnosticMark(
+    code: betaDiagnosticCode(text),
+    child: SelectableText(
+      text,
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: context.tracendColors.textSecondary,
+      ),
+    ),
   );
 }
 

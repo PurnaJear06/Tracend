@@ -108,6 +108,16 @@ cutover runbook (checked 2026-11-01). One line per stream; the lead updates thes
   remote sign-out returns to the gate, reminders leave the phone on sign-out, body-fat target floor
   (5% men, 12% women or unknown), Progress and Meals form fixes. Handoff:
   [`onboarding.md`](./handoff/onboarding.md).
+- beta feedback and sheet guard (2026-11-02, branch `claude/feedback-and-sheet-guard`, migration
+  `20261102223417`, in review; new-user audit finding 2 and the sheet finding): **Account › Send
+  feedback** opens an email to the beta support address with the app version, the build and the
+  last beta diagnostic code (kept in memory only; no health values); the daily decision and every
+  Coach reply carry a one-tap Useful / Unclear / Incorrect / Unsafe row stored in
+  `feedback_ratings` (written by `submit_feedback_rating_v1`, exported, deleted with the account),
+  which is how the PRD §8 usefulness gate is measured. Sheets with typed or chosen input (meal,
+  check-in, measurement, pain, goal target, Coach fact, plan-change note, candidate review) ask
+  "Discard changes?" on a swipe, a scrim tap or the close button. Needs a reinstall; the
+  migration deploys with the merge. Handoff: [`ui-polish.md`](./handoff/ui-polish.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.

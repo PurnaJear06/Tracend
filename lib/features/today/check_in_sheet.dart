@@ -197,6 +197,18 @@ class _CheckInSheetState extends State<_CheckInSheet> {
     super.dispose();
   }
 
+  /// Answers that closing the sheet would lose. A check-in being sent is not
+  /// lost, so it is not asked about.
+  bool get _unsaved =>
+      !_saving &&
+      (_values.values.any((value) => value != 3) ||
+          _painReported ||
+          _pain != 0 ||
+          _area != null ||
+          _followUps.values.any((followUp) => followUp.choice != null) ||
+          !_available ||
+          _note.text.trim().isNotEmpty);
+
   /// The follow-ups that will be sent: an area the athlete reports again as
   /// today's pain is answered there, with its own red-flag question.
   Map<PainArea, _FollowUp> get _sentFollowUps => {
@@ -421,160 +433,167 @@ class _CheckInSheetState extends State<_CheckInSheet> {
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
     final textTheme = Theme.of(context).textTheme;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Flexible(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(
-              TracendSpacing.gutter,
-              TracendSpacing.xs,
-              TracendSpacing.gutter,
-              TracendSpacing.md,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Use what you know now. Missing Apple Health data does not '
-                  'block training.',
-                  style: textTheme.bodyMedium,
-                ),
-                const SizedBox(height: TracendSpacing.lg),
-                for (final scale in checkInScales) ...[
-                  _ScaleQuestion(
-                    scale: scale,
-                    value: _values[scale.key]!,
-                    onChanged: (value) =>
-                        setState(() => _values[scale.key] = value),
+    return TracendSheetUnsavedGuard(
+      listenable: _note,
+      isDirty: () => _unsaved,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                TracendSpacing.gutter,
+                TracendSpacing.xs,
+                TracendSpacing.gutter,
+                TracendSpacing.md,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Use what you know now. Missing Apple Health data does not '
+                    'block training.',
+                    style: textTheme.bodyMedium,
                   ),
                   const SizedBox(height: TracendSpacing.lg),
-                ],
-                for (final joint in widget.jointStates) ...[
-                  _FollowUpQuestion(
-                    joint: joint,
-                    followUp: _followUps.putIfAbsent(joint.area, _FollowUp.new),
-                    answeredBelow: _painReported && _area == joint.area,
-                    missing: _followMissing.contains(joint.area),
-                    onChanged: () =>
-                        setState(() => _followMissing.remove(joint.area)),
-                  ),
-                  const SizedBox(height: TracendSpacing.lg),
-                ],
-                _PainQuestion(
-                  reported: _painReported,
-                  severity: _pain,
-                  missing: _painMissing,
-                  area: _area,
-                  areaMissing: _areaMissing,
-                  pattern: _pattern,
-                  flags: _flags,
-                  noneOfThese: _noneOfThese,
-                  flagsMissing: _flagsMissing,
-                  onReported: (reported) => setState(() {
-                    _painReported = reported;
-                    _painMissing = false;
-                    _areaMissing = false;
-                    _flagsMissing = false;
-                    if (!reported) {
-                      _pain = 0;
-                      _area = null;
-                      _pattern = null;
-                      _flags.clear();
+                  for (final scale in checkInScales) ...[
+                    _ScaleQuestion(
+                      scale: scale,
+                      value: _values[scale.key]!,
+                      onChanged: (value) =>
+                          setState(() => _values[scale.key] = value),
+                    ),
+                    const SizedBox(height: TracendSpacing.lg),
+                  ],
+                  for (final joint in widget.jointStates) ...[
+                    _FollowUpQuestion(
+                      joint: joint,
+                      followUp: _followUps.putIfAbsent(
+                        joint.area,
+                        _FollowUp.new,
+                      ),
+                      answeredBelow: _painReported && _area == joint.area,
+                      missing: _followMissing.contains(joint.area),
+                      onChanged: () =>
+                          setState(() => _followMissing.remove(joint.area)),
+                    ),
+                    const SizedBox(height: TracendSpacing.lg),
+                  ],
+                  _PainQuestion(
+                    reported: _painReported,
+                    severity: _pain,
+                    missing: _painMissing,
+                    area: _area,
+                    areaMissing: _areaMissing,
+                    pattern: _pattern,
+                    flags: _flags,
+                    noneOfThese: _noneOfThese,
+                    flagsMissing: _flagsMissing,
+                    onReported: (reported) => setState(() {
+                      _painReported = reported;
+                      _painMissing = false;
+                      _areaMissing = false;
+                      _flagsMissing = false;
+                      if (!reported) {
+                        _pain = 0;
+                        _area = null;
+                        _pattern = null;
+                        _flags.clear();
+                        _noneOfThese = false;
+                      }
+                    }),
+                    onSeverity: (value) => setState(() {
+                      _pain = value;
+                      _painMissing = false;
+                    }),
+                    onArea: (area) => setState(() {
+                      _area = area;
+                      _areaMissing = false;
+                      // Only the questions this area asks stay answered.
+                      _flags.retainWhere(redFlagCodesFor(area).contains);
+                    }),
+                    onPattern: (pattern) => setState(() => _pattern = pattern),
+                    onFlag: (code) => setState(() {
+                      if (!_flags.remove(code)) _flags.add(code);
                       _noneOfThese = false;
-                    }
-                  }),
-                  onSeverity: (value) => setState(() {
-                    _pain = value;
-                    _painMissing = false;
-                  }),
-                  onArea: (area) => setState(() {
-                    _area = area;
-                    _areaMissing = false;
-                    // Only the questions this area asks stay answered.
-                    _flags.retainWhere(redFlagCodesFor(area).contains);
-                  }),
-                  onPattern: (pattern) => setState(() => _pattern = pattern),
-                  onFlag: (code) => setState(() {
-                    if (!_flags.remove(code)) _flags.add(code);
-                    _noneOfThese = false;
-                    _flagsMissing = false;
-                  }),
-                  onNone: () => setState(() {
-                    _noneOfThese = !_noneOfThese;
-                    if (_noneOfThese) _flags.clear();
-                    _flagsMissing = false;
-                  }),
-                ),
-                const SizedBox(height: TracendSpacing.lg),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: colors.surface,
-                    borderRadius: BorderRadius.circular(TracendRadii.card),
+                      _flagsMissing = false;
+                    }),
+                    onNone: () => setState(() {
+                      _noneOfThese = !_noneOfThese;
+                      if (_noneOfThese) _flags.clear();
+                      _flagsMissing = false;
+                    }),
                   ),
-                  child: SwitchListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: TracendSpacing.md,
+                  const SizedBox(height: TracendSpacing.lg),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colors.surface,
+                      borderRadius: BorderRadius.circular(TracendRadii.card),
                     ),
-                    title: Text(
-                      'Available to train today',
-                      style: textTheme.titleSmall,
+                    child: SwitchListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: TracendSpacing.md,
+                      ),
+                      title: Text(
+                        'Available to train today',
+                        style: textTheme.titleSmall,
+                      ),
+                      value: _available,
+                      onChanged: (value) {
+                        TracendHaptics.light();
+                        setState(() => _available = value);
+                      },
                     ),
-                    value: _available,
-                    onChanged: (value) {
-                      TracendHaptics.light();
-                      setState(() => _available = value);
-                    },
                   ),
-                ),
-                const SizedBox(height: TracendSpacing.lg),
-                TextField(
-                  controller: _note,
-                  maxLength: _noteLimit,
-                  minLines: 2,
-                  maxLines: 5,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(
-                    labelText: 'Note (optional)',
-                  ),
-                  buildCounter:
-                      (
-                        context, {
-                        required currentLength,
-                        required isFocused,
-                        maxLength,
-                      }) => currentLength < _counterFrom
-                      ? null
-                      : Text(
-                          '${_noteLimit - currentLength} characters left',
-                          style: textTheme.bodySmall?.copyWith(
-                            color: colors.textSecondary,
+                  const SizedBox(height: TracendSpacing.lg),
+                  TextField(
+                    controller: _note,
+                    maxLength: _noteLimit,
+                    minLines: 2,
+                    maxLines: 5,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: const InputDecoration(
+                      labelText: 'Note (optional)',
+                    ),
+                    buildCounter:
+                        (
+                          context, {
+                          required currentLength,
+                          required isFocused,
+                          maxLength,
+                        }) => currentLength < _counterFrom
+                        ? null
+                        : Text(
+                            '${_noteLimit - currentLength} characters left',
+                            style: textTheme.bodySmall?.copyWith(
+                              color: colors.textSecondary,
+                            ),
                           ),
-                        ),
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border(top: BorderSide(color: colors.borderHairline)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              TracendSpacing.gutter,
-              TracendSpacing.sm,
-              TracendSpacing.gutter,
-              0,
+          DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: colors.borderHairline)),
             ),
-            child: FilledButton(
-              onPressed: _saving ? null : _save,
-              child: Text(_saving ? 'Saving…' : 'Save check-in'),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                TracendSpacing.gutter,
+                TracendSpacing.sm,
+                TracendSpacing.gutter,
+                0,
+              ),
+              child: FilledButton(
+                onPressed: _saving ? null : _save,
+                child: Text(_saving ? 'Saving…' : 'Save check-in'),
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

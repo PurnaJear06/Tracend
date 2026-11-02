@@ -22,6 +22,7 @@ import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/feedback/feedback_mail.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/health/health_status_card.dart';
@@ -55,6 +56,8 @@ class AccountScreen extends StatefulWidget {
     this.screening,
     this.aiConsent,
     this.widgetPublisher,
+    this.mailLauncher = launchMail,
+    this.versionReader = readAppVersion,
     super.key,
   });
 
@@ -84,6 +87,12 @@ class AccountScreen extends StatefulWidget {
   /// Owns the Lock Screen widget choice. Null where there are no widgets to
   /// set up, and then the Widgets section does not show.
   final TodayWidgetPublisher? widgetPublisher;
+
+  /// Opens the mail composer for "Send feedback"; tests replace it.
+  final MailLauncher mailLauncher;
+
+  /// Reads the app version for the feedback email; tests replace it.
+  final AppVersionReader versionReader;
 
   @override
   State<AccountScreen> createState() => _AccountScreenState();
@@ -260,6 +269,19 @@ class _AccountScreenState extends State<AccountScreen> {
             ),
             const SectionLabel('Region'),
             RegionSettings(repository: widget.region),
+            const SectionLabel('Feedback'),
+            TracendGroupedList(
+              children: [
+                TracendListRow(
+                  title: 'Send feedback',
+                  subtitle: 'Report a problem or tell us what to improve',
+                  leading: const TracendRowIcon(
+                    icon: CupertinoIcons.chat_bubble_text,
+                  ),
+                  onTap: _sendFeedback,
+                ),
+              ],
+            ),
             const SectionLabel('Privacy'),
             TracendGroupedList(
               children: [
@@ -427,6 +449,12 @@ class _AccountScreenState extends State<AccountScreen> {
         )
         .toList();
   }
+
+  Future<void> _sendFeedback() => sendFeedback(
+    context,
+    launch: widget.mailLauncher,
+    readVersion: widget.versionReader,
+  );
 
   Future<void> _openExport() => showTracendSheet<void>(
     context,

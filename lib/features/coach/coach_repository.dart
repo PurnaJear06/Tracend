@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/coach/coach_errors.dart';
+import 'package:tracend/features/feedback/feedback_rating.dart';
 import 'package:tracend/shared/shared_reads.dart';
 import 'package:uuid/uuid.dart';
 
@@ -307,7 +308,8 @@ class SupabaseCoachRepository
         CoachRepository,
         CoachChatRepository,
         CoachContextRepository,
-        CoachRawResponses {
+        CoachRawResponses,
+        FeedbackRatingRepository {
   SupabaseCoachRepository(this._client, {DateTime Function()? now})
     : _now = now ?? DateTime.now;
 
@@ -485,6 +487,64 @@ class SupabaseCoachRepository
     await _client.rpc(
       'delete_coach_thread',
       params: {'target_thread_id': threadId},
+    );
+  }
+
+  /// Ratings asked for in the same moment (a thread's replies build together)
+  /// are read with one query.
+  Map<(FeedbackSubject, String), Completer<FeedbackRating?>>? _ratingBatch;
+
+  @override
+  Future<FeedbackRating?> loadRating(FeedbackSubject subject, String id) {
+    final batch = _ratingBatch ??= () {
+      scheduleMicrotask(_readRatingBatch);
+      return <(FeedbackSubject, String), Completer<FeedbackRating?>>{};
+    }();
+    return (batch[(subject, id)] ??= Completer<FeedbackRating?>()).future;
+  }
+
+  Future<void> _readRatingBatch() async {
+    final batch = _ratingBatch!;
+    _ratingBatch = null;
+    try {
+      final rows = await _client
+          .from('feedback_ratings')
+          .select('subject_type, subject_id, rating')
+          .inFilter('subject_id', [for (final key in batch.keys) key.$2]);
+      for (final MapEntry(:key, :value) in batch.entries) {
+        final row = rows
+            .where(
+              (row) =>
+                  row['subject_type'] == key.$1.wire &&
+                  row['subject_id'] == key.$2,
+            )
+            .firstOrNull;
+        value.complete(
+          FeedbackRating.values
+              .where((rating) => rating.name == row?['rating'])
+              .firstOrNull,
+        );
+      }
+    } catch (e) {
+      for (final completer in batch.values) {
+        completer.completeError(e);
+      }
+    }
+  }
+
+  @override
+  Future<void> rate(
+    FeedbackSubject subject,
+    String id,
+    FeedbackRating rating,
+  ) async {
+    await _client.rpc(
+      'submit_feedback_rating_v1',
+      params: {
+        'subject_type': subject.wire,
+        'subject_id': id,
+        'rating': rating.name,
+      },
     );
   }
 

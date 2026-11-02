@@ -385,7 +385,10 @@ on in Account (SECURITY_PRIVACY §10). Notifications themselves still reveal not
 
 ### 5.6 Feedback and auditability
 
-Users can rate a decision as useful, unclear, incorrect, or unsafe and add a note. Model runs,
+Users can rate a decision, and each Coach reply, as useful, unclear, incorrect, or unsafe with one
+tap (a rating is kept per decision or reply and can be changed). A note is not part of the rating:
+**Account › Send feedback** opens an email to the beta support address with the app version, the
+build and the last beta diagnostic code, and the athlete writes what they want to say. Model runs,
 feature snapshots, proposals, approvals, rejections, corrections, exports, and deletions produce
 audit events without storing secrets or unnecessary raw prompt content.
 
@@ -553,5 +556,8 @@ built yet:
 - Sign in with Apple (section 4.1);
 - links from the onboarding terms and privacy checkboxes to the hosted pages (section 4.1);
 - imperial display (the database stores the preference; the app shows metric only);
-- a screen to review a persistent change proposal after onboarding (section 4.8); and
-- decision feedback ratings (section 5.6).
+- a screen to review a persistent change proposal after onboarding (section 4.8).
+
+Built: one-tap ratings of the daily decision and of Coach replies, stored in `feedback_ratings`, and
+**Account › Send feedback** (section 5.6). The beta usefulness gate (section 8) is measured from
+those ratings.

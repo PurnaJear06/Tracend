@@ -14,6 +14,7 @@ import 'package:tracend/features/nutrition/widgets/meal_cards.dart';
 import 'package:tracend/features/nutrition/widgets/nutrition_insight_card.dart';
 import 'package:tracend/features/nutrition/widgets/nutrition_sheets.dart';
 import 'package:tracend/shared/app_lifecycle.dart';
+import 'package:tracend/shared/beta_diagnostic.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/formatting.dart';
@@ -848,11 +849,14 @@ class _NoticeCard extends StatelessWidget {
                 Text(message),
                 if (diagnostic != null) ...[
                   const SizedBox(height: TracendSpacing.xxs),
-                  SelectableText(
-                    diagnostic!,
-                    style: TracendTheme.dataUtility(
-                      colors,
-                    ).copyWith(fontSize: 12),
+                  BetaDiagnosticMark(
+                    code: betaDiagnosticCode(diagnostic!),
+                    child: SelectableText(
+                      diagnostic!,
+                      style: TracendTheme.dataUtility(
+                        colors,
+                      ).copyWith(fontSize: 12),
+                    ),
                   ),
                 ],
               ],

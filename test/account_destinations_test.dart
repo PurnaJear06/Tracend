@@ -47,6 +47,9 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.scrollUntilVisible(find.text('Consent history'), 250);
+    // Built is not on screen: bring the row clear of the bottom edge.
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -200));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Consent history'));
     await tester.pumpAndSettle();
     expect(find.text('Consent history'), findsOneWidget);

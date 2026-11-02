@@ -4,6 +4,7 @@ import 'package:tracend/features/goals/goal_target.dart';
 import 'package:tracend/features/goals/goal_target_repository.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
+import 'package:tracend/shared/widgets/tracend_sheet.dart';
 
 enum _Kind { weight, bodyFat, physique }
 
@@ -45,6 +46,7 @@ class _GoalTargetSheetState extends State<GoalTargetSheet> {
   DateTime? _date;
   bool _saving = false;
   String? _problem;
+  late final String _opened;
 
   @override
   void initState() {
@@ -63,7 +65,20 @@ class _GoalTargetSheetState extends State<GoalTargetSheet> {
     _note.text = initial.physiqueNote ?? '';
     _physique = initial.physique;
     _date = initial.date;
+    _opened = _entered();
   }
+
+  /// What the athlete has entered, as one comparable value: the sheet holds
+  /// unsaved input once this differs from how it opened.
+  String _entered() => [
+    _kind,
+    _weight.text.trim(),
+    _fatMin.text.trim(),
+    _fatMax.text.trim(),
+    _note.text.trim(),
+    _physique,
+    _date,
+  ].join('|');
 
   @override
   void dispose() {
@@ -176,75 +191,79 @@ class _GoalTargetSheetState extends State<GoalTargetSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context).textTheme;
     final date = _date;
-    return Form(
-      key: _form,
-      child: SingleChildScrollView(
-        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'This is the end point of your goal. Coach reads it to check '
-              'your progress and never changes it for you.',
-              style: theme.bodyMedium,
-            ),
-            const SizedBox(height: TracendSpacing.md),
-            TracendSegmentedControl<_Kind>(
-              segments: const [
-                (_Kind.weight, 'Weight'),
-                (_Kind.bodyFat, 'Body fat'),
-                (_Kind.physique, 'Look'),
-              ],
-              selected: _kind,
-              onChanged: (kind) => setState(() {
-                _kind = kind;
-                _problem = null;
-              }),
-            ),
-            const SizedBox(height: TracendSpacing.md),
-            ..._fields(),
-            const SizedBox(height: TracendSpacing.xs),
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton.icon(
-                    key: const ValueKey('goal-target-date'),
-                    onPressed: _pickDate,
-                    icon: const Icon(Icons.event_outlined, size: 18),
-                    label: Text(
-                      date == null
-                          ? 'Add a target date (optional)'
-                          : 'By ${date.day}/${date.month}/${date.year}',
+    return TracendSheetUnsavedGuard(
+      listenable: Listenable.merge([_weight, _fatMin, _fatMax, _note]),
+      isDirty: () => _entered() != _opened,
+      child: Form(
+        key: _form,
+        child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'This is the end point of your goal. Coach reads it to check '
+                'your progress and never changes it for you.',
+                style: theme.bodyMedium,
+              ),
+              const SizedBox(height: TracendSpacing.md),
+              TracendSegmentedControl<_Kind>(
+                segments: const [
+                  (_Kind.weight, 'Weight'),
+                  (_Kind.bodyFat, 'Body fat'),
+                  (_Kind.physique, 'Look'),
+                ],
+                selected: _kind,
+                onChanged: (kind) => setState(() {
+                  _kind = kind;
+                  _problem = null;
+                }),
+              ),
+              const SizedBox(height: TracendSpacing.md),
+              ..._fields(),
+              const SizedBox(height: TracendSpacing.xs),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton.icon(
+                      key: const ValueKey('goal-target-date'),
+                      onPressed: _pickDate,
+                      icon: const Icon(Icons.event_outlined, size: 18),
+                      label: Text(
+                        date == null
+                            ? 'Add a target date (optional)'
+                            : 'By ${date.day}/${date.month}/${date.year}',
+                      ),
                     ),
                   ),
-                ),
-                if (date != null)
-                  TextButton(
-                    onPressed: () => setState(() => _date = null),
-                    child: const Text('Remove'),
+                  if (date != null)
+                    TextButton(
+                      onPressed: () => setState(() => _date = null),
+                      child: const Text('Remove'),
+                    ),
+                ],
+              ),
+              if (_problem != null) ...[
+                const SizedBox(height: TracendSpacing.xs),
+                Text(
+                  _problem!,
+                  key: const ValueKey('goal-target-problem'),
+                  style: theme.bodyMedium!.copyWith(
+                    color: Theme.of(context).colorScheme.error,
                   ),
+                ),
               ],
-            ),
-            if (_problem != null) ...[
-              const SizedBox(height: TracendSpacing.xs),
-              Text(
-                _problem!,
-                key: const ValueKey('goal-target-problem'),
-                style: theme.bodyMedium!.copyWith(
-                  color: Theme.of(context).colorScheme.error,
+              const SizedBox(height: TracendSpacing.sm),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  key: const ValueKey('goal-target-save'),
+                  onPressed: _saving ? null : _save,
+                  child: Text(_saving ? 'Saving' : 'Save target'),
                 ),
               ),
             ],
-            const SizedBox(height: TracendSpacing.sm),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                key: const ValueKey('goal-target-save'),
-                onPressed: _saving ? null : _save,
-                child: Text(_saving ? 'Saving' : 'Save target'),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

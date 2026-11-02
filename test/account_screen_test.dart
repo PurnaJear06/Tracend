@@ -115,7 +115,10 @@ void main() {
       await tester.scrollUntilVisible(find.text(section), 200);
       expect(find.text(section), findsOneWidget);
     }
+    await tester.scrollUntilVisible(find.text('Rest timer alerts'), -200);
     expect(find.text('Rest timer alerts'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Feedback'), 200);
+    expect(find.text('Send feedback'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Delete account'), 200);
     expect(find.text('Export data'), findsOneWidget);
     expect(find.text('Consent history'), findsOneWidget);
@@ -212,7 +215,7 @@ void main() {
         expect(tester.takeException(), isNull);
         await tester.drag(
           find.byType(Scrollable).first,
-          const Offset(0, -4500),
+          const Offset(0, -6000),
         );
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);

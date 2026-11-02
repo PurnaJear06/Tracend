@@ -65,6 +65,7 @@ export const dataTables = [
   "coach_narrative_entries",
   "coach_session_summaries",
   "coach_context_snapshots",
+  "feedback_ratings",
   "data_exports",
   "deletion_requests",
 ] as const;

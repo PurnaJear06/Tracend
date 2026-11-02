@@ -1259,10 +1259,23 @@ Append-only acceptance, rejection, or revision request, one per proposal, with a
 proposal, creates the new plan and target versions, supersedes the previous versions, and writes an
 audit event.
 
-### `decision_feedback` (Not built)
+### `feedback_ratings`
 
-The logical design holds a user rating (`useful`, `unclear`, `incorrect`, or `unsafe`), optional
-score and note, and time. Unsafe feedback opens review but does not automatically change policy.
+The athlete's one-tap rating of a daily decision or a Coach reply (migration `20261102223417`).
+Columns: `id`, `user_id` (cascade with the account), `subject_type` (`daily_decision` or
+`coach_reply`), `subject_id` (`coach_decisions.id` or `coach_messages.id`; no foreign key, because
+the subject is in one of two tables and the function checks it), `rating` (`useful`, `unclear`,
+`incorrect` or `unsafe`) and `created_at` (when the current rating was given). One row per athlete
+and subject (`feedback_ratings_one_per_subject`): rating again replaces the rating. There is no
+score and no note; the beta gate in PRD §8 reads the usefulness share of these ratings. Unsafe
+ratings are read by the owner and do not change any policy by themselves.
+
+Row-level security is on and forced, with an own-rows select policy and a select grant only: the
+athlete cannot insert, update or delete. `submit_feedback_rating_v1(subject_type, subject_id,
+rating)` (security definer, empty search path, authenticated only) checks that the decision is the
+caller's own, or that the reply is an assistant message in one of their conversations, then upserts
+the row. It answers `{schema_version, subject_type, subject_id, rating}` (1.0). Errors: 42501 signed
+out; 22023 an unknown rating or subject type, or a subject that is not the caller's.
 
 ## 9. Feature Engine
 

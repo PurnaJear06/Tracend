@@ -6,6 +6,7 @@ import 'package:flutter/semantics.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/feedback/feedback_rating.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/coach/memory/coach_memory.dart';
 import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
@@ -1214,6 +1215,10 @@ class _CoachScreenState extends State<CoachScreen> {
             message: message,
             onSendFollowUp: (suggestion) => _send(suggestion),
             onRetry: message.isDataSummary ? _retryFor(index) : null,
+            feedback: switch (widget.repository) {
+              final FeedbackRatingRepository ratings => ratings,
+              _ => null,
+            },
           ),
           if (message.proposalId case final proposalId?
               when widget.proposals != null) ...[

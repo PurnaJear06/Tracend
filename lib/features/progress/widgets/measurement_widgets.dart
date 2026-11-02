@@ -4,6 +4,7 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
+import 'package:tracend/shared/widgets/tracend_sheet.dart';
 
 /// The latest weigh-ins as one grouped list. Each row shows the change from
 /// the weigh-in before it, a plain difference of two confirmed values.
@@ -181,82 +182,86 @@ class _MeasurementEntrySheetState extends State<MeasurementEntrySheet> {
   /// Shown in a sheet titled "Record measurement" with `scrollable: false`:
   /// the form brings its own scroll view so a drag dismisses the keyboard.
   @override
-  Widget build(BuildContext context) => Form(
-    key: form,
-    child: SingleChildScrollView(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Only weight is required. Weigh in at the same time of day, '
-            'ideally in the morning, for the clearest trend.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: TracendSpacing.md),
-          ...[
-            'Weight *',
-            'Waist',
-            'Chest',
-            'Hip',
-            'Arm',
-            'Thigh',
-          ].asMap().entries.map(
-            (e) => Padding(
-              padding: const EdgeInsets.only(bottom: TracendSpacing.xs),
-              child: TextFormField(
-                controller: fields[e.key],
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
+  Widget build(BuildContext context) => TracendSheetUnsavedGuard(
+    listenable: Listenable.merge(fields),
+    isDirty: () => fields.any((field) => field.text.trim().isNotEmpty),
+    child: Form(
+      key: form,
+      child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Only weight is required. Weigh in at the same time of day, '
+              'ideally in the morning, for the clearest trend.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: TracendSpacing.md),
+            ...[
+              'Weight *',
+              'Waist',
+              'Chest',
+              'Hip',
+              'Arm',
+              'Thigh',
+            ].asMap().entries.map(
+              (e) => Padding(
+                padding: const EdgeInsets.only(bottom: TracendSpacing.xs),
+                child: TextFormField(
+                  controller: fields[e.key],
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  textInputAction: e.key == 5
+                      ? TextInputAction.done
+                      : TextInputAction.next,
+                  decoration: InputDecoration(
+                    labelText: e.value,
+                    suffixText: e.key == 0 ? 'kg' : 'cm',
+                  ),
+                  validator: (v) {
+                    if (e.key == 0 && n(0) == null) {
+                      return 'Enter a valid weight';
+                    }
+                    if (v!.isEmpty) return null;
+                    final value = n(e.key);
+                    if (value == null) return 'Enter a valid number';
+                    final (low, high) = measurementRanges[e.key];
+                    if (value < low || value > high) {
+                      return 'Between ${low.round()} and ${high.round()} '
+                          '${e.key == 0 ? 'kg' : 'cm'}';
+                    }
+                    return null;
+                  },
                 ),
-                textInputAction: e.key == 5
-                    ? TextInputAction.done
-                    : TextInputAction.next,
-                decoration: InputDecoration(
-                  labelText: e.value,
-                  suffixText: e.key == 0 ? 'kg' : 'cm',
-                ),
-                validator: (v) {
-                  if (e.key == 0 && n(0) == null) {
-                    return 'Enter a valid weight';
-                  }
-                  if (v!.isEmpty) return null;
-                  final value = n(e.key);
-                  if (value == null) return 'Enter a valid number';
-                  final (low, high) = measurementRanges[e.key];
-                  if (value < low || value > high) {
-                    return 'Between ${low.round()} and ${high.round()} '
-                        '${e.key == 0 ? 'kg' : 'cm'}';
-                  }
-                  return null;
-                },
               ),
             ),
-          ),
-          const SizedBox(height: TracendSpacing.xs),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: () {
-                FocusScope.of(context).unfocus();
-                if (!form.currentState!.validate()) return;
-                Navigator.pop(
-                  context,
-                  BodyMeasurement(
-                    date: DateTime.now(),
-                    weightKg: n(0)!,
-                    waistCm: n(1),
-                    chestCm: n(2),
-                    hipCm: n(3),
-                    armCm: n(4),
-                    thighCm: n(5),
-                  ),
-                );
-              },
-              child: const Text('Save measurement'),
+            const SizedBox(height: TracendSpacing.xs),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () {
+                  FocusScope.of(context).unfocus();
+                  if (!form.currentState!.validate()) return;
+                  Navigator.pop(
+                    context,
+                    BodyMeasurement(
+                      date: DateTime.now(),
+                      weightKg: n(0)!,
+                      waistCm: n(1),
+                      chestCm: n(2),
+                      hipCm: n(3),
+                      armCm: n(4),
+                      thighCm: n(5),
+                    ),
+                  );
+                },
+                child: const Text('Save measurement'),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
   );

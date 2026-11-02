@@ -12,6 +12,7 @@ import 'package:tracend/features/account/privacy_export_repository.dart';
 import 'package:tracend/features/account/region_repository.dart';
 import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/feedback/feedback_rating.dart';
 import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_repository.dart';
@@ -1258,6 +1259,10 @@ class _TodayScreenState extends State<TodayScreen> {
                   targets: _targets,
                   meals: _meals,
                   latestDecision: _latestDecision,
+                  feedback: switch (widget.coach) {
+                    final FeedbackRatingRepository ratings => ratings,
+                    _ => null,
+                  },
                   aiAllowed: _aiAllowed,
                   healthHistory: _healthHistory,
                   syncing: _syncing,
@@ -1449,6 +1454,7 @@ class _BriefContent extends StatelessWidget {
     required this.targets,
     required this.meals,
     required this.latestDecision,
+    required this.feedback,
     required this.aiAllowed,
     required this.healthHistory,
     required this.syncing,
@@ -1477,6 +1483,9 @@ class _BriefContent extends StatelessWidget {
   final Future<NutritionTargets?> targets;
   final Future<TodayMeals> meals;
   final Future<CoachDecision?> latestDecision;
+
+  /// Rates the daily decision; null where there is no backend.
+  final FeedbackRatingRepository? feedback;
   final bool aiAllowed;
   final Future<HealthHistory> healthHistory;
   final bool syncing;
@@ -1513,6 +1522,7 @@ class _BriefContent extends StatelessWidget {
     builder: (context, snapshot) => TodaySessionCard(
       brief: brief,
       decision: snapshot.data,
+      feedback: feedback,
       aiAllowed: aiAllowed,
       onOpen: onOpenWorkout,
       dayAdjustment: dayAdjustment,

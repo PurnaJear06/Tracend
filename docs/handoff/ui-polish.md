@@ -28,6 +28,29 @@ captions ("no AI estimate", "R² 0.43", "display-only, no detail destination yet
 | P5 | Coach: one "How I got this" drawer for provider, evidence ids, and missing keys (friendly labels); beta diagnostic kept inside it; fix the ISO date in the context card | Queued |
 | P6 | Account and onboarding: grouped lists, Appearance out of Connections, cost to 2 decimals, notice versions as dates, wire or remove the no-op Edit button | Queued (the onboarding items, including the "mock provider" copy, are rebuilt in onboarding PR 3; see [`onboarding.md`](./onboarding.md)) |
 
+## Beta feedback and the sheet guard (2026-11-02, branch `claude/feedback-and-sheet-guard`)
+
+- **Send feedback** (`lib/features/feedback/feedback_mail.dart`): Account row `Send feedback` opens
+  a `mailto:` to `supportEmail` (the address the too-large-export message already named; the
+  site's `CONTACT_EMAIL` is a separate, owner-set value) with the version and build from
+  `package_info_plus` (now a direct dependency, already in the lock file through Sentry) and
+  `LatestBetaDiagnostic.code`. The code is the first segment of the diagnostic line that was shown
+  last (`BetaDiagnosticMark` wraps the three places a diagnostic is drawn); it lives in memory only.
+  With no mail app (`launchUrl` false) a sheet shows the address as selectable text and Copy.
+- **Ratings** (`feedback_rating.dart`): `FeedbackRatingBar` under the Today coach note (decision id)
+  and under every assistant Coach message (message id). `SupabaseCoachRepository` implements
+  `FeedbackRatingRepository` (the same optional-interface pattern as `CoachRawResponses`), so the
+  controls do not show on the fixture repository. Existing ratings are read with one batched query
+  per build pass. A rating of a reply the server never stored (a random id) fails with the honest
+  message. Reading `feedback_ratings` for the beta gate is an owner SQL query; there is no screen.
+- **Sheet guard** (`tracend_sheet.dart`): `TracendSheetUnsavedGuard` inside a sheet body reports
+  unsaved input to the frame. While unsaved, `PopScope` turns the close button and scrim tap
+  (`maybePop`) into "Discard changes?", and a vertical drag recognizer closer to the touch than
+  the route's own wins the swipe and asks too (the route's swipe pops without asking, and a pop
+  cannot be vetoed). Not guarded on purpose: the password sheets (account deletion, export,
+  password change), which hold no work worth keeping.
+- Owner steps: confirm `tracend.train@gmail.com` is the address testers should write to.
+
 ## P1 notes
 
 - Goal colour reads `user_goals.goal_type` through the optional `ProgressGoalRepository` (the same

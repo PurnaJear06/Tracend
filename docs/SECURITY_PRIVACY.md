@@ -36,6 +36,9 @@ review. Tracend remains a working brand pending trademark and App Store clearanc
 - nutrition logs, meal photos, allergies, and dietary constraints;
 - body measurements, progress photos, and physique analyses;
 - goals, limitations, plan decisions, and coaching history;
+- ratings of daily decisions and Coach replies (`feedback_ratings`: which decision or reply and one
+  of four answers, no text and no health value; written only by `submit_feedback_rating_v1`, which
+  checks the subject is the caller's own);
 - the account's optional country (`user_accounts.country_code`; set only through
   `set_my_country_v1`, exported and deleted with the account; it picks the regional library sources
   inside the database and is not sent to an AI provider, which receives only the chunks chosen);
@@ -663,7 +666,8 @@ history.
   provenance, and timestamps. It includes the onboarding profile fields, `onboarding_generations`,
   `onboarding_questions`, `onboarding_screenings` (the pre-plan health check answers),
   `health_history_months`, `day_adjustments` (the athlete's readiness answers),
-  `pain_reports` (the athlete's pain checks),
+  `pain_reports` (the athlete's pain checks), `feedback_ratings` (the athlete's ratings of
+  decisions and Coach replies; they are deleted with the account by the foreign key),
   `ai_usage_events`, physique analyses and every
   set-timing column. `coach_facts` (what the athlete confirmed for Coach) and `coach_notes` (Coach's own
   notes) are included, and so are the Coach conversation (`coach_threads` and `coach_messages`,
@@ -690,7 +694,8 @@ history.
   whose media passes 32 MiB fails with the code `export_too_large` (recorded on the request) instead
   of running the function out of memory: the budget is counted page by page while the tables are
   read, the function answers 413 `export_too_large`, and the app says the data is too large to
-  prepare in the app (the app has no support address; it points to whoever invited the athlete).
+  prepare in the app (the app shows the beta support address, `supportEmail` in the app, and asks the
+  athlete to email from their account email).
   A table with omitted columns selects an explicit column list, so an omitted column such as a
   snapshot's `context` is never downloaded; a test fails when the list drifts from the migrations. Meal photos that retention is deleting, or that are already
   gone from Storage, are listed under `skipped_media`. A Deno test reads the migrations and fails
@@ -708,6 +713,18 @@ history.
 - A package permits three downloads through 60-second signed authorization. Daily retention deletes
   it after the limit or seven days and retries failures.
 - The research library is not exported: it holds no user data.
+
+### Feedback
+
+- **Account › Send feedback** opens the phone's mail composer to the beta support address. The
+  prefilled text holds the app version and build and the last beta diagnostic code the athlete was
+  shown (a failure code such as `HTTP 502`, kept in memory only, never stored or sent by the app
+  itself). It holds no health value, no email address and no account id; anything else in the email
+  is what the athlete types, and the athlete sends it from their own mail app. With no mail app set
+  up the app shows the address to copy.
+- Ratings of the daily decision and of Coach replies are written only by
+  `submit_feedback_rating_v1`, which refuses a decision or reply that is not the caller's. The
+  table is exported (`feedback_ratings`) and goes with the account on deletion.
 
 ### Deletion
 
