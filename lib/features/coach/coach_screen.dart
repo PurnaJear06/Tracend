@@ -20,6 +20,7 @@ import 'package:tracend/features/coach/widgets/coach_thinking_indicator.dart';
 import 'package:tracend/features/coach/widgets/fact_suggestion_chip.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/shared/app_lifecycle.dart';
+import 'package:tracend/shared/beta_diagnostic.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/coach_draft_requests.dart';
@@ -697,6 +698,10 @@ class _CoachScreenState extends State<CoachScreen> {
           await (chat as CoachRawResponses).loadLastRawResponse(),
         );
       }
+      final answerDiagnostic = answer.diagnostic;
+      if (answerDiagnostic != null) {
+        LatestBetaDiagnostic.note(betaDiagnosticText(answerDiagnostic));
+      }
       final elapsed = DateTime.now().difference(started);
       if (chat is SupabaseCoachRepository &&
           elapsed < const Duration(milliseconds: 1200)) {
@@ -755,6 +760,7 @@ class _CoachScreenState extends State<CoachScreen> {
     int replays,
   ) {
     final failure = coachChatFailure(error, now: DateTime.now());
+    LatestBetaDiagnostic.note(failure.betaDiagnostic);
     return (
       message: failure.message,
       diagnostic: failure.betaDiagnostic,

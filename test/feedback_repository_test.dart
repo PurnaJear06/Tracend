@@ -69,6 +69,51 @@ void main() {
     );
   });
 
+  test('a rating read once is not read again', () async {
+    final server = _Server();
+    final repository = SupabaseCoachRepository(server.client);
+
+    await Future.wait([
+      repository.loadRating(FeedbackSubject.dailyDecision, _decision),
+      repository.loadRating(FeedbackSubject.coachReply, _unrated),
+    ]);
+    final again = await Future.wait([
+      repository.loadRating(FeedbackSubject.dailyDecision, _decision),
+      repository.loadRating(FeedbackSubject.coachReply, _unrated),
+    ]);
+
+    expect(again, [FeedbackRating.unclear, null]);
+    expect(
+      server.requests.where(
+        (request) => request.url.path == '/rest/v1/feedback_ratings',
+      ),
+      hasLength(1),
+      reason: 'even a subject with no rating is remembered',
+    );
+  });
+
+  test('a rating just given is what is read next', () async {
+    final server = _Server();
+    final repository = SupabaseCoachRepository(server.client);
+
+    await repository.rate(
+      FeedbackSubject.coachReply,
+      _unrated,
+      FeedbackRating.useful,
+    );
+
+    expect(
+      await repository.loadRating(FeedbackSubject.coachReply, _unrated),
+      FeedbackRating.useful,
+    );
+    expect(
+      server.requests.where(
+        (request) => request.url.path == '/rest/v1/feedback_ratings',
+      ),
+      isEmpty,
+    );
+  });
+
   test('a rating is saved through the rating function only', () async {
     final server = _Server();
 

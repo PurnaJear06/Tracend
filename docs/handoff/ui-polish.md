@@ -34,15 +34,20 @@ captions ("no AI estimate", "R² 0.43", "display-only, no detail destination yet
   a `mailto:` to `supportEmail` (the address the too-large-export message already named; the
   site's `CONTACT_EMAIL` is a separate, owner-set value) with the version and build from
   `package_info_plus` (now a direct dependency, already in the lock file through Sentry) and
-  `LatestBetaDiagnostic.code`. The code is the first segment of the diagnostic line that was shown
-  last (`BetaDiagnosticMark` wraps the three places a diagnostic is drawn); it lives in memory only.
+  `LatestBetaDiagnostic.code`. The code is the first segment of the diagnostic of the last
+  failure produced (`LatestBetaDiagnostic.note`, called where a Coach turn fails or answers with a
+  data summary and where a meal photo fails; a Train load error, known only once drawn, uses
+  `BetaDiagnosticMark`); a line drawn again never replaces it. It lives in memory only.
   With no mail app (`launchUrl` false) a sheet shows the address as selectable text and Copy.
 - **Ratings** (`feedback_rating.dart`): `FeedbackRatingBar` under the Today coach note (decision id)
   and under every assistant Coach message (message id). `SupabaseCoachRepository` implements
   `FeedbackRatingRepository` (the same optional-interface pattern as `CoachRawResponses`), so the
   controls do not show on the fixture repository. Existing ratings are read with one batched query
   per build pass. A rating of a reply the server never stored (a random id) fails with the honest
-  message. Reading `feedback_ratings` for the beta gate is an owner SQL query; there is no screen.
+  message. Reading `feedback_ratings` for the beta gate is an owner SQL query (in DATA_MODEL, joined to the
+  subjects that still exist); there is no screen. Taps are ignored while a rating is saving, fetched
+  ratings are cached by id in the repository, and a message the app named itself (no id in the
+  response) shows no rating row.
 - **Sheet guard** (`tracend_sheet.dart`): `TracendSheetUnsavedGuard` inside a sheet body reports
   unsaved input to the frame. While unsaved, `PopScope` turns the close button and scrim tap
   (`maybePop`) into "Discard changes?", and a vertical drag recognizer closer to the touch than

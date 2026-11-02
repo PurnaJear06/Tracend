@@ -476,10 +476,12 @@ class _NutritionScreenState extends State<NutritionScreen> {
   void _photoFailed(MealPhotoFailure failure, StackTrace stackTrace) {
     logNonCritical(failure, 'Meal photo failed');
     unawaited(Sentry.captureException(failure, stackTrace: stackTrace));
+    final diagnostic = mealPhotoFailureDiagnostic(failure);
+    LatestBetaDiagnostic.note(diagnostic);
     if (mounted) {
       setState(() {
         _photoError = mealPhotoFailureMessage(failure);
-        _photoDiagnostic = mealPhotoFailureDiagnostic(failure);
+        _photoDiagnostic = diagnostic;
       });
     }
   }
@@ -849,14 +851,11 @@ class _NoticeCard extends StatelessWidget {
                 Text(message),
                 if (diagnostic != null) ...[
                   const SizedBox(height: TracendSpacing.xxs),
-                  BetaDiagnosticMark(
-                    code: betaDiagnosticCode(diagnostic!),
-                    child: SelectableText(
-                      diagnostic!,
-                      style: TracendTheme.dataUtility(
-                        colors,
-                      ).copyWith(fontSize: 12),
-                    ),
+                  SelectableText(
+                    diagnostic!,
+                    style: TracendTheme.dataUtility(
+                      colors,
+                    ).copyWith(fontSize: 12),
                   ),
                 ],
               ],

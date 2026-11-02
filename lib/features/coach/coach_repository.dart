@@ -194,6 +194,7 @@ class CoachMessage {
     this.diagnostic,
     this.nearBudgetLimit = false,
     this.proposalId,
+    this.stored = true,
   });
 
   /// Parses a stored `coach_messages` row or a coach-chat response message.
@@ -229,6 +230,7 @@ class CoachMessage {
           : null,
       nearBudgetLimit: row['budget_warning'] == true,
       proposalId: row['proposal_id'] as String?,
+      stored: row['id'] is String,
     );
   }
 
@@ -257,6 +259,10 @@ class CoachMessage {
   /// under the reply, live and when it is reloaded. Null for every other
   /// message.
   final String? proposalId;
+
+  /// False for a message the app named itself because the response carried no
+  /// id; there is no stored row to rate.
+  final bool stored;
 
   /// A labeled deterministic reply from the athlete's data, served when the
   /// model could not answer. Never the Coach AI's own answer.
@@ -490,12 +496,21 @@ class SupabaseCoachRepository
     );
   }
 
+  /// Ratings read or given, by subject, so a reply that builds again (a
+  /// thread reopened, a tab remounted) does not ask again. A null value is
+  /// "not rated".
+  final _ratings = <(FeedbackSubject, String), FeedbackRating?>{};
+
   /// Ratings asked for in the same moment (a thread's replies build together)
   /// are read with one query.
   Map<(FeedbackSubject, String), Completer<FeedbackRating?>>? _ratingBatch;
 
   @override
   Future<FeedbackRating?> loadRating(FeedbackSubject subject, String id) {
+    final known = _ratings[(subject, id)];
+    if (known != null || _ratings.containsKey((subject, id))) {
+      return Future.value(known);
+    }
     final batch = _ratingBatch ??= () {
       scheduleMicrotask(_readRatingBatch);
       return <(FeedbackSubject, String), Completer<FeedbackRating?>>{};
@@ -519,11 +534,11 @@ class SupabaseCoachRepository
                   row['subject_id'] == key.$2,
             )
             .firstOrNull;
-        value.complete(
-          FeedbackRating.values
-              .where((rating) => rating.name == row?['rating'])
-              .firstOrNull,
-        );
+        final rating = FeedbackRating.values
+            .where((rating) => rating.name == row?['rating'])
+            .firstOrNull;
+        _ratings.putIfAbsent(key, () => rating);
+        value.complete(_ratings[key]);
       }
     } catch (e) {
       for (final completer in batch.values) {
@@ -546,6 +561,7 @@ class SupabaseCoachRepository
         'rating': rating.name,
       },
     );
+    _ratings[(subject, id)] = rating;
   }
 
   @override

@@ -1277,6 +1277,23 @@ caller's own, or that the reply is an assistant message in one of their conversa
 the row. It answers `{schema_version, subject_type, subject_id, rating}` (1.0). Errors: 42501 signed
 out; 22023 an unknown rating or subject type, or a subject that is not the caller's.
 
+Deleting a Coach conversation deletes its replies but not the ratings of those replies: with no
+foreign key, a rating stays until the account is deleted. It holds only the reply's id and the
+verdict, no text. The owner's beta-gate query therefore joins to the subjects that still exist, so
+deleted replies and decisions do not count:
+
+```sql
+select r.subject_type, r.rating, count(*) as ratings
+from public.feedback_ratings r
+left join public.coach_decisions d
+  on r.subject_type = 'daily_decision' and d.id = r.subject_id
+left join public.coach_messages m
+  on r.subject_type = 'coach_reply' and m.id = r.subject_id
+where d.id is not null or m.id is not null
+group by r.subject_type, r.rating
+order by r.subject_type, r.rating;
+```
+
 ## 9. Feature Engine
 
 Deterministic scores computed in PostgreSQL. Formulas and citations are in

@@ -65,8 +65,11 @@ class _FeedbackRatingBarState extends State<FeedbackRatingBar> {
   FeedbackRating? _rating;
   bool _failed = false;
 
-  /// Taps are answered in order: a rating that is still being saved is not
-  /// overwritten by a late answer from the first read.
+  /// Taps are ignored while a rating is being saved, so the screen and the
+  /// server cannot end up on different answers.
+  bool _saving = false;
+
+  /// A tap before the first read is answered keeps its choice over the read.
   var _taps = 0;
 
   String get _noun => switch (widget.subject) {
@@ -106,8 +109,9 @@ class _FeedbackRatingBarState extends State<FeedbackRatingBar> {
 
   Future<void> _rate(FeedbackRating rating) async {
     final before = _rating;
-    if (before == rating) return;
-    final tap = ++_taps;
+    if (_saving || before == rating) return;
+    _taps++;
+    _saving = true;
     unawaited(TracendHaptics.selection());
     setState(() {
       _rating = rating;
@@ -117,12 +121,14 @@ class _FeedbackRatingBarState extends State<FeedbackRatingBar> {
       await widget.repository.rate(widget.subject, widget.subjectId, rating);
     } catch (e) {
       logNonCritical(e, 'rating not saved');
-      if (mounted && tap == _taps) {
+      if (mounted) {
         setState(() {
           _rating = before;
           _failed = true;
         });
       }
+    } finally {
+      _saving = false;
     }
   }
 

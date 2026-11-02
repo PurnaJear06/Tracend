@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_screen.dart';
+import 'package:tracend/shared/beta_diagnostic.dart';
 
 class _PhotoRepository extends FixtureNutritionRepository
     implements MealPhotoRepository {
@@ -133,6 +134,10 @@ void main() {
     expect(
       find.text('Beta diagnostic · analysis: 503 meal_analysis_unavailable'),
       findsOneWidget,
+    );
+    expect(
+      LatestBetaDiagnostic.code,
+      'analysis: 503 meal_analysis_unavailable',
     );
     expect(repository.analyzed, 1);
   });

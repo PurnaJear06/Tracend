@@ -215,15 +215,36 @@ void main() {
       expect(betaDiagnosticCode('Beta diagnostic: '), isNull);
     });
 
-    testWidgets('is remembered when a coach diagnostic is shown', (
+    test('is set when a failure produces a diagnostic', () {
+      LatestBetaDiagnostic.note('Beta diagnostic: HTTP 429 · busy');
+      expect(LatestBetaDiagnostic.code, 'HTTP 429');
+
+      LatestBetaDiagnostic.note(null);
+      LatestBetaDiagnostic.note('Beta diagnostic: ');
+      expect(LatestBetaDiagnostic.code, 'HTTP 429', reason: 'nothing to note');
+    });
+
+    testWidgets('a line drawn again never replaces a newer failure', (
       tester,
     ) async {
+      LatestBetaDiagnostic.note('Beta diagnostic: HTTP 502');
+
       await tester.pumpWidget(
         _app(const CoachDiagnosticLine('Beta diagnostic: HTTP 429 · busy')),
       );
 
-      expect(LatestBetaDiagnostic.code, 'HTTP 429');
       expect(find.text('Beta diagnostic: HTTP 429 · busy'), findsOneWidget);
+      expect(LatestBetaDiagnostic.code, 'HTTP 502');
+    });
+
+    testWidgets('a load error is remembered when its line first appears', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(const BetaDiagnosticMark(code: 'StateError', child: Text('x'))),
+      );
+
+      expect(LatestBetaDiagnostic.code, 'StateError');
     });
   });
 
@@ -334,6 +355,36 @@ void main() {
       expect(ratings.stored['d1'], FeedbackRating.unclear);
     });
 
+    testWidgets('ignores taps while a rating is being saved', (tester) async {
+      final ratings = FakeFeedbackRatings()..hold = Completer<void>();
+      await tester.pumpWidget(
+        _app(
+          FeedbackRatingBar(
+            repository: ratings,
+            subject: FeedbackSubject.coachReply,
+            subjectId: 'm1',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Unclear'));
+      await tester.pump();
+      await tester.tap(find.text('Unsafe'));
+      await tester.pump();
+      ratings.hold!.complete();
+      await tester.pumpAndSettle();
+
+      expect(ratings.saved, [
+        (FeedbackSubject.coachReply, 'm1', FeedbackRating.unclear),
+      ]);
+      expect(ratings.stored['m1'], FeedbackRating.unclear);
+
+      await tester.tap(find.text('Unsafe'));
+      await tester.pumpAndSettle();
+      expect(ratings.stored['m1'], FeedbackRating.unsafe);
+    });
+
     testWidgets('takes the choice back and says so when it did not save', (
       tester,
     ) async {
@@ -380,6 +431,28 @@ void main() {
     testWidgets('there is no rating row without a backend', (tester) async {
       await tester.pumpWidget(_app(CoachMessageBubble(message: _reply())));
 
+      expect(find.text('Useful'), findsNothing);
+    });
+
+    testWidgets('a message the app named itself is not rated', (tester) async {
+      await tester.pumpWidget(
+        _app(
+          CoachMessageBubble(
+            message: CoachMessage.fromJson(
+              {
+                'role': 'assistant',
+                'answer': 'Keep the plan.',
+                'created_at': '2026-11-02T08:00:00Z',
+              },
+              fallbackId: 'local-id',
+              fallbackCreatedAt: DateTime(2026, 11, 2),
+            ),
+            feedback: FakeFeedbackRatings(),
+          ),
+        ),
+      );
+
+      expect(find.text('Keep the plan.'), findsOneWidget);
       expect(find.text('Useful'), findsNothing);
     });
 

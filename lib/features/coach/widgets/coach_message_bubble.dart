@@ -6,7 +6,6 @@ import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/widgets/coach_reply_text.dart';
 import 'package:tracend/features/coach/widgets/reasoning_chain_card.dart';
 import 'package:tracend/features/feedback/feedback_rating.dart';
-import 'package:tracend/shared/beta_diagnostic.dart';
 import 'package:tracend/shared/widgets/evidence_accordion.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
@@ -232,7 +231,7 @@ class _CoachReply extends StatelessWidget {
               ],
             ),
           ],
-          if (feedback != null) ...[
+          if (feedback != null && message.stored) ...[
             const SizedBox(height: TracendSpacing.xs),
             FeedbackRatingBar(
               repository: feedback!,
@@ -400,14 +399,11 @@ class CoachDiagnosticLine extends StatelessWidget {
   final String text;
 
   @override
-  Widget build(BuildContext context) => BetaDiagnosticMark(
-    code: betaDiagnosticCode(text),
-    child: SelectableText(
-      text,
-      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-        color: context.tracendColors.textSecondary,
-      ),
-    ),
+  Widget build(BuildContext context) => SelectableText(
+    text,
+    style: Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: context.tracendColors.textSecondary),
   );
 }
 
