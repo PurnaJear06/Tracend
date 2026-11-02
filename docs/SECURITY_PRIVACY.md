@@ -633,7 +633,7 @@ Initial private-beta defaults:
 - Pro Plan database: Supabase daily backups with the plan's current seven-day availability, plus an
   independent pre-release logical export where permitted;
 - Storage objects: the private `progress-photos` bucket is backed up every night as an encrypted
-  archive in the private backups repository (newest 30, skipped while the bucket is empty); meal photos are
+  archive in the private backups repository (newest 30; an empty bucket still stores an empty archive, so old archives age out); meal photos are
   not, because they are deleted about 7 days after capture; database backups contain metadata but
   not Storage bytes; and
 - provider content: shortest available approved retention, documented per provider.

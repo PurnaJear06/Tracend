@@ -11,8 +11,8 @@ backup in the private `Tracend-backups` repository, the newest 30 of each:
 
 - `database-backup-<stamp>.tar.gz.enc`: roles, schema and data, restore-drilled into a throwaway
   database before it is stored. Every merge to `main` makes one too.
-- `photo-backup-<stamp>.tar.gz.enc`: the private `progress-photos` bucket. An empty bucket stores
-  nothing; otherwise every night adds one, so a deleted account's photos leave the backups within
+- `photo-backup-<stamp>.tar.gz.enc`: the private `progress-photos` bucket. Every night adds one (an empty
+  bucket adds an archive with no files), so a deleted account's photos leave the backups within
   30 nights, as its database rows do. Meal photos (`meal-images`) are not backed up: the app deletes them about 7 days after
   they are taken. `account-exports` holds short-lived export files, also not backed up.
 
@@ -129,7 +129,9 @@ Work through this list in order once the paid Apple Developer Program is active.
    - User Content: Photos or Videos (meal and progress photos); Other User Content (Coach
      messages, meals, check-ins).
    - Identifiers: User ID.
-   - Diagnostics: Crash Data, Performance Data (Sentry traces) and Other Diagnostic Data.
+   - Diagnostics: Crash Data, Performance Data (Sentry traces) and Other Diagnostic Data (Sentry
+     reports of handled errors, with error type and code only). `PrivacyInfo.xcprivacy` declares
+     the same types.
 6. **Set up the upload key (once).** App Store Connect > Users and Access > Integrations > App
    Store Connect API > Team Keys > generate a key with the Developer role. Note the Key ID and the
    Issuer ID shown on that page, and download the `.p8` file: Apple lets you download it once.

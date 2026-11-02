@@ -3,8 +3,9 @@
 #
 # Usage: scripts/backup-progress-photos.sh <output-directory>
 #
-# Writes <output-directory>/photo-backup-<UTC stamp>.tar.gz.enc and prints its name. Writes
-# nothing and says so when the bucket is empty. Meal photos (meal-images) are not backed up: the
+# Writes <output-directory>/photo-backup-<UTC stamp>.tar.gz.enc and prints its name. An empty
+# bucket gives an archive with no files, so retention keeps advancing and archives holding
+# deleted photos age out. Meal photos (meal-images) are not backed up: the
 # app deletes them about 7 days after they are taken. Every night's archive is stored, not only
 # a changed one, so a deleted account's photos leave the backups within the 30 retained nights.
 #
@@ -44,24 +45,26 @@ photo_count() {
   echo "${answer#photos:}"
 }
 
-before="$(photo_count)"
-if [ "$before" -eq 0 ]; then
-  echo "No progress photos to back up."
-  exit 0
-fi
-
 mkdir -p "$scratch/photos"
-if ! "$cli" storage cp --experimental --linked -r "ss:///$bucket" "$scratch/photos" >"$scratch/download.log" 2>&1; then
-  die "the download failed (its output is withheld: it names accounts)"
+before="$(photo_count)"
+if [ "$before" -gt 0 ]; then
+  if ! "$cli" storage cp --experimental --linked -r "ss:///$bucket" "$scratch/photos" >"$scratch/download.log" 2>&1; then
+    die "the download failed (its output is withheld: it names accounts)"
+  fi
+  after="$(photo_count)"
+  downloaded="$(find "$scratch/photos" -type f | wc -l | tr -d ' ')"
+  # Photos can be added or deleted while the download runs, so only a shortfall against the
+  # smaller of the two counts means the download missed some.
+  expected="$before"
+  [ "$after" -ge "$expected" ] || expected="$after"
+  [ "$downloaded" -ge "$expected" ] ||
+    die "downloaded $downloaded files but the bucket holds at least $expected"
+else
+  # An empty bucket still stores an archive with no files in it: the newest 30 nights are kept,
+  # so a night that stored nothing would leave the archives that hold a deleted account's
+  # photos in the backups for ever.
+  downloaded=0
 fi
-after="$(photo_count)"
-downloaded="$(find "$scratch/photos" -type f | wc -l | tr -d ' ')"
-# Photos can be added or deleted while the download runs, so only a shortfall against the
-# smaller of the two counts means the download missed some.
-expected="$before"
-[ "$after" -ge "$expected" ] || expected="$after"
-[ "$downloaded" -ge "$expected" ] ||
-  die "downloaded $downloaded files but the bucket holds at least $expected"
 
 stamp="$(date -u +%Y-%m-%dT%H%M%S)"
 name="photo-backup-${stamp}.tar.gz.enc"
@@ -73,5 +76,5 @@ size="$(wc -c <"$out_dir/$name" | tr -d ' ')"
 if [ "$size" -gt "$warn_bytes" ]; then
   echo "::warning::The photo backup is $size bytes. The private backups repository keeps 30 copies and rejects a file over 90 MiB: move photo backups to object storage before it gets there."
 fi
-echo "Backed up $downloaded progress photos (about $size bytes encrypted)."
+echo "Backed up $downloaded progress photo(s) (about $size bytes encrypted)."
 echo "$name"

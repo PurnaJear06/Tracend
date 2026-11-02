@@ -60,45 +60,62 @@ commit() { # message  (commits everything with the next day's date)
 tag() { git -C "$repo" tag "$1" && git -C "$repo" push -q origin "$1"; }
 run() { bash "$repo/scripts/rollback-function.sh" "$@"; }
 
-echo 'export const shared = 1' >"$fns/_shared/a.ts"
-echo 'foo one' >"$fns/foo/index.ts"
-echo 'bar one' >"$fns/bar/index.ts"
+write_files() { # a-version inner-version foo-version bar-version
+  printf 'import { inner } from "./a_inner.ts";\nexport const a = %s;\n' "$1" >"$fns/_shared/a.ts"
+  printf 'export const inner = %s;\n' "$2" >"$fns/_shared/a_inner.ts"
+  printf 'export const b = 1;\n' >"$fns/_shared/b.ts"
+  printf 'import { a } from "../_shared/a.ts";\nimport "./helper.ts";\nconsole.log(%s);\n' "$3" >"$fns/foo/index.ts"
+  printf 'export const helper = 1;\n' >"$fns/foo/helper.ts"
+  printf 'import { b } from "../_shared/b.ts";\nconsole.log(%s);\n' "$4" >"$fns/bar/index.ts"
+}
+
+write_files 1 1 1 1
+printf 'import { x } from "../_shared/a.ts";\n' >"$fns/foo/index_test.ts"
 commit "release one"
 tag v2026.10.02-1000
+# Release two changes foo's own code and, through _shared/a.ts's own import, what foo imports.
 mkdir -p "$fns/baz"
-echo 'export const shared = 2' >"$fns/_shared/a.ts"
-echo 'foo two' >"$fns/foo/index.ts"
-echo 'baz one' >"$fns/baz/index.ts"
+write_files 1 2 2 1
+echo 'baz' >"$fns/baz/index.ts"
 commit "release two"
 tag v2026.10.03-1000
+# Release three changes only bar.
+write_files 1 2 2 3
+commit "release three"
+tag v2026.10.04-1000
 
-# 1. Main's functions equal the newest release: the previous release is the target.
-expect_out "the default target skips a release with the same code as main" \
+# 1. A release that changed only another function is skipped: foo's code is the same in releases
+# three and two as on main, so the target is release one. bar changed in release three.
+expect_out "a release that changed only another function is skipped" \
   "Rolling back foo to v2026.10.02-1000" run foo --dry-run
-expect_out "the diff names the shared file that goes back too" "_shared/a.ts" run foo --dry-run
-expect_out "the diff summary names the function folders that differ" "  foo" run foo --dry-run
+expect_out "the target for the function that changed is the release before the change" \
+  "Rolling back bar to v2026.10.03-1000" run bar --dry-run
+expect_out "the bundle diff names the file reached through a transitive import" "_shared/a_inner.ts" run foo --dry-run
+expect_out "the bundle diff names the function's own file" "foo/index.ts" run foo --dry-run
 expect_out "a dry run deploys nothing" "Dry run: nothing will be deployed." run foo --dry-run
 if [ "$(git -C "$repo" worktree list | wc -l | tr -d ' ')" = "1" ]; then pass "a dry run leaves no worktree behind"; else fail "a dry run left a worktree"; fi
 if [ ! -e "$repo/.tooling" ]; then pass "a dry run creates no scratch directory"; else fail "a dry run created .tooling"; fi
+if run foo --dry-run | grep -q "bar/index.ts"; then fail "the diff must list only foo's bundle"; else pass "the diff lists only foo's bundle"; fi
 
-# 2. A merge that changed function code and was never tagged (a deploy that stopped): the newest
-# release is the target.
-echo 'foo three' >"$fns/foo/index.ts"
-commit "bad change, deploy stopped before the tag"
+# 2. A file that is not reachable from the function and a test file do not count as a change.
+printf 'export const unrelated = 1;\n' >"$fns/_shared/unrelated.ts"
+printf 'import { x } from "../_shared/a.ts";\nexport const y = 2;\n' >"$fns/foo/index_test.ts"
+commit "unrelated shared file and a test change"
+expect_out "unreachable files and tests do not move the target" "Rolling back foo to v2026.10.02-1000" run foo --dry-run
+
+# 3. An untagged change on main (a deploy that stopped before the tag): the newest release that
+# differs is the target.
+write_files 1 2 9 3
+commit "bad change to foo, deploy stopped before the tag"
 expect_out "an untagged change on main rolls back to the newest release" \
-  "Rolling back foo to v2026.10.03-1000" run foo --dry-run
-
-# 3. A later release whose code equals main's is skipped, and a commit that changes nothing under
-# supabase/functions does not move the target.
-tag v2026.10.04-1000
-echo 'select 1' >"$repo/note.sql"
-commit "sql only"
-tag v2026.10.05-1000
-expect_out "releases with main's code are skipped, the newest different one is the target" \
-  "Rolling back foo to v2026.10.03-1000" run foo --dry-run
+  "Rolling back foo to v2026.10.04-1000" run foo --dry-run
 
 # 4. Explicit target, listing and refusals.
 expect_out "--to picks the named release" "Rolling back foo to v2026.10.02-1000" run foo --to v2026.10.02-1000 --dry-run
+write_files 1 2 2 3
+commit "foo back to its release code"
+expect_fail "--to refuses a release whose bundle is identical to main's" "would change nothing" run foo --to v2026.10.04-1000 --dry-run
+expect_out "--force allows an identical release" "Rolling back foo to v2026.10.04-1000" run foo --to v2026.10.04-1000 --force --dry-run
 expect_fail "--to refuses a name that is not a release tag" "is not a release tag" run foo --to main --dry-run
 expect_fail "--to refuses a tag that does not exist" "no tag named" run foo --to v2026.01.01-0000 --dry-run
 expect_fail "an unknown function is refused" "no function named nope" run nope --dry-run
@@ -106,11 +123,12 @@ expect_fail "a function that did not exist in the release is refused" "did not e
 expect_fail "a missing function name is refused" "Missing function name" run --dry-run
 expect_fail "a bad function name is refused" "invalid function name" run "../etc" --dry-run
 expect_out "--list shows the release tags" "v2026.10.03-1000" run --list
-expect_out "--list says which releases match main's code" "same code as origin/main" run --list
-expect_out "--list says which differ" "differs from origin/main" run --list
-expect_out "--help describes the options" "--dry-run" run --help
+expect_out "--list for a function says which releases match main's code" "same foo code as origin/main" run foo --list
+expect_out "--list for a function says which differ" "differs from origin/main" run foo --list
+expect_out "--list says when the function did not exist" "baz did not exist" run baz --list
+expect_out "--help describes the options" "--force" run --help
 
-# 5. When every release has main's code there is nothing to roll back to.
+# 5. When no release differs the script refuses and points to --to.
 for old in v2026.10.02-1000 v2026.10.03-1000; do
   git -C "$repo" tag -d "$old" >/dev/null
   git --git-dir="$base/origin.git" tag -d "$old" >/dev/null

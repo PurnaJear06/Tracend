@@ -4,10 +4,12 @@
 # Usage: rollback-function.sh <function_name> [--to <release-tag>] [--dry-run] [--list]
 #
 # A release is a tag that deploy.yml (v2026.10.31-1853) or hotfix.yml (hf-v2026.10.31-1853)
-# created after everything was live. The default target is the newest release tag whose
-# supabase/functions tree differs from origin/main's: rolling back to identical code would change
-# nothing. The tag's whole supabase/functions tree is checked out in a temporary worktree, so
-# the function and the shared code it imports (_shared) come from the same release. The function
+# created after everything was live. The default target is the newest release tag whose bundle of
+# this function differs from origin/main's: its own folder plus every file it imports, followed
+# through relative imports into _shared. A release that changed only another function is skipped,
+# because rolling back to identical code would change nothing. The tag's whole supabase/functions
+# tree is checked out in a temporary worktree, so the function and the shared code it imports
+# come from the same release. The function
 # is deployed from there with --use-api, then scripts/verify-live-function.sh compares what is
 # live with that tree. Your checkout is not touched.
 #
@@ -16,9 +18,12 @@
 # stay applied; they are additive, so older code keeps working against them.
 #
 # Options:
-#   --to <tag>      Roll back to this release tag instead of the default
+#   --to <tag>      Roll back to this release tag instead of the default. Refused when that
+#                   release's bundle of the function is identical to origin/main's, unless --force
+#   --force         Allow --to a release whose bundle of the function is identical
 #   -n, --dry-run   Print what would be deployed and a summary of the difference; deploy nothing
 #   -l, --list      List the recent release tags and whether their code matches origin/main
+#                   (the named function's bundle, or the whole tree without a name)
 #   -h, --help      Show this help
 #
 # Environment:
@@ -42,6 +47,7 @@ function_name=""
 target_tag=""
 dry_run=false
 list_only=false
+force=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --to)
@@ -50,6 +56,7 @@ while [[ $# -gt 0 ]]; do
       target_tag="$1"
       ;;
     -n | --dry-run) dry_run=true ;;
+    --force) force=true ;;
     -l | --list) list_only=true ;;
     -h | --help)
       usage
@@ -73,6 +80,81 @@ git fetch -q --tags origin main || die "cannot fetch origin"
 
 functions_tree() { git rev-parse --verify -q "$1:supabase/functions" || true; }
 
+# The files that make up one function's deployed bundle at a git ref, one "path blob" line each:
+# every non-test file in its folder, the functions-wide deno.json, and every file reached by
+# following relative imports (from, import, export ... from, import()) from those. Nothing is
+# checked out: files are read from the git objects.
+bundle_files() { # ref function
+  python3 -I - "$repo_root" "$1" "$2" <<'BUNDLE_PY'
+import posixpath
+import re
+import subprocess
+import sys
+
+repo, ref, name = sys.argv[1:4]
+base = "supabase/functions"
+specifier = re.compile(r"""(?:\bfrom\s*|\bimport\s*\(?\s*)["'](\.{1,2}/[^"']+)["']""")
+
+
+def git(*args):
+    return subprocess.run(["git", "-C", repo, *args], capture_output=True, check=False)
+
+
+def is_test(path):
+    return path.endswith("_test.ts")
+
+
+# One listing gives every path and blob at the ref; file contents come from one cat-file process.
+blobs = {}
+for line in git("ls-tree", "-r", ref, base).stdout.decode().splitlines():
+    meta, path = line.split("\t", 1)
+    blobs[path] = meta.split()[2]
+reader = subprocess.Popen(
+    ["git", "-C", repo, "cat-file", "--batch"], stdin=subprocess.PIPE, stdout=subprocess.PIPE
+)
+
+
+def read(sha):
+    reader.stdin.write(sha.encode() + b"\n")
+    reader.stdin.flush()
+    size = int(reader.stdout.readline().split()[2])
+    data = reader.stdout.read(size)
+    reader.stdout.read(1)
+    return data.decode("utf-8", "replace")
+
+
+pending = [p for p in blobs if p.startswith(f"{base}/{name}/") and not is_test(p)]
+if f"{base}/deno.json" in blobs:
+    pending.append(f"{base}/deno.json")
+seen = {}
+while pending:
+    path = pending.pop()
+    if path in seen:
+        continue
+    sha = blobs.get(path)
+    seen[path] = sha or "missing"
+    if not sha or not path.endswith((".ts", ".tsx", ".js", ".mjs")):
+        continue
+    for rel in specifier.findall(read(sha)):
+        target = posixpath.normpath(posixpath.join(posixpath.dirname(path), rel))
+        if target.startswith(base + "/") and not is_test(target):
+            pending.append(target)
+reader.stdin.close()
+reader.wait()
+for path in sorted(seen):
+    print(path, seen[path])
+BUNDLE_PY
+}
+
+bundle_digest() { # ref function
+  bundle_files "$1" "$2" | git hash-object --stdin
+}
+
+# Whether a function's folder exists at a ref.
+has_function() { # ref function
+  git cat-file -e "$1:supabase/functions/$2/index.ts" 2>/dev/null
+}
+
 main_tree="$(functions_tree refs/remotes/origin/main)"
 [[ -n "$main_tree" ]] || die "origin/main has no supabase/functions"
 
@@ -82,9 +164,20 @@ release_tags() {
 }
 
 if [[ "$list_only" == "true" ]]; then
+  if [[ -n "$function_name" ]]; then
+    main_digest="$(bundle_digest refs/remotes/origin/main "$function_name")"
+  fi
   release_tags | sed -n '1,10p' | while IFS= read -r tag; do
     marker="differs from origin/main"
-    [[ "$(functions_tree "refs/tags/$tag")" != "$main_tree" ]] || marker="same code as origin/main"
+    if [[ -n "$function_name" ]]; then
+      if ! has_function "refs/tags/$tag" "$function_name"; then
+        marker="$function_name did not exist"
+      elif [[ "$(bundle_digest "refs/tags/$tag" "$function_name")" == "$main_digest" ]]; then
+        marker="same $function_name code as origin/main"
+      fi
+    elif [[ "$(functions_tree "refs/tags/$tag")" == "$main_tree" ]]; then
+      marker="same code as origin/main"
+    fi
     printf '%s  %s  %s\n' "$tag" "$(git rev-parse --short "refs/tags/$tag^{commit}")" "$marker"
   done
   exit 0
@@ -96,38 +189,44 @@ fi
   exit 2
 }
 [[ "$function_name" =~ ^[a-z0-9-]+$ ]] || die "invalid function name: $function_name"
-git cat-file -e "refs/remotes/origin/main:supabase/functions/$function_name/index.ts" 2>/dev/null ||
-  die "no function named $function_name on origin/main"
+has_function refs/remotes/origin/main "$function_name" || die "no function named $function_name on origin/main"
+main_digest="$(bundle_digest refs/remotes/origin/main "$function_name")"
 
 if [[ -n "$target_tag" ]]; then
   [[ "$target_tag" =~ $tag_pattern ]] || die "$target_tag is not a release tag (v... or hf-v...)"
   git rev-parse --verify -q "refs/tags/$target_tag" >/dev/null || die "no tag named $target_tag"
+  has_function "refs/tags/$target_tag" "$function_name" || die "$function_name did not exist in $target_tag"
+  if [[ "$(bundle_digest "refs/tags/$target_tag" "$function_name")" == "$main_digest" && "$force" != "true" ]]; then
+    die "$target_tag has the same $function_name code as origin/main, so deploying it would change nothing. Use --force to deploy it anyway."
+  fi
 else
   while IFS= read -r tag; do
-    if [[ "$(functions_tree "refs/tags/$tag")" != "$main_tree" ]]; then
+    has_function "refs/tags/$tag" "$function_name" || continue
+    if [[ "$(bundle_digest "refs/tags/$tag" "$function_name")" != "$main_digest" ]]; then
       target_tag="$tag"
       break
     fi
   done < <(release_tags)
-  [[ -n "$target_tag" ]] || die "no release tag has different function code than origin/main; nothing to roll back to"
+  [[ -n "$target_tag" ]] ||
+    die "no release tag has different $function_name code than origin/main (its folder and the files it imports); nothing to roll back to. Name a release with --to <tag> (and --force if its code is identical)."
 fi
-
-git cat-file -e "refs/tags/$target_tag:supabase/functions/$function_name/index.ts" 2>/dev/null ||
-  die "$function_name did not exist in $target_tag"
 
 target_commit="$(git rev-parse --short "refs/tags/$target_tag^{commit}")"
 echo "Origin main: $(git rev-parse --short refs/remotes/origin/main)"
 echo "Rolling back $function_name to $target_tag ($target_commit, $(git log -1 --format=%cs "refs/tags/$target_tag^{commit}"))"
-echo "Its whole supabase/functions tree from that release is deployed: the function and _shared."
+echo "Its whole supabase/functions tree from that release is deployed: the function and the shared code it imports."
 
 if [[ "$dry_run" == "true" ]]; then
   echo ""
   echo "Dry run: nothing will be deployed."
-  echo "Changed between $target_tag and origin/main (rolling back reverts these):"
-  git diff --stat "refs/tags/$target_tag" refs/remotes/origin/main -- supabase/functions | sed 's/^/  /'
-  echo "Functions whose own folder differs:"
-  git diff --name-only "refs/tags/$target_tag" refs/remotes/origin/main -- supabase/functions |
-    awk -F/ 'NF >= 4 && $3 != "_shared" && $3 != "_tests" { print $3 }' | sort -u | sed 's/^/  /'
+  changed="$(diff <(bundle_files "refs/tags/$target_tag" "$function_name") <(bundle_files refs/remotes/origin/main "$function_name") |
+    sed -n 's/^[<>] \([^ ]*\) .*/\1/p' | sort -u)" || true
+  echo "Files of the $function_name bundle that differ between $target_tag and origin/main (rolling back reverts these):"
+  if [[ -n "$changed" ]]; then
+    printf '%s\n' "$changed" | sed 's/^/  /'
+  else
+    echo "  (none: the bundles are identical)"
+  fi
   echo "Run again without --dry-run to deploy $function_name from $target_tag."
   exit 0
 fi

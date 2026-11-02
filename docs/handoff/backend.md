@@ -484,9 +484,10 @@ unaffected until the next device or TestFlight build.
   permission text that names what is read and where it goes. `scripts/app-version.sh` counts to
   the newest `origin/main` commit the checkout contains. In release mode `Phase2Gate` shows "This
   build is missing its server settings" instead of the demo.
-- **Rollback.** `scripts/rollback-function.sh` redeploys the previous release tag's whole
-  `supabase/functions` tree for one function and verifies it live (`--dry-run`, `--list`, `--to`).
-  `hotfix.yml` never shared its logic and is unchanged.
+- **Rollback.** `scripts/rollback-function.sh` redeploys the newest release tag whose bundle of one function (its folder plus the files it
+  imports) differs from main, using that tag's whole `supabase/functions` tree, and verifies it live (`--dry-run`, `--list`, `--to`).
+  `hotfix.yml` never shared its logic and is unchanged. The nightly and deploy workflows check each
+  other (skip, and wait up to 20 minutes before migrating) instead of sharing a concurrency group.
 - **Nightly backups.** `nightly-backup.yml` and the reusable `database-backup.yml` (also called by
   `deploy.yml`) run the dump, restore drill, encryption and storage once, in one place, plus the
   `progress-photos` bucket (`scripts/backup-progress-photos.sh`, `encrypt-backup.sh`).

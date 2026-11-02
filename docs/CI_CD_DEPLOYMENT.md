@@ -185,8 +185,12 @@ dump, integrity check, isolated restore drill, encryption (`scripts/encrypt-back
 in the backups repository, and the restored-privilege comparison. `deploy.yml` calls it with the
 merged commit before any migration. `nightly-backup.yml` (cron `17 19 * * *`, also
 `workflow_dispatch`, `main` only) calls it with `photos: true`, so a quiet week still has a restore
-point less than a day old. The nightly workflow has its own concurrency group, `nightly-backup`:
-sharing `production-deploy` would let a queued nightly replace a queued deploy. When a nightly
+point less than a day old. The nightly workflow has its own concurrency group, `nightly-backup`: sharing
+`production-deploy` would let a queued nightly replace a queued deploy. Instead the two check each
+other with `gh run list`: the nightly's first job skips the night (with a notice) when `deploy.yml`
+is running or queued, since a deploy takes its own backup, and the deploy's migration job waits up
+to 20 minutes for a running nightly backup before it migrates, then fails before changing
+production (rerun it once the backup ends), so a dump is never taken across a migration. When a nightly
 run and a deploy reach the backups repository together, the loser's push is refused, so the store
 steps fetch again and retry up to three times. Both workflows pass
 `scripts/check-workflow-credentials.sh`: their triggers (`workflow_call`, `schedule`,
@@ -197,8 +201,9 @@ steps fetch again and retry up to three times. Both workflows pass
 Storage object bytes are outside PostgreSQL logical dumps, so the nightly run's `photos` job backs
 up the private `progress-photos` bucket with `scripts/backup-progress-photos.sh`. The Supabase CLI
 reads the bucket with the project's own API keys, fetched through `SUPABASE_ACCESS_TOKEN`, so no
-service key is stored. The script counts the stored photos in the database first (an empty bucket
-stores nothing), downloads the bucket, checks the number of files against that count, archives and
+service key is stored. The script counts the stored photos in the database first (an empty bucket skips
+the download but still stores an archive with no files, so retention keeps advancing and archives
+holding deleted photos age out), downloads the bucket, checks the number of files against that count, archives and
 encrypts it exactly as the database backup is, and names it `photo-backup-<stamp>.tar.gz.enc`.
 `store-backup.sh` keeps database and photo backups as two kinds, each pruned to the newest 30.
 Every night's archive is stored, not only a changed one, so a deleted account's photos leave the
@@ -306,9 +311,12 @@ Agents must not deploy manually unless GitHub Actions is unavailable or the owne
 - Edge Function rollback uses `scripts/rollback-function.sh <function>`. It deploys from the
   previous **release tag** (`v…` from `deploy.yml`, `hf-v…` from `hotfix.yml`), not from a
   commit found through the function's folder history: on merge history that picks the pull
-  request's own commit. The default target is the newest release tag whose `supabase/functions`
-  tree differs from `origin/main`'s, `--to <tag>` picks another, and `--list` shows the recent
-  tags. The tag's whole `supabase/functions` tree is checked out in a temporary worktree, so
+  request's own commit. The default target is the newest release tag whose bundle of that function
+  differs from `origin/main`'s: the function's folder plus every file it imports, followed through
+  relative imports into `_shared` (tests excluded). A release that changed only another function
+  is skipped, and with no differing release the script refuses and asks for `--to`. `--to <tag>`
+  picks a release, and refuses one with an identical bundle unless `--force`. `--list [function]`
+  shows the recent tags and whether their code matches `origin/main`. The tag's whole `supabase/functions` tree is checked out in a temporary worktree, so
   `_shared` goes back with the function and the rest of your checkout is untouched. The function is
   deployed from there with `scripts/deploy-function.sh` (`--use-api`, 5xx retries), then
   `scripts/verify-live-function.sh` compares what is live with that tree. `--dry-run` prints the

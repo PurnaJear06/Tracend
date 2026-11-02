@@ -82,6 +82,13 @@ expect_fail "an old commit behind the origin/main tip is refused" "is not the or
 git -C "$repo" pull -q --ff-only origin main
 
 expect_fail "a manual build number is refused" "TRACEND_BUILD_NUMBER is set" run TRACEND_BUILD_NUMBER=5
+expect_fail "a manual build name is refused" "TRACEND_BUILD_NAME is set" run TRACEND_BUILD_NAME=9.9.9
+printf 'TRACEND_BUILD_NUMBER=5\n' >>"$env_file"
+expect_fail "a build number set in .env is refused" "TRACEND_BUILD_NUMBER is set" run
+write_env https://example.supabase.co secret-publishable-key
+printf 'TRACEND_BUILD_NAME=9.9.9\n' >>"$env_file"
+expect_fail "a build name set in .env is refused" "TRACEND_BUILD_NAME is set" run
+write_env https://example.supabase.co secret-publishable-key
 
 write_env "" secret-publishable-key
 expect_fail "an empty SUPABASE_URL is refused" "must both be set" run

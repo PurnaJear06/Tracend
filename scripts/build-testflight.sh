@@ -9,7 +9,8 @@
 # Run it from a clean checkout of the newest origin/main (git checkout --detach origin/main).
 # It refuses a dirty tree, a commit that is not the origin/main tip, an empty
 # SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY, a build number that is not higher than the last
-# build this machine made, and a manual TRACEND_BUILD_NUMBER.
+# build this machine made, and a manual TRACEND_BUILD_NUMBER or TRACEND_BUILD_NAME, whether set in
+# the environment or in .env.
 #
 # Config comes from the gitignored .env, as for scripts/install-device.sh:
 #   SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY (required), SENTRY_DSN (optional)
@@ -62,10 +63,6 @@ if [[ "$head_sha" != "$main_sha" ]]; then
   die "HEAD ($(git rev-parse --short HEAD)) is not the origin/main tip ($(git rev-parse --short origin/main)). Run: git checkout --detach origin/main"
 fi
 
-if [[ -n "${TRACEND_BUILD_NUMBER:-}" ]]; then
-  die "TRACEND_BUILD_NUMBER is set. TestFlight numbers come from origin/main's commit count; unset it."
-fi
-
 env_file="${TRACEND_ENV_FILE:-$repo_root/.env}"
 [[ -f "$env_file" ]] || die "missing $env_file. Copy .env.example to .env and fill SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY."
 set -a
@@ -74,6 +71,11 @@ set -a
 set +a
 [[ -n "${SUPABASE_URL:-}" && -n "${SUPABASE_PUBLISHABLE_KEY:-}" ]] ||
   die "SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY must both be set in $env_file. A build without them would run as a local demo."
+# Checked after .env is read: a line there would otherwise override the number and the version.
+for override in TRACEND_BUILD_NUMBER TRACEND_BUILD_NAME; do
+  [[ -z "${!override:-}" ]] ||
+    die "$override is set (in the environment or $env_file). TestFlight numbers come from origin/main's commit count and the version from pubspec.yaml; remove it."
+done
 case "$SUPABASE_URL" in
   https://*) ;;
   *) die "SUPABASE_URL must start with https:// in a TestFlight build" ;;

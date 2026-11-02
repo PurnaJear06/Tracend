@@ -6,9 +6,9 @@ name: Database Backup
 #
 # `database`: dump roles, schema and data, restore them into a throwaway local Supabase, compare
 # privileges with the migrations, then store the encrypted dump in the private backups repository
-# (the newest 30). `photos` (nightly only): store the encrypted progress-photo bucket there too,
-# skipped when the bucket is empty. Meal photos are not backed up: the app deletes
-# them about 7 days after they are taken.
+# (the newest 30). `photos` (nightly only): store the encrypted progress-photo bucket there too
+# (an empty bucket stores an archive with no files, so retention keeps advancing). Meal photos are
+# not backed up: the app deletes them about 7 days after they are taken.
 on:
   workflow_call:
     inputs:
@@ -285,10 +285,10 @@ jobs:
         run: |
           shopt -s nullglob
           files=("$RUNNER_TEMP"/photo-backup/photo-backup-*.tar.gz.enc)
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "No progress photos, nothing to store."
-            exit 0
-          fi
+          test "${#files[@]}" -eq 1 || {
+            echo "::error::Expected exactly one photo backup archive."
+            exit 1
+          }
           test -n "$BACKUP_REPO" && test -n "$BACKUP_REPO_DEPLOY_KEY" || {
             echo "::error::The BACKUP_REPO variable and BACKUP_REPO_DEPLOY_KEY secret must be configured."
             exit 1

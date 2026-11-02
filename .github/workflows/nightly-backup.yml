@@ -4,12 +4,16 @@ name: Nightly Backup
 # only backs up when something merges). Runs the same workflow as every deploy, plus the
 # progress photos. A failed run emails the repository owner. Start one by hand from
 # Actions > Nightly Backup > Run workflow.
+#
+# It skips itself while a deploy is running or queued: a deploy takes its own backup before it
+# migrates. And deploy.yml waits for a running nightly backup before it migrates, so a dump is
+# never taken across a migration. Neither shares the production-deploy concurrency group, because
+# a queued nightly would replace a queued deploy there.
 on:
   schedule:
     - cron: "17 19 * * *"
   workflow_dispatch:
 
-# Its own group: sharing production-deploy would let a queued nightly replace a queued deploy.
 concurrency:
   group: nightly-backup
   cancel-in-progress: false
@@ -18,9 +22,38 @@ permissions:
   contents: read
 
 jobs:
+  guard:
+    name: Skip while a deploy runs
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      deploying: ${{ steps.check.outputs.deploying }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          busy=0
+          for status in queued in_progress waiting pending requested; do
+            count=$(gh run list --workflow deploy.yml --status "$status" --json databaseId --jq length)
+            busy=$((busy + count))
+          done
+          if [ "$busy" -gt 0 ]; then
+            echo "::notice::A deploy is running or queued. It takes its own backup, so tonight's run is skipped."
+            echo "deploying=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploying=false" >> "$GITHUB_OUTPUT"
+          fi
+
   backup:
     name: Nightly Backup
-    if: github.ref == 'refs/heads/main'
+    needs: guard
+    if: needs.guard.outputs.deploying == 'false'
     uses: ./.github/workflows/database-backup.yml
     with:
       sha: ${{ github.sha }}

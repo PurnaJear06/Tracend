@@ -56,13 +56,17 @@ set_bucket() { # count, then name=content pairs
 }
 backups() { find "$out" -maxdepth 1 -name 'photo-backup-*.tar.gz.enc' 2>/dev/null | sort; }
 
-# 1. An empty bucket writes nothing and does not call the download.
+# 1. An empty bucket is not downloaded but still writes an archive (with no files in it), so the
+# store step runs and retention keeps advancing.
 set_bucket 0
 : >"$base/calls"
-answer="$(run)"
-expect_eq "an empty bucket says so" "No progress photos to back up." "$answer"
-expect_eq "an empty bucket writes no archive" "" "$(backups)"
+run >/dev/null
+empty="$(backups)"
+expect_eq "an empty bucket still writes one archive" "1" "$(printf '%s\n' "$empty" | grep -c .)"
+expect_eq "the empty archive holds no files" "0" \
+  "$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$empty" -pass env:BACKUP_ARCHIVE_PASSPHRASE | tar -tzf - | grep -vc '/$')"
 if grep -q 'storage cp' "$base/calls"; then fail "an empty bucket must not be downloaded"; else pass "an empty bucket is not downloaded"; fi
+rm -rf "$out"
 
 # 2. Photos become one encrypted archive that decrypts to the same files.
 set_bucket 2 "user-a/front.jpg=photo one" "user-b/side.jpg=photo two"
