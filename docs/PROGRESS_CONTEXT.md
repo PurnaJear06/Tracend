@@ -1,6 +1,6 @@
 # Tracend Current State
 
-**As of:** 2026-11-01
+**As of:** 2026-11-02
 
 **Lifecycle:** owner-only private beta; not approved for public production. Production Auth
 sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
@@ -528,8 +528,18 @@ longer names an amount. App only, needs a reinstall. See
   with the commit; the release tag waits for that check. On 2026-09-28, parallel deploys had
   reported success while Supabase kept the previous version of four functions. Supabase's
   intermittent deploy 500 is retried automatically (`scripts/deploy-function.sh`).
-- Semantic versions come from `pubspec.yaml`; build numbers are monotonic in CI and derived from Git
-  history for local device builds.
+- Semantic versions come from `pubspec.yaml`; build numbers are monotonic in CI and count the
+  commits up to `origin/main` for device and TestFlight builds, so a branch can never outrun main.
+- The route to testers is `scripts/build-testflight.sh` (signed App Store `.ipa` from a clean
+  `origin/main` tip, bundle checked, upload command printed; no upload without the owner's App
+  Store Connect key). A release build without Supabase settings says so instead of running the
+  demo. Owner steps are in `docs/BETA_OPERATIONS.md` (not done yet: paid Apple team, App Store
+  Connect record, widget App ID, upload key, demo account).
+- `nightly-backup.yml` backs up the database (restore-drilled) and the progress photos every night
+  into the private backups repository, through the same `database-backup.yml` that every deploy
+  calls. Meal photos are not backed up by design.
+- `scripts/rollback-function.sh` rolls an Edge Function back to the previous release tag with its
+  whole `supabase/functions` tree, and checks it live.
 - Each checkout builds in its own folder. The device installer refuses an app bundle without its
   fonts and asset manifests, and CI checks the same on its iOS build.
 

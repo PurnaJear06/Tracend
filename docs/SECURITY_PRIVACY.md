@@ -628,12 +628,14 @@ Initial private-beta defaults:
   private beta shuts down; provider-side conversation state remains disabled;
 - invite-list and waitlist rows: until account deletion (both removed with the account), a request
   to the owner, or for an unconfirmed waitlist signup, 30 days after its last email;
-- Free Plan database: encrypted off-site logical export at least weekly during active beta and
+- Free Plan database: encrypted off-site logical export every night (`nightly-backup.yml`) and
   before migrations; Supabase does not provide the Pro daily-backup guarantee;
 - Pro Plan database: Supabase daily backups with the plan's current seven-day availability, plus an
   independent pre-release logical export where permitted;
-- Storage objects: separate encrypted inventory/export procedure because database backups contain
-  metadata but not Storage bytes; and
+- Storage objects: the private `progress-photos` bucket is backed up every night as an encrypted
+  archive in the private backups repository (newest 30, skipped while the bucket is empty); meal photos are
+  not, because they are deleted about 7 days after capture; database backups contain metadata but
+  not Storage bytes; and
 - provider content: shortest available approved retention, documented per provider.
 
 Every production deploy takes an AES-256 encrypted logical backup before migrating, restores it in

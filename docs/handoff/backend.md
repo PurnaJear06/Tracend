@@ -471,6 +471,33 @@ privacy were recorded.
 - **Check after the first merge:** the new `database-backup-*.tar.gz.enc` appears in the private
   repository and the public repository's artifact list has no `database-backup` entry.
 
+## Release path, rollback and nightly backups (2026-11-02, branch `claude/release-path`)
+
+From the beta audit (release B3, reliability P1-12 and P1-14). Nothing here changes the database or
+an Edge Function, so merging deploys no new function code; the installed app (build 920) is
+unaffected until the next device or TestFlight build.
+
+- **TestFlight build.** `scripts/build-testflight.sh` (guards, `--check`, tests in
+  `scripts/test-build-testflight.sh`), `ios/Runner/PrivacyInfo.xcprivacy` (UserDefaults CA92.1, no
+  tracking, collected types matching `site/src/pages/privacy.astro`; the widget extension uses no
+  required-reason API, so it has none), `ITSAppUsesNonExemptEncryption` false, and a Health
+  permission text that names what is read and where it goes. `scripts/app-version.sh` counts to
+  the newest `origin/main` commit the checkout contains. In release mode `Phase2Gate` shows "This
+  build is missing its server settings" instead of the demo.
+- **Rollback.** `scripts/rollback-function.sh` redeploys the previous release tag's whole
+  `supabase/functions` tree for one function and verifies it live (`--dry-run`, `--list`, `--to`).
+  `hotfix.yml` never shared its logic and is unchanged.
+- **Nightly backups.** `nightly-backup.yml` and the reusable `database-backup.yml` (also called by
+  `deploy.yml`) run the dump, restore drill, encryption and storage once, in one place, plus the
+  `progress-photos` bucket (`scripts/backup-progress-photos.sh`, `encrypt-backup.sh`).
+  `store-backup.sh` keeps database and photo backups as separate kinds (30 each) and refuses a
+  file over 90 MiB. Photos are stored every night, not only when changed, so a deleted account's
+  photos leave the backups within 30 nights.
+- **Check after the merge:** run Actions > Nightly Backup once by hand, then confirm a
+  `database-backup-*` and (if any progress photo exists) a `photo-backup-*` file in the private
+  backups repository, and that the next merge's Deploy run still passes its backup job. Neither
+  workflow was run before the merge.
+
 ## Restore drill compares privileges (2026-10-15)
 
 - **Found:** `supabase db dump` comments out every GRANT and REVOKE line that names a schema it

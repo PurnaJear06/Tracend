@@ -1,0 +1,28 @@
+name: Nightly Backup
+
+# Backs up production every night, so a quiet week still has a recent restore point (deploy.yml
+# only backs up when something merges). Runs the same workflow as every deploy, plus the
+# progress photos. A failed run emails the repository owner. Start one by hand from
+# Actions > Nightly Backup > Run workflow.
+on:
+  schedule:
+    - cron: "17 19 * * *"
+  workflow_dispatch:
+
+# Its own group: sharing production-deploy would let a queued nightly replace a queued deploy.
+concurrency:
+  group: nightly-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: Nightly Backup
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/database-backup.yml
+    with:
+      sha: ${{ github.sha }}
+      photos: true
+    secrets: inherit

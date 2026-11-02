@@ -183,6 +183,15 @@ if echo "$STEPS" | grep -q "deno"; then
     die "backup storage tests failed"
   fi
 
+  info "progress photo backup script tests ..."
+  if bash "$repo_root/scripts/test-backup-progress-photos.sh" 2>&1 | while IFS= read -r line; do
+    echo "    $line"
+  done; then
+    pass "progress photo backup tests passed"
+  else
+    die "progress photo backup tests failed"
+  fi
+
   info "restore privilege check script tests ..."
   if bash "$repo_root/scripts/test-restore-privileges.sh" 2>&1 | while IFS= read -r line; do
     echo "    $line"
@@ -199,6 +208,24 @@ if echo "$STEPS" | grep -q "deno"; then
     pass "retire functions tests passed"
   else
     die "retire functions tests failed"
+  fi
+
+  info "TestFlight build script tests ..."
+  if bash "$repo_root/scripts/test-build-testflight.sh" 2>&1 | while IFS= read -r line; do
+    echo "    $line"
+  done; then
+    pass "TestFlight build script tests passed"
+  else
+    die "TestFlight build script tests failed"
+  fi
+
+  info "rollback script tests ..."
+  if bash "$repo_root/scripts/test-rollback-function.sh" 2>&1 | while IFS= read -r line; do
+    echo "    $line"
+  done; then
+    pass "rollback script tests passed"
+  else
+    die "rollback script tests failed"
   fi
 
   info "workflow credential guard ..."

@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# Store one encrypted production database backup in the private backups repository.
+# Store one encrypted production backup in the private backups repository.
 #
 # Usage: scripts/store-backup.sh <database-backup-YYYY-MM-DDTHHMMSS.tar.gz.enc>
+#        scripts/store-backup.sh <photo-backup-YYYY-MM-DDTHHMMSS.tar.gz.enc>
+#
+# Database and progress-photo backups are two kinds, each kept and pruned on its own.
 #
 # Environment:
 #   BACKUP_REPO             owner/name of the private backups repository
 #   BACKUP_REPO_DEPLOY_KEY  OpenSSH private key with write access to that repository only
 #   BACKUP_REPO_URL         git remote override (tests use a local bare repository)
 #   BACKUP_BRANCH           branch to write (default: main)
-#   BACKUP_KEEP             newest backups to retain (default: 30)
+#   BACKUP_KEEP             newest backups of each kind to retain (default: 30)
+#   BACKUP_MAX_BYTES        largest backup file accepted (default: 94371840, 90 MiB; GitHub
+#                           rejects a file over 100 MiB)
 #   BACKUP_RETRY_DELAY      seconds between network retries, multiplied by the attempt (default: 5)
 #
 # The target branch is rewritten as a single orphan commit on every run so the repository does
@@ -33,7 +38,7 @@ github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+V
 KNOWN_HOSTS
 }
 
-[ "$#" -eq 1 ] || die "usage: $0 <database-backup-*.tar.gz.enc>"
+[ "$#" -eq 1 ] || die "usage: $0 <database-backup-*.tar.gz.enc | photo-backup-*.tar.gz.enc>"
 backup_name="$(basename "$1")"
 branch="${BACKUP_BRANCH:-main}"
 keep="${BACKUP_KEEP:-30}"
@@ -42,16 +47,24 @@ retry_delay="${BACKUP_RETRY_DELAY:-5}"
 [ -s "$1" ] || die "backup file is missing or empty: $1"
 # Absolute path: the script changes directory into a scratch repository before copying.
 backup_file="$(cd "$(dirname "$1")" && pwd)/$backup_name"
+stamp_pattern='[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]'
 case "$backup_name" in
-  database-backup-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9].tar.gz.enc) ;;
+  database-backup-$stamp_pattern.tar.gz.enc) kind=database ;;
+  photo-backup-$stamp_pattern.tar.gz.enc) kind=photo ;;
   *) die "unexpected backup file name: $backup_name" ;;
 esac
+max_bytes="${BACKUP_MAX_BYTES:-94371840}"
 case "$keep" in
   '' | *[!0-9]* | 0) die "BACKUP_KEEP must be a positive integer" ;;
 esac
 case "$retry_delay" in
   '' | *[!0-9]*) die "BACKUP_RETRY_DELAY must be a non-negative integer" ;;
 esac
+case "$max_bytes" in
+  '' | *[!0-9]* | 0) die "BACKUP_MAX_BYTES must be a positive integer" ;;
+esac
+[ "$(wc -c <"$1" | tr -d ' ')" -le "$max_bytes" ] ||
+  die "$backup_name is larger than $max_bytes bytes, too big for the backups repository. Move $kind backups to object storage."
 
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
@@ -115,7 +128,7 @@ else
   cp "$backup_file" "backups/$backup_name"
 fi
 
-all_backups="$(find backups -maxdepth 1 -type f -name 'database-backup-*.tar.gz.enc' | sed 's#^backups/##' | sort)"
+all_backups="$(find backups -maxdepth 1 -type f -name "$kind-backup-*.tar.gz.enc" | sed 's#^backups/##' | sort)"
 total="$(printf '%s\n' "$all_backups" | grep -c . || true)"
 pruned=""
 if [ "$total" -gt "$keep" ]; then
@@ -140,7 +153,7 @@ unexpected_changes() {
   git diff --no-renames --name-status "$previous_commit" HEAD | while IFS=$'\t' read -r status path; do
     case "$status:$path" in
       "A:backups/$backup_name") ;;
-      D:backups/database-backup-*.tar.gz.enc)
+      D:backups/$kind-backup-*.tar.gz.enc)
         printf '%s\n' "$pruned" | grep -qxF "${path#backups/}" || printf '%s %s\n' "$status" "$path"
         ;;
       *) printf '%s %s\n' "$status" "$path" ;;
@@ -161,5 +174,5 @@ verify_line="$(retry git ls-remote --heads "$remote_url" "refs/heads/$branch")" 
   || die "cannot verify the push"
 [ "${verify_line%%[[:space:]]*}" = "$new_commit" ] || die "remote branch does not point at the pushed commit"
 
-kept="$(git ls-tree --name-only HEAD backups/ | grep -c 'database-backup-' || true)"
-echo "store-backup: stored $backup_name ($kept backups kept, newest $keep retained)"
+kept="$(git ls-tree --name-only HEAD backups/ | grep -c "$kind-backup-" || true)"
+echo "store-backup: stored $backup_name ($kept $kind backups kept, newest $keep retained)"

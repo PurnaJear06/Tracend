@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
@@ -33,10 +35,15 @@ class Phase2Gate extends StatefulWidget {
     this.liveActivity = const MethodChannelWorkoutActivityBridge(),
     this.homeWidgets = const MethodChannelHomeWidgetBridge(),
     this.notifications = const MethodChannelNotificationRepository(),
+    this.releaseBuild = kReleaseMode,
     super.key,
   });
 
   final AppEnvironment environment;
+
+  /// A release build never falls back to the local demo data: without its
+  /// server settings it says so instead.
+  final bool releaseBuild;
 
   /// The app's Supabase client unless a test provides one.
   final SupabaseClient? client;
@@ -97,6 +104,9 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   /// never land after the cancel that ended its session.
   Future<void> _reminderQueue = Future<void>.value();
 
+  bool get _missingServerSettings =>
+      widget.releaseBuild && !widget.environment.hasSupabaseConfiguration;
+
   SupabaseClient get _client => widget.client ?? Supabase.instance.client;
   late final TrainingHubCache _savedPlan = TrainingHubCache(
     SharedPreferencesAsync(),
@@ -112,6 +122,9 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_widgetEraser.retryPending());
+    if (_missingServerSettings) {
+      unawaited(Sentry.captureMessage('release_build_missing_server_settings'));
+    }
     if (widget.environment.hasSupabaseConfiguration) {
       _authEvents = _client.auth.onAuthStateChange.listen((state) {
         if (state.event != AuthChangeEvent.signedOut) return;
@@ -420,6 +433,15 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    if (_missingServerSettings) {
+      return const _GateMessage(
+        title: 'This build is missing its server settings',
+        message:
+            'Tracend cannot sign you in or reach your coach. Install the '
+            'latest build from TestFlight, or tell the person who sent you '
+            'this one.',
+      );
+    }
     if (!widget.environment.hasSupabaseConfiguration) {
       return AppShell(
         environment: widget.environment,

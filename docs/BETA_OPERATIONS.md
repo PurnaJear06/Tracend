@@ -3,21 +3,47 @@
 This runbook supports Phase 8 owner dogfooding. It does not expand the product scope or replace the
 privacy rules in `SECURITY_PRIVACY.md`.
 
-## Weekly backup on Supabase Free
+## Backups on Supabase Free
 
-1. Create an encrypted backup directory under `.tooling/backups/YYYY-MM-DD/` on the external SSD.
-2. Run `./scripts/supabase.sh db dump --linked --file <directory>/database.sql` before migrations
-   and at least weekly while the beta is active.
-3. In the Supabase Storage dashboard, export the private `meal-images`, `progress-photos`, and
-   `account-exports` buckets into the same encrypted directory. Keep object paths with their bucket
-   names because the database dump contains metadata, not object bytes.
-4. Generate a SHA-256 inventory with
-   `find <directory> -type f -print0 | sort -z | xargs -0 shasum -a 256 > <directory>/SHA256SUMS`.
-5. Copy the encrypted directory to a second owner-controlled location. Never commit it or place it
-   in a public/shared folder.
-6. Quarterly, restore the database and Storage inventory into an isolated local Supabase project
-   using synthetic verification only. Record the date, result, and owner without copying user data
-   into worklogs.
+Free Supabase has no daily backups of its own. `nightly-backup.yml` runs at 19:17 UTC every night
+(and by hand from Actions > Nightly Backup > Run workflow) and stores two kinds of encrypted
+backup in the private `Tracend-backups` repository, the newest 30 of each:
+
+- `database-backup-<stamp>.tar.gz.enc`: roles, schema and data, restore-drilled into a throwaway
+  database before it is stored. Every merge to `main` makes one too.
+- `photo-backup-<stamp>.tar.gz.enc`: the private `progress-photos` bucket. An empty bucket stores
+  nothing; otherwise every night adds one, so a deleted account's photos leave the backups within
+  30 nights, as its database rows do. Meal photos (`meal-images`) are not backed up: the app deletes them about 7 days after
+  they are taken. `account-exports` holds short-lived export files, also not backed up.
+
+A failed night emails the repository owner (GitHub sends this for any failed scheduled run). Look
+at Actions > Nightly Backup once a week while the beta runs, and open the backups repository
+after the first night to check the new files.
+
+**Size.** The backups repository holds 30 photo archives. GitHub recommends staying under 1 GB
+per repository and rejects a file over 100 MiB, so the photo backup warns at 25 MiB and
+`store-backup.sh` refuses an archive over 90 MiB. At the beta's size that is far away. When the
+warning appears, move photo backups to object storage (Cloudflare R2 is on the existing
+Cloudflare account; its free tier holds 10 GB) with its own access key kept as a GitHub secret.
+
+**Restore.** Decrypt with the passphrase from the `BACKUP_ARCHIVE_PASSPHRASE` secret, then unpack:
+
+```sh
+read -s BACKUP_ARCHIVE_PASSPHRASE
+export BACKUP_ARCHIVE_PASSPHRASE
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in photo-backup-<stamp>.tar.gz.enc \
+  -pass env:BACKUP_ARCHIVE_PASSPHRASE | tar -xzf - -C <empty-directory>
+unset BACKUP_ARCHIVE_PASSPHRASE
+```
+
+The photos come out under the paths Storage used (`<account id>/<file>`). Upload them back with
+`./scripts/supabase.sh storage cp --experimental --linked -r <directory> ss:///progress-photos`.
+The restore drill in `deploy.yml` (`docs/CI_CD_DEPLOYMENT.md`, Backup contract) is the tested way to restore a database backup.
+
+Optional: a second owner-controlled copy of both backups, kept encrypted on the external SSD and
+never committed or placed in a shared folder. Quarterly, restore the database and the photos into
+an isolated local Supabase project using synthetic verification only. Record the date, result and
+owner without copying user data into worklogs.
 
 ## Export package recovery
 
@@ -72,18 +98,25 @@ Work through this list in order once the paid Apple Developer Program is active.
    will own the app, and enroll (Account > Enroll; enrollment in India is done in the app). Use
    the 2-factor Apple Account, the legal name and the ID Apple asks for, and pay the annual fee.
    Wait for the confirmation email, then note the new paid Team ID.
-2. **Sign with the paid team.** In Xcode (Signing & Capabilities) switch the Runner target, and any
-   extension target, from the free team to the paid team. Register the bundle IDs
-   (`com.tracend.app` and each extension) in Certificates, Identifiers & Profiles with the HealthKit
-   capability, and only the other capabilities the build uses. Let Xcode create the Apple
-   Distribution certificate and App Store profiles.
-3. **Review `ios/Runner/Info.plist`** (in a PR by the owner of `ios/**`):
-   - Read every purpose string (Health, camera, photo library) against what the app does.
-   - The app reads Health and never writes to it (no write calls in `lib/`), so remove
-     `NSHealthUpdateUsageDescription` unless a build starts asking for write access.
-   - Set `ITSAppUsesNonExemptEncryption` to `NO`. The app itself only uses HTTPS; the export
-     file's AES-256-GCM encryption runs on the server, not in the app. This answers export
-     compliance for every build.
+2. **Sign with the paid team.** The Xcode project still names the free team in every
+   `DEVELOPMENT_TEAM` line of `ios/Runner.xcodeproj/project.pbxproj` (the app, the widget
+   extension and the tests); switch all of them to the paid Team ID in a PR (Xcode: Signing &
+   Capabilities for each target). `scripts/build-testflight.sh` reads the team from there and
+   refuses a project that names more than one. In Certificates, Identifiers & Profiles:
+   - register the App ID `com.tracend.app` with the HealthKit capability and the App Group
+     `group.com.tracend.app`;
+   - register the widget extension's App ID `com.tracend.app.TracendWidgets` with the same App
+     Group (its Live Activity needs no extra capability);
+   - let Xcode create the Apple Distribution certificate and the App Store profiles for both. The
+     first `build-testflight.sh` run does it, because the build uses automatic signing and Xcode
+     must be signed in to the paid team (Xcode > Settings > Accounts).
+3. **`ios/Runner/Info.plist` and the privacy manifest** are done in the repository:
+   `ITSAppUsesNonExemptEncryption` is `false` (the app itself only uses HTTPS and SHA hashing; the
+   export file's AES-256-GCM encryption runs on the server, so every upload skips the export
+   compliance question), the Health text names the data read and says where it goes, and
+   `ios/Runner/PrivacyInfo.xcprivacy` declares the one required-reason API the app's own code uses
+   (UserDefaults, reason CA92.1), no tracking, and the data types of step 5. Keep that file in step
+   with `site/src/pages/privacy.astro` whenever the app collects something new.
 4. **Create the app record.** App Store Connect > Apps > New App: iOS, the Tracend name (it must be
    free on the App Store), primary language, bundle ID `com.tracend.app`, a SKU. Then:
    - privacy policy URL `https://tracend.pages.dev/privacy/` and a support URL;
@@ -97,44 +130,56 @@ Work through this list in order once the paid Apple Developer Program is active.
      messages, meals, check-ins).
    - Identifiers: User ID.
    - Diagnostics: Crash Data, Performance Data (Sentry traces) and Other Diagnostic Data.
-6. **Build and upload.** Build from a merged `main` commit through the wrapper with the `.env`
-   dart-defines, as `scripts/install-device.sh` does, not from a bare Xcode archive:
-   `./scripts/flutter.sh build ipa --release` with `--build-name "$(./scripts/app-version.sh name)"`,
-   `--build-number "$(./scripts/app-version.sh number)"` (the git commit count, so it grows with
-   every merge) and `--dart-define` for `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and
-   `SENTRY_DSN`. Run `./scripts/verify-app-bundle.sh` on the built `Runner.app`
-   (`build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app` under the checkout's
-   build directory), then upload the `.ipa` with Apple's Transporter app, or from CI with an App
-   Store Connect API key (issuer ID, key ID and `.p8` as GitHub secrets; workflows are the lead's
-   files).
-7. **Check the upload email.** If App Store Connect reports ITMS-91053 (missing API declaration) or
-   ITMS-91061 (missing privacy manifest), add `ios/Runner/PrivacyInfo.xcprivacy` declaring the
-   required-reason APIs named in the email, update any SDK it names, and upload again.
-8. **Test internally first.** Add the owner as an internal tester (no review needed) and install
+6. **Set up the upload key (once).** App Store Connect > Users and Access > Integrations > App
+   Store Connect API > Team Keys > generate a key with the Developer role. Note the Key ID and the
+   Issuer ID shown on that page, and download the `.p8` file: Apple lets you download it once.
+   Save it as `~/.appstoreconnect/private_keys/AuthKey_<KEYID>.p8` with `chmod 600` (the folder
+   `altool` searches), and put the two IDs in your shell profile as `ASC_KEY_ID` and
+   `ASC_ISSUER_ID`. The key never goes in the repository, `.env`, a GitHub secret or chat; revoke
+   it from the same page if it leaks.
+7. **Build and upload.** From a clean checkout of the newest `origin/main` (a worktree is fine:
+   `git checkout --detach origin/main`) with `.env` filled in as for `install-device.sh`:
+   `./scripts/build-testflight.sh --check` runs every guard first, then
+   `./scripts/build-testflight.sh` builds the signed App Store `.ipa`, checks the bundle inside it
+   (icons, fonts, privacy manifest, widget extension, build number) and prints the upload command:
+   `xcrun altool --upload-app --type ios -f <ipa> --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"`
+   (or drag the `.ipa` into Apple's Transporter app). It refuses a dirty tree, a commit that is not
+   the `origin/main` tip, an empty `SUPABASE_URL` or `SUPABASE_PUBLISHABLE_KEY`, and a build number
+   that is not higher than the last one built on this Mac. The build number is the commit count of
+   `origin/main`, so it grows with every merge and later uploads are never rejected as "bundle
+   version must be higher". A build without the server settings would show "This build is missing
+   its server settings" instead of running a demo, but it should never get that far.
+8. **Check the upload email.** Apple emails about any problem within minutes. ITMS-91053 (missing
+   API declaration) means a required-reason API is used that `ios/Runner/PrivacyInfo.xcprivacy`
+   does not declare: add the reason the email names, update any SDK it names, and upload again.
+9. **Test internally first.** Add the owner as an internal tester (no review needed) and install
    the TestFlight build. Check sign-in, Apple Health permission, every AI consent notice, export
    and account deletion on that build.
-9. **Make Supabase Auth email work for outsiders.** Supabase's built-in email only reaches the
+10. **Make Supabase Auth email work for outsiders.** Supabase's built-in email only reaches the
    project team. In Dashboard > Authentication > Emails > SMTP Settings, set custom SMTP with the
    Gmail account the waitlist already uses (`smtp.gmail.com`, port 465, the same app password).
    Set the Site URL and the redirect URLs the app's auth links use (Authentication > URL
    Configuration). Then sign up with an invited address outside the team and check that the
    email arrives and its link works.
-10. **Open the gate in Supabase.** Turn production sign-ups back on (Dashboard > Authentication >
+11. **Open the gate in Supabase.** Turn production sign-ups back on (Dashboard > Authentication >
     Sign In / Providers > Allow new users to sign up). The invite-only trigger still refuses any
     email that has no row in `private.signup_invites`, so add each tester before they sign up:
     `select * from private.invite_from_waitlist(n);` for confirmed waitlist signups, or insert the
     email into `private.signup_invites` with a note. Check that an email with no invite is still
     refused.
-11. **Prepare Beta App Review.** In TestFlight > Test Information add the beta description, a
+12. **Prepare Beta App Review.** In TestFlight > Test Information add the beta description, a
     feedback email, the privacy policy URL `https://tracend.pages.dev/privacy/`, and a reviewer
-    account: invite a reviewer email (step 10), sign up once, load synthetic data only, and give
-    its email and password in the sign-in fields. In the review notes say that Apple Health
+    demo account, because sign-ups are off and the reviewer cannot create one: invite a reviewer
+    email (step 11), sign up once in the build, finish onboarding with synthetic data only, and
+    give its email and password in the sign-in fields of Test Information. Keep the account
+    working for as long as builds are in review, and delete it with the in-app deletion when the
+    beta ends. In the review notes say that Apple Health
     access is optional, and that the AI disclosure follows App Review Guideline 5.1.2(i): before
     any AI feature shares data with a third-party AI company, the app shows a notice naming that
     company and what is sent, asks for explicit permission, and works without it.
-12. **Create the external group.** TestFlight > External Testing > add a group, add the build and
+13. **Create the external group.** TestFlight > External Testing > add a group, add the build and
     submit it for Beta App Review. The first build of each version is reviewed; later builds of
     the same version usually are not. Then add testers by email, using the same emails that were
-    invited in step 10. Do not use a public link while sign-ups are invite-only.
-13. **Run it.** Builds expire after 90 days; upload a new one before then. Watch Sentry and the AI
+    invited in step 11. Do not use a public link while sign-ups are invite-only.
+14. **Run it.** Builds expire after 90 days; upload a new one before then. Watch Sentry and the AI
     budget after each new group.
