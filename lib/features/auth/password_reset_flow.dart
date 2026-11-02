@@ -41,8 +41,9 @@ class ResendCooldown extends ChangeNotifier {
 
 /// Marks a password reset between an accepted code and a saved password. The
 /// accepted code signs the phone in, so a reset the app was closed during
-/// would open the account with no new password chosen: the gate's next
-/// account check ends that session instead (`Phase2Gate`).
+/// would open the account with no new password chosen: the gate ends that
+/// session at launch instead (`Phase2Gate`). The mark stays until a later
+/// launch finds no session, so a session whose removal failed is ended again.
 class PasswordResetMarker {
   PasswordResetMarker([SharedPreferencesAsync? preferences])
     : _preferences = preferences ?? SharedPreferencesAsync();
@@ -55,8 +56,8 @@ class PasswordResetMarker {
   /// the code is then not sent.
   Future<void> mark() => _preferences.setBool(key, true);
 
-  /// Cleared once the new password is saved, or the reset is left. Never
-  /// throws.
+  /// Cleared once the new password is saved, the reset is left, or the athlete
+  /// signs in with a password. Never throws.
   Future<void> clear() async {
     try {
       await _preferences.remove(key);
@@ -65,17 +66,15 @@ class PasswordResetMarker {
     }
   }
 
-  /// Whether a reset was left unfinished; the mark is cleared as it is read.
-  /// Never throws: a mark that cannot be read counts as none.
-  Future<bool> takeUnfinished() async {
+  /// Whether a reset was left unfinished. Never throws: a mark that cannot
+  /// be read counts as none.
+  Future<bool> isSet() async {
     try {
-      if (await _preferences.getBool(key) != true) return false;
+      return await _preferences.getBool(key) == true;
     } catch (e) {
       logNonCritical(e, 'password reset mark not read');
       return false;
     }
-    await clear();
-    return true;
   }
 }
 
@@ -302,7 +301,11 @@ class _PasswordResetFlowState extends State<PasswordResetFlow> {
       try {
         await widget.auth.signOut(scope: SignOutScope.local);
       } catch (e) {
+        // The session may still be on this phone: the mark stays, and the
+        // next launch ends it.
         logNonCritical(e);
+        widget.onCancel();
+        return;
       }
     }
     await _marker.clear();

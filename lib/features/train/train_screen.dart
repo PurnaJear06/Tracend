@@ -574,8 +574,14 @@ class _TrainScreenState extends State<TrainScreen> {
     }
     final hub = loadedHub;
     if (!mounted || load != _hubLoads) return;
-    // The phone's copy answers when the server could not: no success.
-    if (hub.cachedAt == null) noteLoadSuccess(_hubLoad);
+    // The phone's copy answers when the server could not: no success, and
+    // the server's failure counts (a lost connection is skipped there).
+    final serverError = hub.serverError;
+    if (hub.cachedAt == null) {
+      noteLoadSuccess(_hubLoad);
+    } else if (serverError != null) {
+      noteLoadFailure(serverError, null, _hubLoad);
+    }
     _loaded.mark();
     setState(() {
       _show(hub);

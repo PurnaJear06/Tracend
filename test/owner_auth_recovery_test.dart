@@ -42,6 +42,7 @@ class _FakeAuth extends Fake implements GoTrueClient {
   Object? updateError;
   Object? resendError;
   Object? signInError;
+  Object? signOutError;
 
   @override
   Future<void> resetPasswordForEmail(
@@ -81,6 +82,7 @@ class _FakeAuth extends Fake implements GoTrueClient {
   @override
   Future<void> signOut({SignOutScope scope = SignOutScope.local}) async {
     calls.add('signOut ${scope.name}');
+    if (signOutError != null) throw signOutError!;
   }
 
   @override
@@ -345,6 +347,42 @@ void main() {
       expect(find.text('Sign in to Tracend'), findsOneWidget);
       expect(authenticated, 0);
     });
+
+    testWidgets('leaving keeps the mark when the session could not be ended', (
+      tester,
+    ) async {
+      auth.updateError = const AuthApiException(
+        'New password should be different from the old password.',
+        statusCode: '422',
+        code: 'same_password',
+      );
+      auth.signOutError = Exception('keychain');
+      await askForCode(tester);
+      await enterCode(tester, '123456');
+
+      await tap(tester, 'Back to sign in');
+      await tester.pumpAndSettle();
+
+      // The next launch finds the session, and the mark ends it.
+      expect(await marked(tester), isTrue);
+      expect(find.text('Sign in to Tracend'), findsOneWidget);
+    });
+
+    testWidgets(
+      'a password sign-in clears a mark left by an unfinished reset',
+      (tester) async {
+        await tester.runAsync(() => PasswordResetMarker().mark());
+        await pump(tester);
+        await tester.enterText(field('Email'), _email);
+        await tester.enterText(field('Password'), 'password-1');
+        await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(authenticated, 1);
+        expect(await marked(tester), isNull);
+      },
+    );
 
     testWidgets('leaving before a code was accepted signs nothing out', (
       tester,

@@ -85,6 +85,9 @@ class _OwnerAuthScreenState extends State<OwnerAuthScreen> {
           password: _passwordController.text,
         );
       }
+      // A password sign-in is not a reset: a mark left by one that was never
+      // finished must not end this session at the next launch.
+      await PasswordResetMarker().clear();
       widget.onAuthenticated();
     } on AuthException catch (error) {
       setState(() {

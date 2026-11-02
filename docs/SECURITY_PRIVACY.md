@@ -352,8 +352,13 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
   say whether an account exists; Auth's own API still answers a direct caller differently (a 429 or
   500 only for an existing account), which the app cannot change. The accepted code signs the phone
   in, so a persisted `tracend.password_reset_pending` mark is set before the code is checked and
-  cleared once the new password is saved or the reset is left; a launch that finds it ends that
-  session on the phone first. Leaving after the code was accepted signs that session out. The Reset password email
+  cleared once the new password is saved, the reset is left (the session signed out), or a password
+  sign-in succeeds. At launch, once, the gate reads the mark: with a restored session it signs that
+  session out on the phone and keeps the mark; with no session it clears the mark (so a mark left
+  by a launch that died before the code was accepted can never sign out a later sign-in). A launch
+  that finds the session again (a failed Keychain delete, a kill) ends it again; the mark only
+  matters for a session restored at launch. Leaving after the code was accepted signs that session
+  out, and keeps the mark if that sign-out failed. The Reset password email
   template must show `{{ .Token }}` (`docs/BETA_OPERATIONS.md` step 9), and leaked-password
   protection is on in Auth (owner step); a password found in a breach is refused with its own
   message. A confirmation email can be sent again from sign-in, at most once a minute.
@@ -504,7 +509,9 @@ the email): it is set when the gate lets an account in (online or from the saved
 on every signed-out transition, deletion included. The scrubber keeps the user's id and drops every
 other user field (email, name, IP address). A load that keeps failing is reported once: the daily
 brief, the training hub, an Apple Health sync and the coaching decision send one event (type and
-code) at the third failure in a row; a success starts the count again, a lost connection is not
+code) at the third failure in a row; a success starts the count again (a training hub answered from
+the phone's copy because the server failed counts that failure, not a success; an Apple Health sync
+counts from the Health read to the saved state, and Health that cannot be read is neither), a lost connection is not
 counted, only the load whose result is shown counts (once per request), and every change of account
 starts all counts again.
 In Flutter (`lib/app/sentry_scrubber.dart`) the scrubber also covers exception values, `extra`,

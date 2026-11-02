@@ -95,6 +95,10 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   /// saved plan, when it has one.
   static const _waitForNetwork = Duration(seconds: 6);
 
+  /// The unfinished-reset mark was looked at: only the session restored at
+  /// launch can belong to it.
+  bool _resetChecked = false;
+
   /// Every change to this phone's reminders runs in turn, so a restore can
   /// never land after the cancel that ended its session.
   Future<void> _reminderQueue = Future<void>.value();
@@ -160,19 +164,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     String? userId;
     try {
       final client = _client;
-      // A password reset the app was closed during: its code signed the
-      // phone in, but no new password was saved. That session ends here,
-      // before anything opens, and the athlete signs in again.
-      if (client.auth.currentSession != null &&
-          await PasswordResetMarker().takeUnfinished()) {
-        // The session leaves this phone at once; telling Auth needs the
-        // network, so the launch does not wait for it.
-        unawaited(
-          client.auth
-              .signOut(scope: SignOutScope.local)
-              .catchError((Object e) => logNonCritical(e)),
-        );
-      }
+      await _endUnfinishedReset(client);
       final session = client.auth.currentSession;
       if (session == null) {
         // A widget snapshot a failed clear left behind goes now.
@@ -221,6 +213,32 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
       _checking = false;
       if (!ended() && !quiet) setState(() => _loading = false);
     }
+  }
+
+  /// A password reset the app was closed during: its code signed the phone
+  /// in, but no new password was saved. Looked at once, at launch. A session
+  /// restored with the mark set ends here, before anything opens, and the
+  /// athlete signs in again; the mark stays until a later launch finds no
+  /// session, so a session whose removal failed or was cut short is ended
+  /// again. A mark with no session (the app died before the code was
+  /// accepted, or the session is already gone) is cleared, so it can never
+  /// end a later sign-in.
+  Future<void> _endUnfinishedReset(SupabaseClient client) async {
+    if (_resetChecked) return;
+    _resetChecked = true;
+    final marker = PasswordResetMarker();
+    if (!await marker.isSet()) return;
+    if (client.auth.currentSession == null) {
+      await marker.clear();
+      return;
+    }
+    // The session leaves this phone at once; telling Auth needs the
+    // network, so the launch does not wait for it.
+    unawaited(
+      client.auth
+          .signOut(scope: SignOutScope.local)
+          .catchError((Object e) => logNonCritical(e)),
+    );
   }
 
   /// Asks Auth whether the account and session still exist, then opens the

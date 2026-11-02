@@ -225,6 +225,28 @@ class SupabaseHealthRepository
     if (keys == null) {
       return const HealthSyncStatus(state: HealthConnectionState.manualOnly);
     }
+    // The whole sync is one load: the Health read, the summaries, the
+    // request and the saved state. It counts as done only when all of it is.
+    final HealthSyncStatus status;
+    try {
+      status = await _sync(keys);
+    } catch (error, stackTrace) {
+      noteLoadFailure(
+        error is _HealthSyncException ? error.cause : error,
+        stackTrace,
+        _syncLoad,
+      );
+      rethrow;
+    }
+    // Health that cannot be read (no access, not available) is an outcome
+    // the screen explains, not a fault and not a sync that worked.
+    if (status.state != HealthConnectionState.unavailable) {
+      noteLoadSuccess(_syncLoad);
+    }
+    return status;
+  }
+
+  Future<HealthSyncStatus> _sync(HealthPreferenceKeys keys) async {
     final preferences = _state.preferences;
     final now = _now();
     final initialBackfillComplete =
@@ -277,7 +299,6 @@ class SupabaseHealthRepository
     DateTime now,
   ) async {
     Object? lastError;
-    StackTrace? lastStack;
     // One key for the whole sync: an attempt whose reply was lost may have
     // been written, and the server returns it for a repeated key.
     final idempotencyKey = _uuid.v4();
@@ -305,24 +326,19 @@ class SupabaseHealthRepository
             'workouts': healthWorkoutReferences(result.samples),
           },
         );
-        noteLoadSuccess(_syncLoad);
         return;
-      } on FunctionException catch (error, stackTrace) {
+      } on FunctionException catch (error) {
         lastError = error;
-        lastStack = stackTrace;
         // A 4xx from the function or from Supabase's relay in front of it (a
         // refused batch, the hourly limit, a session refused) gets the same
         // answer a moment later: it is not tried again. A server fault (5xx)
         // and a request that never arrived (status 0) are.
         if (error.status >= 400 && error.status < 500) break;
-      } catch (error, stackTrace) {
+      } catch (error) {
         lastError = error;
-        lastStack = stackTrace;
       }
     }
-    final failure = lastError!;
-    noteLoadFailure(failure, lastStack, _syncLoad);
-    throw _HealthSyncException(healthSyncFailureMessage(failure));
+    throw _HealthSyncException(healthSyncFailureMessage(lastError!), lastError);
   }
 
   /// The name a run of failed syncs is reported under.
@@ -482,8 +498,11 @@ class ManualHealthRepository implements HealthRepository {
 }
 
 class _HealthSyncException implements Exception {
-  const _HealthSyncException(this.message);
+  const _HealthSyncException(this.message, this.cause);
   final String message;
+
+  /// The failure the message describes, for counting by its type.
+  final Object cause;
 
   @override
   String toString() => message;

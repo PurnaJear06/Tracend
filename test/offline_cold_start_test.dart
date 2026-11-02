@@ -109,6 +109,9 @@ class _Backend {
   /// `complete_workout_v2` makes the session completed on the server.
   bool completingCompletesSession = false;
 
+  /// The code every hub request is refused with, when set.
+  String? hubRefusal;
+
   /// Runs while a hub request is being answered, before it is.
   Future<void> Function()? duringHub;
 
@@ -136,7 +139,8 @@ class _Backend {
         return _ok({'onboarding_state': 'completed'});
       case 'POST /rest/v1/rpc/get_my_training_hub':
         await duringHub?.call();
-        return _ok(hub);
+        final refusal = hubRefusal;
+        return refusal == null ? _ok(hub) : _error(refusal, 'refused');
       case 'POST /rest/v1/rpc/start_workout':
         final params = jsonDecode(request.body) as Map;
         final id = params['p_planned_workout_id'] as String;
@@ -617,7 +621,9 @@ void main() {
     });
 
     testWidgets('a password reset left after its code was accepted ends that '
-        'session at launch', (tester) async {
+        'session at launch, and the mark stays until a launch with none', (
+      tester,
+    ) async {
       final client = await startSupabase(tester);
       await cache.save(_userId, _hubJson(), savedThreeDaysAgo);
       await preferences.setBool(PasswordResetMarker.key, true);
@@ -627,7 +633,57 @@ void main() {
       expect(find.byType(OwnerAuthScreen), findsOneWidget);
       expect(find.text('Upper body A'), findsNothing);
       expect(client.auth.currentSession, isNull);
+      // Ending the session may not have finished (a Keychain failure, a kill):
+      // the next launch would find the session again, and the mark with it.
+      expect(await preferences.getBool(PasswordResetMarker.key), isTrue);
+    });
+
+    testWidgets('a launch that finds the mark and no session clears it', (
+      tester,
+    ) async {
+      await startSupabase(tester, signedIn: false);
+      await preferences.setBool(PasswordResetMarker.key, true);
+
+      await pumpGate(tester);
+
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
       expect(await preferences.getBool(PasswordResetMarker.key), isNull);
+    });
+
+    testWidgets('a mark left before the code was accepted does not end a '
+        'later sign-in', (tester) async {
+      // The app died after the mark and before the code's answer arrived.
+      await startSupabase(tester, signedIn: false);
+      await preferences.setBool(PasswordResetMarker.key, true);
+      await pumpGate(tester);
+      expect(await preferences.getBool(PasswordResetMarker.key), isNull);
+      await tester.pumpWidget(const SizedBox());
+
+      // The athlete signed in normally; the next launch restores that session.
+      final client = Supabase.instance.client;
+      await client.auth.setInitialSession(_storedSession());
+      await cache.save(_userId, _hubJson(), savedThreeDaysAgo);
+      await pumpGate(tester);
+
+      expect(client.auth.currentSession, isNotNull);
+      expect(find.byType(OwnerAuthScreen), findsNothing);
+      expect(find.text('Upper body A'), findsWidgets);
+    });
+
+    testWidgets('a mark that appears while the app runs does not end the '
+        'session it opened', (tester) async {
+      final client = await startSupabase(tester);
+      await cache.save(_userId, _hubJson(), savedThreeDaysAgo);
+      await pumpGate(tester);
+      expect(find.text('Upper body A'), findsWidgets);
+
+      await preferences.setBool(PasswordResetMarker.key, true);
+      backend.online = true;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(client.auth.currentSession, isNotNull);
+      expect(find.byType(OwnerAuthScreen), findsNothing);
     });
 
     testWidgets('no stored session shows sign-in', (tester) async {
@@ -786,6 +842,29 @@ void main() {
       expect(hub.planTitle, isNotEmpty);
     });
 
+    testWidgets('a server that refuses answers from the copy and says why', (
+      tester,
+    ) async {
+      final source = await repository(tester);
+      backend.online = true;
+      await source.loadTrainingHub();
+      backend.hubRefusal = '42501';
+
+      final hub = await source.loadTrainingHub();
+
+      expect(hub.cachedAt, isNotNull);
+      expect(hub.serverError, isA<PostgrestException>());
+    });
+
+    testWidgets('a hub that loads names no server error', (tester) async {
+      final source = await repository(tester);
+      backend.online = true;
+
+      final hub = await source.loadTrainingHub();
+
+      expect(hub.serverError, isNull);
+    });
+
     testWidgets('a copy from an earlier day is shown on the phone\'s day '
         'without that day\'s numbers', (tester) async {
       final yesterday = DateTime.now().subtract(const Duration(days: 1));
@@ -906,6 +985,61 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('Offline.'), findsNothing);
       expect(find.text('Start workout'), findsOneWidget);
+    });
+
+    testWidgets('a server that keeps failing is counted behind the saved '
+        'plan, and an answer ends the run', (tester) async {
+      final reported = <NonCriticalFailure>[];
+      final previous = failureSink;
+      failureSink = (failure, _) => reported.add(failure);
+      addTearDown(() => failureSink = previous);
+      resetLoadFailures();
+      addTearDown(resetLoadFailures);
+      const load = 'Train: training hub';
+      final failed = trainHub(
+        cachedAt: DateTime(2026, 9, 30),
+        serverError: const PostgrestException(
+          message: 'refused',
+          code: '42501',
+        ),
+      );
+      final repository = TrainFixtureRepository(hub: failed);
+      await pumpTrain(tester, repository);
+      expect(find.text('Upper body A'), findsWidgets);
+      expect(loadFailuresInARow(load), 1);
+
+      for (var i = 0; i < 2; i++) {
+        await tester.tap(find.text('Try again'));
+        await tester.pumpAndSettle();
+      }
+      expect(loadFailuresInARow(load), 3);
+      expect(
+        reported.single.what,
+        'Train: training hub failed 3 times in a row',
+      );
+
+      repository.hub = trainHub();
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(loadFailuresInARow(load), 0);
+    });
+
+    testWidgets('a lost connection behind the saved plan is not counted', (
+      tester,
+    ) async {
+      resetLoadFailures();
+      addTearDown(resetLoadFailures);
+      await pumpTrain(
+        tester,
+        TrainFixtureRepository(
+          hub: trainHub(
+            cachedAt: DateTime(2026, 9, 30),
+            serverError: http.ClientException('offline'),
+          ),
+        ),
+      );
+
+      expect(loadFailuresInARow('Train: training hub'), 0);
     });
 
     testWidgets('tries the server again when the tab comes back', (

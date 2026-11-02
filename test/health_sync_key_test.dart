@@ -39,11 +39,17 @@ class _Reader implements HeartRateReader {
 }
 
 class _Source implements HealthDataSource {
+  _Source({this.readResult});
+
+  /// What the read does instead of returning steps.
+  final Future<HealthReadResult> Function()? readResult;
+
   @override
   Future<bool> requestReadAccess() async => true;
 
   @override
   Future<HealthReadResult> read(DateTime start, DateTime end) async =>
+      readResult?.call() ??
       const HealthReadResult(
         requestedMetrics: {HealthMetric.steps},
         returnedMetrics: {HealthMetric.steps},
@@ -91,13 +97,15 @@ Future<(SupabaseClient, List<String>)> _client(
   return (client, keys);
 }
 
-SupabaseHealthRepository _repository(SupabaseClient client) =>
-    SupabaseHealthRepository(
-      client,
-      SharedPreferencesAsync(),
-      source: _Source(),
-      heartRateReader: _Reader(),
-    );
+SupabaseHealthRepository _repository(
+  SupabaseClient client, {
+  HealthDataSource? source,
+}) => SupabaseHealthRepository(
+  client,
+  SharedPreferencesAsync(),
+  source: source ?? _Source(),
+  heartRateReader: _Reader(),
+);
 
 http.Response _json(http.Request request, int status, Object body) =>
     http.Response(
@@ -214,4 +222,103 @@ void main() {
       expect(reported.single.detail, 'FunctionsHttpException 422');
     },
   );
+
+  group('a failed sync is counted whole, not only its request', () {
+    const load = 'Apple Health sync';
+
+    test('a Health read that throws counts, and three in a row reach '
+        'Sentry', () async {
+      final reported = <NonCriticalFailure>[];
+      final previous = failureSink;
+      failureSink = (failure, _) => reported.add(failure);
+      addTearDown(() => failureSink = previous);
+      final (client, keys) = await _client(
+        (request) => _json(request, 200, <String, Object>{}),
+      );
+      final repository = _repository(
+        client,
+        source: _Source(readResult: () async => throw StateError('read')),
+      );
+
+      for (var i = 0; i < 3; i++) {
+        await expectLater(repository.sync(), throwsStateError);
+      }
+
+      expect(keys, isEmpty, reason: 'the request was never reached');
+      expect(loadFailuresInARow(load), 3);
+      expect(reported.single.what, 'Apple Health sync failed 3 times in a row');
+    });
+
+    test('a request that succeeds ends the run only after the whole sync '
+        'finished', () async {
+      final (client, _) = await _client(
+        (request) => _json(request, 200, <String, Object>{}),
+      );
+      var broken = true;
+      final repository = _repository(
+        client,
+        source: _Source(
+          readResult: () async {
+            if (broken) throw StateError('read');
+            return const HealthReadResult(
+              requestedMetrics: {HealthMetric.steps},
+              returnedMetrics: {HealthMetric.steps},
+              samples: [],
+            );
+          },
+        ),
+      );
+      await expectLater(repository.sync(), throwsStateError);
+      await expectLater(repository.sync(), throwsStateError);
+      expect(loadFailuresInARow(load), 2);
+
+      broken = false;
+      await repository.sync();
+
+      expect(loadFailuresInARow(load), 0);
+    });
+
+    test(
+      'Health that cannot be read neither counts nor ends the run',
+      () async {
+        final (client, _) = await _client(
+          (request) => _json(request, 200, <String, Object>{}),
+        );
+        var unavailable = false;
+        final repository = _repository(
+          client,
+          source: _Source(
+            readResult: () async {
+              if (!unavailable) throw StateError('read');
+              return const HealthReadResult(
+                requestedMetrics: {},
+                returnedMetrics: {},
+                samples: [],
+                unavailable: true,
+                accessError: HealthAccessError.authorizationDenied,
+              );
+            },
+          ),
+        );
+        await expectLater(repository.sync(), throwsStateError);
+        expect(loadFailuresInARow(load), 1);
+
+        unavailable = true;
+        final status = await repository.sync();
+
+        expect(status.state, HealthConnectionState.unavailable);
+        expect(loadFailuresInARow(load), 1);
+      },
+    );
+
+    test('a lost connection is not counted', () async {
+      final (client, _) = await _client(
+        (request) => throw http.ClientException('offline'),
+      );
+
+      await expectLater(_repository(client).sync(), throwsException);
+
+      expect(loadFailuresInARow(load), 0);
+    });
+  });
 }

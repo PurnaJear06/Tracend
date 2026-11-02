@@ -30,8 +30,10 @@ Audit of `origin/main` 4421da9, findings B2, B4, P1-7 and P1-4.
   sign-in. `OwnerAuthScreen` takes an optional `GoTrueClient` for tests
   (`test/owner_auth_recovery_test.dart`). Review round 1: 5xx and `email_address_not_authorized`
   also read as sent (logged by code); `PasswordResetMarker` (`tracend.password_reset_pending`) is set
-  before `verifyOTP` and cleared after `updateUser` or on leaving, and the gate ends a session it
-  finds marked at launch (`test/offline_cold_start_test.dart`).
+  before `verifyOTP` and cleared after `updateUser`, on leaving (kept if the sign-out failed) and
+  after a password sign-in. Review round 2: the gate reads it once at launch (`_endUnfinishedReset`):
+  mark and session sign the session out locally and keep the mark; mark and no session clear it, so
+  a stale mark can never end a later sign-in (`test/offline_cold_start_test.dart`).
 - **P1-7, deletion during onboarding.** Onboarding's header has **Account options** beside **Sign
   out** (two text buttons overflow at 320 pt and 2x text), offering **Delete account** through the
   shared `showAccountDeletion` (`account_sheets.dart`, now also used by Account). The gate passes a
@@ -48,7 +50,10 @@ Audit of `origin/main` 4421da9, findings B2, B4, P1-7 and P1-4.
   Review round 1: counts reset on every change of account; only the load whose result is shown
   counts (a superseded Today or Train load does not, and a shared brief request counts once,
   `test/today_load_failures_test.dart`); a relay 4xx (`FunctionsRelayException`) is not retried
-  either.
+  either. Round 2: a training hub answered from the saved plan carries `TrainingHubData.serverError`
+  and Train counts it (a success only for a hub just loaded); an Apple Health sync is counted
+  around the whole `sync()`, with Health that cannot be read neither a failure nor a success
+  (`test/health_sync_key_test.dart`, `test/offline_cold_start_test.dart`).
 - **Owner steps** (`docs/BETA_OPERATIONS.md` step 9): paste the Reset password template with
   `{{ .Token }}`, keep the OTP expiry at 3600 s and length 6, set the Site URL, and turn on
   leaked-password protection. Until the template is changed, the reset email carries only a link
