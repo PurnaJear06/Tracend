@@ -1075,7 +1075,9 @@ confirmation actions. The tab reads top to bottom:
   - A day before the athlete's first plan began was never due: its strip box reads as a rest day, it
     is not counted in "This week", and the day shows "Before your plan" ("Your plan started on Thu 1
     Oct. Nothing was due this day.") with no action. Today's week, Progress and the weekly review
-    leave such days out the same way.
+    leave such days out the same way. A weekly review of a week with nothing
+    due (before the plan began, or in a break) shows "None planned this week" beside the workouts done,
+    never "0 of 0" or a percentage; the Progress workout count reads "none planned" the same way.
   - **One workout at a time.** Starting a workout while another has sets logged asks first, in an
     action sheet: "Legs B (Fri) has 2 sets logged." with **Resume it** and **Start this one
     anyway**. Starting anyway leaves that draft as it is; nothing is discarded. The same workout

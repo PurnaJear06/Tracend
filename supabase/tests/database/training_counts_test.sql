@@ -7,11 +7,15 @@ select no_plan();
 -- 1. Progression -------------------------------------------------------------------------------------------
 
 -- A session summary as private.next_session_targets builds it (latest first in the array).
-create function pg_temp.sess(p_load numeric, p_reps integer[], p_min_rir integer, p_date date default null)
+-- skipped_before and pain_before say a skipped or a pain-flagged performance came between this session and
+-- the one before it.
+create function pg_temp.sess(p_load numeric, p_reps integer[], p_min_rir integer, p_date date default null,
+  p_skipped_before boolean default false, p_pain_before boolean default false)
 returns jsonb language sql as $$
   select jsonb_build_object('local_date', p_date, 'load_kg', p_load, 'sets', cardinality(p_reps),
     'min_reps', (select min(r) from unnest(p_reps) r), 'total_reps', (select sum(r) from unnest(p_reps) r),
-    'min_rir', p_min_rir, 'effort_known', true, 'pain', false, 'adjusted', false, 'sets_planned', null)
+    'min_rir', p_min_rir, 'effort_known', true, 'pain', false, 'adjusted', false, 'sets_planned', null,
+    'skipped_before', p_skipped_before, 'pain_before', p_pain_before)
 $$;
 
 -- A beginner squat: 3 sets of 8 to 12, 2.5 kg step, three days since the last session.
@@ -70,6 +74,24 @@ select is(pg_temp.squat(7.5, jsonb_build_array(pg_temp.sess(60, '{10,10,10}', 2,
 select is(pg_temp.squat(7, jsonb_build_array(pg_temp.sess(60, '{10,10,10}', 3, '2026-10-26'),
     pg_temp.sess(60, '{10,10,10}', 3, '2026-10-12'), pg_temp.sess(60, '{10,10,10}', 3, '2026-10-05'))) ->> 'action',
   'add_reps', 'a session after 14 days away followed a hold too, worked out from the dates');
+
+-- A hold for a skipped session or for pain is a hold too: equal reps after it are what was asked, not a stall,
+-- whichever interval it fell in. The same three sessions with nothing between them are a stall.
+select is(pg_temp.squat(7.5, jsonb_build_array(pg_temp.sess(60, '{10,10,10}', 2, '2026-10-12'),
+    pg_temp.sess(60, '{10,10,10}', 2, '2026-10-08', true), pg_temp.sess(60, '{10,10,10}', 2, '2026-10-05'))) ->> 'action',
+  'add_reps', 'a skip between the oldest two sessions: held, not a stall');
+select is(pg_temp.squat(7.5, jsonb_build_array(pg_temp.sess(60, '{10,10,10}', 2, '2026-10-12', true),
+    pg_temp.sess(60, '{10,10,10}', 2, '2026-10-08'), pg_temp.sess(60, '{10,10,10}', 2, '2026-10-05'))) ->> 'action',
+  'add_reps', 'a skip between the newest two: held, not a stall');
+select is(pg_temp.squat(7.5, jsonb_build_array(pg_temp.sess(60, '{10,10,10}', 2, '2026-10-12'),
+    pg_temp.sess(60, '{10,10,10}', 2, '2026-10-08', false, true), pg_temp.sess(60, '{10,10,10}', 2, '2026-10-05'))) ->> 'action',
+  'add_reps', 'pain flagged between the oldest two sessions: held, not a stall');
+select is(pg_temp.squat(7.5, jsonb_build_array(pg_temp.sess(60, '{10,10,10}', 2, '2026-10-12', false, true),
+    pg_temp.sess(60, '{10,10,10}', 2, '2026-10-08'), pg_temp.sess(60, '{10,10,10}', 2, '2026-10-05'))) ->> 'action',
+  'add_reps', 'pain flagged between the newest two: held, not a stall');
+select is(pg_temp.squat(7.5, jsonb_build_array(pg_temp.sess(60, '{9,9,9}', 2, '2026-10-12'),
+    pg_temp.sess(60, '{10,10,10}', 2, '2026-10-08', true), pg_temp.sess(60, '{10,10,10}', 2, '2026-10-05'))) ->> 'reason',
+  'stall', 'fewer reps per set after a held skip is still a stall');
 
 -- 2. The first day of training -------------------------------------------------------------------------
 
@@ -179,8 +201,8 @@ select is((select (summary -> 'training' ->> 'planned_sessions')::integer from p
   'the week''s review plans only the days since the plan began, less the can''t-train day');
 select is((select summary -> 'training' from public.progress_reviews
     where user_id = 'c0000000-0000-4000-8000-0000000000c3'),
-  '{"planned_sessions":0,"completed_workouts":0,"completed_sets":0,"adherence_percent":100}'::jsonb,
-  'a week wholly before the plan had nothing due: nothing was missed');
+  '{"planned_sessions":0,"completed_workouts":0,"completed_sets":0,"adherence_percent":null}'::jsonb,
+  'a week wholly before the plan had nothing due: no adherence percentage, not 0% or 100%');
 select is((select summary -> 'missing_data' ? 'active_training_plan' from public.progress_reviews
     where user_id = 'c0000000-0000-4000-8000-0000000000c3'), false,
   'and it is not reported as a missing plan');
@@ -222,6 +244,88 @@ select is((select count(*) from public.workout_sessions
 select ok((select p.prosrc like '%pg_advisory_xact_lock(hashtextextended(%''day_adjustment:'' || v_user_id::text%'
     from pg_proc p where p.oid = 'public.healthkit_auto_complete_workout(uuid,date)'::regprocedure),
   'it takes start_workout''s day lock, so two taps at once never both insert');
+
+-- 4. The skip and the pain between sessions come from the logs --------------------------------------------
+
+insert into auth.users(id, role) values ('c0000000-0000-4000-8000-0000000000e5', 'authenticated');
+select pg_temp.plan('c0000000-0000-4000-8000-0000000000e5', 'c1000000-0000-4000-8000-0000000000e5', 1,
+  'active', (select today - 40 from t));
+-- Three lifts, 3 x 8 to 12 at RPE 7.5: the squat is skipped between its oldest two sessions, the curl has a
+-- pain flag there (no set logged), and the goblet squat has nothing between its sessions.
+insert into public.planned_exercises(id, user_id, planned_workout_id, exercise_order, display_name_snapshot,
+  set_count, rep_min, rep_max, target_rpe, rest_seconds, exercise_slug)
+select x.id::uuid, 'c0000000-0000-4000-8000-0000000000e5', w.id, x.o, x.n, 3, 8, 12, 7.5, 90, x.slug
+from (values ('c4000000-0000-4000-8000-0000000000e1', 1, 'Barbell back squat', 'barbell-back-squat'),
+  ('c4000000-0000-4000-8000-0000000000e2', 2, 'Dumbbell curl', 'dumbbell-curl'),
+  ('c4000000-0000-4000-8000-0000000000e3', 3, 'Goblet squat', 'goblet-squat')) x(id, o, n, slug)
+join public.planned_workouts w on w.plan_version_id = 'c1000000-0000-4000-8000-0000000000e5'
+  and w.preferred_weekday = 1;
+
+create function pg_temp.session_on(p_days_ago integer) returns uuid language sql as $$
+  insert into public.workout_sessions(user_id, plan_version_id, planned_workout_id, local_date, timezone, state,
+    idempotency_key, completed_at, duration_seconds, session_effort, session_effort_source, completion_source)
+  select w.user_id, w.plan_version_id, w.id, (select today - p_days_ago from t), 'UTC', 'completed',
+    gen_random_uuid(), now() - p_days_ago * interval '1 day', 3000, 7, 'athlete', 'manual'
+  from public.planned_workouts w
+  where w.plan_version_id = 'c1000000-0000-4000-8000-0000000000e5' and w.preferred_weekday = 1
+  returning id;
+$$;
+-- A performance of one planned exercise: its status, its pain flag and three sets of 10 with 2 reps left.
+create function pg_temp.log_perf(p_session uuid, p_exercise text, p_order integer, p_status text, p_pain boolean,
+  p_load numeric) returns void language plpgsql as $$
+declare pid uuid;
+begin
+  insert into public.exercise_performances(user_id, workout_session_id, planned_exercise_id, exercise_order,
+    status, performance_kind, pain_flag)
+  values ('c0000000-0000-4000-8000-0000000000e5', p_session, ('c4000000-0000-4000-8000-0000000000' || p_exercise)::uuid,
+    p_order, p_status, 'prescribed', p_pain)
+  returning id into pid;
+  if p_load is not null then
+    insert into public.exercise_sets(user_id, exercise_performance_id, set_number, repetitions, load_kg, rir,
+      completed)
+    select 'c0000000-0000-4000-8000-0000000000e5', pid, n, 10, p_load, 2, true from generate_series(1, 3) n;
+  end if;
+end $$;
+
+-- The oldest session of each lift, then a session where the squat is skipped and the curl is flagged, then
+-- the two newest.
+create function pg_temp.lifts(p_days_ago integer) returns void language plpgsql as $$
+declare sid uuid := pg_temp.session_on(p_days_ago);
+begin
+  perform pg_temp.log_perf(sid, 'e1', 1, 'performed', false, 60);
+  perform pg_temp.log_perf(sid, 'e2', 2, 'performed', false, 12.5);
+  perform pg_temp.log_perf(sid, 'e3', 3, 'performed', false, 20);
+end $$;
+select pg_temp.lifts(28);
+do $$
+declare sid uuid := pg_temp.session_on(24);
+begin
+  perform pg_temp.log_perf(sid, 'e1', 1, 'skipped', false, null);
+  perform pg_temp.log_perf(sid, 'e2', 2, 'performed', true, null);
+end $$;
+select pg_temp.lifts(17);
+select pg_temp.lifts(10);
+
+create temporary table tg as
+select t.value ->> 'name' as name, t.value ->> 'action' as action, t.value ->> 'reason' as reason,
+  t.value -> 'basis' -> 'recent' as recent
+from jsonb_array_elements(private.next_session_targets('c0000000-0000-4000-8000-0000000000e5')) t;
+
+select is((select action || ' ' || reason from tg where name = 'Goblet squat'), 'lower stall',
+  'equal reps over three sessions with nothing between them are a stall: the load is cut');
+select is((select action from tg where name = 'Barbell back squat'), 'add_reps',
+  'a skipped session between them was a hold: no stall, no cut');
+select is((select reason from tg where name = 'Dumbbell curl'), 'within_range',
+  'and so was a pain flag with no set logged: no stall, no cut');
+select is((select array[recent -> 1 ->> 'skipped_before', recent -> 1 ->> 'pain_before']
+    from tg where name = 'Barbell back squat'), array['true', 'false'],
+  'the squat''s middle session carries the skip that came before it');
+select is((select array[recent -> 1 ->> 'skipped_before', recent -> 1 ->> 'pain_before']
+    from tg where name = 'Dumbbell curl'), array['false', 'true'],
+  'and the curl''s the pain');
+select is((select array[recent -> 0 ->> 'skipped_before', recent -> 2 ->> 'skipped_before']
+    from tg where name = 'Goblet squat'), array['false', 'false'],
+  'a lift with nothing between its sessions carries neither');
 
 select * from finish();
 rollback;

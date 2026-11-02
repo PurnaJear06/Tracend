@@ -763,7 +763,7 @@ change or a new block keeps the first plan's start. A day before it is neither d
 day the athlete chose: the brief's `week` does not plan it (1.9, no shape change), the training hub 1.11
 leaves its sessions out of `adherence.planned_sessions` and returns the date as `training_started_on`, the
 weekly review's `planned_sessions` start at it and leave out rest days without a logged session (a week
-with nothing due reads `adherence_percent` 100, not a missing plan; snapshots name
+with nothing due has a null `adherence_percent`, neither 0% nor 100% and not a missing plan; snapshots name
 `weekly-deterministic-v2`), and `get_coach_plan_state_v1` 1.4 returns it so the Coach never calls such a
 session undone.
 

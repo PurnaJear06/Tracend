@@ -507,7 +507,8 @@ rir_target   the hard edge of the target's reps-left band, floor(10 - target_rpe
              2 to 3 reps left, so 2 or 3 is on target (RPE 7: 3, 8: 2, 8.5: 1; 2 when the plan
              sets no RPE; migration 20261102194352, it rounded before and held sets at 2)
 held        s1 or s2 followed a hold: the decision worked out from the sessions before it
-             (with the days between them) was a hold
+             (with the days between them, and a skipped or pain-flagged performance that came
+             between them, carried on each session as skipped_before / pain_before) was a hold
 step         exercise_catalog.load_step_kg; none for bands, benches, bars and exercises
              without a catalog link (those progress by reps only)
 assisted     assisted-* slug or "assisted ..." name: the load is machine help, the working

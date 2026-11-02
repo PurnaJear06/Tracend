@@ -5,13 +5,15 @@
 --    target's band (RPE 7.5 is "about 2-3 reps left", as the plan says, so 2 or 3 is on target; it used to
 --    round to 3, held every set logged at 2 and then read the holds as a stall and cut the load). A session
 --    that followed a hold is a stall only when reps per set fell, not when they repeated what was asked.
+--    Whether an earlier session followed a hold counts the skipped or pain-flagged performances between
+--    the sessions too: next_session_targets now carries them as skipped_before and pain_before.
 -- 2. private.training_started_on: the first day of the athlete's first plan. Days before it are neither
 --    due nor missed, like the rest days of 20261101200000 (a break, a can't-train check-in):
 --      get_my_daily_brief 1.9          the week's days before it are not planned (no shape change).
 --      get_my_training_hub 1.11        planned_sessions leaves out the sessions before it, and the hub
 --                                      returns it as training_started_on (additive).
 --      generate_weekly_progress_review planned sessions start at it and leave out rest days; a week with
---                                      nothing due reads 100% (nothing missed), not "no plan".
+--                                      nothing due has no adherence percentage (null), not 0% or 100%.
 --      get_coach_plan_state_v1 1.4     returns it, so Coach never calls a session before it undone.
 -- 3. healthkit_auto_complete_workout takes start_workout's day lock, so a double tap on "Mark complete"
 --    records one session; the repeat returns that session.
@@ -68,16 +70,21 @@ begin
   v_load_out := v_load;
   v_reps := v_hold_reps;
   -- Whether the session before the latest or the latest one followed a hold, as worked out from the
-  -- sessions before each: repeating what a hold asked for is not a stall, so then only fewer reps
-  -- per set is.
+  -- sessions before each, with what happened between them (a skipped or a pain-flagged performance,
+  -- carried on the later session as skipped_before and pain_before): repeating what a hold asked for
+  -- is not a stall, so then only fewer reps per set is.
   if s3 is not null then
     v_followed_hold := private.progression_decision(p_set_count, p_rep_min, p_rep_max,
         p_target_rpe, p_step_kg,
-        coalesce((s2 ->> 'local_date')::date - (s3 ->> 'local_date')::date, 0), false, false,
+        coalesce((s2 ->> 'local_date')::date - (s3 ->> 'local_date')::date, 0),
+        coalesce((s2 ->> 'skipped_before')::boolean, false),
+        coalesce((s2 ->> 'pain_before')::boolean, false),
         p_assisted, jsonb_build_array(s3)) ->> 'action' = 'hold'
       or private.progression_decision(p_set_count, p_rep_min, p_rep_max,
         p_target_rpe, p_step_kg,
-        coalesce((s1 ->> 'local_date')::date - (s2 ->> 'local_date')::date, 0), false, false,
+        coalesce((s1 ->> 'local_date')::date - (s2 ->> 'local_date')::date, 0),
+        coalesce((s1 ->> 'skipped_before')::boolean, false),
+        coalesce((s1 ->> 'pain_before')::boolean, false),
         p_assisted, jsonb_build_array(s2, s3)) ->> 'action' = 'hold';
   end if;
 
@@ -143,6 +150,195 @@ begin
     'confidence', case when coalesce((s1 ->> 'effort_known')::boolean, false)
       then 'high' else 'low' end);
 end $$;
+
+-- 1b. next_session_targets carries what happened between sessions (20261024060325 plus the hunks) -------------
+
+create or replace function private.next_session_targets(p_user uuid)
+returns jsonb language sql stable security definer set search_path = '' as $$
+with rules as (
+  select private.progression_rules() as r
+), today as (
+  select private.local_date_for(p_user) as d
+), deloading as (
+  -- The active plan version is a deload week that has not ended (the same test as the signals' running).
+  select exists (
+    select 1 from public.training_plan_versions v
+    join public.change_proposals cp on cp.id = v.source_proposal_id and cp.user_id = v.user_id
+    where v.user_id = p_user and v.status = 'active' and v.block_kind = 'intensity'
+      and v.ends_on >= (select d from today)
+      and private.is_deload_proposal(cp.proposal_kind, cp.proposal_payload)) as active
+), planned as (
+  select e.id as planned_exercise_id, w.workout_order, e.exercise_order,
+    e.exercise_slug, e.display_name_snapshot as name,
+    e.set_count, e.rep_min, e.rep_max, e.target_rpe,
+    private.exercise_name_key(e.display_name_snapshot) as name_key,
+    private.exercise_name_key(c.name) as catalog_name_key,
+    coalesce(e.exercise_slug like 'assisted-%',
+      private.exercise_name_key(e.display_name_snapshot) like 'assisted %') as assisted,
+    c.load_step_kg as step_kg,
+    coalesce(c.added_load, false) as added_load,
+    -- The same lift planned more than once with different rep ranges (an advanced plan's heavy
+    -- and light days): each range keeps its own history, so a heavy 100 kg x 9 is never read
+    -- as a light day's 100 kg x 10.
+    e.exercise_slug is not null and exists (
+      select 1 from public.planned_exercises o
+      join public.planned_workouts ow on ow.id = o.planned_workout_id and ow.user_id = o.user_id
+      where ow.plan_version_id = v.id and o.user_id = e.user_id
+        and o.exercise_slug = e.exercise_slug
+        and (o.rep_min, o.rep_max) is distinct from (e.rep_min, e.rep_max)) as split_range
+  from public.training_plan_versions v
+  join public.planned_workouts w on w.plan_version_id = v.id and w.user_id = v.user_id
+  join public.planned_exercises e on e.planned_workout_id = w.id and e.user_id = w.user_id
+  left join public.exercise_catalog c on c.slug = e.exercise_slug
+  where v.user_id = p_user and v.status = 'active'
+), perf as (
+  select pl.planned_exercise_id, pl.assisted, pl.added_load, p.id as performance_id, p.status, p.pain_flag,
+    s.local_date, s.completed_at, s.id as session_id, p.planned_exercise_id as logged_exercise_id
+  from planned pl
+  join public.exercise_performances p on p.user_id = p_user
+  left join public.planned_exercises pe on pe.id = p.planned_exercise_id and pe.user_id = p.user_id
+  join public.workout_sessions s on s.id = p.workout_session_id and s.user_id = p.user_id
+    and s.state = 'completed'
+    and s.local_date >= (select d from today) - (select (r ->> 'lookback_days')::integer from rules)
+  where ((pl.exercise_slug is not null and p.exercise_slug = pl.exercise_slug)
+    or (pl.exercise_slug is not null and p.exercise_slug is null
+        and p.performance_kind = 'prescribed'
+        and private.exercise_name_key(coalesce(p.performed_name, pe.display_name_snapshot))
+            = pl.catalog_name_key)
+    or (pl.exercise_slug is null and p.exercise_slug is null
+        and private.exercise_name_key(coalesce(p.performed_name, pe.display_name_snapshot))
+            = pl.name_key))
+    -- A lift planned with several ranges counts only the performances logged against a planned
+    -- exercise with this range, whichever plan version it came from.
+    and (not pl.split_range
+      or (pe.rep_min is not distinct from pl.rep_min and pe.rep_max is not distinct from pl.rep_max))
+), logged as (
+  select pf.planned_exercise_id, pf.assisted, pf.session_id, pf.local_date, pf.completed_at,
+    pf.pain_flag, pf.logged_exercise_id,
+    -- Assisted: the load is machine help and 0 is unassisted, so it is kept. Added load (a weighted
+    -- pull-up): the load is the weight added to the body, so no load and 0 both mean none added,
+    -- a real starting point for the first step.
+    case when pf.assisted then es.load_kg
+      when pf.added_load then coalesce(es.load_kg, 0)
+      else nullif(es.load_kg, 0) end as load_kg,
+    es.repetitions,
+    case when es.rir is not null then es.rir::integer
+      when es.rpe is not null then greatest(0, least(5, round(10 - es.rpe)::integer)) end as rir
+  from perf pf
+  join public.exercise_sets es on es.exercise_performance_id = pf.performance_id
+    and es.user_id = p_user and es.completed and es.repetitions > 0
+  where pf.status <> 'skipped' and (not pf.assisted or es.load_kg is not null)
+), topped as (
+  -- The top load is the heaviest; for an assisted exercise the least help.
+  select l.*, case when l.assisted
+      then min(l.load_kg) over (partition by l.planned_exercise_id, l.session_id)
+      else max(l.load_kg) over (partition by l.planned_exercise_id, l.session_id) end as top_load
+  from logged l
+), sessions as (
+  select t.planned_exercise_id, t.session_id, t.local_date, t.completed_at, t.top_load,
+    count(*)::integer as sets,
+    min(t.repetitions)::integer as min_reps,
+    sum(t.repetitions)::integer as total_reps,
+    min(t.rir) as min_rir,
+    count(t.rir) = count(*) as effort_known,
+    bool_or(t.pain_flag) as pain,
+    max(t.logged_exercise_id::text)::uuid as logged_exercise_id
+  from topped t
+  where t.load_kg is not distinct from t.top_load
+  group by t.planned_exercise_id, t.session_id, t.local_date, t.completed_at, t.top_load
+), marked as (
+  -- Done under an accepted answer that lists this exercise (hold_load, reduce_sets or joint_adjust,
+  -- B4 and B5), or one that limits its range for a joint: not evidence for lowering its load, and its
+  -- planned set count is the answer's (an easy-cardio answer keeps the plan's sets). An exercise the
+  -- answer left alone is judged as ever, however easy the rest of the session was. A session done under
+  -- a deload week's plan version is held to the same rule: it is a lighter week on purpose, so it is
+  -- never evidence for lowering a load (its planned set count stays the plan's, so the first session
+  -- after the week reads as incomplete and holds).
+  select s.*, ch.listed is not null or dl.deload is not null as adjusted, ch.sets_planned
+  from sessions s
+  join public.workout_sessions ws on ws.id = s.session_id and ws.user_id = p_user
+  left join public.day_adjustments a on a.id = ws.day_adjustment_id and a.user_id = p_user
+    and a.status = 'accepted'
+  left join lateral (
+    select true as listed,
+      case when a.kind <> 'swap_to_easy_cardio' then (c ->> 'sets_to')::integer end as sets_planned
+    from jsonb_array_elements(a.changes) c
+    where c ->> 'planned_exercise_id' = s.logged_exercise_id::text
+      and (a.kind in ('hold_load', 'reduce_sets', 'joint_adjust')
+        or c ->> 'joint_action' = 'limit') limit 1) ch on true
+  left join lateral (
+    select true as deload from public.training_plan_versions pv
+    join public.change_proposals cp on cp.id = pv.source_proposal_id and cp.user_id = pv.user_id
+    where pv.id = ws.plan_version_id and pv.user_id = p_user and pv.block_kind = 'intensity'
+      and private.is_deload_proposal(cp.proposal_kind, cp.proposal_payload)) dl on true
+), ranked as (
+  select s.*, row_number() over w as rn,
+    lead(s.local_date) over w as older_date, lead(s.completed_at) over w as older_completed_at
+  from marked s
+  window w as (partition by s.planned_exercise_id order by s.local_date desc, s.completed_at desc)
+), chained as (
+  -- What happened between a session and the one before it: a skipped performance, or one flagged for
+  -- pain even though no set was logged that day. progression_decision reads them when it works out
+  -- whether the earlier sessions followed a hold, so a hold for a skip or for pain is never counted
+  -- as a stall.
+  select r.*,
+    exists (select 1 from perf sk where sk.planned_exercise_id = r.planned_exercise_id
+      and sk.status = 'skipped'
+      and (sk.local_date, sk.completed_at) > (r.older_date, r.older_completed_at)
+      and (sk.local_date, sk.completed_at) < (r.local_date, r.completed_at)) as skipped_before,
+    exists (select 1 from perf pn where pn.planned_exercise_id = r.planned_exercise_id
+      and pn.pain_flag
+      and (pn.local_date, pn.completed_at) > (r.older_date, r.older_completed_at)
+      and (pn.local_date, pn.completed_at) < (r.local_date, r.completed_at)) as pain_before
+  from ranked r where r.rn <= 3
+), recent as (
+  select r.planned_exercise_id, max(r.local_date) filter (where r.rn = 1) as latest_date,
+    max(r.completed_at) filter (where r.rn = 1) as latest_completed_at,
+    jsonb_agg(jsonb_build_object(
+      'local_date', r.local_date, 'load_kg', r.top_load, 'sets', r.sets,
+      'min_reps', r.min_reps, 'total_reps', r.total_reps, 'min_rir', r.min_rir,
+      'effort_known', r.effort_known, 'pain', r.pain, 'adjusted', r.adjusted,
+      'sets_planned', r.sets_planned, 'skipped_before', r.skipped_before,
+      'pain_before', r.pain_before) order by r.rn) as sess
+  from chained r group by r.planned_exercise_id
+)
+select coalesce(jsonb_agg(x.target order by x.workout_order, x.exercise_order), '[]'::jsonb)
+from (
+  select pl.workout_order, pl.exercise_order,
+    jsonb_build_object('planned_exercise_id', pl.planned_exercise_id,
+      'exercise_key', coalesce(pl.exercise_slug, pl.name_key), 'name', pl.name)
+    || d.decision
+    || jsonb_build_object('basis', jsonb_build_object(
+      'last_date', rc.latest_date, 'recent', rc.sess)) as target
+  from planned pl
+  join recent rc on rc.planned_exercise_id = pl.planned_exercise_id
+  cross join lateral (
+    select private.progression_decision(pl.set_count, pl.rep_min, pl.rep_max, pl.target_rpe,
+      pl.step_kg, (select d from today) - rc.latest_date,
+      exists (select 1 from perf sk where sk.planned_exercise_id = pl.planned_exercise_id
+        and sk.status = 'skipped'
+        and (sk.local_date, sk.completed_at) > (rc.latest_date, rc.latest_completed_at)),
+      -- (workout_sessions.completed_at is never null for a completed session: a check
+      -- constraint ties them, so the row comparisons are never null.)
+      -- Pain on a later performance counts even when no set was logged that day.
+      exists (select 1 from perf pn where pn.planned_exercise_id = pl.planned_exercise_id
+        and pn.pain_flag
+        and (pn.local_date, pn.completed_at) > (rc.latest_date, rc.latest_completed_at)),
+      pl.assisted,
+      rc.sess) as decision
+  ) q
+  -- During a deload week a target never steps up: a step in load becomes a hold at the last
+  -- working load.
+  cross join lateral (
+    select case when (select active from deloading) and q.decision ->> 'action' = 'add_load'
+      then q.decision || jsonb_build_object('action', 'hold', 'reason', 'deload',
+        'load_kg', rc.sess -> 0 -> 'load_kg',
+        'reps', least(pl.rep_max, greatest(pl.rep_min, (rc.sess -> 0 ->> 'min_reps')::integer)))
+      else q.decision end as decision
+  ) d
+  where d.decision is not null
+) x;
+$$;
 
 -- 2. The first day of training ------------------------------------------------------------------------------
 
@@ -590,8 +786,9 @@ begin
     missing := array_append(missing, 'active_training_plan');
     adherence_percent := 0;
   elsif planned_sessions = 0 then
-    -- Nothing was due this week, so nothing was missed.
-    adherence_percent := 100;
+    -- Nothing was due this week (it fell before the plan began, or in a break), so there is no
+    -- percentage to report.
+    adherence_percent := null;
   else
     adherence_percent := least(100, round(completed_workouts * 100.0 / planned_sessions));
   end if;

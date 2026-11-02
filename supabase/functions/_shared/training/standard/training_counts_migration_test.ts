@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 
-// The training-counts migration redefines six functions. Each must be its latest earlier definition plus
+// The training-counts migration redefines seven functions. Each must be its latest earlier definition plus
 // the intended hunks and nothing else, so everything else it does is what the earlier migrations (and their
 // pgTAP tests) already proved.
 const read = (name: string) =>
@@ -54,7 +54,7 @@ Deno.test("progression_decision is its latest earlier definition plus the traini
     ],
     [
       "  v_reps := v_hold_reps;\n\n",
-      "  v_reps := v_hold_reps;\n  -- Whether the session before the latest or the latest one followed a hold, as worked out from the\n  -- sessions before each: repeating what a hold asked for is not a stall, so then only fewer reps\n  -- per set is.\n  if s3 is not null then\n    v_followed_hold := private.progression_decision(p_set_count, p_rep_min, p_rep_max,\n        p_target_rpe, p_step_kg,\n        coalesce((s2 ->> 'local_date')::date - (s3 ->> 'local_date')::date, 0), false, false,\n        p_assisted, jsonb_build_array(s3)) ->> 'action' = 'hold'\n      or private.progression_decision(p_set_count, p_rep_min, p_rep_max,\n        p_target_rpe, p_step_kg,\n        coalesce((s1 ->> 'local_date')::date - (s2 ->> 'local_date')::date, 0), false, false,\n        p_assisted, jsonb_build_array(s2, s3)) ->> 'action' = 'hold';\n  end if;\n\n",
+      "  v_reps := v_hold_reps;\n  -- Whether the session before the latest or the latest one followed a hold, as worked out from the\n  -- sessions before each, with what happened between them (a skipped or a pain-flagged performance,\n  -- carried on the later session as skipped_before and pain_before): repeating what a hold asked for\n  -- is not a stall, so then only fewer reps per set is.\n  if s3 is not null then\n    v_followed_hold := private.progression_decision(p_set_count, p_rep_min, p_rep_max,\n        p_target_rpe, p_step_kg,\n        coalesce((s2 ->> 'local_date')::date - (s3 ->> 'local_date')::date, 0),\n        coalesce((s2 ->> 'skipped_before')::boolean, false),\n        coalesce((s2 ->> 'pain_before')::boolean, false),\n        p_assisted, jsonb_build_array(s3)) ->> 'action' = 'hold'\n      or private.progression_decision(p_set_count, p_rep_min, p_rep_max,\n        p_target_rpe, p_step_kg,\n        coalesce((s1 ->> 'local_date')::date - (s2 ->> 'local_date')::date, 0),\n        coalesce((s1 ->> 'skipped_before')::boolean, false),\n        coalesce((s1 ->> 'pain_before')::boolean, false),\n        p_assisted, jsonb_build_array(s2, s3)) ->> 'action' = 'hold';\n  end if;\n\n",
     ],
     [
       "        and (s1 ->> 'total_reps')::integer * (s3 ->> 'sets')::integer\n          <= (s3 ->> 'total_reps')::integer * (s1 ->> 'sets')::integer then\n",
@@ -66,6 +66,26 @@ Deno.test("progression_decision is its latest earlier definition plus the traini
     "create or replace function private.progression_decision(",
     "create or replace function private.progression_decision(",
     "end $$;",
+    hunks,
+  );
+});
+
+Deno.test("next_session_targets is its latest earlier definition plus the training-counts hunks only", async () => {
+  const hunks: Hunks = [
+    [
+      "), ranked as (\n  select s.*, row_number() over (partition by s.planned_exercise_id\n    order by s.local_date desc, s.completed_at desc) as rn\n  from marked s\n), recent as (",
+      "), ranked as (\n  select s.*, row_number() over w as rn,\n    lead(s.local_date) over w as older_date, lead(s.completed_at) over w as older_completed_at\n  from marked s\n  window w as (partition by s.planned_exercise_id order by s.local_date desc, s.completed_at desc)\n), chained as (\n  -- What happened between a session and the one before it: a skipped performance, or one flagged for\n  -- pain even though no set was logged that day. progression_decision reads them when it works out\n  -- whether the earlier sessions followed a hold, so a hold for a skip or for pain is never counted\n  -- as a stall.\n  select r.*,\n    exists (select 1 from perf sk where sk.planned_exercise_id = r.planned_exercise_id\n      and sk.status = 'skipped'\n      and (sk.local_date, sk.completed_at) > (r.older_date, r.older_completed_at)\n      and (sk.local_date, sk.completed_at) < (r.local_date, r.completed_at)) as skipped_before,\n    exists (select 1 from perf pn where pn.planned_exercise_id = r.planned_exercise_id\n      and pn.pain_flag\n      and (pn.local_date, pn.completed_at) > (r.older_date, r.older_completed_at)\n      and (pn.local_date, pn.completed_at) < (r.local_date, r.completed_at)) as pain_before\n  from ranked r where r.rn <= 3\n), recent as (",
+    ],
+    [
+      "      'sets_planned', r.sets_planned) order by r.rn) as sess\n  from ranked r where r.rn <= 3 group by r.planned_exercise_id",
+      "      'sets_planned', r.sets_planned, 'skipped_before', r.skipped_before,\n      'pain_before', r.pain_before) order by r.rn) as sess\n  from chained r group by r.planned_exercise_id",
+    ],
+  ];
+  await pinned(
+    "20261024060325_deload_cardio_review_fixes.sql",
+    "create or replace function private.next_session_targets(",
+    "create or replace function private.next_session_targets(",
+    "$$;",
     hunks,
   );
 });
@@ -138,7 +158,7 @@ Deno.test("generate_weekly_progress_review is its latest earlier definition plus
     ],
     [
       "  if planned_sessions = 0 then\n    missing := array_append(missing, 'active_training_plan');\n    adherence_percent := 0;\n  else\n",
-      "  if not has_plan then\n    missing := array_append(missing, 'active_training_plan');\n    adherence_percent := 0;\n  elsif planned_sessions = 0 then\n    -- Nothing was due this week, so nothing was missed.\n    adherence_percent := 100;\n  else\n",
+      "  if not has_plan then\n    missing := array_append(missing, 'active_training_plan');\n    adherence_percent := 0;\n  elsif planned_sessions = 0 then\n    -- Nothing was due this week (it fell before the plan began, or in a break), so there is no\n    -- percentage to report.\n    adherence_percent := null;\n  else\n",
     ],
     [
       "'weekly-deterministic-v1'",
