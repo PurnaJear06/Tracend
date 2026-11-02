@@ -245,7 +245,7 @@ select is((select array(select k from jsonb_object_keys(public.get_coach_plan_st
       pg_temp.u(40, 1), (select today from t))) k order by k collate "C")),
   array['after_block', 'avoid_patterns', 'completed_this_week', 'equipment', 'experience',
     'local_date', 'plan', 'progression', 'recent_completed', 'schema_version', 'sessions',
-    'unfinished', 'weekday'], 'every 1.2 key is still there beside the new one');
+    'training_started_on', 'unfinished', 'weekday'], 'every 1.2 key is still there beside the new one');
 select is((select public.get_coach_plan_state_v1(pg_temp.u(40, 1), (select today from t))
     ->'plan'->>'title'), 'Plan A', 'the active plan is still read');
 select is((select jsonb_array_length(public.get_coach_plan_state_v1(pg_temp.u(40, 1),
