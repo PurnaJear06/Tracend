@@ -39,6 +39,9 @@ begin
     (uid, 'privacy', '2026-07-01', 'granted', 'ios_app');
   insert into public.onboarding_drafts(user_id, path, current_section, payload)
   values (uid, 'beginner', 'review', '{}');
+  -- A missing health check is unscreened, never cleared (20261102074318).
+  insert into public.onboarding_screenings(user_id, exercises_regularly, known_disease, symptoms, outcome)
+  values (uid, true, false, false, 'cleared');
   insert into public.user_goals(user_id, goal_type, priority, status)
   values (uid, 'recomposition', 1, 'draft');
 end $$;
