@@ -1,14 +1,19 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
+import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/account/account_time_zone.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/auth/account_session.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
+import 'package:tracend/features/auth/password_reset_flow.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/consent/legal_consent.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
@@ -23,6 +28,7 @@ import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
 import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
+import 'package:tracend/shared/local_health_store.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 
 class Phase2Gate extends StatefulWidget {
@@ -33,10 +39,16 @@ class Phase2Gate extends StatefulWidget {
     this.liveActivity = const MethodChannelWorkoutActivityBridge(),
     this.homeWidgets = const MethodChannelHomeWidgetBridge(),
     this.notifications = const MethodChannelNotificationRepository(),
+    this.releaseBuild = kReleaseMode,
+    this.healthBaseline,
     super.key,
   });
 
   final AppEnvironment environment;
+
+  /// A release build never falls back to the local demo data: without its
+  /// server settings it says so instead.
+  final bool releaseBuild;
 
   /// The app's Supabase client unless a test provides one.
   final SupabaseClient? client;
@@ -54,6 +66,10 @@ class Phase2Gate extends StatefulWidget {
   final NotificationRepository notifications;
   final LocalAccountData? localData;
 
+  /// The athlete's usual months from Apple Health, unless a test provides
+  /// one.
+  final HealthBaselineSource? healthBaseline;
+
   @override
   State<Phase2Gate> createState() => _Phase2GateState();
 }
@@ -70,6 +86,19 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
 
   /// An account check is running.
   bool _checking = false;
+
+  /// The terms, privacy and health-data agreements an onboarded athlete
+  /// gives again before the app opens, because this build shows newer pages
+  /// than they agreed to. Empty when the check could not run: the app opens
+  /// and the next launch asks again.
+  Set<LegalConsent> _legalOutdated = const {};
+
+  /// The agreements could not be checked this launch (a failed lookup, or the
+  /// saved plan opened offline). The app is open, but nothing is read from
+  /// Apple Health or sent until a later check succeeds with current
+  /// agreements; the next foreground retries it.
+  bool _legalUnknown = false;
+  bool _legalRetrying = false;
   AiCoachingConsentController? _aiConsent;
 
   /// One Apple Health repository for onboarding and the app; its state is
@@ -93,13 +122,20 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   /// saved plan, when it has one.
   static const _waitForNetwork = Duration(seconds: 6);
 
+  /// The unfinished-reset mark was looked at: only the session restored at
+  /// launch can belong to it.
+  bool _resetChecked = false;
+
   /// Every change to this phone's reminders runs in turn, so a restore can
   /// never land after the cancel that ended its session.
   Future<void> _reminderQueue = Future<void>.value();
 
+  bool get _missingServerSettings =>
+      widget.releaseBuild && !widget.environment.hasSupabaseConfiguration;
+
   SupabaseClient get _client => widget.client ?? Supabase.instance.client;
   late final TrainingHubCache _savedPlan = TrainingHubCache(
-    SharedPreferencesAsync(),
+    const LocalHealthStore(),
   );
   late final LocalAccountData _localData =
       widget.localData ?? LocalAccountData();
@@ -112,6 +148,9 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_widgetEraser.retryPending());
+    if (_missingServerSettings) {
+      unawaited(Sentry.captureMessage('release_build_missing_server_settings'));
+    }
     if (widget.environment.hasSupabaseConfiguration) {
       _authEvents = _client.auth.onAuthStateChange.listen((state) {
         if (state.event != AuthChangeEvent.signedOut) return;
@@ -158,6 +197,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     String? userId;
     try {
       final client = _client;
+      await _endUnfinishedReset(client);
       final session = client.auth.currentSession;
       if (session == null) {
         // A widget snapshot a failed clear left behind goes now.
@@ -208,6 +248,32 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     }
   }
 
+  /// A password reset the app was closed during: its code signed the phone
+  /// in, but no new password was saved. Looked at once, at launch. A session
+  /// restored with the mark set ends here, before anything opens, and the
+  /// athlete signs in again; the mark stays until a later launch finds no
+  /// session, so a session whose removal failed or was cut short is ended
+  /// again. A mark with no session (the app died before the code was
+  /// accepted, or the session is already gone) is cleared, so it can never
+  /// end a later sign-in.
+  Future<void> _endUnfinishedReset(SupabaseClient client) async {
+    if (_resetChecked) return;
+    _resetChecked = true;
+    final marker = PasswordResetMarker();
+    if (!await marker.isSet()) return;
+    if (client.auth.currentSession == null) {
+      await marker.clear();
+      return;
+    }
+    // The session leaves this phone at once; telling Auth needs the
+    // network, so the launch does not wait for it.
+    unawaited(
+      client.auth
+          .signOut(scope: SignOutScope.local)
+          .catchError((Object e) => logNonCritical(e)),
+    );
+  }
+
   /// Asks Auth whether the account and session still exist, then opens the
   /// app on the account's state. Throws when that cannot be done; a session
   /// Auth refused is ended here.
@@ -242,21 +308,82 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     // leaves the app open; the screens that ask retry it themselves.
     await aiConsent.load();
     if (ended()) return;
+    // Null: the lookup failed.
+    final legalOutdated = complete
+        ? await _loadLegalOutdated(client)
+        : const <LegalConsent>{};
+    if (ended()) return;
     _userId = userId;
+    identifyAthlete(userId);
     // Workouts finished or logged with no signal go to the server now,
     // whichever screen is open.
     unawaited(_workouts().sendWaiting());
-    // The usual months a later plan review compares with, and the saved
-    // reminder choices back on this phone; neither blocks.
+    // The saved reminder choices back on this phone; this never blocks. The
+    // usual months a later plan review compares with are read from Apple
+    // Health only once the agreements are known to be current. A lookup that
+    // failed opens the app without them, and the next foreground checks again.
     if (complete) {
-      unawaited(_baselineSource().refreshIfDue());
       unawaited(_restoreReminders(client));
+      if (legalOutdated != null && legalOutdated.isEmpty) {
+        unawaited(_baselineSource().refreshIfDue());
+      }
     }
     setState(() {
       _authenticated = true;
       _onboardingComplete = complete;
+      _legalOutdated = legalOutdated ?? const {};
+      _legalUnknown = legalOutdated == null;
       _offline = false;
     });
+  }
+
+  /// The agreements to ask for again; null when they could not be checked.
+  /// A failed lookup never locks an onboarded athlete out, but it keeps Apple
+  /// Health off until a later check succeeds. Nothing is ever recorded here.
+  Future<Set<LegalConsent>?> _loadLegalOutdated(SupabaseClient client) async {
+    try {
+      return await SupabaseLegalConsentRepository(client).loadOutdated();
+    } catch (e, stackTrace) {
+      if (isNetworkFailure(e)) {
+        logNonCritical(e, 'Legal consent not checked');
+      } else {
+        reportNonCritical(e, stackTrace, 'Legal consent not checked');
+      }
+      return null;
+    }
+  }
+
+  /// Whether Apple Health may be read and sent: the agreements were checked
+  /// and are current, or onboarding (which asks for them itself) is running.
+  bool get _healthAllowed =>
+      _authenticated && !_legalUnknown && _legalOutdated.isEmpty;
+
+  /// A foreground after a check that failed: looks again, and starts what
+  /// waited for the agreements once they are current.
+  Future<void> _retryLegal() async {
+    if (_legalRetrying) return;
+    _legalRetrying = true;
+    final sessionsEnded = _sessionsEnded;
+    try {
+      final outdated = await _loadLegalOutdated(_client);
+      if (outdated == null || !mounted || sessionsEnded != _sessionsEnded) {
+        return;
+      }
+      setState(() {
+        _legalUnknown = false;
+        _legalOutdated = outdated;
+      });
+      if (outdated.isEmpty) unawaited(_baselineSource().refreshIfDue());
+    } finally {
+      _legalRetrying = false;
+    }
+  }
+
+  /// The athlete agreed again: the app opens, and the Apple Health read that
+  /// waited for the agreement starts.
+  void _legalAgreed() {
+    setState(() => _legalOutdated = const {});
+    unawaited(_baselineSource().refreshIfDue());
   }
 
   /// Opens the app on the plan this phone saved for [userId], when it has
@@ -269,9 +396,11 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
       SupabaseAiCoachingConsentRepository(_client),
     );
     _userId = userId;
+    identifyAthlete(userId);
     setState(() {
       _authenticated = true;
       _onboardingComplete = true;
+      _legalUnknown = true;
       _offline = true;
       _error = null;
       _loading = false;
@@ -283,11 +412,16 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   /// the gate's transient state (loading, a connection error) goes with the
   /// session, so nothing hides sign-in. Repeated events change nothing more.
   void _showSignedOut() {
+    // The next account starts with no Sentry user and no load counts.
+    identifyAthlete(null);
+    resetLoadFailures();
     if (!mounted) return;
     _sessionsEnded++;
     setState(() {
       _authenticated = false;
       _onboardingComplete = false;
+      _legalOutdated = const {};
+      _legalUnknown = false;
       _offline = false;
       _userId = null;
       _error = null;
@@ -376,6 +510,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
         // Back at the front with the saved plan open: the connection may be
         // back too.
         if (_offline) unawaited(_refresh(quiet: true));
+        if (_legalUnknown && !_offline) unawaited(_retryLegal());
       }
     }
   }
@@ -396,11 +531,12 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
 
   SupabaseWorkoutRepository _workouts() => SupabaseWorkoutRepository(
     _client,
-    SharedPreferencesAsync(),
+    const LocalHealthStore(),
     loggerOpen: () => ActiveWorkoutScreen.isOpen,
   );
 
   HealthBaselineSource _baselineSource() => _baseline ??=
+      widget.healthBaseline ??
       SupabaseHealthBaselineSource(_client, SharedPreferencesAsync());
 
   @override
@@ -420,6 +556,15 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    if (_missingServerSettings) {
+      return const _GateMessage(
+        title: 'This build is missing its server settings',
+        message:
+            'Tracend cannot sign you in or reach your coach. Install the '
+            'latest build from TestFlight, or tell the person who sent you '
+            'this one.',
+      );
+    }
     if (!widget.environment.hasSupabaseConfiguration) {
       return AppShell(
         environment: widget.environment,
@@ -448,12 +593,13 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
       );
     }
     if (!_authenticated) {
-      return OwnerAuthScreen(onAuthenticated: _refresh);
+      return OwnerAuthScreen(onAuthenticated: _refresh, auth: _client.auth);
     }
     final aiConsent = _aiConsent!;
     final health = _health ??= SupabaseHealthRepository(
       _client,
       SharedPreferencesAsync(),
+      syncAllowed: () => _healthAllowed,
     );
     if (!_onboardingComplete) {
       return OnboardingFlow(
@@ -463,6 +609,24 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
         health: health,
         healthBaseline: _baselineSource(),
         onSignOut: _signOut,
+        deletion: SupabaseAccountDeletionRepository(
+          _client,
+          localData: _localData,
+        ),
+      );
+    }
+    // Newer beta terms or privacy notice than the athlete agreed to: they
+    // agree again, sign out or delete the account before anything else.
+    if (_legalOutdated.isNotEmpty) {
+      return LegalConsentScreen(
+        repository: SupabaseLegalConsentRepository(_client),
+        outdated: _legalOutdated,
+        onAgreed: _legalAgreed,
+        onSignOut: _signOut,
+        deletion: SupabaseAccountDeletionRepository(
+          _client,
+          localData: _localData,
+        ),
       );
     }
     // Accounts created before the question existed, and anyone asked again

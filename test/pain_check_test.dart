@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
@@ -11,8 +10,10 @@ import 'package:tracend/features/readiness/pain_check.dart';
 import 'package:tracend/features/readiness/pain_report_queue.dart';
 import 'package:tracend/features/readiness/pain_reporting.dart';
 import 'package:tracend/features/readiness/safety_copy.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 import 'day_adjustment_fixtures.dart';
+import 'memory_health_files.dart';
 import 'pain_fakes.dart';
 
 PainReport _report({
@@ -349,12 +350,10 @@ void main() {
   });
 
   group('a report that cannot go yet', () {
-    late SharedPreferences preferences;
+    const preferences = LocalHealthStore();
     late FakePainCheckRepository server;
 
-    setUp(() async {
-      SharedPreferences.setMockInitialValues({});
-      preferences = await SharedPreferences.getInstance();
+    setUp(() {
       server = FakePainCheckRepository();
     });
 
@@ -362,7 +361,11 @@ void main() {
       final queue = PainReportQueue(preferences, userId: 'a');
       await queue.add(_report());
       await queue.add(_report(), refused: false);
-      expect(queue.state.waiting, hasLength(1), reason: 'one key, one report');
+      expect(
+        (await queue.state()).waiting,
+        hasLength(1),
+        reason: 'one key, one report',
+      );
 
       server.failure = PainCheckFailure.retry;
       var state = await queue.drain(server);
@@ -373,7 +376,10 @@ void main() {
       state = await queue.drain(server);
       expect(state.isEmpty, isTrue);
       expect(server.reports.map((r) => r.idempotencyKey), ['key-1', 'key-1']);
-      expect(preferences.getString(PainReportQueue.storageKeyFor('a')), isNull);
+      expect(
+        await preferences.getString(PainReportQueue.storageKeyFor('a')),
+        isNull,
+      );
     });
 
     test('a refusal is kept until the athlete has read it', () async {
@@ -392,7 +398,7 @@ void main() {
       expect(server.reports, isEmpty);
 
       await queue.dismissRefused();
-      expect(queue.state.isEmpty, isTrue);
+      expect((await queue.state()).isEmpty, isTrue);
     });
 
     group('while a drain waits on the network', () {
@@ -418,7 +424,7 @@ void main() {
         expect(left.waiting.map((r) => r.idempotencyKey), ['r2']);
         expect(gated.sent, ['r1', 'r2'], reason: 'sent in the same drain');
         expect(
-          PainReportQueue(preferences, userId: 'a').state.waiting,
+          (await PainReportQueue(preferences, userId: 'a').state()).waiting,
           hasLength(1),
         );
       });
@@ -437,7 +443,7 @@ void main() {
 
         expect(left.refused, isEmpty);
         expect(
-          PainReportQueue(preferences, userId: 'a').state.refused,
+          (await PainReportQueue(preferences, userId: 'a').state()).refused,
           isEmpty,
         );
         expect(left.waiting.single.idempotencyKey, 'r1');
@@ -456,7 +462,7 @@ void main() {
 
         expect(left.isEmpty, isTrue);
         expect(
-          preferences.getString(PainReportQueue.storageKeyFor('a')),
+          await preferences.getString(PainReportQueue.storageKeyFor('a')),
           isNull,
           reason: 'the drain did not write the report back',
         );
@@ -510,9 +516,12 @@ void main() {
 
     test('is kept per athlete', () async {
       await PainReportQueue(preferences, userId: 'a').add(_report());
-      expect(PainReportQueue(preferences, userId: 'b').state.isEmpty, isTrue);
       expect(
-        PainReportQueue(preferences, userId: 'a').state.waiting,
+        (await PainReportQueue(preferences, userId: 'b').state()).isEmpty,
+        isTrue,
+      );
+      expect(
+        (await PainReportQueue(preferences, userId: 'a').state()).waiting,
         hasLength(1),
       );
     });
@@ -540,7 +549,6 @@ void main() {
     late PainReporting reporting;
 
     setUp(() {
-      SharedPreferences.setMockInitialValues({});
       server = FakePainCheckRepository();
       reporting = PainReporting(repository: server, userId: 'a');
     });
@@ -581,6 +589,17 @@ void main() {
         expect(server.reports.last.idempotencyKey, 'key-1');
       },
     );
+
+    test('a report that cannot be kept either says so', () async {
+      server.failure = PainCheckFailure.retry;
+      LocalHealthFiles.instance = FailingHealthFiles(LocalHealthFiles.instance);
+
+      final delivery = await reporting.submit(_report(severity: 5)).delivery;
+
+      expect(delivery.sent, isFalse);
+      expect(delivery.kept, isFalse);
+      expect((await reporting.state()).isEmpty, isTrue);
+    });
 
     test('a refusal is kept, not forgotten', () async {
       server.failure = PainCheckFailure.refused;

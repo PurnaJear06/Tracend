@@ -23,6 +23,8 @@ import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/consent/legal_consent.dart';
+import 'package:tracend/features/feedback/feedback_mail.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
@@ -61,6 +63,8 @@ class AccountScreen extends StatefulWidget {
     this.screening,
     this.aiConsent,
     this.widgetPublisher,
+    this.mailLauncher = launchMail,
+    this.versionReader = readAppVersion,
     this.onboarding,
     this.currentSetup,
     this.healthBaseline,
@@ -94,6 +98,12 @@ class AccountScreen extends StatefulWidget {
   /// Owns the Lock Screen widget choice. Null where there are no widgets to
   /// set up, and then the Widgets section does not show.
   final TodayWidgetPublisher? widgetPublisher;
+
+  /// Opens the mail composer for "Send feedback"; tests replace it.
+  final MailLauncher mailLauncher;
+
+  /// Reads the app version for the feedback email; tests replace it.
+  final AppVersionReader versionReader;
 
   /// What "Change my setup" builds a new plan through, and where it reads the
   /// approved answers. Null uses the signed-in athlete's, and without a
@@ -294,6 +304,19 @@ class _AccountScreenState extends State<AccountScreen> {
             ),
             const SectionLabel('Region'),
             RegionSettings(repository: widget.region),
+            const SectionLabel('Feedback'),
+            TracendGroupedList(
+              children: [
+                TracendListRow(
+                  title: 'Send feedback',
+                  subtitle: 'Report a problem or tell us what to improve',
+                  leading: const TracendRowIcon(
+                    icon: CupertinoIcons.chat_bubble_text,
+                  ),
+                  onTap: _sendFeedback,
+                ),
+              ],
+            ),
             const SectionLabel('Privacy'),
             TracendGroupedList(
               children: [
@@ -310,6 +333,18 @@ class _AccountScreenState extends State<AccountScreen> {
                   subtitle: 'Your privacy and AI choices, with dates',
                   leading: const TracendRowIcon(icon: CupertinoIcons.lock),
                   onTap: _openConsentHistory,
+                ),
+                TracendListRow(
+                  title: 'Privacy notice',
+                  subtitle: 'What Tracend collects and why',
+                  leading: const TracendRowIcon(icon: CupertinoIcons.doc_text),
+                  onTap: () => openLegalPage(context, LegalNotices.privacyUrl),
+                ),
+                TracendListRow(
+                  title: 'Beta terms',
+                  subtitle: 'The terms you agreed to',
+                  leading: const TracendRowIcon(icon: CupertinoIcons.doc_text),
+                  onTap: () => openLegalPage(context, LegalNotices.termsUrl),
                 ),
                 TracendListRow(
                   title: 'Delete account',
@@ -512,6 +547,12 @@ class _AccountScreenState extends State<AccountScreen> {
         .toList();
   }
 
+  Future<void> _sendFeedback() => sendFeedback(
+    context,
+    launch: widget.mailLauncher,
+    readVersion: widget.versionReader,
+  );
+
   Future<void> _openExport() => showTracendSheet<void>(
     context,
     title: 'Export your data',
@@ -519,22 +560,8 @@ class _AccountScreenState extends State<AccountScreen> {
   );
 
   Future<void> _openDeletion() async {
-    final outcome = await showTracendSheet<AccountDeletionOutcome>(
-      context,
-      title: 'Delete account',
-      builder: (_) => AccountDeletionSheet(repository: widget.deletion),
-    );
+    final outcome = await showAccountDeletion(context, widget.deletion);
     if (outcome == null || !mounted) return;
-    // The toast sits in the root overlay, so it outlives this page.
-    TracendToast.show(
-      context,
-      outcome == AccountDeletionOutcome.deleted
-          ? 'Your account was deleted'
-          : 'Signed out. Sign in to see whether the account remains.',
-      icon: outcome == AccountDeletionOutcome.deleted
-          ? CupertinoIcons.checkmark_alt
-          : CupertinoIcons.info,
-    );
     await _signOut();
   }
 

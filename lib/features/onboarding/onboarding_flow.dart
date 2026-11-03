@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/account/account_deletion_repository.dart';
+import 'package:tracend/features/account/widgets/account_sheets.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/consent/legal_consent.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
@@ -43,6 +46,7 @@ class OnboardingFlow extends StatefulWidget {
     this.healthBaseline,
     this.currentSetup,
     this.onSignOut,
+    this.deletion,
     this.pollInterval = const Duration(seconds: 3),
     this.pollTimeout = const Duration(seconds: 150),
     this.currentYear,
@@ -70,6 +74,11 @@ class OnboardingFlow extends StatefulWidget {
   /// then.
   final OnboardingDraft? currentSetup;
   final Future<void> Function()? onSignOut;
+
+  /// Deletes the account from setup, offered beside Sign out: someone who
+  /// stops before their plan (screened out, or changing their mind) can
+  /// still remove what they saved. Signs out after it settles.
+  final AccountDeletionRepository? deletion;
   final Duration pollInterval;
 
   /// Longer than the server's generation lease; after it the app offers a retry.
@@ -278,8 +287,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   OnboardingProposal? _approved;
   bool _adult = false;
   bool _needsClinicalSupport = false;
-  bool _terms = false;
-  bool _privacy = false;
+
+  /// The terms, privacy and health-data rows ticked; all three are needed.
+  final _legal = <LegalConsent>{};
   bool? _aiChoice;
 
   /// The health check answers; null until answered. The clearance question is
@@ -421,6 +431,20 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   static double _half(double kg) => (kg * 2).round() / 2;
 
+  /// The lowest target weight Tracend sets: BMI 18.5 at the athlete's height,
+  /// as the server rounds it, then up to the next half kilo on the slider. The
+  /// server sets no target below it.
+  double get _targetFloorKg {
+    final metres = _heightCm.round() / 100;
+    final floor = ((18.5 * metres * metres * 10).round() / 10 * 2).ceil() / 2;
+    return floor < _minWeightKg ? _minWeightKg : floor;
+  }
+
+  /// The target as shown and saved: never under the healthy floor.
+  double? get _targetShownKg => _targetWeightKg == null
+      ? null
+      : _half(_targetWeightKg!).clamp(_targetFloorKg, _maxWeightKg);
+
   /// The four answers once every question shown has been answered.
   ScreeningAnswers? get _screeningAnswers => ScreeningAnswers.fromChoices(
     exercisesRegularly: _exercisesRegularly,
@@ -444,9 +468,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       'birth_year': _birthYearValue,
       'height_cm': _heightCm.round(),
       'weight_kg': _half(_weightKg),
-      'target_weight_kg': _targetWeightKg == null
-          ? null
-          : _half(_targetWeightKg!),
+      'target_weight_kg': _targetShownKg,
       'daily_activity': _dailyActivity,
       'training_weekdays': weekdays,
       // Read by builds before 2026-10 as a day count.
@@ -627,6 +649,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           restored = _screeningStep;
         }
         if (_skips(restored)) restored = _focusStep;
+        // A draft past the first step resumes there only with the current
+        // terms, privacy and health-data agreements on record. Otherwise it
+        // continues from the agreements, before any Apple Health history is
+        // read or a plan is built. A lookup that fails fails the restore.
+        if (restored > _eligibilityStep &&
+            (await widget.repository.loadOutdatedLegalConsents()).isNotEmpty) {
+          restored = _eligibilityStep;
+        }
         if (restored > 0) _step = restored;
         _aboutPassed = _step > _aboutStep;
         resumeGeneration = _step == _proposalStep;
@@ -654,7 +684,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     if (_restoreFailed) return;
     if (resumeGeneration && mounted) unawaited(_resumeGeneration());
     if (_step == _questionsStep && mounted) unawaited(_fetchQuestions());
-    if (mounted && _healthImport != 'skipped') unawaited(_loadHealthFacts());
+    if (mounted && _healthImport != 'skipped' && _step > _eligibilityStep) {
+      unawaited(_loadHealthFacts());
+    }
   }
 
   /// The athlete's stored screening when it says to see a professional first;
@@ -821,6 +853,31 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     } finally {
       if (mounted) setState(() => _signingOut = false);
     }
+  }
+
+  /// The account menu beside Sign out: deletion, through the same sheet as
+  /// Account (password, `DELETE`, a destructive confirm).
+  Future<void> _openAccountMenu() async {
+    final deletion = widget.deletion;
+    if (deletion == null || _signingOut) return;
+    final delete = await showTracendActionSheet<bool>(
+      context,
+      title: 'Your account',
+      message:
+          'Deleting it removes everything saved so far, including your '
+          'answers, the health check and any Apple Health summaries.',
+      actions: const [
+        TracendSheetAction(
+          label: 'Delete account',
+          value: true,
+          destructive: true,
+        ),
+      ],
+    );
+    if (delete != true || !mounted) return;
+    final outcome = await showAccountDeletion(context, deletion);
+    if (outcome == null || !mounted) return;
+    await _signOut();
   }
 
   /// Reopened on the Plan step: show the stored proposal, keep waiting for a
@@ -1114,6 +1171,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     try {
       if (_step == _eligibilityStep) {
         await widget.repository.recordEligibilityAndConsent(eligible: true);
+        // Apple Health already connected on an earlier run is read only now
+        // that the health-data agreement is on record.
+        if (_healthImport != 'skipped' && _healthFacts == null) {
+          unawaited(_loadHealthFacts());
+        }
       }
       if (_step == _screeningStep && _screeningOutcome == null) {
         final submitted = _screeningAnswers!;
@@ -1164,7 +1226,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   bool _isStepValid() => switch (_step) {
-    _eligibilityStep => _adult && !_needsClinicalSupport && _terms && _privacy,
+    _eligibilityStep =>
+      _adult &&
+          !_needsClinicalSupport &&
+          _legal.length == LegalConsent.values.length,
     _screeningStep =>
       _screeningAnswers != null &&
           _screeningOutcome != ScreeningOutcome.seeProfessional,
@@ -1383,19 +1448,26 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     });
   }
 
-  List<Widget> _signOutAction() => [
-    if (widget.onSignOut != null)
+  List<Widget> _accountActions() => [
+    if (widget.onSignOut != null) ...[
       TextButton(
         onPressed: _signingOut ? null : _signOut,
         child: const Text('Sign out'),
       ),
+      if (widget.deletion != null)
+        IconButton(
+          tooltip: 'Account options',
+          onPressed: _signingOut ? null : _openAccountMenu,
+          icon: const Icon(CupertinoIcons.ellipsis_circle),
+        ),
+    ],
   ];
 
   @override
   Widget build(BuildContext context) {
     if (_loading || _restoreFailed) {
       return Scaffold(
-        appBar: AppBar(title: Text(_title), actions: _signOutAction()),
+        appBar: AppBar(title: Text(_title), actions: _accountActions()),
         body: SafeArea(
           child: Center(
             child: _loading
@@ -1442,7 +1514,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                 icon: const Icon(CupertinoIcons.back),
               )
             : null,
-        actions: _signOutAction(),
+        actions: _accountActions(),
       ),
       body: SafeArea(
         top: false,
@@ -1619,19 +1691,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         ],
       ),
       const SizedBox(height: TracendSpacing.lg),
-      TracendGroupedList(
-        children: [
-          CheckRow(
-            title: 'I accept the private-beta terms',
-            checked: _terms,
-            onChanged: (value) => setState(() => _terms = value),
-          ),
-          CheckRow(
-            title: 'I have read the privacy notice',
-            checked: _privacy,
-            onChanged: (value) => setState(() => _privacy = value),
-          ),
-        ],
+      LegalConsentRows(
+        checked: _legal,
+        onChanged: (consent, value) => setState(() {
+          if (value) {
+            _legal.add(consent);
+          } else {
+            _legal.remove(consent);
+          }
+        }),
       ),
     ],
   );
@@ -1982,19 +2050,24 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               setState(() => _targetWeightKg = on ? _weightKg : null),
           title: const Text('I have a target weight'),
         ),
-        if (_targetWeightKg != null) ...[
+        if (_targetShownKg case final target?) ...[
           Text(
-            'Target: ${_weightLabel(_targetWeightKg!)}',
+            'Target: ${_weightLabel(target)}',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           _Stepper(
             label: 'Target weight',
-            value: _half(_targetWeightKg!).clamp(_minWeightKg, _maxWeightKg),
-            min: _minWeightKg,
+            value: target,
+            min: _targetFloorKg,
             max: _maxWeightKg,
             step: 0.5,
             format: _weightLabel,
             onChanged: (value) => setState(() => _targetWeightKg = value),
+          ),
+          Text(
+            'Lowest healthy target for your height: '
+            '${_weightLabel(_targetFloorKg)}',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ],
@@ -2428,9 +2501,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   List<_ReviewRow> _reviewRows() {
     final weekdays = _weekdays.toList()..sort();
     final days = weekdays.map((day) => onboardingWeekdayLabels[day - 1]);
-    final target = _targetWeightKg == null
+    final target = _targetShownKg == null
         ? ''
-        : ' → ${_weightLabel(_targetWeightKg!)}';
+        : ' → ${_weightLabel(_targetShownKg!)}';
     String orNone(String value) => value.trim().isEmpty ? 'None' : value.trim();
     return [
       _ReviewRow(
@@ -2735,32 +2808,36 @@ class _RevisionSheetState extends State<_RevisionSheet> {
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      TextField(
-        controller: _note,
-        autofocus: true,
-        minLines: 2,
-        maxLines: 5,
-        maxLength: 500,
-        decoration: const InputDecoration(
-          hintText: 'Example: fewer exercises per session, no deadlifts',
+  Widget build(BuildContext context) => TracendSheetUnsavedGuard(
+    listenable: _note,
+    isDirty: () => _note.text.trim().isNotEmpty,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _note,
+          autofocus: true,
+          minLines: 2,
+          maxLines: 5,
+          maxLength: 500,
+          decoration: const InputDecoration(
+            hintText: 'Example: fewer exercises per session, no deadlifts',
+          ),
         ),
-      ),
-      const SizedBox(height: TracendSpacing.sm),
-      ValueListenableBuilder<TextEditingValue>(
-        valueListenable: _note,
-        builder: (context, value, _) => FilledButton(
-          // Changes need words; an empty request would rebuild the same plan.
-          onPressed: value.text.trim().isEmpty
-              ? null
-              : () => Navigator.of(context).pop(value.text.trim()),
-          child: const Text('Request changes'),
+        const SizedBox(height: TracendSpacing.sm),
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _note,
+          builder: (context, value, _) => FilledButton(
+            // Changes need words; an empty request would rebuild the same plan.
+            onPressed: value.text.trim().isEmpty
+                ? null
+                : () => Navigator.of(context).pop(value.text.trim()),
+            child: const Text('Request changes'),
+          ),
         ),
-      ),
-    ],
+      ],
+    ),
   );
 }
 

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/coach/coach_errors.dart';
+import 'package:tracend/features/feedback/feedback_rating.dart';
 import 'package:tracend/shared/shared_reads.dart';
 import 'package:uuid/uuid.dart';
 
@@ -193,6 +194,7 @@ class CoachMessage {
     this.diagnostic,
     this.nearBudgetLimit = false,
     this.proposalId,
+    this.stored = true,
   });
 
   /// Parses a stored `coach_messages` row or a coach-chat response message.
@@ -228,6 +230,7 @@ class CoachMessage {
           : null,
       nearBudgetLimit: row['budget_warning'] == true,
       proposalId: row['proposal_id'] as String?,
+      stored: row['id'] is String,
     );
   }
 
@@ -256,6 +259,10 @@ class CoachMessage {
   /// under the reply, live and when it is reloaded. Null for every other
   /// message.
   final String? proposalId;
+
+  /// False for a message the app named itself because the response carried no
+  /// id; there is no stored row to rate.
+  final bool stored;
 
   /// A labeled deterministic reply from the athlete's data, served when the
   /// model could not answer. Never the Coach AI's own answer.
@@ -307,7 +314,8 @@ class SupabaseCoachRepository
         CoachRepository,
         CoachChatRepository,
         CoachContextRepository,
-        CoachRawResponses {
+        CoachRawResponses,
+        FeedbackRatingRepository {
   SupabaseCoachRepository(this._client, {DateTime Function()? now})
     : _now = now ?? DateTime.now;
 
@@ -486,6 +494,74 @@ class SupabaseCoachRepository
       'delete_coach_thread',
       params: {'target_thread_id': threadId},
     );
+  }
+
+  /// Ratings read or given, by subject, so a reply that builds again (a
+  /// thread reopened, a tab remounted) does not ask again. A null value is
+  /// "not rated".
+  final _ratings = <(FeedbackSubject, String), FeedbackRating?>{};
+
+  /// Ratings asked for in the same moment (a thread's replies build together)
+  /// are read with one query.
+  Map<(FeedbackSubject, String), Completer<FeedbackRating?>>? _ratingBatch;
+
+  @override
+  Future<FeedbackRating?> loadRating(FeedbackSubject subject, String id) {
+    final known = _ratings[(subject, id)];
+    if (known != null || _ratings.containsKey((subject, id))) {
+      return Future.value(known);
+    }
+    final batch = _ratingBatch ??= () {
+      scheduleMicrotask(_readRatingBatch);
+      return <(FeedbackSubject, String), Completer<FeedbackRating?>>{};
+    }();
+    return (batch[(subject, id)] ??= Completer<FeedbackRating?>()).future;
+  }
+
+  Future<void> _readRatingBatch() async {
+    final batch = _ratingBatch!;
+    _ratingBatch = null;
+    try {
+      final rows = await _client
+          .from('feedback_ratings')
+          .select('subject_type, subject_id, rating')
+          .inFilter('subject_id', [for (final key in batch.keys) key.$2]);
+      for (final MapEntry(:key, :value) in batch.entries) {
+        final row = rows
+            .where(
+              (row) =>
+                  row['subject_type'] == key.$1.wire &&
+                  row['subject_id'] == key.$2,
+            )
+            .firstOrNull;
+        final rating = FeedbackRating.values
+            .where((rating) => rating.name == row?['rating'])
+            .firstOrNull;
+        _ratings.putIfAbsent(key, () => rating);
+        value.complete(_ratings[key]);
+      }
+    } catch (e) {
+      for (final completer in batch.values) {
+        completer.completeError(e);
+      }
+    }
+  }
+
+  @override
+  Future<void> rate(
+    FeedbackSubject subject,
+    String id,
+    FeedbackRating rating,
+  ) async {
+    await _client.rpc(
+      'submit_feedback_rating_v1',
+      params: {
+        'subject_type': subject.wire,
+        'subject_id': id,
+        'rating': rating.name,
+      },
+    );
+    _ratings[(subject, id)] = rating;
   }
 
   @override

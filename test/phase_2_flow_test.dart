@@ -1,10 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
+import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/consent/legal_consent.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
@@ -91,6 +94,7 @@ void main() {
     await _tapText(tester, 'I am 18 or older');
     await _tapText(tester, 'I accept the private-beta terms');
     await _tapText(tester, 'I have read the privacy notice');
+    await _tapText(tester, 'I agree to Tracend using my health data');
     await _continue(tester);
     await _passScreening(tester);
 
@@ -220,6 +224,7 @@ void main() {
       await _tapText(tester, 'I am 18 or older');
       await _tapText(tester, 'I accept the private-beta terms');
       await _tapText(tester, 'I have read the privacy notice');
+      await _tapText(tester, 'I agree to Tracend using my health data');
       await _continue(tester);
       expect(find.text('A quick health check.'), findsOneWidget);
       return repository;
@@ -497,6 +502,7 @@ void main() {
     await _tapText(tester, 'I am 18 or older');
     await _tapText(tester, 'I accept the private-beta terms');
     await _tapText(tester, 'I have read the privacy notice');
+    await _tapText(tester, 'I agree to Tracend using my health data');
     await _continue(tester);
     await _passScreening(tester);
 
@@ -1191,6 +1197,7 @@ void main() {
     await _tapText(tester, 'I am 18 or older');
     await _tapText(tester, 'I accept the private-beta terms');
     await _tapText(tester, 'I have read the privacy notice');
+    await _tapText(tester, 'I agree to Tracend using my health data');
     await _continue(tester);
     await _answerScreening(tester, [true, false, false]);
     await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
@@ -1203,6 +1210,98 @@ void main() {
     expect(signedOut, isTrue);
     repository.screeningDelay!.complete();
     await tester.pumpAndSettle();
+  });
+
+  group('deleting the account during onboarding', () {
+    Future<void> openDeletion(WidgetTester tester) async {
+      await tester.tap(find.byTooltip('Account options'));
+      await tester.pumpAndSettle();
+      expect(find.text('Your account'), findsOneWidget);
+      await tester.tap(find.text('Delete account'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('deletes through the Account sheet, then signs out', (
+      tester,
+    ) async {
+      var signedOut = false;
+      final deletion = _OnboardingDeletion();
+      await _pump(
+        tester,
+        _FakeOnboardingRepository(draft: _draft('schedule')),
+        onSignOut: () async => signedOut = true,
+        deletion: deletion,
+      );
+      await tester.pumpAndSettle();
+      await openDeletion(tester);
+
+      // The same sheet as Account: password, DELETE, a destructive confirm.
+      expect(find.textContaining('cannot be undone'), findsOneWidget);
+      await tester.enterText(find.byType(TextField).at(0), 'account-password');
+      await tester.enterText(find.byType(TextField).at(1), 'DELETE');
+      final submit = find.widgetWithText(
+        FilledButton,
+        'Permanently delete account',
+      );
+      await tester.ensureVisible(submit);
+      await tester.pumpAndSettle();
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+      expect(deletion.deleted, isFalse);
+      await tester.tap(
+        find.descendant(
+          of: find.byType(CupertinoAlertDialog),
+          matching: find.text('Delete account'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(deletion.deleted, isTrue);
+      expect(find.text('Your account was deleted'), findsOneWidget);
+      expect(signedOut, isTrue);
+    });
+
+    testWidgets('closing the menu or the sheet deletes nothing', (
+      tester,
+    ) async {
+      var signedOut = false;
+      final deletion = _OnboardingDeletion();
+      await _pump(
+        tester,
+        _FakeOnboardingRepository(draft: _draft('schedule')),
+        onSignOut: () async => signedOut = true,
+        deletion: deletion,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Account options'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('Permanently delete account'), findsNothing);
+
+      await openDeletion(tester);
+      await tester.tap(find.bySemanticsLabel(RegExp('Close')).first);
+      await tester.pumpAndSettle();
+
+      expect(deletion.deleted, isFalse);
+      expect(signedOut, isFalse);
+      expect(find.text('When do you train?'), findsOneWidget);
+    });
+
+    testWidgets('is offered when the answers did not load', (tester) async {
+      final repository = _FakeOnboardingRepository(draft: _draft('schedule'))
+        ..failingLoads = 1;
+      await _pump(
+        tester,
+        repository,
+        onSignOut: () async {},
+        deletion: _OnboardingDeletion(),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Your answers did not load.'), findsOneWidget);
+      expect(find.byTooltip('Account options'), findsOneWidget);
+    });
   });
 
   group('recovery and controls', () {
@@ -1286,6 +1385,35 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('a target weight never goes under the healthy floor', (
+      tester,
+    ) async {
+      // A draft from an older build: 45 kg with a 40 kg target at 165 cm.
+      final draft = _draft('about');
+      final repository = _FakeOnboardingRepository(
+        draft: OnboardingDraft(
+          path: draft.path,
+          currentSection: draft.currentSection,
+          payload: {...draft.payload, 'weight_kg': 45, 'target_weight_kg': 40},
+        ),
+      );
+      await _pump(tester, repository);
+      await tester.pumpAndSettle();
+      // BMI 18.5 at 165 cm is 50.4 kg, so the lowest half kilo is 50.5 kg.
+      expect(find.text('Target: 50.5 kg'), findsOneWidget);
+      expect(
+        find.text('Lowest healthy target for your height: 50.5 kg'),
+        findsOneWidget,
+      );
+      final decrease = find.byTooltip('Decrease target weight');
+      await tester.ensureVisible(decrease);
+      await tester.tap(decrease);
+      await tester.pumpAndSettle();
+      expect(find.text('Target: 50.5 kg'), findsOneWidget);
+      await _continue(tester);
+      expect(repository.savedPayload!['target_weight_kg'], 50.5);
+    });
+
     testWidgets('rejecting asks first; one tap approves once', (tester) async {
       final repository = _FakeOnboardingRepository(
         draft: _draft('proposal'),
@@ -1344,7 +1472,13 @@ void main() {
     ) async {
       tester.platformDispatcher.textScaleFactorTestValue = 2.0;
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-      await _pump(tester, repo, onSignOut: () async {}, width: 320);
+      await _pump(
+        tester,
+        repo,
+        onSignOut: () async {},
+        deletion: _OnboardingDeletion(),
+        width: 320,
+      );
       await tester.pumpAndSettle();
     }
 
@@ -1652,6 +1786,87 @@ void main() {
         expect(find.text('Your starting plan'), findsOneWidget);
       },
     );
+
+    group('a saved draft without the current agreements', () {
+      const missing = {LegalConsent.healthData};
+
+      testWidgets('past the first step restarts at the agreements, with no '
+          'Apple Health read and no plan', (tester) async {
+        final repository = _FakeOnboardingRepository(
+          draft: _experiencedDraft('questions', {'health_import': 'connected'}),
+          generations: [_succeeded],
+        )..legalOutdated = missing;
+        final baseline = _FakeBaseline(const HealthBaseline(months: 11));
+        final health = _FakeHealth(status: _connected);
+        await _pump(
+          tester,
+          repository,
+          healthBaseline: baseline,
+          health: health,
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('I agree to Tracend using my health data'),
+          findsOneWidget,
+        );
+        expect(find.text('Allow AI coaching?'), findsNothing);
+        expect(baseline.loads, 0);
+        expect(health.statusLoads, 0);
+        expect(repository.askCalls, 0);
+        expect(repository.startCalls, 0);
+
+        await _tapText(tester, 'I am 18 or older');
+        await _tapText(tester, 'I accept the private-beta terms');
+        await _tapText(tester, 'I have read the privacy notice');
+        await _tapText(tester, 'I agree to Tracend using my health data');
+        await _continue(tester);
+        await tester.pumpAndSettle();
+
+        // The agreements are recorded first; only then is Apple Health read.
+        expect(repository.eligibilityCalls, 1);
+        expect(health.statusLoads, 1);
+        expect(find.text('A quick health check.'), findsOneWidget);
+      });
+
+      testWidgets('on the plan step does not resume the plan', (tester) async {
+        final repository = _FakeOnboardingRepository(
+          draft: _draft('proposal'),
+          generations: [_running, _succeeded],
+        )..legalOutdated = missing;
+        await _pump(tester, repository);
+        await tester.pumpAndSettle();
+
+        expect(find.text('I accept the private-beta terms'), findsOneWidget);
+        expect(find.text('Building your plan'), findsNothing);
+        expect(find.text('Your starting plan'), findsNothing);
+        expect(repository.startCalls, 0);
+      });
+
+      testWidgets('a lookup that fails offers a retry and reads nothing', (
+        tester,
+      ) async {
+        final repository = _FakeOnboardingRepository(draft: _draft('review'))
+          ..failingLegalLoads = 1;
+        final health = _FakeHealth(status: _connected);
+        await _pump(tester, repository, health: health);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Try again'), findsOneWidget);
+        expect(health.statusLoads, 0);
+
+        await _tapText(tester, 'Try again');
+        expect(find.text('Review before building.'), findsOneWidget);
+      });
+
+      testWidgets('with the current agreements a draft resumes as saved', (
+        tester,
+      ) async {
+        await _pump(tester, _FakeOnboardingRepository(draft: _draft('review')));
+
+        expect(find.text('Review before building.'), findsOneWidget);
+      });
+    });
 
     testWidgets(
       'an edited answer drops the follow-up answers it no longer fits',
@@ -2018,9 +2233,13 @@ class _FakeHealth implements HealthRepository {
   HealthHistory history;
   bool connectThrows;
   int connectCalls = 0;
+  int statusLoads = 0;
 
   @override
-  Future<HealthSyncStatus> loadStatus() async => status;
+  Future<HealthSyncStatus> loadStatus() async {
+    statusLoads++;
+    return status;
+  }
 
   @override
   Future<HealthHistory> loadHistory() async => history;
@@ -2120,6 +2339,7 @@ Future<void> _pump(
   VoidCallback? onCompleted,
   AiCoachingConsentController? consent,
   Future<void> Function()? onSignOut,
+  AccountDeletionRepository? deletion,
   int? currentYear,
   HealthRepository? health,
   HealthBaselineSource? healthBaseline,
@@ -2139,6 +2359,7 @@ Future<void> _pump(
         health: health,
         healthBaseline: healthBaseline,
         onSignOut: onSignOut,
+        deletion: deletion,
         pollInterval: Duration.zero,
         currentYear: currentYear,
       ),
@@ -2266,6 +2487,22 @@ class _FakeOnboardingRepository implements OnboardingRepository {
   @override
   Future<void> recordEligibilityAndConsent({required bool eligible}) async {
     eligibilityCalls++;
+    legalOutdated = const {};
+  }
+
+  /// The agreements the server lacks at this build's versions.
+  Set<LegalConsent> legalOutdated = const {};
+
+  /// How many agreement lookups fail before one succeeds.
+  int failingLegalLoads = 0;
+
+  @override
+  Future<Set<LegalConsent>> loadOutdatedLegalConsents() async {
+    if (failingLegalLoads > 0) {
+      failingLegalLoads--;
+      throw Exception('offline');
+    }
+    return legalOutdated;
   }
 
   /// What the server answers to the health check; by default the outcome the
@@ -2469,4 +2706,23 @@ class _FakeOnboardingRepository implements OnboardingRepository {
     respondedIds.add(proposalId);
     notes.add(note);
   }
+}
+
+class _OnboardingDeletion implements AccountDeletionRepository {
+  bool deleted = false;
+
+  @override
+  Future<AccountDeletionOutcome> delete({
+    required String accountPassword,
+    required String confirmation,
+  }) async {
+    expect(accountPassword, 'account-password');
+    expect(confirmation, 'DELETE');
+    deleted = true;
+    return AccountDeletionOutcome.deleted;
+  }
+
+  @override
+  Future<AccountDeletionOutcome> confirm() async =>
+      AccountDeletionOutcome.deleted;
 }

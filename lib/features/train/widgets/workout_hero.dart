@@ -586,3 +586,65 @@ class RestDayHero extends StatelessWidget {
     );
   }
 }
+
+/// A day before the athlete's first plan began: nothing was due, so it is
+/// neither planned nor missed.
+class BeforePlanDayCard extends StatelessWidget {
+  const BeforePlanDayCard({
+    required this.date,
+    required this.startedOn,
+    required this.today,
+    super.key,
+  });
+
+  final DateTime date;
+  final DateTime startedOn;
+  final DateTime today;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      key: const ValueKey('before-plan-day'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(TracendRadii.card),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                CupertinoIcons.calendar,
+                size: 15,
+                color: colors.textSecondary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                dayAndDate(date, now: today),
+                style: textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Semantics(
+            header: true,
+            child: Text('Before your plan', style: trainDisplay(context)),
+          ),
+          const SizedBox(height: TracendSpacing.sm),
+          Text(
+            'Your plan started on ${dayAndDate(startedOn, now: today)}. '
+            'Nothing was due this day.',
+            style: textTheme.bodyMedium,
+          ),
+        ],
+      ),
+    );
+  }
+}

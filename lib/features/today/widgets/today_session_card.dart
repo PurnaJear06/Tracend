@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/feedback/feedback_rating.dart';
 import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/readiness/day_adjustment_card.dart';
 import 'package:tracend/features/readiness/day_adjustment_controller.dart';
@@ -35,6 +36,7 @@ class TodaySessionCard extends StatelessWidget {
     required this.decision,
     required this.aiAllowed,
     required this.onOpen,
+    this.feedback,
     this.dayAdjustment,
     this.onTalkToCoach,
     this.onCheckIn,
@@ -47,6 +49,10 @@ class TodaySessionCard extends StatelessWidget {
   final CoachDecision? decision;
   final bool aiAllowed;
   final VoidCallback onOpen;
+
+  /// Rates today's decision (useful, unclear, incorrect, unsafe). Null where
+  /// there is no backend, and then the note shows no rating.
+  final FeedbackRatingRepository? feedback;
 
   /// Today's same-day readiness adjustment, shared with Train. Null without a
   /// backend, where there is none.
@@ -81,6 +87,7 @@ class TodaySessionCard extends StatelessWidget {
         : _CoachNote(
             decision: decision?.localDate == brief.localDate ? decision : null,
             aiAllowed: aiAllowed,
+            feedback: feedback,
           );
     final readiness = dayAdjustment == null
         ? const SizedBox.shrink()
@@ -366,10 +373,15 @@ class _SetStrip extends StatelessWidget {
 
 /// The coach's note for today, in a lime-tinted panel.
 class _CoachNote extends StatelessWidget {
-  const _CoachNote({required this.decision, required this.aiAllowed});
+  const _CoachNote({
+    required this.decision,
+    required this.aiAllowed,
+    required this.feedback,
+  });
 
   final CoachDecision? decision;
   final bool aiAllowed;
+  final FeedbackRatingRepository? feedback;
 
   @override
   Widget build(BuildContext context) {
@@ -427,6 +439,14 @@ class _CoachNote extends StatelessWidget {
                         : colors.textPrimary,
                   ),
                 ),
+                if (decision != null && feedback != null) ...[
+                  const SizedBox(height: TracendSpacing.xxs),
+                  FeedbackRatingBar(
+                    repository: feedback!,
+                    subject: FeedbackSubject.dailyDecision,
+                    subjectId: decision.id,
+                  ),
+                ],
               ],
             ),
           ),

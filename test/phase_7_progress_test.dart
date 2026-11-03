@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/features/progress/progress_screen.dart';
+import 'package:tracend/features/progress/widgets/weekly_review_widgets.dart';
 
 void main() {
   testWidgets('Progress starts with honest empty evidence state', (
@@ -102,6 +103,43 @@ void main() {
     await tester.tap(find.text('Mark reviewed'));
     await tester.pumpAndSettle();
     expect(repository.acknowledgedReviewId, 'review-1');
+  });
+  testWidgets('A week with nothing due shows no percentage', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TracendTheme.light,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: WeeklyReviewSheet(
+              review: WeeklyProgressReview(
+                id: 'review-2',
+                week: DateTime(2026, 6, 22),
+                outcomeCode: 'gather_execution_data',
+                plannedSessions: 0,
+                completedWorkouts: 0,
+                completedSets: 0,
+                adherencePercent: null,
+                checkInDays: 0,
+                averageEnergy: null,
+                averageSoreness: null,
+                healthDays: 0,
+                confirmedNutritionDays: 0,
+                measurementDays: 0,
+                missingData: const [],
+                nextFocusCode: 'complete_next_planned_workout',
+                acknowledged: false,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('0 of 0'), findsNothing);
+    expect(find.text('0%'), findsNothing);
+    expect(find.text('100%'), findsNothing);
+    expect(find.text('workouts done'), findsOneWidget);
+    expect(find.text('None'), findsOneWidget);
+    expect(find.text('planned this week'), findsOneWidget);
   });
 }
 

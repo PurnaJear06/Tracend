@@ -7,11 +7,13 @@ import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/feedback/feedback_rating.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/today/check_in_gate.dart';
+import 'package:tracend/features/today/check_in_marks.dart';
 import 'package:tracend/features/today/widgets/fuel_rail_card.dart';
 import 'package:tracend/features/today/widgets/plan_progress_line.dart';
 import 'package:tracend/features/today/widgets/recovery_readout_card.dart';
@@ -27,6 +29,7 @@ import 'package:tracend/shared/widgets/tracend_motion.dart';
 import 'package:tracend/shared/widgets/tracend_skeleton.dart';
 
 import 'day_adjustment_fixtures.dart';
+import 'feedback_fakes.dart';
 
 Widget _wrap(Widget child) {
   return MaterialApp(
@@ -669,6 +672,60 @@ void main() {
       expect(find.text('Drop the last bench set today.'), findsOneWidget);
       // Advice never changes the prescribed blocks.
       expect(blocks(tester), hasLength(7));
+    });
+
+    testWidgets("today's decision can be rated when ratings can be saved", (
+      tester,
+    ) async {
+      final ratings = FakeFeedbackRatings();
+      await tester.pumpWidget(
+        _wrap(
+          TodaySessionCard(
+            brief: _brief(workout: workout),
+            decision: decision(),
+            feedback: ratings,
+            aiAllowed: true,
+            onOpen: _noop,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Unclear'));
+      await tester.pumpAndSettle();
+
+      expect(ratings.saved, [
+        (FeedbackSubject.dailyDecision, 'd1', FeedbackRating.unclear),
+      ]);
+    });
+
+    testWidgets('there is nothing to rate without a decision or a backend', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          Column(
+            children: [
+              TodaySessionCard(
+                brief: _brief(workout: workout),
+                decision: null,
+                feedback: FakeFeedbackRatings(),
+                aiAllowed: true,
+                onOpen: _noop,
+              ),
+              TodaySessionCard(
+                brief: _brief(workout: workout),
+                decision: decision(),
+                aiAllowed: true,
+                onOpen: _noop,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Useful'), findsNothing);
     });
 
     testWidgets('a decision from another day is not shown', (tester) async {
@@ -1487,6 +1544,42 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(gate.required, isFalse);
+    });
+
+    testWidgets('another account on the phone is asked for its own check-in, '
+        'and its marks are its own', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        CheckInMarks.savedOnKey: '2026-08-23',
+        CheckInMarks.skippedOnKey: '2026-08-23',
+        CheckInMarks.savedOnKeyFor('athlete-a'): '2026-08-23',
+        CheckInMarks.skippedOnKeyFor('athlete-a'): '2026-08-23',
+      });
+      final gate = CheckInGate();
+      addTearDown(gate.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: Scaffold(
+            body: TodayScreen(
+              environment: _environment,
+              brief: _NoCheckInBriefRepository(),
+              checkInGate: gate,
+              userId: 'athlete-b',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(gate.required, isTrue);
+
+      gate.skip();
+      await tester.pumpAndSettle();
+      expect(gate.required, isFalse);
+      final preferences = await SharedPreferences.getInstance();
+      expect(
+        preferences.getString(CheckInMarks.skippedOnKeyFor('athlete-b')),
+        '2026-08-23',
+      );
     });
   });
 

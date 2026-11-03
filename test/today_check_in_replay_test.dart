@@ -6,6 +6,7 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 /// The offline check-in promise, made whole: a check-in saved while offline
 /// ("It will need a connection to sync") is delivered by the next Today
@@ -29,7 +30,7 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
-    final preferences = await SharedPreferences.getInstance();
+    const preferences = LocalHealthStore();
     await CheckInQueue(preferences).enqueue(
       payload: payload,
       localDate: '2026-09-05',
@@ -60,9 +61,7 @@ void main() {
 
     expect(sentDates, ['2026-09-05']);
     expect(
-      (await SharedPreferences.getInstance()).getString(
-        CheckInQueue.queueStorageKey,
-      ),
+      await const LocalHealthStore().getString(CheckInQueue.queueStorageKey),
       isNull,
     );
     // The brief was loaded once at init and once more after delivery.
@@ -73,7 +72,7 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
-    final preferences = await SharedPreferences.getInstance();
+    const preferences = LocalHealthStore();
     await CheckInQueue(preferences).enqueue(
       payload: payload,
       localDate: '2026-09-05',
@@ -98,9 +97,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
 
     expect(
-      (await SharedPreferences.getInstance()).getString(
-        CheckInQueue.queueStorageKey,
-      ),
+      await const LocalHealthStore().getString(CheckInQueue.queueStorageKey),
       isNotNull,
     );
     // No delivery -> no extra brief load beyond init.
@@ -109,7 +106,7 @@ void main() {
 
   testWidgets('nothing pending: no send, no extra brief load', (tester) async {
     SharedPreferences.setMockInitialValues({});
-    final preferences = await SharedPreferences.getInstance();
+    const preferences = LocalHealthStore();
     var briefLoads = 0;
     var sends = 0;
     await tester.pumpWidget(

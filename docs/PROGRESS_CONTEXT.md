@@ -8,9 +8,9 @@ sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
 **Current priority (2026-10-15): the coaching platform program.** Plan, contracts and board:
 [`docs/plans/coaching-platform-2026-10/README.md`](./plans/coaching-platform-2026-10/README.md).
 Iteration 1 (Phase 0 + Phase 1) is live. Iteration 2 (Phase 2: A3–A7, D1, C2, B1) is merged
-(2026-10-16). Coach chat and the daily decision run on Claude (Anthropic); meal photos and the
-physique check still run on Groq, and onboarding uses its rules plan, until the owner finishes the
-cutover runbook (checked 2026-11-01). One line per stream; the lead updates these lines when a chunk merges.
+(2026-10-16). Every AI feature runs on Claude (Anthropic): Coach chat and the daily decision,
+and since 2026-11-01 meal photos (`claude-haiku-5-5`) and the physique check (`claude-sonnet-5-5`),
+with both v2 photo notices published; Groq receives nothing. Onboarding uses its rules plan. One line per stream; the lead updates these lines when a chunk merges.
 
 <!-- PROGRAM:coaching-platform-2026-10 -->
 - program: P0 (contracts, migration-order CI check) live (#102).
@@ -49,7 +49,7 @@ cutover runbook (checked 2026-11-01). One line per stream; the lead updates thes
   Today, Train, the readiness card ("Rest day: you said you can't train today"), the daily decision
   (`rest_as_chosen`, never PROCEED_AS_PLANNED on such a day) and a provider-neutral `standing_state`
   block always in the Coach's context; the gateway file now shows 3 check-ins and the last 2 exchanges
-  of other chats, so a turn is smaller. Brief 1.9, hub 1.10. The dead `coach_session_summaries`
+  of other chats, so a turn is smaller. Brief 1.9, hub 1.10 (1.11 with the training counts below). The dead `coach_session_summaries`
   writer is gone (table kept for a two-step drop). Handoff:
   [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
@@ -60,7 +60,7 @@ cutover runbook (checked 2026-11-01). One line per stream; the lead updates thes
   `20261023140024`): `day_adjustments`, `get_my_day_adjustment_v1` / `respond_to_day_adjustment_v1`
   (hold loads, one set fewer or easy cardio for today only; one tap and Undo; the recovery score never
   adjusts a session alone, the athlete may choose), `start_workout` building the adjusted sets and B3
-  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). B5-1 (pain check and joint rules) merged as #172; B5-2 (the pain check in the app) in review as #176; B5-3 and B5-4 (deloads and cardio dosing, server) in review. Training-day integrity (QA group A, branch `claude/training-day-integrity`, migration `20261024090000`, hub 1.9): sessions logged under an earlier plan version stay done in Train and cannot be logged twice, a start for a future day is refused (the app previews it), and the hub uses the athlete's local date. Handoff:
+  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). B5-1 (pain check and joint rules) merged as #172; B5-2 (the pain check in the app) in review as #176; B5-3 and B5-4 (deloads and cardio dosing, server) in review. Training-day integrity (QA group A, branch `claude/training-day-integrity`, migration `20261024090000`, hub 1.9): sessions logged under an earlier plan version stay done in Train and cannot be logged twice, a start for a future day is refused (the app previews it), and the hub uses the athlete's local date. Training counts (2026-11-02, branch `claude/training-counts`, migration `20261102194352`, in review): sets at the hard edge of the effort band (2 reps left at RPE 7.5) progress instead of holding and then losing load, a hold is not a stall; days before the first plan began are neither due nor missed in Today, Train, Progress, the weekly review and Coach (hub 1.11, Coach plan state 1.4); Apple Health "Mark complete" saves one session a day. Handoff:
   [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping
@@ -108,6 +108,23 @@ cutover runbook (checked 2026-11-01). One line per stream; the lead updates thes
   remote sign-out returns to the gate, reminders leave the phone on sign-out, body-fat target floor
   (5% men, 12% women or unknown), Progress and Meals form fixes. Handoff:
   [`onboarding.md`](./handoff/onboarding.md).
+- pre-beta audit B5a/B5b (2026-11-02, branch `claude/onboarding-safety-floors`, migration
+  `20261102074318`, in review): onboarding applies the healthy-weight floors (maintenance under BMI
+  19.5, no target under BMI 18.5; re-checked at approval in SQL), `user_goals` and
+  `onboarding_state` lose their direct client writes, a missing screening is unscreened (never
+  cleared), and no `public` function is open to `anon`. Owner step: answer Account › Plan › Health
+  check before merging (production has no screening rows). Handoff:
+  [`onboarding.md`](./handoff/onboarding.md).
+- beta feedback and sheet guard (2026-11-02, branch `claude/feedback-and-sheet-guard`, migration
+  `20261102223417`, in review; new-user audit finding 2 and the sheet finding): **Account › Send
+  feedback** opens an email to the beta support address with the app version, the build and the
+  last beta diagnostic code (kept in memory only; no health values); the daily decision and every
+  Coach reply carry a one-tap Useful / Unclear / Incorrect / Unsafe row stored in
+  `feedback_ratings` (written by `submit_feedback_rating_v1`, exported, deleted with the account),
+  which is how the PRD §8 usefulness gate is measured. Sheets with typed or chosen input (meal,
+  check-in, measurement, pain, goal target, Coach fact, plan-change note, candidate review) ask
+  "Discard changes?" on a swipe, a scrim tap or the close button. Needs a reinstall; the
+  migration deploys with the merge. Handoff: [`ui-polish.md`](./handoff/ui-polish.md).
 - onboarding: Change my setup and the starting meal schedule (2026-11-02, branch
   `claude/change-setup-meal-schedule`, migration `20261102224851`, in review). **Account › Plan ›
   Change my setup** reopens the onboarding Review with the approved answers, builds a new proposal
@@ -118,11 +135,17 @@ cutover runbook (checked 2026-11-01). One line per stream; the lead updates thes
   protein) when targets are approved, so Today's food rail and Coach's "next meal" have an answer;
   `activate_my_nutrition_schedule` is dropped. Needs an app reinstall for Change my setup; the
   schedule needs only the migration. Handoff: [`onboarding.md`](./handoff/onboarding.md).
-- website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
+- website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Beta terms and consent (2026-11-02, `claude/beta-terms-consent`, migration `20261102143719`, in review): app beta terms at `/beta-terms/` (a draft for a lawyer), privacy page fixes (controller and grievance contact, workout and sleeping heart rate, explicit health-data consent, processor wording), onboarding rows that open both pages plus a separate `health_data` consent, Account links, page versions = "Last updated" dates kept equal to `LegalNotices` by a test, and a launch screen that asks onboarded athletes again when a page changes (fails open; the owner sees it once after installing). Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
+
+**Baseline history dedupe (2026-11-02, branch `claude/baseline-history-dedupe`, migration `20261102041737`, PR open):**
+pre-beta audit P1-1. `metric_baseline_history` gets one row per user, metric and observation day; every recompute used
+to write the whole trail again (157,165 rows, 76 MB, one athlete). The migration clears the old trail and rebuilds it,
+drops the `prior_baseline_id` self-reference that made account deletion quadratic, and adds a unique key. Baselines and
+scores are unchanged. Server only, no reinstall. Details: "Baseline history dedupe" in [`backend.md`](./handoff/backend.md).
 
 **Lost replies and thread switching (2026-10-24, branch `claude/lost-replies-thread-switch`, PR open):** QA audit groups E
 and F, app only. Coach: the latest conversation open wins and a failed open restores the previous chat; New conversation
@@ -288,7 +311,8 @@ Decided by the owner on 2026-10-16:
   leave the phone.
 
 Known gaps found:
-- The app's terms and privacy checkboxes don't link to the site pages.
+- Fixed on `claude/beta-terms-consent` (2026-11-02, in review): the terms and privacy rows link to
+  the site pages, and the app has its own beta terms.
 
 **Website and waitlist (2026-10-13):** the public website (`site/`, Astro, Cloudflare Pages at
 https://tracend.pages.dev) and a double opt-in waitlist on the production project (three
@@ -321,12 +345,31 @@ AI notice v5; needs the new build) and PR 5 (Keychain session storage, SHA-pinne
 read-only workflow tokens) are in review. Workstream state:
 [`docs/handoff/security-hardening.md`](./handoff/security-hardening.md).
 
+**On-device data (2026-11-02, branch `claude/local-data-privacy`, in review; needs the new build):**
+pain reports, check-ins, workout drafts, exercise history, the saved plan, referrals read and the
+Coach thread id moved out of `UserDefaults` (copied by iCloud and computer backups) into files
+under Application Support, excluded from backups (they were copied by both before); the
+first launch moves the old keys. "Checked in today" and "Not today" are per athlete and removed on
+sign-out, a refused session and deletion (a second account on the phone was shown as checked in);
+a test lists every key the app writes. The app switcher shows the launch screen instead of the
+last screen. Details and the owner's phone check:
+[`docs/handoff/security-hardening.md`](./handoff/security-hardening.md).
+
 **Security hardening round 2 (2026-10-31, branch `claude/security-hardening-license`, in review):** no
 pull request runs with a provider secret any more (live evals are Run workflow on the branch, write access needed, a CI
 guard enforces it; the `coach-eval` and `onboarding-eval` labels are gone), Edge Sentry events carry
 codes and numbers only, the repository license is proprietary (view only), and the Supabase key
 migration is prepared with a no-change helper and an owner runbook:
 [`docs/handoff/supabase-key-migration.md`](./handoff/supabase-key-migration.md).
+
+**Pre-beta audit: auth and account safety (2026-11-01, branch `claude/auth-account-safety`, in
+review):** links never create a session (B2); **Forgot password?** resets in the app with an emailed
+code and **Resend email** sends the confirmation again (B4; owner pastes the Reset password template
+with `{{ .Token }}` and turns on leaked-password protection, `docs/BETA_OPERATIONS.md` step 9);
+**Delete account** during onboarding (P1-7); `health-sync` answers 422/429/503 and reports server
+faults by code, app Sentry events carry the account id, and a load failing three times in a row is
+reported once (P1-4). Needs a reinstall. Handoff:
+[`account-session.md`](./handoff/account-session.md).
 
 **Privacy export, deletion and retention fixes (2026-10-24, QA audit group D):** the export now
 carries every table with a `user_id` (Coach threads and messages included) in pages of 1000, with a
@@ -538,8 +581,19 @@ longer names an amount. App only, needs a reinstall. See
   with the commit; the release tag waits for that check. On 2026-09-28, parallel deploys had
   reported success while Supabase kept the previous version of four functions. Supabase's
   intermittent deploy 500 is retried automatically (`scripts/deploy-function.sh`).
-- Semantic versions come from `pubspec.yaml`; build numbers are monotonic in CI and derived from Git
-  history for local device builds.
+- Semantic versions come from `pubspec.yaml`; build numbers are monotonic in CI and count the
+  commits up to `origin/main` for device and TestFlight builds, so a branch can never outrun main.
+- The route to testers is `scripts/build-testflight.sh` (signed App Store `.ipa` from a clean
+  `origin/main` tip, bundle checked, upload command printed; no upload without the owner's App
+  Store Connect key). A release build without Supabase settings says so instead of running the
+  demo. Owner steps are in `docs/BETA_OPERATIONS.md` (not done yet: paid Apple team, App Store
+  Connect record, widget App ID, upload key, demo account).
+- `nightly-backup.yml` backs up the database (restore-drilled) every night into the private
+  backups repository, through the same `database-backup.yml` that every deploy calls. Progress
+  photos are not backed up yet (follow-up: encrypted backup to Cloudflare R2 with a 30-day
+  lifecycle rule, bucket and key from the owner); meal photos are deleted after about 7 days.
+- `scripts/rollback-function.sh` rolls an Edge Function back to the newest release whose bundle of it
+  differs from main, with that release's whole `supabase/functions` tree, and checks it live.
 - Each checkout builds in its own folder. The device installer refuses an app bundle without its
   fonts and asset manifests, and CI checks the same on its iOS build.
 

@@ -9,6 +9,7 @@ import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
+import 'package:tracend/shared/widgets/tracend_sheet.dart';
 import 'package:uuid/uuid.dart';
 import 'package:tracend/shared/diagnostics.dart';
 
@@ -237,14 +238,7 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
 
   @override
   void dispose() {
-    for (final controller in [
-      _name,
-      _serving,
-      _calories,
-      _protein,
-      _carbs,
-      _fat,
-    ]) {
+    for (final controller in _fields) {
       controller.dispose();
     }
     super.dispose();
@@ -297,92 +291,103 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
 
   /// Shown in a sheet titled "Enter meal" with `scrollable: false`: the
   /// form brings its own scroll view so a drag dismisses the keyboard.
+  late final _fields = [_name, _serving, _calories, _protein, _carbs, _fat];
+
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-    child: Form(
-      key: _formKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Align(
-            alignment: Alignment.centerRight,
-            child: HideKeyboardButton(),
-          ),
-          MealTypeChips(
-            selected: _mealType,
-            onSelected: (type) => setState(() => _mealType = type),
-          ),
-          const SizedBox(height: TracendSpacing.xs),
-          const SizedBox(height: TracendSpacing.xs),
-          TextFormField(
-            controller: _name,
-            decoration: const InputDecoration(labelText: 'Food name'),
-            validator: _required,
-            onTapOutside: dismissKeyboard,
-          ),
-          const SizedBox(height: TracendSpacing.xs),
-          TextFormField(
-            controller: _serving,
-            decoration: const InputDecoration(labelText: 'Serving'),
-            validator: _required,
-            onTapOutside: dismissKeyboard,
-          ),
-          const SizedBox(height: TracendSpacing.xs),
-          TextFormField(
-            controller: _calories,
-            decoration: const InputDecoration(labelText: 'Calories'),
-            keyboardType: decimalKeyboard,
-            validator: _number,
-            onTapOutside: dismissKeyboard,
-          ),
-          const SizedBox(height: TracendSpacing.xs),
-          TextFormField(
-            controller: _protein,
-            decoration: const InputDecoration(labelText: 'Protein (g)'),
-            keyboardType: decimalKeyboard,
-            validator: _number,
-            onTapOutside: dismissKeyboard,
-          ),
-          const SizedBox(height: TracendSpacing.xs),
-          TextFormField(
-            controller: _carbs,
-            decoration: const InputDecoration(labelText: 'Carbohydrate (g)'),
-            keyboardType: decimalKeyboard,
-            validator: _number,
-            onTapOutside: dismissKeyboard,
-          ),
-          const SizedBox(height: TracendSpacing.xs),
-          TextFormField(
-            controller: _fat,
-            decoration: const InputDecoration(labelText: 'Fat (g)'),
-            keyboardType: decimalKeyboard,
-            validator: _number,
-            onTapOutside: dismissKeyboard,
-          ),
-          const SizedBox(height: TracendSpacing.lg),
-          if (_failed) ...[
-            Semantics(
-              liveRegion: true,
-              child: Text(
-                _unknown
-                    ? 'The meal may not have been saved. What you entered is '
-                          'kept; check the connection and confirm it again. '
-                          'If it was saved, it is not added twice.'
-                    : 'The meal was not saved. What you entered is kept; '
-                          'check the connection and confirm it again.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: context.tracendColors.stateDanger,
+  Widget build(BuildContext context) => TracendSheetUnsavedGuard(
+    listenable: Listenable.merge(_fields),
+    // A save in flight keeps the sheet dirty: only the pop that follows its
+    // success leaves without asking.
+    isDirty: () =>
+        _saving ||
+        _mealType != widget.initialMealType ||
+        _fields.any((field) => field.text.trim().isNotEmpty),
+    child: SingleChildScrollView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Align(
+              alignment: Alignment.centerRight,
+              child: HideKeyboardButton(),
+            ),
+            MealTypeChips(
+              selected: _mealType,
+              onSelected: (type) => setState(() => _mealType = type),
+            ),
+            const SizedBox(height: TracendSpacing.xs),
+            const SizedBox(height: TracendSpacing.xs),
+            TextFormField(
+              controller: _name,
+              decoration: const InputDecoration(labelText: 'Food name'),
+              validator: _required,
+              onTapOutside: dismissKeyboard,
+            ),
+            const SizedBox(height: TracendSpacing.xs),
+            TextFormField(
+              controller: _serving,
+              decoration: const InputDecoration(labelText: 'Serving'),
+              validator: _required,
+              onTapOutside: dismissKeyboard,
+            ),
+            const SizedBox(height: TracendSpacing.xs),
+            TextFormField(
+              controller: _calories,
+              decoration: const InputDecoration(labelText: 'Calories'),
+              keyboardType: decimalKeyboard,
+              validator: _number,
+              onTapOutside: dismissKeyboard,
+            ),
+            const SizedBox(height: TracendSpacing.xs),
+            TextFormField(
+              controller: _protein,
+              decoration: const InputDecoration(labelText: 'Protein (g)'),
+              keyboardType: decimalKeyboard,
+              validator: _number,
+              onTapOutside: dismissKeyboard,
+            ),
+            const SizedBox(height: TracendSpacing.xs),
+            TextFormField(
+              controller: _carbs,
+              decoration: const InputDecoration(labelText: 'Carbohydrate (g)'),
+              keyboardType: decimalKeyboard,
+              validator: _number,
+              onTapOutside: dismissKeyboard,
+            ),
+            const SizedBox(height: TracendSpacing.xs),
+            TextFormField(
+              controller: _fat,
+              decoration: const InputDecoration(labelText: 'Fat (g)'),
+              keyboardType: decimalKeyboard,
+              validator: _number,
+              onTapOutside: dismissKeyboard,
+            ),
+            const SizedBox(height: TracendSpacing.lg),
+            if (_failed) ...[
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  _unknown
+                      ? 'The meal may not have been saved. What you entered is '
+                            'kept; check the connection and confirm it again. '
+                            'If it was saved, it is not added twice.'
+                      : 'The meal was not saved. What you entered is kept; '
+                            'check the connection and confirm it again.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: context.tracendColors.stateDanger,
+                  ),
                 ),
               ),
+              const SizedBox(height: TracendSpacing.sm),
+            ],
+            FilledButton(
+              onPressed: _saving ? null : _submit,
+              child: Text(_saving ? 'Saving…' : 'Confirm meal'),
             ),
-            const SizedBox(height: TracendSpacing.sm),
           ],
-          FilledButton(
-            onPressed: _saving ? null : _submit,
-            child: Text(_saving ? 'Saving…' : 'Confirm meal'),
-          ),
-        ],
+        ),
       ),
     ),
   );
@@ -418,6 +423,25 @@ class _CandidateSheetState extends State<CandidateSheet> {
       .toSet();
   bool _discarding = false;
   bool _discardFailed = false;
+
+  /// Editors that have reported their opening values. An editor reports them
+  /// as it opens (rounded as its fields show them), which is not an edit.
+  final _opened = <String>{};
+
+  /// Counts the athlete's edits to a candidate, so the sheet notices them.
+  final _edits = ValueNotifier<int>(0);
+
+  @override
+  void dispose() {
+    _edits.dispose();
+    super.dispose();
+  }
+
+  void _edit(String id, MealCandidate candidate) {
+    _edited[id] = candidate;
+    if (_opened.add(id)) return;
+    _edits.value++;
+  }
 
   Future<void> _discard() async {
     setState(() {
@@ -496,54 +520,59 @@ class _CandidateSheetState extends State<CandidateSheet> {
     ],
   );
 
-  Widget _review(BuildContext context) => Form(
-    key: _formKey,
-    child: SingleChildScrollView(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Align(
-            alignment: Alignment.centerRight,
-            child: HideKeyboardButton(),
-          ),
-          Text(
-            widget.candidates.any(
-                  (candidate) =>
-                      candidate.source == MealSource.label ||
-                      candidate.source == MealSource.labelUnverified,
-                )
-                ? 'Values read from a label can still be misread. Compare the '
-                      'name and the numbers with the pack, choose how much you '
-                      'ate, then confirm only what you ate.'
-                : 'These are estimates from your photo. Check portions, oil, '
-                      'sauces, and hidden ingredients, then confirm only what '
-                      'you ate.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: TracendSpacing.md),
-          for (final item in widget.candidates) ...[
-            CandidateEditor(
-              candidate: item,
-              selected: _selected.contains(item.id),
-              onSelected: (selected) => setState(() {
-                if (selected) {
-                  _selected.add(item.id);
-                } else {
-                  _selected.remove(item.id);
-                }
-              }),
-              onChanged: (candidate) => _edited[item.id] = candidate,
+  Widget _review(BuildContext context) => TracendSheetUnsavedGuard(
+    listenable: _edits,
+    isDirty: () =>
+        _edits.value > 0 || _selected.length != widget.candidates.length,
+    child: Form(
+      key: _formKey,
+      child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Align(
+              alignment: Alignment.centerRight,
+              child: HideKeyboardButton(),
             ),
-            const SizedBox(height: TracendSpacing.xs),
+            Text(
+              widget.candidates.any(
+                    (candidate) =>
+                        candidate.source == MealSource.label ||
+                        candidate.source == MealSource.labelUnverified,
+                  )
+                  ? 'Values read from a label can still be misread. Compare the '
+                        'name and the numbers with the pack, choose how much you '
+                        'ate, then confirm only what you ate.'
+                  : 'These are estimates from your photo. Check portions, oil, '
+                        'sauces, and hidden ingredients, then confirm only what '
+                        'you ate.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: TracendSpacing.md),
+            for (final item in widget.candidates) ...[
+              CandidateEditor(
+                candidate: item,
+                selected: _selected.contains(item.id),
+                onSelected: (selected) => setState(() {
+                  if (selected) {
+                    _selected.add(item.id);
+                  } else {
+                    _selected.remove(item.id);
+                  }
+                }),
+                onChanged: (candidate) => _edit(item.id, candidate),
+              ),
+              const SizedBox(height: TracendSpacing.xs),
+            ],
+            const SizedBox(height: TracendSpacing.md),
+            FilledButton(
+              onPressed: _selected.isEmpty ? null : _submit,
+              child: const Text('Confirm selected foods'),
+            ),
           ],
-          const SizedBox(height: TracendSpacing.md),
-          FilledButton(
-            onPressed: _selected.isEmpty ? null : _submit,
-            child: const Text('Confirm selected foods'),
-          ),
-        ],
+        ),
       ),
     ),
   );

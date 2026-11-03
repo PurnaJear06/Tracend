@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/account/account_screen.dart';
+import 'package:tracend/features/consent/legal_consent.dart';
 import 'package:tracend/features/onboarding/current_setup.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_screening.dart';
@@ -288,6 +289,9 @@ class _Repository implements OnboardingRepository {
 
   @override
   Future<bool> isOnboardingComplete() async => true;
+
+  @override
+  Future<Set<LegalConsent>> loadOutdatedLegalConsents() async => {};
 
   @override
   Future<OnboardingDraft?> loadDraft() async => null;

@@ -78,6 +78,14 @@ class _PainCheckFormState extends State<_PainCheckForm> {
   bool get _complete =>
       _area != null && _severity != null && _sharp != null && _numb != null;
 
+  /// Answers that closing the sheet would lose: a body area the exercise
+  /// already named does not count until the athlete changes it.
+  bool get _unsaved =>
+      _area != widget.preselected ||
+      _severity != null ||
+      _sharp != null ||
+      _numb != null;
+
   void _submit() {
     if (!_complete) {
       setState(() => _incomplete = true);
@@ -126,64 +134,67 @@ class _PainCheckFormState extends State<_PainCheckForm> {
             ),
           ],
         );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ChoiceGroup(
-          title: chipWhereTitle,
-          options: [
-            for (final area in PainArea.values)
-              (
-                label: areaChoice(area),
-                selected: _area == area,
-                onTap: () => setState(() {
-                  _area = area;
-                  _incomplete = false;
-                }),
-              ),
-          ],
-        ),
-        const SizedBox(height: TracendSpacing.lg),
-        Text(chipStrengthTitle, style: textTheme.titleMedium),
-        const SizedBox(height: TracendSpacing.xxs),
-        Text(
-          '1 is barely noticeable, 10 is the worst you can imagine.',
-          style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
-        ),
-        const SizedBox(height: TracendSpacing.sm),
-        Wrap(
-          spacing: TracendSpacing.xs,
-          runSpacing: TracendSpacing.xs,
-          children: [
-            for (var level = 1; level <= 10; level++)
-              SeverityChip(
-                level: level,
-                selected: _severity == level,
-                onTap: () => setState(() {
-                  _severity = level;
-                  _incomplete = false;
-                }),
-              ),
-          ],
-        ),
-        const SizedBox(height: TracendSpacing.lg),
-        yesNo(chipSharpTitle, _sharp, (value) => _sharp = value),
-        const SizedBox(height: TracendSpacing.lg),
-        yesNo(chipNumbTitle, _numb, (value) => _numb = value),
-        if (_incomplete) ...[
-          const SizedBox(height: TracendSpacing.sm),
-          Semantics(
-            liveRegion: true,
-            child: Text(
-              chipRequired,
-              style: textTheme.bodySmall?.copyWith(color: colors.stateDanger),
-            ),
+    return TracendSheetUnsavedGuard(
+      isDirty: () => _unsaved,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ChoiceGroup(
+            title: chipWhereTitle,
+            options: [
+              for (final area in PainArea.values)
+                (
+                  label: areaChoice(area),
+                  selected: _area == area,
+                  onTap: () => setState(() {
+                    _area = area;
+                    _incomplete = false;
+                  }),
+                ),
+            ],
           ),
+          const SizedBox(height: TracendSpacing.lg),
+          Text(chipStrengthTitle, style: textTheme.titleMedium),
+          const SizedBox(height: TracendSpacing.xxs),
+          Text(
+            '1 is barely noticeable, 10 is the worst you can imagine.',
+            style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+          ),
+          const SizedBox(height: TracendSpacing.sm),
+          Wrap(
+            spacing: TracendSpacing.xs,
+            runSpacing: TracendSpacing.xs,
+            children: [
+              for (var level = 1; level <= 10; level++)
+                SeverityChip(
+                  level: level,
+                  selected: _severity == level,
+                  onTap: () => setState(() {
+                    _severity = level;
+                    _incomplete = false;
+                  }),
+                ),
+            ],
+          ),
+          const SizedBox(height: TracendSpacing.lg),
+          yesNo(chipSharpTitle, _sharp, (value) => _sharp = value),
+          const SizedBox(height: TracendSpacing.lg),
+          yesNo(chipNumbTitle, _numb, (value) => _numb = value),
+          if (_incomplete) ...[
+            const SizedBox(height: TracendSpacing.sm),
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                chipRequired,
+                style: textTheme.bodySmall?.copyWith(color: colors.stateDanger),
+              ),
+            ),
+          ],
+          const SizedBox(height: TracendSpacing.lg),
+          FilledButton(onPressed: _submit, child: const Text(chipSave)),
+          const SizedBox(height: TracendSpacing.sm),
         ],
-        const SizedBox(height: TracendSpacing.lg),
-        FilledButton(onPressed: _submit, child: const Text(chipSave)),
-        const SizedBox(height: TracendSpacing.sm),
-      ],
+      ),
     );
   }
 }
@@ -282,7 +293,11 @@ class _PainResult extends StatelessWidget {
             return Padding(
               padding: const EdgeInsets.only(top: TracendSpacing.sm),
               child: Text(
-                delivery.refused ? chipNotRecorded : chipQueued,
+                !delivery.kept
+                    ? chipNotSaved
+                    : delivery.refused
+                    ? chipNotRecorded
+                    : chipQueued,
                 style: textTheme.bodySmall?.copyWith(
                   color: colors.textSecondary,
                 ),

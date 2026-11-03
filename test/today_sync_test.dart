@@ -9,6 +9,8 @@ import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/today/widgets/today_hero.dart';
+import 'package:tracend/features/today/check_in_queue.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 const _configuredEnvironment = AppEnvironment(
   name: 'test',
@@ -39,6 +41,7 @@ Widget _app({
         health: health,
         coach: coach,
         brief: brief,
+        queueFactory: () => CheckInQueue(const LocalHealthStore()),
       ),
     ),
   );

@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tracend/features/readiness/pain_check.dart';
 import 'package:tracend/shared/diagnostics.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 /// A pain report from a workout that waits on this phone until it can be sent.
 @immutable
@@ -77,14 +77,14 @@ class PainQueueState {
 /// deleted account stays empty.
 class PainReportQueue {
   PainReportQueue(
-    this._preferences, {
+    this._store, {
     String? userId,
     String? Function()? signedInUser,
   }) : _userId = userId,
        _signedInUser = signedInUser,
-       _key = userId == null ? _anonymousKey : storageKeyFor(userId);
+       _key = userId == null ? storageKey : storageKeyFor(userId);
 
-  final SharedPreferences _preferences;
+  final LocalHealthStore _store;
   final String? _userId;
 
   /// The athlete signed in now, when the queue is to check it before each
@@ -92,9 +92,9 @@ class PainReportQueue {
   final String? Function()? _signedInUser;
   final String _key;
 
-  static const _anonymousKey = 'pain_reports_pending';
+  static const storageKey = 'pain_reports_pending';
 
-  static String storageKeyFor(String userId) => '$_anonymousKey.$userId';
+  static String storageKeyFor(String userId) => '$storageKey.$userId';
 
   /// The end of the changes waiting for each stored list, so changes to one
   /// list run one after the other.
@@ -126,14 +126,14 @@ class PainReportQueue {
   /// Forgets everything kept for [userId] (a deleted account). A drain that
   /// is waiting on the network finds nothing left to change when it comes
   /// back.
-  static Future<void> clearFor(SharedPreferences preferences, String userId) =>
+  static Future<void> clearFor(LocalHealthStore store, String userId) =>
       PainReportQueue(
-        preferences,
+        store,
         userId: userId,
-      )._locked(() => preferences.remove(storageKeyFor(userId)));
+      )._locked(() => store.remove(storageKeyFor(userId)));
 
-  List<QueuedPainReport> _read() {
-    final stored = _preferences.getString(_key);
+  Future<List<QueuedPainReport>> _read() async {
+    final stored = await _store.getString(_key);
     if (stored == null) return const [];
     try {
       final list = jsonDecode(stored);
@@ -156,10 +156,10 @@ class PainReportQueue {
 
   Future<void> _write(List<QueuedPainReport> reports) async {
     if (reports.isEmpty) {
-      await _preferences.remove(_key);
+      await _store.remove(_key);
       return;
     }
-    await _preferences.setString(
+    await _store.setString(
       _key,
       jsonEncode([for (final item in reports) item.toJson()]),
     );
@@ -173,7 +173,7 @@ class PainReportQueue {
     bool refused = false,
     bool tooOld = false,
   }) => _locked(() async {
-    final reports = _read();
+    final reports = await _read();
     if (reports.any((r) => r.report.idempotencyKey == report.idempotencyKey)) {
       return;
     }
@@ -186,7 +186,7 @@ class PainReportQueue {
   /// Forgets [report] once the server has it.
   Future<void> remove(String idempotencyKey) => _locked(
     () async => _write([
-      for (final item in _read())
+      for (final item in await _read())
         if (item.report.idempotencyKey != idempotencyKey) item,
     ]),
   );
@@ -196,7 +196,7 @@ class PainReportQueue {
   /// is not brought back.
   Future<void> _markRefused(String idempotencyKey, {required bool tooOld}) =>
       _locked(() async {
-        final reports = _read();
+        final reports = await _read();
         if (!reports.any((r) => r.report.idempotencyKey == idempotencyKey)) {
           return;
         }
@@ -213,8 +213,8 @@ class PainReportQueue {
         ]);
       });
 
-  PainQueueState get state {
-    final reports = _read();
+  Future<PainQueueState> state() async {
+    final reports = await _read();
     return PainQueueState(
       waiting: [
         for (final item in reports)
@@ -249,7 +249,7 @@ class PainReportQueue {
       // Read again each round: a report added while one was being sent is
       // sent too.
       final next = [
-        for (final item in _read())
+        for (final item in await _read())
           if (!item.refused && !tried.contains(item.report.idempotencyKey))
             item,
       ];
@@ -280,8 +280,8 @@ class PainReportQueue {
     return _stateAfter(sent);
   }
 
-  PainQueueState _stateAfter(int sent) {
-    final now = state;
+  Future<PainQueueState> _stateAfter(int sent) async {
+    final now = await state();
     return PainQueueState(
       waiting: now.waiting,
       refused: now.refused,
@@ -293,7 +293,7 @@ class PainReportQueue {
   /// The athlete has read that a refused report was not recorded.
   Future<void> dismissRefused() => _locked(
     () async => _write([
-      for (final item in _read())
+      for (final item in await _read())
         if (!item.refused) item,
     ]),
   );

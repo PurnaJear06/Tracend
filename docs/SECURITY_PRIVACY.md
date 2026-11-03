@@ -36,6 +36,9 @@ review. Tracend remains a working brand pending trademark and App Store clearanc
 - nutrition logs, meal photos, allergies, and dietary constraints;
 - body measurements, progress photos, and physique analyses;
 - goals, limitations, plan decisions, and coaching history;
+- ratings of daily decisions and Coach replies (`feedback_ratings`: which decision or reply and one
+  of four answers, no text and no health value; written only by `submit_feedback_rating_v1`, which
+  checks the subject is the caller's own);
 - the account's optional country (`user_accounts.country_code`; set only through
   `set_my_country_v1`, exported and deleted with the account; it picks the regional library sources
   inside the database and is not sent to an AI provider, which receives only the chunks chosen);
@@ -77,7 +80,19 @@ the athlete's notice names, like the rest of the Coach context.
 
 Consent choices are separate and versioned for:
 
-- private-beta terms and privacy notice;
+- private-beta terms and privacy notice (`terms`, `privacy`), each versioned by its hosted page's
+  "Last updated" date (`LegalNotices` in the app); an onboarded athlete whose grant is older is
+  asked again at launch before the app opens, and a failed lookup never locks them out;
+- explicit consent to processing health data: Apple Health data, check-ins, pain reports, body
+  measurements and photos (`health_data`, its own unticked onboarding row, versioned with the
+  privacy notice), as GDPR Art. 9(2)(a) and India's SPDI Rules 2011 Rule 5 expect. The server
+  enforces it: every Apple Health write (`persist_health_sync_v2` behind `health-sync`,
+  `save_health_history`, `persist_set_heart_rate_v1`, `persist_sleeping_heart_rate_v1`) refuses with
+  SQLSTATE `P0403` when the athlete's newest `health_data` record is missing or `withdrawn` (any
+  notice version counts; a new version is asked again by the app). `health-sync` answers 403
+  `health_consent_required`. The app reads nothing from Apple Health while the agreements are
+  outdated or could not be checked (a failed lookup opens the app with Apple Health off and checks
+  again at the next foreground);
 - AI coaching: sending the athlete's Tracend data to the AI provider for Coach chat answers, daily
   decisions and the onboarding plan (`ai_coaching`; a decline is stored as `withdrawn`, and a grant
   of an older notice version is asked again);
@@ -335,6 +350,33 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
   (`KeychainSessionStorage`, `first_unlock_this_device`, never synced or backed up). A build that
   finds a session in preferences moves it, checks it reads back, then deletes the old copy; a fresh
   install clears anything a deleted install left in the Keychain.
+- A session starts only from the password sign-in or from a password reset code typed into the app.
+  The auth client never takes a session from a link (`detectSessionInUri` off,
+  `lib/app/auth_options.dart`): `tracend://` links only switch tabs, so a crafted link or QR code
+  carrying another account's tokens cannot sign the phone into that account
+  (`test/auth_link_session_test.dart`). The sign-up confirmation link confirms the email on the
+  server; the athlete then signs in with the password.
+- A forgotten password is reset in the app with a code. **Forgot password?** calls Auth's recover
+  endpoint; the athlete types the code from the email with a new password (`verifyOTP` with type
+  `recovery`, then `updateUser`). What the app reveals about an address: Auth answers an unknown
+  address at once with nothing sent, so every answer only an existing account can get is shown as
+  "code sent" (the per-address email limit `over_email_send_rate_limit`, `email_address_not_authorized`
+  and any 5xx, such as a mail that could not be sent); its code is logged, codes only. Shown as they
+  are, because they apply to every address alike: the per-request limit (`over_request_rate_limit`,
+  "Too many requests"), an invalid address and a lost connection. The app's screens therefore never
+  say whether an account exists; Auth's own API still answers a direct caller differently (a 429 or
+  500 only for an existing account), which the app cannot change. The accepted code signs the phone
+  in, so a persisted `tracend.password_reset_pending` mark is set before the code is checked and
+  cleared once the new password is saved, the reset is left (the session signed out), or a password
+  sign-in succeeds. At launch, once, the gate reads the mark: with a restored session it signs that
+  session out on the phone and keeps the mark; with no session it clears the mark (so a mark left
+  by a launch that died before the code was accepted can never sign out a later sign-in). A launch
+  that finds the session again (a failed Keychain delete, a kill) ends it again; the mark only
+  matters for a session restored at launch. Leaving after the code was accepted signs that session
+  out, and keeps the mark if that sign-out failed. The Reset password email
+  template must show `{{ .Token }}` (`docs/BETA_OPERATIONS.md` step 9), and leaked-password
+  protection is on in Auth (owner step); a password found in a breach is refused with its own
+  message. A confirmation email can be sent again from sign-in, at most once a minute.
 - Capture an Apple-provided name only on first authorization when present; do not require or infer a
   legal name.
 - Store secrets in environment-specific secret management, never source control, mobile bundles,
@@ -419,6 +461,53 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
 - Rotate credentials after exposure, staff change, or scheduled policy interval.
 - Never place secrets or production data in test fixtures.
 
+### On-device health caches and the app switcher (2026-11-02)
+
+- **What is kept.** To work with no connection the app keeps, per athlete, pain reports and
+  check-ins waiting to be sent (red-flag answers included), the referrals the athlete has read,
+  workout drafts, saved finishes and queued discards, the exercise history, the saved plan and its
+  sore-area notes, and the id of the Coach thread last open. These are health data and never go to
+  iCloud or a computer backup.
+- **Where.** One small store, `LocalHealthStore` (`lib/shared/local_health_store.dart`): one file
+  per key in `Application Support/TracendHealthCache`, written by the native side
+  (`ios/Runner/Native/LocalHealthStoreBridge.swift`). The folder is excluded from iCloud Backup and
+  Finder/iTunes backups (`isExcludedFromBackup`, checked on every write; when it cannot be set,
+  nothing is written) and each file is written atomically with
+  `NSFileProtectionCompleteUntilFirstUserAuthentication`, the class `UserDefaults` had. They are no
+  longer in `UserDefaults` (`SharedPreferences`), whose plist both backups copy.
+- **Locked phone.** The class is "until first unlock", not complete protection, on purpose: the
+  workout Live Activity's "Log set" button runs in the app's process with the phone locked
+  (`RestActivityIntents`) and the logger saves the workout draft then, which a complete-protection
+  file would refuse. What this adds over `UserDefaults` is the removal from backups; the files
+  are as readable on a locked phone after first unlock as the preferences were. Nothing else
+  reads these files in the background: the app has no other background modes, HealthKit
+  background delivery or background fetch, and the widgets read only their own snapshot (§10).
+  A later change that keeps only foreground data (everything but the workout draft, its saved
+  finish and queued discard) could move those keys to complete protection.
+- **Moving from preferences.** The first launch of a build with the store (`main.dart`) copies
+  every old key into the store, then removes it from preferences (`moveHealthCachesToStore`);
+  a key that cannot be written stays for the next launch. Backups made by earlier builds still hold
+  the old plist until newer backups replace them; the app cannot remove them.
+- **Still in preferences, with no health values:** Apple Health sync state (the last sync time,
+  which data types exist, a sync error code, the month the usual months were sent), the nights the
+  sleeping heart rate has settled (dates), the workouts waiting for their heart rate to be read
+  (session id and set times), the Lock Screen numbers choice, the Watch-prompt choice, the theme, the day
+  marks below, and the notification choices (native `UserDefaults`).
+- **Shared phone.** "Checked in today" and "Not today" are kept per athlete (the key holds the
+  athlete's id; the one key earlier builds used for every account is ignored and removed). Sign-out,
+  a session Auth refused and account deletion remove them, with the workouts waiting for their
+  heart rate, so another account on the same phone is asked for its own morning check-in. The
+  waiting list is kept for the whole phone, so it cannot be kept for one athlete: the heart-rate
+  summary of a workout finished just before signing out is dropped and never reaches Tracend
+  (the workout and its sets are unaffected).
+  `test/local_data_privacy_test.dart` lists every key the app writes as per athlete, phone-wide
+  and kept, or ending with the session, and fails when a file starts storing something unlisted or
+  a key outlives a sign-out or a deletion.
+- **App switcher.** While the app is not active, `SceneDelegate` covers the window with the launch
+  screen's colour and logo (`sceneWillResignActive`; removed in `sceneDidBecomeActive`), so the
+  switcher's snapshot never shows physique photos, pain answers or a Coach chat. System sheets such
+  as Face ID make the app inactive too; the cover is just there while they are.
+
 ## 9. Multi-User Isolation
 
 - RLS is the mandatory default-deny authorization boundary for every exposed user-owned table and
@@ -428,13 +517,20 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
 - Cross-table foreign-key ownership is validated in constraints or transactional functions.
 - Storage paths and policies are user/purpose bound.
 - Edge Functions validate the JWT and requested resource even when using secret/service-role access.
-- An RPC granted to `authenticated` that takes a target user id refuses any id but the caller's
-  unless the caller is the service role. None remains: `persist_coach_preference` is service role
-  only since 2026-10-31.
+- No security definer function in `public` that takes a user id is executable by `authenticated`
+  (`persist_coach_preference` is service role only since 2026-10-31), and no `public` function is
+  executable by `anon` (`get_healthkit_completion_candidate(date)` was the last, revoked
+  2026-11-02). `safety_floors_test.sql` checks the whole catalogue, so a new function created
+  without its revoke fails CI. The `private` schema has no usage grant for the app roles.
 - The first-generation onboarding approval and the fixture-meal functions are closed to the app
-  roles, and `user_accounts.onboarding_state` cannot be written by the signed-in role: approval
-  sets `completed` inside `respond_to_onboarding_proposal_v2` (which enforces the health check) and
-  the database moves `not_started` to `in_progress` with the first draft.
+  roles, and `user_accounts.onboarding_state` cannot be written by the signed-in role (revoked
+  2026-11-02, once the installed build stopped writing it): approval sets `completed` inside
+  `respond_to_onboarding_proposal_v2` (which enforces the health check and the healthy-weight
+  floors) and the database moves `not_started` to `in_progress` with the first draft. An athlete
+  with no screening row is unscreened, never cleared, so skipping the health check gives no plan.
+- `user_goals` takes only the onboarding draft from the client: insert of `user_id`, `goal_type`,
+  `priority`, `status` and update of `goal_type`, on the caller's own `draft` rows. Targets,
+  phases and activation go through the definer functions that check the floors and audit.
 - Tables in the `private` schema (invites, waitlist, AI budget limits, research library) are not
   exposed by the Data API and have no client grants.
 - Queue messages carry opaque resource IDs and workers reauthorize ownership and consent at
@@ -473,6 +569,20 @@ has no spaces except a leading `async ` or `new `, and a frame whose file is not
 module (`file:`, `ext:`, `https:`, `node:`, `jsr:`, `npm:`) is dropped; if the header cannot be
 located no frame is sent. A provider failure keeps its short code and HTTP status (for example
 `meal_vision_request_failed:503:overloaded`) only when the text is a code. Reporting never throws. A report may carry the account ID and device and app details, never name or email.
+`health-sync` answers a batch the database refuses (SQLSTATE class 22 or 23, or `P0002`) with 422
+`health_sync_rejected` and the SQLSTATE, and a warning log line; the hourly limit (54000) with 429
+`health_sync_limit`; anything else with 503 `health_sync_unavailable`. The last two write an error
+log line and a Sentry event, both with the SQLSTATE only. The app tries a 5xx again and never a 4xx, from the function or from Supabase's relay.
+The app names the signed-in athlete on its events by the account ID (the Supabase user id, never
+the email): it is set when the gate lets an account in (online or from the saved plan) and cleared
+on every signed-out transition, deletion included. The scrubber keeps the user's id and drops every
+other user field (email, name, IP address). A load that keeps failing is reported once: the daily
+brief, the training hub, an Apple Health sync and the coaching decision send one event (type and
+code) at the third failure in a row; a success starts the count again (a training hub answered from
+the phone's copy because the server failed counts that failure, not a success; an Apple Health sync
+counts from the Health read to the saved state, and Health that cannot be read is neither), a lost connection is not
+counted, only the load whose result is shown counts (once per request), and every change of account
+starts all counts again.
 In Flutter (`lib/app/sentry_scrubber.dart`) the scrubber also covers exception values, `extra`,
 contexts and breadcrumbs; the app's prints are not breadcrumbs (`enablePrintBreadcrumbs` is off);
 a `beforeBreadcrumb` drops console crumbs and cuts HTTP crumbs to method, status and address
@@ -602,7 +712,8 @@ phone; the widgets never call the network and hold no token.
   then get a fresh snapshot without numbers). Leftover temporary files of an interrupted write are
   deleted on every write and clear.
 - **Deep links.** `tracend://today` and `tracend://train` only switch tab; the native side accepts
-  nothing else, and Flutter's own deep-link routing is off (`FlutterDeepLinkingEnabled` = NO). A
+  nothing else, Flutter's own deep-link routing is off (`FlutterDeepLinkingEnabled` = NO), and the
+  auth client reads no session from a link (section 7). A
   request waits a minute for the app and then expires.
 - **Telemetry.** Sentry breadcrumbs (`home_widgets`) carry the method name only, never the
   snapshot.
@@ -628,12 +739,14 @@ Initial private-beta defaults:
   private beta shuts down; provider-side conversation state remains disabled;
 - invite-list and waitlist rows: until account deletion (both removed with the account), a request
   to the owner, or for an unconfirmed waitlist signup, 30 days after its last email;
-- Free Plan database: encrypted off-site logical export at least weekly during active beta and
+- Free Plan database: encrypted off-site logical export every night (`nightly-backup.yml`) and
   before migrations; Supabase does not provide the Pro daily-backup guarantee;
 - Pro Plan database: Supabase daily backups with the plan's current seven-day availability, plus an
   independent pre-release logical export where permitted;
-- Storage objects: separate encrypted inventory/export procedure because database backups contain
-  metadata but not Storage bytes; and
+- Storage objects: not backed up yet. Database backups contain metadata but not Storage bytes. A
+  photo backup must live in a store with lifecycle deletion so a deleted account's photos leave it
+  within 30 days (planned: encrypted, Cloudflare R2, 30-day lifecycle rule); the private backups
+  repository cannot give that guarantee. Meal photos are deleted about 7 days after capture; and
 - provider content: shortest available approved retention, documented per provider.
 
 Every production deploy takes an AES-256 encrypted logical backup before migrating, restores it in
@@ -663,7 +776,8 @@ history.
   provenance, and timestamps. It includes the onboarding profile fields, `onboarding_generations`,
   `onboarding_questions`, `onboarding_screenings` (the pre-plan health check answers),
   `health_history_months`, `day_adjustments` (the athlete's readiness answers),
-  `pain_reports` (the athlete's pain checks),
+  `pain_reports` (the athlete's pain checks), `feedback_ratings` (the athlete's ratings of
+  decisions and Coach replies; they are deleted with the account by the foreign key),
   `ai_usage_events`, physique analyses and every
   set-timing column. `coach_facts` (what the athlete confirmed for Coach) and `coach_notes` (Coach's own
   notes) are included, and so are the Coach conversation (`coach_threads` and `coach_messages`,
@@ -690,7 +804,8 @@ history.
   whose media passes 32 MiB fails with the code `export_too_large` (recorded on the request) instead
   of running the function out of memory: the budget is counted page by page while the tables are
   read, the function answers 413 `export_too_large`, and the app says the data is too large to
-  prepare in the app (the app has no support address; it points to whoever invited the athlete).
+  prepare in the app (the app shows the beta support address, `supportEmail` in the app, and asks the
+  athlete to email from their account email).
   A table with omitted columns selects an explicit column list, so an omitted column such as a
   snapshot's `context` is never downloaded; a test fails when the list drifts from the migrations. Meal photos that retention is deleting, or that are already
   gone from Storage, are listed under `skipped_media`. A Deno test reads the migrations and fails
@@ -709,9 +824,24 @@ history.
   it after the limit or seven days and retries failures.
 - The research library is not exported: it holds no user data.
 
+### Feedback
+
+- **Account › Send feedback** opens the phone's mail composer to the beta support address. The
+  prefilled text holds the app version and build and the last beta diagnostic code the athlete was
+  shown (a failure code such as `HTTP 502`, kept in memory only, never stored or sent by the app
+  itself). It holds no health value, no email address and no account id; anything else in the email
+  is what the athlete types, and the athlete sends it from their own mail app. With no mail app set
+  up the app shows the address to copy.
+- Ratings of the daily decision and of Coach replies are written only by
+  `submit_feedback_rating_v1`, which refuses a decision or reply that is not the caller's. The
+  table is exported (`feedback_ratings`) and goes with the account on deletion.
+
 ### Deletion
 
 - Fresh password authentication and the exact phrase `DELETE` are required.
+- Deletion is offered in Account and, beside **Sign out**, during onboarding, through the same
+  sheet, so someone who stops before their plan (screened out, or changing their mind) can remove
+  their saved answers, health check and Apple Health summaries.
 - Account deletion requires explicit confirmation and revokes active sessions promptly.
 - Meal images, progress photos, and export packages are removed before the Auth user: every object
   recorded for the account plus every object in the account's folders
@@ -741,7 +871,8 @@ history.
 
 ### Consent withdrawal
 
-Withdrawal is narrower than account deletion. HealthKit withdrawal stops sync; photo-AI withdrawal
+Withdrawal is narrower than account deletion. Health-data consent (`health_data`) is withdrawn by
+deleting the account or by email, since Tracend cannot coach without it. HealthKit withdrawal stops sync; photo-AI withdrawal
 stops new analysis and removes provider-processing eligibility. Existing source records are handled
 according to the notice and user deletion controls.
 
@@ -794,10 +925,11 @@ Before inviting testers:
   its step and error code only, because the error message can contain the photo's storage path;
 - provider data controls are recorded and configured;
 - athlete- and public-facing AI wording follows D11 (Planned, Phase 2 / A7);
-- **public-release blocker:** the hosted terms and privacy notice must be linked from the
-  onboarding Terms and Privacy checkboxes before any other tester or a public release. The pages
-  exist on the website (`site/src/pages/privacy.astro`, `terms.astro`), but the in-app checkboxes
-  do not link to them yet. This is acceptable only for the owner-only private beta; and
+- the hosted beta terms and privacy notice are linked from the onboarding rows and from Account
+  (`site/src/pages/beta-terms.astro`, `privacy.astro`); health data has its own explicit consent
+  (`health_data`); each page's version is its "Last updated" date, kept equal to `LegalNotices` in
+  the app by `test/legal_versions_test.dart`, and a newer version asks onboarded athletes again
+  at launch. The beta terms are a draft: have a lawyer review them before outside testers; and
 - the owner completes at least two weeks of dogfooding before broader invitations.
 
 The full TestFlight checklist is in [BETA_OPERATIONS.md](./BETA_OPERATIONS.md). Public App Store

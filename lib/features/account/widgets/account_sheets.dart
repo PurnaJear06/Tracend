@@ -4,8 +4,38 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/account/privacy_export_repository.dart';
+import 'package:tracend/features/feedback/feedback_mail.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
+import 'package:tracend/shared/widgets/tracend_sheet.dart';
+import 'package:tracend/shared/widgets/tracend_toast.dart';
+
+/// Opens the deletion sheet and, once the deletion settles, says how it
+/// ended. Completes with the outcome, or null when the sheet was closed
+/// first; after an outcome the caller signs out. Used by Account and by
+/// onboarding, so someone who stops before their plan can leave too.
+Future<AccountDeletionOutcome?> showAccountDeletion(
+  BuildContext context,
+  AccountDeletionRepository repository,
+) async {
+  final outcome = await showTracendSheet<AccountDeletionOutcome>(
+    context,
+    title: 'Delete account',
+    builder: (_) => AccountDeletionSheet(repository: repository),
+  );
+  if (outcome == null || !context.mounted) return outcome;
+  // The toast sits in the root overlay, so it outlives the page.
+  TracendToast.show(
+    context,
+    outcome == AccountDeletionOutcome.deleted
+        ? 'Your account was deleted'
+        : 'Signed out. Sign in to see whether the account remains.',
+    icon: outcome == AccountDeletionOutcome.deleted
+        ? CupertinoIcons.checkmark_alt
+        : CupertinoIcons.info,
+  );
+  return outcome;
+}
 
 /// Permanent account deletion, the body of a Tracend sheet: the account
 /// password, the exact word `DELETE`, then a destructive confirm before the
@@ -170,10 +200,10 @@ class _AccountDeletionSheetState extends State<AccountDeletionSheet> {
   }
 }
 
-/// Shown when the export is over the size one request can build. The app has no support address
-/// of its own, so it points to whoever invited the athlete.
+/// Shown when the export is over the size one request can build: the export
+/// is sent by email instead.
 const tooLargeExportMessage =
-    'Your data is too large to prepare in the app, and trying again will not help. Email tracend.train@gmail.com from your account email and we will send your export.';
+    'Your data is too large to prepare in the app, and trying again will not help. Email $supportEmail from your account email and we will send your export.';
 
 /// Encrypted export, the body of a Tracend sheet: the account password and a
 /// separate export password of 12 or more characters; the download unlocks

@@ -14,6 +14,7 @@ import 'package:tracend/features/nutrition/widgets/meal_cards.dart';
 import 'package:tracend/features/nutrition/widgets/nutrition_insight_card.dart';
 import 'package:tracend/features/nutrition/widgets/nutrition_sheets.dart';
 import 'package:tracend/shared/app_lifecycle.dart';
+import 'package:tracend/shared/beta_diagnostic.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/formatting.dart';
@@ -475,10 +476,12 @@ class _NutritionScreenState extends State<NutritionScreen> {
   void _photoFailed(MealPhotoFailure failure, StackTrace stackTrace) {
     logNonCritical(failure, 'Meal photo failed');
     unawaited(Sentry.captureException(failure, stackTrace: stackTrace));
+    final diagnostic = mealPhotoFailureDiagnostic(failure);
+    LatestBetaDiagnostic.note(diagnostic);
     if (mounted) {
       setState(() {
         _photoError = mealPhotoFailureMessage(failure);
-        _photoDiagnostic = mealPhotoFailureDiagnostic(failure);
+        _photoDiagnostic = diagnostic;
       });
     }
   }

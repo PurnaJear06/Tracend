@@ -55,243 +55,47 @@ jobs:
   backup:
     name: Backup + Isolated Restore Drill
     needs: ci-gate
-    runs-on: ubuntu-latest
-    environment: production
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.event.workflow_run.head_sha }}
-
-      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
-        with:
-          version: "2.101.0"
-
-      - name: Dump production schema + data
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: |
-          supabase link --project-ref qsfzzsjenopqqqhvpyaw
-          TIMESTAMP=$(date -u +%Y-%m-%dT%H%M%S)
-          echo "BACKUP_STAMP=$TIMESTAMP" >> "$GITHUB_ENV"
-          supabase db dump --linked --role-only -f "backup-${TIMESTAMP}-roles.sql"
-          supabase db dump --linked -f "backup-${TIMESTAMP}-schema.sql"
-          supabase db dump --linked --data-only --use-copy -f "backup-${TIMESTAMP}-data.sql"
-          # The data dump leaves out supabase_migrations, so record which
-          # migrations production has applied for the privilege comparison.
-          supabase migration list --linked >"$RUNNER_TEMP/migration-list.txt"
-          bash scripts/restore-privileges.sh versions "$RUNNER_TEMP/migration-list.txt" \
-            >"$RUNNER_TEMP/applied-migrations.txt"
-
-      - name: Verify backup integrity
-        run: |
-          for file in \
-            "backup-${BACKUP_STAMP}-roles.sql" \
-            "backup-${BACKUP_STAMP}-schema.sql" \
-            "backup-${BACKUP_STAMP}-data.sql"; do
-            test -s "$file" || {
-              echo "::error::Backup is missing or empty: $file"
-              exit 1
-            }
-          done
-          sha256sum backup-*.sql > SHA256SUMS
-          sha256sum --check SHA256SUMS
-
-      - name: Start isolated restore target
-        run: |
-          supabase start
-          # `supabase start` applied every migration of this commit; keep its
-          # privileges to compare with the restored database.
-          bash scripts/restore-privileges.sh snapshot >"$RUNNER_TEMP/privileges-migrations.tsv"
-
-      - name: Restore schema + data into isolated database
-        run: |
-          DB_CONTAINER=$(docker ps \
-            --filter 'name=supabase_db_' \
-            --format '{{.Names}}' | head -1)
-          test -n "$DB_CONTAINER" || {
-            echo "::error::Isolated Supabase database container was not found."
-            exit 1
-          }
-
-          # On an error psql prints the failing statement, and for the data
-          # file that statement holds production rows. The deploy log is
-          # public, so restore output goes to a file that is always removed,
-          # and a failure shows only the step and the failing line number.
-          restore_psql() {
-            local step="$1"
-            shift
-            local log
-            log=$(mktemp)
-            if docker exec "$DB_CONTAINER" psql --quiet \
-              --variable VERBOSITY=terse --variable SHOW_CONTEXT=never \
-              "$@" >"$log" 2>&1; then
-              rm -f "$log"
-              return 0
-            fi
-            local where
-            where=$(grep -m1 -oE 'psql:/tmp/[a-z]+[.]sql:[0-9]+' "$log" || true)
-            rm -f "$log"
-            echo "::error::$step failed${where:+ at ${where#psql:}}. Output withheld: it can contain production rows."
-            exit 1
-          }
-
-          # `public` and `private` belong to the local postgres role, while
-          # Supabase-managed schemas contain tables that role cannot modify.
-          # Clear each with its owning administrative role before replaying the
-          # production snapshot. `private` must go too: the snapshot recreates it,
-          # and its tables already exist here from the migrations `supabase start`
-          # applied (first seen 2026-10-13, once production had private tables).
-          # The new `public` gets the grants the old one had, as in a fresh
-          # project; the snapshot then adds its own. A blanket GRANT ALL here
-          # gave anon and authenticated CREATE on `public`, which no migration
-          # grants (found by the privilege comparison, 2026-10-15).
-          restore_psql "Reset public and private schemas" \
-            --username postgres \
-            --dbname postgres \
-            --variable ON_ERROR_STOP=1 \
-            --command "DO \$\$
-              DECLARE
-                schema_grants text[];
-                schema_grant text;
-              BEGIN
-                SELECT coalesce(array_agg(format(
-                  'GRANT %s ON SCHEMA public TO %s',
-                  acl.privilege_type,
-                  CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(role.rolname) END
-                )), '{}')
-                INTO schema_grants
-                FROM pg_namespace AS namespace
-                CROSS JOIN LATERAL aclexplode(namespace.nspacl) AS acl
-                LEFT JOIN pg_roles AS role ON role.oid = acl.grantee
-                WHERE namespace.nspname = 'public';
-
-                DROP SCHEMA public CASCADE;
-                CREATE SCHEMA public;
-                FOREACH schema_grant IN ARRAY schema_grants LOOP
-                  EXECUTE schema_grant;
-                END LOOP;
-              END
-            \$\$;" \
-            --command 'DROP SCHEMA IF EXISTS private CASCADE'
-
-          restore_psql "Clear managed schemas" \
-            --username supabase_admin \
-            --dbname postgres \
-            --variable ON_ERROR_STOP=1 \
-            --command "DO \$\$
-              DECLARE relation_list text;
-              BEGIN
-                SELECT string_agg(
-                  format('%I.%I', namespace.nspname, class.relname),
-                  ', ' ORDER BY namespace.nspname, class.relname
-                )
-                INTO relation_list
-                FROM pg_class AS class
-                JOIN pg_namespace AS namespace ON namespace.oid = class.relnamespace
-                WHERE class.relkind IN ('r', 'p')
-                  AND namespace.nspname IN (
-                    'auth', 'realtime', 'storage', 'supabase_migrations', 'vault'
-                  )
-                  AND NOT EXISTS (
-                    SELECT 1 FROM pg_inherits AS inheritance
-                    WHERE inheritance.inhrelid = class.oid
-                  );
-
-                IF relation_list IS NOT NULL THEN
-                  EXECUTE 'TRUNCATE TABLE ' || relation_list || ' RESTART IDENTITY CASCADE';
-                END IF;
-              END
-            \$\$;"
-
-          docker cp "backup-${BACKUP_STAMP}-schema.sql" "$DB_CONTAINER:/tmp/schema.sql"
-          docker cp "backup-${BACKUP_STAMP}-data.sql" "$DB_CONTAINER:/tmp/data.sql"
-
-          # The production schema is owned by postgres, but a few managed
-          # storage tables only permit the internal admin to write their rows.
-          restore_psql "Schema restore" \
-            --username postgres \
-            --dbname postgres \
-            --single-transaction \
-            --variable ON_ERROR_STOP=1 \
-            --file /tmp/schema.sql
-
-          restore_psql "Data restore" \
-            --username supabase_admin \
-            --dbname postgres \
-            --single-transaction \
-            --variable ON_ERROR_STOP=1 \
-            --command 'SET session_replication_role = replica' \
-            --file /tmp/data.sql
-
-          TABLE_COUNT=$(docker exec "$DB_CONTAINER" psql \
-            --username postgres \
-            --dbname postgres \
-            --tuples-only \
-            --no-align \
-            --command "select count(*) from pg_tables where schemaname = 'public'" | tr -d '[:space:]')
-          test "${TABLE_COUNT:-0}" -gt 0 || {
-            echo "::error::Restore drill produced no public tables."
-            exit 1
-          }
-          echo "Restore drill passed with $TABLE_COUNT public tables."
-
-      - name: Encrypt verified backup artifact
-        env:
-          BACKUP_ARCHIVE_PASSPHRASE: ${{ secrets.BACKUP_ARCHIVE_PASSPHRASE }}
-        run: |
-          test -n "$BACKUP_ARCHIVE_PASSPHRASE" || {
-            echo "::error::BACKUP_ARCHIVE_PASSPHRASE is not configured."
-            exit 1
-          }
-          ARCHIVE="database-backup-${BACKUP_STAMP}.tar.gz"
-          tar -czf "$ARCHIVE" backup-*.sql SHA256SUMS
-          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 \
-            -in "$ARCHIVE" \
-            -out "${ARCHIVE}.enc" \
-            -pass env:BACKUP_ARCHIVE_PASSPHRASE
-          test -s "${ARCHIVE}.enc"
-          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
-            -in "${ARCHIVE}.enc" \
-            -pass env:BACKUP_ARCHIVE_PASSPHRASE | tar -tzf - >/dev/null
-          rm -f backup-*.sql SHA256SUMS "$ARCHIVE"
-
-      - name: Store encrypted backup in the private backups repository
-        env:
-          BACKUP_REPO: ${{ vars.BACKUP_REPO }}
-          BACKUP_REPO_DEPLOY_KEY: ${{ secrets.BACKUP_REPO_DEPLOY_KEY }}
-        run: |
-          test -n "$BACKUP_REPO" && test -n "$BACKUP_REPO_DEPLOY_KEY" || {
-            echo "::error::The BACKUP_REPO variable and BACKUP_REPO_DEPLOY_KEY secret must be configured."
-            exit 1
-          }
-          bash scripts/store-backup.sh "database-backup-${BACKUP_STAMP}.tar.gz.enc"
-
-      # `supabase db dump` drops GRANT and REVOKE lines that name a schema it
-      # excludes (auth, extensions, vault, ...), so a restore can silently give
-      # anon EXECUTE on a function the migrations revoked. This runs after the
-      # backup is stored: the backup is still useful, but the deploy stops.
-      # Output names objects only. When this commit adds migrations, the script
-      # resets the drill database to production's version for the comparison.
-      - name: Compare restored privileges with the migrations
-        run: |
-          bash scripts/restore-privileges.sh compare \
-            "$RUNNER_TEMP/privileges-migrations.tsv" \
-            "$RUNNER_TEMP/applied-migrations.txt"
+    uses: ./.github/workflows/database-backup.yml
+    with:
+      sha: ${{ github.event.workflow_run.head_sha }}
+    secrets: inherit
 
   deploy-migrations:
     name: Deploy Migrations
     needs: [dry-run, backup]
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 5
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ github.event.workflow_run.head_sha }}
+
+      # A nightly backup that started before this deploy must not dump across a migration.
+      # Bounded: after 20 minutes the deploy stops here, before changing production.
+      - name: Wait for a running nightly backup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for attempt in $(seq 1 40); do
+            running=0
+            for status in queued in_progress waiting pending requested; do
+              count=$(gh run list --workflow nightly-backup.yml --status "$status" --json databaseId --jq length)
+              running=$((running + count))
+            done
+            if [ "$running" -eq 0 ]; then
+              exit 0
+            fi
+            echo "A nightly backup is running; waiting ($attempt of 40)."
+            sleep 30
+          done
+          echo "::error::A nightly backup is still running after 20 minutes. Rerun the deploy once it ends."
+          exit 1
 
       - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
         with:

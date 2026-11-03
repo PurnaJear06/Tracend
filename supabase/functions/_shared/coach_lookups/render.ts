@@ -417,13 +417,15 @@ function weeklyReviews(body: Json): Parts {
     const recoveryPart = rec(review.recovery);
     return `- Week of ${val(review.review_week)}: ${
       val(review.outcome_code).replaceAll("_", " ")
-    }; ${val(training.completed_workouts)} of ${val(training.planned_sessions)} planned workouts (${
-      val(training.adherence_percent)
-    }% done), ${val(training.completed_sets)} sets; ${
-      val(recoveryPart.check_in_days)
-    } check-in days; ${val(rec(review.nutrition).confirmed_days)} days with meals; next focus ${
-      val(review.next_focus_code).replaceAll("_", " ")
-    }`;
+    }; ${
+      has(training.adherence_percent)
+        ? `${val(training.completed_workouts)} of ${
+          val(training.planned_sessions)
+        } planned workouts (${val(training.adherence_percent)}% done)`
+        : `${val(training.completed_workouts)} workouts done, none planned that week`
+    }, ${val(training.completed_sets)} sets; ${val(recoveryPart.check_in_days)} check-in days; ${
+      val(rec(review.nutrition).confirmed_days)
+    } days with meals; next focus ${val(review.next_focus_code).replaceAll("_", " ")}`;
   });
   return singles(lines);
 }

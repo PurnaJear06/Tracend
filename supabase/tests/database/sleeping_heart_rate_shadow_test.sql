@@ -10,6 +10,9 @@ begin;
 select plan(8);
 
 insert into auth.users(id, role) values ('c3400000-0000-4000-8000-000000000001', 'authenticated');
+-- Apple Health is stored only for an athlete who agreed to it.
+insert into public.consent_records(user_id, consent_type, notice_version, action, source) values
+  ('c3400000-0000-4000-8000-000000000001', 'health_data', '2026-11-02', 'granted', 'ios_app');
 
 -- A morning estimate (as recovery_modes_test.sql, user 2): eight days of HRV and resting heart
 -- rate, today's morning HRV and a check-in.

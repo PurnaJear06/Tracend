@@ -28,7 +28,10 @@ These rules apply to every flow; the components are specified in
 
 - **Sheet** (`showTracendSheet`): a focused, self-contained task that can be abandoned, such as a
   check-in, a detail view or a picker. It always closes with a swipe down, a tap outside or the
-  close button. A sheet holding unsaved input asks before discarding it.
+  close button. A sheet holding unsaved input (the meal, check-in, measurement, pain, goal-target and
+  Coach-fact forms, the plan-change note) asks **Discard changes?** with **Keep editing** and a
+  destructive **Discard** on a swipe down, a tap outside or the close button; with nothing entered
+  it closes at once. A save that closes the sheet itself never asks.
 - **Confirmation** (`showTracendConfirm`): one consequential step, named by its outcome (**Discard
   workout**, **Delete conversation**). Deleting or discarding anything is always confirmed, with
   Cancel as the default choice.
@@ -94,7 +97,7 @@ Account
 ├── Widgets (health numbers on the Lock Screen)
 ├── AI coach: AI coaching, AI usage this month, What Coach remembers, Coach conversations
 ├── Region: Country (optional)
-└── Privacy: Export data, Consent history, Delete account
+└── Privacy: Export data, Consent history, Privacy notice, Beta terms, Delete account
 ```
 
 The daily decision appears on Today (the session card's coach note), on Train (the readiness line's
@@ -134,9 +137,33 @@ account** segmented control, filled **Email** and **Password** fields and one pi
 (**Sign in** or **Create account**). The development copy is one small line: **Private beta: email
 sign-in**.
 
+- **Forgot password?** (under **Sign in**) opens **Reset your password** in place: the email from
+  sign-in, **Send code** and **Back to sign in**. Next, **Check your email** says "If an account uses
+  <email>, we sent it a code", the same whether or not one does (a request Auth refuses for coming
+  too often reads the same), and asks for **Code from the email** and **New password**. **Set new
+  password** checks the code, saves the password and opens the app signed in. A wrong or expired
+  code says so and saves nothing; a refused password (too weak, found in a data breach, the same as
+  the old one) keeps the accepted code and asks for another password. **Send a new code** waits a
+  minute between codes. **Back to sign in** after the code was accepted signs that session out. No
+  link is involved: the code is typed into the app.
+- After **Create account**, **Check your email to confirm your account.** comes with **Resend
+  email**, which waits a minute between emails (**Resend email in 42s**); a sign-in refused because
+  the email is not confirmed offers it too. A resend Auth refuses says to wait a minute.
+
 ### Returning user
 
-`Launch → Restore session → Today`
+`Launch → Restore session → (Terms and privacy, when a page changed) → Today`
+
+- **Terms and privacy again.** When the newest `terms`, `privacy` or `health_data` grant of an
+  onboarded athlete is older than the page version this build shows (or missing, or withdrawn),
+  a blocking **Terms and privacy** screen opens after the account check and before the AI
+  coaching question and the app: **Please agree again to carry on.**, the same three unticked rows
+  and links as onboarding, **Agree and continue** (enabled once all three are ticked; it records
+  the outdated agreements at the versions shown), then **Sign out** and **Delete account** (the
+  Account deletion sheet). A lookup that fails, and a launch that opens the saved plan offline,
+  open the app without asking, with Apple Health off (nothing is read or sent) until a check
+  succeeds with current agreements; the next foreground checks again. Nothing is recorded without the tap. While the screen is open nothing is read from Apple
+  Health or uploaded: the monthly history upload starts after **Agree and continue**.
 
 - Restore selected tab, scroll position, and safe in-progress drafts. Today the app opens on Today,
   or on Train when a tapped widget asked for it (below); an unfinished workout draft and an unsent
@@ -178,7 +205,8 @@ sign-in**.
   sign-in. When Auth says the account no longer exists, its local data is removed.
 - Resolve deep links only after authentication and authorization. The only links the app handles
   are the widgets' `tracend://today` and `tracend://train` (§5, Widgets): they switch to that tab and do nothing else, the request waits a minute for the app
-  and then expires, and Flutter's own deep-link routing is off.
+  and then expires, and Flutter's own deep-link routing is off. No link ever signs the phone in:
+  the auth client does not read sessions from links.
 
 ## 4. Onboarding
 
@@ -190,11 +218,17 @@ sign-in**.
 4. If excluded, stop plan generation and show appropriate professional guidance. Today an
    excluded answer shows the inline message "Tracend cannot create a plan for clinical nutrition,
    pregnancy, acute injury, or rehabilitation needs." and nothing is built.
-5. Accept terms and privacy notice: **I accept the private-beta terms** and **I have read the
-   privacy notice**, as check rows in a grouped list on the same step as the age question. The
-   hosted terms and privacy pages exist on the site, but the app does not link the rows to them
-   yet. That is acceptable only for the owner-only beta and is a public-release blocker
-   (SECURITY_PRIVACY.md §15). No legal text lives in the app.
+5. Accept terms and privacy notice, and agree to health-data use: three separate, unticked check
+   rows in a grouped list on the same step as the age question. **I accept the private-beta
+   terms** with a **Read the beta terms** link (`https://tracend.pages.dev/beta-terms/`), **I have
+   read the privacy notice** with a **Read the privacy notice** link
+   (`https://tracend.pages.dev/privacy/`), and **I agree to Tracend using my health data** with
+   the detail "My Apple Health data, check-ins, pain reports, body measurements and photos, used to
+   coach me as the privacy notice describes." A link opens the page in the in-app browser (Safari
+   if that cannot open; a toast gives the address if neither can) and never ticks its row; the row
+   and the link are separate VoiceOver elements. Continue needs all three. The step records
+   `terms`, `privacy` and `health_data` grants at the page versions this build shows
+   (`LegalNotices`, `lib/features/consent/legal_consent.dart`). No legal text lives in the app.
 6. **Health check** (B6), its own step right after the boundary and terms and before anything else
    is asked, so an athlete who should see a professional first learns it at once. Four plain
    yes/no questions, with no diagnosis and the note that this is not a medical check. (1) Do you exercise regularly now (about 30 minutes or more, at least 3
@@ -283,7 +317,10 @@ Eligibility → AI coaching → Path → Goal
   older build continues at **About you**. **Saved answers that fail to load** show **Your answers
   did not load.** with **Try again**; nothing is saved until they load, so defaults never overwrite
   them.
-  **Sign out** stays available on every step, including while saved answers load.
+  **Sign out** stays available on every step, including while saved answers load. Beside it,
+  **Account options** (an ellipsis button) offers **Delete account**, which opens the same deletion
+  sheet as Account (password, `DELETE`, a destructive confirm) and signs out once it settles, so
+  someone who stops during setup can remove what they saved.
 - **Goal:** nothing is preselected; each goal has a one-line description.
 - **Inputs:** use visible labels and a short rationale for sensitive fields. Height,
   weight, target weight and session length are sliders with − and + buttons for exact values,
@@ -499,7 +536,13 @@ Reading order:
    set grouped by exercise, filling lime as sets are logged in Train ("4 of 15 sets logged",
    "Done · 15 sets logged"). The coach's note sits under it: today's first training adjustment,
    else today's training summary, as advice in its own words, labelled "Coach · ‹confidence›"; it
-   never changes the prescribed sets. A decision from another day is not shown. **Readiness card
+   never changes the prescribed sets. Under the note, once a decision exists, a small row asks "How was
+   this?" with four one-tap answers, **Useful**, **Unclear**, **Incorrect** and **Unsafe** (44pt
+   targets; VoiceOver reads "Rate this daily decision useful" and so on, with the chosen one
+   selected). The choice shows at once; if it could not be saved it is taken back and the row says
+   "Could not save your rating. Check your connection and tap again." Tapping another answer
+   replaces the rating, and the app shows the rating already given. A decision from another day is
+   not shown. **Readiness card
    (B4-2):** a card sits between the strip and the note whenever `get_my_day_adjustment_v1` has
    something to say, read for the hub's `local_today` (never the phone's date). Proposed: the title
    for the kind, the server's sentence (reasons plus action), **What Tracend sees** (recovery score
@@ -706,6 +749,8 @@ three separate autonomous chatbots.
   with no provider name (D11). A reply no model wrote (the deterministic safety boundary, stored
   with provider `mock`) reads **Tracend safety answer · not AI** and never carries the AI badge. A
   provider or validation failure never substitutes generic coaching text.
+- **Rating.** Under every Coach reply the same "How was this?" row (**Useful**, **Unclear**,
+  **Incorrect**, **Unsafe**) rates that reply; the athlete's own messages are not rated.
 - **Formatting.** Replies display bold, italic, and bullet or numbered lists, so they read as
   formatted text rather than raw Markdown. Long answers are selectable.
 - **Labeled replies.** When the model cannot answer, Coach shows a labeled reply in its place,
@@ -1090,6 +1135,12 @@ confirmation actions. The tab reads top to bottom:
     it, log it for Tue 29 Sep", is for a workout trained and not logged: it asks "Log Upper body B
     for Tuesday 29 September?" (**Log for Tuesday** / **Cancel**) and logs the session under that
     day.
+  - A day before the athlete's first plan began was never due: its strip box reads as a rest day, it
+    is not counted in "This week", and the day shows "Before your plan" ("Your plan started on Thu 1
+    Oct. Nothing was due this day.") with no action. Today's week, Progress and the weekly review
+    leave such days out the same way. A weekly review of a week with nothing
+    due (before the plan began, or in a break) shows "None planned this week" beside the workouts done,
+    never "0 of 0" or a percentage; the Progress workout count reads "none planned" the same way.
   - **One workout at a time.** Starting a workout while another has sets logged asks first, in an
     action sheet: "Legs B (Fri) has 2 sets logged." with **Resume it** and **Start this one
     anyway**. Starting anyway leaves that draft as it is; nothing is discarded. The same workout
@@ -1527,6 +1578,10 @@ Account is one iOS inset-grouped settings page:
   month**, **What Coach remembers** (§13, memory) and **Coach conversations** (a sheet; deleting a conversation asks with a destructive
   confirm, **Delete thread**). The footnote says provider keys stay on Tracend's server. The AI
   coaching row names no provider (D11): "On · AI writes Coach answers".
+- **Feedback:** **Send feedback** opens the mail composer to the beta support address with the app
+  version, the build and the last beta diagnostic code under a line for the athlete's own words
+  (no health values). With no mail app set up, a sheet shows the address as selectable text with
+  **Copy address** and the details to mention.
 - **Region:** one row, **Country**, optional. It opens a sheet with Australia, India, United
   Kingdom, United States, **Another country** and **Not set** (the countries are those whose
   national food and body-size guidance the research library holds). The subtitle says what it does:
@@ -1538,8 +1593,9 @@ Account is one iOS inset-grouped settings page:
   only picks which national guidelines Coach can cite and that the plan's numbers do not change. A
   failed save keeps the old choice and shows a toast; an unreadable country shows "Could not be read
   · open to try again". With nothing chosen the app behaves as it did before the row existed.
-- **Privacy:** **Export data**, **Consent history** and **Delete account**, then **Sign out** at
-  the foot.
+- **Privacy:** **Export data**, **Consent history**, **Privacy notice** and **Beta terms** (each
+  opens its hosted page in the in-app browser) and **Delete account**, then **Sign out** at the
+  foot.
 
 Sheets use the Tracend sheet, confirmations the destructive confirm, transient results a toast,
 and loading the brand loader.
@@ -1587,8 +1643,8 @@ remain available. Today that row appears only in a build without a backend.
 Privacy screens show consent by purpose, provider disclosure, photo retention controls, connected
 data, export, and deletion.
 
-**Consent history** is read-only: the latest `consent_records` entry per purpose (Terms of use,
-Privacy policy, AI coaching, Progress photo storage, Progress photo AI analysis, Meal photo AI
+**Consent history** is read-only: the latest `consent_records` entry per purpose (Beta terms,
+Privacy policy, Health data, AI coaching, Progress photo storage, Progress photo AI analysis, Meal photo AI
 analysis, Notifications). Each row leads with the choice and its date ("Granted 2 Sep 2026"); the
 notice version and where it was made ("Version ai-coaching-v1 · iOS app", or "Set up during
 testing" for owner-development records) are secondary text. Purposes without a record say "No

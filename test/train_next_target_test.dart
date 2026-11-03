@@ -112,6 +112,33 @@ void main() {
       ),
     );
 
+    testWidgets('the effort reads as the band the targets judge it by', (
+      tester,
+    ) async {
+      await open(tester, _workout.exercises[0]);
+      await tester.pump();
+      expect(
+        find.text('Aim for about 2 reps left on each set.'),
+        findsOneWidget,
+      );
+      await open(
+        tester,
+        PlannedExercise(
+          order: 1,
+          name: 'Back squat',
+          setCount: 3,
+          repMin: 8,
+          repMax: 12,
+          targetRpe: 7.5,
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.text('Aim for about 2–3 reps left on each set.'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('an assisted exercise shows help and says why in help', (
       tester,
     ) async {
