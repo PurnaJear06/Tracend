@@ -1193,6 +1193,7 @@ class _TodayScreenState extends State<TodayScreen> {
       builder: (_) => AccountScreen(
         environment: widget.environment,
         onSignOut: widget.onSignOut,
+        planChanges: widget.planChanges,
         health: widget.health,
         coach: widget.coach,
         widgetPublisher: widget.widgetPublisher,

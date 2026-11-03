@@ -2570,7 +2570,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         Text(
           widget.currentSetup == null
               ? 'Building creates a proposal only. Nothing starts until you approve it.'
-              : 'Building creates a proposal only. Nothing starts until you approve it. A new plan starts fresh: your body-fat and physique targets are cleared, and you can set them again in Progress.',
+              : 'Building creates a proposal only. Nothing starts until you approve it. A new plan starts fresh: your body-fat and physique targets, target date and training phase are cleared, and you can set them again in Progress.',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       ],
