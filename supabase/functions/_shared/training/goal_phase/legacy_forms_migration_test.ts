@@ -33,7 +33,7 @@ Deno.test("nothing in the migration grants a function to anyone", () => {
   assert(!/grant\s+execute/i.test(sql), "the migration grants no function");
 });
 
-Deno.test("the app role keeps its onboarding_state grant while older builds still write it", () => {
+Deno.test("this migration leaves the onboarding_state grant (20261102074318 revokes it)", () => {
   assert(!/revoke[^;]*\(onboarding_state\)/.test(sql), "no column revoke in this migration");
 });
 

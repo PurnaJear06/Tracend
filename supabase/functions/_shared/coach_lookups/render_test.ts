@@ -12,6 +12,7 @@ import {
   request,
   scheduleLookupPayload,
   watchWorkoutsPayload,
+  weeklyReviewsPayload,
   workoutsNotesPayload,
   workoutsPayload,
 } from "./lookup_fixtures.ts";
@@ -770,6 +771,24 @@ Deno.test("watch workouts of any age: date, activity, length and whether a logge
     text,
     "- 2026-08-20 Running recorded by the watch, 40 min, 350 kcal; matched to a logged session (confirmed)",
   );
+});
+
+Deno.test("weekly reviews: a week with nothing due says none were planned, not a percentage", () => {
+  const nothingDue = {
+    ...weeklyReviewsPayload,
+    reviews: [{
+      ...weeklyReviewsPayload.reviews[0],
+      training: {
+        planned_sessions: 0,
+        completed_workouts: 0,
+        completed_sets: 0,
+        adherence_percent: null,
+      },
+    }],
+  };
+  const { text } = renderLookup(request("weekly_reviews", "2026-09-01", "2026-10-17"), nothingDue);
+  assertStringIncludes(text, "0 workouts done, none planned that week, 0 sets");
+  assert(!text.includes("% done"));
 });
 
 Deno.test("daily decisions: the action, the decision and its flags", () => {

@@ -23,6 +23,13 @@ export const refusals = {
       "Your health check caps your training at moderate effort until a health professional " +
         "clears you, so I can't raise the intensity or start a strength-focus block.",
     ),
+  screeningUnanswered: () =>
+    refuse(
+      "screening_unanswered",
+      "You haven't answered the health check yet, so your training stays at moderate effort and " +
+        "I can't raise the intensity or start a strength-focus block. You can answer it in your " +
+        "profile under Plan.",
+    ),
   noPlan: () => refuse("no_active_plan", "You don't have an active training plan to change yet."),
   noNutrition: () =>
     refuse("no_active_nutrition", "You don't have an active nutrition target to change yet."),

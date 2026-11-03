@@ -57,8 +57,8 @@ unit_system                  metric | imperial
 onboarding_state             not_started | in_progress | completed
 onboarding_path              beginner | experienced
 experience_level             beginner | intermediate | advanced
-consent_type                 terms | privacy | progress_photo_storage | progress_photo_ai |
-                             notifications | ai_coaching | meal_photo_ai
+consent_type                 terms | privacy | health_data | progress_photo_storage |
+                             progress_photo_ai | notifications | ai_coaching | meal_photo_ai
 consent_action               granted | withdrawn
 goal_type                    fat_loss | muscle_gain | recomposition | strength | aesthetic
 goal_status                  draft | active | superseded
@@ -127,7 +127,10 @@ account, metadata `from` and `to`); setting the stored value again or clearing a
 writes none. A new region adds its code to the set function in a later migration. The app writes `timezone`
 only through `set_my_timezone`, which accepts only names Postgres knows; clients cannot write the
 column directly. Readers such as the weekly-review scheduler go through `private.safe_timezone`,
-and `private.local_date_for` gives the athlete's local date.
+and `private.local_date_for` gives the athlete's local date. Clients cannot write
+`onboarding_state` either (since 20261102074318): the first onboarding draft moves `not_started` to
+`in_progress` (trigger `onboarding_drafts_mark_started`) and approval sets `completed` inside
+`respond_to_onboarding_proposal_v2`, after the health check and the healthy-weight floors.
 
 ### `consent_records`
 
@@ -136,6 +139,17 @@ Append-only records: consent type, notice version, action (`granted` or `withdra
 type. Clients may insert only `user_id`, `consent_type`, `notice_version`, `action` and `source`;
 `created_at` always takes its default. At most 100 records a day per user. HealthKit permission is
 held by iOS, not here.
+
+`terms`, `privacy` and `health_data` (explicit consent to health-data processing, migration
+`20261102143719_health_data_consent_type.sql`) carry the "Last updated" date of the page they were
+given against as `notice_version` (ISO, for example `2026-11-02`; `health_data` uses the privacy
+notice's). Records from before 2026-11-02 carry `2026-07-01`, a version that was never published.
+The app treats a missing, withdrawn or older grant as outdated and asks again; a newer one counts.
+Onboarding approval on the server still checks only that `terms` and `privacy` are granted.
+`private.health_data_consent_granted(user)` (migration `20261102213907_health_data_consent_enforced.sql`)
+is true when the newest `health_data` record is a grant of any version; the Apple Health write
+functions (`persist_health_sync_v2`, `save_health_history`, `persist_set_heart_rate_v1`,
+`persist_sleeping_heart_rate_v1`) raise SQLSTATE `P0403` without it.
 
 ### `ai_consent_notices` and `ai_notice_current`
 
@@ -185,6 +199,13 @@ never stored.
 
 Goals with type, priority (1–5), status (`draft`, `active`, `superseded`), a `details` object
 with the goal's specifics such as a target weight (at most 16 KB), and activation time. Exactly one active goal is primary. At most 200 goals per user.
+
+**Client writes (since 20261102074318).** The signed-in role reads its goals and writes only the
+draft goal the onboarding flow saves: insert of `user_id`, `goal_type`, `priority` and `status`,
+and update of `goal_type`, with policies that keep both to the caller's own `draft` rows. Details
+(targets, phases), activation and status change only inside the security definer functions
+(`respond_to_onboarding_proposal_v2`, `set_goal_target_v1`, Coach proposal approval and undo),
+which check the floors and write the audit event.
 
 **Goal target (B7).** The end point of a goal lives in `details` under `target_weight_kg`,
 `target_body_fat_pct_min`, `target_body_fat_pct_max`, `target_physique` (`visible_abs`,
@@ -252,7 +273,15 @@ answers, so every answer the athlete gave stays on record. Columns: `id`, `user_
 `exercises_regularly`, `known_disease` (a known heart, metabolic or kidney condition), `symptoms`
 (a current sign or symptom), `cleared_by_professional` (false when not asked), `outcome`
 (`cleared`, `moderate_until_cleared` or `see_professional`) and `screened_at`. The newest row per
-user is current; no row reads as `cleared`.
+user is current. No row is **unscreened**, never cleared (since 20261102074318):
+`private.current_screening_outcome` returns `unscreened`, which ranks with
+`moderate_until_cleared` (the moderate effort cap applies in Coach, its proposals, the cardio week
+and restored plans), and `private.assert_screening_allows` refuses to store or approve an
+onboarding plan (55000 "the health check must be answered first") until the check is answered. A
+Coach proposal built while unscreened records `unscreened` in its basis and holds effort to
+moderate, so it can still be approved. `get_my_screening_v1` still answers a never-screened
+athlete with `screened: false` and outcome `cleared`, the shape installed builds read; the app
+acts on `screened`.
 
 - **Written only by `record_screening_v1`** (the athlete's own session; it audits
   `onboarding_screening_recorded` with the outcome only). It works out the outcome in the database
@@ -262,8 +291,9 @@ user is current; no row reads as `cleared`.
   `_shared/training/screening/screening.ts`, and both tests hold the same sixteen-row table.
 - **RLS:** owner read only (`user_id = auth.uid()`); clients cannot insert, update or delete.
 - **Privacy:** included in `privacy-export`; deleted with the account (cascade).
-- The answers also sit in the onboarding draft payload (`screening`) so a plan request can read
-  them; an old draft without the key reads as cleared.
+- The answers also sit in the onboarding draft payload (`screening`). The plan request reads the
+  stored row: with none, `onboarding-plan` answers 422 `onboarding_answers_incomplete` with
+  `missing: ["screening"]`, which every app build opens at the health check.
 
 ### `onboarding_generations`
 
@@ -756,6 +786,16 @@ passes planned) carry it, and
 days with its area and date). A day in a break adds the readiness trigger `paused`, which
 `day_adjustments.triggers` allows, and offers no readiness choice; a held or limited joint's own change
 still does.
+
+**The first day of training (migration `20261102194352`).** `private.training_started_on(user)` is the
+earliest effective date of any plan version that was ever active (`active` or `superseded`), so a Coach
+change or a new block keeps the first plan's start. A day before it is neither due nor missed, like a rest
+day the athlete chose: the brief's `week` does not plan it (1.9, no shape change), the training hub 1.11
+leaves its sessions out of `adherence.planned_sessions` and returns the date as `training_started_on`, the
+weekly review's `planned_sessions` start at it and leave out rest days without a logged session (a week
+with nothing due has a null `adherence_percent`, neither 0% nor 100% and not a missing plan; snapshots name
+`weekly-deterministic-v2`), and `get_coach_plan_state_v1` 1.4 returns it so the Coach never calls such a
+session undone.
 
 ### `pain_reports` (B5-1, migration `20261024060025`)
 
@@ -1292,11 +1332,19 @@ than 3 observations `cold_start`, 3–6 `low`, 7–13 `medium`, 14 or more `high
 
 ### `metric_baseline_history`
 
-Append-only per-observation trail written by `compute_user_baselines`: metric, baseline value,
-spread and observation count after the observation, observation date, raw value, whether it was
-winsorized (clamped to ±3 × spread) or rejected as an outlier (beyond 5 × spread), the λ used
-(3-day half-life for the first eight observations, then 14-day), `prior_baseline_id` (linked list),
-engine version, and creation time. Forced RLS, read-only for authenticated.
+Per-observation trail written by `compute_user_baselines`: one row per user, metric and
+observation day (UNIQUE (user_id, metric_name, observation_date), date required), holding the
+baseline value, spread and observation count after that day's observation, the raw value, whether it
+was winsorized (clamped to ±3 × spread) or rejected as an outlier (beyond 5 × spread), the λ used
+(3-day half-life for the first eight observations, then 14-day), engine version, and creation time.
+The trail matches the fold at the athlete's newest day: a recompute deletes days no longer
+observed (HealthKit re-sends recent days) and writes only rows that differ (a new day, a revised day
+and the later days it moved), so a repeat writes nothing; a fold for an earlier day leaves the trail
+alone. Two weigh-ins on one day are one row, the state after the later entry (created_at, then id).
+Nothing reads the trail back: baselines and scores come from the source data. No table
+references it, so an account deletion removes it in one indexed pass. `prior_baseline_id` is no
+longer written or constrained (20261102041737) and is dropped by a later migration. Forced RLS,
+read-only for authenticated.
 
 ### `daily_computed_metrics`
 

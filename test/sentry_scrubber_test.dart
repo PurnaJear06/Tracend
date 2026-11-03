@@ -89,6 +89,31 @@ void main() {
       expect(templateUrl('not a url'), '[url]');
     });
 
+    test('keeps the account id alone as the user', () {
+      const uid = '3f2b8c1e-5a47-4d0e-9b61-7c2a4e8f1d90';
+      final out = scrubEvent(
+        SentryEvent(
+          user: SentryUser(
+            id: uid,
+            email: 'athlete@example.com',
+            name: 'Athlete',
+            ipAddress: '203.0.113.7',
+          ),
+        ),
+        hint,
+      )!;
+      expect(out.user!.id, uid);
+      expect(out.user!.email, isNull);
+      expect(out.user!.name, isNull);
+      expect(out.user!.ipAddress, isNull);
+
+      final anonymous = scrubEvent(
+        SentryEvent(user: SentryUser(email: 'athlete@example.com')),
+        hint,
+      )!;
+      expect(anonymous.user, isNull);
+    });
+
     test('scrubs exception values, extra, message and request data', () {
       final event = SentryEvent(
         exceptions: [

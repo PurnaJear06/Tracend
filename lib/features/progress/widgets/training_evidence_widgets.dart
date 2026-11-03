@@ -97,9 +97,11 @@ class TrainingEvidenceSection extends StatelessWidget {
       children: [
         Semantics(
           container: true,
-          label:
-              '${hub.completedSessions} of ${hub.plannedSessions} planned '
-              'workouts done in the last ${periodLabel(periodDays)}',
+          label: hub.plannedSessions == 0
+              ? '${hub.completedSessions} workouts done in the last '
+                    '${periodLabel(periodDays)}, none planned'
+              : '${hub.completedSessions} of ${hub.plannedSessions} planned '
+                    'workouts done in the last ${periodLabel(periodDays)}',
           excludeSemantics: true,
           child: PremiumGradientCard(
             child: Column(
@@ -123,7 +125,9 @@ class TrainingEvidenceSection extends StatelessWidget {
                             ),
                           ),
                           TextSpan(
-                            text: ' of ${hub.plannedSessions} workouts',
+                            text: hub.plannedSessions == 0
+                                ? ' workouts, none planned'
+                                : ' of ${hub.plannedSessions} workouts',
                             style: theme.bodyMedium,
                           ),
                         ],

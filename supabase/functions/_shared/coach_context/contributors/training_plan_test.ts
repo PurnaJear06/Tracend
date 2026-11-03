@@ -296,6 +296,30 @@ Deno.test("an undone session that is tomorrow's own is not made up today; tomorr
   assert(!repeats.includes("A session from earlier this week is still undone"));
 });
 
+Deno.test("a session from before the athlete's first plan began is never undone", () => {
+  // Monday's and Friday's sessions are not done. A plan that began on Saturday owed neither.
+  const payload = (startedOn: string) => ({
+    ...splitPlanPayload(7, ["w-legs-a", "w-pull", "w-chest-b", "w-shoulders"]),
+    schema_version: "1.4",
+    training_started_on: startedOn,
+  });
+  const fresh = parsePlanState(payload("2026-10-17"))!;
+  assertEquals(fresh.startedOn, "2026-10-17");
+  assertEquals(pickFocusSession(fresh).undone, []);
+  const text = renderTrainingPlan(fresh)!;
+  assert(!text.includes("undone earlier this week"));
+  assert(!text.includes("A session from earlier this week is still undone"));
+  // A plan that began on Wednesday owed Friday's session, not Monday's.
+  const older = parsePlanState(payload("2026-10-14"))!;
+  assertEquals(pickFocusSession(older).undone.map((session) => session.name), ["Legs B"]);
+  // A 1.3 payload has no start date and reads as before.
+  assertEquals(
+    parsePlanState(splitPlanPayload(7, ["w-legs-a", "w-pull", "w-chest-b", "w-shoulders"]))!
+      .startedOn,
+    null,
+  );
+});
+
 // The 2026-10-23 incident: Friday's Legs B was logged (23 sets) and never finished, the hourly job
 // closed it, and Coach read it as "not done". It is the athlete's to save or discard.
 const legsBUnfinished = (patch: Record<string, unknown> = {}) => ({

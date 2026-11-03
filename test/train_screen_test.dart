@@ -381,6 +381,36 @@ void main() {
       expect(find.text('Start workout'), findsNothing);
     });
 
+    testWidgets('a day before the first plan began is neither planned nor '
+        'missed', (tester) async {
+      // The plan began on Thursday 1 October: Tuesday's and Wednesday's
+      // workouts were never due.
+      await _pumpTrain(
+        tester,
+        repository: TrainFixtureRepository(
+          hub: trainHub(
+            completed: const {},
+            sessions: const [],
+            trainingStartedOn: DateTime(2026, 10, 1),
+          ),
+        ),
+      );
+      expect(
+        find.bySemanticsLabel('Tuesday 29 September, rest day'),
+        findsOneWidget,
+      );
+      expect(find.text('0 of 2  done', findRichText: true), findsOneWidget);
+      await _tapDay(tester, '2026-09-29');
+      expect(find.byKey(const ValueKey('before-plan-day')), findsOneWidget);
+      expect(find.text('Before your plan'), findsOneWidget);
+      expect(
+        find.text('Your plan started on Thu 1 Oct. Nothing was due this day.'),
+        findsOneWidget,
+      );
+      expect(find.text('Tuesday, missed'), findsNothing);
+      expect(find.text('Do it today'), findsNothing);
+    });
+
     testWidgets('a coming rest day names the next workout and jumps to it', (
       tester,
     ) async {
