@@ -663,6 +663,7 @@ class TrainingHubData {
     this.dailyLoad = const [],
     this.load,
     this.cachedAt,
+    this.serverError,
     this.availability = TrainingAvailability.available,
     this.pausedDays = const {},
     this.pausedSessions = 0,
@@ -677,7 +678,11 @@ class TrainingHubData {
   /// week changes their loads by the day) belong to the day the copy was
   /// saved, so when that is another day they are left out rather than shown
   /// for today.
-  factory TrainingHubData.fromCache(CachedTrainingHub cached, DateTime now) {
+  factory TrainingHubData.fromCache(
+    CachedTrainingHub cached,
+    DateTime now, {
+    Object? serverError,
+  }) {
     final json = Map<String, dynamic>.of(cached.hub);
     final today = localDayKey(now);
     if (json['local_today'] != today) {
@@ -689,7 +694,11 @@ class TrainingHubData {
         ..remove('next_targets')
         ..remove('availability');
     }
-    return TrainingHubData.fromHubJson(json, cachedAt: cached.savedAt);
+    return TrainingHubData.fromHubJson(
+      json,
+      cachedAt: cached.savedAt,
+      serverError: serverError,
+    );
   }
 
   /// Parses `get_my_training_hub`. A cached 1.5 payload parses too: every
@@ -697,6 +706,7 @@ class TrainingHubData {
   factory TrainingHubData.fromHubJson(
     Map<String, dynamic> value, {
     DateTime? cachedAt,
+    Object? serverError,
   }) {
     final targets = _nextTargets(value['next_targets']);
     final active = _map(value['active_plan']);
@@ -781,6 +791,7 @@ class TrainingHubData {
               todayStrain: (computed['today_strain'] as num?)?.toDouble(),
             ),
       cachedAt: cachedAt,
+      serverError: serverError,
       availability: TrainingAvailability.fromJson(value['availability']),
       pausedDays: {
         for (final day in (value['paused_days'] as List? ?? const []))
@@ -844,6 +855,10 @@ class TrainingHubData {
   /// When this phone saved the hub it shows, when the server could not be
   /// reached and this is the last copy; null for a hub just loaded.
   final DateTime? cachedAt;
+
+  /// Why the server could not answer, on a hub that is a saved copy because
+  /// of it; null for a hub just loaded or a copy opened with no request.
+  final Object? serverError;
 
   /// Today's training availability: a break running or set to start, or a
   /// check-in that said the athlete can't train (hub 1.10).
@@ -1197,7 +1212,7 @@ class SupabaseWorkoutRepository
       final cached = await _hubCache.load(userId);
       if (cached == null) rethrow;
       logNonCritical(error, 'training hub from device');
-      return TrainingHubData.fromCache(cached, _clock());
+      return TrainingHubData.fromCache(cached, _clock(), serverError: error);
     }
     if (userId != null) {
       if (periodDays == _cachedHubDays) await _saveHub(userId, hub);

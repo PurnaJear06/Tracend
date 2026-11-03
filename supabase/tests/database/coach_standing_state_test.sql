@@ -12,6 +12,10 @@ $$;
 create function pg_temp.athlete(uid uuid) returns void language plpgsql as $$
 begin
   insert into auth.users(id, role) values (uid, 'authenticated');
+  -- A cleared health check; a missing one is unscreened (20261102074318).
+  insert into public.onboarding_screenings(user_id, exercises_regularly, known_disease, symptoms,
+    outcome)
+  values (uid, true, false, false, 'cleared');
   insert into public.user_profiles(user_id, adult_attested_at, eligible, experience_level,
     training_days, session_minutes)
   values (uid, now(), true, 'beginner', array[2,5]::smallint[], 45);

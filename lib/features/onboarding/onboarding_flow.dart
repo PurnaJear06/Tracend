@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/account/account_deletion_repository.dart';
+import 'package:tracend/features/account/widgets/account_sheets.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/consent/legal_consent.dart';
 import 'package:tracend/features/health/health_baseline.dart';
@@ -43,6 +45,7 @@ class OnboardingFlow extends StatefulWidget {
     this.health,
     this.healthBaseline,
     this.onSignOut,
+    this.deletion,
     this.pollInterval = const Duration(seconds: 3),
     this.pollTimeout = const Duration(seconds: 150),
     this.currentYear,
@@ -63,6 +66,11 @@ class OnboardingFlow extends StatefulWidget {
   /// The athlete's usual months from Apple Health, read after Connect.
   final HealthBaselineSource? healthBaseline;
   final Future<void> Function()? onSignOut;
+
+  /// Deletes the account from setup, offered beside Sign out: someone who
+  /// stops before their plan (screened out, or changing their mind) can
+  /// still remove what they saved. Signs out after it settles.
+  final AccountDeletionRepository? deletion;
   final Duration pollInterval;
 
   /// Longer than the server's generation lease; after it the app offers a retry.
@@ -412,6 +420,20 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   static double _half(double kg) => (kg * 2).round() / 2;
 
+  /// The lowest target weight Tracend sets: BMI 18.5 at the athlete's height,
+  /// as the server rounds it, then up to the next half kilo on the slider. The
+  /// server sets no target below it.
+  double get _targetFloorKg {
+    final metres = _heightCm.round() / 100;
+    final floor = ((18.5 * metres * metres * 10).round() / 10 * 2).ceil() / 2;
+    return floor < _minWeightKg ? _minWeightKg : floor;
+  }
+
+  /// The target as shown and saved: never under the healthy floor.
+  double? get _targetShownKg => _targetWeightKg == null
+      ? null
+      : _half(_targetWeightKg!).clamp(_targetFloorKg, _maxWeightKg);
+
   /// The four answers once every question shown has been answered.
   ScreeningAnswers? get _screeningAnswers => ScreeningAnswers.fromChoices(
     exercisesRegularly: _exercisesRegularly,
@@ -435,9 +457,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       'birth_year': _birthYearValue,
       'height_cm': _heightCm.round(),
       'weight_kg': _half(_weightKg),
-      'target_weight_kg': _targetWeightKg == null
-          ? null
-          : _half(_targetWeightKg!),
+      'target_weight_kg': _targetShownKg,
       'daily_activity': _dailyActivity,
       'training_weekdays': weekdays,
       // Read by builds before 2026-10 as a day count.
@@ -820,6 +840,31 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     } finally {
       if (mounted) setState(() => _signingOut = false);
     }
+  }
+
+  /// The account menu beside Sign out: deletion, through the same sheet as
+  /// Account (password, `DELETE`, a destructive confirm).
+  Future<void> _openAccountMenu() async {
+    final deletion = widget.deletion;
+    if (deletion == null || _signingOut) return;
+    final delete = await showTracendActionSheet<bool>(
+      context,
+      title: 'Your account',
+      message:
+          'Deleting it removes everything saved so far, including your '
+          'answers, the health check and any Apple Health summaries.',
+      actions: const [
+        TracendSheetAction(
+          label: 'Delete account',
+          value: true,
+          destructive: true,
+        ),
+      ],
+    );
+    if (delete != true || !mounted) return;
+    final outcome = await showAccountDeletion(context, deletion);
+    if (outcome == null || !mounted) return;
+    await _signOut();
   }
 
   /// Reopened on the Plan step: show the stored proposal, keep waiting for a
@@ -1386,12 +1431,19 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     });
   }
 
-  List<Widget> _signOutAction() => [
-    if (widget.onSignOut != null)
+  List<Widget> _accountActions() => [
+    if (widget.onSignOut != null) ...[
       TextButton(
         onPressed: _signingOut ? null : _signOut,
         child: const Text('Sign out'),
       ),
+      if (widget.deletion != null)
+        IconButton(
+          tooltip: 'Account options',
+          onPressed: _signingOut ? null : _openAccountMenu,
+          icon: const Icon(CupertinoIcons.ellipsis_circle),
+        ),
+    ],
   ];
 
   @override
@@ -1400,7 +1452,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Set up Tracend'),
-          actions: _signOutAction(),
+          actions: _accountActions(),
         ),
         body: SafeArea(
           child: Center(
@@ -1444,7 +1496,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                 icon: const Icon(CupertinoIcons.back),
               )
             : null,
-        actions: _signOutAction(),
+        actions: _accountActions(),
       ),
       body: SafeArea(
         top: false,
@@ -1980,19 +2032,24 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               setState(() => _targetWeightKg = on ? _weightKg : null),
           title: const Text('I have a target weight'),
         ),
-        if (_targetWeightKg != null) ...[
+        if (_targetShownKg case final target?) ...[
           Text(
-            'Target: ${_weightLabel(_targetWeightKg!)}',
+            'Target: ${_weightLabel(target)}',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           _Stepper(
             label: 'Target weight',
-            value: _half(_targetWeightKg!).clamp(_minWeightKg, _maxWeightKg),
-            min: _minWeightKg,
+            value: target,
+            min: _targetFloorKg,
             max: _maxWeightKg,
             step: 0.5,
             format: _weightLabel,
             onChanged: (value) => setState(() => _targetWeightKg = value),
+          ),
+          Text(
+            'Lowest healthy target for your height: '
+            '${_weightLabel(_targetFloorKg)}',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ],
@@ -2426,9 +2483,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   List<_ReviewRow> _reviewRows() {
     final weekdays = _weekdays.toList()..sort();
     final days = weekdays.map((day) => onboardingWeekdayLabels[day - 1]);
-    final target = _targetWeightKg == null
+    final target = _targetShownKg == null
         ? ''
-        : ' → ${_weightLabel(_targetWeightKg!)}';
+        : ' → ${_weightLabel(_targetShownKg!)}';
     String orNone(String value) => value.trim().isEmpty ? 'None' : value.trim();
     return [
       _ReviewRow(

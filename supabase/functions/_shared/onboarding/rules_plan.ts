@@ -425,6 +425,9 @@ const profileText = {
   general: "general fitness at moderate effort",
 } as const;
 
+// While the healthy-weight hold applies, a lean profile names no fat loss: calories stay at maintenance.
+const heldLeanText = "keeping and building muscle at maintenance calories";
+
 const splitText = {
   full_body: "Full-body sessions",
   upper_lower: "An upper / lower split",
@@ -702,7 +705,9 @@ function buildPlan(
       ? "When every set reaches the top of its rep range at the target effort, add a small amount of load next session. Heavy and light days each progress inside their own range."
       : "When every set reaches the top of its rep range at the target effort, add a small amount of load next session.",
     rationale: `${splitText[template.split]} for ${
-      profileText[template.profile]
+      nutrition.healthyWeightHold && template.profile === "lean"
+        ? heldLeanText
+        : profileText[template.profile]
     }, using only exercises your equipment allows, within Tracend's volume and effort limits.`,
     expected_benefit: "A clear starting plan that can be measured before it changes.",
     downside: "Targets are first estimates and need two to three weeks of data to refine.",
