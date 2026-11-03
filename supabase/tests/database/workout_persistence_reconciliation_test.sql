@@ -4,6 +4,10 @@ select plan(18);
 insert into auth.users(id, role) values
   ('11111111-1111-6666-8666-111111111111', 'authenticated'),
   ('22222222-2222-6666-8666-222222222222', 'authenticated');
+-- Apple Health is stored only for an athlete who agreed to it.
+insert into public.consent_records(user_id, consent_type, notice_version, action, source) values
+  ('11111111-1111-6666-8666-111111111111', 'health_data', '2026-11-02', 'granted', 'ios_app'),
+  ('22222222-2222-6666-8666-222222222222', 'health_data', '2026-11-02', 'granted', 'ios_app');
 
 insert into public.training_plans(id, user_id, title, source) values
   ('11111111-3111-6666-8666-111111111111', '11111111-1111-6666-8666-111111111111', 'Plan', 'user');

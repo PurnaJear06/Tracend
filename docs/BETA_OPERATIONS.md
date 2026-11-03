@@ -60,6 +60,34 @@ The 2026-07-03 tabletop rehearsal used a hypothetical leaked worker secret. The 
 path is function disablement, secret rotation, Cron/Vault update, unauthenticated rejection
 verification, and retention-worker smoke.
 
+## Changing the beta terms or the privacy notice
+
+The app's legal pages are `site/src/pages/beta-terms.astro` and `site/src/pages/privacy.astro`.
+Each page's version is its "Last updated" date. In one PR:
+
+1. Edit the page and set its "Last updated" date to the day it goes live.
+2. Set the matching constant in `LegalNotices` (`lib/features/consent/legal_consent.dart`) to the
+   same date in ISO form (`termsVersion` or `privacyVersion`; health-data consent follows the
+   privacy notice). `test/legal_versions_test.dart` fails in CI until the page and the constant
+   agree.
+3. Merge. The deploy publishes the page; then install the app built from that `main` commit.
+   On its next launch every onboarded athlete whose grant is older sees **Terms and privacy** and
+   agrees again (or signs out, or deletes the account) before the app opens. Git history keeps
+   every earlier version of each page, and `consent_records.notice_version` says which one each
+   athlete agreed to.
+
+The server stores Apple Health only for an athlete whose newest `health_data` consent record is a
+grant (any version). After the migration `20261102213907_health_data_consent_enforced.sql`
+deploys, an installed build 920 cannot sync Apple Health: `health-sync` answers 403
+`health_consent_required` until the new build is installed and the athlete agrees on the **Terms
+and privacy** screen. Nothing is lost: the sync does not move its last-sync mark, so the next sync
+sends the same window again. Install the new build soon after the deploy.
+
+A wording fix that changes nothing an athlete agreed to still changes the date, and so asks
+everyone again; batch such fixes. The website terms (`terms.astro`) cover only the site and the
+waitlist and are not asked for in the app. The beta terms are a draft written without a lawyer;
+have them reviewed before inviting anyone outside the owner.
+
 ## TestFlight external beta checklist
 
 Today the beta is owner-only: signed release builds go straight to the owner's iPhone
@@ -86,7 +114,8 @@ Work through this list in order once the paid Apple Developer Program is active.
      compliance for every build.
 4. **Create the app record.** App Store Connect > Apps > New App: iOS, the Tracend name (it must be
    free on the App Store), primary language, bundle ID `com.tracend.app`, a SKU. Then:
-   - privacy policy URL `https://tracend.pages.dev/privacy/` and a support URL;
+   - privacy policy URL `https://tracend.pages.dev/privacy/` and a support URL (the app's beta
+     terms are at `https://tracend.pages.dev/beta-terms/`);
    - the age rating questionnaire, answered so the rating is 18+ (Tracend is for adults).
 5. **Fill in App Privacy (nutrition labels)** to match `site/src/pages/privacy.astro`. Mark every
    type "Linked to you", purpose App Functionality, not used for tracking:
@@ -116,9 +145,31 @@ Work through this list in order once the paid Apple Developer Program is active.
 9. **Make Supabase Auth email work for outsiders.** Supabase's built-in email only reaches the
    project team. In Dashboard > Authentication > Emails > SMTP Settings, set custom SMTP with the
    Gmail account the waitlist already uses (`smtp.gmail.com`, port 465, the same app password).
-   Set the Site URL and the redirect URLs the app's auth links use (Authentication > URL
-   Configuration). Then sign up with an invited address outside the team and check that the
-   email arrives and its link works.
+   Set the Site URL to `https://tracend.pages.dev` (Authentication > URL Configuration): a sign-up
+   confirmation link confirms the email and lands there. The app takes no session from a link, so
+   it needs no redirect URL. Then:
+   - **Reset password email.** The app resets a forgotten password with a code typed into the app,
+     and Supabase's default template only has a link. In Authentication > Emails > Templates >
+     Reset password, set the subject to `Your Tracend password reset code` and the body to:
+
+     ```html
+     <h2>Reset your Tracend password</h2>
+     <p>Enter this code in the Tracend app, with your new password:</p>
+     <p style="font-size:28px;font-weight:bold;letter-spacing:6px;">{{ .Token }}</p>
+     <p>The code works once and expires in one hour. If you did not ask to reset your password,
+     ignore this email: your password stays the same.</p>
+     ```
+
+     Keep `{{ .ConfirmationURL }}` out of it: opening that link would use up the code.
+   - **Code settings.** In Authentication > Sign In / Providers > Email, keep Email OTP Expiration at
+     3600 seconds (the template says one hour) and Email OTP Length at 6.
+   - **Leaked-password protection.** Turn on the setting that refuses passwords found in known
+     breaches (Authentication > Passwords). The app says "This password has appeared in a data
+     breach" when Auth refuses one.
+   - **Check.** Sign up with an invited address outside the team and check that the confirmation
+     email arrives, its link confirms the address and **Resend email** sends another. Then use
+     **Forgot password?** on that account: the code arrives, **Set new password** signs in, and the
+     old password no longer works.
 10. **Open the gate in Supabase.** Turn production sign-ups back on (Dashboard > Authentication >
     Sign In / Providers > Allow new users to sign up). The invite-only trigger still refuses any
     email that has no row in `private.signup_invites`, so add each tester before they sign up:

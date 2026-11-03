@@ -8,9 +8,9 @@ sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
 **Current priority (2026-10-15): the coaching platform program.** Plan, contracts and board:
 [`docs/plans/coaching-platform-2026-10/README.md`](./plans/coaching-platform-2026-10/README.md).
 Iteration 1 (Phase 0 + Phase 1) is live. Iteration 2 (Phase 2: A3–A7, D1, C2, B1) is merged
-(2026-10-16). Coach chat and the daily decision run on Claude (Anthropic); meal photos and the
-physique check still run on Groq, and onboarding uses its rules plan, until the owner finishes the
-cutover runbook (checked 2026-11-01). One line per stream; the lead updates these lines when a chunk merges.
+(2026-10-16). Every AI feature runs on Claude (Anthropic): Coach chat and the daily decision,
+and since 2026-11-01 meal photos (`claude-haiku-5-5`) and the physique check (`claude-sonnet-5-5`),
+with both v2 photo notices published; Groq receives nothing. Onboarding uses its rules plan. One line per stream; the lead updates these lines when a chunk merges.
 
 <!-- PROGRAM:coaching-platform-2026-10 -->
 - program: P0 (contracts, migration-order CI check) live (#102).
@@ -108,11 +108,24 @@ cutover runbook (checked 2026-11-01). One line per stream; the lead updates thes
   remote sign-out returns to the gate, reminders leave the phone on sign-out, body-fat target floor
   (5% men, 12% women or unknown), Progress and Meals form fixes. Handoff:
   [`onboarding.md`](./handoff/onboarding.md).
-- website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
+- pre-beta audit B5a/B5b (2026-11-02, branch `claude/onboarding-safety-floors`, migration
+  `20261102074318`, in review): onboarding applies the healthy-weight floors (maintenance under BMI
+  19.5, no target under BMI 18.5; re-checked at approval in SQL), `user_goals` and
+  `onboarding_state` lose their direct client writes, a missing screening is unscreened (never
+  cleared), and no `public` function is open to `anon`. Owner step: answer Account › Plan › Health
+  check before merging (production has no screening rows). Handoff:
+  [`onboarding.md`](./handoff/onboarding.md).
+- website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Beta terms and consent (2026-11-02, `claude/beta-terms-consent`, migration `20261102143719`, in review): app beta terms at `/beta-terms/` (a draft for a lawyer), privacy page fixes (controller and grievance contact, workout and sleeping heart rate, explicit health-data consent, processor wording), onboarding rows that open both pages plus a separate `health_data` consent, Account links, page versions = "Last updated" dates kept equal to `LegalNotices` by a test, and a launch screen that asks onboarded athletes again when a page changes (fails open; the owner sees it once after installing). Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
+
+**Baseline history dedupe (2026-11-02, branch `claude/baseline-history-dedupe`, migration `20261102041737`, PR open):**
+pre-beta audit P1-1. `metric_baseline_history` gets one row per user, metric and observation day; every recompute used
+to write the whole trail again (157,165 rows, 76 MB, one athlete). The migration clears the old trail and rebuilds it,
+drops the `prior_baseline_id` self-reference that made account deletion quadratic, and adds a unique key. Baselines and
+scores are unchanged. Server only, no reinstall. Details: "Baseline history dedupe" in [`backend.md`](./handoff/backend.md).
 
 **Lost replies and thread switching (2026-10-24, branch `claude/lost-replies-thread-switch`, PR open):** QA audit groups E
 and F, app only. Coach: the latest conversation open wins and a failed open restores the previous chat; New conversation
@@ -278,7 +291,8 @@ Decided by the owner on 2026-10-16:
   leave the phone.
 
 Known gaps found:
-- The app's terms and privacy checkboxes don't link to the site pages.
+- Fixed on `claude/beta-terms-consent` (2026-11-02, in review): the terms and privacy rows link to
+  the site pages, and the app has its own beta terms.
 
 **Website and waitlist (2026-10-13):** the public website (`site/`, Astro, Cloudflare Pages at
 https://tracend.pages.dev) and a double opt-in waitlist on the production project (three
@@ -317,6 +331,15 @@ guard enforces it; the `coach-eval` and `onboarding-eval` labels are gone), Edge
 codes and numbers only, the repository license is proprietary (view only), and the Supabase key
 migration is prepared with a no-change helper and an owner runbook:
 [`docs/handoff/supabase-key-migration.md`](./handoff/supabase-key-migration.md).
+
+**Pre-beta audit: auth and account safety (2026-11-01, branch `claude/auth-account-safety`, in
+review):** links never create a session (B2); **Forgot password?** resets in the app with an emailed
+code and **Resend email** sends the confirmation again (B4; owner pastes the Reset password template
+with `{{ .Token }}` and turns on leaked-password protection, `docs/BETA_OPERATIONS.md` step 9);
+**Delete account** during onboarding (P1-7); `health-sync` answers 422/429/503 and reports server
+faults by code, app Sentry events carry the account id, and a load failing three times in a row is
+reported once (P1-4). Needs a reinstall. Handoff:
+[`account-session.md`](./handoff/account-session.md).
 
 **Privacy export, deletion and retention fixes (2026-10-24, QA audit group D):** the export now
 carries every table with a `user_id` (Coach threads and messages included) in pages of 1000, with a

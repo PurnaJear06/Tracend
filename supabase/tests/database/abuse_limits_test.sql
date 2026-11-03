@@ -4,6 +4,9 @@ select plan(20);
 insert into auth.users(id, role) values
   ('c1000000-0000-4000-8000-000000000001', 'authenticated'),
   ('c1000000-0000-4000-8000-000000000002', 'authenticated');
+-- Apple Health is stored only for an athlete who agreed to it.
+insert into public.consent_records(user_id, consent_type, notice_version, action, source) values
+  ('c1000000-0000-4000-8000-000000000001', 'health_data', '2026-11-02', 'granted', 'ios_app');
 
 -- Time zones ----------------------------------------------------------------------------
 update public.user_accounts set timezone = 'Mars/Olympus', account_status = 'active',

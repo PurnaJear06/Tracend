@@ -535,7 +535,9 @@ enforced.
 2. Mobile reads the authorized date window and normalizes supported values.
 3. Mobile computes source/checksum metadata required for deduplication.
 4. `health-sync` verifies JWT, units, ranges, timestamps, and idempotency key.
-5. A transaction upserts daily summaries and records the sync run.
+5. A transaction upserts daily summaries and records the sync run. A batch the database refuses is
+   422 with its SQLSTATE (the app does not send it again), the hourly limit is 429 and a server
+   fault 503 (the app tries again twice); the last two are logged and reported to Sentry by code.
 6. Feature snapshots consume only successfully normalized records.
 
 The first successful sync reads a 9-date window (today−8) so recent history can be restored; later

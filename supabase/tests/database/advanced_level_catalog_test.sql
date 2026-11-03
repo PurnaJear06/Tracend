@@ -133,6 +133,11 @@ select is(
 -- and a curl planned twice with the same range.
 
 insert into auth.users(id, role) values ('b4000000-0000-4000-8000-000000000001', 'authenticated');
+-- These athletes answered the health check as cleared; a missing check is unscreened, never
+-- cleared (20261102074318).
+insert into public.onboarding_screenings(user_id, exercises_regularly, known_disease, symptoms, outcome)
+select u.id, true, false, false, 'cleared' from auth.users u
+where not exists (select 1 from public.onboarding_screenings s where s.user_id = u.id);
 insert into public.user_profiles(user_id, adult_attested_at, eligible, experience_level,
   training_days, session_minutes)
 values ('b4000000-0000-4000-8000-000000000001', now(), true, 'advanced', array[1,2,4]::smallint[], 60);

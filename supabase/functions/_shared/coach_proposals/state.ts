@@ -19,7 +19,7 @@ import {
   muscles,
 } from "../onboarding/catalog.ts";
 import { parseGoalPhaseInputs, summarizeGoalPhase } from "../training/goal_phase/index.ts";
-import { screeningOutcomes } from "../training/screening/outcome.ts";
+import { screeningGates } from "../training/screening/outcome.ts";
 import { parseProgressionSummary } from "../training/progression/targets.ts";
 import {
   type AthleteState,
@@ -140,7 +140,7 @@ export function parseAthleteState(sources: StateSources): AthleteState | null {
   const activity = oneOf<DailyActivity>(dailyActivities, profile.daily_activity);
   const days = list(profile.training_days).map(whole);
   const sessionMinutes = whole(profile.session_minutes);
-  const screening = oneOf(screeningOutcomes, root.screening);
+  const screening = oneOf(screeningGates, root.screening);
   if (
     !today || !sex || birthYear === null || heightCm === null || !experience || !activity ||
     days.length === 0 || days.includes(null) || sessionMinutes === null || !screening
