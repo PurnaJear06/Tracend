@@ -14,14 +14,17 @@ class FakeFeedbackRatings implements FeedbackRatingRepository {
   /// When set, the save waits for this before answering.
   Completer<void>? hold;
 
+  /// Reading the rating of an id waits for its completer, when it has one.
+  final loadHolds = <String, Completer<void>>{};
+
   /// When true, saving a rating throws.
   bool failure = false;
 
   @override
-  Future<FeedbackRating?> loadRating(
-    FeedbackSubject subject,
-    String id,
-  ) async => stored[id];
+  Future<FeedbackRating?> loadRating(FeedbackSubject subject, String id) async {
+    await loadHolds[id]?.future;
+    return stored[id];
+  }
 
   @override
   Future<void> rate(

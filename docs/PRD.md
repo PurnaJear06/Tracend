@@ -514,7 +514,8 @@ Private-beta success requires:
 - zero known plan mutations caused by invalid or failed AI output;
 - schema-valid AI output in at least 99% of successful model calls after retry/fallback handling;
 - safe behavior on the required safety evaluation suite;
-- median user usefulness rating of at least 4/5 for reviewed daily decisions; and
+- at least 80% of rated daily decisions marked useful, and every one marked unsafe reviewed before
+  the beta widens; and
 - two weeks of stable owner dogfooding before inviting additional testers.
 
 The external beta also waits until all four phases of the coaching platform program are merged and
@@ -561,5 +562,6 @@ built yet:
 - a screen to review a persistent change proposal after onboarding (section 4.8).
 
 Built: one-tap ratings of the daily decision and of Coach replies, stored in `feedback_ratings`, and
-**Account › Send feedback** (section 5.6). The beta usefulness gate (section 8) is measured from
-those ratings.
+**Account › Send feedback** (section 5.6). The beta usefulness gate (section 8: at least 80% of
+rated daily decisions marked useful, and every one marked unsafe reviewed) is measured from those
+ratings.

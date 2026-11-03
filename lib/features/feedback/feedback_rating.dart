@@ -72,6 +72,10 @@ class _FeedbackRatingBarState extends State<FeedbackRatingBar> {
   /// A tap before the first read is answered keeps its choice over the read.
   var _taps = 0;
 
+  /// Counts the subjects shown. An answer for an earlier subject (a read, or
+  /// the rollback of a save that failed) never touches the current one.
+  var _subjectGeneration = 0;
+
   String get _noun => switch (widget.subject) {
     FeedbackSubject.dailyDecision => 'daily decision',
     FeedbackSubject.coachReply => 'reply',
@@ -88,20 +92,25 @@ class _FeedbackRatingBarState extends State<FeedbackRatingBar> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.subjectId != widget.subjectId ||
         oldWidget.subject != widget.subject) {
+      _subjectGeneration++;
       _rating = null;
       _failed = false;
+      _saving = false;
       unawaited(_load());
     }
   }
 
   Future<void> _load() async {
     final taps = _taps;
+    final generation = _subjectGeneration;
     try {
       final stored = await widget.repository.loadRating(
         widget.subject,
         widget.subjectId,
       );
-      if (mounted && taps == _taps) setState(() => _rating = stored);
+      if (mounted && taps == _taps && generation == _subjectGeneration) {
+        setState(() => _rating = stored);
+      }
     } catch (e) {
       logNonCritical(e, 'rating not read');
     }
@@ -112,6 +121,7 @@ class _FeedbackRatingBarState extends State<FeedbackRatingBar> {
     if (_saving || before == rating) return;
     _taps++;
     _saving = true;
+    final generation = _subjectGeneration;
     unawaited(TracendHaptics.selection());
     setState(() {
       _rating = rating;
@@ -121,14 +131,14 @@ class _FeedbackRatingBarState extends State<FeedbackRatingBar> {
       await widget.repository.rate(widget.subject, widget.subjectId, rating);
     } catch (e) {
       logNonCritical(e, 'rating not saved');
-      if (mounted) {
+      if (mounted && generation == _subjectGeneration) {
         setState(() {
           _rating = before;
           _failed = true;
         });
       }
     } finally {
-      _saving = false;
+      if (generation == _subjectGeneration) _saving = false;
     }
   }
 

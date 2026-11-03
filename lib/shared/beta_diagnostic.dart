@@ -25,10 +25,13 @@ class LatestBetaDiagnostic {
 /// The code at the front of a diagnostic line: "HTTP 502" from
 /// "Beta diagnostic: HTTP 502", or "provider_response_invalid" from
 /// "Beta diagnostic: provider_response_invalid · first attempt: …". The
-/// detail after the first " · " is left out. Null when there is no code.
+/// detail after the first " · " is left out. Null when there is no code, and
+/// for any text without the "Beta diagnostic" prefix, so raw exception text
+/// never reaches the feedback email.
 String? betaDiagnosticCode(String line) {
-  final stripped = line.replaceFirst(RegExp(r'^Beta diagnostic\s*[:·]\s*'), '');
-  final code = stripped.split(' · ').first.trim();
+  final prefix = RegExp(r'^Beta diagnostic\s*[:·]\s*').firstMatch(line);
+  if (prefix == null) return null;
+  final code = line.substring(prefix.end).split(' · ').first.trim();
   if (code.isEmpty) return null;
   return code.length > 80 ? code.substring(0, 80) : code;
 }

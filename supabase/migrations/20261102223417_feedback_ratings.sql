@@ -1,9 +1,10 @@
 -- One-tap feedback ratings on the daily decision and on Coach replies (PRD section 5.6).
 --
 -- A tester rates what Coach said as useful, unclear, incorrect or unsafe. The beta gate in PRD
--- section 8 (median usefulness of at least 4 out of 5) can only be measured when those answers are
--- stored, so each athlete keeps one rating per decision or reply; rating it again replaces the
--- first answer. A rating carries no health value and no text, only which thing was rated and how.
+-- section 8 (at least 80% of rated daily decisions marked useful, and every one marked unsafe
+-- reviewed) can only be measured when those answers are stored, so each athlete keeps one rating
+-- per decision or reply; rating it again replaces the first answer. A rating carries no health
+-- value and no text, only which thing was rated and how.
 --
 --   1. public.feedback_ratings            the ratings, read-only for the athlete
 --   2. public.submit_feedback_rating_v1   the one writer: checks the thing rated is the caller's own

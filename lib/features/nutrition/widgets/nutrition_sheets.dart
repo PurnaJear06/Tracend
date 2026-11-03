@@ -296,8 +296,12 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
   @override
   Widget build(BuildContext context) => TracendSheetUnsavedGuard(
     listenable: Listenable.merge(_fields),
+    // A save in flight keeps the sheet dirty: only the pop that follows its
+    // success leaves without asking.
     isDirty: () =>
-        !_saving && _fields.any((field) => field.text.trim().isNotEmpty),
+        _saving ||
+        _mealType != widget.initialMealType ||
+        _fields.any((field) => field.text.trim().isNotEmpty),
     child: SingleChildScrollView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       child: Form(

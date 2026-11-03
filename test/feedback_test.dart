@@ -215,6 +215,15 @@ void main() {
       expect(betaDiagnosticCode('Beta diagnostic: '), isNull);
     });
 
+    test('is never taken from text without the diagnostic prefix', () {
+      expect(betaDiagnosticCode('SocketException: no route to host'), isNull);
+      expect(betaDiagnosticCode('HTTP 502'), isNull);
+      expect(betaDiagnosticCode(' Beta diagnostic: HTTP 502'), isNull);
+      LatestBetaDiagnostic.code = null;
+      LatestBetaDiagnostic.note('Exception: raw text with a health value 72');
+      expect(LatestBetaDiagnostic.code, isNull);
+    });
+
     test('is set when a failure produces a diagnostic', () {
       LatestBetaDiagnostic.note('Beta diagnostic: HTTP 429 · busy');
       expect(LatestBetaDiagnostic.code, 'HTTP 429');
@@ -383,6 +392,57 @@ void main() {
       await tester.tap(find.text('Unsafe'));
       await tester.pumpAndSettle();
       expect(ratings.stored['m1'], FeedbackRating.unsafe);
+    });
+
+    testWidgets('a slow read of the previous subject never fills the new '
+        'one', (tester) async {
+      final ratings = FakeFeedbackRatings(stored: {'m1': FeedbackRating.useful})
+        ..loadHolds['m1'] = Completer<void>();
+      Widget bar(String id) => _app(
+        FeedbackRatingBar(
+          repository: ratings,
+          subject: FeedbackSubject.coachReply,
+          subjectId: id,
+        ),
+      );
+      await tester.pumpWidget(bar('m1'));
+      await tester.pumpWidget(bar('m2'));
+      await tester.pumpAndSettle();
+
+      ratings.loadHolds['m1']!.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.text('How was this?'), findsOneWidget);
+      expect(find.textContaining('Thanks'), findsNothing);
+    });
+
+    testWidgets('a failed save of the previous subject never changes the new '
+        'one', (tester) async {
+      final ratings = FakeFeedbackRatings(
+        stored: {'m2': FeedbackRating.unclear},
+      )..hold = Completer<void>();
+      Widget bar(String id) => _app(
+        FeedbackRatingBar(
+          repository: ratings,
+          subject: FeedbackSubject.coachReply,
+          subjectId: id,
+        ),
+      );
+      await tester.pumpWidget(bar('m1'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Useful'));
+      await tester.pump();
+
+      await tester.pumpWidget(bar('m2'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Thanks'), findsOneWidget);
+
+      ratings.failure = true;
+      ratings.hold!.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Could not save'), findsNothing);
+      expect(find.textContaining('Thanks'), findsOneWidget);
     });
 
     testWidgets('takes the choice back and says so when it did not save', (

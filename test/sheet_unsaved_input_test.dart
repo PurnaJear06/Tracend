@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -105,6 +107,54 @@ void main() {
       await tester.tap(find.text('Keep editing'));
       await tester.pumpAndSettle();
       expect(find.text('Rice'), findsOneWidget);
+    });
+
+    testWidgets('asks once another meal is chosen', (tester) async {
+      await openMeal(tester);
+      await tester.tap(find.text('Dinner'));
+      await tester.pumpAndSettle();
+
+      await _close(tester);
+
+      _expectAsked();
+    });
+
+    testWidgets('still asks while the meal is being saved, and leaves '
+        'without asking once it is saved', (tester) async {
+      final saving = Completer<void>();
+      await _open(
+        tester,
+        (context) => showTracendSheet<void>(
+          context,
+          title: 'Enter meal',
+          scrollable: false,
+          builder: (_) => ManualMealSheet(onSave: (_) => saving.future),
+        ),
+      );
+      for (final (label, text) in [
+        ('Food name', 'Rice'),
+        ('Serving', '1 bowl'),
+        ('Calories', '200'),
+        ('Protein (g)', '4'),
+        ('Carbohydrate (g)', '40'),
+        ('Fat (g)', '1'),
+      ]) {
+        await tester.enterText(find.widgetWithText(TextFormField, label), text);
+      }
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Confirm meal'));
+      await tester.tap(find.text('Confirm meal'));
+      await tester.pump();
+      expect(find.text('Saving…'), findsOneWidget);
+
+      await _close(tester);
+      _expectAsked();
+      await tester.tap(find.text('Keep editing'));
+      await tester.pumpAndSettle();
+
+      saving.complete();
+      await tester.pumpAndSettle();
+      _expectClosed('Enter meal');
     });
   });
 
