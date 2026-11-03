@@ -7,6 +7,7 @@ import 'package:shared_preferences_platform_interface/shared_preferences_async_p
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/keychain_session_storage.dart';
 import 'package:tracend/features/auth/account_session.dart';
+import 'package:tracend/features/auth/password_reset_flow.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
@@ -77,6 +78,8 @@ final _phoneWide = <String>{
   SupabaseWatchWorkoutPromptSource.snoozedUntilKey,
   HomeWidgetEraser.pendingKey,
   KeychainSessionStorage.markerKey,
+  // A flag that a password reset ended the session: it names no athlete.
+  PasswordResetMarker.key,
   // An opaque conversation id: only read when it is one of the signed-in
   // athlete's own threads. Deleting an account removes it.
   LocalCoachThreadMemory.storageKey,
@@ -99,6 +102,7 @@ const _storingFiles = {
   'lib/app/app.dart',
   'lib/app/keychain_session_storage.dart',
   'lib/features/auth/account_session.dart',
+  'lib/features/auth/password_reset_flow.dart',
   'lib/features/auth/phase_2_gate.dart',
   'lib/features/coach/coach_thread_memory.dart',
   'lib/features/health/health_baseline.dart',
@@ -238,6 +242,66 @@ void main() {
       expect(left, isNot(contains(LocalCoachThreadMemory.storageKey)));
       expect(left, isNot(contains(CheckInQueue.singleSlotKey)));
       expect(left.where((key) => key.contains(_b)), isNotEmpty);
+    });
+  });
+
+  group('a first-launch move that never finished', () {
+    final legacyHealth = <String, Object>{
+      CheckInQueue.queueStorageKeyFor(_a): '{}',
+      CheckInQueue.earlierKeyFor(_a): '[]',
+      CheckInQueue.singleSlotKeyFor(_a): '{}',
+      PainReportQueue.storageKeyFor(_a): '[]',
+      SafetyAcknowledgements.storageKeyFor(_a): ['2026-10-01:urgent'],
+      CheckInQueue.queueStorageKey: '{}',
+      PainReportQueue.storageKey: '[]',
+      SafetyAcknowledgements.storageKey: ['2026-10-01:urgent'],
+      CheckInQueue.singleSlotKey: '{}',
+      LocalCoachThreadMemory.storageKey: 'thread-1',
+    };
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({
+        ...legacyHealth,
+        CheckInQueue.queueStorageKeyFor(_b): '{}',
+        PainReportQueue.storageKeyFor(_b): '[]',
+      });
+      await putAsync({
+        '${WorkoutLocalKeys.draftPrefix(_a)}workout-1': '{}',
+        '${WorkoutLocalKeys.finishPrefix(_a)}workout-1': '{}',
+        WorkoutLocalKeys.discards(_a): ['session-1'],
+        WorkoutLocalKeys.exerciseHistory(_a): '{}',
+        TrainingHubCache.keyFor(_a): '{}',
+        TrainingHubCache.safetyKeyFor(_a): '{}',
+      });
+    });
+
+    test('deleting the account removes the keys left in legacy and async '
+        'preferences, and keeps the next athlete\'s', () async {
+      await LocalAccountData().clear(_a);
+
+      final legacy = (await SharedPreferences.getInstance()).getKeys();
+      for (final key in legacyHealth.keys) {
+        expect(
+          legacy,
+          isNot(contains(key)),
+          reason: '$key outlives the account',
+        );
+      }
+      expect(legacy, contains(CheckInQueue.queueStorageKeyFor(_b)));
+      expect(legacy, contains(PainReportQueue.storageKeyFor(_b)));
+      expect(
+        (await preferences.getKeys()).where((key) => key.contains(_a)),
+        isEmpty,
+      );
+    });
+
+    test('a refused session removes the phone-wide Coach thread from legacy '
+        'preferences and keeps the athlete\'s own queue', () async {
+      await LocalAccountData().forgetSession(_a);
+
+      final legacy = (await SharedPreferences.getInstance()).getKeys();
+      expect(legacy, isNot(contains(LocalCoachThreadMemory.storageKey)));
+      expect(legacy, contains(CheckInQueue.queueStorageKeyFor(_a)));
     });
   });
 

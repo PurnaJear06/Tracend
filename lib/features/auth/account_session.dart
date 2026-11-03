@@ -13,6 +13,7 @@ import 'package:tracend/features/workout_hr/set_heart_rate_recorder.dart';
 import 'package:tracend/features/workout_hr/sleeping_heart_rate_recorder.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
+import 'package:tracend/shared/local_health_migration.dart';
 import 'package:tracend/shared/local_health_store.dart';
 
 /// Auth's codes for a session that can never be used again: its user was
@@ -86,7 +87,10 @@ class LocalAccountData {
         );
         owned.addAll(
           (await _preferences.getKeys()).where(
-            (key) => key.startsWith(healthPrefix) || key == historyMonth,
+            (key) =>
+                key.startsWith(healthPrefix) ||
+                key == historyMonth ||
+                WorkoutLocalKeys.owns(userId, key),
           ),
         );
         owned.add(SleepingHeartRateRecorder.finalKeyFor(userId));
@@ -97,6 +101,7 @@ class LocalAccountData {
       logNonCritical(e, 'athlete preferences not cleared');
     }
     await forgetCheckInMarks(userId);
+    await _clearLegacyHealthCaches(userId);
     try {
       await _store.removeAll({
         LocalCoachThreadMemory.storageKey,
@@ -127,6 +132,34 @@ class LocalAccountData {
     if (userId != null) await _clearPainReports(userId);
   }
 
+  /// Removes what earlier builds cached in the phone's legacy preferences
+  /// (the check-in, pain, referral and Coach caches the first launch of this
+  /// build moves to the store), so a move that stopped part way cannot bring a
+  /// deleted athlete's data back or hand it to the next account. The keys of
+  /// [userId] go, and so do the ones those builds kept for the whole phone.
+  Future<void> _clearLegacyHealthCaches(
+    String? userId, {
+    Iterable<String> prefixes = legacyHealthKeyPrefixes,
+  }) async {
+    try {
+      final legacy = await _legacyPreferences();
+      final owned = legacy.getKeys().where(
+        (key) => prefixes.any(
+          (prefix) =>
+              key == prefix ||
+              (userId != null &&
+                  (key == '$prefix.$userId' ||
+                      key == '$prefix.earlier.$userId')),
+        ),
+      );
+      for (final key in owned.toList()) {
+        await legacy.remove(key);
+      }
+    } catch (e) {
+      logNonCritical(e, 'legacy health caches not cleared');
+    }
+  }
+
   /// Empties the pain reports kept for [userId], behind the same lock as every
   /// other change to them, so a send that is still waiting on the network
   /// cannot write them back.
@@ -145,6 +178,10 @@ class LocalAccountData {
     await forgetSavedPlan(userId);
     await forgetCheckInMarks(userId);
     await forgetHeartRateJobs();
+    await _clearLegacyHealthCaches(
+      null,
+      prefixes: const [LocalCoachThreadMemory.storageKey],
+    );
     try {
       await _store.remove(LocalCoachThreadMemory.storageKey);
     } catch (e) {
