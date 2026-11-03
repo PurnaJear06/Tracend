@@ -659,10 +659,12 @@ class TrainingHubData {
     this.completedDays = const {},
     this.plan,
     this.localToday,
+    this.trainingStartedOn,
     this.todayWorkout,
     this.dailyLoad = const [],
     this.load,
     this.cachedAt,
+    this.serverError,
     this.availability = TrainingAvailability.available,
     this.pausedDays = const {},
     this.pausedSessions = 0,
@@ -677,7 +679,11 @@ class TrainingHubData {
   /// week changes their loads by the day) belong to the day the copy was
   /// saved, so when that is another day they are left out rather than shown
   /// for today.
-  factory TrainingHubData.fromCache(CachedTrainingHub cached, DateTime now) {
+  factory TrainingHubData.fromCache(
+    CachedTrainingHub cached,
+    DateTime now, {
+    Object? serverError,
+  }) {
     final json = Map<String, dynamic>.of(cached.hub);
     final today = localDayKey(now);
     if (json['local_today'] != today) {
@@ -689,7 +695,11 @@ class TrainingHubData {
         ..remove('next_targets')
         ..remove('availability');
     }
-    return TrainingHubData.fromHubJson(json, cachedAt: cached.savedAt);
+    return TrainingHubData.fromHubJson(
+      json,
+      cachedAt: cached.savedAt,
+      serverError: serverError,
+    );
   }
 
   /// Parses `get_my_training_hub`. A cached 1.5 payload parses too: every
@@ -697,6 +707,7 @@ class TrainingHubData {
   factory TrainingHubData.fromHubJson(
     Map<String, dynamic> value, {
     DateTime? cachedAt,
+    Object? serverError,
   }) {
     final targets = _nextTargets(value['next_targets']);
     final active = _map(value['active_plan']);
@@ -716,6 +727,7 @@ class TrainingHubData {
               progressionRule: _text(active['progression_rule']),
             ),
       localToday: _date(value['local_today']),
+      trainingStartedOn: _date(value['training_started_on']),
       workouts: (value['workouts'] as List? ?? const [])
           .map(
             (item) =>
@@ -781,6 +793,7 @@ class TrainingHubData {
               todayStrain: (computed['today_strain'] as num?)?.toDouble(),
             ),
       cachedAt: cachedAt,
+      serverError: serverError,
       availability: TrainingAvailability.fromJson(value['availability']),
       pausedDays: {
         for (final day in (value['paused_days'] as List? ?? const []))
@@ -832,6 +845,10 @@ class TrainingHubData {
   /// The athlete's local date on the server (hub 1.6).
   final DateTime? localToday;
 
+  /// The first day of the athlete's first plan (hub 1.11): a later plan
+  /// version keeps it. Null from an older hub, which then reads as before.
+  final DateTime? trainingStartedOn;
+
   /// Today's planned workout from the hub, when one is scheduled.
   final PlannedWorkout? todayWorkout;
 
@@ -844,6 +861,10 @@ class TrainingHubData {
   /// When this phone saved the hub it shows, when the server could not be
   /// reached and this is the last copy; null for a hub just loaded.
   final DateTime? cachedAt;
+
+  /// Why the server could not answer, on a hub that is a saved copy because
+  /// of it; null for a hub just loaded or a copy opened with no request.
+  final Object? serverError;
 
   /// Today's training availability: a break running or set to start, or a
   /// check-in that said the athlete can't train (hub 1.10).
@@ -864,6 +885,18 @@ class TrainingHubData {
   /// Sessions of the window on a can't-train day with nothing logged; the
   /// server leaves them out of [plannedSessions].
   final int unavailableSessions;
+
+  /// A day before the athlete's first plan began: nothing was due on it, so
+  /// it is never planned or missed.
+  bool isBeforeStart(DateTime date) {
+    final started = trainingStartedOn;
+    return started != null &&
+        DateTime(
+          date.year,
+          date.month,
+          date.day,
+        ).isBefore(DateTime(started.year, started.month, started.day));
+  }
 
   bool isDayPaused(DateTime date) =>
       pausedDays.contains(DateTime(date.year, date.month, date.day));
@@ -1197,7 +1230,7 @@ class SupabaseWorkoutRepository
       final cached = await _hubCache.load(userId);
       if (cached == null) rethrow;
       logNonCritical(error, 'training hub from device');
-      return TrainingHubData.fromCache(cached, _clock());
+      return TrainingHubData.fromCache(cached, _clock(), serverError: error);
     }
     if (userId != null) {
       if (periodDays == _cachedHubDays) await _saveHub(userId, hub);

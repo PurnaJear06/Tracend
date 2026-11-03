@@ -1,13 +1,20 @@
 // Contract 7 contributor: the athlete's pre-exercise screening outcome (Contract 8, chunk B6) and
 // the rule it implies for Coach. The outcome caps what Coach may advise: under
 // moderate_until_cleared no vigorous or maximal effort, under see_professional no training
-// prescriptions at all. Coach explains and follows the rule; it never sets, changes or softens
+// prescriptions at all. An athlete who never answered the health check is unscreened, never
+// cleared: the moderate cap applies until they answer it. Coach explains and follows the rule; it
+// never sets, changes or softens
 // the outcome. A stable contributor: the outcome changes only when the athlete answers the
 // health check again, so it joins the cached prompt prefix.
 //
 // The reply guard (coach_safety/reply_guard.ts) reads the same outcome from the rendered block
 // (`screeningOutcomeIn`), so the model and the guard always work from one value.
-import { type ScreeningOutcome, screeningOutcomes } from "../../training/screening/outcome.ts";
+import {
+  type ScreeningGate,
+  screeningGates,
+  type ScreeningOutcome,
+  screeningOutcomes,
+} from "../../training/screening/outcome.ts";
 import { blockOf, type CoachContextContributor, type CoachContributions } from "../host.ts";
 import { plain, record as recorded } from "../../recorded_text.ts";
 import { supabaseSecretKey } from "../../supabase_keys.ts";
@@ -16,18 +23,18 @@ export const screeningContributorId = "screening";
 export const screeningBudgetChars = 900;
 
 /**
- * What Coach and the reply guard act on: the outcome, or "unknown" when the lookup failed. An
- * unreadable health check is never read as cleared: it carries the restrictions of
- * moderate_until_cleared.
+ * What Coach and the reply guard act on: the gate (a stored outcome, or unscreened), or "unknown"
+ * when the lookup failed. Neither unscreened nor an unreadable health check is ever read as
+ * cleared: both carry the restrictions of moderate_until_cleared.
  */
-export type ScreeningState = ScreeningOutcome | "unknown";
+export type ScreeningState = ScreeningGate | "unknown";
 
 /** How long the lookup may take before the contributor reports the health check unknown. */
 export const screeningLookupTimeoutMs = 3_000;
 
 export type ScreeningRecord = Readonly<{ outcome: ScreeningOutcome; screenedAt: string }>;
 
-/** The athlete's newest screening, or null when they were never screened (reads as cleared). */
+/** The athlete's newest screening, or null when they were never screened (unscreened). */
 export type ScreeningSource = (userId: string) => Promise<ScreeningRecord | null>;
 
 /** The query the source makes, typed structurally so any Supabase client fits. */
@@ -72,21 +79,29 @@ export function serviceRoleScreeningSource(): ScreeningSource {
   };
 }
 
-const rules: Readonly<Record<ScreeningOutcome, string>> = {
+const rules: Readonly<Record<ScreeningGate, string>> = {
   cleared:
     "Rule: the health check puts no cap on effort. Follow the Safe Ranges and the athlete's plan as usual.",
   moderate_until_cleared:
     "Rule: keep every suggestion at moderate effort until a professional clears the athlete: no maximal or near-failure sets (at least 3 reps in reserve), no vigorous conditioning (sprints, intervals, HIIT), no strength-emphasis advice. When the athlete asks to push harder, recommend getting clearance first. Never diagnose.",
   see_professional:
     "Rule: the athlete must see a doctor or qualified exercise professional before training. Give no training prescriptions of any kind (no workouts, sets, reps, loads, cardio targets or effort advice). Recommend getting clearance first. Recovery, sleep and food questions may be answered in general terms.",
+  unscreened:
+    "Rule: keep every suggestion at moderate effort until the athlete answers the health check: no maximal or near-failure sets (at least 3 reps in reserve), no vigorous conditioning (sprints, intervals, HIIT), no strength-emphasis advice. When the athlete asks to push harder, suggest answering the health check in their profile under Plan first. Never suggest they have a condition.",
 };
 
 /**
  * The block's text for a screening with its values marked (`../../recorded_text.ts`): the day it
  * was answered is a record; the rules, and the figures in them, are Tracend's fixed wording.
  */
-function screeningMarked(record: ScreeningRecord | null): string | null {
-  if (!record) return null;
+function screeningMarked(record: ScreeningRecord | null): string {
+  if (!record) {
+    return [
+      "The athlete has not answered Tracend's pre-exercise health check, so the outcome is unscreened. Tracend never treats an unanswered check as cleared; you never change it.",
+      "Outcome: unscreened",
+      rules.unscreened,
+    ].join("\n");
+  }
   return [
     `Pre-exercise health check, answered on ${
       recorded(record.screenedAt.slice(0, 10))
@@ -96,10 +111,9 @@ function screeningMarked(record: ScreeningRecord | null): string | null {
   ].join("\n");
 }
 
-/** The block's text for a screening, or null without one (never screened reads as cleared). */
-export function renderScreening(record: ScreeningRecord | null): string | null {
-  const marked = screeningMarked(record);
-  return marked === null ? null : plain(marked);
+/** The block's text for a screening, or the unscreened block when there is none. */
+export function renderScreening(record: ScreeningRecord | null): string {
+  return plain(screeningMarked(record));
 }
 
 /** The block when the lookup failed or timed out: restricted, never cleared. */
@@ -113,7 +127,7 @@ export function renderScreeningUnknown(): string {
 
 const outcomeLine = new RegExp(
   String.raw`<reference_data source="${screeningContributorId}">[\s\S]*?^Outcome: (${
-    [...screeningOutcomes, "unknown"].join("|")
+    [...screeningGates, "unknown"].join("|")
   })$`,
   "m",
 );
@@ -122,23 +136,21 @@ const outcomeLine = new RegExp(
 export function screeningOutcomeIn(contributorText: string): ScreeningState {
   const found = outcomeLine.exec(contributorText)?.[1];
   if (found === "unknown") return "unknown";
-  return screeningOutcomes.find((outcome) => outcome === found) ?? "cleared";
+  return screeningGates.find((outcome) => outcome === found) ?? "cleared";
 }
 
 /**
- * The screening state a turn runs under. The rendered block decides. Without a block, a
- * contributor that failed or timed out means unknown (restricted); one that rendered nothing
- * means the athlete was never screened (cleared); no contributors at all (a rollback path or a
- * test) means there is nothing to apply.
+ * The screening state a turn runs under. The rendered block decides; the contributor always
+ * renders one (a never-screened athlete gets the unscreened block). A cleared block, or no
+ * screening contributor at all (a rollback path or a test), means there is nothing to apply. A
+ * contributor that ran but left no block (it failed, timed out or was dropped) means unknown.
  */
 export function screeningStateOf(contributions: CoachContributions | null): ScreeningState {
   if (!contributions) return "cleared";
   const blockState = screeningOutcomeIn(contributions.stable);
   if (blockState !== "cleared") return blockState;
   const reported = contributions.outcomes.find((entry) => entry.id === screeningContributorId);
-  return reported && (reported.outcome === "failed" || reported.outcome === "timeout")
-    ? "unknown"
-    : "cleared";
+  return reported && reported.outcome !== "rendered" ? "unknown" : "cleared";
 }
 
 export function createScreeningContributor(
@@ -158,8 +170,7 @@ export function createScreeningContributor(
             timer = setTimeout(() => reject(new Error("screening lookup timed out")), timeoutMs);
           }),
         ]);
-        const marked = screeningMarked(record);
-        return marked === null ? null : blockOf(marked);
+        return blockOf(screeningMarked(record));
       } catch {
         // Fail closed: "could not read" is not "no row".
         return renderScreeningUnknown();

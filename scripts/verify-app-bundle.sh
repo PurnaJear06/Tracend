@@ -8,6 +8,9 @@
 # launch screen artwork in the compiled asset catalog, which iOS would replace
 # with a blank icon and a blank launch screen.
 #
+# And refuse an app without its privacy manifest: App Store Connect refuses the
+# upload when a required-reason API is undeclared.
+#
 # Usage: ./scripts/verify-app-bundle.sh build/ios/iphoneos/Runner.app
 set -eu
 
@@ -15,6 +18,12 @@ if [ "$#" -ne 1 ]; then
   echo "Usage: verify-app-bundle.sh <path/to/Runner.app>" >&2
   exit 2
 fi
+
+if [ ! -s "$1/PrivacyInfo.xcprivacy" ]; then
+  echo "The app bundle has no PrivacyInfo.xcprivacy in $1." >&2
+  exit 1
+fi
+echo "✓ Privacy manifest present"
 
 python3 - "$1/Frameworks/App.framework/flutter_assets" <<'PY'
 import json

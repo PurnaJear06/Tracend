@@ -607,6 +607,36 @@ void main() {
     });
   });
 
+  group('Training Hub contract — get_my_training_hub v1.11', () {
+    test('v1.11 keeps every v1.10 key and adds the first day of training', () {
+      final v110 = _loadFixtureJson('training_hub_v1_10.json');
+      final v111 = _loadFixtureJson('training_hub_v1_11.json');
+      expect(v111['schema_version'], '1.11');
+      expect(v111.keys.toSet(), {...v110.keys, 'training_started_on'});
+      for (final key in v110.keys.where((k) => k != 'schema_version')) {
+        expect(v111[key], v110[key], reason: '$key is unchanged');
+      }
+    });
+
+    test('the first day of training parses; days before it were not due', () {
+      final hub = TrainingHubData.fromHubJson(
+        _loadFixtureJson('training_hub_v1_11.json'),
+      );
+      expect(hub.trainingStartedOn, DateTime(2026, 9, 16));
+      expect(hub.isBeforeStart(DateTime(2026, 9, 15)), isTrue);
+      expect(hub.isBeforeStart(DateTime(2026, 9, 16)), isFalse);
+      expect(hub.isBeforeStart(DateTime(2026, 9, 16, 23, 30)), isFalse);
+    });
+
+    test('a 1.10 hub has no start date and no day reads as before it', () {
+      final hub = TrainingHubData.fromHubJson(
+        _loadFixtureJson('training_hub_v1_10.json'),
+      );
+      expect(hub.trainingStartedOn, isNull);
+      expect(hub.isBeforeStart(DateTime(2000)), isFalse);
+    });
+  });
+
   group('Training Hub parser — TrainingHubData.fromHubJson', () {
     test('a 1.6 hub keeps the plan dates, links, provenance and day load', () {
       final hub = TrainingHubData.fromHubJson(

@@ -503,7 +503,12 @@ history      completed sessions of the exercise in the last 180 days, matched as
 working sets the session's completed sets with reps > 0 at the session's top load
              (warm-ups, back-off sets and unticked sets are not working sets)
 rir(set)     set.rir, else 10 - set.rpe (0 to 5), else unknown
-rir_target   10 - target_rpe, rounded (2 when the plan sets no RPE)
+rir_target   the hard edge of the target's reps-left band, floor(10 - target_rpe): RPE 7.5 is
+             2 to 3 reps left, so 2 or 3 is on target (RPE 7: 3, 8: 2, 8.5: 1; 2 when the plan
+             sets no RPE; migration 20261102194352, it rounded before and held sets at 2)
+held        s1 or s2 followed a hold: the decision worked out from the sessions before it
+             (with the days between them, and a skipped or pain-flagged performance that came
+             between them, carried on each session as skipped_before / pain_before) was a hold
 step         exercise_catalog.load_step_kg; none for bands, benches, bars and exercises
              without a catalog link (those progress by reps only)
 assisted     assisted-* slug or "assisted ..." name: the load is machine help, the working
@@ -519,7 +524,8 @@ first match wins, on the latest session (s1) and the two before it (s2, s3):
   min reps < range minimum                      -> twice at this load: lower; else hold at minimum
   sets done < planned sets                      -> hold (a cut-short session is never a stall)
   3 sessions at one load, reps < range maximum,
-    reps per set(s1) <= reps per set(s3)        -> stall: lower (hold without a step)
+    reps per set(s1) < reps per set(s3), or
+    equal and not held                          -> stall: lower (hold without a step)
   min rir < rir_target                          -> hold
   min reps >= range maximum                     -> add_load: load + step, reps = range minimum
                                                    (hold at the maximum without a step)
@@ -1267,6 +1273,12 @@ TDEE = BMR × daily-activity factor + training energy
   low, and the plan says so.
 - **Basis:** fat loss of about 0.5–1% of body weight a week preserves lean mass (Helms 2014). A
   lean-gain surplus of about 10–20% gains about 0.25–0.5% of body weight a week (Iraki 2019).
+- **Healthy-weight hold (2026-11-02):** at a BMI (to one decimal) under 19.5, a window that starts
+  below TDEE starts at TDEE instead (fat loss and recomposition become 0% … 0%, aesthetic
+  0% … +5%), the rule Coach applies before it proposes a cut (goal phase threshold `bmiNearFloor`;
+  BMI under 18.5 is the WHO 2004 underweight range). A target weight under BMI 18.5 for the height
+  is never carried into the plan. `respond_to_onboarding_proposal_v2` recomputes the lower TDEE in
+  SQL and refuses calories more than 5 kcal under it at that BMI.
 
 ### Macros
 

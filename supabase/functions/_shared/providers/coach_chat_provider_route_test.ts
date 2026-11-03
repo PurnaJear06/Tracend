@@ -150,9 +150,10 @@ Deno.test("a screening that is not cleared, or could not be read, is read from t
   };
   assertEquals(routeSignalsOf(states.moderate).screening, "moderate_until_cleared");
   assertEquals(routeSignalsOf(states.cleared).screening, "cleared");
-  assertEquals(routeSignalsOf(states.never).screening, "cleared");
+  assertEquals(routeSignalsOf(states.never).screening, "unscreened");
   assertEquals(routeSignalsOf(states.unreadable).screening, "unknown");
   assertEquals(strongRouteReasons(routeSignalsOf(states.moderate)), ["screening_not_cleared"]);
+  assertEquals(strongRouteReasons(routeSignalsOf(states.never)), ["screening_not_cleared"]);
   assertEquals(strongRouteReasons(routeSignalsOf(states.unreadable)), ["screening_not_cleared"]);
   assertEquals(strongRouteReasons(routeSignalsOf(states.cleared)), []);
 });

@@ -29,6 +29,8 @@ String describeFailure(Object? error) {
 /// it wraps a lost connection; with one it is a server error (5xx).
 bool isNetworkFailure(Object error) => switch (error) {
   AuthRetryableFetchException(:final statusCode) => statusCode == null,
+  // An Edge Function request that never reached the server (status 0).
+  FunctionsFetchException() ||
   SocketException() ||
   HandshakeException() ||
   TimeoutException() ||
@@ -71,3 +73,77 @@ void reportNonCritical(Object error, StackTrace? stackTrace, String what) {
   logNonCritical(error, what);
   failureSink(NonCriticalFailure(what, describeFailure(error)), stackTrace);
 }
+
+/// Where [identifyAthlete] sends the account id. Sentry drops it without a
+/// DSN.
+@visibleForTesting
+void Function(String? userId) athleteSink = _toSentryUser;
+
+void _toSentryUser(String? userId) {
+  unawaited(
+    Future.sync(
+      () => Sentry.configureScope(
+        (scope) =>
+            scope.setUser(userId == null ? null : SentryUser(id: userId)),
+      ),
+    ).catchError((Object _) {}),
+  );
+}
+
+/// The account the app's events and load counts belong to.
+String? _athlete;
+
+/// Names the signed-in athlete on the app's Sentry events by their account
+/// id (the Supabase user id, never the email), so one tester's failures can
+/// be found; null when the session ends. `scrubEvent` keeps the id alone.
+/// Another account (or none) starts every load's count again, so one
+/// athlete's failures never add to the next one's.
+void identifyAthlete(String? userId) {
+  if (userId != _athlete) {
+    _athlete = userId;
+    resetLoadFailures();
+  }
+  athleteSink(userId);
+}
+
+/// How many times in a row each named load has failed.
+final _loadFailures = <String, int>{};
+
+/// The failure in a row of one load that reaches Sentry.
+const repeatedLoadFailure = 3;
+
+/// Notes that the load named [what] (the daily brief, the training hub, an
+/// Apple Health sync, the coaching decision) failed. The third failure in a
+/// row sends one Sentry event ([reportNonCritical]: type and code only), so a
+/// screen that keeps failing for an athlete is seen without an event for each
+/// retry; the others are only logged. No signal is not a fault: a network
+/// failure is logged and leaves the count as it was.
+///
+/// Callers note only the request whose result is used: a load superseded
+/// by a newer one is not counted, and a request several callers share is
+/// counted once.
+void noteLoadFailure(Object error, StackTrace? stackTrace, String what) {
+  if (isNetworkFailure(error)) {
+    logNonCritical(error, what);
+    return;
+  }
+  final streak = (_loadFailures[what] ?? 0) + 1;
+  _loadFailures[what] = streak;
+  if (streak == repeatedLoadFailure) {
+    reportNonCritical(error, stackTrace, '$what failed $streak times in a row');
+  } else {
+    logNonCritical(error, what);
+  }
+}
+
+/// Notes that the load named [what] succeeded, which ends its run of
+/// failures.
+void noteLoadSuccess(String what) => _loadFailures.remove(what);
+
+/// Forgets every run of failures: on every change of account, and between
+/// tests.
+void resetLoadFailures() => _loadFailures.clear();
+
+/// How many times in a row the load named [what] has failed.
+@visibleForTesting
+int loadFailuresInARow(String what) => _loadFailures[what] ?? 0;

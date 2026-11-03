@@ -17,11 +17,11 @@ const payload = {
 const parse = (extra: Record<string, unknown> = {}) =>
   parseOnboardingAnswers("beginner", { ...payload, ...extra }, 2026);
 
-Deno.test("a draft without screening still parses and reads as cleared", () => {
+Deno.test("a draft without screening still parses and is unscreened", () => {
   const parsed = parse();
   assert(parsed.ok);
   assertEquals(parsed.answers.screening, undefined);
-  assertEquals(screeningOutcomeOf(parsed.answers.screening), "cleared");
+  assertEquals(screeningOutcomeOf(parsed.answers.screening), "unscreened");
 });
 
 Deno.test("an older draft's snapshot has no screening key, so its hash is unchanged", () => {

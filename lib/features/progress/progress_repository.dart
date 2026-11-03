@@ -78,7 +78,10 @@ class WeeklyProgressReview {
   final int plannedSessions;
   final int completedWorkouts;
   final int completedSets;
-  final int adherencePercent;
+
+  /// Null when nothing was due that week (it fell before the plan began, or in a
+  /// break).
+  final int? adherencePercent;
   final int checkInDays;
   final double? averageEnergy;
   final double? averageSoreness;
@@ -375,7 +378,7 @@ class SupabaseProgressRepository
       plannedSessions: (training['planned_sessions'] as num).toInt(),
       completedWorkouts: (training['completed_workouts'] as num).toInt(),
       completedSets: (training['completed_sets'] as num).toInt(),
-      adherencePercent: (training['adherence_percent'] as num).toInt(),
+      adherencePercent: (training['adherence_percent'] as num?)?.toInt(),
       checkInDays: (recovery['check_in_days'] as num).toInt(),
       averageEnergy: (recovery['average_energy'] as num?)?.toDouble(),
       averageSoreness: (recovery['average_soreness'] as num?)?.toDouble(),
