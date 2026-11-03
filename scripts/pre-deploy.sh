@@ -201,6 +201,24 @@ if echo "$STEPS" | grep -q "deno"; then
     die "retire functions tests failed"
   fi
 
+  info "TestFlight build script tests ..."
+  if bash "$repo_root/scripts/test-build-testflight.sh" 2>&1 | while IFS= read -r line; do
+    echo "    $line"
+  done; then
+    pass "TestFlight build script tests passed"
+  else
+    die "TestFlight build script tests failed"
+  fi
+
+  info "rollback script tests ..."
+  if bash "$repo_root/scripts/test-rollback-function.sh" 2>&1 | while IFS= read -r line; do
+    echo "    $line"
+  done; then
+    pass "rollback script tests passed"
+  else
+    die "rollback script tests failed"
+  fi
+
   info "workflow credential guard ..."
   if ! command -v yq >/dev/null 2>&1; then
     warn "yq is not installed, so the workflow credential guard was skipped (brew install yq); CI runs it"

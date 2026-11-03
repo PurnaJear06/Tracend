@@ -7,6 +7,7 @@ import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 /// Decision freshness (Pass 2.5a): the daily decision generates once, but it
 /// can be generated before the morning check-in — in that state the policy
@@ -52,7 +53,7 @@ void main() {
     'replayed check-in regenerates a decision that cited it missing',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
-      final preferences = await SharedPreferences.getInstance();
+      const preferences = LocalHealthStore();
       await CheckInQueue(preferences).enqueue(
         payload: const {
           'sleep_quality': 3,
@@ -103,7 +104,7 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
-    final preferences = await SharedPreferences.getInstance();
+    const preferences = LocalHealthStore();
     await CheckInQueue(preferences).enqueue(
       payload: const {
         'sleep_quality': 3,

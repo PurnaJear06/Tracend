@@ -89,7 +89,7 @@ class _OpenedFrom {
 class CoachScreen extends StatefulWidget {
   const CoachScreen({
     this.repository = const FixtureCoachRepository(),
-    this.threadMemory = const SharedPreferencesCoachThreadMemory(),
+    this.threadMemory = const LocalCoachThreadMemory(),
     this.aiConsent,
     this.proposals,
     this.planChanges,

@@ -215,8 +215,12 @@ TrainingHubData trainHub({
   List<PlannedWorkout>? workouts,
   DateTime? localToday,
   DateTime? cachedAt,
+  DateTime? trainingStartedOn,
+  Object? serverError,
 }) => TrainingHubData(
   cachedAt: cachedAt,
+  trainingStartedOn: trainingStartedOn,
+  serverError: serverError,
   planTitle: 'Strength foundation',
   plan: withPlan
       ? ActivePlanSummary(

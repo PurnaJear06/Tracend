@@ -58,14 +58,25 @@ void main() {
               version: 'ai-coaching-v1',
             ),
             _record('progress_photo_ai', 'withdrawn', DateTime(2026, 8, 20)),
+            _record(
+              'health_data',
+              'granted',
+              DateTime(2026, 11, 2),
+              version: '2026-11-02',
+            ),
           ],
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Terms of use'), findsOneWidget);
+    expect(find.text('Beta terms'), findsOneWidget);
     expect(find.text('Privacy policy'), findsOneWidget);
+    expect(find.text('Health data'), findsOneWidget);
+    expect(
+      find.text('Granted 2 Nov 2026\nVersion 2026-11-02 · iOS app'),
+      findsOneWidget,
+    );
     expect(find.text('AI coaching'), findsOneWidget);
     expect(find.text('Progress photo storage'), findsOneWidget);
     expect(find.text('Progress photo AI analysis'), findsOneWidget);
@@ -97,7 +108,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('No consent choices yet'), findsOneWidget);
-    expect(find.text('Terms of use'), findsNothing);
+    expect(find.text('Beta terms'), findsNothing);
   });
 
   testWidgets('load failure keeps consent unchanged', (tester) async {

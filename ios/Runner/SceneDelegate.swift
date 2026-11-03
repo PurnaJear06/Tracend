@@ -9,6 +9,11 @@ class SceneDelegate: FlutterSceneDelegate {
   private let restTimerPreferenceKey = "tracend.notifications.rest-timer"
   private let notifications = TracendNotificationScheduler(center: SystemNotificationCenter())
 
+  /// Covers the window while the app is not active, so the app switcher's
+  /// snapshot shows the launch screen instead of a progress photo, pain
+  /// answers or a Coach chat.
+  private var privacyCover: UIView?
+
   override func scene(
     _ scene: UIScene,
     willConnectTo session: UISceneSession,
@@ -24,6 +29,7 @@ class SceneDelegate: FlutterSceneDelegate {
     WorkoutActivityBridge.register(on: flutterEngine.binaryMessenger)
     HeartRateReader.register(on: flutterEngine.binaryMessenger)
     HomeWidgetBridge.register(on: flutterEngine.binaryMessenger)
+    LocalHealthStoreBridge.register(on: flutterEngine.binaryMessenger)
     registerSceneLifeCycle(with: flutterEngine)
 
     window?.rootViewController = FlutterViewController(
@@ -53,6 +59,38 @@ class SceneDelegate: FlutterSceneDelegate {
     for context in contexts {
       MainActor.assumeIsolated { HomeWidgetBridge.open(context.url) }
     }
+  }
+
+  override func sceneWillResignActive(_ scene: UIScene) {
+    showPrivacyCover()
+    super.sceneWillResignActive(scene)
+  }
+
+  override func sceneDidBecomeActive(_ scene: UIScene) {
+    hidePrivacyCover()
+    super.sceneDidBecomeActive(scene)
+  }
+
+  /// The launch screen's colour and logo over the whole window. iOS takes
+  /// the app switcher's snapshot after this runs; system sheets such as Face ID
+  /// also make the app inactive, and the cover is simply there while they are.
+  private func showPrivacyCover() {
+    guard privacyCover == nil, let window else { return }
+    let cover = UIView(frame: window.bounds)
+    cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    cover.backgroundColor = UIColor(named: "LaunchBackground") ?? .black
+    let logo = UIImageView(image: UIImage(named: "LaunchImage"))
+    logo.frame = cover.bounds
+    logo.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    logo.contentMode = .center
+    cover.addSubview(logo)
+    window.addSubview(cover)
+    privacyCover = cover
+  }
+
+  private func hidePrivacyCover() {
+    privacyCover?.removeFromSuperview()
+    privacyCover = nil
   }
 
   override func sceneDidDisconnect(_ scene: UIScene) {

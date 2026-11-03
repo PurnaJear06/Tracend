@@ -143,9 +143,15 @@ class ExerciseDetailBody extends StatelessWidget {
       ? '${exercise.repMin}'
       : '${exercise.repMin}–${exercise.repMax}';
 
-  /// The plan's target effort as reps left in reserve.
+  /// The plan's target effort as reps left in reserve: a half-point RPE is a
+  /// band (RPE 7.5 is 2–3 reps left), as the plan proposal says and as the
+  /// next-session targets judge it.
   static String _repsLeft(num rpe) {
-    final left = (10 - rpe).round();
+    final exact = 10 - rpe;
+    if (exact % 1 != 0 && exact > 0 && exact < 5) {
+      return '${exact.floor()}–${exact.ceil()} reps left';
+    }
+    final left = exact.round();
     if (left <= 0) return 'no reps left';
     if (left == 1) return '1 rep left';
     if (left >= 5) return '5 or more reps left';

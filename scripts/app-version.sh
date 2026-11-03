@@ -16,7 +16,15 @@ build_name=${TRACEND_BUILD_NAME:-$default_name}
 if [ -n "${TRACEND_BUILD_NUMBER:-}" ]; then
   build_number=$TRACEND_BUILD_NUMBER
 elif git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  build_number=$(git -C "$repo_root" rev-list --count HEAD)
+  # Count up to the newest origin/main commit this checkout contains, not HEAD:
+  # a branch with more commits than main must not take a number that later
+  # main builds, and so later TestFlight uploads, would then have to beat. On
+  # main the two are the same. Without origin/main (a shallow CI clone) HEAD counts.
+  base=HEAD
+  if mainline=$(git -C "$repo_root" merge-base HEAD refs/remotes/origin/main 2>/dev/null); then
+    base=$mainline
+  fi
+  build_number=$(git -C "$repo_root" rev-list --count "$base")
 else
   build_number=$default_number
 fi

@@ -204,6 +204,9 @@ class _TrainScreenState extends State<TrainScreen> {
   /// Which hub load started last; an older reply is dropped.
   int _hubLoads = 0;
 
+  /// The name a run of failed hub loads is reported under.
+  static const _hubLoad = 'Train: training hub';
+
   HealthkitCompletionCandidate? _candidate;
   bool _healthkitBusy = false;
 
@@ -539,10 +542,12 @@ class _TrainScreenState extends State<TrainScreen> {
         : Future<List<WorkoutReconciliation>?>.value();
     TrainingHubData? loadedHub;
     Object? failure;
+    StackTrace? failureStack;
     try {
       loadedHub = await _loadHubData();
-    } catch (error) {
+    } catch (error, stackTrace) {
       failure = error;
+      failureStack = stackTrace;
     }
     final repairs = (await repairsLoad)
         ?.where((c) => !_respondedRepairSessionIds.contains(c.sessionId))
@@ -551,10 +556,14 @@ class _TrainScreenState extends State<TrainScreen> {
         ?.where((r) => !_respondedReconciliationIds.contains(r.id))
         .toList();
     if (loadedHub == null) {
-      logNonCritical(failure!, 'Train: training hub failed');
       _resumePending = false;
       _resumeTarget = null;
-      if (!mounted || load != _hubLoads) return;
+      if (!mounted || load != _hubLoads) {
+        logNonCritical(failure!, 'Train: training hub (superseded)');
+        return;
+      }
+      // Only the load whose result is shown counts.
+      noteLoadFailure(failure!, failureStack, _hubLoad);
       setState(() {
         _hubError = failure;
         _hubLoading = false;
@@ -565,6 +574,14 @@ class _TrainScreenState extends State<TrainScreen> {
     }
     final hub = loadedHub;
     if (!mounted || load != _hubLoads) return;
+    // The phone's copy answers when the server could not: no success, and
+    // the server's failure counts (a lost connection is skipped there).
+    final serverError = hub.serverError;
+    if (hub.cachedAt == null) {
+      noteLoadSuccess(_hubLoad);
+    } else if (serverError != null) {
+      noteLoadFailure(serverError, null, _hubLoad);
+    }
     _loaded.mark();
     setState(() {
       _show(hub);
@@ -983,7 +1000,9 @@ class _TrainScreenState extends State<TrainScreen> {
 
   Future<void> _autoComplete(HealthkitCompletionCandidate candidate) async {
     final source = _source;
-    if (source is! SupabaseWorkoutRepository) return;
+    if (source is! SupabaseWorkoutRepository || _healthkitBusy) return;
+    // Busy from the first tap, so a second tap sends nothing.
+    setState(() => _healthkitBusy = true);
     // A workout in progress on this phone is resumed, never completed from
     // Apple Health: that would record a second session beside it.
     final planned = _planWorkout(candidate.plannedWorkoutId);
@@ -997,7 +1016,10 @@ class _TrainScreenState extends State<TrainScreen> {
               : _isDraftOf(o, planned)),
     );
     if (inProgress) {
-      setState(() => _open = open);
+      setState(() {
+        _open = open;
+        _healthkitBusy = false;
+      });
       TracendToast.show(
         context,
         'This workout is in progress on this phone. Resume it to finish it.',
@@ -1005,7 +1027,6 @@ class _TrainScreenState extends State<TrainScreen> {
       );
       return;
     }
-    setState(() => _healthkitBusy = true);
     try {
       await source.autoCompleteFromHealthKit(
         candidate.plannedWorkoutId,
@@ -1215,15 +1236,17 @@ class _TrainScreenState extends State<TrainScreen> {
     final open = _open;
     final assigned = hub.workouts.any((w) => w.weekday != null);
     // A day the athlete chose not to train (a break, or a can't-train
-    // check-in) has nothing due, so it does not count as planned, unless a
-    // session was logged on it: then it counts as planned and done, as in the
-    // hub's adherence, so done never passes planned.
+    // check-in) or a day before their first plan began has nothing due, so it
+    // does not count as planned, unless a session was logged on it: then it
+    // counts as planned and done, as in the hub's adherence, so done never
+    // passes planned.
     final plannedThisWeek = assigned
         ? currentWeek
               .where(
                 (d) =>
                     hub.workoutForWeekday(d.weekday) != null &&
-                    (!hub.isRestChosen(d) || hub.isDayCompleted(d)),
+                    ((!hub.isRestChosen(d) && !hub.isBeforeStart(d)) ||
+                        hub.isDayCompleted(d)),
               )
               .length
         : hub.plan?.sessionsPerWeek ?? hub.workouts.length;
@@ -1266,9 +1289,11 @@ class _TrainScreenState extends State<TrainScreen> {
             : hub.isDayPaused(date)
             ? DayBoxStatus.paused
             // A can't-train day is not due: it reads as a rest day, though its
-            // workout can still be opened and started.
+            // workout can still be opened and started. A day before the first
+            // plan began was never due either.
             : hub.workoutForWeekday(date.weekday) != null &&
-                  !hub.isRestChosen(date)
+                  !hub.isRestChosen(date) &&
+                  !hub.isBeforeStart(date)
             ? DayBoxStatus.planned
             : DayBoxStatus.rest,
         workoutNameFor: (date) => hub.workoutForWeekday(date.weekday)?.name,
@@ -1391,6 +1416,14 @@ class _TrainScreenState extends State<TrainScreen> {
               onEnd: offline ? null : () => _endBreak(running),
             )
           : BreakDayCard(date: date, today: today);
+    }
+    // A day before the athlete's first plan began: nothing was due, so it is
+    // neither planned nor missed.
+    final startedOn = hub.trainingStartedOn;
+    if (startedOn != null &&
+        hub.isBeforeStart(date) &&
+        !hub.isDayCompleted(date)) {
+      return BeforePlanDayCard(date: date, startedOn: startedOn, today: today);
     }
     final planned = hub.workoutForWeekday(date.weekday);
     final workout = planned == null ? null : _forDay(planned, date);

@@ -10,6 +10,9 @@ import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/today/check_in_sheet.dart';
+import 'package:tracend/shared/local_health_store.dart';
+
+import 'memory_health_files.dart';
 
 const _environment = AppEnvironment(
   name: 'test',
@@ -306,11 +309,49 @@ void main() {
         ),
         findsOneWidget,
       );
-      final preferences = await SharedPreferences.getInstance();
+      const preferences = LocalHealthStore();
       final replay = await CheckInQueue(
         preferences,
       ).replay((date, zone, key, payload) async => true);
       expect(replay.deliveredAny, isTrue);
+    });
+
+    testWidgets('a check-in that cannot be kept on the phone is sent as it is, '
+        'and delivered', (tester) async {
+      final recorder = _Recorder();
+      await _open(tester, recorder);
+      LocalHealthFiles.instance = FailingHealthFiles(LocalHealthFiles.instance);
+      await _save(tester);
+
+      expect(recorder.payloads, hasLength(1));
+      expect(find.text('Check-in saved'), findsOneWidget);
+      expect(find.text('Daily check-in'), findsNothing);
+    });
+
+    testWidgets('a check-in kept nowhere says so and stays open to try '
+        'again', (tester) async {
+      CheckInSaved? saved;
+      var closed = false;
+      await _openWith(
+        tester,
+        (date, zone, key, payload) async {
+          throw Exception('offline');
+        },
+        onSaved: (result) {
+          saved = result;
+          closed = true;
+        },
+      );
+      LocalHealthFiles.instance = FailingHealthFiles(LocalHealthFiles.instance);
+      await _save(tester);
+
+      expect(find.text('Not saved. Try again.'), findsOneWidget);
+      expect(find.text('Daily check-in'), findsOneWidget);
+      expect(closed, isFalse);
+      expect(saved, isNull);
+      expect(await const LocalHealthStore().getKeys(), isEmpty);
+      // The sheet is not left saving: the athlete can try again.
+      expect(find.text('Save check-in'), findsOneWidget);
     });
 
     testWidgets('Save stays reachable at 320pt with 2× text', (tester) async {
@@ -367,7 +408,7 @@ void main() {
         reason: 'the sheet closes for the referral; the send finishes after',
       );
       expect(
-        CheckInQueue(await SharedPreferences.getInstance()).painState,
+        await CheckInQueue(const LocalHealthStore()).painState(),
         CheckInPainState.none,
         reason: 'delivered, so nothing waits',
       );
@@ -436,9 +477,9 @@ void main() {
       expect(saved!.delivered, isFalse);
       expect(saved!.referralRoute, 'clinician_today');
       expect(await saved!.pending, isFalse);
-      final preferences = await SharedPreferences.getInstance();
+      const preferences = LocalHealthStore();
       final queue = CheckInQueue(preferences);
-      expect(queue.painState, CheckInPainState.waiting);
+      expect(await queue.painState(), CheckInPainState.waiting);
       Map<String, dynamic>? replayed;
       await queue.replay((date, zone, key, payload) async {
         replayed = payload;
@@ -488,7 +529,7 @@ void main() {
       expect(sent.last.$2['energy'], 1, reason: 'this one last');
       expect(saved!.delivered, isTrue);
       expect(
-        CheckInQueue(await SharedPreferences.getInstance()).painState,
+        await CheckInQueue(const LocalHealthStore()).painState(),
         CheckInPainState.none,
       );
     });
@@ -546,8 +587,8 @@ void main() {
       );
       expect(await saved!.pending, isFalse);
       // The check-in is kept, marked, not thrown away.
-      final queue = CheckInQueue(await SharedPreferences.getInstance());
-      expect(queue.painState, CheckInPainState.refused);
+      final queue = CheckInQueue(const LocalHealthStore());
+      expect(await queue.painState(), CheckInPainState.refused);
       Map<String, dynamic>? rest;
       await queue.acknowledgeRefusedPain((date, zone, key, payload) async {
         rest = payload;
@@ -570,8 +611,8 @@ void main() {
       expect(saved!.delivered, isFalse);
       expect(saved!.referralRoute, isNull);
       expect(find.textContaining('could not record this report'), findsOne);
-      final queue = CheckInQueue(await SharedPreferences.getInstance());
-      expect(queue.painState, CheckInPainState.refused);
+      final queue = CheckInQueue(const LocalHealthStore());
+      expect(await queue.painState(), CheckInPainState.refused);
     });
 
     testWidgets('a server that never answers does not hold back a referral', (
@@ -592,7 +633,7 @@ void main() {
       expect(saved!.referralRoute, 'clinician_today');
       expect(saved!.delivered, isFalse);
       expect(
-        CheckInQueue(await SharedPreferences.getInstance()).painState,
+        await CheckInQueue(const LocalHealthStore()).painState(),
         CheckInPainState.waiting,
         reason: 'kept on the phone meanwhile',
       );

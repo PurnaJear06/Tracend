@@ -71,7 +71,7 @@ Cloudflare Pages) talks only to the three session-less waitlist functions.
   exposes only normalized internal sample types.
 - The approved plan and in-progress workout are cached locally for degraded and offline use. The
   plan is the last `get_my_training_hub` that loaded (`lib/features/train/training_hub_cache.dart`),
-  kept per athlete in the app's preferences with the athlete's id and the save time, replaced on
+  kept per athlete in the health store (below) with the athlete's id and the save time, replaced on
   every successful Train load, and removed on sign-out, a refused session and account deletion.
   When the account check cannot finish (no connection, or six seconds without an answer) and a copy
   exists, the gate opens the shell in offline mode (`lib/features/auth/phase_2_gate.dart`,
@@ -85,6 +85,14 @@ Cloudflare Pages) talks only to the three session-less waitlist functions.
   Motion, safe areas, and state restoration.
 - The client may contain the Supabase project URL and publishable key. It must never contain
   secret/service-role keys or AI-provider keys.
+
+**On-device health store.** Pain reports and check-ins waiting to be sent, referrals read, workout
+drafts and exercise history, the saved plan and the last Coach thread id live in `LocalHealthStore`
+(`lib/shared/local_health_store.dart`): one file per key under Application Support, out of backups
+and written with protection until first unlock by `LocalHealthStoreBridge` (SECURITY_PRIVACY §8). Its
+methods mirror `SharedPreferencesAsync`; tests replace its files with an in-memory copy
+(`test/flutter_test_config.dart`). Settings and sync state with no health values stay in
+preferences. `moveHealthCachesToStore` moves what earlier builds kept in preferences, once.
 
 **Workout logging.** History and the open session are kept on the device for offline use; finish
 and discard requests are saved locally first and sent when the network returns. Each set records
@@ -535,7 +543,9 @@ enforced.
 2. Mobile reads the authorized date window and normalizes supported values.
 3. Mobile computes source/checksum metadata required for deduplication.
 4. `health-sync` verifies JWT, units, ranges, timestamps, and idempotency key.
-5. A transaction upserts daily summaries and records the sync run.
+5. A transaction upserts daily summaries and records the sync run. A batch the database refuses is
+   422 with its SQLSTATE (the app does not send it again), the hourly limit is 429 and a server
+   fault 503 (the app tries again twice); the last two are logged and reported to Sentry by code.
 6. Feature snapshots consume only successfully normalized records.
 
 The first successful sync reads a 9-date window (today−8) so recent history can be restored; later
@@ -552,7 +562,8 @@ response never proves permission denial.
 2. Train displays a prompt card with the HealthKit evidence and two buttons.
 3. **Yes, mark complete** calls the authenticated `healthkit_auto_complete_workout` RPC, which:
    - authorizes user ownership of the planned workout in the active plan;
-   - guards idempotently against duplicate completion;
+   - takes `start_workout`'s per-athlete day lock, so two taps never both insert, and returns the
+     session already completed for that workout and day (`replayed`) instead of a second one;
    - creates a `workout_sessions` row with `state='completed'` and duration from HealthKit,
      `completion_source='healthkit'` and `session_effort_source='healthkit_default'`;
    - writes an `audit_events` row with `action_code='workout.auto_completed'`.

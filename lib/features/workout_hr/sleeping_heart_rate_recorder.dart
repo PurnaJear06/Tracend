@@ -64,7 +64,8 @@ class SleepingHeartRateRecorder {
   final String? Function() _userId;
   final DateTime Function() _clock;
 
-  String _finalKey(String userId) =>
+  /// The nights already settled for [userId].
+  static String finalKeyFor(String userId) =>
       'tracend.sleeping_heart_rate.final.$userId';
 
   /// Reads and saves the recent nights found in [samples]. Never throws: the
@@ -82,7 +83,9 @@ class SleepingHeartRateRecorder {
             night,
       ];
       if (recent.isEmpty) return;
-      final finals = {...?await _preferences.getStringList(_finalKey(userId))};
+      final finals = {
+        ...?await _preferences.getStringList(finalKeyFor(userId)),
+      };
       final nights = [
         for (final night in recent)
           if (!finals.contains(night.localDate)) night,
@@ -114,7 +117,7 @@ class SleepingHeartRateRecorder {
         }
       }
       await _preferences.setStringList(
-        _finalKey(userId),
+        finalKeyFor(userId),
         finals.toList()..sort(),
       );
       AppBreadcrumbs.workout(

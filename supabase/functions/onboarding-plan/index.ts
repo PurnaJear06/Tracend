@@ -60,8 +60,11 @@ function supabaseStore(
         .order("screened_at", { ascending: false }).order("id", { ascending: false }).limit(1)
         .maybeSingle();
       if (error) throw error;
-      // No row: never screened (an account or app build from before the screening).
-      return screeningOutcomes.find((outcome) => outcome === data?.outcome) ?? "cleared";
+      if (!data) return null;
+      const outcome = screeningOutcomes.find((candidate) => candidate === data.outcome);
+      // A row with a value this code does not know is not "no row".
+      if (!outcome) throw new Error("screening outcome unreadable");
+      return outcome;
     },
     async loadCatalog() {
       const { data, error } = await client.from("exercise_catalog")

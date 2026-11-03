@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/features/readiness/day_adjustment.dart';
@@ -16,6 +15,7 @@ import 'package:tracend/features/train/unfinished_workout.dart';
 import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/diagnostics.dart';
+import 'package:tracend/shared/local_health_store.dart';
 import 'package:tracend/shared/training_availability.dart';
 
 /// What the next session's target does with last time's result.
@@ -659,10 +659,12 @@ class TrainingHubData {
     this.completedDays = const {},
     this.plan,
     this.localToday,
+    this.trainingStartedOn,
     this.todayWorkout,
     this.dailyLoad = const [],
     this.load,
     this.cachedAt,
+    this.serverError,
     this.availability = TrainingAvailability.available,
     this.pausedDays = const {},
     this.pausedSessions = 0,
@@ -677,7 +679,11 @@ class TrainingHubData {
   /// week changes their loads by the day) belong to the day the copy was
   /// saved, so when that is another day they are left out rather than shown
   /// for today.
-  factory TrainingHubData.fromCache(CachedTrainingHub cached, DateTime now) {
+  factory TrainingHubData.fromCache(
+    CachedTrainingHub cached,
+    DateTime now, {
+    Object? serverError,
+  }) {
     final json = Map<String, dynamic>.of(cached.hub);
     final today = localDayKey(now);
     if (json['local_today'] != today) {
@@ -689,7 +695,11 @@ class TrainingHubData {
         ..remove('next_targets')
         ..remove('availability');
     }
-    return TrainingHubData.fromHubJson(json, cachedAt: cached.savedAt);
+    return TrainingHubData.fromHubJson(
+      json,
+      cachedAt: cached.savedAt,
+      serverError: serverError,
+    );
   }
 
   /// Parses `get_my_training_hub`. A cached 1.5 payload parses too: every
@@ -697,6 +707,7 @@ class TrainingHubData {
   factory TrainingHubData.fromHubJson(
     Map<String, dynamic> value, {
     DateTime? cachedAt,
+    Object? serverError,
   }) {
     final targets = _nextTargets(value['next_targets']);
     final active = _map(value['active_plan']);
@@ -716,6 +727,7 @@ class TrainingHubData {
               progressionRule: _text(active['progression_rule']),
             ),
       localToday: _date(value['local_today']),
+      trainingStartedOn: _date(value['training_started_on']),
       workouts: (value['workouts'] as List? ?? const [])
           .map(
             (item) =>
@@ -781,6 +793,7 @@ class TrainingHubData {
               todayStrain: (computed['today_strain'] as num?)?.toDouble(),
             ),
       cachedAt: cachedAt,
+      serverError: serverError,
       availability: TrainingAvailability.fromJson(value['availability']),
       pausedDays: {
         for (final day in (value['paused_days'] as List? ?? const []))
@@ -832,6 +845,10 @@ class TrainingHubData {
   /// The athlete's local date on the server (hub 1.6).
   final DateTime? localToday;
 
+  /// The first day of the athlete's first plan (hub 1.11): a later plan
+  /// version keeps it. Null from an older hub, which then reads as before.
+  final DateTime? trainingStartedOn;
+
   /// Today's planned workout from the hub, when one is scheduled.
   final PlannedWorkout? todayWorkout;
 
@@ -844,6 +861,10 @@ class TrainingHubData {
   /// When this phone saved the hub it shows, when the server could not be
   /// reached and this is the last copy; null for a hub just loaded.
   final DateTime? cachedAt;
+
+  /// Why the server could not answer, on a hub that is a saved copy because
+  /// of it; null for a hub just loaded or a copy opened with no request.
+  final Object? serverError;
 
   /// Today's training availability: a break running or set to start, or a
   /// check-in that said the athlete can't train (hub 1.10).
@@ -864,6 +885,18 @@ class TrainingHubData {
   /// Sessions of the window on a can't-train day with nothing logged; the
   /// server leaves them out of [plannedSessions].
   final int unavailableSessions;
+
+  /// A day before the athlete's first plan began: nothing was due on it, so
+  /// it is never planned or missed.
+  bool isBeforeStart(DateTime date) {
+    final started = trainingStartedOn;
+    return started != null &&
+        DateTime(
+          date.year,
+          date.month,
+          date.day,
+        ).isBefore(DateTime(started.year, started.month, started.day));
+  }
 
   bool isDayPaused(DateTime date) =>
       pausedDays.contains(DateTime(date.year, date.month, date.day));
@@ -1156,14 +1189,14 @@ class SupabaseWorkoutRepository
   /// to the open logger, which sends its own workout itself.
   SupabaseWorkoutRepository(
     this._client,
-    this._preferences, {
+    this._store, {
     DateTime Function()? clock,
     bool Function()? loggerOpen,
   }) : _clock = clock ?? DateTime.now,
        _loggerOpen = loggerOpen,
-       _hubCache = TrainingHubCache(_preferences);
+       _hubCache = TrainingHubCache(_store);
   final SupabaseClient _client;
-  final SharedPreferencesAsync _preferences;
+  final LocalHealthStore _store;
   final DateTime Function() _clock;
   final bool Function()? _loggerOpen;
   final TrainingHubCache _hubCache;
@@ -1197,7 +1230,7 @@ class SupabaseWorkoutRepository
       final cached = await _hubCache.load(userId);
       if (cached == null) rethrow;
       logNonCritical(error, 'training hub from device');
-      return TrainingHubData.fromCache(cached, _clock());
+      return TrainingHubData.fromCache(cached, _clock(), serverError: error);
     }
     if (userId != null) {
       if (periodDays == _cachedHubDays) await _saveHub(userId, hub);
@@ -1279,28 +1312,27 @@ class SupabaseWorkoutRepository
   /// Moves the phone's draft and saved finish of workout [from] to workout
   /// [to]. False when [to] already holds a different draft: both stay.
   Future<bool> _moveDraft(String from, String to) async {
-    final draft = await _preferences.getString(_draftKey(from));
+    final draft = await _store.getString(_draftKey(from));
     if (draft == null) return true;
-    final existing = await _preferences.getString(_draftKey(to));
+    final existing = await _store.getString(_draftKey(to));
     if (existing != null) {
       final same = _sameSession(draft, existing);
       if (!same) return false;
       // An earlier move that stopped after writing the draft may not have
       // copied the saved finish: it goes over before the source is cleared,
       // so the only copy of a finish is never the one removed.
-      final finish = await _preferences.getString(_finishKey(from));
-      if (finish != null &&
-          await _preferences.getString(_finishKey(to)) == null) {
-        await _preferences.setString(_finishKey(to), finish);
+      final finish = await _store.getString(_finishKey(from));
+      if (finish != null && await _store.getString(_finishKey(to)) == null) {
+        await _store.setString(_finishKey(to), finish);
       }
       await clearDraft(from);
       return true;
     }
     final moved = decodeDraft(draft)..['workout_id'] = to;
-    await _preferences.setString(_draftKey(to), jsonEncode(moved));
-    final finish = await _preferences.getString(_finishKey(from));
+    await _store.setString(_draftKey(to), jsonEncode(moved));
+    final finish = await _store.getString(_finishKey(from));
     if (finish != null) {
-      await _preferences.setString(_finishKey(to), finish);
+      await _store.setString(_finishKey(to), finish);
     }
     await clearDraft(from);
     return true;
@@ -1359,7 +1391,7 @@ class SupabaseWorkoutRepository
     try {
       final prefix = WorkoutLocalKeys.draftPrefix(userId);
       final ids = [
-        for (final key in await _preferences.getKeys())
+        for (final key in await _store.getKeys())
           if (key.startsWith(prefix)) key.substring(prefix.length),
       ];
       for (final id in ids) {
@@ -1449,12 +1481,12 @@ class SupabaseWorkoutRepository
     if (userId == null) return const [];
     final prefix = WorkoutLocalKeys.draftPrefix(userId);
     final finishPrefix = WorkoutLocalKeys.finishPrefix(userId);
-    final keys = await _preferences.getKeys();
+    final keys = await _store.getKeys();
     final drafts = <String, String>{};
     final finished = <String>{};
     for (final key in keys) {
       if (key.startsWith(prefix)) {
-        final saved = await _preferences.getString(key);
+        final saved = await _store.getString(key);
         if (saved != null) drafts[key.substring(prefix.length)] = saved;
       } else if (key.startsWith(finishPrefix)) {
         finished.add(key.substring(finishPrefix.length));
@@ -1718,7 +1750,7 @@ class SupabaseWorkoutRepository
 
   @override
   Future<String?> loadDraft(String workoutId) =>
-      _preferences.getString(_draftKey(workoutId));
+      _store.getString(_draftKey(workoutId));
   @override
   Future<Map<String, dynamic>?> loadSession(
     PlannedWorkout workout, {
@@ -1742,11 +1774,10 @@ class SupabaseWorkoutRepository
 
   @override
   Future<void> saveDraft(String workoutId, String json) =>
-      _preferences.setString(_draftKey(workoutId), json);
+      _store.setString(_draftKey(workoutId), json);
   @override
-  Future<void> clearDraft(String workoutId) => _preferences.clear(
-    allowList: {_draftKey(workoutId), _finishKey(workoutId)},
-  );
+  Future<void> clearDraft(String workoutId) =>
+      _store.removeAll({_draftKey(workoutId), _finishKey(workoutId)});
   @override
   Future<String> start(
     PlannedWorkout workout,
@@ -1827,14 +1858,11 @@ class SupabaseWorkoutRepository
   Future<void> savePendingFinish(
     String workoutId,
     PendingWorkoutFinish finish,
-  ) => _preferences.setString(
-    _finishKey(workoutId),
-    jsonEncode(finish.toJson()),
-  );
+  ) => _store.setString(_finishKey(workoutId), jsonEncode(finish.toJson()));
 
   @override
   Future<PendingWorkoutFinish?> loadPendingFinish(String workoutId) async {
-    final stored = await _preferences.getString(_finishKey(workoutId));
+    final stored = await _store.getString(_finishKey(workoutId));
     if (stored == null) return null;
     try {
       return PendingWorkoutFinish.fromJson(jsonDecode(stored));
@@ -1879,7 +1907,7 @@ class SupabaseWorkoutRepository
 
   Future<WorkoutDiscard> _queueDiscard(String sessionId) async {
     final waiting = await _waitingDiscards();
-    await _preferences.setStringList(_discardKey, [
+    await _store.setStringList(_discardKey, [
       ...waiting.where((id) => id != sessionId),
       sessionId,
     ]);
@@ -1896,7 +1924,7 @@ class SupabaseWorkoutRepository
   }
 
   Future<List<String>> _waitingDiscards() async =>
-      await _preferences.getStringList(_discardKey) ?? const [];
+      await _store.getStringList(_discardKey) ?? const [];
 
   /// Sends discards saved offline. A final refusal (already finished, not
   /// found) settles it too; a connection failure or any other server error
@@ -1921,9 +1949,9 @@ class SupabaseWorkoutRepository
       }
     }
     if (kept.isEmpty) {
-      await _preferences.remove(_discardKey);
+      await _store.remove(_discardKey);
     } else {
-      await _preferences.setStringList(_discardKey, kept);
+      await _store.setStringList(_discardKey, kept);
     }
     if (kept.length < waiting.length) {
       AppBreadcrumbs.workout(
@@ -1981,7 +2009,7 @@ class SupabaseWorkoutRepository
   }
 
   Future<Map<String, Object?>> _cachedHistory() async {
-    final stored = await _preferences.getString(_historyKey);
+    final stored = await _store.getString(_historyKey);
     if (stored == null) return const {};
     try {
       final decoded = jsonDecode(stored);
@@ -2003,7 +2031,7 @@ class SupabaseWorkoutRepository
       if (overflow > 0) {
         cache.keys.take(overflow).toList().forEach(cache.remove);
       }
-      await _preferences.setString(_historyKey, jsonEncode(cache));
+      await _store.setString(_historyKey, jsonEncode(cache));
     } catch (e) {
       logNonCritical(e, 'exercise history not saved');
     }

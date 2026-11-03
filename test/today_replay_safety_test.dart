@@ -7,6 +7,7 @@ import 'package:tracend/features/readiness/day_adjustment_controller.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 import 'day_adjustment_fixtures.dart';
 
@@ -43,7 +44,7 @@ void main() {
     required bool delivered,
   }) async {
     SharedPreferences.setMockInitialValues({});
-    final preferences = await SharedPreferences.getInstance();
+    const preferences = LocalHealthStore();
     await CheckInQueue(preferences).enqueue(
       payload: payload,
       localDate: '2026-10-02',
@@ -129,7 +130,7 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
-    final preferences = await SharedPreferences.getInstance();
+    const preferences = LocalHealthStore();
     final brief = _Brief();
     final controller = DayAdjustmentController(
       repository: FakeDayAdjustmentRepository(adjustmentJson()),

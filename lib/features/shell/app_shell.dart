@@ -43,6 +43,7 @@ import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
 import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
+import 'package:tracend/shared/local_health_store.dart';
 import 'package:tracend/shared/coach_draft_requests.dart';
 import 'package:tracend/shared/plan_changes.dart';
 
@@ -297,7 +298,7 @@ class _AppShellState extends State<AppShell> {
         (live
             ? SupabaseWorkoutRepository(
                 Supabase.instance.client,
-                SharedPreferencesAsync(),
+                const LocalHealthStore(),
                 loggerOpen: () => ActiveWorkoutScreen.isOpen,
               )
             : FixtureWorkoutRepository());

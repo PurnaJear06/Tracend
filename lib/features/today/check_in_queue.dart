@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/readiness/pain_check.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/diagnostics.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 /// Performs the `save_daily_check_in` RPC for a replayed envelope.
 typedef CheckInSend =
@@ -95,9 +96,9 @@ enum CheckInPainState {
 
 /// Pending-check-in replay queue.
 ///
-/// The check-in sheet persists the full check-in envelope to
-/// SharedPreferences before attempting the RPC, so a completed check-in
-/// survives a lost connection or app restart. Today replays the queue at
+/// The check-in sheet persists the full check-in envelope to the health
+/// store ([LocalHealthStore]) before attempting the RPC, so a completed
+/// check-in survives a lost connection or app restart. Today replays the queue at
 /// launch and every time the app comes back to the front.
 ///
 /// The queue is keyed by the answer day's `local_date`: a check-in belongs to
@@ -123,14 +124,14 @@ enum CheckInPainState {
 /// survives whether that replay lands or is refused. Replays run one after
 /// the other.
 class CheckInQueue {
-  CheckInQueue(this._preferences, {String? userId})
+  CheckInQueue(this._store, {String? userId})
     : _key = userId == null ? queueStorageKey : queueStorageKeyFor(userId),
       _earlierKey = earlierKeyFor(userId ?? ''),
       _singleSlotKeys = [
         if (userId != null) singleSlotKeyFor(userId),
         singleSlotKey,
       ];
-  final SharedPreferences _preferences;
+  final LocalHealthStore _store;
   final String _key;
   final String _earlierKey;
 
@@ -197,7 +198,7 @@ class CheckInQueue {
     required String timezone,
   }) => _locked(() async {
     await _migrate();
-    final entries = _readEntries();
+    final entries = await _readEntries();
     await _keepEarlier(entries[localDate]);
     final key = newIdempotencyKey();
     entries[localDate] = {
@@ -215,7 +216,7 @@ class CheckInQueue {
   /// overwrite it.
   Future<void> _keepEarlier(Map<String, dynamic>? waiting) async {
     if (waiting == null || !_hasPainCheck(waiting['payload'] as Map)) return;
-    final earlier = _readEarlier();
+    final earlier = await _readEarlier();
     if (earlier.any(
       (e) => e['idempotency_key'] == waiting['idempotency_key'],
     )) {
@@ -228,8 +229,8 @@ class CheckInQueue {
   Future<List<String>> pendingDays() => _locked(() async {
     await _migrate();
     return {
-      ..._readEntries().keys,
-      for (final e in _readEarlier()) e['local_date'] as String,
+      ...(await _readEntries()).keys,
+      for (final e in await _readEarlier()) e['local_date'] as String,
     }.toList()..sort();
   });
 
@@ -238,9 +239,9 @@ class CheckInQueue {
   /// discarded as stale. Call it inside the lock.
   Future<void> _migrate() async {
     final stored = <String>[];
-    final entries = _readEntries();
+    final entries = await _readEntries();
     for (final oldKey in _singleSlotKeys) {
-      final value = _preferences.getString(oldKey);
+      final value = await _store.getString(oldKey);
       if (value == null) continue;
       stored.add(oldKey);
       final entry = _readEnvelope(value);
@@ -252,16 +253,24 @@ class CheckInQueue {
     // The keyed list is written first, and the old keys go only once that
     // write succeeded: a failure or an interruption leaves them to be read
     // again, and the move is repeatable.
-    if (!await _writeEntries(entries)) return;
-    for (final oldKey in stored) {
-      await _preferences.remove(oldKey);
+    try {
+      await _writeEntries(entries);
+    } on Exception catch (error) {
+      logNonCritical(error, 'earlier check-in not moved');
+      return;
+    }
+    try {
+      await _store.removeAll(stored);
+    } on Exception catch (error) {
+      // The keyed list holds them; a failed delete is repeated next time.
+      logNonCritical(error, 'earlier check-in not removed');
     }
   }
 
   /// The keyed list: each day's waiting envelope.
-  Map<String, Map<String, dynamic>> _readEntries() {
+  Future<Map<String, Map<String, dynamic>>> _readEntries() async {
     final entries = <String, Map<String, dynamic>>{};
-    final stored = _preferences.getString(_key);
+    final stored = await _store.getString(_key);
     if (stored == null) return entries;
     try {
       final decoded = jsonDecode(stored);
@@ -278,10 +287,10 @@ class CheckInQueue {
     return entries;
   }
 
-  Future<bool> _writeEntries(Map<String, Map<String, dynamic>> entries) =>
+  Future<void> _writeEntries(Map<String, Map<String, dynamic>> entries) =>
       entries.isEmpty
-      ? _preferences.remove(_key)
-      : _preferences.setString(_key, jsonEncode(entries));
+      ? _store.remove(_key)
+      : _store.setString(_key, jsonEncode(entries));
 
   /// A stored envelope that has all it needs, else null.
   static Map<String, dynamic>? _readEnvelope(Object? stored) {
@@ -301,8 +310,8 @@ class CheckInQueue {
     }
   }
 
-  List<Map<String, dynamic>> _readEarlier() {
-    final stored = _preferences.getString(_earlierKey);
+  Future<List<Map<String, dynamic>>> _readEarlier() async {
+    final stored = await _store.getString(_earlierKey);
     if (stored == null) return const [];
     try {
       final list = jsonDecode(stored);
@@ -315,10 +324,10 @@ class CheckInQueue {
 
   Future<void> _writeEarlier(List<Map<String, dynamic>> envelopes) async {
     if (envelopes.isEmpty) {
-      await _preferences.remove(_earlierKey);
+      await _store.remove(_earlierKey);
       return;
     }
-    await _preferences.setString(_earlierKey, jsonEncode(envelopes));
+    await _store.setString(_earlierKey, jsonEncode(envelopes));
   }
 
   /// Changes the envelope with [idempotencyKey], wherever it is kept, with
@@ -327,7 +336,7 @@ class CheckInQueue {
     String idempotencyKey,
     Map<String, dynamic>? Function(Map<String, dynamic> envelope) change,
   ) async {
-    final entries = _readEntries();
+    final entries = await _readEntries();
     for (final day in entries.keys.toList()) {
       if (entries[day]!['idempotency_key'] != idempotencyKey) continue;
       final changed = change(entries[day]!);
@@ -338,7 +347,7 @@ class CheckInQueue {
       }
       await _writeEntries(entries);
     }
-    final earlier = _readEarlier();
+    final earlier = await _readEarlier();
     if (earlier.any((e) => e['idempotency_key'] == idempotencyKey)) {
       await _writeEarlier([
         for (final e in earlier)
@@ -353,8 +362,8 @@ class CheckInQueue {
   /// superseded: the server counts this one as the day's check-in, and the
   /// older one is not sent after it.
   Future<void> clearDelivered(String idempotencyKey) => _locked(() async {
-    final earlier = _readEarlier();
-    final delivered = _envelopes()
+    final earlier = await _readEarlier();
+    final delivered = (await _envelopes())
         .where((e) => e['idempotency_key'] == idempotencyKey)
         .firstOrNull;
     await _changeByKey(idempotencyKey, (_) => null);
@@ -371,7 +380,7 @@ class CheckInQueue {
     };
     if (superseded.isEmpty) return;
     await _writeEarlier([
-      for (final e in _readEarlier())
+      for (final e in await _readEarlier())
         if (superseded.contains(e['idempotency_key']))
           {...e, 'superseded': true}
         else
@@ -435,7 +444,7 @@ class CheckInQueue {
     final tried = <String>{};
     var stopped = false;
     while (!stopped) {
-      final next = _nextToSend(tried);
+      final next = await _nextToSend(tried);
       if (next == null) break;
       final key = next['idempotency_key'] as String;
       final day = next['local_date'] as String;
@@ -458,7 +467,7 @@ class CheckInQueue {
     return CheckInReplay(
       delivered: delivered,
       retained: stopped
-          ? [for (final e in _sendable()) e['local_date'] as String]
+          ? [for (final e in await _sendable()) e['local_date'] as String]
           : const [],
       refused: refused,
       fates: fates,
@@ -468,11 +477,11 @@ class CheckInQueue {
   /// The envelopes still to be sent, in the order they go: the earlier ones,
   /// then each day's, oldest day first. Those the server refused wait for the
   /// athlete instead.
-  List<Map<String, dynamic>> _sendable() {
-    final entries = _readEntries();
+  Future<List<Map<String, dynamic>>> _sendable() async {
+    final entries = await _readEntries();
     return [
       for (final e in [
-        ..._readEarlier(),
+        ...await _readEarlier(),
         for (final day in entries.keys.toList()..sort()) entries[day]!,
       ])
         if (e['pain_refused'] != true) e,
@@ -480,8 +489,8 @@ class CheckInQueue {
   }
 
   /// The envelope to send next, leaving out those already tried.
-  Map<String, dynamic>? _nextToSend(Set<String> tried) {
-    for (final envelope in _sendable()) {
+  Future<Map<String, dynamic>?> _nextToSend(Set<String> tried) async {
+    for (final envelope in await _sendable()) {
       if (!tried.contains(envelope['idempotency_key'])) return envelope;
     }
     return null;
@@ -529,9 +538,9 @@ class CheckInQueue {
   }
 
   /// Whether a stored envelope carries a pain check, and what became of it.
-  CheckInPainState get painState {
+  Future<CheckInPainState> painState() async {
     var waiting = false;
-    for (final envelope in _envelopes()) {
+    for (final envelope in await _envelopes()) {
       if (!_hasPainCheck(envelope['payload'] as Map)) continue;
       if (envelope['pain_refused'] == true) return CheckInPainState.refused;
       waiting = true;
@@ -540,16 +549,16 @@ class CheckInQueue {
   }
 
   /// Every pain check the server refused was refused only for its date.
-  bool get painRefusedTooOld => _envelopes().every(
+  Future<bool> painRefusedTooOld() async => (await _envelopes()).every(
     (envelope) =>
         envelope['pain_refused'] != true ||
         envelope['pain_refused_too_old'] != false,
   );
 
   /// The stored envelopes, the earlier ones first.
-  List<Map<String, dynamic>> _envelopes() => [
-    ..._readEarlier(),
-    ..._readEntries().values,
+  Future<List<Map<String, dynamic>>> _envelopes() async => [
+    ...await _readEarlier(),
+    ...(await _readEntries()).values,
   ];
 
   /// The athlete has read that the server did not record the pain check.
@@ -573,13 +582,13 @@ class CheckInQueue {
                 : entry.value,
       };
       await _writeEarlier([
-        for (final e in _readEarlier())
+        for (final e in await _readEarlier())
           if (e['pain_refused'] != true)
             e
           else if (e['superseded'] != true)
             withoutPain(e),
       ]);
-      final entries = _readEntries();
+      final entries = await _readEntries();
       var changed = false;
       for (final day in entries.keys.toList()) {
         if (entries[day]!['pain_refused'] != true) continue;

@@ -5,8 +5,7 @@
 // profile, no weight and no logged data, and the health check never holds one back.
 import { addDays, daysBetween, reasonText, shortDate } from "./common.ts";
 import { refusals, refuse } from "./refusals.ts";
-import type { ScreeningOutcome } from "../training/screening/outcome.ts";
-import { screeningOutcomes } from "../training/screening/outcome.ts";
+import { type ScreeningGate, screeningGates } from "../training/screening/outcome.ts";
 import {
   type BuildResult,
   type CoachProposalIntent,
@@ -28,7 +27,7 @@ export type PauseWindow = Readonly<{ startDate: string; lastDay: string }>;
 export type PauseInputs = Readonly<{
   /** The athlete's own date. */
   today: string;
-  screening: ScreeningOutcome;
+  screening: ScreeningGate;
   pauses: readonly PauseWindow[];
 }>;
 
@@ -42,7 +41,7 @@ export function parsePauseInputs(raw: unknown): PauseInputs | null {
   const row = rec(raw);
   if (!row || row.schema_version !== "1.0" || typeof row.local_date !== "string") return null;
   if (!isoDate.test(row.local_date) || !Array.isArray(row.pauses)) return null;
-  const screening = screeningOutcomes.find((item) => item === row.screening);
+  const screening = screeningGates.find((item) => item === row.screening);
   if (!screening) return null;
   const pauses: PauseWindow[] = [];
   for (const item of row.pauses) {

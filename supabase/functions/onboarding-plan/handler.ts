@@ -71,7 +71,10 @@ import {
 //
 // An athlete whose stored screening outcome is see_professional gets 422
 // onboarding_screening_see_professional (both modes): no plan, no questions, no model call and no
-// budget. moderate_until_cleared builds a plan capped at moderate effort.
+// budget. moderate_until_cleared builds a plan capped at moderate effort. An athlete with no
+// stored screening (it was skipped, or the account predates it) gets 422
+// onboarding_answers_incomplete with missing ["screening"], which every app build opens at the
+// health check: a missing screening is never read as cleared.
 //
 // POST onboarding-plan {"mode":"questions"}: the coach's follow-up questions
 // for the current answers, answered synchronously. One request claims the
@@ -137,10 +140,9 @@ export interface OnboardingStore {
   timezone(): Promise<string>;
   /**
    * The athlete's stored pre-exercise screening outcome (Contract 8): the newest
-   * onboarding_screenings row. No row (an account or app build from before the screening) is
-   * "cleared".
+   * onboarding_screenings row, or null when there is none (never screened).
    */
-  screening(): Promise<ScreeningOutcome>;
+  screening(): Promise<ScreeningOutcome | null>;
   /** Apple Health daily summaries and workouts with local dates in [from, through]. */
   loadHealth(
     from: string,
@@ -258,9 +260,12 @@ export async function handleOnboardingPlan(deps: HandlerDeps): Promise<Response>
   if (!asked.ok) {
     return reply(422, { error: "onboarding_answers_incomplete", missing: asked.missing });
   }
+  const screening = await deps.store.screening();
+  if (screening === null) {
+    return reply(422, { error: "onboarding_answers_incomplete", missing: ["screening"] });
+  }
   const catalog = await deps.store.loadCatalog();
   const { health, history } = await loadHealthContext(deps);
-  const screening = await deps.store.screening();
   try {
     validRulesPlan(policiesFor(asked.answers, catalog, health, history, screening));
   } catch (error) {

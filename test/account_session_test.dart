@@ -20,20 +20,24 @@ import 'package:tracend/features/auth/account_session.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/auth/phase_2_gate.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/consent/legal_consent.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/readiness/pain_report_queue.dart';
 import 'package:tracend/features/readiness/safety_acknowledgements.dart';
+import 'package:tracend/features/today/check_in_marks.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/local_health_store.dart';
 import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 
 import 'home_widgets/fake_home_widget_bridge.dart';
+import 'memory_health_files.dart';
 import 'live_activity/fake_workout_activity_bridge.dart';
 
 const _url = 'https://tracend-test.supabase.co';
@@ -189,20 +193,11 @@ void main() {
       TodayWidgetPublisher.lockScreenNumbersKeyFor(_otherUserId),
       true,
     );
-    await preferences.setString(
-      '${WorkoutLocalKeys.draftPrefix(_userId)}workout-1',
-      '{}',
-    );
-    await preferences.setString(
-      WorkoutLocalKeys.exerciseHistory(_userId),
-      '{}',
-    );
-    await preferences.setString(
-      WorkoutLocalKeys.exerciseHistory(_otherUserId),
-      '{}',
-    );
-    SharedPreferences.setMockInitialValues({
-      SharedPreferencesCoachThreadMemory.storageKey: 'thread-1',
+    await seedHealthCache({
+      '${WorkoutLocalKeys.draftPrefix(_userId)}workout-1': '{}',
+      WorkoutLocalKeys.exerciseHistory(_userId): '{}',
+      WorkoutLocalKeys.exerciseHistory(_otherUserId): '{}',
+      LocalCoachThreadMemory.storageKey: 'thread-1',
       CheckInQueue.queueStorageKeyFor(_userId): '{}',
       CheckInQueue.queueStorageKeyFor(_otherUserId): '{}',
       CheckInQueue.earlierKeyFor(_userId): '[]',
@@ -211,7 +206,29 @@ void main() {
       PainReportQueue.storageKeyFor(_otherUserId): '[]',
       SafetyAcknowledgements.storageKeyFor(_userId): '[]',
     });
+    SharedPreferences.setMockInitialValues({
+      // An earlier build's marks for the whole phone, and each athlete's own.
+      CheckInMarks.savedOnKey: '2026-10-01',
+      CheckInMarks.savedOnKeyFor(_userId): '2026-10-01',
+      CheckInMarks.skippedOnKeyFor(_userId): '2026-10-01',
+      CheckInMarks.savedOnKeyFor(_otherUserId): '2026-10-01',
+    });
   });
+
+  const store = LocalHealthStore();
+
+  /// The athlete's day marks are gone, with the one an earlier build kept for
+  /// the whole phone; another athlete's stay theirs.
+  Future<void> expectCheckInMarksForgotten() async {
+    final legacy = await SharedPreferences.getInstance();
+    expect(legacy.getString(CheckInMarks.savedOnKey), isNull);
+    expect(legacy.getString(CheckInMarks.savedOnKeyFor(_userId)), isNull);
+    expect(legacy.getString(CheckInMarks.skippedOnKeyFor(_userId)), isNull);
+    expect(
+      legacy.getString(CheckInMarks.savedOnKeyFor(_otherUserId)),
+      '2026-10-01',
+    );
+  }
 
   /// The athlete's Lock Screen choice and the phone-wide one are gone;
   /// another athlete's stays theirs.
@@ -253,67 +270,69 @@ void main() {
     expect(await preferences.getString('tracend_theme_mode'), 'dark');
     // The Lock Screen widget choice goes with the account.
     await expectWidgetChoiceForgotten();
+    await expectCheckInMarksForgotten();
     expect(
-      await preferences.getString(
+      await store.getString(
         '${WorkoutLocalKeys.draftPrefix(_userId)}workout-1',
       ),
       isNull,
     );
     expect(
-      await preferences.getString(WorkoutLocalKeys.exerciseHistory(_userId)),
+      await store.getString(WorkoutLocalKeys.exerciseHistory(_userId)),
       isNull,
     );
     expect(
-      await preferences.getString(
-        WorkoutLocalKeys.exerciseHistory(_otherUserId),
-      ),
+      await store.getString(WorkoutLocalKeys.exerciseHistory(_otherUserId)),
       isNotNull,
     );
-    final legacy = await SharedPreferences.getInstance();
+    expect(await store.getString(LocalCoachThreadMemory.storageKey), isNull);
     expect(
-      legacy.getString(SharedPreferencesCoachThreadMemory.storageKey),
+      await store.getString(CheckInQueue.queueStorageKeyFor(_userId)),
       isNull,
     );
-    expect(legacy.getString(CheckInQueue.queueStorageKeyFor(_userId)), isNull);
-    expect(legacy.getString(CheckInQueue.earlierKeyFor(_userId)), isNull);
+    expect(await store.getString(CheckInQueue.earlierKeyFor(_userId)), isNull);
     expect(
-      legacy.getString(CheckInQueue.earlierKeyFor(_otherUserId)),
+      await store.getString(CheckInQueue.earlierKeyFor(_otherUserId)),
       isNotNull,
     );
     expect(
-      legacy.getString(CheckInQueue.queueStorageKeyFor(_otherUserId)),
+      await store.getString(CheckInQueue.queueStorageKeyFor(_otherUserId)),
       isNotNull,
     );
     // A pain report and the referrals read go with the account too.
-    expect(legacy.getString(PainReportQueue.storageKeyFor(_userId)), isNull);
     expect(
-      legacy.getString(SafetyAcknowledgements.storageKeyFor(_userId)),
+      await store.getString(PainReportQueue.storageKeyFor(_userId)),
       isNull,
     );
     expect(
-      legacy.getString(PainReportQueue.storageKeyFor(_otherUserId)),
+      await store.getString(SafetyAcknowledgements.storageKeyFor(_userId)),
+      isNull,
+    );
+    expect(
+      await store.getString(PainReportQueue.storageKeyFor(_otherUserId)),
       isNotNull,
     );
   }
 
   /// A refused session may belong to an account that still exists: only the
-  /// open Coach thread and the Lock Screen choice are forgotten.
+  /// open Coach thread, the day marks and the Lock Screen choice are
+  /// forgotten.
   Future<void> expectAthleteDataKept() async {
     await expectWidgetChoiceForgotten();
     expect(
       await preferences.getString(HealthPreferenceKeys(_userId).lastSync),
       isNotNull,
     );
-    final legacy = await SharedPreferences.getInstance();
+    await expectCheckInMarksForgotten();
+    expect(await store.getString(LocalCoachThreadMemory.storageKey), isNull);
     expect(
-      legacy.getString(SharedPreferencesCoachThreadMemory.storageKey),
-      isNull,
-    );
-    expect(
-      legacy.getString(CheckInQueue.queueStorageKeyFor(_userId)),
+      await store.getString(CheckInQueue.queueStorageKeyFor(_userId)),
       isNotNull,
     );
-    expect(legacy.getString(PainReportQueue.storageKeyFor(_userId)), isNotNull);
+    expect(
+      await store.getString(PainReportQueue.storageKeyFor(_userId)),
+      isNotNull,
+    );
   }
 
   late FakeWorkoutActivityBridge liveActivity;
@@ -389,6 +408,7 @@ void main() {
         expect(server.requests, contains('POST /auth/v1/logout'));
         expect(server.client.auth.currentSession, isNull);
         await expectWidgetChoiceForgotten();
+        await expectCheckInMarksForgotten();
         // Nothing else of the athlete's goes.
         expect(
           await preferences.getString(HealthPreferenceKeys(_userId).lastSync),
@@ -572,7 +592,16 @@ void main() {
           'onboarding_state': 'completed',
         })
         ..answer('GET /rest/v1/onboarding_drafts', 200, <Object>[])
-        ..answer('GET /rest/v1/consent_records', 200, <Object>[]);
+        // Current terms, privacy and health-data grants, and no AI answer:
+        // the AI coaching question is what an onboarded athlete sees next.
+        ..answer('GET /rest/v1/consent_records', 200, [
+          for (final consent in LegalConsent.values)
+            {
+              'consent_type': consent.type,
+              'notice_version': consent.version,
+              'action': 'granted',
+            },
+        ]);
       await _storeSession(
         server.client,
         DateTime.now().add(const Duration(minutes: 50)),

@@ -104,6 +104,7 @@ class WeeklyReviewSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).textTheme;
+    final percent = review.adherencePercent;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -124,13 +125,22 @@ class WeeklyReviewSheet extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _StatTile(
-                value:
-                    '${review.completedWorkouts} of ${review.plannedSessions}',
-                label: 'planned workouts',
-              ),
-              const SizedBox(width: TracendSpacing.xs),
-              _StatTile(value: '${review.adherencePercent}%', label: 'on plan'),
+              if (percent == null) ...[
+                _StatTile(
+                  value: '${review.completedWorkouts}',
+                  label: 'workouts done',
+                ),
+                const SizedBox(width: TracendSpacing.xs),
+                const _StatTile(value: 'None', label: 'planned this week'),
+              ] else ...[
+                _StatTile(
+                  value:
+                      '${review.completedWorkouts} of ${review.plannedSessions}',
+                  label: 'planned workouts',
+                ),
+                const SizedBox(width: TracendSpacing.xs),
+                _StatTile(value: '$percent%', label: 'on plan'),
+              ],
               const SizedBox(width: TracendSpacing.xs),
               _StatTile(
                 value: '${review.completedSets}',

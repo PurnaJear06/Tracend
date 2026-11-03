@@ -13,6 +13,7 @@ import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/today/check_in_gate.dart';
+import 'package:tracend/features/today/check_in_marks.dart';
 import 'package:tracend/features/today/widgets/fuel_rail_card.dart';
 import 'package:tracend/features/today/widgets/plan_progress_line.dart';
 import 'package:tracend/features/today/widgets/recovery_readout_card.dart';
@@ -1543,6 +1544,42 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(gate.required, isFalse);
+    });
+
+    testWidgets('another account on the phone is asked for its own check-in, '
+        'and its marks are its own', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        CheckInMarks.savedOnKey: '2026-08-23',
+        CheckInMarks.skippedOnKey: '2026-08-23',
+        CheckInMarks.savedOnKeyFor('athlete-a'): '2026-08-23',
+        CheckInMarks.skippedOnKeyFor('athlete-a'): '2026-08-23',
+      });
+      final gate = CheckInGate();
+      addTearDown(gate.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: Scaffold(
+            body: TodayScreen(
+              environment: _environment,
+              brief: _NoCheckInBriefRepository(),
+              checkInGate: gate,
+              userId: 'athlete-b',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(gate.required, isTrue);
+
+      gate.skip();
+      await tester.pumpAndSettle();
+      expect(gate.required, isFalse);
+      final preferences = await SharedPreferences.getInstance();
+      expect(
+        preferences.getString(CheckInMarks.skippedOnKeyFor('athlete-b')),
+        '2026-08-23',
+      );
     });
   });
 

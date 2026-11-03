@@ -33,6 +33,7 @@ import 'package:tracend/features/train/widgets/workout_finish_sheet.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/features/today/check_in_gate.dart';
+import 'package:tracend/features/today/check_in_marks.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/today/check_in_sheet.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
@@ -48,6 +49,7 @@ import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
+import 'package:tracend/shared/local_health_store.dart';
 import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/training_availability.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
@@ -222,8 +224,6 @@ class _TodayScreenState extends State<TodayScreen> {
   bool _pauseBusy = false;
   String? _justSetPauseId;
   DailyBrief? _lastBrief;
-  static const _checkedInKey = 'today_check_in_saved_on';
-  static const _skippedKey = 'today_check_in_skipped_on';
 
   /// What the last sync could not refresh, shown on the hero until a sync
   /// succeeds.
@@ -545,10 +545,10 @@ class _TodayScreenState extends State<TodayScreen> {
     var tooOld = true;
     try {
       final queue = await _resolveQueue();
-      final state = queue?.painState;
+      final state = await queue?.painState();
       waiting = state == CheckInPainState.waiting;
       refused = state == CheckInPainState.refused;
-      if (refused) tooOld = queue?.painRefusedTooOld ?? true;
+      if (refused) tooOld = await queue?.painRefusedTooOld() ?? true;
       final reports = await widget.pain?.state();
       if (reports != null) {
         waiting = waiting || reports.waiting.isNotEmpty;
@@ -629,9 +629,8 @@ class _TodayScreenState extends State<TodayScreen> {
     if (widget.queueFactory != null) return widget.queueFactory!();
     // Without a backend there is no signed-in athlete to queue for.
     if (!widget.environment.hasSupabaseConfiguration) return null;
-    final preferences = await SharedPreferences.getInstance();
     return CheckInQueue(
-      preferences,
+      const LocalHealthStore(),
       userId: Supabase.instance.client.auth.currentUser?.id,
     );
   }
@@ -720,15 +719,27 @@ class _TodayScreenState extends State<TodayScreen> {
     final day = _briefDay();
     _briefRequestedFor = _dateKey(day);
     final future = widget.brief.load(day);
-    future.then((brief) {
-      if (!mounted || load != _briefLoads) return;
-      _lastBrief = brief;
-      _briefLoadedAt = widget.clock();
-      _updateGate();
-      unawaited(_publishWidgets(brief));
-    }, onError: (_) {});
+    future.then(
+      (brief) {
+        // Only the newest load is shown, so only it counts; loads that share
+        // one request (SharedDailyBriefRepository) count it once.
+        if (!mounted || load != _briefLoads) return;
+        noteLoadSuccess(_briefLoad);
+        _lastBrief = brief;
+        _briefLoadedAt = widget.clock();
+        _updateGate();
+        unawaited(_publishWidgets(brief));
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!mounted || load != _briefLoads) return;
+        noteLoadFailure(error, stackTrace, _briefLoad);
+      },
+    );
     return future;
   }
+
+  /// The name a run of failed brief loads is reported under.
+  static const _briefLoad = 'Today: daily brief';
 
   /// Newest publish wins: targets can arrive after the brief, and a slow
   /// older publish must not overwrite a newer one.
@@ -774,8 +785,12 @@ class _TodayScreenState extends State<TodayScreen> {
       final preferences = await SharedPreferences.getInstance();
       if (!mounted) return;
       setState(() {
-        _checkedInOn = preferences.getString(_checkedInKey);
-        _skippedOn = preferences.getString(_skippedKey);
+        _checkedInOn = preferences.getString(
+          CheckInMarks.savedOnKeyFor(widget.userId),
+        );
+        _skippedOn = preferences.getString(
+          CheckInMarks.skippedOnKeyFor(widget.userId),
+        );
       });
       _updateGate();
       final brief = _lastBrief;
@@ -799,7 +814,7 @@ class _TodayScreenState extends State<TodayScreen> {
     final day = _dayKey();
     setState(() => _skippedOn = day);
     _updateGate();
-    _rememberDay(_skippedKey, day);
+    _rememberDay(CheckInMarks.skippedOnKeyFor(widget.userId), day);
   }
 
   void _reloadHealth() {
@@ -930,7 +945,11 @@ class _TodayScreenState extends State<TodayScreen> {
 
   Future<void> _makeDecisionCurrent() {
     final check = _decisionChain.then((_) => _checkDecision());
-    _decisionChain = check.then<void>((_) {}, onError: (_) {});
+    _decisionChain = check.then<void>(
+      (_) => noteLoadSuccess('Today: coaching decision'),
+      onError: (Object error, StackTrace stackTrace) =>
+          noteLoadFailure(error, stackTrace, 'Today: coaching decision'),
+    );
     return check;
   }
 
@@ -969,7 +988,7 @@ class _TodayScreenState extends State<TodayScreen> {
       // below can fail in the outage that queued the check-in.
       final brief = _lastBrief;
       if (brief != null) unawaited(_publishWidgets(brief));
-      await _rememberDay(_checkedInKey, day);
+      await _rememberDay(CheckInMarks.savedOnKeyFor(widget.userId), day);
     }
     if (mounted) {
       setState(() {
@@ -1004,6 +1023,15 @@ class _TodayScreenState extends State<TodayScreen> {
     bool delivered;
     try {
       delivered = await pending;
+    } on CheckInNotSaved {
+      if (mounted) {
+        TracendToast.show(
+          context,
+          chipNotSaved,
+          icon: CupertinoIcons.exclamationmark_circle,
+        );
+      }
+      return;
     } on Exception catch (error) {
       logNonCritical(error, 'check-in send ended badly');
       delivered = false;
@@ -1026,15 +1054,8 @@ class _TodayScreenState extends State<TodayScreen> {
     if (mounted) await _refreshPainNotice();
   }
 
-  Future<SafetyAcknowledgements?> _acknowledgements() async {
-    try {
-      final preferences = await SharedPreferences.getInstance();
-      return SafetyAcknowledgements(preferences, userId: widget.userId);
-    } on Exception catch (error) {
-      logNonCritical(error, 'referrals not remembered');
-      return null;
-    }
-  }
+  SafetyAcknowledgements _acknowledgements() =>
+      SafetyAcknowledgements(const LocalHealthStore(), userId: widget.userId);
 
   /// The referral for a day with a safety route, shown until it has been
   /// acknowledged, and then once for that day and route. [fallbackRoute] is
@@ -1053,16 +1074,21 @@ class _TodayScreenState extends State<TodayScreen> {
       final adjustment = widget.dayAdjustment?.current;
       final route = stricterRoute(adjustment?.safetyRoute, fallbackRoute);
       if (route == null) return;
-      final acknowledgements = await _acknowledgements();
+      final acknowledgements = _acknowledgements();
       final key = SafetyAcknowledgements.keyOf(
         adjustment?.localDate ?? _dayKey(),
         route,
       );
-      if (acknowledgements == null ||
-          (!fresh && acknowledgements.isAcknowledged(key)) ||
-          !mounted) {
-        return;
+      // A referral that cannot be checked against what was read is shown.
+      var read = false;
+      if (!fresh) {
+        try {
+          read = await acknowledgements.isAcknowledged(key);
+        } on Exception catch (error) {
+          logNonCritical(error, 'referrals not read');
+        }
       }
+      if (read || !mounted) return;
       await showSafetyReferralSheet(
         context,
         route,
@@ -1070,7 +1096,11 @@ class _TodayScreenState extends State<TodayScreen> {
             ? const []
             : jointReminderLines(adjustment),
       );
-      await acknowledgements.acknowledge(key);
+      try {
+        await acknowledgements.acknowledge(key);
+      } on Exception catch (error) {
+        logNonCritical(error, 'referral not remembered');
+      }
     } finally {
       _safetyShowing = false;
     }

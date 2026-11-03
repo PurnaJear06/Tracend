@@ -16,7 +16,7 @@ Deno.test("each outcome renders its date and the rule it implies", () => {
   const moderate = renderScreening({
     outcome: "moderate_until_cleared",
     screenedAt: "2026-10-12T08:30:00+00:00",
-  })!;
+  });
   assertStringIncludes(moderate, "answered on 2026-10-12");
   assertStringIncludes(moderate, "Outcome: moderate_until_cleared");
   assertStringIncludes(moderate, "no maximal or near-failure sets");
@@ -24,19 +24,29 @@ Deno.test("each outcome renders its date and the rule it implies", () => {
   const professional = renderScreening({
     outcome: "see_professional",
     screenedAt: "2026-10-12T08:30:00+00:00",
-  })!;
+  });
   assertStringIncludes(professional, "Outcome: see_professional");
   assertStringIncludes(professional, "no training prescriptions of any kind");
   assertStringIncludes(professional, "doctor or qualified exercise professional");
-  const cleared = renderScreening({ outcome: "cleared", screenedAt: "2026-10-12T08:30:00Z" })!;
+  const cleared = renderScreening({ outcome: "cleared", screenedAt: "2026-10-12T08:30:00Z" });
   assertStringIncludes(cleared, "no cap on effort");
-  for (const text of [moderate, professional, cleared]) {
+  const unscreened = renderScreening(null);
+  for (const text of [moderate, professional, cleared, unscreened]) {
     assert(text.length <= screeningBudgetChars, `${text.length} chars`);
   }
 });
 
-Deno.test("never screened reads as cleared and renders nothing", () => {
-  assertEquals(renderScreening(null), null);
+Deno.test("never screened is unscreened: the moderate rule, never cleared", () => {
+  const unscreened = renderScreening(null);
+  assertStringIncludes(unscreened, "Outcome: unscreened");
+  assertStringIncludes(unscreened, "has not answered");
+  assertStringIncludes(unscreened, "no maximal or near-failure sets");
+  assertStringIncludes(unscreened, "answering the health check");
+  assert(!unscreened.includes("professional clears"), "no clearance is implied");
+  assertEquals(
+    screeningOutcomeIn(`<reference_data source="screening">\n${unscreened}`),
+    "unscreened",
+  );
   assertEquals(screeningOutcomeIn(""), "cleared");
 });
 
@@ -75,13 +85,14 @@ Deno.test("a lookup that takes too long is unknown too, not cleared", async () =
   assertStringIncludes(result.stable, "Outcome: unknown");
 });
 
-Deno.test("no row is cleared; a lookup that failed is not", async () => {
+Deno.test("no row is unscreened, not cleared; no contributor at all applies nothing", async () => {
   const none = await renderCoachContext(
     [createScreeningContributor(() => Promise.resolve(null))],
     input,
   );
-  assertEquals(none.outcomes[0].outcome, "empty");
-  assertEquals(screeningStateOf(none), "cleared");
+  assertEquals(none.outcomes[0].outcome, "rendered");
+  assertStringIncludes(none.stable, "Outcome: unscreened");
+  assertEquals(screeningStateOf(none), "unscreened");
   assertEquals(screeningStateOf(null), "cleared");
   assertEquals(screeningStateOf(noCoachContributions), "cleared");
 });
@@ -102,7 +113,9 @@ Deno.test("the state follows the host's report when the block never arrived", ()
   });
   assertEquals(screeningStateOf(outcome("failed")), "unknown");
   assertEquals(screeningStateOf(outcome("timeout")), "unknown");
-  assertEquals(screeningStateOf(outcome("empty")), "cleared");
+  // The contributor always renders a block, so one that left none is not known to be cleared.
+  assertEquals(screeningStateOf(outcome("empty")), "unknown");
+  assertEquals(screeningStateOf(outcome("rendered")), "cleared");
 });
 
 Deno.test("an outcome value the code does not know is a failure, not 'no row'", async () => {

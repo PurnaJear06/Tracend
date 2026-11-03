@@ -54,6 +54,12 @@ jobs:
       - name: Retire functions script tests
         run: bash scripts/test-retire-functions.sh
 
+      - name: TestFlight build script tests
+        run: bash scripts/test-build-testflight.sh
+
+      - name: Rollback script tests
+        run: bash scripts/test-rollback-function.sh
+
       - name: Workflow credential guard tests
         run: bash scripts/test-check-workflow-credentials.sh
 
@@ -199,7 +205,7 @@ jobs:
           ASTRO_TELEMETRY_DISABLED: "1"
         run: |
           npm run build
-          for page in index privacy/index terms/index confirm/index unsubscribe/index 404; do
+          for page in index privacy/index terms/index beta-terms/index confirm/index unsubscribe/index 404; do
             test -s "dist/$page.html" || { echo "::error::Missing dist/$page.html"; exit 1; }
           done
 
