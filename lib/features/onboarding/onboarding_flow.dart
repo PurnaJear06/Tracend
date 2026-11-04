@@ -2783,32 +2783,36 @@ class _RevisionSheetState extends State<_RevisionSheet> {
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      TextField(
-        controller: _note,
-        autofocus: true,
-        minLines: 2,
-        maxLines: 5,
-        maxLength: 500,
-        decoration: const InputDecoration(
-          hintText: 'Example: fewer exercises per session, no deadlifts',
+  Widget build(BuildContext context) => TracendSheetUnsavedGuard(
+    listenable: _note,
+    isDirty: () => _note.text.trim().isNotEmpty,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _note,
+          autofocus: true,
+          minLines: 2,
+          maxLines: 5,
+          maxLength: 500,
+          decoration: const InputDecoration(
+            hintText: 'Example: fewer exercises per session, no deadlifts',
+          ),
         ),
-      ),
-      const SizedBox(height: TracendSpacing.sm),
-      ValueListenableBuilder<TextEditingValue>(
-        valueListenable: _note,
-        builder: (context, value, _) => FilledButton(
-          // Changes need words; an empty request would rebuild the same plan.
-          onPressed: value.text.trim().isEmpty
-              ? null
-              : () => Navigator.of(context).pop(value.text.trim()),
-          child: const Text('Request changes'),
+        const SizedBox(height: TracendSpacing.sm),
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _note,
+          builder: (context, value, _) => FilledButton(
+            // Changes need words; an empty request would rebuild the same plan.
+            onPressed: value.text.trim().isEmpty
+                ? null
+                : () => Navigator.of(context).pop(value.text.trim()),
+            child: const Text('Request changes'),
+          ),
         ),
-      ),
-    ],
+      ],
+    ),
   );
 }
 

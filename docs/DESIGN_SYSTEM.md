@@ -342,7 +342,11 @@ The standard bottom sheet for a focused, dismissible sub-task.
   itself.
 - `detents` (for example `[0.5, 0.92]`) open a sheet at the first size and snap between sizes.
 - Inside a sheet, grouped content sits on `surface` against the `sheet` fill.
-- A sheet that holds unsaved input asks before discarding it (§7).
+- A sheet that holds unsaved input asks before discarding it (§7). The body is wrapped in
+  `TracendSheetUnsavedGuard(isDirty:, listenable:)`; while it reports unsaved input, a swipe down,
+  a scrim tap and the close button ask "Discard changes?" (**Keep editing** / destructive
+  **Discard**, `showTracendConfirm`), and a clean sheet closes at once. A sheet with `detents`
+  stays at its first size on a swipe while unsaved.
 
 #### Action sheet and confirm: `showTracendActionSheet`, `showTracendConfirm`
 

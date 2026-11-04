@@ -115,6 +115,16 @@ with both v2 photo notices published; Groq receives nothing. Onboarding uses its
   cleared), and no `public` function is open to `anon`. Owner step: answer Account › Plan › Health
   check before merging (production has no screening rows). Handoff:
   [`onboarding.md`](./handoff/onboarding.md).
+- beta feedback and sheet guard (2026-11-02, branch `claude/feedback-and-sheet-guard`, migration
+  `20261102223417`, in review; new-user audit finding 2 and the sheet finding): **Account › Send
+  feedback** opens an email to the beta support address with the app version, the build and the
+  last beta diagnostic code (kept in memory only; no health values); the daily decision and every
+  Coach reply carry a one-tap Useful / Unclear / Incorrect / Unsafe row stored in
+  `feedback_ratings` (written by `submit_feedback_rating_v1`, exported, deleted with the account),
+  which is how the PRD §8 usefulness gate is measured. Sheets with typed or chosen input (meal,
+  check-in, measurement, pain, goal target, Coach fact, plan-change note, candidate review) ask
+  "Discard changes?" on a swipe, a scrim tap or the close button. Needs a reinstall; the
+  migration deploys with the merge. Handoff: [`ui-polish.md`](./handoff/ui-polish.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Beta terms and consent (2026-11-02, `claude/beta-terms-consent`, migration `20261102143719`, in review): app beta terms at `/beta-terms/` (a draft for a lawyer), privacy page fixes (controller and grievance contact, workout and sleeping heart rate, explicit health-data consent, processor wording), onboarding rows that open both pages plus a separate `health_data` consent, Account links, page versions = "Last updated" dates kept equal to `LegalNotices` by a test, and a launch screen that asks onboarded athletes again when a page changes (fails open; the owner sees it once after installing). Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.

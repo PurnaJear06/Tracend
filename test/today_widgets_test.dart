@@ -7,6 +7,7 @@ import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/feedback/feedback_rating.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
@@ -28,6 +29,7 @@ import 'package:tracend/shared/widgets/tracend_motion.dart';
 import 'package:tracend/shared/widgets/tracend_skeleton.dart';
 
 import 'day_adjustment_fixtures.dart';
+import 'feedback_fakes.dart';
 
 Widget _wrap(Widget child) {
   return MaterialApp(
@@ -670,6 +672,60 @@ void main() {
       expect(find.text('Drop the last bench set today.'), findsOneWidget);
       // Advice never changes the prescribed blocks.
       expect(blocks(tester), hasLength(7));
+    });
+
+    testWidgets("today's decision can be rated when ratings can be saved", (
+      tester,
+    ) async {
+      final ratings = FakeFeedbackRatings();
+      await tester.pumpWidget(
+        _wrap(
+          TodaySessionCard(
+            brief: _brief(workout: workout),
+            decision: decision(),
+            feedback: ratings,
+            aiAllowed: true,
+            onOpen: _noop,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Unclear'));
+      await tester.pumpAndSettle();
+
+      expect(ratings.saved, [
+        (FeedbackSubject.dailyDecision, 'd1', FeedbackRating.unclear),
+      ]);
+    });
+
+    testWidgets('there is nothing to rate without a decision or a backend', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          Column(
+            children: [
+              TodaySessionCard(
+                brief: _brief(workout: workout),
+                decision: null,
+                feedback: FakeFeedbackRatings(),
+                aiAllowed: true,
+                onOpen: _noop,
+              ),
+              TodaySessionCard(
+                brief: _brief(workout: workout),
+                decision: decision(),
+                aiAllowed: true,
+                onOpen: _noop,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Useful'), findsNothing);
     });
 
     testWidgets('a decision from another day is not shown', (tester) async {

@@ -4,6 +4,8 @@ import 'package:tracend/features/readiness/safety_copy.dart';
 import 'package:tracend/features/train/widgets/muscle_map.dart';
 import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/beta_diagnostic.dart';
+import 'package:tracend/shared/diagnostics.dart';
 
 /// Small pieces the Train screen and its sheets share.
 
@@ -427,11 +429,14 @@ class BetaDiagnostic extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => SelectableText(
-    describe(error),
-    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-      fontSize: 11,
-      color: context.tracendColors.textSecondary,
+  Widget build(BuildContext context) => BetaDiagnosticMark(
+    code: describeFailure(error),
+    child: SelectableText(
+      describe(error),
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        fontSize: 11,
+        color: context.tracendColors.textSecondary,
+      ),
     ),
   );
 }

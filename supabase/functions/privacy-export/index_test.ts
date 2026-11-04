@@ -38,6 +38,10 @@ Deno.test("the export includes the pain checks the athlete made", () => {
   assert(dataTables.includes("pain_reports"));
 });
 
+Deno.test("the export includes the ratings the athlete gave Coach", () => {
+  assert(dataTables.includes("feedback_ratings"));
+});
+
 Deno.test("the export includes the facts the athlete confirmed and the Coach's notes", () => {
   assert(dataTables.includes("coach_facts"));
   assert(dataTables.includes("coach_notes"));

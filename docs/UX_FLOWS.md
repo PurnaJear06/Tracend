@@ -28,7 +28,10 @@ These rules apply to every flow; the components are specified in
 
 - **Sheet** (`showTracendSheet`): a focused, self-contained task that can be abandoned, such as a
   check-in, a detail view or a picker. It always closes with a swipe down, a tap outside or the
-  close button. A sheet holding unsaved input asks before discarding it.
+  close button. A sheet holding unsaved input (the meal, check-in, measurement, pain, goal-target and
+  Coach-fact forms, the plan-change note) asks **Discard changes?** with **Keep editing** and a
+  destructive **Discard** on a swipe down, a tap outside or the close button; with nothing entered
+  it closes at once. A save that closes the sheet itself never asks.
 - **Confirmation** (`showTracendConfirm`): one consequential step, named by its outcome (**Discard
   workout**, **Delete conversation**). Deleting or discarding anything is always confirmed, with
   Cancel as the default choice.
@@ -515,7 +518,13 @@ Reading order:
    set grouped by exercise, filling lime as sets are logged in Train ("4 of 15 sets logged",
    "Done · 15 sets logged"). The coach's note sits under it: today's first training adjustment,
    else today's training summary, as advice in its own words, labelled "Coach · ‹confidence›"; it
-   never changes the prescribed sets. A decision from another day is not shown. **Readiness card
+   never changes the prescribed sets. Under the note, once a decision exists, a small row asks "How was
+   this?" with four one-tap answers, **Useful**, **Unclear**, **Incorrect** and **Unsafe** (44pt
+   targets; VoiceOver reads "Rate this daily decision useful" and so on, with the chosen one
+   selected). The choice shows at once; if it could not be saved it is taken back and the row says
+   "Could not save your rating. Check your connection and tap again." Tapping another answer
+   replaces the rating, and the app shows the rating already given. A decision from another day is
+   not shown. **Readiness card
    (B4-2):** a card sits between the strip and the note whenever `get_my_day_adjustment_v1` has
    something to say, read for the hub's `local_today` (never the phone's date). Proposed: the title
    for the kind, the server's sentence (reasons plus action), **What Tracend sees** (recovery score
@@ -722,6 +731,8 @@ three separate autonomous chatbots.
   with no provider name (D11). A reply no model wrote (the deterministic safety boundary, stored
   with provider `mock`) reads **Tracend safety answer · not AI** and never carries the AI badge. A
   provider or validation failure never substitutes generic coaching text.
+- **Rating.** Under every Coach reply the same "How was this?" row (**Useful**, **Unclear**,
+  **Incorrect**, **Unsafe**) rates that reply; the athlete's own messages are not rated.
 - **Formatting.** Replies display bold, italic, and bullet or numbered lists, so they read as
   formatted text rather than raw Markdown. Long answers are selectable.
 - **Labeled replies.** When the model cannot answer, Coach shows a labeled reply in its place,
@@ -1547,6 +1558,10 @@ Account is one iOS inset-grouped settings page:
   month**, **What Coach remembers** (§13, memory) and **Coach conversations** (a sheet; deleting a conversation asks with a destructive
   confirm, **Delete thread**). The footnote says provider keys stay on Tracend's server. The AI
   coaching row names no provider (D11): "On · AI writes Coach answers".
+- **Feedback:** **Send feedback** opens the mail composer to the beta support address with the app
+  version, the build and the last beta diagnostic code under a line for the athlete's own words
+  (no health values). With no mail app set up, a sheet shows the address as selectable text with
+  **Copy address** and the details to mention.
 - **Region:** one row, **Country**, optional. It opens a sheet with Australia, India, United
   Kingdom, United States, **Another country** and **Not set** (the countries are those whose
   national food and body-size guidance the research library holds). The subtitle says what it does:

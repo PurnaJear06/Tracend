@@ -14,6 +14,7 @@ import 'package:tracend/features/coach/coach_screen.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/coach/widgets/coach_message_bubble.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/shared/beta_diagnostic.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/tracend_toast.dart';
 
@@ -662,10 +663,16 @@ void main() {
         final repository = _ScriptedRepository([
           coachChatFailure(_http(fixture[entry.key]!), now: _now),
         ]);
+        LatestBetaDiagnostic.code = null;
         await tester.pumpWidget(app(repository));
         await tester.pumpAndSettle();
         await ask(tester, 'How am I doing?');
 
+        // The failure that was produced is the one Send feedback reports.
+        expect(
+          LatestBetaDiagnostic.code,
+          betaDiagnosticCode(expected.diagnostic),
+        );
         final card = find.byType(CoachTurnError);
         expect(card, findsOneWidget);
         final message = tester

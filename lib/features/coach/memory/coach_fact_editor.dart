@@ -3,6 +3,7 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/memory/coach_memory.dart';
 import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
 import 'package:tracend/shared/diagnostics.dart';
+import 'package:tracend/shared/widgets/tracend_sheet.dart';
 
 /// The body of the add and edit sheet on the memory screen: a kind from the
 /// closed list and the athlete's own words. [save] runs when Save is tapped;
@@ -49,6 +50,10 @@ class _CoachFactEditorState extends State<CoachFactEditor> {
         _kind != initial.kind;
   }
 
+  /// Something typed or changed that closing the sheet would lose.
+  bool get _unsaved =>
+      widget.initial == null ? _statement.isNotEmpty : _changed;
+
   Future<void> _save() async {
     setState(() {
       _saving = true;
@@ -74,58 +79,63 @@ class _CoachFactEditorState extends State<CoachFactEditor> {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final colors = context.tracendColors;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: TracendSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('What is it about?', style: textTheme.titleSmall),
-          const SizedBox(height: TracendSpacing.xs),
-          Wrap(
-            spacing: TracendSpacing.xs,
-            children: [
-              for (final kind in CoachFactKind.values)
-                ChoiceChip(
-                  label: Text(kind.label),
-                  selected: _kind == kind,
-                  materialTapTargetSize: MaterialTapTargetSize.padded,
-                  onSelected: _saving
-                      ? null
-                      : (selected) {
-                          if (selected) setState(() => _kind = kind);
-                        },
-                ),
-            ],
-          ),
-          const SizedBox(height: TracendSpacing.md),
-          TextField(
-            controller: _text,
-            enabled: !_saving,
-            maxLength: _maxChars,
-            maxLines: 3,
-            minLines: 2,
-            textCapitalization: TextCapitalization.sentences,
-            onChanged: (_) => setState(() {}),
-            decoration: const InputDecoration(
-              labelText: 'In your words',
-              hintText: 'For example: left knee hurts on deep squats',
-            ),
-          ),
-          if (_error != null) ...[
+    return TracendSheetUnsavedGuard(
+      isDirty: () => _unsaved,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: TracendSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('What is it about?', style: textTheme.titleSmall),
             const SizedBox(height: TracendSpacing.xs),
-            Text(
-              _error!,
-              style: textTheme.bodyMedium?.copyWith(color: colors.stateDanger),
+            Wrap(
+              spacing: TracendSpacing.xs,
+              children: [
+                for (final kind in CoachFactKind.values)
+                  ChoiceChip(
+                    label: Text(kind.label),
+                    selected: _kind == kind,
+                    materialTapTargetSize: MaterialTapTargetSize.padded,
+                    onSelected: _saving
+                        ? null
+                        : (selected) {
+                            if (selected) setState(() => _kind = kind);
+                          },
+                  ),
+              ],
+            ),
+            const SizedBox(height: TracendSpacing.md),
+            TextField(
+              controller: _text,
+              enabled: !_saving,
+              maxLength: _maxChars,
+              maxLines: 3,
+              minLines: 2,
+              textCapitalization: TextCapitalization.sentences,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                labelText: 'In your words',
+                hintText: 'For example: left knee hurts on deep squats',
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: TracendSpacing.xs),
+              Text(
+                _error!,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colors.stateDanger,
+                ),
+              ),
+            ],
+            const SizedBox(height: TracendSpacing.md),
+            FilledButton(
+              onPressed: _saving || _statement.isEmpty || !_changed
+                  ? null
+                  : _save,
+              child: Text(_saving ? 'Saving…' : 'Save'),
             ),
           ],
-          const SizedBox(height: TracendSpacing.md),
-          FilledButton(
-            onPressed: _saving || _statement.isEmpty || !_changed
-                ? null
-                : _save,
-            child: Text(_saving ? 'Saving…' : 'Save'),
-          ),
-        ],
+        ),
       ),
     );
   }

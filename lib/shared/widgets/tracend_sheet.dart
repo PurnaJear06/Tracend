@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
+import 'package:tracend/shared/widgets/tracend_confirm.dart';
 
 /// Opens a Tracend bottom sheet (DESIGN_SYSTEM.md §5.1, sheet) and completes
 /// with the value the sheet pops, or null when it is dismissed.
@@ -19,6 +22,12 @@ import 'package:tracend/shared/widgets/pressable.dart';
 /// itself. Pass [detents] (ascending fractions of the available height, such
 /// as `[0.5, 0.92]`) for a sheet that opens at the first size and snaps
 /// between them when dragged; its body always scrolls.
+///
+/// A sheet that takes input wraps its body in [TracendSheetUnsavedGuard].
+/// While the guard reports unsaved input, a swipe down, a tap on the scrim and
+/// the close button ask "Discard changes?" instead of closing; a saving
+/// action that pops the route itself is never asked. A guarded sheet with
+/// [detents] stays at its smallest size on a swipe rather than closing.
 Future<T?> showTracendSheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
@@ -121,7 +130,7 @@ class _TracendSheetRoute<T> extends ModalBottomSheetRoute<T> {
   }
 }
 
-class _TracendSheetFrame extends StatelessWidget {
+class _TracendSheetFrame extends StatefulWidget {
   const _TracendSheetFrame({
     required this.title,
     required this.subtitle,
@@ -143,53 +152,100 @@ class _TracendSheetFrame extends StatelessWidget {
   final WidgetBuilder builder;
 
   @override
+  State<_TracendSheetFrame> createState() => _TracendSheetFrameState();
+}
+
+class _TracendSheetFrameState extends State<_TracendSheetFrame> {
+  /// A downward drag this far, or this fast, is a swipe to close.
+  static const _swipeDistance = 80.0;
+  static const _swipeVelocity = 700.0;
+
+  final _unsaved = _UnsavedInput();
+  var _swiped = 0.0;
+  var _asking = false;
+
+  @override
+  void dispose() {
+    _unsaved.close();
+    super.dispose();
+  }
+
+  Future<void> _askToDiscard() async {
+    if (_asking) return;
+    _asking = true;
+    final discard = await showTracendConfirm(
+      context,
+      title: 'Discard changes?',
+      message: 'What you entered has not been saved.',
+      confirmLabel: 'Discard',
+      cancelLabel: 'Keep editing',
+      destructive: true,
+    );
+    _asking = false;
+    if (discard && mounted) Navigator.of(context).pop();
+  }
+
+  void _swipeEnded(DragEndDetails details) {
+    final swiped =
+        _swiped >= _swipeDistance ||
+        details.velocity.pixelsPerSecond.dy >= _swipeVelocity;
+    _swiped = 0;
+    if (swiped) unawaited(_askToDiscard());
+  }
+
+  @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final keyboard = media.viewInsets.bottom;
-    final bodyPadding = padding.add(
+    final bodyPadding = widget.padding.add(
       EdgeInsets.only(
         bottom: (keyboard > 0 ? 0 : media.padding.bottom) + TracendSpacing.lg,
       ),
     );
+    final title = widget.title;
     final header = title == null
         ? null
         : TracendSheetHeader(
-            title: title!,
-            subtitle: subtitle,
-            showCloseButton: showCloseButton,
-            topPadding: hasDragHandle ? 0 : TracendSpacing.lg,
+            title: title,
+            subtitle: widget.subtitle,
+            showCloseButton: widget.showCloseButton,
+            topPadding: widget.hasDragHandle ? 0 : TracendSpacing.lg,
           );
     Widget body(BuildContext context) => MediaQuery.removeViewInsets(
       context: context,
       removeBottom: true,
-      child: Builder(builder: builder),
+      child: Builder(builder: widget.builder),
     );
 
-    final detents = this.detents;
+    final detents = widget.detents;
     final Widget sheet;
     if (detents != null) {
-      sheet = DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: detents.first,
-        minChildSize: detents.first,
-        maxChildSize: detents.last,
-        snap: detents.length > 1,
-        snapSizes: detents.length > 2
-            ? detents.sublist(1, detents.length - 1)
-            : null,
-        builder: (context, controller) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (hasDragHandle) const TracendSheetHandle(),
-            ?header,
-            Expanded(
-              child: SingleChildScrollView(
-                controller: controller,
-                padding: bodyPadding,
-                child: body(context),
+      sheet = ValueListenableBuilder<bool>(
+        valueListenable: _unsaved,
+        builder: (context, unsaved, _) => DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: detents.first,
+          minChildSize: detents.first,
+          maxChildSize: detents.last,
+          shouldCloseOnMinExtent: !unsaved,
+          snap: detents.length > 1,
+          snapSizes: detents.length > 2
+              ? detents.sublist(1, detents.length - 1)
+              : null,
+          builder: (context, controller) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (widget.hasDragHandle) const TracendSheetHandle(),
+              ?header,
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: controller,
+                  padding: bodyPadding,
+                  child: body(context),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
     } else {
@@ -197,10 +253,10 @@ class _TracendSheetFrame extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (hasDragHandle) const TracendSheetHandle(),
+          if (widget.hasDragHandle) const TracendSheetHandle(),
           ?header,
           Flexible(
-            child: scrollable
+            child: widget.scrollable
                 ? SingleChildScrollView(
                     padding: bodyPadding,
                     child: body(context),
@@ -210,11 +266,147 @@ class _TracendSheetFrame extends StatelessWidget {
         ],
       );
     }
-    return Padding(
-      padding: EdgeInsets.only(bottom: keyboard),
-      child: sheet,
+    // While input is unsaved the close button and the scrim go through
+    // `maybePop`, which the PopScope turns into the question. The route's own
+    // swipe pops without asking, so a drag recognizer closer to the touch
+    // wins it instead; it exists only while unsaved, so a clean sheet keeps
+    // the interactive swipe.
+    return _UnsavedInputScope(
+      input: _unsaved,
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _unsaved,
+        child: Padding(
+          padding: EdgeInsets.only(bottom: keyboard),
+          child: sheet,
+        ),
+        builder: (context, unsaved, child) => PopScope(
+          canPop: !unsaved,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) unawaited(_askToDiscard());
+          },
+          child: GestureDetector(
+            // The swipe is for touch; its scroll actions would merge the
+            // whole sheet into one screen reader element.
+            excludeFromSemantics: true,
+            onVerticalDragStart: unsaved ? (_) => _swiped = 0 : null,
+            onVerticalDragUpdate: unsaved
+                ? (details) => _swiped += details.delta.dy
+                : null,
+            onVerticalDragEnd: unsaved ? _swipeEnded : null,
+            child: child,
+          ),
+        ),
+      ),
     );
   }
+}
+
+/// Whether the sheet holds unsaved input. A change that arrives after the
+/// sheet is gone (a guard disposed with it) is ignored.
+class _UnsavedInput extends ValueNotifier<bool> {
+  _UnsavedInput() : super(false);
+
+  var _open = true;
+
+  void close() {
+    _open = false;
+    dispose();
+  }
+
+  void set(bool dirty) {
+    if (_open && value != dirty) value = dirty;
+  }
+}
+
+class _UnsavedInputScope extends InheritedWidget {
+  const _UnsavedInputScope({required this.input, required super.child});
+
+  final _UnsavedInput input;
+
+  @override
+  bool updateShouldNotify(_UnsavedInputScope oldWidget) =>
+      input != oldWidget.input;
+}
+
+/// Tells the sheet around it whether the athlete has typed or chosen
+/// something that closing would lose. Wrap the body of any sheet that takes
+/// input; see [showTracendSheet] for what an unsaved sheet does on a swipe,
+/// a scrim tap or the close button.
+///
+/// [isDirty] is read when the guard is built and whenever [listenable]
+/// notifies, so a sheet that rebuilds on every change (`setState`) needs no
+/// listenable, and one with text controllers passes
+/// `Listenable.merge([...])`. Outside a sheet the guard does nothing.
+class TracendSheetUnsavedGuard extends StatefulWidget {
+  const TracendSheetUnsavedGuard({
+    required this.isDirty,
+    required this.child,
+    this.listenable,
+    super.key,
+  });
+
+  final bool Function() isDirty;
+  final Listenable? listenable;
+  final Widget child;
+
+  @override
+  State<TracendSheetUnsavedGuard> createState() =>
+      _TracendSheetUnsavedGuardState();
+}
+
+class _TracendSheetUnsavedGuardState extends State<TracendSheetUnsavedGuard> {
+  _UnsavedInput? _input;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.listenable?.addListener(_sync);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _input = context
+        .dependOnInheritedWidgetOfExactType<_UnsavedInputScope>()
+        ?.input;
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(TracendSheetUnsavedGuard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.listenable != widget.listenable) {
+      oldWidget.listenable?.removeListener(_sync);
+      widget.listenable?.addListener(_sync);
+    }
+    _sync();
+  }
+
+  @override
+  void dispose() {
+    widget.listenable?.removeListener(_sync);
+    _publish(_input, false);
+    super.dispose();
+  }
+
+  void _sync() => _publish(_input, widget.isDirty());
+
+  /// Changes made while a frame is building wait for its end, so the sheet
+  /// is never marked dirty in the middle of building itself.
+  static void _publish(_UnsavedInput? input, bool dirty) {
+    if (input == null) return;
+    final binding = SchedulerBinding.instance;
+    if (binding.schedulerPhase == SchedulerPhase.idle) {
+      input.set(dirty);
+      return;
+    }
+    binding
+      ..addPostFrameCallback((_) => input.set(dirty))
+      ..scheduleFrame();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// The sheet's drag handle: a 36×5 pill, 8pt below the top edge. It is a

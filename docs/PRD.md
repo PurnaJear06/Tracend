@@ -388,7 +388,10 @@ on in Account (SECURITY_PRIVACY §10). Notifications themselves still reveal not
 
 ### 5.6 Feedback and auditability
 
-Users can rate a decision as useful, unclear, incorrect, or unsafe and add a note. Model runs,
+Users can rate a decision, and each Coach reply, as useful, unclear, incorrect, or unsafe with one
+tap (a rating is kept per decision or reply and can be changed). A note is not part of the rating:
+**Account › Send feedback** opens an email to the beta support address with the app version, the
+build and the last beta diagnostic code, and the athlete writes what they want to say. Model runs,
 feature snapshots, proposals, approvals, rejections, corrections, exports, and deletions produce
 audit events without storing secrets or unnecessary raw prompt content.
 
@@ -511,7 +514,8 @@ Private-beta success requires:
 - zero known plan mutations caused by invalid or failed AI output;
 - schema-valid AI output in at least 99% of successful model calls after retry/fallback handling;
 - safe behavior on the required safety evaluation suite;
-- median user usefulness rating of at least 4/5 for reviewed daily decisions; and
+- at least 80% of rated daily decisions marked useful, and every one marked unsafe reviewed before
+  the beta widens; and
 - two weeks of stable owner dogfooding before inviting additional testers.
 
 The external beta also waits until all four phases of the coaching platform program are merged and
@@ -555,5 +559,9 @@ built yet:
 
 - Sign in with Apple (section 4.1);
 - imperial display (the database stores the preference; the app shows metric only);
-- a screen to review a persistent change proposal after onboarding (section 4.8); and
-- decision feedback ratings (section 5.6).
+- a screen to review a persistent change proposal after onboarding (section 4.8).
+
+Built: one-tap ratings of the daily decision and of Coach replies, stored in `feedback_ratings`, and
+**Account › Send feedback** (section 5.6). The beta usefulness gate (section 8: at least 80% of
+rated daily decisions marked useful, and every one marked unsafe reviewed) is measured from those
+ratings.
