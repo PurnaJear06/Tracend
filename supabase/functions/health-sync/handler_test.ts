@@ -1,5 +1,6 @@
-// health-sync's answers: a refused batch stays 422 with its SQLSTATE, the hourly limit is 429, and
-// a server fault is 503. The last two are logged and reported by code only.
+// health-sync's answers: a refused batch stays 422 with its SQLSTATE, a missing health-data consent
+// is 403 (expected, quiet), the hourly limit is 429, and a server fault is 503. The last two are
+// logged and reported by code only.
 
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 import { captureLogs } from "../_shared/ai/fakes.ts";
@@ -76,6 +77,14 @@ for (const code of ["22023", "22P02", "23514", "P0002"]) {
     assert(lines[0].includes(`"error_code":"${code}"`));
   });
 }
+
+Deno.test("a missing health-data consent is 403, expected: not logged, not reported", async () => {
+  const { status, body, lines, reports } = await run(valid, failing("P0403"));
+  assertEquals(status, 403);
+  assertEquals(body, { error: "health_consent_required" });
+  assertEquals(lines, []);
+  assertEquals(reports, []);
+});
 
 Deno.test("the hourly limit is 429, logged and reported", async () => {
   const { status, body, lines, reports } = await run(valid, failing("54000"));

@@ -4,6 +4,10 @@ select plan(35);
 insert into auth.users(id, role) values
   ('f4000000-0000-4000-8000-000000000001', 'authenticated'),
   ('f4000000-0000-4000-8000-000000000002', 'authenticated');
+-- Apple Health is stored only for an athlete who agreed to it.
+insert into public.consent_records(user_id, consent_type, notice_version, action, source) values
+  ('f4000000-0000-4000-8000-000000000001', 'health_data', '2026-11-02', 'granted', 'ios_app'),
+  ('f4000000-0000-4000-8000-000000000002', 'health_data', '2026-11-02', 'granted', 'ios_app');
 -- These athletes answered the health check as cleared; a missing check is unscreened, never
 -- cleared (20261102074318).
 insert into public.onboarding_screenings(user_id, exercises_regularly, known_disease, symptoms, outcome)

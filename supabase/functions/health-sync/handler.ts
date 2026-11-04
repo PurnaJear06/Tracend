@@ -57,6 +57,11 @@ export async function handleHealthSync(body: unknown, deps: HealthSyncDeps): Pro
   } catch {
     write = { data: null, error: null };
   }
+  // The athlete has no current health-data consent (P0403): expected until they agree in the
+  // app, so it is neither logged nor reported.
+  if (write.error?.code === "P0403") {
+    return reply(403, { error: "health_consent_required" });
+  }
   if (write.error || !write.data) {
     const failure = healthSyncFailure(write.error);
     if (failure.status === 422) {

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:tracend/features/consent/legal_consent.dart';
 import 'package:tracend/features/onboarding/onboarding_screening.dart';
 
 class OnboardingDraft {
@@ -464,9 +465,14 @@ abstract interface class OnboardingRepository implements ScreeningRepository {
     required Map<String, dynamic> payload,
   });
 
-  /// Records adult eligibility, and terms and privacy consent unless this
-  /// version is already granted. Approval writes the rest of the profile.
+  /// Records adult eligibility, and terms, privacy and health-data consent
+  /// unless this version (or a newer one) is already granted. Approval writes
+  /// the rest of the profile.
   Future<void> recordEligibilityAndConsent({required bool eligible});
+
+  /// The agreements not yet granted at this build's versions. A saved draft
+  /// past the first step resumes there only when this is empty.
+  Future<Set<LegalConsent>> loadOutdatedLegalConsents();
   Future<void> saveGoal(String goal);
 
   /// Starts (or returns) the plan generation for the saved draft.
@@ -551,8 +557,6 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
     );
   }
 
-  static const _legalNoticeVersion = '2026-07-01';
-
   @override
   Future<void> recordEligibilityAndConsent({required bool eligible}) async {
     // Only the eligibility answer: training days, session length and
@@ -564,37 +568,20 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
         'eligible': eligible,
       }),
     );
-    final records = await _limited(
-      _client
-          .from('consent_records')
-          .select('consent_type,notice_version,action')
-          .eq('user_id', _userId)
-          .inFilter('consent_type', ['terms', 'privacy'])
-          .order('created_at', ascending: false),
-    );
-    bool granted(String type) {
-      final newest = records.where((row) => row['consent_type'] == type);
-      return newest.isNotEmpty &&
-          newest.first['action'] == 'granted' &&
-          newest.first['notice_version'] == _legalNoticeVersion;
-    }
-
     // Passing this step again adds no duplicate records.
-    final missing = ['terms', 'privacy'].where((type) => !granted(type));
-    if (missing.isEmpty) return;
-    await _limited(
-      _client.from('consent_records').insert([
-        for (final type in missing)
-          {
-            'user_id': _userId,
-            'consent_type': type,
-            'notice_version': _legalNoticeVersion,
-            'action': 'granted',
-            'source': 'ios_app',
-          },
-      ]),
+    final legal = SupabaseLegalConsentRepository(
+      _client,
+      callTimeout: callTimeout,
     );
+    await legal.grant(await legal.loadOutdated());
   }
+
+  @override
+  Future<Set<LegalConsent>> loadOutdatedLegalConsents() =>
+      SupabaseLegalConsentRepository(
+        _client,
+        callTimeout: callTimeout,
+      ).loadOutdated();
 
   @override
   Future<void> saveGoal(String goal) async {

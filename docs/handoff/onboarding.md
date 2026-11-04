@@ -236,8 +236,24 @@ v1 approval now refuses 2.0 proposals.
   Reject asks first; Request changes needs a note; RPE explained in reps left; **You're set.**
   after approval; Account › Profile and goals shows the onboarding answers and no longer tells
   athletes to ask the Coach for a proposal (no Coach plan-change path exists yet).
-- **Not changed** (owner's choice or out of scope): lb/ft units, translations, links to the
-  terms text, raw error text in beta.
+- **Not changed** (owner's choice or out of scope): lb/ft units, translations, raw error text in
+  beta.
+- **Terms, privacy and health data (2026-11-02, `claude/beta-terms-consent`):** the eligibility
+  step has three separate unticked rows (`LegalConsentRows`, `lib/features/consent/legal_consent.dart`):
+  the private-beta terms and the privacy notice, each with a link to its hosted page (in-app
+  browser), and explicit health-data consent. Continue needs all three; the step records
+  `terms`, `privacy` and `health_data` at `LegalNotices` versions (the pages' "Last updated"
+  dates) unless that version or a newer one is already granted. `Phase2Gate` asks onboarded
+  athletes again at launch when a grant is older (`LegalConsentScreen`, with Sign out and Delete
+  account); a failed lookup opens the app with Apple Health off (`syncAllowed` on
+  `SupabaseHealthRepository`, so no HealthKit read or upload) and the next foreground retries.
+  The server refuses Apple Health writes without a current-or-older `health_data` grant
+  (`P0403`; `health-sync` answers 403 `health_consent_required`); the app treats that as not
+  consented, quietly, without moving the last-sync mark. Apple Health is read only
+  once the agreements are current: the gate starts the monthly history upload after the re-consent
+  screen, and a saved draft past the first step whose agreements are missing or outdated restarts
+  at the agreements (`loadOutdatedLegalConsents`) before any Apple Health read or plan resume; a
+  failed lookup there shows the restore retry.
 
 **Switching provider or model later** (AI_SAFETY_SPEC §10):
 

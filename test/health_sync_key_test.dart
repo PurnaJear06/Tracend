@@ -57,6 +57,16 @@ class _Source implements HealthDataSource {
       );
 }
 
+class _CountingSource extends _Source {
+  var reads = 0;
+
+  @override
+  Future<HealthReadResult> read(DateTime start, DateTime end) {
+    reads++;
+    return super.read(start, end);
+  }
+}
+
 /// A signed-in client whose health-sync answers come from [answer], and the
 /// idempotency key of every attempt it receives.
 Future<(SupabaseClient, List<String>)> _client(
@@ -100,11 +110,13 @@ Future<(SupabaseClient, List<String>)> _client(
 SupabaseHealthRepository _repository(
   SupabaseClient client, {
   HealthDataSource? source,
+  bool Function()? syncAllowed,
 }) => SupabaseHealthRepository(
   client,
   SharedPreferencesAsync(),
   source: source ?? _Source(),
   heartRateReader: _Reader(),
+  syncAllowed: syncAllowed,
 );
 
 http.Response _json(http.Request request, int status, Object body) =>
@@ -120,6 +132,52 @@ void main() {
     SharedPreferencesAsyncPlatform.instance =
         InMemorySharedPreferencesAsync.empty();
     resetLoadFailures();
+  });
+
+  test(
+    'while consent is unknown or outdated nothing is read or sent',
+    () async {
+      final source = _CountingSource();
+      var allowed = false;
+      final (client, keys) = await _client(
+        (request) => _json(request, 200, <String, Object>{}),
+      );
+      final repository = _repository(
+        client,
+        source: source,
+        syncAllowed: () => allowed,
+      );
+
+      await repository.sync();
+      await repository.connectAndSync();
+      expect(source.reads, 0);
+      expect(keys, isEmpty);
+
+      allowed = true;
+      await repository.sync();
+      expect(source.reads, 1);
+      expect(keys, hasLength(1));
+    },
+  );
+
+  test('a server refusal for consent is quiet, final and sends the window '
+      'again later', () async {
+    var consented = false;
+    final (client, keys) = await _client(
+      (request) => consented
+          ? _json(request, 200, <String, Object>{})
+          : _json(request, 403, {'error': 'health_consent_required'}),
+    );
+    final repository = _repository(client);
+
+    final refused = await repository.sync();
+    expect(keys, hasLength(1), reason: 'a refusal is not retried');
+    expect(refused.lastSuccessfulSync, isNull, reason: 'the last sync stays');
+
+    consented = true;
+    final accepted = await repository.sync();
+    expect(keys, hasLength(2));
+    expect(accepted.lastSuccessfulSync, isNotNull);
   });
 
   test('every attempt of one sync repeats its key, and the next sync '

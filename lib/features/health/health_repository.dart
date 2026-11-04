@@ -39,7 +39,9 @@ class SupabaseHealthRepository
     DateTime Function()? now,
     SleepingHeartRateRecorder? sleepingHeartRate,
     HeartRateReader? heartRateReader,
+    bool Function()? syncAllowed,
   }) : _client = client,
+       _syncAllowed = syncAllowed ?? (() => true),
        _state = HealthPreferences(
          preferences,
          userId: () => client.auth.currentUser?.id,
@@ -67,6 +69,10 @@ class SupabaseHealthRepository
   final DateTime Function() _now;
   final HeartRateReader _heartRateReader;
   final SleepingHeartRateRecorder _sleepingHeartRate;
+
+  /// Whether Apple Health may be read and sent now. The app turns it off
+  /// while the athlete's health-data consent is unknown or outdated.
+  final bool Function() _syncAllowed;
 
   @override
   Future<HeartRateProfile?> loadHeartRateProfile() =>
@@ -221,6 +227,7 @@ class SupabaseHealthRepository
 
   @override
   Future<HealthSyncStatus> sync() async {
+    if (!_syncAllowed()) return loadStatus();
     final keys = await _state.keys();
     if (keys == null) {
       return const HealthSyncStatus(state: HealthConnectionState.manualOnly);
@@ -272,7 +279,13 @@ class SupabaseHealthRepository
       requestedMetrics: result.requestedMetrics,
       timezone: timezone,
     );
-    await _invokeSync(result, summaries, start, now);
+    try {
+      await _invokeSync(result, summaries, start, now);
+    } on HealthConsentRequired {
+      // Nothing was stored and the last sync does not move, so the same
+      // window is sent once the athlete agrees.
+      return loadStatus();
+    }
     await preferences.setString(keys.lastSync, now.toUtc().toIso8601String());
     await preferences.setStringList(
       keys.availableTypes,
@@ -328,6 +341,7 @@ class SupabaseHealthRepository
         );
         return;
       } on FunctionException catch (error) {
+        if (_isConsentRefusal(error)) throw const HealthConsentRequired();
         lastError = error;
         // A 4xx from the function or from Supabase's relay in front of it (a
         // refused batch, the hourly limit, a session refused) gets the same
@@ -340,6 +354,11 @@ class SupabaseHealthRepository
     }
     throw _HealthSyncException(healthSyncFailureMessage(lastError!), lastError);
   }
+
+  static bool _isConsentRefusal(FunctionException error) =>
+      error.status == 403 &&
+      error.details is Map &&
+      (error.details as Map)['error'] == 'health_consent_required';
 
   /// The name a run of failed syncs is reported under.
   static const _syncLoad = 'Apple Health sync';
@@ -495,6 +514,16 @@ class ManualHealthRepository implements HealthRepository {
 
   @override
   Future<HealthSyncStatus> sync() => loadStatus();
+}
+
+/// The server refused the sync because the athlete's newest health-data
+/// consent is missing or withdrawn. Expected until they agree in the app:
+/// never retried, never shown as an error.
+class HealthConsentRequired implements Exception {
+  const HealthConsentRequired();
+
+  @override
+  String toString() => 'Health data consent required.';
 }
 
 class _HealthSyncException implements Exception {

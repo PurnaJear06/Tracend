@@ -6,6 +6,7 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/account/widgets/account_sheets.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/consent/legal_consent.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
@@ -278,8 +279,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   OnboardingProposal? _approved;
   bool _adult = false;
   bool _needsClinicalSupport = false;
-  bool _terms = false;
-  bool _privacy = false;
+
+  /// The terms, privacy and health-data rows ticked; all three are needed.
+  final _legal = <LegalConsent>{};
   bool? _aiChoice;
 
   /// The health check answers; null until answered. The clearance question is
@@ -634,6 +636,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           restored = _screeningStep;
         }
         if (_skips(restored)) restored = _focusStep;
+        // A draft past the first step resumes there only with the current
+        // terms, privacy and health-data agreements on record. Otherwise it
+        // continues from the agreements, before any Apple Health history is
+        // read or a plan is built. A lookup that fails fails the restore.
+        if (restored > _eligibilityStep &&
+            (await widget.repository.loadOutdatedLegalConsents()).isNotEmpty) {
+          restored = _eligibilityStep;
+        }
         if (restored > 0) _step = restored;
         _aboutPassed = _step > _aboutStep;
         resumeGeneration = _step == _proposalStep;
@@ -661,7 +671,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     if (_restoreFailed) return;
     if (resumeGeneration && mounted) unawaited(_resumeGeneration());
     if (_step == _questionsStep && mounted) unawaited(_fetchQuestions());
-    if (mounted && _healthImport != 'skipped') unawaited(_loadHealthFacts());
+    if (mounted && _healthImport != 'skipped' && _step > _eligibilityStep) {
+      unawaited(_loadHealthFacts());
+    }
   }
 
   /// The athlete's stored screening when it says to see a professional first;
@@ -1146,6 +1158,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     try {
       if (_step == _eligibilityStep) {
         await widget.repository.recordEligibilityAndConsent(eligible: true);
+        // Apple Health already connected on an earlier run is read only now
+        // that the health-data agreement is on record.
+        if (_healthImport != 'skipped' && _healthFacts == null) {
+          unawaited(_loadHealthFacts());
+        }
       }
       if (_step == _screeningStep && _screeningOutcome == null) {
         final submitted = _screeningAnswers!;
@@ -1196,7 +1213,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   bool _isStepValid() => switch (_step) {
-    _eligibilityStep => _adult && !_needsClinicalSupport && _terms && _privacy,
+    _eligibilityStep =>
+      _adult &&
+          !_needsClinicalSupport &&
+          _legal.length == LegalConsent.values.length,
     _screeningStep =>
       _screeningAnswers != null &&
           _screeningOutcome != ScreeningOutcome.seeProfessional,
@@ -1653,19 +1673,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         ],
       ),
       const SizedBox(height: TracendSpacing.lg),
-      TracendGroupedList(
-        children: [
-          CheckRow(
-            title: 'I accept the private-beta terms',
-            checked: _terms,
-            onChanged: (value) => setState(() => _terms = value),
-          ),
-          CheckRow(
-            title: 'I have read the privacy notice',
-            checked: _privacy,
-            onChanged: (value) => setState(() => _privacy = value),
-          ),
-        ],
+      LegalConsentRows(
+        checked: _legal,
+        onChanged: (consent, value) => setState(() {
+          if (value) {
+            _legal.add(consent);
+          } else {
+            _legal.remove(consent);
+          }
+        }),
       ),
     ],
   );

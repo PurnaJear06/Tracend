@@ -11,6 +11,7 @@ import 'package:tracend/features/auth/account_session.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/auth/password_reset_flow.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/consent/legal_consent.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
@@ -35,6 +36,7 @@ class Phase2Gate extends StatefulWidget {
     this.liveActivity = const MethodChannelWorkoutActivityBridge(),
     this.homeWidgets = const MethodChannelHomeWidgetBridge(),
     this.notifications = const MethodChannelNotificationRepository(),
+    this.healthBaseline,
     super.key,
   });
 
@@ -56,6 +58,10 @@ class Phase2Gate extends StatefulWidget {
   final NotificationRepository notifications;
   final LocalAccountData? localData;
 
+  /// The athlete's usual months from Apple Health, unless a test provides
+  /// one.
+  final HealthBaselineSource? healthBaseline;
+
   @override
   State<Phase2Gate> createState() => _Phase2GateState();
 }
@@ -72,6 +78,19 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
 
   /// An account check is running.
   bool _checking = false;
+
+  /// The terms, privacy and health-data agreements an onboarded athlete
+  /// gives again before the app opens, because this build shows newer pages
+  /// than they agreed to. Empty when the check could not run: the app opens
+  /// and the next launch asks again.
+  Set<LegalConsent> _legalOutdated = const {};
+
+  /// The agreements could not be checked this launch (a failed lookup, or the
+  /// saved plan opened offline). The app is open, but nothing is read from
+  /// Apple Health or sent until a later check succeeds with current
+  /// agreements; the next foreground retries it.
+  bool _legalUnknown = false;
+  bool _legalRetrying = false;
   AiCoachingConsentController? _aiConsent;
 
   /// One Apple Health repository for onboarding and the app; its state is
@@ -275,22 +294,82 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     // leaves the app open; the screens that ask retry it themselves.
     await aiConsent.load();
     if (ended()) return;
+    // Null: the lookup failed.
+    final legalOutdated = complete
+        ? await _loadLegalOutdated(client)
+        : const <LegalConsent>{};
+    if (ended()) return;
     _userId = userId;
     identifyAthlete(userId);
     // Workouts finished or logged with no signal go to the server now,
     // whichever screen is open.
     unawaited(_workouts().sendWaiting());
-    // The usual months a later plan review compares with, and the saved
-    // reminder choices back on this phone; neither blocks.
+    // The saved reminder choices back on this phone; this never blocks. The
+    // usual months a later plan review compares with are read from Apple
+    // Health only once the agreements are known to be current. A lookup that
+    // failed opens the app without them, and the next foreground checks again.
     if (complete) {
-      unawaited(_baselineSource().refreshIfDue());
       unawaited(_restoreReminders(client));
+      if (legalOutdated != null && legalOutdated.isEmpty) {
+        unawaited(_baselineSource().refreshIfDue());
+      }
     }
     setState(() {
       _authenticated = true;
       _onboardingComplete = complete;
+      _legalOutdated = legalOutdated ?? const {};
+      _legalUnknown = legalOutdated == null;
       _offline = false;
     });
+  }
+
+  /// The agreements to ask for again; null when they could not be checked.
+  /// A failed lookup never locks an onboarded athlete out, but it keeps Apple
+  /// Health off until a later check succeeds. Nothing is ever recorded here.
+  Future<Set<LegalConsent>?> _loadLegalOutdated(SupabaseClient client) async {
+    try {
+      return await SupabaseLegalConsentRepository(client).loadOutdated();
+    } catch (e, stackTrace) {
+      if (isNetworkFailure(e)) {
+        logNonCritical(e, 'Legal consent not checked');
+      } else {
+        reportNonCritical(e, stackTrace, 'Legal consent not checked');
+      }
+      return null;
+    }
+  }
+
+  /// Whether Apple Health may be read and sent: the agreements were checked
+  /// and are current, or onboarding (which asks for them itself) is running.
+  bool get _healthAllowed =>
+      _authenticated && !_legalUnknown && _legalOutdated.isEmpty;
+
+  /// A foreground after a check that failed: looks again, and starts what
+  /// waited for the agreements once they are current.
+  Future<void> _retryLegal() async {
+    if (_legalRetrying) return;
+    _legalRetrying = true;
+    final sessionsEnded = _sessionsEnded;
+    try {
+      final outdated = await _loadLegalOutdated(_client);
+      if (outdated == null || !mounted || sessionsEnded != _sessionsEnded) {
+        return;
+      }
+      setState(() {
+        _legalUnknown = false;
+        _legalOutdated = outdated;
+      });
+      if (outdated.isEmpty) unawaited(_baselineSource().refreshIfDue());
+    } finally {
+      _legalRetrying = false;
+    }
+  }
+
+  /// The athlete agreed again: the app opens, and the Apple Health read that
+  /// waited for the agreement starts.
+  void _legalAgreed() {
+    setState(() => _legalOutdated = const {});
+    unawaited(_baselineSource().refreshIfDue());
   }
 
   /// Opens the app on the plan this phone saved for [userId], when it has
@@ -307,6 +386,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     setState(() {
       _authenticated = true;
       _onboardingComplete = true;
+      _legalUnknown = true;
       _offline = true;
       _error = null;
       _loading = false;
@@ -326,6 +406,8 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     setState(() {
       _authenticated = false;
       _onboardingComplete = false;
+      _legalOutdated = const {};
+      _legalUnknown = false;
       _offline = false;
       _userId = null;
       _error = null;
@@ -414,6 +496,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
         // Back at the front with the saved plan open: the connection may be
         // back too.
         if (_offline) unawaited(_refresh(quiet: true));
+        if (_legalUnknown && !_offline) unawaited(_retryLegal());
       }
     }
   }
@@ -439,6 +522,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   );
 
   HealthBaselineSource _baselineSource() => _baseline ??=
+      widget.healthBaseline ??
       SupabaseHealthBaselineSource(_client, SharedPreferencesAsync());
 
   @override
@@ -492,6 +576,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
     final health = _health ??= SupabaseHealthRepository(
       _client,
       SharedPreferencesAsync(),
+      syncAllowed: () => _healthAllowed,
     );
     if (!_onboardingComplete) {
       return OnboardingFlow(
@@ -500,6 +585,20 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
         aiConsent: aiConsent,
         health: health,
         healthBaseline: _baselineSource(),
+        onSignOut: _signOut,
+        deletion: SupabaseAccountDeletionRepository(
+          _client,
+          localData: _localData,
+        ),
+      );
+    }
+    // Newer beta terms or privacy notice than the athlete agreed to: they
+    // agree again, sign out or delete the account before anything else.
+    if (_legalOutdated.isNotEmpty) {
+      return LegalConsentScreen(
+        repository: SupabaseLegalConsentRepository(_client),
+        outdated: _legalOutdated,
+        onAgreed: _legalAgreed,
         onSignOut: _signOut,
         deletion: SupabaseAccountDeletionRepository(
           _client,
