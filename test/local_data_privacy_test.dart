@@ -101,6 +101,7 @@ Map<String, Object> _endsWithSession() => {
 const _storingFiles = {
   'lib/app/app.dart',
   'lib/app/keychain_session_storage.dart',
+  'lib/features/account/account_screen.dart',
   'lib/features/auth/account_session.dart',
   'lib/features/auth/password_reset_flow.dart',
   'lib/features/auth/phase_2_gate.dart',

@@ -452,6 +452,7 @@ class _AppShellState extends State<AppShell> {
             : const FixtureRegionRepository(),
         aiConsent: widget.aiConsent,
         widgetPublisher: _widgetPublisher,
+        planChanges: _planChanges,
       ),
     ),
   );

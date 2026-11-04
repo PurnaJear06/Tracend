@@ -125,6 +125,16 @@ with both v2 photo notices published; Groq receives nothing. Onboarding uses its
   check-in, measurement, pain, goal target, Coach fact, plan-change note, candidate review) ask
   "Discard changes?" on a swipe, a scrim tap or the close button. Needs a reinstall; the
   migration deploys with the merge. Handoff: [`ui-polish.md`](./handoff/ui-polish.md).
+- onboarding: Change my setup and the starting meal schedule (2026-11-02, branch
+  `claude/change-setup-meal-schedule`, migration `20261102224851`, in review). **Account › Plan ›
+  Change my setup** reopens the onboarding Review with the approved answers, builds a new proposal
+  through the existing generation (AI when consented and routed, rules otherwise) and replaces the
+  plan only on approval; leaving changes nothing; the health check and safety floors apply as in
+  onboarding; no server change was needed for a re-run (pgTAP pins it). A new athlete also gets a
+  starting meal schedule (breakfast, lunch, snack, dinner, split from the approved calories and
+  protein) when targets are approved, so Today's food rail and Coach's "next meal" have an answer;
+  `activate_my_nutrition_schedule` is dropped. Needs an app reinstall for Change my setup; the
+  schedule needs only the migration. Handoff: [`onboarding.md`](./handoff/onboarding.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Beta terms and consent (2026-11-02, `claude/beta-terms-consent`, migration `20261102143719`, in review): app beta terms at `/beta-terms/` (a draft for a lawyer), privacy page fixes (controller and grievance contact, workout and sleeping heart rate, explicit health-data consent, processor wording), onboarding rows that open both pages plus a separate `health_data` consent, Account links, page versions = "Last updated" dates kept equal to `LegalNotices` by a test, and a launch screen that asks onboarded athletes again when a page changes (fails open; the owner sees it once after installing). Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.

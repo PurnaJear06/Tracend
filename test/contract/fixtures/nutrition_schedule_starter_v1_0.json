@@ -1,0 +1,60 @@
+{
+  "schema_version": "1.0",
+  "local_date": "2026-11-03",
+  "version": {
+    "id": "7f2f0f0e-8f5a-4c8e-9a53-1c1f5b0f6a01",
+    "version_number": 1,
+    "title": "Starting meal schedule",
+    "effective_date": "2026-11-03"
+  },
+  "items": [
+    {
+      "id": "7f2f0f0e-8f5a-4c8e-9a53-1c1f5b0f6a11",
+      "order": 1,
+      "slot_key": "breakfast",
+      "label": "Breakfast",
+      "local_time": "08:00",
+      "window_minutes": 60,
+      "foods": [{"name": "Meal target", "quantity": "about 530 kcal and 35 g protein"}],
+      "optional": false,
+      "reminder_enabled": false,
+      "status": "upcoming"
+    },
+    {
+      "id": "7f2f0f0e-8f5a-4c8e-9a53-1c1f5b0f6a12",
+      "order": 2,
+      "slot_key": "lunch",
+      "label": "Lunch",
+      "local_time": "13:00",
+      "window_minutes": 60,
+      "foods": [{"name": "Meal target", "quantity": "about 630 kcal and 40 g protein"}],
+      "optional": false,
+      "reminder_enabled": false,
+      "status": "upcoming"
+    },
+    {
+      "id": "7f2f0f0e-8f5a-4c8e-9a53-1c1f5b0f6a13",
+      "order": 3,
+      "slot_key": "snack",
+      "label": "Snack",
+      "local_time": "16:30",
+      "window_minutes": 60,
+      "foods": [{"name": "Meal target", "quantity": "about 320 kcal and 20 g protein"}],
+      "optional": true,
+      "reminder_enabled": false,
+      "status": "upcoming"
+    },
+    {
+      "id": "7f2f0f0e-8f5a-4c8e-9a53-1c1f5b0f6a14",
+      "order": 4,
+      "slot_key": "dinner",
+      "label": "Dinner",
+      "local_time": "19:30",
+      "window_minutes": 60,
+      "foods": [{"name": "Meal target", "quantity": "about 630 kcal and 40 g protein"}],
+      "optional": false,
+      "reminder_enabled": false,
+      "status": "upcoming"
+    }
+  ]
+}

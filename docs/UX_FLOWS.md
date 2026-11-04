@@ -420,6 +420,24 @@ Today**.
 (sex, birth year, daily activity, equipment and its note, movements to avoid, limitations, diet;
 shown when the answers were kept) and **Approved plan** (plan, version, approved date).
 
+**Account › Plan › Change my setup** (no AI needed) reopens the onboarding **Review** step as
+"Change my setup", with the approved answers filled in: the profile, the active goal and its target
+weight, the newest weight and the stored health check, with the saved draft only for what approval
+does not keep (the current plan, top sets, the Apple Health answer). Every row has its pencil, so
+the athlete can change training days, session length, equipment, goal and any other answer; the
+heading says the current plan stays active until the new one is approved, and that a new plan
+clears body-fat and physique targets. **Continue to your coach** saves the answers, the coach may
+ask its questions, and the plan builds through the same path as onboarding: the AI route when the
+athlete has AI consent and the route is on, the rules plan otherwise. The proposal opens in the
+usual view, headed "Your new plan", saying that approving it replaces the current plan, with
+**Approve plan**, **Request changes** and **Reject proposal**. Approving creates a new plan version
+and an audit event, returns to Account with "Your new plan is active.", and reloads Today, Train
+and Meals. The back arrow at Review, or on the proposal, leaves without changing anything: until
+approval the active plan, targets and goal are untouched. The health check, the healthy-weight
+floors and the plan's safety ranges apply exactly as in onboarding, and a stored health check that
+says to see a professional sends the athlete to it instead of building. An athlete never asked the
+health check is asked it first.
+
 ## 5. Today and Daily Coaching
 
 ```text
@@ -1531,7 +1549,9 @@ Account is one iOS inset-grouped settings page:
 - **Identity:** the name from the email local-part, a **Private beta** chip and **Current goal**
   when the active-goal query returns one. There is no separate Edit control; **Profile and goals**
   is the edit entry.
-- **Plan:** **Profile and goals** opens the read-only screen of that title (§4.4). **Health check**
+- **Plan:** **Profile and goals** opens the read-only screen of that title (§4.4). **Change my setup**
+  reopens onboarding Review with the approved answers to build and approve a new plan (§4.4).
+  **Health check**
   reopens the four health-check questions (§4.1, step 6). Signing out, and a session that ends on
   another device, return to sign-in from any screen; a double tap on **Sign out** signs out once.
   Signing out or deleting the account also removes the reminders from the phone; signing in puts the

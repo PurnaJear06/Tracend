@@ -1,5 +1,5 @@
 begin;
-select plan(26);
+select plan(27);
 
 -- These checks exercise the stop's mechanics at its original USD 2; the
 -- Phase 2 value (USD 3) is tested in ai_budget_phase2_test.sql.
@@ -31,11 +31,24 @@ values(
  'aaaaaaaa-5111-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
  1,'active',2400,170,280,70,'Owner approved targets',now(),current_date);
 
+insert into public.nutrition_schedule_versions(
+ id,user_id,version_number,status,title,rationale,approved_at,effective_date) values
+ ('aaaaaaaa-7111-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
+  1,'active','Owner schedule','Reviewed schedule',now(),current_date);
+insert into public.nutrition_schedule_items(
+ user_id,schedule_version_id,item_order,slot_key,label,local_time,foods) values
+ ('aaaaaaaa-1111-4111-8111-111111111111','aaaaaaaa-7111-4111-8111-111111111111',
+  1,'pre_workout','Pre-workout','07:45','[{"name":"Oats","quantity":"60 g"}]'),
+ ('aaaaaaaa-1111-4111-8111-111111111111','aaaaaaaa-7111-4111-8111-111111111111',
+  2,'post_workout','Post-workout','10:00','[{"name":"Meal","quantity":"1 serving"}]');
+
 select ok((select bool_and(relrowsecurity and relforcerowsecurity) from pg_class
  where oid=any(array['public.coach_threads'::regclass,
  'public.coach_messages'::regclass,'public.nutrition_schedule_versions'::regclass,
  'public.nutrition_schedule_items'::regclass,'public.ai_usage_events'::regclass])),
  'production rebuild tables enable and force RLS');
+select is(to_regprocedure('public.activate_my_nutrition_schedule(text,text,date,jsonb)'),null,
+ 'no function lets an athlete replace their meal schedule from raw JSON');
 select ok(not has_table_privilege('authenticated','public.coach_messages','insert'),
  'mobile cannot forge assistant messages');
 select ok(has_function_privilege('authenticated','public.get_my_training_hub(integer)','execute'),
@@ -61,10 +74,6 @@ grant select on thread_result to service_role;
 select ok((select id is not null from thread_result),'owner creates a chat thread');
 select is((select count(*) from public.coach_threads),1::bigint,
  'owner reads the created thread');
-create temporary table schedule_result as select public.activate_my_nutrition_schedule(
- 'Owner schedule','Reviewed schedule',current_date,
- '[{"slot_key":"pre_workout","label":"Pre-workout","local_time":"07:45","foods":[{"name":"Oats","quantity":"60 g"}]},
-   {"slot_key":"post_workout","label":"Post-workout","local_time":"10:00","foods":[{"name":"Meal","quantity":"1 serving"}]}]'::jsonb) id;
 select is((select count(*) from public.nutrition_schedule_versions where status='active'),1::bigint,
  'exactly one active meal schedule exists');
 select is(jsonb_array_length(public.get_my_nutrition_schedule(current_date)->'items'),2,
