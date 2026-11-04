@@ -689,12 +689,14 @@ Initial private-beta defaults:
   private beta shuts down; provider-side conversation state remains disabled;
 - invite-list and waitlist rows: until account deletion (both removed with the account), a request
   to the owner, or for an unconfirmed waitlist signup, 30 days after its last email;
-- Free Plan database: encrypted off-site logical export at least weekly during active beta and
+- Free Plan database: encrypted off-site logical export every night (`nightly-backup.yml`) and
   before migrations; Supabase does not provide the Pro daily-backup guarantee;
 - Pro Plan database: Supabase daily backups with the plan's current seven-day availability, plus an
   independent pre-release logical export where permitted;
-- Storage objects: separate encrypted inventory/export procedure because database backups contain
-  metadata but not Storage bytes; and
+- Storage objects: not backed up yet. Database backups contain metadata but not Storage bytes. A
+  photo backup must live in a store with lifecycle deletion so a deleted account's photos leave it
+  within 30 days (planned: encrypted, Cloudflare R2, 30-day lifecycle rule); the private backups
+  repository cannot give that guarantee. Meal photos are deleted about 7 days after capture; and
 - provider content: shortest available approved retention, documented per provider.
 
 Every production deploy takes an AES-256 encrypted logical backup before migrating, restores it in

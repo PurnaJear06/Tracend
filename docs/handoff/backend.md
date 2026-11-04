@@ -471,6 +471,36 @@ privacy were recorded.
 - **Check after the first merge:** the new `database-backup-*.tar.gz.enc` appears in the private
   repository and the public repository's artifact list has no `database-backup` entry.
 
+## Release path, rollback and nightly backups (2026-11-02, branch `claude/release-path`)
+
+From the beta audit (release B3, reliability P1-12 and P1-14). Nothing here changes the database or
+an Edge Function, so merging deploys no new function code; the installed app (build 920) is
+unaffected until the next device or TestFlight build.
+
+- **TestFlight build.** `scripts/build-testflight.sh` (guards, `--check`, tests in
+  `scripts/test-build-testflight.sh`), `ios/Runner/PrivacyInfo.xcprivacy` (UserDefaults CA92.1, no
+  tracking, collected types matching `site/src/pages/privacy.astro`; the widget extension uses no
+  required-reason API, so it has none), `ITSAppUsesNonExemptEncryption` false, and a Health
+  permission text that names what is read and where it goes. `scripts/app-version.sh` counts to
+  the newest `origin/main` commit the checkout contains. In release mode `Phase2Gate` shows "This
+  build is missing its server settings" instead of the demo.
+- **Rollback.** `scripts/rollback-function.sh` redeploys the newest release tag whose bundle of
+  one function differs from main, using that tag's whole `supabase/functions` tree, and verifies it
+  live (`--dry-run`, `--list`, `--to`, `--force`). The bundle is the function's entrypoint
+  followed through relative imports, `deno.json`, and the function's stanza in
+  `supabase/config.toml`. `hotfix.yml` never shared its logic and is unchanged by it.
+- **Nightly backups.** `nightly-backup.yml` and the reusable `database-backup.yml` (also called by
+  `deploy.yml`) run the dump, restore drill, encryption and storage once, in one place. The
+  nightly skips while `deploy.yml` or `hotfix.yml` runs; both of those wait up to 20 minutes for a
+  running nightly before they migrate (no shared concurrency group, which would let a queued
+  nightly replace a queued deploy). Progress photos are not backed up: a photo backup was built
+  and removed because the private repository cannot guarantee deleted photos leave within 30
+  nights. Follow-up: encrypted backup to Cloudflare R2 with a 30-day lifecycle rule (owner
+  creates the bucket and a scoped key).
+- **Check after the merge:** run Actions > Nightly Backup once by hand, then confirm a
+  `database-backup-*` file in the private backups repository, and that the next merge's Deploy run
+  still passes its backup job. Neither workflow was run before the merge.
+
 ## Restore drill compares privileges (2026-10-15)
 
 - **Found:** `supabase db dump` comments out every GRANT and REVOKE line that names a schema it

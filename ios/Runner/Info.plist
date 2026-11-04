@@ -39,10 +39,12 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>FlutterDeepLinkingEnabled</key>
 	<false/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Tracend reads selected activity, recovery, workout heart-rate and overnight (sleeping) heart-rate data to build private daily coaching summaries.</string>
+	<string>Tracend reads your steps, active energy, sleep, workouts, body weight, resting heart rate, heart rate during workouts and overnight, heart rate variability and breathing rate to coach you. It sends daily summaries of them to Tracend's server, and to an AI provider only for the features you agree to. You choose each type in iOS, and the app works without any of them.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Tracend does not write health data. This key is required by HealthKit.</string>
 	<key>NSCameraUsageDescription</key>

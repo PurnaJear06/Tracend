@@ -2,7 +2,8 @@
 
 **Status:** Implemented
 
-**Last verified design update:** 2026-10-15 (the deploy of `90a3b96` passed the restore drill,
+**Last verified design update:** 2026-11-02 (the TestFlight, rollback and nightly-backup parts are
+new and unrun; the rest is as of 2026-10-15, when the deploy of `90a3b96` passed the restore drill,
 including the privilege comparison that skips event trigger functions)
 
 **Production project:** `qsfzzsjenopqqqhvpyaw` (Singapore)
@@ -18,7 +19,8 @@ Production changes follow one path:
 3. Merge the pull request.
 4. CI runs again on the resulting `main` commit.
 5. `deploy.yml` starts only after that exact `main` CI run succeeds.
-6. The deploy workflow dry-runs migrations and independently backs up production.
+6. The deploy workflow dry-runs migrations and independently backs up production by calling
+   `database-backup.yml`, the one copy of the backup job that `nightly-backup.yml` also runs.
 7. The backup job rejects failed or empty dumps, verifies SHA-256 checksums, and restores the
    schema and data into an isolated local Supabase database.
 8. Only after the dry-run and restore drill pass may migrations deploy, followed by the Edge
@@ -174,8 +176,37 @@ pushes it with `BACKUP_REPO_DEPLOY_KEY`, a deploy key with write access to that 
 keeps the newest 30 backups, rewrites the branch as one orphan commit so history does not grow,
 and refuses to push unless the only changes are the new file and retention pruning. Backups must
 never be committed or uploaded unencrypted anywhere, and the backups repository must stay private.
-`scripts/test-store-backup.sh` covers the script in CI. Storage object bytes are outside PostgreSQL logical dumps and require their own
-recovery process; database backups cover Storage metadata only.
+`scripts/test-store-backup.sh` covers the script in CI.
+
+### One backup workflow, run on every merge and every night
+
+`database-backup.yml` is a reusable workflow (`workflow_call` only) holding the whole backup:
+dump, integrity check, isolated restore drill, encryption (`scripts/encrypt-backup.sh`), storage
+in the backups repository, and the restored-privilege comparison. `deploy.yml` calls it with the
+merged commit before any migration. `nightly-backup.yml` (cron `17 19 * * *`, also
+`workflow_dispatch`, `main` only) calls it, so a quiet week still has a restore point less than a
+day old. The nightly workflow has its own concurrency group, `nightly-backup`: sharing
+`production-deploy` would let a queued nightly replace a queued deploy. Instead the two check each
+other with `gh run list`: the nightly's first job skips the night (with a notice) when `deploy.yml`
+or `hotfix.yml` is running or queued, since a deploy takes its own backup, and the migration job of
+each waits up to 20 minutes for a running nightly backup before it migrates, then fails before changing
+production (rerun it once the backup ends), so a dump is never taken across a migration. When a nightly
+run and a deploy reach the backups repository together, the loser's push is refused, so the store
+steps fetch again and retry up to three times. Both workflows pass
+`scripts/check-workflow-credentials.sh`: their triggers (`workflow_call`, `schedule`,
+`workflow_dispatch`, and a `workflow_run` limited to `main`) are not untrusted ones.
+
+### Progress photos are not backed up yet
+
+Storage object bytes are outside PostgreSQL logical dumps, so the `progress-photos` bucket is in
+no backup (the database backups cover Storage metadata only). A photo backup into the private
+backups repository was built and dropped: its history is force-pushed but GitHub keeps old
+objects, so a deleted account's photos could not be guaranteed to leave within 30 nights. The
+follow-up is an encrypted photo backup (`scripts/encrypt-backup.sh`) to a store with lifecycle
+deletion: Cloudflare R2 with a 30-day lifecycle rule, in a bucket and with a bucket-scoped key
+that the owner creates and adds as GitHub secrets. Meal photos are deleted about 7 days after
+capture and `account-exports` are short-lived, so neither needs a backup. Artifacts are not an
+option: they are downloadable by any signed-in GitHub user on a public repository.
 
 Any backup, restore-drill or restored-privilege failure stops the deployment before production
 mutation.
@@ -185,10 +216,17 @@ mutation.
 `pubspec.yaml` owns the semantic app version. `scripts/app-version.sh` validates it and produces the
 release metadata:
 
-- local/device builds default to the semantic version plus the Git commit count;
+- the default build number is the commit count up to the newest `origin/main` commit the checkout
+  contains. On `main` that is the plain commit count; a branch with more commits than `main` takes
+  `main`'s number instead of a higher one, which later `main` builds (and TestFlight uploads) would
+  have to beat. Without `origin/main` (a shallow CI clone) the checkout's own commit count is used;
+- `scripts/build-testflight.sh` builds only the `origin/main` tip, so every TestFlight build number
+  is a first-parent commit count, which grows with every merge, and it refuses a number that is
+  not higher than the last one it built (`.tooling/testflight-builds.txt`);
 - CI iOS builds use the GitHub run number as the monotonic build number; and
 - an intentional release can override both with `TRACEND_BUILD_NAME` and
-  `TRACEND_BUILD_NUMBER` (or the equivalent `install-device.sh` flags).
+  `TRACEND_BUILD_NUMBER` (or the equivalent `install-device.sh` flags). TestFlight builds refuse
+  the override.
 
 Examples:
 
@@ -196,6 +234,30 @@ Examples:
 ./scripts/app-version.sh version
 ./scripts/install-device.sh --build-name 1.1.0 --build-number 200
 ```
+
+## TestFlight builds
+
+`scripts/build-testflight.sh` produces the signed App Store `.ipa` and stops before uploading:
+
+1. It refuses a dirty tree, a `HEAD` that is not the `origin/main` tip, a manual build number, an
+   empty `SUPABASE_URL` or `SUPABASE_PUBLISHABLE_KEY` in `.env` (a release build without them
+   would run as a local demo) or one that is not `https://`, and a project that names more than
+   one `DEVELOPMENT_TEAM`. `--check` runs these guards and builds nothing.
+2. It writes `build/ios/ExportOptions.plist` (method `app-store-connect`, automatic signing, the
+   team ID read from `ios/Runner.xcodeproj`) and runs `flutter build ipa` through the wrapper.
+   Flutter exits 0 even when the export step fails, so the script removes the old output first and
+   fails when no `.ipa` appears.
+3. It unpacks the `.ipa` and runs `scripts/verify-app-bundle.sh` on the bundle inside, then checks
+   the privacy manifest, the build number and version, `ITSAppUsesNonExemptEncryption`, and the
+   widget extension.
+4. It prints the `xcrun altool --upload-app` command. Uploading needs the owner's App Store Connect
+   API key, kept outside the repository (`docs/BETA_OPERATIONS.md`).
+
+In Dart, a release build without Supabase settings shows "This build is missing its server
+settings" instead of the local demo data (`Phase2Gate`, `releaseBuild`), and sends a Sentry message
+when a DSN exists. Debug and test builds keep the demo.
+`scripts/test-build-testflight.sh` covers the guards and the build-number rule in CI; the signed
+build itself runs only on the owner's Mac.
 
 ## Device installs
 
@@ -233,7 +295,26 @@ Agents must not deploy manually unless GitHub Actions is unavailable or the owne
 
 ## Rollback
 
-- Edge Function rollback uses `scripts/rollback-function.sh <function>`.
+- Edge Function rollback uses `scripts/rollback-function.sh <function>`. It deploys from the
+  previous **release tag** (`v…` from `deploy.yml`, `hf-v…` from `hotfix.yml`), not from a
+  commit found through the function's folder history: on merge history that picks the pull
+  request's own commit. The default target is the newest release tag whose bundle of that function
+  differs from `origin/main`'s: the function's entrypoint (`index.ts`, or the entrypoint named in
+  `supabase/config.toml`) followed through relative imports into `_shared` (tests excluded; JSON
+  is included only when imported), `deno.json`, and the function's `[functions.<name>]` stanza of
+  `supabase/config.toml`, so a config-only regression such as `verify_jwt` can be rolled back.
+  Files in the folder that nothing imports (golden data, harnesses) are not part of the bundle. A release that changed only another function
+  is skipped, and with no differing release the script refuses and asks for `--to`. `--to <tag>`
+  picks a release, and refuses one with an identical bundle unless `--force`. `--list [function]`
+  shows the recent tags and whether their code matches `origin/main`. The tag's whole `supabase/functions` tree is checked out in a temporary worktree, so
+  `_shared` goes back with the function and the rest of your checkout is untouched. The function is
+  deployed from there with `scripts/deploy-function.sh` (`--use-api`, 5xx retries), then
+  `scripts/verify-live-function.sh` compares what is live with that tree. `--dry-run` prints the
+  target and a diff summary and deploys nothing. `scripts/test-rollback-function.sh` covers the
+  tag choice in CI.
+- A rollback puts old code back only until the next `deploy.yml` run, which deploys `main` again.
+  Revert the bad pull request on `main` straight after (a revert PR, merged by the owner).
+  `hotfix.yml` is a separate manual deploy of `main`'s head and does not use this script.
 - Database migrations are forward-only. Correct a bad migration with a new additive migration.
 - Never edit, delete, or rewrite an applied migration.
 
