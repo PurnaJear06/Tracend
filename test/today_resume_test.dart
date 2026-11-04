@@ -11,6 +11,7 @@ import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/shared/diagnostics.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 /// Today when the app comes back to the front: last night's Apple Health
 /// data, and check-ins that waited for a connection.
@@ -65,7 +66,7 @@ class _Health implements HealthRepository {
 void main() {
   late DateTime now;
   late _Health health;
-  late SharedPreferences preferences;
+  const preferences = LocalHealthStore();
   final sent = <String>[];
   Object? sendError;
 
@@ -73,7 +74,6 @@ void main() {
     now = DateTime(2026, 10, 2, 22);
     health = _Health(() => now);
     SharedPreferences.setMockInitialValues({});
-    preferences = await SharedPreferences.getInstance();
     sent.clear();
     sendError = null;
   });

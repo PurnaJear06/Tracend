@@ -31,6 +31,7 @@ import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 import 'day_adjustment_fixtures.dart';
 import 'home_widgets/fake_home_widget_bridge.dart';
@@ -431,14 +432,15 @@ class _SwitchingRepository extends FixtureWorkoutRepository
 
 void main() {
   late _Backend backend;
-  late SharedPreferencesAsync preferences;
+  const preferences = LocalHealthStore();
+  late SharedPreferencesAsync resetMarker;
   late TrainingHubCache cache;
 
   setUp(() {
     SharedPreferencesAsyncPlatform.instance =
         InMemorySharedPreferencesAsync.empty();
     SharedPreferences.setMockInitialValues({});
-    preferences = SharedPreferencesAsync();
+    resetMarker = SharedPreferencesAsync();
     cache = TrainingHubCache(preferences);
     backend = _Backend();
     SupabaseWorkoutRepository.forgetSending();
@@ -626,7 +628,7 @@ void main() {
     ) async {
       final client = await startSupabase(tester);
       await cache.save(_userId, _hubJson(), savedThreeDaysAgo);
-      await preferences.setBool(PasswordResetMarker.key, true);
+      await resetMarker.setBool(PasswordResetMarker.key, true);
 
       await pumpGate(tester);
 
@@ -635,28 +637,28 @@ void main() {
       expect(client.auth.currentSession, isNull);
       // Ending the session may not have finished (a Keychain failure, a kill):
       // the next launch would find the session again, and the mark with it.
-      expect(await preferences.getBool(PasswordResetMarker.key), isTrue);
+      expect(await resetMarker.getBool(PasswordResetMarker.key), isTrue);
     });
 
     testWidgets('a launch that finds the mark and no session clears it', (
       tester,
     ) async {
       await startSupabase(tester, signedIn: false);
-      await preferences.setBool(PasswordResetMarker.key, true);
+      await resetMarker.setBool(PasswordResetMarker.key, true);
 
       await pumpGate(tester);
 
       expect(find.byType(OwnerAuthScreen), findsOneWidget);
-      expect(await preferences.getBool(PasswordResetMarker.key), isNull);
+      expect(await resetMarker.getBool(PasswordResetMarker.key), isNull);
     });
 
     testWidgets('a mark left before the code was accepted does not end a '
         'later sign-in', (tester) async {
       // The app died after the mark and before the code's answer arrived.
       await startSupabase(tester, signedIn: false);
-      await preferences.setBool(PasswordResetMarker.key, true);
+      await resetMarker.setBool(PasswordResetMarker.key, true);
       await pumpGate(tester);
-      expect(await preferences.getBool(PasswordResetMarker.key), isNull);
+      expect(await resetMarker.getBool(PasswordResetMarker.key), isNull);
       await tester.pumpWidget(const SizedBox());
 
       // The athlete signed in normally; the next launch restores that session.
@@ -677,7 +679,7 @@ void main() {
       await pumpGate(tester);
       expect(find.text('Upper body A'), findsWidgets);
 
-      await preferences.setBool(PasswordResetMarker.key, true);
+      await resetMarker.setBool(PasswordResetMarker.key, true);
       backend.online = true;
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();

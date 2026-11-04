@@ -10,6 +10,7 @@ import 'package:tracend/app/auth_options.dart';
 import 'package:tracend/app/keychain_session_storage.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/sentry_scrubber.dart';
+import 'package:tracend/shared/local_health_migration.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,6 +37,7 @@ Future<void> main() async {
           options.beforeSend = scrubEvent;
         },
         appRunner: () async {
+          await moveHealthCachesToStore();
           if (environment.hasSupabaseConfiguration) {
             await Supabase.initialize(
               url: environment.supabaseUrl,

@@ -325,6 +325,16 @@ AI notice v5; needs the new build) and PR 5 (Keychain session storage, SHA-pinne
 read-only workflow tokens) are in review. Workstream state:
 [`docs/handoff/security-hardening.md`](./handoff/security-hardening.md).
 
+**On-device data (2026-11-02, branch `claude/local-data-privacy`, in review; needs the new build):**
+pain reports, check-ins, workout drafts, exercise history, the saved plan, referrals read and the
+Coach thread id moved out of `UserDefaults` (copied by iCloud and computer backups) into files
+under Application Support, excluded from backups (they were copied by both before); the
+first launch moves the old keys. "Checked in today" and "Not today" are per athlete and removed on
+sign-out, a refused session and deletion (a second account on the phone was shown as checked in);
+a test lists every key the app writes. The app switcher shows the launch screen instead of the
+last screen. Details and the owner's phone check:
+[`docs/handoff/security-hardening.md`](./handoff/security-hardening.md).
+
 **Security hardening round 2 (2026-10-31, branch `claude/security-hardening-license`, in review):** no
 pull request runs with a provider secret any more (live evals are Run workflow on the branch, write access needed, a CI
 guard enforces it; the `coach-eval` and `onboarding-eval` labels are gone), Edge Sentry events carry

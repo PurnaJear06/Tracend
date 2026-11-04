@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tracend/features/train/offline_safety_notes.dart';
 import 'package:tracend/shared/diagnostics.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 /// The last training hub that loaded for one athlete (`get_my_training_hub`
 /// as the server sent it) and when this phone saved it.
@@ -19,9 +19,9 @@ class CachedTrainingHub {
 /// id, so another account never reads it; signing out, a refused session and
 /// account deletion remove it.
 class TrainingHubCache {
-  const TrainingHubCache(this._preferences);
+  const TrainingHubCache(this._store);
 
-  final SharedPreferencesAsync _preferences;
+  final LocalHealthStore _store;
 
   /// Where [userId]'s copy lives.
   static String keyFor(String userId) => 'training_hub_cache_$userId';
@@ -40,7 +40,7 @@ class TrainingHubCache {
     DateTime now,
   ) async {
     try {
-      await _preferences.setString(
+      await _store.setString(
         keyFor(userId),
         jsonEncode({
           'v': _version,
@@ -58,7 +58,7 @@ class TrainingHubCache {
   /// was saved for another athlete.
   Future<CachedTrainingHub?> load(String userId) async {
     try {
-      final stored = await _preferences.getString(keyFor(userId));
+      final stored = await _store.getString(keyFor(userId));
       if (stored == null) return null;
       final decoded = jsonDecode(stored);
       if (decoded is! Map ||
@@ -83,7 +83,7 @@ class TrainingHubCache {
   /// kept only mean Train says it cannot check them offline.
   Future<void> saveSafety(String userId, OfflineSafetyNotes notes) async {
     try {
-      await _preferences.setString(
+      await _store.setString(
         safetyKeyFor(userId),
         jsonEncode({'v': _version, 'user_id': userId, 'notes': notes.toJson()}),
       );
@@ -96,7 +96,7 @@ class TrainingHubCache {
   /// unreadable, or they were saved for another athlete.
   Future<OfflineSafetyNotes?> loadSafety(String userId) async {
     try {
-      final stored = await _preferences.getString(safetyKeyFor(userId));
+      final stored = await _store.getString(safetyKeyFor(userId));
       if (stored == null) return null;
       final decoded = jsonDecode(stored);
       if (decoded is! Map ||
@@ -114,9 +114,7 @@ class TrainingHubCache {
   /// Removes [userId]'s copy and sore-area notes. Never throws.
   Future<void> clear(String userId) async {
     try {
-      await _preferences.clear(
-        allowList: {keyFor(userId), safetyKeyFor(userId)},
-      );
+      await _store.removeAll({keyFor(userId), safetyKeyFor(userId)});
     } catch (error) {
       logNonCritical(error, 'cached training hub not removed');
     }

@@ -71,7 +71,7 @@ Cloudflare Pages) talks only to the three session-less waitlist functions.
   exposes only normalized internal sample types.
 - The approved plan and in-progress workout are cached locally for degraded and offline use. The
   plan is the last `get_my_training_hub` that loaded (`lib/features/train/training_hub_cache.dart`),
-  kept per athlete in the app's preferences with the athlete's id and the save time, replaced on
+  kept per athlete in the health store (below) with the athlete's id and the save time, replaced on
   every successful Train load, and removed on sign-out, a refused session and account deletion.
   When the account check cannot finish (no connection, or six seconds without an answer) and a copy
   exists, the gate opens the shell in offline mode (`lib/features/auth/phase_2_gate.dart`,
@@ -85,6 +85,14 @@ Cloudflare Pages) talks only to the three session-less waitlist functions.
   Motion, safe areas, and state restoration.
 - The client may contain the Supabase project URL and publishable key. It must never contain
   secret/service-role keys or AI-provider keys.
+
+**On-device health store.** Pain reports and check-ins waiting to be sent, referrals read, workout
+drafts and exercise history, the saved plan and the last Coach thread id live in `LocalHealthStore`
+(`lib/shared/local_health_store.dart`): one file per key under Application Support, out of backups
+and written with protection until first unlock by `LocalHealthStoreBridge` (SECURITY_PRIVACY §8). Its
+methods mirror `SharedPreferencesAsync`; tests replace its files with an in-memory copy
+(`test/flutter_test_config.dart`). Settings and sync state with no health values stay in
+preferences. `moveHealthCachesToStore` moves what earlier builds kept in preferences, once.
 
 **Workout logging.** History and the open session are kept on the device for offline use; finish
 and discard requests are saved locally first and sent when the network returns. Each set records

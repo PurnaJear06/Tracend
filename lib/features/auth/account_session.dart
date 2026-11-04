@@ -5,11 +5,16 @@ import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/readiness/pain_report_queue.dart';
 import 'package:tracend/features/readiness/safety_acknowledgements.dart';
+import 'package:tracend/features/today/check_in_marks.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/training_hub_cache.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/features/workout_hr/set_heart_rate_recorder.dart';
+import 'package:tracend/features/workout_hr/sleeping_heart_rate_recorder.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
+import 'package:tracend/shared/local_health_migration.dart';
+import 'package:tracend/shared/local_health_store.dart';
 
 /// Auth's codes for a session that can never be used again: its user was
 /// deleted, it was revoked, or its refresh token is gone.
@@ -40,24 +45,34 @@ bool isDeletedUser(Object error) =>
 /// What this device keeps for one athlete: Apple Health sync state, the
 /// month the usual months were sent, a check-in waiting to sync, the Lock
 /// Screen widget choice (all kept per athlete), the Coach thread last open,
-/// and the last loaded plan that opens the app with no connection.
+/// the day marks that say the athlete checked in or chose "Not today", the
+/// workouts waiting for their heart rate to be read, and the last loaded plan
+/// that opens the app with no connection.
+///
+/// What is health data (the check-in queue, pain reports, workout drafts,
+/// the saved plan, referrals read, the Coach thread) lives in the health store
+/// ([LocalHealthStore]); the rest is in preferences.
 ///
 /// A deleted account takes all of it. A refused session takes the Coach
-/// thread, the saved plan and the Lock Screen choice, and signing out takes
-/// the saved plan and the Lock Screen choice: the account may still exist
+/// thread, the saved plan, the day marks, the heart rate jobs and the Lock
+/// Screen choice, and signing out takes the saved plan, the day marks, the
+/// heart rate jobs and the Lock Screen choice: the account may still exist
 /// (signed out on another device, say), and its athlete gets their unsent
-/// check-in and sync state back on signing in, but health numbers on the
-/// Lock Screen are chosen again and the plan is loaded again. Nothing kept
-/// is readable by another account.
+/// check-in and sync state back on signing in, but health numbers on the Lock
+/// Screen are chosen again and the plan is loaded again. Nothing kept is
+/// readable by another account.
 class LocalAccountData {
   LocalAccountData({
     SharedPreferencesAsync? preferences,
     Future<SharedPreferences> Function()? legacyPreferences,
+    LocalHealthStore? store,
   }) : _preferences = preferences ?? SharedPreferencesAsync(),
-       _legacyPreferences = legacyPreferences ?? SharedPreferences.getInstance;
+       _legacyPreferences = legacyPreferences ?? SharedPreferences.getInstance,
+       _store = store ?? const LocalHealthStore();
 
   final SharedPreferencesAsync _preferences;
   final Future<SharedPreferences> Function() _legacyPreferences;
+  final LocalHealthStore _store;
 
   /// Removes everything this device holds for a deleted account. Never
   /// throws: a store that cannot be read leaves its keys, and signing out
@@ -78,23 +93,71 @@ class LocalAccountData {
                 WorkoutLocalKeys.owns(userId, key),
           ),
         );
+        owned.add(SleepingHeartRateRecorder.finalKeyFor(userId));
       }
+      owned.add(SetHeartRateRecorder.pendingKey);
       await _preferences.clear(allowList: owned);
     } catch (e) {
       logNonCritical(e, 'athlete preferences not cleared');
     }
-    await _removeLegacy({
-      SharedPreferencesCoachThreadMemory.storageKey,
-      // An older build's envelope belonged to the last athlete signed in.
-      CheckInQueue.singleSlotKey,
-      if (userId != null) ...{
-        CheckInQueue.singleSlotKeyFor(userId),
-        CheckInQueue.queueStorageKeyFor(userId),
-        CheckInQueue.earlierKeyFor(userId),
-        SafetyAcknowledgements.storageKeyFor(userId),
-      },
-    });
+    await forgetCheckInMarks(userId);
+    await _clearLegacyHealthCaches(userId);
+    try {
+      await _store.removeAll({
+        LocalCoachThreadMemory.storageKey,
+        // An older build's envelope belonged to the last athlete signed in.
+        CheckInQueue.singleSlotKey,
+        if (userId != null) ...{
+          CheckInQueue.singleSlotKeyFor(userId),
+          CheckInQueue.queueStorageKeyFor(userId),
+          CheckInQueue.earlierKeyFor(userId),
+          SafetyAcknowledgements.storageKeyFor(userId),
+        },
+      });
+    } catch (e) {
+      logNonCritical(e, 'athlete health cache not cleared');
+    }
+    if (userId != null) {
+      // Listing the keys can fail on its own; the ones named above are gone.
+      try {
+        await _store.removeAll(
+          (await _store.getKeys()).where(
+            (key) => WorkoutLocalKeys.owns(userId, key),
+          ),
+        );
+      } catch (e) {
+        logNonCritical(e, 'athlete workout cache not cleared');
+      }
+    }
     if (userId != null) await _clearPainReports(userId);
+  }
+
+  /// Removes what earlier builds cached in the phone's legacy preferences
+  /// (the check-in, pain, referral and Coach caches the first launch of this
+  /// build moves to the store), so a move that stopped part way cannot bring a
+  /// deleted athlete's data back or hand it to the next account. The keys of
+  /// [userId] go, and so do the ones those builds kept for the whole phone.
+  Future<void> _clearLegacyHealthCaches(
+    String? userId, {
+    Iterable<String> prefixes = legacyHealthKeyPrefixes,
+  }) async {
+    try {
+      final legacy = await _legacyPreferences();
+      final owned = legacy.getKeys().where(
+        (key) => prefixes.any(
+          (prefix) =>
+              key == prefix ||
+              (userId != null &&
+                  (key == '$prefix.$userId' ||
+                      key == '$prefix.earlier.$userId')),
+        ),
+      );
+      for (final key in owned.toList()) {
+        await legacy.remove(key);
+      }
+    } catch (e) {
+      logNonCritical(e, 'legacy health caches not cleared');
+    }
   }
 
   /// Empties the pain reports kept for [userId], behind the same lock as every
@@ -102,25 +165,65 @@ class LocalAccountData {
   /// cannot write them back.
   Future<void> _clearPainReports(String userId) async {
     try {
-      await PainReportQueue.clearFor(await _legacyPreferences(), userId);
+      await PainReportQueue.clearFor(_store, userId);
     } catch (e) {
       logNonCritical(e, 'pain reports not cleared');
     }
   }
 
   /// Forgets what belongs to the session rather than the athlete: the open
-  /// Coach thread and the Lock Screen choice. Never throws.
+  /// Coach thread, the day marks and the Lock Screen choice. Never throws.
   Future<void> forgetSession(String? userId) async {
     await forgetWidgetChoice(userId);
     await forgetSavedPlan(userId);
-    await _removeLegacy({SharedPreferencesCoachThreadMemory.storageKey});
+    await forgetCheckInMarks(userId);
+    await forgetHeartRateJobs();
+    await _clearLegacyHealthCaches(
+      null,
+      prefixes: const [LocalCoachThreadMemory.storageKey],
+    );
+    try {
+      await _store.remove(LocalCoachThreadMemory.storageKey);
+    } catch (e) {
+      logNonCritical(e, 'coach thread not cleared');
+    }
   }
 
   /// Forgets the plan this phone saved for [userId], so no one signed in
   /// afterwards can open it offline. Never throws.
   Future<void> forgetSavedPlan(String? userId) async {
     if (userId == null) return;
-    await TrainingHubCache(_preferences).clear(userId);
+    await TrainingHubCache(_store).clear(userId);
+  }
+
+  /// Forgets that [userId] checked in today or chose "Not today", and the
+  /// marks an earlier build kept for the whole phone, so the next athlete on
+  /// this phone is asked for the morning check-in. Never throws.
+  Future<void> forgetCheckInMarks(String? userId) async {
+    try {
+      final legacy = await _legacyPreferences();
+      for (final key in {
+        CheckInMarks.savedOnKey,
+        CheckInMarks.skippedOnKey,
+        CheckInMarks.savedOnKeyFor(userId),
+        CheckInMarks.skippedOnKeyFor(userId),
+      }) {
+        await legacy.remove(key);
+      }
+    } catch (e) {
+      logNonCritical(e, 'check-in marks not cleared');
+    }
+  }
+
+  /// Forgets the workouts waiting for their heart rate to be read. The list is
+  /// kept for the whole phone, and the next athlete's account does not own
+  /// those workouts. Never throws.
+  Future<void> forgetHeartRateJobs() async {
+    try {
+      await _preferences.remove(SetHeartRateRecorder.pendingKey);
+    } catch (e) {
+      logNonCritical(e, 'heart rate jobs not cleared');
+    }
   }
 
   /// Forgets [userId]'s choice to show health numbers on the Lock Screen,
@@ -138,17 +241,6 @@ class LocalAccountData {
     TodayWidgetPublisher.lockScreenNumbersKey,
     TodayWidgetPublisher.lockScreenNumbersKeyFor(userId),
   };
-
-  Future<void> _removeLegacy(Set<String> keys) async {
-    try {
-      final legacy = await _legacyPreferences();
-      for (final key in keys) {
-        await legacy.remove(key);
-      }
-    } catch (e) {
-      logNonCritical(e, 'athlete preferences not cleared');
-    }
-  }
 }
 
 /// Ends a session Auth refused, on this device only, so the next launch
@@ -175,9 +267,9 @@ Future<void> endRejectedSession(
 }
 
 /// Signs the athlete out, the end of an account deletion included. The Lock
-/// Screen choice and the saved plan are forgotten first, so the next athlete
-/// on this phone never inherits either. When Auth cannot be reached, the session is removed from
-/// this device alone.
+/// Screen choice, the saved plan and the day marks are forgotten first, so the
+/// next athlete on this phone never inherits any of them. When Auth cannot be
+/// reached, the session is removed from this device alone.
 Future<void> signOutAthlete(
   SupabaseClient client,
   LocalAccountData localData,
@@ -185,6 +277,8 @@ Future<void> signOutAthlete(
 ) async {
   await localData.forgetWidgetChoice(userId);
   await localData.forgetSavedPlan(userId);
+  await localData.forgetCheckInMarks(userId);
+  await localData.forgetHeartRateJobs();
   try {
     await client.auth.signOut();
   } catch (e) {

@@ -28,6 +28,7 @@ import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
 import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
+import 'package:tracend/shared/local_health_store.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 
 class Phase2Gate extends StatefulWidget {
@@ -134,7 +135,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
 
   SupabaseClient get _client => widget.client ?? Supabase.instance.client;
   late final TrainingHubCache _savedPlan = TrainingHubCache(
-    SharedPreferencesAsync(),
+    const LocalHealthStore(),
   );
   late final LocalAccountData _localData =
       widget.localData ?? LocalAccountData();
@@ -530,7 +531,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
 
   SupabaseWorkoutRepository _workouts() => SupabaseWorkoutRepository(
     _client,
-    SharedPreferencesAsync(),
+    const LocalHealthStore(),
     loggerOpen: () => ActiveWorkoutScreen.isOpen,
   );
 

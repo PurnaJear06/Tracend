@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
@@ -10,6 +9,7 @@ import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/shared/diagnostics.dart';
+import 'package:tracend/shared/local_health_store.dart';
 import 'package:tracend/shared/plan_changes.dart';
 
 const _offline = AppEnvironment(
@@ -47,8 +47,6 @@ void main() {
   });
 
   Future<void> pump(WidgetTester tester, DailyBriefRepository brief) async {
-    SharedPreferences.setMockInitialValues({});
-    final preferences = await SharedPreferences.getInstance();
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(
@@ -59,7 +57,7 @@ void main() {
           environment: _offline,
           brief: brief,
           planChanges: planChanges,
-          queueFactory: () => CheckInQueue(preferences),
+          queueFactory: () => CheckInQueue(const LocalHealthStore()),
           clock: () => DateTime(2026, 10, 1, 9),
         ),
       ),

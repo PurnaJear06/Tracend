@@ -290,6 +290,7 @@ const chipContinue = 'Continue';
 const chipQueued =
     'Saved on this phone. It will go to Tracend when you are online, and it '
     'must be sent today or tomorrow.';
+const chipNotSaved = 'Not saved. Try again.';
 const chipNotRecorded =
     'Tracend could not record this report. If the pain is still there, '
     'report it again in a check-in.';
