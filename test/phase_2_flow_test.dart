@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
+import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_baseline.dart';
@@ -1205,6 +1207,98 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  group('deleting the account during onboarding', () {
+    Future<void> openDeletion(WidgetTester tester) async {
+      await tester.tap(find.byTooltip('Account options'));
+      await tester.pumpAndSettle();
+      expect(find.text('Your account'), findsOneWidget);
+      await tester.tap(find.text('Delete account'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('deletes through the Account sheet, then signs out', (
+      tester,
+    ) async {
+      var signedOut = false;
+      final deletion = _OnboardingDeletion();
+      await _pump(
+        tester,
+        _FakeOnboardingRepository(draft: _draft('schedule')),
+        onSignOut: () async => signedOut = true,
+        deletion: deletion,
+      );
+      await tester.pumpAndSettle();
+      await openDeletion(tester);
+
+      // The same sheet as Account: password, DELETE, a destructive confirm.
+      expect(find.textContaining('cannot be undone'), findsOneWidget);
+      await tester.enterText(find.byType(TextField).at(0), 'account-password');
+      await tester.enterText(find.byType(TextField).at(1), 'DELETE');
+      final submit = find.widgetWithText(
+        FilledButton,
+        'Permanently delete account',
+      );
+      await tester.ensureVisible(submit);
+      await tester.pumpAndSettle();
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+      expect(deletion.deleted, isFalse);
+      await tester.tap(
+        find.descendant(
+          of: find.byType(CupertinoAlertDialog),
+          matching: find.text('Delete account'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(deletion.deleted, isTrue);
+      expect(find.text('Your account was deleted'), findsOneWidget);
+      expect(signedOut, isTrue);
+    });
+
+    testWidgets('closing the menu or the sheet deletes nothing', (
+      tester,
+    ) async {
+      var signedOut = false;
+      final deletion = _OnboardingDeletion();
+      await _pump(
+        tester,
+        _FakeOnboardingRepository(draft: _draft('schedule')),
+        onSignOut: () async => signedOut = true,
+        deletion: deletion,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Account options'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('Permanently delete account'), findsNothing);
+
+      await openDeletion(tester);
+      await tester.tap(find.bySemanticsLabel(RegExp('Close')).first);
+      await tester.pumpAndSettle();
+
+      expect(deletion.deleted, isFalse);
+      expect(signedOut, isFalse);
+      expect(find.text('When do you train?'), findsOneWidget);
+    });
+
+    testWidgets('is offered when the answers did not load', (tester) async {
+      final repository = _FakeOnboardingRepository(draft: _draft('schedule'))
+        ..failingLoads = 1;
+      await _pump(
+        tester,
+        repository,
+        onSignOut: () async {},
+        deletion: _OnboardingDeletion(),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Your answers did not load.'), findsOneWidget);
+      expect(find.byTooltip('Account options'), findsOneWidget);
+    });
+  });
+
   group('recovery and controls', () {
     testWidgets('answers that fail to load are never overwritten', (
       tester,
@@ -1344,7 +1438,13 @@ void main() {
     ) async {
       tester.platformDispatcher.textScaleFactorTestValue = 2.0;
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-      await _pump(tester, repo, onSignOut: () async {}, width: 320);
+      await _pump(
+        tester,
+        repo,
+        onSignOut: () async {},
+        deletion: _OnboardingDeletion(),
+        width: 320,
+      );
       await tester.pumpAndSettle();
     }
 
@@ -2120,6 +2220,7 @@ Future<void> _pump(
   VoidCallback? onCompleted,
   AiCoachingConsentController? consent,
   Future<void> Function()? onSignOut,
+  AccountDeletionRepository? deletion,
   int? currentYear,
   HealthRepository? health,
   HealthBaselineSource? healthBaseline,
@@ -2139,6 +2240,7 @@ Future<void> _pump(
         health: health,
         healthBaseline: healthBaseline,
         onSignOut: onSignOut,
+        deletion: deletion,
         pollInterval: Duration.zero,
         currentYear: currentYear,
       ),
@@ -2469,4 +2571,23 @@ class _FakeOnboardingRepository implements OnboardingRepository {
     respondedIds.add(proposalId);
     notes.add(note);
   }
+}
+
+class _OnboardingDeletion implements AccountDeletionRepository {
+  bool deleted = false;
+
+  @override
+  Future<AccountDeletionOutcome> delete({
+    required String accountPassword,
+    required String confirmation,
+  }) async {
+    expect(accountPassword, 'account-password');
+    expect(confirmation, 'DELETE');
+    deleted = true;
+    return AccountDeletionOutcome.deleted;
+  }
+
+  @override
+  Future<AccountDeletionOutcome> confirm() async =>
+      AccountDeletionOutcome.deleted;
 }

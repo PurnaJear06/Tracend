@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/account/account_deletion_repository.dart';
+import 'package:tracend/features/account/widgets/account_sheets.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_models.dart';
@@ -42,6 +44,7 @@ class OnboardingFlow extends StatefulWidget {
     this.health,
     this.healthBaseline,
     this.onSignOut,
+    this.deletion,
     this.pollInterval = const Duration(seconds: 3),
     this.pollTimeout = const Duration(seconds: 150),
     this.currentYear,
@@ -62,6 +65,11 @@ class OnboardingFlow extends StatefulWidget {
   /// The athlete's usual months from Apple Health, read after Connect.
   final HealthBaselineSource? healthBaseline;
   final Future<void> Function()? onSignOut;
+
+  /// Deletes the account from setup, offered beside Sign out: someone who
+  /// stops before their plan (screened out, or changing their mind) can
+  /// still remove what they saved. Signs out after it settles.
+  final AccountDeletionRepository? deletion;
   final Duration pollInterval;
 
   /// Longer than the server's generation lease; after it the app offers a retry.
@@ -810,6 +818,31 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     }
   }
 
+  /// The account menu beside Sign out: deletion, through the same sheet as
+  /// Account (password, `DELETE`, a destructive confirm).
+  Future<void> _openAccountMenu() async {
+    final deletion = widget.deletion;
+    if (deletion == null || _signingOut) return;
+    final delete = await showTracendActionSheet<bool>(
+      context,
+      title: 'Your account',
+      message:
+          'Deleting it removes everything saved so far, including your '
+          'answers, the health check and any Apple Health summaries.',
+      actions: const [
+        TracendSheetAction(
+          label: 'Delete account',
+          value: true,
+          destructive: true,
+        ),
+      ],
+    );
+    if (delete != true || !mounted) return;
+    final outcome = await showAccountDeletion(context, deletion);
+    if (outcome == null || !mounted) return;
+    await _signOut();
+  }
+
   /// Reopened on the Plan step: show the stored proposal, keep waiting for a
   /// running generation, or go back to Review.
   Future<void> _resumeGeneration() async {
@@ -1366,12 +1399,19 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     });
   }
 
-  List<Widget> _signOutAction() => [
-    if (widget.onSignOut != null)
+  List<Widget> _accountActions() => [
+    if (widget.onSignOut != null) ...[
       TextButton(
         onPressed: _signingOut ? null : _signOut,
         child: const Text('Sign out'),
       ),
+      if (widget.deletion != null)
+        IconButton(
+          tooltip: 'Account options',
+          onPressed: _signingOut ? null : _openAccountMenu,
+          icon: const Icon(CupertinoIcons.ellipsis_circle),
+        ),
+    ],
   ];
 
   @override
@@ -1380,7 +1420,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Set up Tracend'),
-          actions: _signOutAction(),
+          actions: _accountActions(),
         ),
         body: SafeArea(
           child: Center(
@@ -1424,7 +1464,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                 icon: const Icon(CupertinoIcons.back),
               )
             : null,
-        actions: _signOutAction(),
+        actions: _accountActions(),
       ),
       body: SafeArea(
         top: false,

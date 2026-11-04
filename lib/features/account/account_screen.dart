@@ -32,7 +32,6 @@ import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
 import 'package:tracend/shared/widgets/tracend_sheet.dart';
-import 'package:tracend/shared/widgets/tracend_toast.dart';
 
 /// Account: one iOS inset-grouped settings page (UX_FLOWS.md §13).
 ///
@@ -435,22 +434,8 @@ class _AccountScreenState extends State<AccountScreen> {
   );
 
   Future<void> _openDeletion() async {
-    final outcome = await showTracendSheet<AccountDeletionOutcome>(
-      context,
-      title: 'Delete account',
-      builder: (_) => AccountDeletionSheet(repository: widget.deletion),
-    );
+    final outcome = await showAccountDeletion(context, widget.deletion);
     if (outcome == null || !mounted) return;
-    // The toast sits in the root overlay, so it outlives this page.
-    TracendToast.show(
-      context,
-      outcome == AccountDeletionOutcome.deleted
-          ? 'Your account was deleted'
-          : 'Signed out. Sign in to see whether the account remains.',
-      icon: outcome == AccountDeletionOutcome.deleted
-          ? CupertinoIcons.checkmark_alt
-          : CupertinoIcons.info,
-    );
     await _signOut();
   }
 
