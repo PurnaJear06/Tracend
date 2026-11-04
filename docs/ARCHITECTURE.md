@@ -554,7 +554,8 @@ response never proves permission denial.
 2. Train displays a prompt card with the HealthKit evidence and two buttons.
 3. **Yes, mark complete** calls the authenticated `healthkit_auto_complete_workout` RPC, which:
    - authorizes user ownership of the planned workout in the active plan;
-   - guards idempotently against duplicate completion;
+   - takes `start_workout`'s per-athlete day lock, so two taps never both insert, and returns the
+     session already completed for that workout and day (`replayed`) instead of a second one;
    - creates a `workout_sessions` row with `state='completed'` and duration from HealthKit,
      `completion_source='healthkit'` and `session_effort_source='healthkit_default'`;
    - writes an `audit_events` row with `action_code='workout.auto_completed'`.

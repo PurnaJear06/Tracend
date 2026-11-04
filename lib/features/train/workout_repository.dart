@@ -659,6 +659,7 @@ class TrainingHubData {
     this.completedDays = const {},
     this.plan,
     this.localToday,
+    this.trainingStartedOn,
     this.todayWorkout,
     this.dailyLoad = const [],
     this.load,
@@ -726,6 +727,7 @@ class TrainingHubData {
               progressionRule: _text(active['progression_rule']),
             ),
       localToday: _date(value['local_today']),
+      trainingStartedOn: _date(value['training_started_on']),
       workouts: (value['workouts'] as List? ?? const [])
           .map(
             (item) =>
@@ -843,6 +845,10 @@ class TrainingHubData {
   /// The athlete's local date on the server (hub 1.6).
   final DateTime? localToday;
 
+  /// The first day of the athlete's first plan (hub 1.11): a later plan
+  /// version keeps it. Null from an older hub, which then reads as before.
+  final DateTime? trainingStartedOn;
+
   /// Today's planned workout from the hub, when one is scheduled.
   final PlannedWorkout? todayWorkout;
 
@@ -879,6 +885,18 @@ class TrainingHubData {
   /// Sessions of the window on a can't-train day with nothing logged; the
   /// server leaves them out of [plannedSessions].
   final int unavailableSessions;
+
+  /// A day before the athlete's first plan began: nothing was due on it, so
+  /// it is never planned or missed.
+  bool isBeforeStart(DateTime date) {
+    final started = trainingStartedOn;
+    return started != null &&
+        DateTime(
+          date.year,
+          date.month,
+          date.day,
+        ).isBefore(DateTime(started.year, started.month, started.day));
+  }
 
   bool isDayPaused(DateTime date) =>
       pausedDays.contains(DateTime(date.year, date.month, date.day));

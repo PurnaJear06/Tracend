@@ -154,7 +154,7 @@ select ok((select p.prosrc like '%e.action_code = ''workout.abandoned'' and e.me
 select ok((select p.prosecdef and p.provolatile = 's' and p.proconfig = array['search_path=""']
     from pg_proc p where p.oid = 'public.get_coach_plan_state_v1(uuid,date)'::regprocedure),
   'the Coach plan state is still a stable security definer function with an empty search path');
-select ok((select p.prosrc like '%''schema_version'', ''1.3''%'
+select ok((select p.prosrc like '%''schema_version'', ''1.4''%'
       and p.prosrc like '%private.coach_plan_sessions(p_user_id, (select a.version_id from active a))%'
       and p.prosrc like '%private.coach_session_exercises(p_user_id, s.id)%'
       and p.prosrc like '%public.get_progression_summary_v1(p_user_id)%'
@@ -226,7 +226,7 @@ select is((select j->'workout'->>'session_id' from h where name = 'other'),
 -- Coach reads the same facts ------------------------------------------------------------------
 
 select is((select public.get_coach_plan_state_v1(pg_temp.u(40, 1), (select today from t))->>'schema_version'),
-  '1.3', 'the Coach plan state is 1.3');
+  '1.4', 'the Coach plan state is 1.4');
 select is((select jsonb_array_length(public.get_coach_plan_state_v1(pg_temp.u(40, 1),
     (select today from t))->'unfinished')), 5,
   'it lists five: the four offered and Push (9 days ago), not the 29 day old one, the finished day, the empty one or the discards');
@@ -245,7 +245,7 @@ select is((select array(select k from jsonb_object_keys(public.get_coach_plan_st
       pg_temp.u(40, 1), (select today from t))) k order by k collate "C")),
   array['after_block', 'avoid_patterns', 'completed_this_week', 'equipment', 'experience',
     'local_date', 'plan', 'progression', 'recent_completed', 'schema_version', 'sessions',
-    'unfinished', 'weekday'], 'every 1.2 key is still there beside the new one');
+    'training_started_on', 'unfinished', 'weekday'], 'every 1.2 key is still there beside the new one');
 select is((select public.get_coach_plan_state_v1(pg_temp.u(40, 1), (select today from t))
     ->'plan'->>'title'), 'Plan A', 'the active plan is still read');
 select is((select jsonb_array_length(public.get_coach_plan_state_v1(pg_temp.u(40, 1),

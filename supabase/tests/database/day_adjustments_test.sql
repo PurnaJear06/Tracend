@@ -658,7 +658,8 @@ select is((select (tg -> 'basis' -> 'recent' -> 0) - 'local_date' from jsonb_arr
     private.next_session_targets('b4000000-0000-4000-8000-000000000001')) tg
     where tg ->> 'name' = 'Barbell bench press'),
   '{"pain": false, "sets": 3, "load_kg": 60, "min_rir": 3, "min_reps": 8, "adjusted": true,
-    "total_reps": 24, "effort_known": true, "sets_planned": 3}'::jsonb,
+    "total_reps": 24, "pain_before": false, "effort_known": true, "sets_planned": 3,
+    "skipped_before": false}'::jsonb,
   'the session is marked adjusted with its planned set count');
 select is((select tg ->> 'action' from jsonb_array_elements(
     private.next_session_targets('b4000000-0000-4000-8000-000000000001')) tg

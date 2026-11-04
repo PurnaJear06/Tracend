@@ -49,7 +49,7 @@ with both v2 photo notices published; Groq receives nothing. Onboarding uses its
   Today, Train, the readiness card ("Rest day: you said you can't train today"), the daily decision
   (`rest_as_chosen`, never PROCEED_AS_PLANNED on such a day) and a provider-neutral `standing_state`
   block always in the Coach's context; the gateway file now shows 3 check-ins and the last 2 exchanges
-  of other chats, so a turn is smaller. Brief 1.9, hub 1.10. The dead `coach_session_summaries`
+  of other chats, so a turn is smaller. Brief 1.9, hub 1.10 (1.11 with the training counts below). The dead `coach_session_summaries`
   writer is gone (table kept for a two-step drop). Handoff:
   [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
@@ -60,7 +60,7 @@ with both v2 photo notices published; Groq receives nothing. Onboarding uses its
   `20261023140024`): `day_adjustments`, `get_my_day_adjustment_v1` / `respond_to_day_adjustment_v1`
   (hold loads, one set fewer or easy cardio for today only; one tap and Undo; the recovery score never
   adjusts a session alone, the athlete may choose), `start_workout` building the adjusted sets and B3
-  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). B5-1 (pain check and joint rules) merged as #172; B5-2 (the pain check in the app) in review as #176; B5-3 and B5-4 (deloads and cardio dosing, server) in review. Training-day integrity (QA group A, branch `claude/training-day-integrity`, migration `20261024090000`, hub 1.9): sessions logged under an earlier plan version stay done in Train and cannot be logged twice, a start for a future day is refused (the app previews it), and the hub uses the athlete's local date. Handoff:
+  ignoring adjusted sessions as evidence for lowering a load. B4-2, the app card on Today and Train (one tap, Undo until the start, Talk to Coach, safety referral), in review on `claude/b4-2-day-adjustment-card` (2026-10-24, no server change). B5-1 (pain check and joint rules) merged as #172; B5-2 (the pain check in the app) in review as #176; B5-3 and B5-4 (deloads and cardio dosing, server) in review. Training-day integrity (QA group A, branch `claude/training-day-integrity`, migration `20261024090000`, hub 1.9): sessions logged under an earlier plan version stay done in Train and cannot be logged twice, a start for a future day is refused (the app previews it), and the hub uses the athlete's local date. Training counts (2026-11-02, branch `claude/training-counts`, migration `20261102194352`, in review): sets at the hard edge of the effort band (2 reps left at RPE 7.5) progress instead of holding and then losing load, a hold is not a stall; days before the first plan began are neither due nor missed in Today, Train, Progress, the weekly review and Coach (hub 1.11, Coach plan state 1.4); Apple Health "Mark complete" saves one session a day. Handoff:
   [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping

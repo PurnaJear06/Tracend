@@ -104,6 +104,11 @@ export type PlanState = Readonly<{
   title: string;
   version: number | null;
   sessionsPerWeek: number | null;
+  /**
+   * The first day of the athlete's first plan (get_coach_plan_state_v1 1.4): a session of an earlier
+   * day was never due, so it is never undone. Null from an older payload.
+   */
+  startedOn: string | null;
   sessions: readonly PlanSession[];
   /**
    * When the active version is a temporary block: its last day and the sessions the athlete
@@ -164,6 +169,9 @@ export function planRestOf(standing: StandingState | null): PlanRest | undefined
 }
 
 const isRestDay = (state: PlanState, date: string) => state.rest?.days.has(date) ?? false;
+/** A day before the athlete's first plan began: nothing was due on it. */
+const isBeforeStart = (state: PlanState, date: string) =>
+  state.startedOn !== null && date < state.startedOn;
 /** The date this ISO week of a session's weekday. */
 const dateThisWeek = (state: PlanState, weekday: number) =>
   addDays(state.localDate, weekday - state.weekday);
@@ -225,6 +233,7 @@ export function parsePlanState(payload: unknown): PlanState | null {
     title: str(plan.title),
     version: num(plan.version_number),
     sessionsPerWeek: num(plan.sessions_per_week),
+    startedOn: typeof body.training_started_on === "string" ? body.training_started_on : null,
     sessions,
     afterBlock: typeof afterBlock.ends_on === "string"
       ? { endsOn: afterBlock.ends_on, sessions: parseSessions(afterBlock.sessions) }
@@ -487,11 +496,13 @@ export function pickFocusSession(state: PlanState): FocusSession {
   const inForceToday = new Set(poolOn(state, state.localDate).map((session) => session.id));
   // A session the athlete logged sets in and left unfinished is neither undone nor made up: it is
   // theirs to save or discard, and the plan block says so.
-  // A session on a day the athlete chose to rest (a break, a can't-train check-in) was never due.
+  // A session on a day the athlete chose to rest (a break, a can't-train check-in) or on a day before
+  // their first plan began was never due.
   const undone = dated.filter((session) =>
     session.weekday! < state.weekday && unfinished(session) && inForceToday.has(session.id) &&
     unfinishedFor(state, session) === undefined &&
-    !isRestDay(state, dateThisWeek(state, session.weekday!))
+    !isRestDay(state, dateThisWeek(state, session.weekday!)) &&
+    !isBeforeStart(state, dateThisWeek(state, session.weekday!))
   );
   const base = {
     doneToday: slotDone,
