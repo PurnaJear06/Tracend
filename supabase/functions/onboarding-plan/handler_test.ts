@@ -792,7 +792,7 @@ function spend(extra: Partial<OnboardingStore> = {}) {
 const planOf = (proposal: OnboardingProposalPayload) =>
   proposal.training.calculation as Record<string, unknown>;
 
-Deno.test("no stored screening (an old app build) builds the usual plan", async () => {
+Deno.test("a cleared screening builds the usual plan", async () => {
   const { fake, calls } = store({ screening: () => Promise.resolve("cleared") });
   const { response } = await run(fake);
   assertEquals(response.status, 202);
@@ -800,6 +800,20 @@ Deno.test("no stored screening (an old app build) builds the usual plan", async 
   assertEquals(planOf(calls.persisted[0].proposal).screening, undefined);
   // A cleared athlete's snapshot, and so its hash, is the one made before the screening existed.
   assertEquals("screening" in calls.persisted[0].snapshot, false);
+});
+
+Deno.test("no stored screening asks for the health check, in both modes, and spends nothing", async () => {
+  const { spent, overrides } = spend({ screening: () => Promise.resolve(null) });
+  const { fake, calls } = store(overrides);
+  for (const mode of ["plan", "questions"] as const) {
+    const { response, body, backgroundRuns } = await run(fake, { mode });
+    assertEquals(response.status, 422);
+    assertEquals(body, { error: "onboarding_answers_incomplete", missing: ["screening"] });
+    assertEquals(backgroundRuns, 0);
+  }
+  assertEquals(calls.claimedHashes, []);
+  assertEquals(calls.persisted, []);
+  assertEquals(spent, { consent: 0, budget: 0, reserve: 0, generated: 0, questions: 0 });
 });
 
 Deno.test("moderate_until_cleared builds a plan capped at moderate effort", async () => {

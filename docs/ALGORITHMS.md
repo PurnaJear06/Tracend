@@ -1267,6 +1267,12 @@ TDEE = BMR × daily-activity factor + training energy
   low, and the plan says so.
 - **Basis:** fat loss of about 0.5–1% of body weight a week preserves lean mass (Helms 2014). A
   lean-gain surplus of about 10–20% gains about 0.25–0.5% of body weight a week (Iraki 2019).
+- **Healthy-weight hold (2026-11-02):** at a BMI (to one decimal) under 19.5, a window that starts
+  below TDEE starts at TDEE instead (fat loss and recomposition become 0% … 0%, aesthetic
+  0% … +5%), the rule Coach applies before it proposes a cut (goal phase threshold `bmiNearFloor`;
+  BMI under 18.5 is the WHO 2004 underweight range). A target weight under BMI 18.5 for the height
+  is never carried into the plan. `respond_to_onboarding_proposal_v2` recomputes the lower TDEE in
+  SQL and refuses calories more than 5 kcal under it at that BMI.
 
 ### Macros
 

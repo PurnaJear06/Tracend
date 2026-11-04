@@ -1,6 +1,6 @@
 # Tracend Current State
 
-**As of:** 2026-11-01
+**As of:** 2026-11-02
 
 **Lifecycle:** owner-only private beta; not approved for public production. Production Auth
 sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
@@ -107,6 +107,13 @@ cutover runbook (checked 2026-11-01). One line per stream; the lead updates thes
   removed (the deploy deletes the deployed function: `scripts/retire-functions.sh`), Account › Health check reopens the screening,
   remote sign-out returns to the gate, reminders leave the phone on sign-out, body-fat target floor
   (5% men, 12% women or unknown), Progress and Meals form fixes. Handoff:
+  [`onboarding.md`](./handoff/onboarding.md).
+- pre-beta audit B5a/B5b (2026-11-02, branch `claude/onboarding-safety-floors`, migration
+  `20261102074318`, in review): onboarding applies the healthy-weight floors (maintenance under BMI
+  19.5, no target under BMI 18.5; re-checked at approval in SQL), `user_goals` and
+  `onboarding_state` lose their direct client writes, a missing screening is unscreened (never
+  cleared), and no `public` function is open to `anon`. Owner step: answer Account › Plan › Health
+  check before merging (production has no screening rows). Handoff:
   [`onboarding.md`](./handoff/onboarding.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,

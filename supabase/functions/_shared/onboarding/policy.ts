@@ -3,6 +3,8 @@ import { type HealthHistory, returningFromBreak } from "./health_history.ts";
 import type { DailyActivity, Goal, OnboardingAnswers, Sex } from "./answers.ts";
 import type { MovementPattern, Muscle } from "./catalog.ts";
 import type { ScreeningOutcome } from "../training/screening/outcome.ts";
+import { bmiOf } from "../training/goal_phase/bmi.ts";
+import { goalPhaseThresholds } from "../training/goal_phase/thresholds.ts";
 
 // onboarding-policy-v2: the safe ranges an onboarding plan must stay inside.
 // Deterministic code computes them; the model chooses within them and its plan
@@ -99,6 +101,16 @@ export type NutritionPolicy = Readonly<{
   floorApplied: boolean;
   /** The goal range was above the ceiling and was capped to it. */
   ceilingApplied: boolean;
+  /** Body-mass index from the answers, to one decimal (the goal phase review's bmiOf). */
+  bmi: number;
+  /**
+   * The goal asks for a calorie deficit but the BMI is under bmiNearFloor (19.5), so the range
+   * starts at maintenance instead: the same rule Coach applies before it proposes a cut
+   * (coach_proposals limitRefusal). respond_to_onboarding_proposal_v2 checks it again.
+   */
+  healthyWeightHold: boolean;
+  /** The goal window around maintenance actually applied (the hold raises a deficit to 0). */
+  adjustment: readonly [number, number];
   protein: readonly [number, number];
   /** Minimum fat in grams at a given calorie target. */
   fatMinG: (calories: number) => number;
@@ -124,7 +136,12 @@ export function nutritionPolicy(answers: OnboardingAnswers): NutritionPolicy {
   );
   const tdeeLow = bmrLow * factor + training;
   const tdeeHigh = bmrHigh * factor + training;
-  const [adjustLow, adjustHigh] = goalCalorieAdjustments[goal];
+  const roundedBmi = bmiOf(weightKg, heightCm);
+  const [goalLow, goalHigh] = goalCalorieAdjustments[goal];
+  const healthyWeightHold = goalLow < 0 &&
+    roundedBmi < goalPhaseThresholds.bmiNearFloor.value;
+  const adjustLow = healthyWeightHold ? 0 : goalLow;
+  const adjustHigh = healthyWeightHold ? Math.max(goalHigh, 0) : goalHigh;
   const floor = calorieFloorKcal(sex, weightKg, heightCm, age);
   // From BMI 30, protein and the fat minimum follow the weight at BMI 25, so
   // they track lean mass instead of total weight.
@@ -141,7 +158,7 @@ export function nutritionPolicy(answers: OnboardingAnswers): NutritionPolicy {
   const ceilingApplied = high > ceiling;
   high = Math.min(high, ceiling);
   low = Math.min(low, high);
-  const deficit = adjustHigh < 0 || goal === "recomposition";
+  const deficit = adjustHigh < 0 || (goal === "recomposition" && !healthyWeightHold);
   const [proteinMin, proteinMax] = nutritionBounds.proteinG;
   const proteinLow = Math.max(proteinMin, Math.round(1.6 * referenceWeight));
   const proteinHigh = Math.min(proteinMax, Math.round((deficit ? 2.6 : 2.2) * referenceWeight));
@@ -154,6 +171,9 @@ export function nutritionPolicy(answers: OnboardingAnswers): NutritionPolicy {
     calories: [low, high],
     floorApplied,
     ceilingApplied,
+    bmi: roundedBmi,
+    healthyWeightHold,
+    adjustment: [adjustLow, adjustHigh],
     protein: [proteinLow, proteinHigh],
     fatMinG: (calories) =>
       Math.max(
@@ -244,8 +264,9 @@ export function priorityMinimumSets(
 export const moderateEffortRpe = 7;
 
 /**
- * Contract 8: `see_professional` builds no plan. A missing outcome means the athlete was never
- * screened and reads as cleared.
+ * Contract 8: `see_professional` builds no plan. A missing outcome is a cleared athlete's (snapshots
+ * leave cleared out); an athlete never screened gets no plan at all (onboarding-plan asks for the
+ * health check first).
  */
 export const screeningBlocksPlan = (screening: ScreeningOutcome | undefined): boolean =>
   screening === "see_professional";

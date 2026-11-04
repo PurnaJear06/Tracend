@@ -55,7 +55,10 @@ export type ScreeningSetting = "cleared" | "moderate_until_cleared" | "see_profe
 export type Contributors = Readonly<{
   /** The coaching principles digest (always in the real prompt). Default true. */
   principles?: boolean;
-  /** The health-check outcome; "unreadable" is a failed lookup, null never screened. */
+  /**
+   * The health-check outcome; "unreadable" is a failed lookup, null never screened (unscreened).
+   * Default cleared, the usual athlete.
+   */
   screening?: ScreeningSetting | "unreadable" | null;
   /** A get_goal_phase_inputs_v1 payload, or null for none. */
   goalPhase?: unknown | null;

@@ -14,6 +14,11 @@ insert into auth.users(id, role) values
   ('e1000000-0000-4000-8000-000000000001', 'authenticated'),
   ('e1000000-0000-4000-8000-000000000002', 'authenticated'),
   ('e1000000-0000-4000-8000-000000000003', 'authenticated');
+-- These athletes answered the health check as cleared; a missing check is unscreened, never
+-- cleared (20261102074318).
+insert into public.onboarding_screenings(user_id, exercises_regularly, known_disease, symptoms, outcome)
+select u.id, true, false, false, 'cleared' from auth.users u
+where not exists (select 1 from public.onboarding_screenings s where s.user_id = u.id);
 update public.user_accounts set timezone = case
     when (statement_timestamp() at time zone 'Pacific/Kiritimati')::date
       <> (statement_timestamp() at time zone 'UTC')::date then 'Pacific/Kiritimati'
@@ -286,6 +291,11 @@ reset role;
 insert into auth.users(id, role)
 select ('e1000000-0000-4000-8000-0000000000' || lpad(n::text, 2, '0'))::uuid, 'authenticated'
 from generate_series(4, 17) n;
+-- These athletes answered the health check as cleared; a missing check is unscreened, never
+-- cleared (20261102074318).
+insert into public.onboarding_screenings(user_id, exercises_regularly, known_disease, symptoms, outcome)
+select u.id, true, false, false, 'cleared' from auth.users u
+where not exists (select 1 from public.onboarding_screenings s where s.user_id = u.id);
 
 create function pg_temp.u(n integer) returns uuid language sql as $$
   select ('e1000000-0000-4000-8000-0000000000' || lpad(n::text, 2, '0'))::uuid

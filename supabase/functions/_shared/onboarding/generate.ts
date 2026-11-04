@@ -14,12 +14,7 @@ import {
   type PlanPolicies,
   validateOnboardingPlan,
 } from "./plan_contract.ts";
-import {
-  goalCalorieAdjustments,
-  nutritionPolicy,
-  screeningBlocksPlan,
-  trainingPolicy,
-} from "./policy.ts";
+import { nutritionPolicy, screeningBlocksPlan, trainingPolicy } from "./policy.ts";
 import type { ScreeningOutcome } from "../training/screening/outcome.ts";
 import { buildRulesPlan, weeklySetsByMuscle } from "./rules_plan.ts";
 import {
@@ -147,7 +142,7 @@ export const data = (value: unknown) =>
 
 export function onboardingSystemPrompt(policies: PlanPolicies): string {
   const { answers, training, nutrition } = policies;
-  const [adjustLow, adjustHigh] = goalCalorieAdjustments[answers.goal];
+  const [adjustLow, adjustHigh] = nutrition.adjustment;
   const pct = (value: number) => `${value > 0 ? "+" : ""}${Math.round(value * 100)}%`;
   const limits = onboardingPlanLimits;
   return [
@@ -210,6 +205,16 @@ export function onboardingSystemPrompt(policies: PlanPolicies): string {
     } kcal, activity factor ${nutrition.activityFactor}, maintenance ${
       nutrition.tdeeKcal.join("-")
     } kcal including training, goal adjustment ${pct(adjustLow)} to ${pct(adjustHigh)}.`,
+    ...(nutrition.healthyWeightHold
+      ? [
+        `- Calories are held at maintenance: the athlete's BMI is ${
+          nutrition.bmi.toFixed(1)
+        }, under 19.5, so Tracend sets no calorie deficit for this goal. Never describe the plan as a deficit, a cut or weight loss anywhere in your text.`,
+      ]
+      : []),
+    ...(answers.targetBelowHealthyFloorKg === undefined ? [] : [
+      "- The target weight the athlete gave is below the healthy range for their height, so the plan sets no target weight. Never mention a target weight or a weight to reach.",
+    ]),
     `- calories ${nutrition.calories[0]}-${
       nutrition.calories[1]
     } kcal (never below ${nutrition.floorKcal}).`,
