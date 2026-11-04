@@ -863,7 +863,8 @@ the nearest 5 g), by `private.starter_schedule_items`. The times are local clock
 the athlete's own clock like every schedule. While the active version is still the starter, a newly
 approved target set rewrites the amounts in place (so a meal already logged keeps its slot); a
 schedule that is not the starter, such as the owner's confirmed one, is never touched. Creation
-writes the `nutrition.schedule.activated` audit event with `starter: true`. There is no
+writes the `nutrition.schedule.activated` audit event with `starter: true`; each refresh in place
+writes `nutrition.schedule.refreshed` with the same metadata. There is no
 athlete-facing way to edit the schedule yet; `activate_my_nutrition_schedule`, which replaced it
 from raw JSON with no approval, was removed.
 
