@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/environment.dart';
@@ -75,7 +78,8 @@ void main() {
     expect(harness.repository.saveCalls, 0);
     expect(harness.repository.startCalls, 0);
     expect(harness.repository.responses, isEmpty);
-    expect(harness.announced, 0);
+    // The plan screens refresh whenever the flow closes; nothing changed.
+    expect(harness.announced, 1);
   });
 
   testWidgets('a changed schedule builds a new proposal, and approving it '
@@ -143,8 +147,72 @@ void main() {
 
     expect(find.text('Account'), findsOneWidget);
     expect(harness.repository.responses, isEmpty);
-    expect(harness.announced, 0);
+    expect(harness.announced, 1);
     expect(find.text('Your new plan is active.'), findsNothing);
+  });
+
+  testWidgets('the flow cannot be left while the approval is saving', (
+    tester,
+  ) async {
+    final repository = _Repository()..respondGate = Completer<void>();
+    final harness = await _open(tester, repository: repository);
+
+    await tester.tap(
+      find.widgetWithText(FilledButton, 'Continue to your coach'),
+    );
+    await tester.pumpAndSettle();
+    final approve = find.widgetWithText(FilledButton, 'Approve plan');
+    await tester.ensureVisible(approve);
+    await tester.pumpAndSettle();
+    await tester.tap(approve);
+    await tester.pump();
+
+    expect(repository.responses, ['accept']);
+    expect(find.byType(BackButton), findsNothing);
+    expect(find.byType(CupertinoNavigationBarBackButton), findsNothing);
+    expect(find.byTooltip('Back'), findsNothing);
+    // The system back gesture is refused too.
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(find.text('Your new plan'), findsOneWidget);
+    expect(find.text('Account'), findsNothing);
+
+    repository.respondGate!.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('Account'), findsOneWidget);
+    expect(find.text('Your new plan is active.'), findsOneWidget);
+    expect(harness.announced, 1);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('the flow can be left again once the approval has failed', (
+    tester,
+  ) async {
+    final repository = _Repository()
+      ..respondGate = Completer<void>()
+      ..failResponse = true;
+    final harness = await _open(tester, repository: repository);
+
+    await tester.tap(
+      find.widgetWithText(FilledButton, 'Continue to your coach'),
+    );
+    await tester.pumpAndSettle();
+    final approve = find.widgetWithText(FilledButton, 'Approve plan');
+    await tester.ensureVisible(approve);
+    await tester.pumpAndSettle();
+    await tester.tap(approve);
+    await tester.pump();
+    repository.respondGate!.complete();
+    await tester.pumpAndSettle();
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Account'), findsOneWidget);
+    expect(find.text('Your new plan is active.'), findsNothing);
+    expect(harness.announced, 1);
   });
 
   testWidgets('equipment the plan cannot work with opens the equipment step', (
@@ -286,6 +354,8 @@ class _Repository implements OnboardingRepository {
   Map<String, dynamic>? savedPayload;
   final responses = <String>[];
   final respondedIds = <String>[];
+  Completer<void>? respondGate;
+  bool failResponse = false;
 
   @override
   Future<bool> isOnboardingComplete() async => true;
@@ -390,5 +460,7 @@ class _Repository implements OnboardingRepository {
   Future<void> respond(String proposalId, String action, {String? note}) async {
     responses.add(action);
     respondedIds.add(proposalId);
+    await respondGate?.future;
+    if (failResponse) throw Exception('offline');
   }
 }

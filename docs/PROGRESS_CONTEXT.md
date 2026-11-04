@@ -134,7 +134,10 @@ with both v2 photo notices published; Groq receives nothing. Onboarding uses its
   starting meal schedule (breakfast, lunch, snack, dinner, split from the approved calories and
   protein) when targets are approved, so Today's food rail and Coach's "next meal" have an answer;
   `activate_my_nutrition_schedule` is dropped. Needs an app reinstall for Change my setup; the
-  schedule needs only the migration. Handoff: [`onboarding.md`](./handoff/onboarding.md).
+  schedule needs only the migration. Review follow-ups (2026-11-04, `claude/change-setup-followups`,
+  migration `20261104103729`, in review): Change my setup cannot be left while an approval saves,
+  Account always announces when the flow closes, and a starter-schedule refresh is audited
+  (`nutrition.schedule.refreshed`). Handoff: [`onboarding.md`](./handoff/onboarding.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Beta terms and consent (2026-11-02, `claude/beta-terms-consent`, migration `20261102143719`, in review): app beta terms at `/beta-terms/` (a draft for a lawyer), privacy page fixes (controller and grievance contact, workout and sleeping heart rate, explicit health-data consent, processor wording), onboarding rows that open both pages plus a separate `health_data` consent, Account links, page versions = "Last updated" dates kept equal to `LegalNotices` by a test, and a launch screen that asks onboarded athletes again when a page changes (fails open; the owner sees it once after installing). Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.

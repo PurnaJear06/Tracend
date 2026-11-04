@@ -459,8 +459,10 @@ class _AccountScreenState extends State<AccountScreen> {
         ),
       ),
     );
-    if (approved != true || !mounted) return;
+    // An approval replaces the plan on the server, so Train and Meals
+    // refresh whenever the flow closes, whatever it returned.
     widget.planChanges?.announce();
+    if (approved != true || !mounted) return;
     TracendToast.show(context, 'Your new plan is active.');
   }
 

@@ -1,10 +1,10 @@
 begin;
-select plan(32);
+select plan(35);
 
 -- Approving nutrition targets gives an athlete with no meal schedule a starting one
 -- (20261102224851_starter_meal_schedule.sql): four slots with the approved calories and protein
--- split between them, refreshed in place while it is still the starter, and never replacing a
--- schedule the athlete or the owner confirmed.
+-- split between them, refreshed in place (and audited, 20261104103729) while it is still the
+-- starter, and never replacing a schedule the athlete or the owner confirmed.
 
 create temporary table payload as select
   '{"title":"Foundation block","block_weeks":6,"sessions_per_week":2,"split":"full_body",
@@ -137,6 +137,17 @@ select is((select count(*)::integer from public.nutrition_schedule_items i
 select is((select i ->> 'status' from jsonb_array_elements(public.get_my_nutrition_schedule(current_date) -> 'items') i
     where i ->> 'slot_key' = 'lunch'), 'logged', 'so a meal already logged keeps its slot');
 reset role;
+select is((select count(*)::integer from public.audit_events
+    where user_id = 'c1000000-0000-4000-8000-000000000001' and action_code = 'nutrition.schedule.refreshed'
+      and target_id = (select id from public.nutrition_schedule_versions
+        where user_id = 'c1000000-0000-4000-8000-000000000001' and status = 'active')
+      and (metadata ->> 'starter')::boolean
+      and (metadata ->> 'nutrition_target_set_id')::uuid = (select id from public.nutrition_target_sets
+        where user_id = 'c1000000-0000-4000-8000-000000000001' and status = 'active')), 1,
+  'the refresh is audited once, naming the target set behind it');
+select is((select count(*)::integer from public.audit_events
+    where user_id = 'c1000000-0000-4000-8000-000000000001' and action_code = 'nutrition.schedule.activated'), 1,
+  'and the creation was audited only once');
 
 -- 3. A schedule that is not the starter is never touched -------------------------------------------
 
@@ -161,6 +172,9 @@ select is((public.get_my_nutrition_schedule(current_date) -> 'items' -> 0 -> 'fo
 reset role;
 select is((select count(*)::integer from public.nutrition_schedule_versions
     where user_id = 'c1000000-0000-4000-8000-000000000002'), 1, 'and no second version');
+select is((select count(*)::integer from public.audit_events
+    where user_id = 'c1000000-0000-4000-8000-000000000002' and action_code like 'nutrition.schedule.%'), 0,
+  'and no schedule audit event');
 
 -- 4. Targets that were not approved start nothing --------------------------------------------------
 

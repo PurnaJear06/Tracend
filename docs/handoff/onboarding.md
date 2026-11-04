@@ -574,4 +574,14 @@ never touched. `breakfast` joins the slot names; `activate_my_nutrition_schedule
 called it, and it let an athlete replace their schedule with no approval). No account is backfilled:
 a read of production found every account with approved targets already has a schedule. There is no
 way for an athlete to edit the schedule yet; that needs its own approval flow. Tests:
-`starter_meal_schedule_test.sql` (32 checks), `test/starter_schedule_test.dart`.
+`starter_meal_schedule_test.sql` (35 checks), `test/starter_schedule_test.dart`.
+
+**Follow-ups from the PR #203 review (2026-11-04, branch `claude/change-setup-followups`, migration
+`20261104103729_starter_schedule_refresh_audit.sql`).** (1) While an approval is saving, Change my
+setup cannot be left (`PopScope(canPop: !_saving)` and no automatic back arrow in
+`OnboardingFlow`), and Account announces the change whenever the flow closes, not only on approval,
+so Train and Meals never keep an old plan; the "Your new plan is active." toast stays for an
+approval. Tests in `test/change_setup_test.dart`. (2) Refreshing the starter schedule in place now
+writes `nutrition.schedule.refreshed` (version, `starter: true`, `nutrition_target_set_id`), as
+creation writes `activated`; the function is otherwise the earlier body. Needs an app reinstall for
+(1); the migration deploys with the merge.

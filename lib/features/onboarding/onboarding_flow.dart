@@ -1504,89 +1504,98 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         (!onPlan || _proposal == null) &&
         !_saving &&
         !(widget.currentSetup != null && _step == _reviewStep);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_title),
-        leading: canGoBack
-            ? IconButton(
-                tooltip: 'Previous section',
-                onPressed: _back,
-                icon: const Icon(CupertinoIcons.back),
-              )
-            : null,
-        actions: _accountActions(),
-      ),
-      body: SafeArea(
-        top: false,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: TracendSpacing.gutter,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Step $_stepNumber of ${_visibleSteps.length} · ${_sections[_step]}',
-                    style: Theme.of(context).textTheme.labelMedium,
-                  ),
-                  const SizedBox(height: TracendSpacing.xs),
-                  _StepLine(count: _visibleSteps.length, current: _stepNumber),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(TracendSpacing.gutter),
-                child: AnimatedSwitcher(
-                  duration: MediaQuery.disableAnimationsOf(context)
-                      ? Duration.zero
-                      : const Duration(milliseconds: 220),
-                  child: KeyedSubtree(
-                    key: ValueKey(
-                      '$_step-${_proposal?.id}-$_generating-$_generationFailed-$_proposalExpired-$_asking',
-                    ),
-                    child: _stepBody(),
-                  ),
-                ),
-              ),
-            ),
-            if (!onPlan)
+    // Approving replaces the plan on the server: while the answer is in
+    // flight, leaving would skip the refresh that shows the new plan.
+    return PopScope(
+      canPop: !_saving,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(_title),
+          automaticallyImplyLeading: !_saving,
+          leading: canGoBack
+              ? IconButton(
+                  tooltip: 'Previous section',
+                  onPressed: _back,
+                  icon: const Icon(CupertinoIcons.back),
+                )
+              : null,
+          actions: _accountActions(),
+        ),
+        body: SafeArea(
+          top: false,
+          child: Column(
+            children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  TracendSpacing.gutter,
-                  TracendSpacing.sm,
-                  TracendSpacing.gutter,
-                  TracendSpacing.md,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: TracendSpacing.gutter,
                 ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (_error != null) _errorText(),
-                    FilledButton(
-                      onPressed: _saving ? null : _continue,
-                      child: _saving
-                          ? const TracendLoader(
-                              size: 24,
-                              semanticLabel: 'Saving',
-                            )
-                          : Text(
-                              _step == _reviewStep
-                                  ? 'Continue to your coach'
-                                  : _step == _questionsStep
-                                  ? (_asking
-                                        ? 'Skip and build my plan'
-                                        : 'Build my plan')
-                                  : _returnToReview
-                                  ? 'Save and return to review'
-                                  : 'Continue',
-                            ),
+                    Text(
+                      'Step $_stepNumber of ${_visibleSteps.length} · ${_sections[_step]}',
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                    const SizedBox(height: TracendSpacing.xs),
+                    _StepLine(
+                      count: _visibleSteps.length,
+                      current: _stepNumber,
                     ),
                   ],
                 ),
               ),
-          ],
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(TracendSpacing.gutter),
+                  child: AnimatedSwitcher(
+                    duration: MediaQuery.disableAnimationsOf(context)
+                        ? Duration.zero
+                        : const Duration(milliseconds: 220),
+                    child: KeyedSubtree(
+                      key: ValueKey(
+                        '$_step-${_proposal?.id}-$_generating-$_generationFailed-$_proposalExpired-$_asking',
+                      ),
+                      child: _stepBody(),
+                    ),
+                  ),
+                ),
+              ),
+              if (!onPlan)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    TracendSpacing.gutter,
+                    TracendSpacing.sm,
+                    TracendSpacing.gutter,
+                    TracendSpacing.md,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_error != null) _errorText(),
+                      FilledButton(
+                        onPressed: _saving ? null : _continue,
+                        child: _saving
+                            ? const TracendLoader(
+                                size: 24,
+                                semanticLabel: 'Saving',
+                              )
+                            : Text(
+                                _step == _reviewStep
+                                    ? 'Continue to your coach'
+                                    : _step == _questionsStep
+                                    ? (_asking
+                                          ? 'Skip and build my plan'
+                                          : 'Build my plan')
+                                    : _returnToReview
+                                    ? 'Save and return to review'
+                                    : 'Continue',
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

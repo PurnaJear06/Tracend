@@ -433,7 +433,8 @@ usual view, headed "Your new plan", saying that approving it replaces the curren
 **Approve plan**, **Request changes** and **Reject proposal**. Approving creates a new plan version
 and an audit event, returns to Account with "Your new plan is active.", and reloads Today, Train
 and Meals. The back arrow at Review, or on the proposal, leaves without changing anything: until
-approval the active plan, targets and goal are untouched. The health check, the healthy-weight
+approval the active plan, targets and goal are untouched. While the approval is saving there is no
+back arrow and the swipe-back does nothing; Today, Train and Meals reload whenever the flow closes. The health check, the healthy-weight
 floors and the plan's safety ranges apply exactly as in onboarding, and a stored health check that
 says to see a professional sends the athlete to it instead of building. An athlete never asked the
 health check is asked it first.
