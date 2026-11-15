@@ -1,6 +1,6 @@
 # Website and Waitlist Handoff
 
-**As of:** 2026-11-02
+**As of:** 2026-11-15
 
 ## State
 
@@ -37,6 +37,25 @@
   `beta-terms.astro` or `privacy.astro` now changes a version the app asks for:** bump its date
   and `LegalNotices` together (BETA_OPERATIONS.md, "Changing the beta terms or the privacy
   notice"); `test/legal_versions_test.dart` enforces it.
+- 2026-11-15 (`claude/landing-redesign`): the home page was restructured after a design review
+  (people did not follow the eight-step scroll story, and phones got a long stack of screens).
+  - The story is four moments of one day (train, sleep, recovery, adjust) framed by the question
+    "How did it know to go lighter?". Each moment holds still for the last part of its scroll
+    (`S` in `page.js`). The clock is a small label; the step rail names the four moments.
+  - Phones and upright tablets now get the same pinned story as desktop (`data-lay="tall"`): copy
+    on top, one phone under it running past the fold. Reduced motion, short and sideways screens
+    keep the static stacked page (`data-mode="flow"`).
+  - The hero copy and form are plain HTML with a CSS rise, so they never wait for a script; on a
+    phone the form is on the first screen and the Coach's call shows as a banner over the phone.
+  - Order after the story: demo, five apps, made for you, Coach, progress, muscle map, "Other apps
+    stop at the score", "Your plan, in three steps" (the three onboarding screens, `setupStart`),
+    join. "Coming next" is one labelled row at the end of the five-apps section; its Dynamic
+    Island and Watch film was deleted. The meal screen left the story (the food tile and the
+    hero's dinner card still show it).
+  - One primary button style (`.btn-primary`, lime); the nav button is lime too. The closing
+    heading is "Your plan starts with a goal." and the outlined clock there is gone.
+  - Page length on a 390 px phone went from about 25,000 px to about 17,800 px.
+  - Rules for future edits are in `site/PRODUCT.md`, "Page structure".
 - Follow-up after the Phase 2 cutover plus its 2-week rollback window: remove DeepSeek and Groq
   from the processor list in `site/src/pages/privacy.astro`, update its date and `LegalNotices.privacyVersion`
   (athletes are asked again). A new AI company
@@ -109,6 +128,12 @@ by changing the secrets, and update the processor list in `site/src/pages/privac
 
 - The first live join needs the owner's own email: confirm the email arrives, the link confirms,
   and unsubscribe works.
+- The redesign was checked in a desktop browser at 1440x900 and 390x664, plus the reduced-motion
+  page. It has not been tried on a real iPhone or inside the Instagram in-app browser: do that
+  from the preview link before paying for ads (watch the pinned story while the address bar
+  hides and shows).
+- The page has no founder line, tester count or testimonial, by rule. A true one-line "who built
+  this" from the owner would help; it needs the owner's words.
 - Add `Website Build` to the required checks if wanted.
 - Decided 2026-10-15 (owner): the site keeps Android "in testing"; CLAUDE.md's "No Android"
   covers what gets built.

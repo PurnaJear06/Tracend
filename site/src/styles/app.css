@@ -147,14 +147,6 @@
 .lg-done{margin-top:14px;width:100%}
 
 /* ---------- Nutrition ---------- */
-.n-week{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;margin-top:6px}
-.n-week span{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-radius:16px;font-size:13px;color:var(--a-text2)}
-.n-week span b{font-family:var(--a-display);font-size:19px;font-weight:600;color:var(--a-text2)}
-.n-week span.on{background:var(--a-raised);color:var(--a-text)}
-.n-week span.on b{color:var(--a-text)}
-.n-tot{background:var(--a-surface);border-radius:24px;padding:14px;margin-top:8px;display:grid;gap:8px}
-.n-tot .src{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--a-text2);padding:2px 4px 2px}
-.n-tot .src svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8}
 .n-box{background:var(--a-raised);border-radius:18px;padding:14px 16px}
 .n-box .top{display:flex;justify-content:space-between;align-items:center;font-size:14px;color:var(--a-text2)}
 .n-box .top em{font-style:normal;font-weight:600;color:var(--a-text);font-size:13.5px}
@@ -166,18 +158,6 @@
 .n-two .v{font-size:22px}
 .c-carb{background:var(--a-good)!important}
 .c-fat{background:var(--a-amber)!important}
-.n-meal{display:grid;grid-template-columns:48px 26px 1fr;gap:8px;align-items:start;background:var(--a-surface);border-radius:22px;padding:16px;margin-top:4px;position:relative;overflow:hidden}
-.n-meal .t{font-size:13px;color:var(--a-text2);padding-top:3px}
-.n-meal .st{width:22px;height:22px;border-radius:50%;background:var(--a-good);display:grid;place-items:center;margin-top:1px}
-.n-meal .st svg{width:12px;height:12px;fill:none;stroke:#062016;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
-.n-meal h5{margin:0;font-family:var(--a-display);font-weight:700;font-size:18px}
-.n-meal .ln{font-size:14px;color:var(--a-text2);margin-top:4px}
-.n-meal .ln b{color:var(--a-good);font-weight:600}
-.tri{display:flex;gap:3px;height:4px;margin-top:10px}
-.tri i{border-radius:2px;background:var(--a-text)}
-.tri i:nth-child(2){background:var(--a-good)}
-.tri i:nth-child(3){background:var(--a-amber)}
-.n-meal .scan{position:absolute;inset:0;background:linear-gradient(90deg,rgba(200,240,90,0),rgba(200,240,90,.14),rgba(200,240,90,0));transform:translateX(-100%);pointer-events:none}
 
 /* ---------- Sleep quality ---------- */
 .sq-top{display:flex;align-items:flex-end;gap:10px;margin-top:8px}

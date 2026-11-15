@@ -59,13 +59,13 @@ Shipped features from docs/PRD.md and docs/UX_FLOWS.md, and where the page shows
 | Feature | Where on the page |
 | --- | --- |
 | Plans shaped by age, sex, history and limits; the profile remembers answers, limits, preferences | "Made for you. Never a template." (and the hero) |
-| Onboarding: goal, about you, schedule, equipment, limits, current lifts, focus | Film act 1, "You set the goal" |
-| Apple Health usual months, coach questions (0 to 3), experienced path keeps what works | Film act 1, "It gets to know you" |
-| Plan proposal: training week, starting loads, nutrition targets, reasoning; approve, request changes, reject | Film act 1, "You approve the plan" |
-| Set logging with effort, new bests | Film act 2, "You train"; bento |
-| Meal photo, then confirm | Film act 2, "You eat"; bento |
-| Sleep and recovery score from five drivers, morning check-in | Film act 2, "You sleep", "Your body answers"; demo |
-| Today's session adjusted, with the reason | Film act 2, "Today, adjusted"; "Other apps stop at the score" |
+| Onboarding: goal, about you, schedule, equipment, limits, current lifts, focus | "Your plan, in three steps", step 1 |
+| Apple Health usual months, coach questions (0 to 3), experienced path keeps what works | "Your plan, in three steps", step 2 |
+| Plan proposal: training week, starting loads, nutrition targets, reasoning; approve, request changes, reject | "Your plan, in three steps", step 3 |
+| Set logging with effort, new bests | Story, "You train hard"; bento |
+| Meal photo, then confirm | Bento, "Food"; the hero's dinner card on wide screens |
+| Sleep and recovery score from five drivers, morning check-in | Story, "You sleep short", "Your body answers"; demo |
+| Today's session adjusted, with the reason | Story, "Today, adjusted"; "Other apps stop at the score" |
 | Muscle map for the plan's week | "Every workout, mapped to your body" |
 | Weight trend and body measurements (waist, chest, hip, arm, thigh) toward the goal, strength (workouts done, best lifts) | "It checks your progress" |
 | Weekly review, calculated from logs, no AI | "It checks your progress" |
@@ -77,7 +77,9 @@ Shipped features from docs/PRD.md and docs/UX_FLOWS.md, and where the page shows
 
 ## Coming next (owner decision, 2026-10-13)
 
-Shown only inside a section labelled "Coming next" with "Not in the beta yet", never with a date:
+Shown only under a label reading "Coming next. Not in the beta yet.", never with a date. Since
+2026-11-15 it is one short row at the end of "Five apps that never talk to each other", not a
+section of its own: the page sells what the beta has.
 - Live Activity for a workout in progress: the Dynamic Island keeps the session after you leave
   the app, and you log sets (weight, reps) from the Dynamic Island or the Lock Screen.
 - An Apple Watch app for logging sets.
@@ -99,6 +101,20 @@ Shown only inside a section labelled "Coming next" with "Not in the beta yet", n
 - Cause and effect between a session and a night ("shown alongside", not "caused").
 - "Tracks 24/7 without a watch", "no subscription", medical or diagnostic wording.
 - Ratings, testimonials, user counts or press that don't exist.
+
+## Page structure (2026-11-15)
+
+The page is a pitch, in this order: hero (headline, one line, the form, the Coach's call) → the
+story → try it (the sliders) → five apps in one → made for you → Coach → progress → muscle map →
+"Other apps stop at the score" → three steps to a plan → join.
+
+- The story answers one question, "How did it know to go lighter?", in four moments of one day:
+  train, sleep, recovery, adjust. Each moment rests long enough to read. Do not add moments that
+  are not part of that answer; other features have their own sections.
+- The hero copy and form never wait for a script, and on a phone the form is on the first screen.
+- One primary action, "Join the beta", always lime (`.btn-primary`, the nav button, the form
+  button). White is for selected states (tabs, segmented controls) only.
+- Time is a small label on each moment, never the largest thing on screen.
 
 ## Voice
 

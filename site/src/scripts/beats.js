@@ -1,11 +1,11 @@
-/* Sub-animations for each beat's app screen.
-   anim(i, scope, tl, at) adds beat i's tweens to timeline tl at time at; scope holds the phone.
+/* Sub-animations for each moment's app screen.
+   anim(id, scope, tl, at) adds that moment's tweens to timeline tl at time at; scope holds the phone.
    Every tween is a fromTo so a scrubbed timeline lands in the same state in both directions. */
 (function () {
   'use strict';
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
-  var D = window.TRACEND_DAY, BEATS = D.beats;
+  var D = window.TRACEND_DAY;
 
   /* a finger tap: the ring under the finger, and the control dips */
   function tap(tl, el, at) {
@@ -48,18 +48,6 @@
         .fromTo(done, { scale: 0.96 }, { scale: 1, duration: 0.12, ease: TK.EASE.out }, at + 0.56);
       tl.fromTo($('[data-best]', scr), { scale: 0.85, autoAlpha: 0, y: 6 }, { scale: 1, autoAlpha: 1, y: 0, duration: 0.22, ease: TK.EASE.spring }, at + 0.62);
     },
-    eat: function (scr, tl, at) {
-      var t = D.monday.meal.totals;
-      tl.fromTo($('[data-meal]', scr), { autoAlpha: 0, y: 18 }, { autoAlpha: 1, y: 0, duration: 0.22 }, at + 0.06);
-      tl.fromTo($('[data-scan]', scr), { xPercent: -100 }, { xPercent: 100, duration: 0.3, ease: 'none' }, at + 0.14);
-      ['kcal', 'protein', 'carbs', 'fat'].forEach(function (k, n) {
-        var el = $('[data-n="' + k + '"]', scr), bar = $('[data-nb="' + k + '"]', scr);
-        TK.countUp(el, t[k][1], { tl: tl, at: at + 0.4, dur: 0.35, from: t[k][0], fmt: function (v) { return Math.round(v).toLocaleString('en-US'); } });
-        tl.fromTo(bar, { '--v': t[k][0] / t[k][2] }, { '--v': Math.min(1, t[k][1] / t[k][2]), duration: 0.35 }, at + 0.4 + n * 0.03);
-      });
-      TK.countUp($('[data-pct]', scr), Math.round(t.kcal[1] / t.kcal[2] * 100), { tl: tl, at: at + 0.4, dur: 0.35, from: Math.round(t.kcal[0] / t.kcal[2] * 100), fmt: function (v) { return Math.round(v) + '%'; } });
-      TK.countUp($('[data-left]', scr), t.protein[2] - t.protein[1], { tl: tl, at: at + 0.4, dur: 0.35, from: t.protein[2] - t.protein[0], fmt: function (v) { return Math.round(v) + 'g left'; } });
-    },
     sleep: function (scr, tl, at) {
       TK.countUp($('.sq-score', scr), D.night.sleep.score, { tl: tl, at: at + 0.1, dur: 0.4 });
       tl.fromTo($$('.hyp i', scr), { scaleY: 0 }, { scaleY: 1, duration: 0.2, stagger: 0.012, transformOrigin: '50% 100%' }, at + 0.08);
@@ -80,9 +68,11 @@
       if (b) tl.fromTo(b, { backgroundColor: 'rgba(200,240,90,0)' }, { backgroundColor: 'rgba(200,240,90,.18)', duration: 0.2 }, at + 0.55);
     }
   };
-  function beatAnim(i, scope, tl, at) {
-    var scr = $('[data-scr="' + BEATS[i].scr + '"]', scope);
-    if (scr && ANIM[BEATS[i].id]) ANIM[BEATS[i].id](scr, tl, at);
+  /* which app screen each moment plays on */
+  var SCR = { goal: 'goal', learn: 'intake', approve: 'proposal', train: 'workout', sleep: 'sleep', read: 'today', plan: 'session' };
+  function beatAnim(id, scope, tl, at) {
+    var scr = $('[data-scr="' + SCR[id] + '"]', scope);
+    if (scr && ANIM[id]) ANIM[id](scr, tl, at);
   }
   /* strike line drawn by background so it can animate */
   var st = document.createElement('style');
