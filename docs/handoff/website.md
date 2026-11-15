@@ -46,14 +46,28 @@
     on top, one phone under it running past the fold. Reduced motion, short and sideways screens
     keep the static stacked page (`data-mode="flow"`).
   - The hero copy and form are plain HTML with a CSS rise, so they never wait for a script; on a
-    phone the form is on the first screen and the Coach's call shows as a banner over the phone.
+    phone the form is on the first screen and the Coach's call is a notification on the phone's
+    own screen, under the island (it scales with the phone through `--pu`).
+  - Hero cards (after the owner's check on an iPhone and a laptop: they looked dropped on the page
+    and lit differently from the phone). They now live inside the phone's tilt (`.dev-tilt`): the
+    three inputs in one column behind its left edge, the Coach's answer in front, all lit from the
+    upper right. `sizePhone()` scales them with the phone (`--fs`), keeps them clear of the copy
+    and the right edge (`--hang`), and drops the inputs when the window is too narrow
+    (`.fc-solo`). The outlined clock behind the phone is gone.
+  - Phones: `.top-fade` dissolves content under the status bar and the menu, so nothing slides
+    behind the menu or shows beside the clock; the pinned story starts 22 px below the menu.
+  - Fade-ins are per block (`reveals()`, one `ScrollTrigger.batch`), so a stacked phone page does
+    not get one fade for a two-screen block. The exit of a hero card uses `opacity`, not
+    `autoAlpha`: the cards sit inside the phone's wrapper, which is hidden when the timeline is
+    first measured, and `autoAlpha` then restores them as hidden.
   - Order after the story: demo, five apps, made for you, Coach, progress, muscle map, "Other apps
     stop at the score", "Your plan, in three steps" (the three onboarding screens, `setupStart`),
     join. "Coming next" is one labelled row at the end of the five-apps section; its Dynamic
     Island and Watch film was deleted. The meal screen left the story (the food tile and the
     hero's dinner card still show it).
-  - On a phone the demo's score and call ride with the sliders (`.demo-mini`), because the full
-    result sits a screen below them.
+  - On a phone a live readout (`.demo-mini`) docks under the menu while the sliders are on screen
+    and the result ring is not, and slides in and out. It is `position:fixed`, so it must stay
+    outside any element that gets a transform (it sits next to the menu in `Page.astro`).
   - One primary button style (`.btn-primary`, lime); the nav button is lime too. The closing
     heading is "Your plan starts with a goal." and the outlined clock there is gone.
   - Page length on a 390 px phone went from about 25,000 px to about 17,800 px.
@@ -130,8 +144,8 @@ by changing the secrets, and update the processor list in `site/src/pages/privac
 
 - The first live join needs the owner's own email: confirm the email arrives, the link confirms,
   and unsubscribe works.
-- The redesign was checked in a desktop browser at 1440x900 and 390x664, plus the reduced-motion
-  page. It has not been tried on a real iPhone or inside the Instagram in-app browser: do that
+- The redesign was checked in a desktop browser from 1100x720 to 1920x1080 and at 393x852, plus
+  the short and sideways page. It has not been tried on a real iPhone or inside the Instagram in-app browser: do that
   from the preview link before paying for ads (watch the pinned story while the address bar
   hides and shows).
 - The page has no founder line, tester count or testimonial, by rule. A true one-line "who built

@@ -115,6 +115,11 @@ story → try it (the sliders) → five apps in one → made for you → Coach �
 - One primary action, "Join the beta", always lime (`.btn-primary`, the nav button, the form
   button). White is for selected states (tabs, segmented controls) only.
 - Time is a small label on each moment, never the largest thing on screen.
+- Anything shown beside the hero phone lives in the phone's own tilt and light (inside
+  `.dev-tilt`): what it read sits behind its left edge, its answer in front. Never lay a flat card
+  over the tilted phone. On a phone the answer is a notification on the phone's screen.
+- On a phone nothing scrolls visibly behind the menu, and anything that sticks or docks slides in
+  and out; it never snaps.
 
 ## Voice
 

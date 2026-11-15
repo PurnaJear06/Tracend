@@ -7,6 +7,8 @@ import JoinForm from './JoinForm.astro';
   <nav class="nav-links" aria-label="Sections"><a href="#day" data-day-link>How it works</a><a href="#demo">Try it</a><a href="#complete">The app</a><a href="#progress">Progress</a></nav>
   <a class="nav-cta" href="#join" data-focus>Join the beta</a>
 </header>
+<div class="top-fade" aria-hidden="true"></div>
+<div class="demo-mini" aria-hidden="true"><div class="dm-in"><span class="dm-s"><b data-m="score">36</b><em data-m="band">Low</em></span><span class="dm-p" data-m="plan">Go lighter today.</span></div></div>
 
 <div id="smooth-wrapper"><div id="smooth-content">
 <main id="main">
@@ -25,14 +27,16 @@ import JoinForm from './JoinForm.astro';
       <div class="bridge" aria-hidden="true"><p>Tuesday 07:02. Rewind to Monday evening.</p><h2 class="disp">How did it know to go lighter?</h2></div>
 
       <div class="f-dev" aria-hidden="true">
-        <div class="f-giant"><span class="f-gday mono" data-hday></span><span class="f-gclock" data-hclock></span></div>
         <div class="f-glow"></div>
         <div class="f-floor"></div>
-        <div class="dev-rise"><div class="dev"><div class="dev-tilt"><div data-phone-slot></div></div></div></div>
-        <div class="fc fc-train" data-fc="-1"><div class="fc-in"><div class="fc-core"><span class="k mono">Mon 18:40 &middot; Train</span><span class="v">120<small>kg</small> &times; 5<span class="pill">New best</span></span><span class="s">Back squat, set 5 of 5</span></div></div></div>
-        <div class="fc fc-food" data-fc="-1"><div class="fc-in"><div class="fc-core"><span class="k mono">Mon 20:30 &middot; Dinner</span><span class="v">760<small>kcal</small></span><span class="s">52 g protein, from one photo</span></div></div></div>
-        <div class="fc fc-sleep" data-fc="-1"><div class="fc-in"><div class="fc-core"><span class="k mono">Mon 23:10 &middot; Sleep</span><span class="v">6 h 12 m</span><span class="s">About an hour short</span></div></div></div>
-        <div class="fc fc-coach" data-fc="1"><div class="fc-in"><div class="fc-core"><span class="k mono"><svg width="12" height="12" viewBox="0 0 12 12"><path fill="#C8F05A" d="M6 .8l1.3 3.4 3.5.4-2.7 2.3.9 3.5L6 8.5 3 10.4l.9-3.5L1.2 4.6l3.5-.4z"/></svg>Tue 07:02 &middot; Coach<em class="fc-ex">Example</em></span><span class="v">Go lighter today.</span><span class="s">Deadlift 3 &times; 3 at 140 kg, effort 7 at most. You slept short after heavy legs.</span></div></div></div>
+        <!-- the cards live in the phone's own 3D space: what it read sits behind its left edge, its answer in front -->
+        <div class="dev-rise"><div class="dev"><div class="dev-tilt">
+          <div class="fc fc-train" data-fc="-1"><div class="fc-in"><div class="fc-core"><span class="k mono">Mon 18:40 &middot; Train</span><span class="v">120<small>kg</small> &times; 5<span class="pill">New best</span></span><span class="s">Back squat, set 5 of 5</span></div></div></div>
+          <div class="fc fc-food" data-fc="-1"><div class="fc-in"><div class="fc-core"><span class="k mono">Mon 20:30 &middot; Dinner</span><span class="v">760<small>kcal</small></span><span class="s">52 g protein, from one photo</span></div></div></div>
+          <div class="fc fc-sleep" data-fc="-1"><div class="fc-in"><div class="fc-core"><span class="k mono">Mon 23:10 &middot; Sleep</span><span class="v">6 h 12 m</span><span class="s">About an hour short</span></div></div></div>
+          <div data-phone-slot></div>
+          <div class="fc fc-coach" data-fc="1"><div class="fc-in"><div class="fc-core"><span class="k mono"><svg width="12" height="12" viewBox="0 0 12 12"><path fill="#C8F05A" d="M6 .8l1.3 3.4 3.5.4-2.7 2.3.9 3.5L6 8.5 3 10.4l.9-3.5L1.2 4.6l3.5-.4z"/></svg>Tue 07:02 &middot; Coach<em class="fc-ex">Example</em></span><span class="v">Go lighter today.</span><span class="s">Deadlift 3 &times; 3 at 140 kg, effort 7 at most. You slept short after heavy legs.</span></div></div></div>
+        </div></div></div>
         <div class="callouts">
           <p class="co" data-co="0" style="top:52%"><i></i><span><b>Set 5 of 5</b>New best, logged with its effort.</span></p>
           <p class="co" data-co="1" style="top:40%"><i></i><span><b>While you sleep</b>Your watch reads every stage.</span></p>
@@ -64,7 +68,7 @@ import JoinForm from './JoinForm.astro';
     <h2 class="sec-h disp" id="demo-h">Change the night. Watch the morning change.</h2>
     <p class="sec-sub">Move the sliders. This is how the recovery score and today&rsquo;s session respond, simplified for one example athlete.</p>
     <div class="demo-grid">
-      <form class="controls"><div class="demo-mini" aria-hidden="true"><span class="dm-s"><b data-m="score">36</b><em data-m="band">Low</em></span><span class="dm-p" data-m="plan">Go lighter today.</span></div><div class="controls-in">
+      <form class="controls"><div class="controls-in">
         <div class="ctl"><label for="d-sleep">Sleep last night <output for="d-sleep" data-o="sleep">6 h 12 m</output></label>
           <input id="d-sleep" type="range" min="240" max="540" step="6" value="372" aria-describedby="d-sleep-h"><small id="d-sleep-h">Sam usually needs about 7 h 20 m.</small></div>
         <div class="ctl"><label for="d-hrv">Morning HRV <output for="d-hrv" data-o="hrv">52 ms</output></label>

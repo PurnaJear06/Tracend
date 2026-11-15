@@ -35,9 +35,6 @@
   if (!pinMode) $$('.beat .b-phone').forEach(function (slot, i) { slot.innerHTML = A.phone({ screens: [BEATS[i].scr], time: BEATS[i].sb || BEATS[i].time, tab: BEATS[i].tab }); });
   $$('[data-ring]').forEach(function (svg) { svg._ring = A.ring(svg, { score: D.morning.score, segments: D.morning.segments }); });
   var heroRing = $('[data-scr="today-hero"] [data-ring]')._ring;
-  var hClock = TK.clock($('[data-hclock]'), '07:02');
-  var hDay = TK.wordReel($('[data-hday]'), ['Monday', 'Tuesday']);
-  TK.setWord(hDay, 'Tuesday', { instant: true });
   var dClock = TK.clock($('[data-dclock]'), BEATS[0].time);
   var dDay = TK.wordReel($('[data-dday]'), BEATS.map(function (b) { return b.day; }).filter(function (d, k, a) { return a.indexOf(d) === k; }));
   TK.setWord(dDay, BEATS[0].day, { instant: true });
@@ -62,6 +59,20 @@
         : Math.round(Math.min(window.innerWidth * 0.66, 300, Math.max(window.innerWidth * 0.56, (window.innerHeight - fdev.offsetTop - lift()) / 1.3)));
     setPwn(ph, pwn);
     fdev.style.setProperty('--pw', pwn + 'px');
+    fdev.style.setProperty('--pu', (pwn / 259).toFixed(4)); /* unitless, for the banner that scales with the phone */
+    /* the cards beside the phone scale with it and give way to the window: they never run into the copy
+       on the left or off the right edge. 0.89 and 0.95 are the tilt's foreshortening on each side. */
+    var base = Math.max(0.84, Math.min(1.1, pwn / 333)), fs = base, solo = false, hang = 14.5;
+    if (window.innerWidth >= 1024) {
+      var box = fdev.getBoundingClientRect(), cx = box.left + box.width / 2;
+      var room = cx - (wide && pinMode ? fcopy.getBoundingClientRect().right + 28 : 16);
+      var fit = ((room + 30) / 0.89 - pwn / 2) / 254;
+      if (fit < base) { if (fit >= 0.8) fs = fit; else solo = true; }
+      hang = Math.max(7, Math.min(14.5, ((window.innerWidth - 16 - cx) / 0.95 - pwn / 2) / fs / 16));
+    }
+    fdev.style.setProperty('--fs', fs.toFixed(4));
+    fdev.style.setProperty('--hang', hang.toFixed(3));
+    fdev.classList.toggle('fc-solo', solo);
   }
   sizePhone();
 
@@ -78,19 +89,12 @@
       tl.from('.fc-coach .fc-in', { y: -22, autoAlpha: 0, duration: 0.8 }, 0.8);
       return tl;
     }
-    /* wide: the day compresses into two seconds. Inputs arrive in the order they happened, the clock runs with them */
-    TK.setClock(hClock, '18:40', { instant: true }); TK.setWord(hDay, 'Monday', { instant: true });
-    tl.from('.f-giant > *', { autoAlpha: 0, duration: 1 }, 0);
-    var cards = ['.fc-train', '.fc-food', '.fc-sleep'], times = ['18:40', '20:30', '23:10'];
-    cards.forEach(function (c, i) {
-      var at = 0.4 + i * 0.32;
-      if (i) TK.setClock(hClock, times[i], { tl: tl, at: at - 0.1, dur: 0.35 });
-      tl.from(c + ' .fc-in', { x: -24, y: 16, autoAlpha: 0, filter: 'blur(8px)', duration: 0.7 }, at);
+    /* wide: what it read arrives in the order it happened, then the score, then its call */
+    ['.fc-train', '.fc-food', '.fc-sleep'].forEach(function (c, i) {
+      tl.from(c + ' .fc-in', { x: -24, y: 16, autoAlpha: 0, filter: 'blur(8px)', duration: 0.7 }, 0.35 + i * 0.22);
     });
-    TK.setClock(hClock, '07:02', { tl: tl, at: 1.4, dur: 0.5 });
-    TK.setWord(hDay, 'Tuesday', { tl: tl, at: 1.4, dur: 0.4 });
-    ring(1.45);
-    tl.from('.fc-coach .fc-in', { y: 24, autoAlpha: 0, filter: 'blur(10px)', duration: 0.8 }, 1.9);
+    ring(1.0);
+    tl.from('.fc-coach .fc-in', { y: 24, autoAlpha: 0, filter: 'blur(10px)', duration: 0.8 }, 1.45);
     tl.set('.fc-in', { clearProps: 'filter' });
     return tl;
   }
@@ -98,21 +102,14 @@
     if (!TK.desk.matches || !wide) return;
     var dev = $('.dev'), stage = $('.f-stage');
     var rx = G.quickTo(dev, 'rotationX', { duration: 1, ease: 'power3' }), ry = G.quickTo(dev, 'rotationY', { duration: 1, ease: 'power3' });
-    var cards = $$('.fc').map(function (c) { return { x: G.quickTo(c, 'x', { duration: 1, ease: 'power3' }), y: G.quickTo(c, 'y', { duration: 1, ease: 'power3' }), d: c.classList.contains('fc-coach') ? 22 : 12 }; });
     stage.addEventListener('pointermove', function (e) {
       var nx = e.clientX / window.innerWidth - 0.5, ny = e.clientY / window.innerHeight - 0.5;
       rx(-ny * 5); ry(nx * 7);
       ph.style.setProperty('--gx', (18 + nx * 60).toFixed(1) + '%'); ph.style.setProperty('--gy', (4 + ny * 30).toFixed(1) + '%');
-      cards.forEach(function (c) { c.x(nx * c.d); c.y(ny * c.d * 0.6); });
     });
   }
 
   /* ---------- PIN: the answer, the question, then the day that led to it ---------- */
-  function strips(el, time) { var d = time.replace(':', '').split('').map(Number); return el._strips.map(function (s, i) { return { s: s, y: -d[i] * 10 }; }); }
-  function reelFT(tl, el, from, to, at, dur) {
-    var a = strips(el, from), b = strips(el, to);
-    a.forEach(function (x, i) { tl.fromTo(x.s, { yPercent: x.y }, { yPercent: b[i].y, duration: dur, ease: TK.EASE.inOut, immediateRender: false }, at + i * 0.04); });
-  }
   function setupPin(heroTL) {
     var scrs = $$('.scr', ph), beats = $$('.beat'), cos = $$('[data-co]'), rail = $$('.rail button');
     var sbTime = $('[data-sbtime]', ph), tabs = $$('.tab', ph), story = $$('.f-story > *'), bridge = $('.bridge');
@@ -131,16 +128,11 @@
     tl.fromTo(fcopy, { autoAlpha: 1, y: 0 }, Object.assign({ autoAlpha: 0, y: -40, duration: 0.4, ease: 'power1.inOut' }, NI), 0);
     $$('.fc').forEach(function (c, i) {
       var dir = +c.getAttribute('data-fc');
-      tl.fromTo(c, { autoAlpha: 1, xPercent: 0, yPercent: 0, scale: 1 }, Object.assign({ autoAlpha: 0, xPercent: wide ? dir * 40 : 0, yPercent: wide ? -30 : -60, scale: 0.92, duration: wide ? 0.45 : 0.3, ease: 'power1.inOut' }, NI), 0.04 + i * 0.04);
+      /* opacity, not autoAlpha: the cards sit inside the phone's wrapper, which is still hidden when this is first measured */
+      tl.fromTo(c, { opacity: 1, xPercent: 0, yPercent: 0, scale: 1 }, Object.assign({ opacity: 0, xPercent: wide ? dir * 40 : 0, yPercent: wide ? -30 : -60, scale: 0.92, duration: wide ? 0.45 : 0.3, ease: 'power1.inOut' }, NI), 0.04 + i * 0.04);
     });
     tl.fromTo(tilt, T0, Object.assign({ duration: 1.05, ease: TK.EASE.inOut }, T1, NI), 0.1);
-    if (wide) {
-      reelFT(tl, hClock, '07:02', BEATS[0].time, 0.3, 0.8);
-      tl.fromTo(hDay._strip, { yPercent: -50 }, Object.assign({ yPercent: 0, duration: 0.5, ease: TK.EASE.inOut }, NI), 0.45);
-      tl.fromTo('.f-giant', { autoAlpha: 1 }, Object.assign({ autoAlpha: 0, duration: 0.3, ease: 'none' }, NI), 1.2);
-    } else {
-      tl.fromTo(fdev, { y: 0 }, Object.assign({ y: lift, duration: 0.9, ease: TK.EASE.inOut }, NI), 0.3);
-    }
+    if (!wide) tl.fromTo(fdev, { y: 0 }, Object.assign({ y: lift, duration: 0.9, ease: TK.EASE.inOut }, NI), 0.3);
     tl.fromTo(film, { '--amb-a': AMB[AMB.length - 1][0], '--amb-b': AMB[AMB.length - 1][1] }, Object.assign({ '--amb-a': AMB[0][0], '--amb-b': AMB[0][1], duration: 0.9, ease: 'none' }, NI), 0.3);
     tl.fromTo(bridge, { autoAlpha: 0, y: 26 }, Object.assign({ autoAlpha: 1, y: 0, duration: 0.3 }, NI), 0.3)
       .fromTo(bridge, { autoAlpha: 1, y: 0 }, Object.assign({ autoAlpha: 0, y: -22, duration: 0.22, ease: 'power1.inOut' }, NI), R - 0.42);
@@ -543,8 +535,13 @@
     var inp = { sleep: $('#d-sleep'), hrv: $('#d-hrv'), rhr: $('#d-rhr') }, seg = $('[data-seg]');
     $('.controls').addEventListener('submit', function (e) { e.preventDefault(); });
     var out = function (k) { return $('[data-o="' + k + '"]'); }, d = function (k) { return $('[data-d="' + k + '"]'); };
-    /* on a phone the result sits a screen below the sliders, so a small copy of it rides with them */
+    /* on a phone the result sits a screen below the sliders: a live readout docks under the menu
+       while the sliders are on screen and the result itself is not */
     var mini = function (k) { return $('[data-m="' + k + '"]'); };
+    var dockEl = $('.demo-mini'), seen = { ctl: false, res: false };
+    function dock() { dockEl.classList.toggle('on', seen.ctl && !seen.res); }
+    TK.whenVisible($('.controls-in'), function (on) { seen.ctl = on; dock(); }, { rootMargin: '-150px 0px -40% 0px' });
+    TK.whenVisible($('.demo-today .ringbox'), function (on) { seen.res = on; dock(); }, { rootMargin: '-120px 0px -110px 0px' });
     var ring = A.ring($('[data-ring-demo]'), { score: D.morning.score, segments: D.morning.segments });
     var shown = { s: D.morning.score }, session = 'heavy', liveT = null, prev = null;
     function hm(m) { return Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' m'; }
@@ -592,9 +589,13 @@
         return G.from(self.lines, { yPercent: 108, duration: 1.15, stagger: 0.09, scrollTrigger: { trigger: h, start: 'top 88%', once: true } });
       } });
     });
-    $$('.sec .sec-sub, .own, .soon-row, .demo-grid, .versus, .sec-cta').forEach(function (el) {
-      G.from(el, { y: 28, autoAlpha: 0, duration: TK.T.focal, scrollTrigger: { trigger: el, start: 'top 90%', once: true } });
-    });
+    /* each piece arrives as it comes into view. Pieces that enter together (side by side on a laptop) are staggered;
+       on a phone they are stacked, so each gets its own moment instead of one fade for a two-screen block */
+    var items = $$('.sec .sec-sub, .own > *, .soon-row, .controls, .demo-out > .a-card, .demo-note, .ys-mem, .ys-stage, .cq, .cc-dev, .nx-steps, .pg-dev, .wk, .bm-stage, .versus > *, .nx-dev, .close .join-wrap, .trust, .sec-cta');
+    G.set(items, { y: 28, autoAlpha: 0 });
+    ScrollTrigger.batch(items, { start: 'top 90%', once: true, onEnter: function (batch) {
+      G.to(batch, { y: 0, autoAlpha: 1, duration: TK.T.focal, ease: TK.EASE.out, stagger: 0.08, overwrite: true, clearProps: 'transform' });
+    } });
     var vsRing = $('[data-ring-vs]');
     ScrollTrigger.create({ trigger: '.versus', start: 'top 75%', once: true, onEnter: function () {
       G.from('.versus .coach-note', { autoAlpha: 0, y: 12, duration: TK.T.focal, delay: 0.5 });

@@ -33,6 +33,14 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:50;opa
 .nav-cta{height:44px;padding:0 16px;border-radius:999px;background:var(--signal);color:var(--on-signal);font-weight:700;font-size:14px;display:inline-flex;align-items:center;text-decoration:none;transition:transform .16s var(--out)}
 .nav-cta:active{transform:scale(.97)}
 @media (max-width:760px){.nav-links{display:none}.nav{left:12px;right:12px;transform:none;width:auto;justify-content:space-between}}
+/* phones and tablets: the page draws under the status bar, so content dissolves before it reaches
+   the menu instead of sliding behind it and showing again beside the clock */
+.top-fade{display:none}
+@media (max-width:1023.98px){
+  .nav{background:rgba(18,19,21,.84)}
+  .top-fade{display:block;position:fixed;inset:0 0 auto;z-index:39;height:calc(96px + env(safe-area-inset-top,0px));pointer-events:none;
+    background:linear-gradient(var(--bg) calc(44px + env(safe-area-inset-top,0px)),rgba(11,12,13,0))}
+}
 
 /* ---------- Film: hero + the day (one stage) ---------- */
 .film{position:relative;isolation:isolate}
@@ -59,12 +67,6 @@ h1 .line{display:block}
 
 /* device */
 .f-dev{position:relative;display:flex;align-items:center;justify-content:center;perspective:1800px}
-.f-giant{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;display:flex;flex-direction:column;align-items:center}
-.f-gday{color:var(--ink-2);height:1.3em;line-height:1.3;margin-bottom:.4em}
-.f-gday .reel{height:1.3em}.f-gday .reel-strip>span{height:1.3em;line-height:1.3}
-.f-gclock{font-family:var(--disp);font-weight:700;font-stretch:87.5%;font-variation-settings:"wdth" 87.5;font-variant-numeric:tabular-nums;
-  font-size:min(27vw,44vh);line-height:1;letter-spacing:-.05em;color:transparent;-webkit-text-stroke:1.3px rgba(244,244,241,.12);display:flex;white-space:nowrap}
-.f-gclock .colon{display:inline-block;width:.24em;text-align:center;-webkit-text-stroke:1.3px rgba(200,240,90,.4)}
 .f-floor{position:absolute;left:50%;bottom:4%;width:min(440px,80%);height:60px;transform:translateX(-50%);border-radius:50%;
   background:radial-gradient(closest-side,rgba(0,0,0,.75),rgba(0,0,0,0));filter:blur(6px)}
 .f-glow{position:absolute;left:50%;top:44%;width:420px;height:420px;margin:-210px 0 0 -210px;border-radius:50%;pointer-events:none;
@@ -76,17 +78,27 @@ h1 .line{display:block}
   background:linear-gradient(90deg,#C3C5CA,#5A5C61 5%,#2E2F33 22%,#1F2023 50%,#2E2F33 78%,#62646A 95%,#B4B6BB)}
 .deep-l.back{background:radial-gradient(80% 60% at 30% 20%,#2A2B2F,#141517);box-shadow:0 50px 90px -30px rgba(0,0,0,.9),0 100px 160px -60px rgba(0,0,0,.7)}
 .deep .phone{box-shadow:none}
-.fc{position:absolute;z-index:3;width:216px}
-.fc-in{border-radius:22px;padding:5px;background:linear-gradient(160deg,rgba(255,255,255,.09),rgba(255,255,255,.02));box-shadow:inset 0 0 0 1px var(--edge),0 26px 50px -22px rgba(0,0,0,.85)}
-.fc-core{border-radius:17px;background:rgba(22,23,25,.94);box-shadow:inset 0 1px 0 rgba(255,255,255,.07);padding:13px 15px}
-.fc .k{display:block;color:var(--ink-2);margin-bottom:6px}
-.fc .v{font-family:var(--disp);font-weight:700;font-size:21px;letter-spacing:-.01em;line-height:1.1;font-variant-numeric:tabular-nums}
-.fc .v small{font-size:13px;font-weight:500;color:var(--ink-2);letter-spacing:0;margin-left:3px}
-.fc .s{display:block;font-size:13px;color:var(--ink-2);margin-top:4px;line-height:1.35}
-.fc .pill{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;background:var(--signal);color:var(--on-signal);font:700 11px/1 var(--body);margin-left:8px;vertical-align:3px}
-.fc-coach{width:272px}
-.fc-coach .k{color:var(--signal);display:flex;align-items:center;gap:6px}
-.fc-coach .v{font-size:19px}
+/* Cards share the phone's tilt and its light (upper right). The three things it read line up in
+   one column tucked behind its left edge; its answer floats in front, lower right. */
+.fc{position:absolute;width:13.5em;pointer-events:none;font-size:calc(16px * var(--fs,1))} /* --fs follows the phone's size (script) */
+.fc-in{border-radius:1.375em;padding:.3125em;background:linear-gradient(215deg,rgba(255,255,255,.16),rgba(255,255,255,.035) 48%,rgba(255,255,255,.015));box-shadow:inset 0 0 0 1px var(--edge),-20px 30px 50px -26px rgba(0,0,0,.9)}
+.fc-core{position:relative;overflow:hidden;border-radius:1.0625em;background:#151618;box-shadow:inset 0 1px 0 rgba(255,255,255,.06);padding:.8125em .9375em}
+.fc .k{display:block;font-size:.75em;color:var(--ink-2);margin-bottom:.5em}
+.fc .v{display:block;font-family:var(--disp);font-weight:700;font-size:1.3125em;letter-spacing:-.01em;line-height:1.1;font-variant-numeric:tabular-nums}
+.fc .v small{font-size:.62em;font-weight:500;color:var(--ink-2);letter-spacing:0;margin-left:.15em}
+.fc .s{display:block;font-size:.8125em;color:var(--ink-2);margin-top:.3em;line-height:1.35}
+.fc .pill{display:inline-flex;align-items:center;height:1.82em;padding:0 .72em;border-radius:999px;background:var(--signal);color:var(--on-signal);font:700 .524em/1 var(--body);margin-left:.72em;vertical-align:.27em}
+.fc-train,.fc-food,.fc-sleep{right:calc(100% + 2.375em);transform:translateZ(-70px)}
+.fc-train{top:11%}.fc-food{top:34.5%}.fc-sleep{top:58%}
+/* the phone stands between these and the light, so its shadow falls across their near edge */
+.fc-train .fc-core::after,.fc-food .fc-core::after,.fc-sleep .fc-core::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(270deg,rgba(0,0,0,.5),rgba(0,0,0,0) 40%)}
+.fc-coach{width:17em;left:calc(100% - 17em + var(--hang,14.5) * 1em);top:68%;transform:translateZ(76px)} /* --hang: how far it reaches past the phone (script) */
+.fc-coach .fc-in{background:linear-gradient(215deg,rgba(255,255,255,.24),rgba(255,255,255,.05) 48%,rgba(255,255,255,.02));box-shadow:inset 0 0 0 1px var(--edge),-30px 40px 60px -22px rgba(0,0,0,.95)}
+.fc-coach .fc-core{background:#191A1D}
+.fc-coach .k{color:var(--signal);display:flex;align-items:center;gap:.5em}
+.fc-coach .v{font-size:1.1875em}
+/* when the window is too narrow for the three inputs, only the answer stays (the script decides) */
+.fc-solo .fc-train,.fc-solo .fc-food,.fc-solo .fc-sleep{display:none}
 .callouts{position:absolute;inset:0;pointer-events:none;display:none}
 .co{position:absolute;left:calc(50% + var(--pw,320px) / 2 - 16px);display:flex;align-items:center;width:min(240px,calc(50% - var(--pw,320px) / 2 + 8px))}
 .co::before{content:"";flex:none;width:44px;height:1px;background:linear-gradient(90deg,var(--signal),rgba(200,240,90,.2));margin-right:10px}
@@ -159,14 +171,10 @@ h1 .line{display:block}
 .film[data-mode="pin"][data-lay="wide"] .clockbar{margin-top:18px}
 .film[data-mode="pin"][data-lay="wide"] .beats{margin-top:22px}
 .film[data-mode="pin"][data-lay="wide"] .rail{order:9;margin-top:clamp(36px,6vh,64px);max-width:520px}
-.fc-train{left:calc(50% - var(--pw,320px) / 2 - 196px);top:16%}
-.fc-food{left:calc(50% - var(--pw,320px) / 2 - 232px);top:39%}
-.fc-sleep{left:calc(50% - var(--pw,320px) / 2 - 176px);top:62%}
-.fc-coach{left:calc(50% + var(--pw,320px) / 2 - 64px);top:58%}
 
 /* tall (phones, tablets held upright): copy on top, the phone under it, cropped by the fold.
    The hero copy and the day's copy share the top row; the script lifts the phone to meet the shorter one. */
-.film[data-mode="pin"][data-lay="tall"] .f-stage{overflow:clip;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);padding:calc(80px + env(safe-area-inset-top,0px)) var(--g) 0}
+.film[data-mode="pin"][data-lay="tall"] .f-stage{overflow:clip;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);padding:calc(92px + env(safe-area-inset-top,0px)) var(--g) 0}
 .film[data-mode="pin"][data-lay="tall"] .f-copy{grid-area:1/1}
 .film[data-mode="pin"][data-lay="tall"] .f-story{grid-area:1/1;align-self:start}
 .film[data-mode="pin"][data-lay="tall"] .bridge{grid-area:1/1;align-self:start;padding-top:clamp(28px,7vh,72px)}
@@ -202,14 +210,20 @@ h1 .line{display:block}
 .film[data-lay="tall"] .lede{margin-top:14px;font-size:16.5px;line-height:1.45;max-width:none}
 .film[data-lay="tall"] .lede-x{display:none}
 .film[data-lay="tall"] .f-copy .join-wrap{margin-top:20px}
-/* on a phone the Coach's call arrives the way it does in life: a banner across the top of the screen */
-.film[data-mode="pin"][data-lay="tall"] .f-giant,.film[data-mode="pin"][data-lay="tall"] .fc-train,.film[data-mode="pin"][data-lay="tall"] .fc-food,.film[data-mode="pin"][data-lay="tall"] .fc-sleep{display:none}
-.film[data-mode="pin"][data-lay="tall"] .fc-coach{--bw:min(326px,calc(100vw - 28px));width:var(--bw);left:calc(50% - var(--bw) / 2);top:-8px}
-.film[data-mode="pin"][data-lay="tall"] .fc-coach .fc-in{background:#232427;box-shadow:inset 0 0 0 1px var(--edge),0 22px 44px -18px rgba(0,0,0,.9)}
-.film[data-mode="pin"][data-lay="tall"] .fc-coach .fc-core{padding:11px 14px;background:#161719}
-.film[data-mode="pin"][data-lay="tall"] .fc-coach .v{font-size:17px}
-.film[data-mode="pin"][data-lay="tall"] .fc-coach .s{font-size:13px}
-.film[data-mode="pin"][data-lay="tall"] .fc-ex{display:block;margin-left:auto;font-style:normal;color:var(--ink-3)}
+/* phones and upright tablets: only the answer, and it arrives the way it does in life, as a banner
+   on the phone's own screen, under the island. It is part of the screen, so it shares its tilt and light. */
+@media (max-width:1023.98px){
+  .fc-train,.fc-food,.fc-sleep{display:none}
+  /* every measure follows the phone's width, so the banner always covers the same part of the screen:
+     the greeting and the verdict it replaces, ending just above the ring */
+  .fc-coach{--u:var(--pu,1.1);font-size:16px;left:calc(19px * var(--u));right:calc(19px * var(--u));width:auto;top:calc(46px * var(--u));transform:translateZ(2px)}
+  .fc-coach .fc-in{padding:0;border-radius:calc(20px * var(--u));background:none;box-shadow:0 16px 26px -12px rgba(0,0,0,.85)}
+  .fc-coach .fc-core{border-radius:inherit;background:#27282C;box-shadow:inset 0 0 0 1px rgba(255,255,255,.09);min-height:calc(110px * var(--u));padding:calc(10px * var(--u)) calc(12px * var(--u))}
+  .fc-coach .k{font-size:calc(10px * var(--u));margin-bottom:calc(5px * var(--u));gap:calc(6px * var(--u))}
+  .fc-coach .v{font-size:calc(15.5px * var(--u))}
+  .fc-coach .s{font-size:calc(11.5px * var(--u));margin-top:calc(4px * var(--u));text-wrap:balance}
+  .fc-ex{display:block;margin-left:auto;font-style:normal;color:var(--ink-3)}
+}
 
 /* FLOW mode (reduced motion, short or sideways screens): a complete static page */
 .film[data-mode="flow"] .f-stage{display:flex;flex-direction:column;padding:104px var(--g) 0}
@@ -218,23 +232,9 @@ h1 .line{display:block}
 .film[data-mode="flow"] h1{order:2}
 .film[data-mode="flow"] .lede{order:3}
 .film[data-mode="flow"] .join-wrap{order:4;margin-top:24px}
-.film[data-mode="flow"] .f-dev{order:5;height:auto;padding:36px 0 18px;margin-inline:calc(var(--g) * -1);overflow:clip}
+.film[data-mode="flow"] .f-dev{order:5;height:auto;padding:56px 0 18px;margin-inline:calc(var(--g) * -1);overflow:clip}
 .film[data-mode="flow"] .f-story{order:6;padding-top:clamp(72px,12vh,120px)}
-.film[data-mode="flow"] .f-gclock{font-size:min(44vw,300px)}
 .film[data-mode="flow"] .dev-tilt{transform:rotateY(-14deg) rotateX(6deg) rotateZ(1.5deg)}
-.film[data-mode="flow"] .fc{width:136px}
-.film[data-mode="flow"] .fc-in{border-radius:16px;padding:3px}
-.film[data-mode="flow"] .fc-core{padding:8px 10px;border-radius:13px}
-.film[data-mode="flow"] .fc .k{font-size:9.5px;margin-bottom:3px;white-space:nowrap}
-.film[data-mode="flow"] .fc .v{font-size:15px}
-.film[data-mode="flow"] .fc .v small{font-size:11px}
-.film[data-mode="flow"] .fc .pill{display:none}
-.film[data-mode="flow"] .fc .s{display:none}
-.film[data-mode="flow"] .fc-train{left:6px;top:7%}
-.film[data-mode="flow"] .fc-sleep{left:auto;right:6px;top:22%}
-.film[data-mode="flow"] .fc-food{left:6px;top:50%}
-.film[data-mode="flow"] .fc-coach{left:auto;right:6px;top:auto;bottom:7%;width:196px}
-.film[data-mode="flow"] .fc-coach .s{display:block;font-size:11.5px}
 .film[data-mode="flow"] .f-dev .scr:not([data-scr="today-hero"]){visibility:hidden}
 .film[data-mode="flow"] .clockbar{display:none}
 .film[data-mode="flow"] .beats{display:grid;gap:clamp(64px,10vh,104px);padding-top:44px;padding-bottom:20px}
@@ -243,24 +243,10 @@ h1 .line{display:block}
 .sec-h{font-size:clamp(36px,4.6vw,74px);line-height:.98;max-width:16ch}
 .sec-sub{margin-top:18px;color:var(--ink-2);font-size:clamp(17px,1.3vw,20px);max-width:50ch}
 .tag{display:inline-flex;align-items:center;height:26px;padding:0 11px;border-radius:999px;background:rgba(244,244,241,.07);box-shadow:inset 0 0 0 1px var(--line);color:var(--ink-2);margin-top:18px}
-@media (min-width:600px) and (max-width:1023.98px){
-  .film[data-mode="flow"] .fc-train{left:calc(50% - 300px)}.film[data-mode="flow"] .fc-food{left:calc(50% - 320px)}
-  .film[data-mode="flow"] .fc-sleep{right:calc(50% - 300px)}.film[data-mode="flow"] .fc-coach{right:calc(50% - 320px)}
-}
-@media (max-width:599.98px){
-  .film[data-mode="flow"] .f-giant,.film[data-mode="flow"] .fc-train,.film[data-mode="flow"] .fc-food,.film[data-mode="flow"] .fc-sleep{display:none}
-  .film[data-mode="flow"] .fc-coach{--bw:min(326px,calc(100vw - 28px));width:var(--bw);left:calc(50% - var(--bw) / 2);right:auto;bottom:auto;top:6px}
-  .film[data-mode="flow"] .fc-coach .fc-in{border-radius:22px;padding:5px;background:#232427}
-  .film[data-mode="flow"] .fc-coach .fc-core{padding:11px 14px;border-radius:17px;background:#161719}
-  .film[data-mode="flow"] .fc-coach .k{font-size:12px;margin-bottom:6px}
-  .film[data-mode="flow"] .fc-coach .v{font-size:17px}
-  .film[data-mode="flow"] .fc-coach .s{font-size:13px}
-  .film[data-mode="flow"] .fc-ex{display:block;margin-left:auto;font-style:normal;color:var(--ink-3)}
-}
 
 /* ---------- Sections ---------- */
 .sec{padding-block:clamp(110px,16vh,190px);overflow-x:clip} /* decorative glows never widen the page */
-@media (max-width:760px){.sec{padding-block:72px}}
+@media (max-width:760px){.sec{padding-block:64px}.sec:has(> .sec-cta){padding-bottom:44px}.sec.close{padding-top:88px}}
 
 /* Complete: the app assembles */
 .bento{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:clamp(44px,7vh,80px)}
@@ -475,12 +461,20 @@ input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px var(-
 .seg button{height:44px;border:0;border-radius:999px;background:transparent;color:var(--ink-2);font-size:14px;font-weight:600;transition:background-color .2s ease,color .2s ease}
 .seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
 .demo-out{display:grid;gap:12px}
-.demo-mini{position:sticky;top:calc(78px + env(safe-area-inset-top,0px));z-index:3;display:flex;align-items:center;gap:14px;margin-bottom:6px;padding:10px 16px;border-radius:24px;background:#1D1E21;box-shadow:inset 0 0 0 1px var(--line),0 14px 30px -14px rgba(0,0,0,.9)}
+/* phones: the result is below the sliders, so while you move them a live readout docks under the menu.
+   It slides in only while the sliders are on screen and the real result is not, and slides out the same way. */
+.demo-mini{position:fixed;inset:0 0 auto;z-index:39;padding:calc(76px + env(safe-area-inset-top,0px)) 12px 22px;pointer-events:none;
+  background:linear-gradient(var(--bg) calc(100% - 40px),rgba(11,12,13,0));
+  opacity:0;visibility:hidden;transition:opacity .2s ease,visibility 0s .3s}
+.demo-mini.on{opacity:1;visibility:visible;transition:opacity .24s ease,visibility 0s}
+.dm-in{display:flex;align-items:center;gap:14px;min-height:52px;padding:8px 18px;border-radius:999px;background:#1D1E21;box-shadow:inset 0 0 0 1px var(--edge),0 14px 30px -14px rgba(0,0,0,.9);
+  transform:translateY(-14px);transition:transform .3s var(--out)}
+.demo-mini.on .dm-in{transform:none;transition:transform .42s var(--out)}
 .dm-s{display:flex;align-items:center;gap:8px;flex:none}
 .dm-s b{font-family:var(--disp);font-stretch:87.5%;font-variation-settings:"wdth" 87.5;font-variant-numeric:tabular-nums;font-weight:700;font-size:28px;line-height:1;min-width:1.25em}
-.dm-s em{font-style:normal;height:22px;padding:0 9px;border-radius:999px;display:inline-flex;align-items:center;font-size:12px;font-weight:700;background:var(--amber);color:#2A1D03}
+.dm-s em{font-style:normal;height:22px;padding:0 9px;border-radius:999px;display:inline-flex;align-items:center;font-size:12px;font-weight:700;background:var(--amber);color:#2A1D03;transition:background-color .2s ease}
 .dm-s em.good{background:var(--signal);color:var(--on-signal)}
-.dm-p{font-weight:600;font-size:15px;line-height:1.25}
+.dm-p{min-width:0;font-weight:600;font-size:15px;line-height:1.2;text-wrap:balance}
 @media (min-width:1024px){.demo-mini{display:none}}
 .demo-out .a-card{padding:22px}
 .demo-out .ringbox{width:230px;height:230px}
