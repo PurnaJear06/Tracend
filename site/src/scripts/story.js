@@ -64,12 +64,13 @@ window.TRACEND_DAY = {
     name: 'Lean down, keep strength', weeks: 20, week: 12, days: 4, start: 80.6, now: 77.3, goal: 75,
     kcal: '2,600', protein: 160
   },
-  /* The story: one day in week 12, from Monday's session to Tuesday's adjusted plan. */
+  /* The story: one day in week 12, from Monday's session to Tuesday's adjusted plan.
+     sb: the time on the phone's status bar when it differs (the sleep report is read in the morning). */
   beats: [
-    { id: 'train', day: 'Monday', time: '18:40', tab: 'train', scr: 'workout', title: 'You train hard.', line: 'Back squat, 5 sets of 5 at 120 kg. Every set logged with its effort. The last one is a new best.' },
-    { id: 'sleep', day: 'Monday', time: '23:10', tab: 'today', scr: 'sleep', title: 'You sleep short.', line: 'Your watch keeps reading. 6 h 12 m, about an hour less than you need.' },
-    { id: 'read', day: 'Tuesday', time: '06:45', tab: 'today', scr: 'today', title: 'Your body answers.', line: 'Short sleep after a heavy day. Recovery 36, under-recovered, with the reasons spelled out.' },
-    { id: 'plan', day: 'Tuesday', time: '07:02', tab: 'today', scr: 'session', title: 'Today, adjusted.', line: 'Lighter pulls today, so the week still moves Sam toward 75 kg without losing strength.' }
+    { id: 'train', day: 'Monday', time: '18:40', tab: 'train', scr: 'workout', title: 'You train hard.', line: 'Back squat, 5 sets of 5 at 120 kg. The last set is a new best.' },
+    { id: 'sleep', day: 'Monday', time: '23:10', sb: '06:45', tab: 'today', scr: 'sleep', title: 'You sleep short.', line: '6 h 12 m on your watch, about an hour less than you need.' },
+    { id: 'read', day: 'Tuesday', time: '06:45', tab: 'today', scr: 'today', title: 'Your body answers.', line: 'Recovery 36. Under-recovered, after a short night and a heavy day.' },
+    { id: 'plan', day: 'Tuesday', time: '07:02', tab: 'today', scr: 'session', title: 'Today, adjusted.', line: 'Deadlift 3 × 3 at 140 kg, not 5 × 3 at 160. The week still moves Sam toward 75 kg.' }
   ],
   /* How a plan starts: the three onboarding moments, shown in "Start in three steps". */
   start: [

@@ -52,6 +52,8 @@
     join. "Coming next" is one labelled row at the end of the five-apps section; its Dynamic
     Island and Watch film was deleted. The meal screen left the story (the food tile and the
     hero's dinner card still show it).
+  - On a phone the demo's score and call ride with the sliders (`.demo-mini`), because the full
+    result sits a screen below them.
   - One primary button style (`.btn-primary`, lime); the nav button is lime too. The closing
     heading is "Your plan starts with a goal." and the outlined clock there is gone.
   - Page length on a 390 px phone went from about 25,000 px to about 17,800 px.

@@ -110,7 +110,7 @@
   var TAP = '<i class="gp-t"></i>';
   function scrGoal() {
     var goals = [['Lose fat', 'Drop body fat and keep your strength.'], ['Build muscle', 'Add size with a small surplus.'], ['Recomposition', 'Lose fat and build muscle, slowly.'], ['Get stronger', 'Lift more on the big lifts.']];
-    return '<section class="scr" data-scr="goal">' + obTop('Step 4 of 15 &middot; Goal', 4, 15) +
+    return '<section class="scr" data-scr="goal">' + obTop('Your goal', 4, 15) +
       '<h4 class="gp-h">What&rsquo;s your goal?</h4><p class="gp-sub">Your whole plan is built around it.</p><div class="gp-cards">' +
       goals.map(function (g, k) { return '<div class="gp-card"' + (k === 0 ? ' data-pick' : '') + '><div><b>' + g[0] + '</b><span>' + g[1] + '</span></div><i class="gp-ck">' + ICON.check + '</i>' + (k === 0 ? TAP : '') + '</div>'; }).join('') +
       '</div><div class="gp-cta"><span class="a-pill lime" data-cont>Continue' + TAP + '</span></div></section>';

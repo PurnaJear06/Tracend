@@ -32,7 +32,7 @@
   }
   function setPwn(phoneEl, v) { phoneEl.style.setProperty('--pwn', v); if (phoneEl.parentNode.classList.contains('deep')) phoneEl.parentNode.style.setProperty('--pwn', v); }
   deepen(ph);
-  if (!pinMode) $$('.beat .b-phone').forEach(function (slot, i) { slot.innerHTML = A.phone({ screens: [BEATS[i].scr], time: BEATS[i].time, tab: BEATS[i].tab }); });
+  if (!pinMode) $$('.beat .b-phone').forEach(function (slot, i) { slot.innerHTML = A.phone({ screens: [BEATS[i].scr], time: BEATS[i].sb || BEATS[i].time, tab: BEATS[i].tab }); });
   $$('[data-ring]').forEach(function (svg) { svg._ring = A.ring(svg, { score: D.morning.score, segments: D.morning.segments }); });
   var heroRing = $('[data-scr="today-hero"] [data-ring]')._ring;
   var hClock = TK.clock($('[data-hclock]'), '07:02');
@@ -176,7 +176,7 @@
       var key = hero ? -1 : idx;
       if (key !== last) {
         last = key;
-        sbTime.textContent = hero ? '07:02' : BEATS[idx].time;
+        sbTime.textContent = hero ? '07:02' : BEATS[idx].sb || BEATS[idx].time;
         dn.textContent = idx + 1;
         var tab = hero ? 'today' : BEATS[idx].tab;
         tabs.forEach(function (tb) { tb.classList.toggle('on', tb.getAttribute('data-tab') === tab); });
@@ -543,6 +543,8 @@
     var inp = { sleep: $('#d-sleep'), hrv: $('#d-hrv'), rhr: $('#d-rhr') }, seg = $('[data-seg]');
     $('.controls').addEventListener('submit', function (e) { e.preventDefault(); });
     var out = function (k) { return $('[data-o="' + k + '"]'); }, d = function (k) { return $('[data-d="' + k + '"]'); };
+    /* on a phone the result sits a screen below the sliders, so a small copy of it rides with them */
+    var mini = function (k) { return $('[data-m="' + k + '"]'); };
     var ring = A.ring($('[data-ring-demo]'), { score: D.morning.score, segments: D.morning.segments });
     var shown = { s: D.morning.score }, session = 'heavy', liveT = null, prev = null;
     function hm(m) { return Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' m'; }
@@ -555,6 +557,7 @@
       var r = TracendDemo.compute(v);
       d('verdict').textContent = r.verdict; d('reason').textContent = r.reason;
       d('band').textContent = r.band; d('band').classList.toggle('good', r.good);
+      mini('band').textContent = r.band; mini('band').classList.toggle('good', r.good); mini('plan').textContent = r.plan.head;
       d('chips').innerHTML = r.chips.map(function (c) { return '<span class="a-chip ' + c.tone + '"><i></i><span>' + c.text + '</span></span>'; }).join('');
       if (!prev || prev.plan.head !== r.plan.head) {
         if (motion() && !first) G.fromTo([d('plan-head'), d('plan-body')], { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: TK.T.state, stagger: 0.04 });
@@ -563,8 +566,8 @@
       $$('i', d('lvl')).forEach(function (bar, k) { bar.style.backgroundColor = k <= 3 - r.plan.level ? (r.plan.level >= 2 ? '#F2B544' : '#C8F05A') : ''; });
       ring.set(r.score, r.segments);
       if (motion() && !first) {
-        G.to(shown, { s: r.score, duration: 0.5, ease: 'power2.out', overwrite: true, onUpdate: function () { ring.set(Math.round(shown.s)); ring.draw(1); d('score').textContent = Math.round(shown.s); } });
-      } else { shown.s = r.score; ring.draw(1); d('score').textContent = r.score; }
+        G.to(shown, { s: r.score, duration: 0.5, ease: 'power2.out', overwrite: true, onUpdate: function () { ring.set(Math.round(shown.s)); ring.draw(1); d('score').textContent = mini('score').textContent = Math.round(shown.s); } });
+      } else { shown.s = r.score; ring.draw(1); d('score').textContent = mini('score').textContent = r.score; }
       clearTimeout(liveT);
       liveT = setTimeout(function () { d('live').textContent = 'Recovery ' + r.score + ', ' + r.verdict + '. ' + r.plan.head + ' ' + r.plan.body; }, 500);
       prev = r;

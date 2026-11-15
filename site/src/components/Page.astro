@@ -18,11 +18,11 @@ import JoinForm from './JoinForm.astro';
       <div class="f-copy">
         <p class="kicker"><i></i>Private beta. For iPhone, best with Apple Watch. Android in testing.</p>
         <h1 id="hero-h" class="disp"><span class="line">Set a goal.</span><span class="line">Tracend plans</span><span class="line">the rest.</span></h1>
-        <p class="lede">A plan for your training and food, adjusted to your recovery every morning so you <strong>stay on course</strong>.<span class="lede-x"> What pros get from a trainer and a nutritionist, from the iPhone and Apple Watch you own.</span></p>
+        <p class="lede">A plan for your training and food, adjusted to your recovery <strong>every morning</strong> so you stay on course.<span class="lede-x"> What pros get from a trainer and a nutritionist, from the iPhone and Apple Watch you own.</span></p>
         <JoinForm id="e1" />
       </div>
 
-      <div class="bridge" aria-hidden="true"><p>Tuesday 07:02. Rewind one day.</p><h2 class="disp">How did it know to go lighter?</h2></div>
+      <div class="bridge" aria-hidden="true"><p>Tuesday 07:02. Rewind to Monday evening.</p><h2 class="disp">How did it know to go lighter?</h2></div>
 
       <div class="f-dev" aria-hidden="true">
         <div class="f-giant"><span class="f-gday mono" data-hday></span><span class="f-gclock" data-hclock></span></div>
@@ -46,13 +46,13 @@ import JoinForm from './JoinForm.astro';
         <div class="rail" role="group" aria-label="Jump to a moment">
           <button type="button" data-go="0"><b>18:40</b><span>Train</span></button><button type="button" data-go="1"><b>23:10</b><span>Sleep</span></button><button type="button" data-go="2"><b>06:45</b><span>Recovery</span></button><button type="button" data-go="3"><b>07:02</b><span>Adjust</span></button>
         </div>
-        <div class="clockbar" aria-hidden="true"><span class="dc-day" data-dday></span><span class="dc-time" data-dclock></span><span class="dc-n"><b data-dn>1</b> of 4</span><span class="dc-ex">Example screens</span></div>
+        <div class="clockbar" aria-hidden="true"><span class="dc-day" data-dday></span><span class="dc-time" data-dclock></span><span class="dc-ex">Example athlete Sam</span><span class="dc-n"><b data-dn>1</b> of 4</span></div>
         <ol class="beats">
-          <li class="beat" data-i="0"><p class="b-when">Monday 18:40</p><h3>You train hard.</h3><p class="l">Back squat, 5 sets of 5 at 120 kg. Every set logged with its effort. The last one is a new best.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">Sets scribbled in a notes app.</span></s></span><span class="pf-now"><em>Tracend</em>Every set logged, with its effort.</span></p><div class="b-phone"></div></li>
-          <li class="beat" data-i="1"><p class="b-when">Monday 23:10</p><h3>You sleep short.</h3><p class="l">Your watch keeps reading. 6 h 12 m, about an hour less than you need.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">A sleep score, alone in another app.</span></s></span><span class="pf-now"><em>Tracend</em>Read right next to your training.</span></p><div class="b-phone"></div></li>
-          <li class="beat" data-i="2"><p class="b-when">Tuesday 06:45</p><h3>Your body answers.</h3><p class="l">Short sleep after a heavy day. Recovery 36, under-recovered, with the reasons spelled out.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">A recovery number, and no next step.</span></s></span><span class="pf-now"><em>Tracend</em>The reasons, spelled out.</span></p><div class="b-phone"></div></li>
-          <li class="beat" data-i="3"><p class="b-when">Tuesday 07:02</p><h3>Today, adjusted.</h3><p class="l">Lighter pulls today, so the week still moves Sam toward 75 kg without losing strength.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">The same plan, however you slept.</span></s></span><span class="pf-now"><em>Tracend</em>Today&rsquo;s session, adjusted, with why. Your plan only changes when you approve it.</span></p><div class="b-phone"></div>
-            <div class="mini-cta"><a class="btn-primary" href="#join" data-focus>Join the beta<i aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></i></a><p>Free. For iPhone, best with Apple Watch. Android in testing.</p></div></li>
+          <li class="beat" data-i="0"><p class="b-when">Monday 18:40</p><h3>You train hard.</h3><p class="l">Back squat, 5 sets of 5 at 120 kg. The last set is a new best.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">Sets scribbled in a notes app.</span></s></span><span class="pf-now"><em>Tracend</em>Every set logged, with its effort.</span></p><div class="b-phone"></div></li>
+          <li class="beat" data-i="1"><p class="b-when">Monday 23:10</p><h3>You sleep short.</h3><p class="l">6 h 12 m on your watch, about an hour less than you need.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">A sleep score, alone in another app.</span></s></span><span class="pf-now"><em>Tracend</em>Read right next to your training.</span></p><div class="b-phone"></div></li>
+          <li class="beat" data-i="2"><p class="b-when">Tuesday 06:45</p><h3>Your body answers.</h3><p class="l">Recovery 36. Under-recovered, after a short night and a heavy day.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">A recovery number, and no next step.</span></s></span><span class="pf-now"><em>Tracend</em>The reasons, spelled out.</span></p><div class="b-phone"></div></li>
+          <li class="beat" data-i="3"><p class="b-when">Tuesday 07:02</p><h3>Today, adjusted.</h3><p class="l">Deadlift 3 &times; 3 at 140 kg, not 5 &times; 3 at 160. The week still moves Sam toward 75 kg.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">The same plan, however you slept.</span></s></span><span class="pf-now"><em>Tracend</em>Today&rsquo;s session, adjusted, with why. Your plan only changes when you approve it.</span></p><div class="b-phone"></div>
+            <div class="mini-cta"><a class="btn-primary" href="#join" data-focus>Join the beta<i aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></i></a><p>Free. One email to confirm.</p></div></li>
         </ol>
       </div>
     </div>
@@ -64,7 +64,7 @@ import JoinForm from './JoinForm.astro';
     <h2 class="sec-h disp" id="demo-h">Change the night. Watch the morning change.</h2>
     <p class="sec-sub">Move the sliders. This is how the recovery score and today&rsquo;s session respond, simplified for one example athlete.</p>
     <div class="demo-grid">
-      <form class="controls"><div class="controls-in">
+      <form class="controls"><div class="demo-mini" aria-hidden="true"><span class="dm-s"><b data-m="score">36</b><em data-m="band">Low</em></span><span class="dm-p" data-m="plan">Go lighter today.</span></div><div class="controls-in">
         <div class="ctl"><label for="d-sleep">Sleep last night <output for="d-sleep" data-o="sleep">6 h 12 m</output></label>
           <input id="d-sleep" type="range" min="240" max="540" step="6" value="372" aria-describedby="d-sleep-h"><small id="d-sleep-h">Sam usually needs about 7 h 20 m.</small></div>
         <div class="ctl"><label for="d-hrv">Morning HRV <output for="d-hrv" data-o="hrv">52 ms</output></label>
@@ -92,7 +92,7 @@ import JoinForm from './JoinForm.astro';
         <p class="sr-only" aria-live="polite" data-d="live"></p>
       </div>
     </div>
-    <div class="mini-cta sec-cta"><a class="btn-primary" href="#join" data-focus>Join the beta<i aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></i></a><p>Free. For iPhone, best with Apple Watch. Android in testing.</p></div>
+    <div class="mini-cta sec-cta"><a class="btn-primary" href="#join" data-focus>Join the beta<i aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></i></a><p>Free. One email to confirm.</p></div>
   </section>
 
   <section class="sec wrap" id="complete" aria-labelledby="complete-h">
@@ -106,7 +106,7 @@ import JoinForm from './JoinForm.astro';
       <figure class="tile t-prog"><span class="was" aria-hidden="true"><s>Weight app</s></span><div class="shell app" data-tile="progress"></div><figcaption><b>Progress</b>Weight and strength over months, not days.</figcaption></figure>
       <figure class="tile t-coach"><span class="was" aria-hidden="true"><s>Chatbot that never saw your data</s></span><div class="shell app" data-tile="coach"></div><figcaption><b>Coach</b>Ask why. Every answer uses your own numbers.</figcaption></figure>
     </div>
-    <p class="own"><span><b>Nothing new to buy.</b> It reads the iPhone you already own, and your Apple Watch if you wear one. For iPhone, best with Apple Watch; Android and other smartwatches are in testing.</span><span><b>Nothing changes without your OK.</b> Every change to your plan shows its evidence and waits for you to approve it. Each approved plan is saved as a new version.</span><span><b>Your plan keeps working</b> when the AI, Apple Health or the network is down.</span></p>
+    <p class="own"><span><b>Nothing new to buy.</b> It reads the iPhone you already own, and your Apple Watch if you wear one.</span><span><b>Nothing changes without your OK.</b> Every change to your plan shows its evidence and waits for you. Each approved plan is saved as a new version.</span><span><b>Your plan keeps working</b> when the AI, Apple Health or the network is down.</span></p>
     <div class="soon-row"><p class="soon"><i></i>Coming next. Not in the beta yet.</p><p>Log sets from the Dynamic Island and the Lock Screen while a workout runs. An Apple Watch app for logging sets follows.</p></div>
   </section>
 
@@ -131,7 +131,7 @@ import JoinForm from './JoinForm.astro';
         <p class="demo-note">Two example athletes. Plans simplified.</p>
       </div>
     </div>
-    <div class="mini-cta sec-cta"><a class="btn-primary" href="#join" data-focus>Join the beta<i aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></i></a><p>Free. For iPhone, best with Apple Watch. Android in testing.</p></div>
+    <div class="mini-cta sec-cta"><a class="btn-primary" href="#join" data-focus>Join the beta<i aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></i></a><p>Free. One email to confirm.</p></div>
   </section>
 
   <section class="sec wrap" id="coach" aria-labelledby="coach-h">
