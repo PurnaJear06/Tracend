@@ -15,7 +15,6 @@
     chev: '<svg viewBox="0 0 16 16"><path d="M6 3.5L10.5 8 6 12.5"/></svg>',
     down: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
     person: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5z"/></svg>',
-    badge: '<svg viewBox="0 0 16 16"><path d="M8 1.5l1.7 1.2 2.1-.1.6 2 1.7 1.3-.7 2 .7 2-1.7 1.3-.6 2-2.1-.1L8 14.5l-1.7-1.2-2.1.1-.6-2-1.7-1.3.7-2-.7-2 1.7-1.3.6-2 2.1.1z"/><path d="M5.6 8.2l1.6 1.6 3.2-3.4"/></svg>',
     spark: '<svg viewBox="0 0 12 12"><path fill="#C8F05A" d="M6 .8l1.3 3.4 3.5.4-2.7 2.3.9 3.5L6 8.5 3 10.4l.9-3.5L1.2 4.6l3.5-.4z"/></svg>'
   };
   function statusBar(time) {
@@ -51,26 +50,6 @@
       '<div class="lg-best"><span class="best" data-best>New best</span></div>' +
       '<p class="lg-foot"><span>Last time <b>' + w.last + '</b></span><span>Your best <b>' + w.best + '</b></span></p></div>' +
       '<span class="a-pill lg-done" data-done>Done set ' + last + '</span>' +
-      '</section>';
-  }
-  function nBox(label, dot, v, of, unit, key, extra) {
-    return '<div class="n-box"><p class="top"><span>' + (dot ? '<i class="' + dot + '"></i>' : '') + label + '</span>' + (extra || '') + '</p>' +
-      '<p class="v"><span data-n="' + key + '">' + v + '</span><small>/ ' + of + unit + '</small></p>' +
-      '<div class="bar"><i class="' + (dot || '') + '" data-nb="' + key + '" style="--v:' + Math.min(1, v / of).toFixed(3) + '"></i></div></div>';
-  }
-  function scrMeal() {
-    var m = D.monday.meal, t = m.totals, i = 1;
-    var days = [['M', 13], ['T', 14], ['W', 15], ['T', 16], ['F', 17], ['S', 18], ['S', 19]];
-    return '<section class="scr" data-scr="meal">' +
-      head('Nutrition', 'Mon 13 Oct') +
-      '<div class="n-week">' + days.map(function (d, k) { return '<span' + (k === 0 ? ' class="on"' : '') + '>' + d[0] + '<b>' + d[1] + '</b></span>'; }).join('') + '</div>' +
-      '<div class="n-tot"><p class="src">' + ICON.badge + 'From confirmed meals</p>' +
-      nBox('Calories', '', t.kcal[i], t.kcal[2].toLocaleString('en-US'), ' kcal', 'kcal', '<em data-pct>' + Math.round(t.kcal[i] / t.kcal[2] * 100) + '%</em>') +
-      nBox('Protein', 'p-dot', t.protein[i], t.protein[2], 'g', 'protein', '<em data-left>' + (t.protein[2] - t.protein[i]) + 'g left</em>') +
-      '<div class="n-two">' + nBox('Carbs', 'c-carb', t.carbs[i], t.carbs[2], 'g', 'carbs') + nBox('Fat', 'c-fat', t.fat[i], t.fat[2], 'g', 'fat') + '</div></div>' +
-      '<p class="sec-label" style="margin-top:8px">Meals</p>' +
-      '<div class="n-meal" data-meal><span class="t a-num">20:30</span><span class="st">' + ICON.check + '</span><div><h5>Dinner &middot; ' + m.macros[2][1] + ' kcal</h5>' +
-      '<p class="ln"><b data-state>Logged</b> &middot; ' + m.line + '</p><div class="tri"><i style="flex:' + m.macros[0][1] * 4 + '"></i><i style="flex:' + m.macros[1][1] * 4 + '"></i><i style="flex:168"></i></div></div><i class="scan" data-scan></i></div>' +
       '</section>';
   }
   function scrSleep() {
@@ -131,7 +110,7 @@
   var TAP = '<i class="gp-t"></i>';
   function scrGoal() {
     var goals = [['Lose fat', 'Drop body fat and keep your strength.'], ['Build muscle', 'Add size with a small surplus.'], ['Recomposition', 'Lose fat and build muscle, slowly.'], ['Get stronger', 'Lift more on the big lifts.']];
-    return '<section class="scr" data-scr="goal">' + obTop('Step 4 of 15 &middot; Goal', 4, 15) +
+    return '<section class="scr" data-scr="goal">' + obTop('Your goal', 4, 15) +
       '<h4 class="gp-h">What&rsquo;s your goal?</h4><p class="gp-sub">Your whole plan is built around it.</p><div class="gp-cards">' +
       goals.map(function (g, k) { return '<div class="gp-card"' + (k === 0 ? ' data-pick' : '') + '><div><b>' + g[0] + '</b><span>' + g[1] + '</span></div><i class="gp-ck">' + ICON.check + '</i>' + (k === 0 ? TAP : '') + '</div>'; }).join('') +
       '</div><div class="gp-cta"><span class="a-pill lime" data-cont>Continue' + TAP + '</span></div></section>';
@@ -153,10 +132,10 @@
       '<div class="gp-set"><h5>You&rsquo;re set.</h5><p class="gp-row"><span>Next session</span><b>Legs, Monday</b></p><p class="gp-row"><span>Every day</span><b>' + p.kcal + ' kcal &middot; ' + p.protein + ' g protein</b></p><p class="gp-row"><span>Apple Health</span><b>Connected</b></p><span class="a-pill">Go to Today</span></div></section>';
   }
 
-  var BUILD = { goal: scrGoal, intake: scrIntake, proposal: scrProposal, coach: scrCoach, workout: scrWorkout, meal: scrMeal, sleep: scrSleep, today: function () { return scrToday(); }, 'today-hero': function () { return scrToday('today-hero'); }, session: scrSession };
+  var BUILD = { goal: scrGoal, intake: scrIntake, proposal: scrProposal, coach: scrCoach, workout: scrWorkout, sleep: scrSleep, today: function () { return scrToday(); }, 'today-hero': function () { return scrToday('today-hero'); }, session: scrSession };
   function phone(opts) {
     opts = opts || {};
-    var list = opts.screens || ['workout', 'meal', 'sleep', 'today', 'session'];
+    var list = opts.screens || ['workout', 'sleep', 'today', 'session'];
     return '<div class="phone app' + (opts.cls ? ' ' + opts.cls : '') + '"' + (opts.id ? ' id="' + opts.id + '"' : '') + ' aria-hidden="true"><i class="rim"></i><i class="btns"></i><div class="screen">' +
       '<span class="island"></span>' + statusBar(opts.time || '18:40') +
       '<div class="screens">' + list.map(function (k) { return BUILD[k](); }).join('') + '</div>' +

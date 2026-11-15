@@ -5,16 +5,20 @@
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
   var G = TK.G, D = window.TRACEND_DAY, A = window.TracendApp, Body = window.TracendBody;
   var motion = function () { return !!G && !TK.reduced(); };
-  /* ambient light per beat: a calm evening for week 1, then the day's light in week 12 */
-  var AMB = [['#2A2822', '#191B21'], ['#2C2A21', '#1A1D20'], ['#2F2C1E', '#1B211E'], ['#33291F', '#1B1F26'], ['#2E2520', '#191B24'], ['#131A3C', '#0A0E24'], ['#3A2828', '#22304A'], ['#3A3524', '#1C2A22']];
-  var BEATS = D.beats, R = 1.3; /* R: length of the rewind, in timeline units */
+  /* ambient light per moment: the evening gym, the night, first light, the morning */
+  var AMB = [['#33291F', '#1B1F26'], ['#131A3C', '#0A0E24'], ['#3A2828', '#22304A'], ['#3A3524', '#1C2A22']];
+  var BEATS = D.beats, R = 1.6, S = 1.4; /* timeline units. R: the rewind. S: one moment, its motion in the first unit, then a rest so it reads settled */
   var film = $('.film'), fdev = $('.f-dev'), live = $('[data-day-live]');
-  var pinMode = motion() && matchMedia('(min-width: 1024px) and (min-height: 660px)').matches;
+  /* wide: copy beside the phone. tall: copy above it (phones and upright tablets). Anything else
+     (reduced motion, short or sideways screens) gets the static page. */
+  var wide = matchMedia('(min-width: 1024px) and (min-height: 660px)').matches;
+  var tall = matchMedia('(max-width: 1023.98px) and (min-height: 540px) and (orientation: portrait)').matches;
+  var pinMode = motion() && (wide || tall);
   film.setAttribute('data-mode', pinMode ? 'pin' : 'flow');
+  film.setAttribute('data-lay', wide ? 'wide' : 'tall');
 
   /* ---------- Static build ---------- */
   $('[data-mark]').outerHTML = A.mark();
-  $$('#hero-h .line').forEach(function (l) { l.innerHTML = '<span class="li">' + l.innerHTML + '</span>'; });
   $('[data-phone-slot]').outerHTML = A.phone({ id: 'day-phone', time: '07:02', tab: 'today', screens: ['today-hero'].concat(BEATS.map(function (b) { return b.scr; })) });
   var ph = $('#day-phone');
   /* a real phone body: stacked layers behind the glass give it depth and a lit titanium edge */
@@ -28,12 +32,9 @@
   }
   function setPwn(phoneEl, v) { phoneEl.style.setProperty('--pwn', v); if (phoneEl.parentNode.classList.contains('deep')) phoneEl.parentNode.style.setProperty('--pwn', v); }
   deepen(ph);
-  if (!pinMode) $$('.beat .b-phone').forEach(function (slot, i) { slot.innerHTML = A.phone({ screens: [BEATS[i].scr], time: BEATS[i].time, tab: BEATS[i].tab }); });
+  if (!pinMode) $$('.beat .b-phone').forEach(function (slot, i) { slot.innerHTML = A.phone({ screens: [BEATS[i].scr], time: BEATS[i].sb || BEATS[i].time, tab: BEATS[i].tab }); });
   $$('[data-ring]').forEach(function (svg) { svg._ring = A.ring(svg, { score: D.morning.score, segments: D.morning.segments }); });
   var heroRing = $('[data-scr="today-hero"] [data-ring]')._ring;
-  var hClock = TK.clock($('[data-hclock]'), '07:02');
-  var hDay = TK.wordReel($('[data-hday]'), ['Week 1 \u00b7 Sunday', 'Monday', 'Tuesday']);
-  TK.setWord(hDay, 'Tuesday', { instant: true });
   var dClock = TK.clock($('[data-dclock]'), BEATS[0].time);
   var dDay = TK.wordReel($('[data-dday]'), BEATS.map(function (b) { return b.day; }).filter(function (d, k, a) { return a.indexOf(d) === k; }));
   TK.setWord(dDay, BEATS[0].day, { instant: true });
@@ -46,96 +47,104 @@
   })();
   A.ring($('[data-ring-vs]'), { score: 36, segments: [{ color: '#6E6F6A', weight: 1 }], mono: '#6E6F6A', track: '#232427' });
   $('[data-vs-session]').innerHTML = A.sessionCard();
-  var cClock = TK.clock($('[data-cclock]'), '07:02');
 
-  /* phone size follows the viewport so the device never crops */
+  /* tall: the phone sits under the hero copy, then rises to sit under the day's shorter copy */
+  var fcopy = $('.f-copy'), fstory = $('.f-story');
+  function lift() { return wide || !pinMode ? 0 : Math.min(0, fstory.offsetHeight - fcopy.offsetHeight); }
+  /* phone size follows the viewport: fitted to the height when wide; when tall, to the width,
+     and never so large that less than its top three fifths show under the day's copy */
   function sizePhone() {
-    var pwn = pinMode ? Math.round(Math.min(window.innerHeight * 0.8, 790) * 390 / 844) : Math.round(Math.min(window.innerWidth * 0.64, 290));
+    var pwn = !pinMode ? Math.round(Math.min(window.innerWidth * 0.64, 290))
+      : wide ? Math.round(Math.min(window.innerHeight * 0.8, 790) * 390 / 844)
+        : Math.round(Math.min(window.innerWidth * 0.66, 300, Math.max(window.innerWidth * 0.56, (window.innerHeight - fdev.offsetTop - lift()) / 1.3)));
     setPwn(ph, pwn);
     fdev.style.setProperty('--pw', pwn + 'px');
+    fdev.style.setProperty('--pu', (pwn / 259).toFixed(4)); /* unitless, for the banner that scales with the phone */
+    /* the cards beside the phone scale with it and give way to the window: they never run into the copy
+       on the left or off the right edge. 0.89 and 0.95 are the tilt's foreshortening on each side. */
+    var base = Math.max(0.84, Math.min(1.1, pwn / 333)), fs = base, solo = false, hang = 14.5;
+    if (window.innerWidth >= 1024) {
+      var box = fdev.getBoundingClientRect(), cx = box.left + box.width / 2;
+      var room = cx - (wide && pinMode ? fcopy.getBoundingClientRect().right + 28 : 16);
+      var fit = ((room + 30) / 0.89 - pwn / 2) / 254;
+      if (fit < base) { if (fit >= 0.8) fs = fit; else solo = true; }
+      hang = Math.max(7, Math.min(14.5, ((window.innerWidth - 16 - cx) / 0.95 - pwn / 2) / fs / 16));
+    }
+    fdev.style.setProperty('--fs', fs.toFixed(4));
+    fdev.style.setProperty('--hang', hang.toFixed(3));
+    fdev.classList.toggle('fc-solo', solo);
   }
   sizePhone();
 
-  /* ---------- Hero film: the day compresses into three seconds ---------- */
+  /* ---------- Hero film: the phone arrives; the copy is already there (CSS) ---------- */
   function heroFilm() {
     var tl = G.timeline({ defaults: { ease: TK.EASE.out } });
-    var lines = $$('.hl:not([hidden]) .li', $('#hero-h'));
-    TK.setClock(hClock, '18:40', { instant: true }); TK.setWord(hDay, 'Monday', { instant: true });
-    tl.from(lines, { yPercent: 112, duration: 1.1, stagger: 0.09 }, 0.15)
-      .from('.kicker, .lede, .f-copy .join-wrap', { y: 18, autoAlpha: 0, duration: TK.T.focal, stagger: 0.07 }, 0.35)
-      .from('.f-giant > *', { autoAlpha: 0, duration: 1.2 }, 0)
-      .from('.dev-rise', { y: 90, autoAlpha: 0, rotationX: 12, duration: 1.4 }, 0.1)
-      .from('.f-glow, .f-floor', { autoAlpha: 0, duration: 1.4 }, 0.4);
-    /* inputs arrive in the order they happened, the clock runs with them */
-    var cards = ['.fc-train', '.fc-food', '.fc-sleep'], times = ['18:40', '20:30', '23:10'];
-    cards.forEach(function (c, i) {
-      var at = 0.7 + i * 0.42;
-      if (i) TK.setClock(hClock, times[i], { tl: tl, at: at - 0.1, dur: 0.4 });
-      tl.from(c + ' .fc-in', { x: -24, y: 16, autoAlpha: 0, filter: 'blur(8px)', duration: 0.8 }, at);
-    });
-    TK.setClock(hClock, '07:02', { tl: tl, at: 2.0, dur: 0.55 });
-    TK.setWord(hDay, 'Tuesday', { tl: tl, at: 2.0, dur: 0.45 });
     var p = { v: 0 }; heroRing.draw(0);
-    tl.to(p, { v: 1, duration: 1.1, ease: 'power2.out', onUpdate: function () { heroRing.draw(p.v); } }, 2.05);
-    tl.from('.fc-coach .fc-in', { y: 24, autoAlpha: 0, filter: 'blur(10px)', duration: 0.9 }, 2.6);
+    var ring = function (at) { tl.to(p, { v: 1, duration: 1.1, ease: 'power2.out', onUpdate: function () { heroRing.draw(p.v); } }, at); };
+    tl.from('.dev-rise', { y: 70, autoAlpha: 0, rotationX: 10, duration: 1.2 }, 0)
+      .from('.f-glow, .f-floor', { autoAlpha: 0, duration: 1.2 }, 0.2);
+    if (!wide) {
+      /* the score fills, then the Coach's call drops in like a notification */
+      ring(0.35);
+      tl.from('.fc-coach .fc-in', { y: -22, autoAlpha: 0, duration: 0.8 }, 0.8);
+      return tl;
+    }
+    /* wide: what it read arrives in the order it happened, then the score, then its call */
+    ['.fc-train', '.fc-food', '.fc-sleep'].forEach(function (c, i) {
+      tl.from(c + ' .fc-in', { x: -24, y: 16, autoAlpha: 0, filter: 'blur(8px)', duration: 0.7 }, 0.35 + i * 0.22);
+    });
+    ring(1.0);
+    tl.from('.fc-coach .fc-in', { y: 24, autoAlpha: 0, filter: 'blur(10px)', duration: 0.8 }, 1.45);
     tl.set('.fc-in', { clearProps: 'filter' });
     return tl;
   }
   function pointerDepth() {
-    if (!TK.desk.matches) return;
+    if (!TK.desk.matches || !wide) return;
     var dev = $('.dev'), stage = $('.f-stage');
     var rx = G.quickTo(dev, 'rotationX', { duration: 1, ease: 'power3' }), ry = G.quickTo(dev, 'rotationY', { duration: 1, ease: 'power3' });
-    var cards = $$('.fc').map(function (c) { return { x: G.quickTo(c, 'x', { duration: 1, ease: 'power3' }), y: G.quickTo(c, 'y', { duration: 1, ease: 'power3' }), d: c.classList.contains('fc-coach') ? 22 : 12 }; });
     stage.addEventListener('pointermove', function (e) {
       var nx = e.clientX / window.innerWidth - 0.5, ny = e.clientY / window.innerHeight - 0.5;
       rx(-ny * 5); ry(nx * 7);
       ph.style.setProperty('--gx', (18 + nx * 60).toFixed(1) + '%'); ph.style.setProperty('--gy', (4 + ny * 30).toFixed(1) + '%');
-      cards.forEach(function (c) { c.x(nx * c.d); c.y(ny * c.d * 0.6); });
     });
   }
 
-  /* ---------- PIN: rewind, dock, then the day ---------- */
-  function strips(el, time) { var d = time.replace(':', '').split('').map(Number); return el._strips.map(function (s, i) { return { s: s, y: -d[i] * 10 }; }); }
-  function reelFT(tl, el, from, to, at, dur) {
-    var a = strips(el, from), b = strips(el, to);
-    a.forEach(function (x, i) { tl.fromTo(x.s, { yPercent: x.y }, { yPercent: b[i].y, duration: dur, ease: TK.EASE.inOut, immediateRender: false }, at + i * 0.04); });
-  }
+  /* ---------- PIN: the answer, the question, then the day that led to it ---------- */
   function setupPin(heroTL) {
     var scrs = $$('.scr', ph), beats = $$('.beat'), cos = $$('[data-co]'), rail = $$('.rail button');
     var sbTime = $('[data-sbtime]', ph), tabs = $$('.tab', ph), story = $$('.f-story > *'), bridge = $('.bridge');
-    var tilt = $('.dev-tilt'), tabbar = $('.tabbar', ph), actA = $('#day-h .act-a'), actB = $('#day-h .act-b');
-    var ACT2 = BEATS.map(function (b) { return b.act; }).indexOf(2);
+    var tilt = $('.dev-tilt'), tabbar = $('.tabbar', ph), dn = $('[data-dn]');
+    var T0 = wide ? { rotationY: -22, rotationX: 8, rotation: 2 } : { rotationY: -14, rotationX: 6, rotation: 1.5 };
+    var T1 = wide ? { rotationY: -9, rotationX: 3, rotation: 0 } : { rotationY: 0, rotationX: 0, rotation: 0 };
     G.set(scrs.slice(1), { autoAlpha: 0 });
-    G.set(actB, { autoAlpha: 0 });
     G.set(beats.slice(1), { autoAlpha: 0 });
     G.set(cos, { autoAlpha: 0, x: -12 });
     G.set(story, { autoAlpha: 0 });
     G.set(bridge, { autoAlpha: 0 });
-    G.set(tilt, { rotationY: -22, rotationX: 8, rotation: 2 });
+    G.set(tilt, T0);
     var tl = G.timeline({ defaults: { ease: TK.EASE.out } });
     var NI = { immediateRender: false };
-    /* rewind: the answer steps aside, the clock runs back, the phone squares up */
-    tl.fromTo('.f-copy', { autoAlpha: 1, y: 0 }, Object.assign({ autoAlpha: 0, y: -48, duration: 0.45, ease: 'power1.inOut' }, NI), 0);
+    /* the answer steps aside, the question takes its place, the phone squares up */
+    tl.fromTo(fcopy, { autoAlpha: 1, y: 0 }, Object.assign({ autoAlpha: 0, y: -40, duration: 0.4, ease: 'power1.inOut' }, NI), 0);
     $$('.fc').forEach(function (c, i) {
       var dir = +c.getAttribute('data-fc');
-      tl.fromTo(c, { autoAlpha: 1, xPercent: 0, yPercent: 0, scale: 1 }, Object.assign({ autoAlpha: 0, xPercent: dir * 40, yPercent: -30, scale: 0.92, duration: 0.45, ease: 'power1.inOut' }, NI), 0.04 + i * 0.04);
+      /* opacity, not autoAlpha: the cards sit inside the phone's wrapper, which is still hidden when this is first measured */
+      tl.fromTo(c, { opacity: 1, xPercent: 0, yPercent: 0, scale: 1 }, Object.assign({ opacity: 0, xPercent: wide ? dir * 40 : 0, yPercent: wide ? -30 : -60, scale: 0.92, duration: wide ? 0.45 : 0.3, ease: 'power1.inOut' }, NI), 0.04 + i * 0.04);
     });
-    tl.fromTo(tilt, { rotationY: -22, rotationX: 8, rotation: 2 }, Object.assign({ rotationY: -9, rotationX: 3, rotation: 0, duration: 1.05, ease: TK.EASE.inOut }, NI), 0.08);
-    reelFT(tl, hClock, '07:02', BEATS[0].time, 0.2, 0.7);
-    tl.fromTo(hDay._strip, { yPercent: -200 / 3 }, Object.assign({ yPercent: 0, duration: 0.5, ease: TK.EASE.inOut }, NI), 0.3);
-    tl.fromTo('.f-giant', { autoAlpha: 1 }, Object.assign({ autoAlpha: 0, duration: 0.35, ease: 'none' }, NI), 0.95);
-    tl.fromTo(film, { '--amb-a': AMB[AMB.length - 1][0], '--amb-b': AMB[AMB.length - 1][1] }, Object.assign({ '--amb-a': AMB[0][0], '--amb-b': AMB[0][1], duration: 0.8, ease: 'none' }, NI), 0.2);
+    tl.fromTo(tilt, T0, Object.assign({ duration: 1.05, ease: TK.EASE.inOut }, T1, NI), 0.1);
+    if (!wide) tl.fromTo(fdev, { y: 0 }, Object.assign({ y: lift, duration: 0.9, ease: TK.EASE.inOut }, NI), 0.3);
+    tl.fromTo(film, { '--amb-a': AMB[AMB.length - 1][0], '--amb-b': AMB[AMB.length - 1][1] }, Object.assign({ '--amb-a': AMB[0][0], '--amb-b': AMB[0][1], duration: 0.9, ease: 'none' }, NI), 0.3);
     tl.fromTo(bridge, { autoAlpha: 0, y: 26 }, Object.assign({ autoAlpha: 1, y: 0, duration: 0.3 }, NI), 0.3)
-      .fromTo(bridge, { autoAlpha: 1, y: 0 }, Object.assign({ autoAlpha: 0, y: -22, duration: 0.22, ease: 'power1.inOut' }, NI), 0.95);
-    tl.fromTo(scrs[0], { opacity: 1, scale: 1 }, Object.assign({ opacity: 0.2, scale: 0.94, duration: 0.42, ease: TK.EASE.inOut }, NI), 0.66);
+      .fromTo(bridge, { autoAlpha: 1, y: 0 }, Object.assign({ autoAlpha: 0, y: -22, duration: 0.22, ease: 'power1.inOut' }, NI), R - 0.42);
     /* screens push up like iOS: the new one is opaque and slides over the old, so text never overlaps */
-    tl.fromTo(scrs[1], { autoAlpha: 1, yPercent: 100 }, Object.assign({ autoAlpha: 1, yPercent: 0, duration: 0.42, ease: TK.EASE.inOut }, NI), 0.66);
-    tl.fromTo(story, { autoAlpha: 0, y: 24 }, { autoAlpha: 1, y: 0, duration: 0.3, stagger: 0.04 }, 1.12);
+    tl.fromTo(scrs[0], { opacity: 1, scale: 1 }, Object.assign({ opacity: 0.2, scale: 0.94, duration: 0.42, ease: TK.EASE.inOut }, NI), R - 0.62);
+    tl.fromTo(scrs[1], { autoAlpha: 1, yPercent: 100 }, Object.assign({ autoAlpha: 1, yPercent: 0, duration: 0.42, ease: TK.EASE.inOut }, NI), R - 0.62);
+    tl.fromTo(story, { autoAlpha: 0, y: 24 }, { autoAlpha: 1, y: 0, duration: 0.3, stagger: 0.04 }, R - 0.2);
     /* the day */
     beatAnim(0, ph, tl, R);
     tl.fromTo(cos[0], { autoAlpha: 0, x: -12 }, { autoAlpha: 1, x: 0, duration: 0.25 }, R + 0.55);
     for (var i = 1; i < BEATS.length; i++) {
-      var at = R + i - 0.15;
+      var at = R + i * S - 0.15;
       TK.setClock(dClock, BEATS[i].time, { tl: tl, at: at, dur: 0.35 });
       if (BEATS[i].day !== BEATS[i - 1].day) TK.setWord(dDay, BEATS[i].day, { tl: tl, at: at, dur: 0.35 });
       tl.to(film, { '--amb-a': AMB[i][0], '--amb-b': AMB[i][1], duration: 0.5, ease: 'none' }, at);
@@ -144,24 +153,23 @@
       tl.to(cos[i - 1], { autoAlpha: 0, x: 8, duration: 0.15, ease: 'power1.inOut' }, at)
         .fromTo(scrs[i], { autoAlpha: 1, scale: 1 }, Object.assign({ autoAlpha: 0.2, scale: 0.94, duration: 0.42, ease: TK.EASE.inOut }, NI), at)
         .fromTo(scrs[i + 1], { autoAlpha: 1, yPercent: 100 }, Object.assign({ autoAlpha: 1, yPercent: 0, duration: 0.42, ease: TK.EASE.inOut }, NI), at);
-      beatAnim(i, ph, tl, R + i);
-      /* the turn from week 1 to week 12 */
-      if (i === ACT2) tl.fromTo(actA, { autoAlpha: 1, y: 0 }, { autoAlpha: 0, y: -10, duration: 0.2 }, at).fromTo(actB, { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.25 }, at + 0.15);
-      tl.fromTo(cos[i], { autoAlpha: 0, x: -12 }, { autoAlpha: 1, x: 0, duration: 0.25 }, R + i + 0.55);
+      beatAnim(i, ph, tl, R + i * S);
+      tl.fromTo(cos[i], { autoAlpha: 0, x: -12 }, { autoAlpha: 1, x: 0, duration: 0.25 }, R + i * S + 0.55);
     }
-    tl.to({}, { duration: 0.6 });
+    tl.to({}, { duration: R + BEATS.length * S + 0.3 - tl.duration() });
     var last = -2;
     function ui(t) {
-      var s = t - R, idx = Math.max(0, Math.min(BEATS.length - 1, Math.floor(s + 0.05))), hero = t < R * 0.55;
+      var s = (t - R) / S, idx = Math.max(0, Math.min(BEATS.length - 1, Math.floor(s + 0.04))), hero = t < R - 0.4;
       rail.forEach(function (b, k) {
         b.style.setProperty('--f', Math.max(0, Math.min(1, s - k)).toFixed(3));
         if (k === idx && !hero) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
       });
-      scrs[0].style.visibility = t < 1.1 ? 'visible' : 'hidden';
+      scrs[0].style.visibility = t < R - 0.2 ? 'visible' : 'hidden';
       var key = hero ? -1 : idx;
       if (key !== last) {
         last = key;
-        sbTime.textContent = hero ? '07:02' : BEATS[idx].time;
+        sbTime.textContent = hero ? '07:02' : BEATS[idx].sb || BEATS[idx].time;
+        dn.textContent = idx + 1;
         var tab = hero ? 'today' : BEATS[idx].tab;
         tabs.forEach(function (tb) { tb.classList.toggle('on', tb.getAttribute('data-tab') === tab); });
         tabbar.style.opacity = tab ? '' : '0';
@@ -170,13 +178,13 @@
     }
     tl.eventCallback('onUpdate', function () { ui(tl.time()); });
     var trig = ScrollTrigger.create({
-      trigger: '.f-stage', start: 'top top', end: function () { return '+=' + Math.round(window.innerHeight * 0.66 * tl.duration()); },
-      pin: true, scrub: 0.8, animation: tl, invalidateOnRefresh: true,
+      trigger: '.f-stage', start: 'top top', end: function () { return '+=' + Math.round(window.innerHeight * 0.52 * tl.duration()); },
+      pin: true, scrub: wide ? 0.8 : 0.5, animation: tl, invalidateOnRefresh: true,
       onUpdate: function (self) { if (heroTL.progress() < 1 && self.progress > 0.002) heroTL.progress(1); }
     });
     ui(0);
     function go(k) {
-      var y = trig.start + (trig.end - trig.start) * (R + k + 0.75) / tl.duration();
+      var y = trig.start + (trig.end - trig.start) * (R + k * S + 1) / tl.duration();
       var sm = TK.smoother();
       if (sm) sm.scrollTo(y, true); else window.scrollTo({ top: y, behavior: 'smooth' });
     }
@@ -185,7 +193,7 @@
   }
   function announce(i) { live.textContent = BEATS[i].day + ' ' + BEATS[i].time + '. ' + $('.beat[data-i="' + i + '"] h3').textContent + ' ' + BEATS[i].line; }
 
-  /* ---------- FLOW: beats stack, the clock sticks ---------- */
+  /* ---------- FLOW: the moments stack, each with its own phone ---------- */
   function setupFlow() {
     var cur = -1;
     $$('.beat').forEach(function (b, i) {
@@ -196,14 +204,12 @@
       TK.whenVisible(b, function (on) {
         if (!on || cur === i) return;
         cur = i;
-        TK.setClock(dClock, BEATS[i].time, { instant: !motion() });
-        TK.setWord(dDay, BEATS[i].day, { instant: !motion() });
         film.style.setProperty('--amb-a', AMB[i][0]); film.style.setProperty('--amb-b', AMB[i][1]);
       }, { rootMargin: '-45% 0px -45% 0px' });
     });
   }
   var beatAnim = function (i, scope, tl, at) {
-    TracendBeats.anim(i, scope, tl, at);
+    TracendBeats.anim(BEATS[i].id, scope, tl, at);
     var beat = $('.beat[data-i="' + i + '"]'), s = $('.pf-was s', beat), n = $('.pf-now', beat);
     tl.fromTo(s, { '--s': '0%' }, { '--s': '100%', duration: 0.22, ease: 'power1.inOut' }, at + 0.3)
       .fromTo(n, { autoAlpha: 0, x: -8 }, { autoAlpha: 1, x: 0, duration: 0.22 }, at + 0.48);
@@ -477,123 +483,51 @@
     if (motion()) TK.whenVisible($('.ys'), function (on) { if (on && auto) cycle(); else clearTimeout(timer); }, { threshold: 0.4 });
   }
 
-  /* ---------- Coming next: Live Activity and Watch, one looping film ---------- */
-  function setupNext() {
-    var slot = $('[data-nx]'), I = A.icon.train, sw = function (a, b, c) { return '<span class="sw"><span>' + a + '</span><span>' + b + '</span>' + (c ? '<span>' + c + '</span>' : '') + '</span>'; };
-    var dots = function (n) { var h = ''; for (var k = 0; k < 5; k++) h += '<i' + (k < n ? ' class="d"' : '') + '></i>'; return '<div class="nx-dots">' + h + '</div>'; };
-    /* watch case: stacked layers, slightly fuller in the middle like the real curved side */
-    var wl = ''; for (var j = 12; j >= 1; j--) wl += '<i class="w-l' + (j === 12 ? ' back' : '') + '" style="--k:' + (j / 12).toFixed(3) + ';--s:' + (1 + 0.025 * Math.sin(Math.PI * j / 12)).toFixed(4) + '"></i>';
-    var icons = ''; for (var k = 0; k < 20; k++) icons += k === 5 ? '<i class="tr">' + A.mark() + '</i>' : '<i></i>';
-    slot.innerHTML = '<span class="nx-tag">Concept</span><div class="nx-rig"><div class="phone app nx-phone"><i class="rim"></i><i class="btns"></i><div class="screen">' +
-      '<div class="nx-wall"></div>' +
-      '<div class="nx-home"><div class="g">' + icons + '</div><div class="nx-dock"><i></i><i></i><i></i><i></i></div></div>' +
-      '<div class="nx-lock"><p class="d">Monday 13 October</p><p class="t">18:52</p></div>' +
-      '<div class="nx-lockbtns"><i></i><i></i></div>' +
-      '<div class="nx-app">' + A.screen('workout') + '</div>' +
-      A.statusBar('18:52') +
-      '<div class="nx-isl"><div class="nx-c"><span class="nx-ic">' + I + '</span><span class="tm" data-el>38:12</span></div>' +
-        '<div class="nx-x"><div class="r1"><span class="nx-ic">' + I + '</span><span><b>Back squat</b><small>Leg day &middot; <span data-el>38:12</span></small></span>' + sw('Set 3 of 5', 'Set 4 of 5') + '</div>' +
-        '<div class="r2"><span class="nx-big">120<small>kg</small>&times; 5</span><span class="nx-pill">' + sw('Log set', '<span data-rest>Rest 2:00</span>') + '</span></div>' + dots(2) + '</div></div>' +
-      '<div class="nx-la"><p class="h">' + A.mark() + 'Tracend &middot; Leg day<span class="tm" data-el>38:12</span></p>' +
-        '<p class="ex"><b>Back squat</b>' + sw('Set 4 of 5', 'Set 5 of 5', 'All 5 sets logged') + '</p>' +
-        '<div class="nx-st"><div class="nx-stp"><span class="b">&minus;</span><span class="v">' + sw('120', '122.5') + '<small>kg</small></span><span class="b nx-plus">+</span></div>' +
-        '<div class="nx-stp"><span class="b">&minus;</span><span class="v">5<small>reps</small></span><span class="b">+</span></div></div>' +
-        '<div class="row">' + dots(3) + '<span class="nx-pill nx-log">Log set</span></div></div>' +
-      '<span class="nx-touch"></span><span class="homebar"></span></div></div>' +
-      '<div class="watch app"><div class="w-tilt"><i class="w-band t"></i><i class="w-band b"></i>' + wl + '<i class="w-crown"></i><i class="w-side"></i><div class="w-case"><div class="w-scr"><div class="w-in">' +
-        '<p class="w-top"><span class="n">Squat</span><span class="c">18:55</span></p><p class="w-set">Set 5 of 5</p><p class="w-big">122.5<small>kg</small>&times; 5</p>' +
-        '<div class="w-eff"><span>Effort</span><b>' + sw('8', '9') + '</b></div><span class="w-done">' + sw('Done', 'Saved') + '</span></div><i class="w-glare"></i></div></div></div></div></div>';
-    var ph2 = $('.nx-phone', slot), rig = $('.nx-rig', slot), watch = $('.watch', slot);
-    $$('.set', ph2).forEach(function (st, k) { if (k >= 2) st.classList.remove('done'); });
-    var best = $('[data-best]', ph2); if (best) best.remove();
-    $('.lg-card .row b', ph2).textContent = 'Set 3 of 5';
-    $('[data-done]', ph2).textContent = 'Done set 3';
-    deepen(ph2);
-    function size() {
-      var pwn = Math.round(Math.min(300, (Math.min(window.innerWidth, 1600) - 32) * (window.innerWidth < 1024 ? 0.62 : 0.3)));
-      var ww = Math.round(pwn * 0.47);
-      setPwn(ph2, pwn); rig.style.setProperty('--pwn', pwn);
-      watch.style.setProperty('--ww', ww + 'px'); watch.style.setProperty('--wz', (ww * 0.91 / 180).toFixed(4));
-      rig._shift = -Math.round(ww * 0.4);
-    }
-    size();
-    window.addEventListener('resize', size);
-
-    var q = function (sel) { return $(sel, ph2); }, isl = q('.nx-isl'), cmp = q('.nx-c'), exp = q('.nx-x'), la = q('.nx-la'), touch = q('.nx-touch');
-    var swaps = $$('.sw', slot), steps = $$('#next .nx-steps button'), live = $('[data-nx-live]');
-    var els = $$('[data-el]', ph2), rest = q('[data-rest]');
-    var LAB = [0, 5.0, 8.2], END = 12.2, NAMES = ['Dynamic Island', 'Lock Screen', 'Apple Watch'];
+  /* ---------- Start: goal, getting to know you, the approved plan, one looping film ---------- */
+  function setupStart() {
+    var slot = $('[data-st]'), S = D.start;
+    slot.innerHTML = A.phone({ cls: 'st-phone', time: S[0].time, tab: null, screens: S.map(function (b) { return b.scr; }) });
+    var sph = $('.st-phone', slot), scr = $$('.scr', sph), sbTime = $('[data-sbtime]', sph);
+    var steps = $$('#start .nx-steps button'), live = $('[data-st-live]');
+    deepen(sph);
+    function size() { setPwn(sph, Math.round(Math.min(330, window.innerWidth * 0.7))); }
+    size(); window.addEventListener('resize', size);
     if (!G) return;
-    var tl = G.timeline({ paused: true, repeat: -1, repeatDelay: 0.3, defaults: { ease: TK.EASE.out, immediateRender: false } });
-    function tap(x, y, at) {
-      tl.fromTo(touch, { x: x - 26, y: y - 26, scale: 0.6, autoAlpha: 0 }, { x: x - 26, y: y - 26, scale: 1, autoAlpha: 1, duration: 0.16 }, at)
-        .to(touch, { scale: 1.3, autoAlpha: 0, duration: 0.3, ease: 'power1.out' }, at + 0.2);
-    }
-    function swap(el, from, to, at) {
-      var c = el.children;
-      tl.fromTo(c[from], { autoAlpha: 1, y: 0 }, { autoAlpha: 0, y: -6, duration: 0.18, ease: 'power1.in' }, at)
-        .fromTo(c[to], { autoAlpha: 0, y: 6 }, { autoAlpha: 1, y: 0, duration: 0.24 }, at + 0.12);
-    }
-    function press(el, at) { tl.fromTo(el, { scale: 1 }, { scale: 0.93, duration: 0.08, ease: 'power2.out' }, at).to(el, { scale: 1, duration: 0.25, ease: TK.EASE.spring }, at + 0.09); }
-    function dot(el, at) { tl.fromTo(el, { backgroundColor: '#2A2B2F', scaleY: 1 }, { backgroundColor: '#4FD1A5', scaleY: 1.6, duration: 0.15 }, at).to(el, { scaleY: 1, duration: 0.2 }, at + 0.16); }
-    /* start state */
-    tl.set([q('.nx-home'), q('.nx-lock'), q('.nx-lockbtns'), cmp, exp, la], { autoAlpha: 0 }, 0)
-      .set(isl, { width: 122, height: 36, top: 12, borderRadius: 20 }, 0)
-      .set(watch, { autoAlpha: 0, x: 40, scale: 0.94 }, 0)
-      .set(rig, { x: 0 }, 0);
-    swaps.forEach(function (w) { tl.set(w.children[0], { autoAlpha: 1, y: 0 }, 0); if (w.children[1]) tl.set(Array.prototype.slice.call(w.children, 1), { autoAlpha: 0 }, 0); });
-    /* 01 Dynamic Island: leave the app, the set stays */
-    tl.fromTo(q('.nx-app'), { x: 0, y: 0, scale: 1, autoAlpha: 1 }, { x: -46, y: -210, scale: 0.164, autoAlpha: 0, duration: 0.6, ease: TK.EASE.inOut }, 0.7)
-      .fromTo(q('.nx-home'), { autoAlpha: 0, scale: 1.08 }, { autoAlpha: 1, scale: 1, duration: 0.6 }, 0.8)
-      .to(isl, { width: 236, duration: 0.55, ease: TK.EASE.spring }, 1.2)
-      .to(cmp, { autoAlpha: 1, duration: 0.25 }, 1.4);
-    tap(195, 30, 2.0);
-    tl.to(cmp, { autoAlpha: 0, duration: 0.12 }, 2.12)
-      .to(isl, { width: 372, height: 192, top: 10, borderRadius: 50, duration: 0.6, ease: TK.EASE.spring }, 2.12)
-      .fromTo(exp, { autoAlpha: 0, y: -8 }, { autoAlpha: 1, y: 0, duration: 0.3 }, 2.36);
-    tap(293, 113, 3.1); press(q('.nx-x .nx-pill'), 3.12); dot(q('.nx-x .nx-dots i:nth-child(3)'), 3.2);
-    swap(swaps[0], 0, 1, 3.25); swap(swaps[1], 0, 1, 3.25);
-    tl.to(exp, { autoAlpha: 0, duration: 0.15 }, 4.3)
-      .to(isl, { width: 236, height: 36, top: 12, borderRadius: 20, duration: 0.5, ease: TK.EASE.inOut }, 4.32)
-      .to(cmp, { autoAlpha: 1, duration: 0.2 }, 4.7);
-    /* 02 Lock Screen: change the weight, log the set */
-    tl.to([cmp], { autoAlpha: 0, duration: 0.15 }, 5.0)
-      .to(isl, { width: 122, duration: 0.4, ease: TK.EASE.inOut }, 5.05)
-      .to(q('.nx-home'), { autoAlpha: 0, scale: 0.96, duration: 0.4 }, 5.0)
-      .fromTo([q('.nx-lock'), q('.nx-lockbtns')], { autoAlpha: 0, y: -10 }, { autoAlpha: 1, y: 0, duration: 0.5 }, 5.1)
-      .fromTo(la, { autoAlpha: 0, y: 60 }, { autoAlpha: 1, y: 0, duration: 0.6 }, 5.35);
-    tap(163, 619, 6.2); press(q('.nx-plus'), 6.22); swap(swaps[3], 0, 1, 6.3);
-    tap(294, 683, 7.1); press(q('.nx-log'), 7.12); dot(q('.nx-la .nx-dots i:nth-child(4)'), 7.2); swap(swaps[2], 0, 1, 7.25);
-    /* 03 Apple Watch: log from the wrist, the phone follows */
-    tl.fromTo(rig, { x: 0 }, { x: function () { return rig._shift; }, duration: 0.8, ease: TK.EASE.inOut }, 8.2)
-      .fromTo(watch, { autoAlpha: 0, x: 40, scale: 0.94 }, { autoAlpha: 1, x: 0, scale: 1, duration: 0.8 }, 8.3)
-      .fromTo($('.w-crown', watch), { backgroundPositionY: 0 }, { backgroundPositionY: 24, duration: 0.6, ease: 'power1.inOut' }, 9.1);
-    swap(swaps[4], 0, 1, 9.35);
-    press($('.w-done', watch), 10.0); swap(swaps[5], 0, 1, 10.1);
-    dot(q('.nx-la .nx-dots i:nth-child(5)'), 10.5); swap(swaps[2], 1, 2, 10.5);
+    var STEP = 5.2, END = STEP * S.length, NI = { immediateRender: false };
+    var tl = G.timeline({ paused: true, repeat: -1, repeatDelay: 0.4, defaults: { ease: TK.EASE.out } });
+    tl.set(scr.slice(1), { autoAlpha: 1, yPercent: 100 }, 0).set(scr[0], { autoAlpha: 1, scale: 1, yPercent: 0 }, 0);
+    S.forEach(function (b, k) {
+      var at = k * STEP;
+      /* the next screen is opaque and slides up over the old one, like iOS */
+      if (k) {
+        tl.fromTo(scr[k - 1], { autoAlpha: 1, scale: 1 }, Object.assign({ autoAlpha: 0.2, scale: 0.94, duration: 0.45, ease: TK.EASE.inOut }, NI), at)
+          .fromTo(scr[k], { autoAlpha: 1, yPercent: 100 }, Object.assign({ autoAlpha: 1, yPercent: 0, duration: 0.45, ease: TK.EASE.inOut }, NI), at);
+      }
+      TracendBeats.anim(b.id, sph, tl, at + (k ? 0.3 : 0));
+    });
     tl.to({}, { duration: 0.01 }, END);
     var lastIdx = -1;
-    function fmt(n) { return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0'); }
     tl.eventCallback('onUpdate', function () {
-      var t = tl.time(), idx = t >= LAB[2] ? 2 : t >= LAB[1] ? 1 : 0, end = idx < 2 ? LAB[idx + 1] : END;
-      var e = fmt(2292 + Math.floor(t)); els.forEach(function (x) { if (x.textContent !== e) x.textContent = e; });
-      rest.textContent = 'Rest ' + fmt(Math.max(0, 120 - Math.floor(Math.max(0, t - 3.3))));
-      steps.forEach(function (b, k) { $('.prog i', b).style.transform = 'scaleX(' + (k === idx ? Math.min(1, (t - LAB[k]) / (end - LAB[k])).toFixed(3) : 0) + ')'; });
-      if (idx !== lastIdx) { lastIdx = idx; steps.forEach(function (b, k) { b.setAttribute('aria-selected', String(k === idx)); }); }
+      var t = tl.time(), idx = Math.min(S.length - 1, Math.floor(t / STEP));
+      steps.forEach(function (bt, k) { $('.prog i', bt).style.transform = 'scaleX(' + (k === idx ? Math.min(1, (t - idx * STEP) / STEP).toFixed(3) : 0) + ')'; });
+      if (idx !== lastIdx) {
+        lastIdx = idx; sbTime.textContent = S[idx].time;
+        steps.forEach(function (bt, k) { bt.setAttribute('aria-selected', String(k === idx)); });
+      }
     });
-    steps.forEach(function (b, k) {
-      b.addEventListener('click', function () {
-        live.textContent = NAMES[k] + ': ' + $('em', b).textContent;
-        if (motion()) tl.play(LAB[k]); else tl.pause(k < 2 ? LAB[k + 1] - 0.05 : END, false);
+    steps.forEach(function (bt, k) {
+      bt.addEventListener('click', function () {
+        live.textContent = $('span', bt).textContent + ': ' + $('em', bt).textContent;
+        if (motion()) tl.play(k * STEP + 0.01); else tl.pause(k < S.length - 1 ? (k + 1) * STEP - 0.05 : END, false);
       });
-      b.addEventListener('keydown', function (e) {
+      bt.addEventListener('keydown', function (e) {
         var d = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
         if (!d) return; e.preventDefault(); var n = (k + d + steps.length) % steps.length; steps[n].focus(); steps[n].click();
       });
     });
     if (!motion()) { tl.pause(END, false); return; }
     tl.pause(0);
-    TK.whenVisible($('.nx'), function (on) { if (on) tl.play(); else tl.pause(); }, { threshold: 0.3 });
+    TK.whenVisible($('#start .nx'), function (on) { if (on) tl.play(); else tl.pause(); }, { threshold: 0.3 });
   }
 
   /* ---------- Demo ---------- */
@@ -601,6 +535,13 @@
     var inp = { sleep: $('#d-sleep'), hrv: $('#d-hrv'), rhr: $('#d-rhr') }, seg = $('[data-seg]');
     $('.controls').addEventListener('submit', function (e) { e.preventDefault(); });
     var out = function (k) { return $('[data-o="' + k + '"]'); }, d = function (k) { return $('[data-d="' + k + '"]'); };
+    /* on a phone the result sits a screen below the sliders: a live readout docks under the menu
+       while the sliders are on screen and the result itself is not */
+    var mini = function (k) { return $('[data-m="' + k + '"]'); };
+    var dockEl = $('.demo-mini'), seen = { ctl: false, res: false };
+    function dock() { dockEl.classList.toggle('on', seen.ctl && !seen.res); }
+    TK.whenVisible($('.controls-in'), function (on) { seen.ctl = on; dock(); }, { rootMargin: '-150px 0px -40% 0px' });
+    TK.whenVisible($('.demo-today .ringbox'), function (on) { seen.res = on; dock(); }, { rootMargin: '-120px 0px -110px 0px' });
     var ring = A.ring($('[data-ring-demo]'), { score: D.morning.score, segments: D.morning.segments });
     var shown = { s: D.morning.score }, session = 'heavy', liveT = null, prev = null;
     function hm(m) { return Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' m'; }
@@ -613,6 +554,7 @@
       var r = TracendDemo.compute(v);
       d('verdict').textContent = r.verdict; d('reason').textContent = r.reason;
       d('band').textContent = r.band; d('band').classList.toggle('good', r.good);
+      mini('band').textContent = r.band; mini('band').classList.toggle('good', r.good); mini('plan').textContent = r.plan.head;
       d('chips').innerHTML = r.chips.map(function (c) { return '<span class="a-chip ' + c.tone + '"><i></i><span>' + c.text + '</span></span>'; }).join('');
       if (!prev || prev.plan.head !== r.plan.head) {
         if (motion() && !first) G.fromTo([d('plan-head'), d('plan-body')], { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: TK.T.state, stagger: 0.04 });
@@ -621,8 +563,8 @@
       $$('i', d('lvl')).forEach(function (bar, k) { bar.style.backgroundColor = k <= 3 - r.plan.level ? (r.plan.level >= 2 ? '#F2B544' : '#C8F05A') : ''; });
       ring.set(r.score, r.segments);
       if (motion() && !first) {
-        G.to(shown, { s: r.score, duration: 0.5, ease: 'power2.out', overwrite: true, onUpdate: function () { ring.set(Math.round(shown.s)); ring.draw(1); d('score').textContent = Math.round(shown.s); } });
-      } else { shown.s = r.score; ring.draw(1); d('score').textContent = r.score; }
+        G.to(shown, { s: r.score, duration: 0.5, ease: 'power2.out', overwrite: true, onUpdate: function () { ring.set(Math.round(shown.s)); ring.draw(1); d('score').textContent = mini('score').textContent = Math.round(shown.s); } });
+      } else { shown.s = r.score; ring.draw(1); d('score').textContent = mini('score').textContent = r.score; }
       clearTimeout(liveT);
       liveT = setTimeout(function () { d('live').textContent = 'Recovery ' + r.score + ', ' + r.verdict + '. ' + r.plan.head + ' ' + r.plan.body; }, 500);
       prev = r;
@@ -647,22 +589,24 @@
         return G.from(self.lines, { yPercent: 108, duration: 1.15, stagger: 0.09, scrollTrigger: { trigger: h, start: 'top 88%', once: true } });
       } });
     });
-    $$('.sec .sec-sub, .own, .demo-grid, .versus').forEach(function (el) {
-      G.from(el, { y: 28, autoAlpha: 0, duration: TK.T.focal, scrollTrigger: { trigger: el, start: 'top 90%', once: true } });
-    });
+    /* each piece arrives as it comes into view. Pieces that enter together (side by side on a laptop) are staggered;
+       on a phone they are stacked, so each gets its own moment instead of one fade for a two-screen block */
+    var items = $$('.sec .sec-sub, .own > *, .soon-row, .controls, .demo-out > .a-card, .demo-note, .ys-mem, .ys-stage, .cq, .cc-dev, .nx-steps, .pg-dev, .wk, .bm-stage, .versus > *, .nx-dev, .close .join-wrap, .trust, .sec-cta');
+    G.set(items, { y: 28, autoAlpha: 0 });
+    ScrollTrigger.batch(items, { start: 'top 90%', once: true, onEnter: function (batch) {
+      G.to(batch, { y: 0, autoAlpha: 1, duration: TK.T.focal, ease: TK.EASE.out, stagger: 0.08, overwrite: true, clearProps: 'transform' });
+    } });
     var vsRing = $('[data-ring-vs]');
     ScrollTrigger.create({ trigger: '.versus', start: 'top 75%', once: true, onEnter: function () {
       G.from('.versus .coach-note', { autoAlpha: 0, y: 12, duration: TK.T.focal, delay: 0.5 });
       void vsRing;
     } });
-    ScrollTrigger.create({ trigger: '.close', start: 'top 75%', once: true, onEnter: function () { TK.setClock(cClock, '18:40'); } });
   }
 
   /* ---------- Boot ---------- */
-  setupBody(); setupCoach(); setupProgress(); setupPeople(); setupNext();
+  setupBody(); setupCoach(); setupProgress(); setupPeople(); setupStart();
   if (!motion()) {
     setupFlow(); setupDemo();
-    TK.setClock(cClock, '18:40', { instant: true });
     return;
   }
   TK.smooth();
@@ -673,6 +617,8 @@
   assemble();
   setupDemo();
   reveals();
-  window.addEventListener('resize', function () { sizePhone(); });
+  window.addEventListener('resize', sizePhone);
+  /* copy heights settle when the fonts land; size the phone again before triggers measure */
+  ScrollTrigger.addEventListener('refreshInit', sizePhone);
   TK.refreshOnFonts();
 })();

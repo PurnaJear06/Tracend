@@ -19,11 +19,6 @@ window.TRACEND_DAY = {
       ]
     },
     meal: {
-      when: 'Monday 20:31',
-      name: 'Dinner',
-      items: [['Grilled chicken thigh', '180 g'], ['Basmati rice', '220 g'], ['Broccolini', '90 g'], ['Tomato and cucumber salad', '120 g']],
-      macros: [['Protein', 52, 'g'], ['Carbs', 96, 'g'], ['Calories', 760, '']],
-      line: 'Chicken thigh, basmati rice, broccolini',
       /* the day's totals before and after dinner, and the target */
       totals: { kcal: [1380, 2140, 2600], protein: [96, 148, 160], carbs: [142, 238, 260], fat: [45, 64, 75] }
     }
@@ -69,15 +64,18 @@ window.TRACEND_DAY = {
     name: 'Lean down, keep strength', weeks: 20, week: 12, days: 4, start: 80.6, now: 77.3, goal: 75,
     kcal: '2,600', protein: 160
   },
-  /* The story in two acts: the evening Sam set the goal (week 1), then one day in week 12. */
+  /* The story: one day in week 12, from Monday's session to Tuesday's adjusted plan.
+     sb: the time on the phone's status bar when it differs (the sleep report is read in the morning). */
   beats: [
-    { id: 'goal', act: 1, day: 'Sunday', time: '21:14', tab: null, scr: 'goal', title: 'You set the goal.', line: 'Lose fat, keep strength: from 80.6 kg to 75. Then the days you can train, your equipment and anything to avoid.' },
-    { id: 'learn', act: 1, day: 'Sunday', time: '21:19', tab: null, scr: 'intake', title: 'It gets to know you.', line: 'Your usual months from Apple Health, your current lifts, and up to three questions from the coach.' },
-    { id: 'approve', act: 1, day: 'Sunday', time: '21:23', tab: null, scr: 'proposal', title: 'You approve the plan.', line: 'Twenty weeks, four days a week, starting loads, 2,600 kcal and 160 g protein a day, with the reasons. Nothing starts until you approve it.' },
-    { id: 'train', act: 2, day: 'Monday', time: '18:40', tab: 'train', scr: 'workout', title: 'You train.', line: 'Back squat, 5 sets of 5 at 120 kg. Every set logged with its effort. The last one is a new best.' },
-    { id: 'eat', act: 2, day: 'Monday', time: '20:30', tab: 'food', scr: 'meal', title: 'You eat.', line: 'One photo of dinner. Protein and calories, ready for you to check and confirm.' },
-    { id: 'sleep', act: 2, day: 'Monday', time: '23:10', tab: 'today', scr: 'sleep', title: 'You sleep.', line: 'Your watch keeps reading. 6 h 12 m, about an hour less than you need.' },
-    { id: 'read', act: 2, day: 'Tuesday', time: '06:45', tab: 'today', scr: 'today', title: 'Your body answers.', line: 'Short sleep after a heavy day. Recovery 36, under-recovered, with the reasons spelled out.' },
-    { id: 'plan', act: 2, day: 'Tuesday', time: '07:02', tab: 'today', scr: 'session', title: 'Today, adjusted.', line: 'Lighter pulls today, so the week still moves Sam toward 75 kg without losing strength.' }
+    { id: 'train', day: 'Monday', time: '18:40', tab: 'train', scr: 'workout', title: 'You train hard.', line: 'Back squat, 5 sets of 5 at 120 kg. The last set is a new best.' },
+    { id: 'sleep', day: 'Monday', time: '23:10', sb: '06:45', tab: 'today', scr: 'sleep', title: 'You sleep short.', line: '6 h 12 m on your watch, about an hour less than you need.' },
+    { id: 'read', day: 'Tuesday', time: '06:45', tab: 'today', scr: 'today', title: 'Your body answers.', line: 'Recovery 36. Under-recovered, after a short night and a heavy day.' },
+    { id: 'plan', day: 'Tuesday', time: '07:02', tab: 'today', scr: 'session', title: 'Today, adjusted.', line: 'Deadlift 3 × 3 at 140 kg, not 5 × 3 at 160. The week still moves Sam toward 75 kg.' }
+  ],
+  /* How a plan starts: the three onboarding moments, shown in "Start in three steps". */
+  start: [
+    { id: 'goal', time: '21:14', scr: 'goal' },
+    { id: 'learn', time: '21:19', scr: 'intake' },
+    { id: 'approve', time: '21:23', scr: 'proposal' }
   ]
 };
