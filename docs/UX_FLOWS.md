@@ -1670,6 +1670,56 @@ owns each purpose.
 - Withdrawing photo-AI consent stops new processing and applies
   [SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md).
 
+### Cycle tracking (2026-11-27)
+
+Optional and off until the athlete turns it on. Nothing below changes a screen for anyone who has not,
+and nothing is stored on the phone: every screen reads the server's answer
+(`get_my_cycle_v1`, see [DATA_MODEL.md](./DATA_MODEL.md)).
+
+- **Agreement.** Turning tracking on first asks for its own consent, **Cycle data** (a sheet with
+  **Agree** and **Not now**), recorded as `cycle_data` against the privacy page date. It is not one of
+  the agreements asked of everyone at launch. A refused call is worded plainly ("Cycle tracking is off.
+  Turn it on in Account to log periods."); the database's code is never shown.
+- **Onboarding, About you.** A "Your cycle" block at the foot of the step, only when sex is **Female**
+  or **Prefer not to say**, only when setting up for the first time (never in **Change my setup**) and
+  only when she has no cycle settings yet. "Take my menstrual cycle into account?" **Yes** / **Not
+  now**. Yes asks for the agreement, then "Which fits you best?" (Regular periods; Irregular or changing
+  (for example perimenopause); Hormonal contraception (pill, implant, hormonal IUD, injection, ring or
+  patch); No periods at the moment). The status is saved the moment it is chosen. For regular or
+  irregular, "When did your last period start?" (a date, or **Not sure**) and "How long is your cycle
+  usually?" (21 to 45 days, default 28, or **Not sure**) are saved with **Save**; the date is logged as
+  the start of a period. Answers go through the cycle RPCs, never the setup draft, and nothing here can
+  block **Continue**. A cycle that cannot be read hides the block.
+- **Account › Cycle tracking** (a row under Region, shown to everyone, "Off · optional, for periods and
+  your cycle" until it is on). The screen has **Track my cycle**, the cycle type, **Typical cycle
+  length** (regular or irregular only), **Read periods from Apple Health**, **Recent cycles** (start and
+  length; tap one to change that day), **Log or change a day** (bleeding: No period, Spotting, Light,
+  Medium, Heavy; cramps; first day of a period) and **Delete my cycle data** (confirm: "This removes
+  every period day and cycle answer. It can't be undone."). Every change is saved at once and says
+  "Not saved" when it was not. Turning tracking off keeps the days; deleting removes them and withdraws
+  the consent.
+- **Apple Health.** **Read periods from Apple Health** asks iOS for menstrual flow only now, then reads
+  180 days; after each health sync it reads the last 30 days, only while the switch is on. Days she logged
+  herself always win; "none" samples are ignored; spotting is logged by hand only. If the first read fails
+  the switch goes back off.
+- **Check-in.** With tracking on and a status other than No periods, the check-in has **Period today?**
+  (No / Yes; Yes asks the flow: Spotting, Light, Medium, Heavy, then cramps: None, Mild, Strong), placed
+  after the pain question, which says "For period cramps, use Period below." Each tap is saved at once and
+  shows **Saved** or **Not saved. Try again.** beside the question. It is not part of the check-in payload,
+  its queue or the "Discard changes?" guard, and a failed tap leaves the control showing what is stored.
+- **Today.** One quiet line under the plan, read after the brief and never part of the first paint: "Cycle
+  day 18 · period expected 8–12 Dec", "Period day 2", "Period is 4 days later than usual", "Cycle day 18"
+  (irregular, no range), or "Bleed day 2" (contraception, a bleed today). It is hidden when tracking is
+  off, for No periods, for contraception without a bleed today, when there is no data and whenever the read
+  fails. After 3 months without a period (6 for irregular) a neutral card says "No period logged for 3
+  months. If that's not expected for you, it's worth talking to a doctor." with **Log a period** and
+  **Update my cycle status**.
+- **Notes, never changes.** In the second half of a cycle (medium or high confidence) the recovery drivers
+  card adds "Second half of your cycle: resting heart rate often runs a little higher and HRV a little
+  lower. That's expected." Around a period the weight card adds "Weight often runs higher around a period
+  (water). Compare with the same point last cycle." The score, the trend and every number are unchanged.
+- Nothing about the cycle appears in notifications or the Home Screen and Lock Screen widgets.
+
 ## 14. Degraded and Edge States
 
 | State             | Required behavior                                                             |

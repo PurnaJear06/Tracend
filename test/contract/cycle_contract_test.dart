@@ -12,6 +12,9 @@ Map<String, dynamic> _fixture(String name) {
   return Map<String, dynamic>.from(json.decode(file.readAsStringSync()) as Map);
 }
 
+Map<String, dynamic> _first(Map<String, dynamic> source, String list) =>
+    (source[list] as List).first as Map<String, dynamic>;
+
 Map<String, dynamic> _copy(Map<String, dynamic> source) =>
     Map<String, dynamic>.from(json.decode(json.encode(source)) as Map);
 
@@ -134,13 +137,13 @@ void main() {
         with_((m) => (m['state'] as Map)['expected_to'] = '2026-13-40'),
         with_((m) => (m['state'] as Map)['no_period_long'] = null),
         with_((m) => (m['state'] as Map)['cycle_day'] = '18'),
-        with_((m) => (m['recent_days'] as List).first['flow'] = 'torrential'),
-        with_((m) => (m['recent_days'] as List).first['source'] = 'watch'),
-        with_((m) => (m['recent_days'] as List).first['source'] = null),
-        with_((m) => (m['recent_days'] as List).first['local_date'] = null),
-        with_((m) => (m['recent_days'] as List).first['is_start'] = 1),
-        with_((m) => (m['cycles'] as List).first['used'] = null),
-        with_((m) => (m['cycles'] as List).first['start_date'] = 'Oct 13'),
+        with_((m) => _first(m, 'recent_days')['flow'] = 'torrential'),
+        with_((m) => _first(m, 'recent_days')['source'] = 'watch'),
+        with_((m) => _first(m, 'recent_days')['source'] = null),
+        with_((m) => _first(m, 'recent_days')['local_date'] = null),
+        with_((m) => _first(m, 'recent_days')['is_start'] = 1),
+        with_((m) => _first(m, 'cycles')['used'] = null),
+        with_((m) => _first(m, 'cycles')['start_date'] = 'Oct 13'),
         with_((m) => m['cycles'] = 'none'),
       ]) {
         expect(

@@ -718,6 +718,24 @@ phone; the widgets never call the network and hold no token.
 - **Telemetry.** Sentry breadcrumbs (`home_widgets`) carry the method name only, never the
   snapshot.
 
+### Cycle data in the app (2026-11-27)
+
+- **No local storage.** The app keeps nothing about the cycle on the phone: no preferences, no cache, no
+  queue (`test/local_data_privacy_test.dart` still lists every file that stores). Every screen reads the
+  server's answer, and a period that cannot be saved says so instead of waiting on the phone. The cycle
+  is not in `today_widget_snapshot.dart`, notifications or any Live Activity.
+- **Consent.** `cycle_data` is recorded by the app (`source` `ios_app`, notice version `2026-11-27`)
+  before tracking can be turned on, apart from `LegalConsent`, which is asked of every athlete.
+- **Apple Health.** Menstrual flow is a separate HealthKit read, requested only when she turns on **Read
+  periods from Apple Health** (iOS prompts only for undecided types). `NSHealthShareUsageDescription` names
+  period days. The app sends only `local_date`, `flow` and `is_start` per day, drops "none" samples and
+  never reads spotting from Apple Health.
+- **Crash reports.** `lib/app/sentry_scrubber.dart` drops keys that start with `cycle_`, `menstrua` or
+  `cramp` and the exact keys `flow` and `period`, and removes such key and value pairs from free text.
+  Parts of other keys (`workflow`, `lifecycle`, `periodDays`) are left alone.
+- **Privacy page.** `site/src/pages/privacy.astro` has a Cycle data section and the date 27 November 2026,
+  which is `LegalNotices.privacyVersion`; athletes agree to the privacy notice and health data again once.
+
 ## 11. Retention
 
 Initial private-beta defaults:

@@ -111,7 +111,7 @@ void main() {
         cycleRecoveryNote(
           answer(CyclePhase.secondHalf, CycleConfidence.medium),
         ),
-        "Second half of your cycle: resting heart rate often runs a little "
+        'Second half of your cycle: resting heart rate often runs a little '
         "higher and HRV a little lower. That's expected.",
       );
       expect(
