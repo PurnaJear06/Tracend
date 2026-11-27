@@ -31,6 +31,7 @@ export const contributorGrounding: Readonly<Record<string, ContributorGrounding>
   nutrition_state: "records",
   coach_proposals: "records",
   heart_rate_profile: "records",
+  cycle: "records",
   coach_notes: "records",
   watch_outs: "records",
   coverage_brief: "records",

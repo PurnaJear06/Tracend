@@ -34,10 +34,11 @@ type Rule = Readonly<{
   pattern: RegExp;
   /**
    * A phrase-level exemption: true when this match, with the few words around it, is a known
-   * benign phrase ("breathe through my nose", "tingling" from beta-alanine). Never a clause-wide
-   * exemption: a benign word elsewhere in the clause does not cover a symptom.
+   * benign phrase ("breathe through my nose", "tingling" from beta-alanine, "severe period pain").
+   * Never a clause-wide exemption: a benign word elsewhere in the clause does not cover a symptom.
+   * `message` is the whole normalized message, for an exemption that a word anywhere in it voids.
    */
-  benign?: (matched: string, nearby: string) => boolean;
+  benign?: (matched: string, nearby: string, message: string) => boolean;
   /**
    * Any mention that reaches the patterns is a hit: no negation, conditional or educational
    * exemption. Self-harm and eating-disorder behaviour: a false referral is acceptable there.
@@ -49,7 +50,7 @@ const rule = (
   id: string,
   category: RedFlagCategory,
   source: string,
-  benign?: (matched: string, nearby: string) => boolean,
+  benign?: (matched: string, nearby: string, message: string) => boolean,
   noExemptions = false,
 ): Rule => ({ id, category, pattern: new RegExp(source, "g"), benign, noExemptions });
 
@@ -58,6 +59,27 @@ const nasalBlockage =
   /\bbreath(?:e|ing) through (?:my |the |your )?nose\b|\bstuffy nose\b|\bnasal congestion\b|\b(?:blocked|congested|stuffy) nose\b|\bnose (?:is |was )?(?:blocked|stuffy|congested)\b/;
 const supplementTingle = /^(?:tingl|pins and needles)/;
 const tingleSupplement = /beta[- ]?alanine|niacin/;
+// Period pain is not an injury (cycle support, 2026-11-27): "severe period pain", "sharp pains on
+// my period", "period pain 8/10" reach Coach, which says when a doctor is worth seeing. Only a pain
+// match is excused (never a pop, a tear or a joint that gave way), only with a menstrual word next
+// to it ("period" alone is not one: "a rest period", "a period of two weeks"), and never when the
+// message anywhere names a body part, an injury, a sudden onset or one side, so "severe pain in my
+// knee during my period" and "sharp pain and a pop on my period" are still referred. Dizziness,
+// fainting, chest pain, pregnancy and medication have their own rules and no such exemption.
+const painMatch = /\bpains?\b/;
+const menstrualWords =
+  /\bmenstrua\w*|\bmenses\b|\bdysmenorrh\w*|\btime of (?:the )?month\b|\bperiod (?:pains?|cramps?|cramping)\b|\b(?:my|her|on|during) periods?\b(?! of\b)/;
+const injuryOrAcute = new RegExp(
+  String
+    .raw`\b(?:knees?|shoulders?|elbows?|ankles?|wrists?|hips?|back|neck|hamstrings?|quads?|calf|calves|groin|muscles?|tendons?|ligaments?|joints?|biceps?|triceps?|pecs?|achilles|ribs?|foot|feet|legs?|arms?|thumbs?|fingers?|toes?|chest|head|eyes?|bones?)\b|\b(?:pop\w*|snap\w*|tear|tore|torn|rip\w*|crack\w*|sprain\w*|swell\w*|swollen|injur\w*|fell|fall(?:en)?|landed|twist\w*|sudden\w*|out of nowhere|one side|left side|right side|fever|can'?t (?:put weight|bear weight|move|walk|stand))\b`,
+);
+const periodPain = (matched: string, nearby: string, message: string) =>
+  painMatch.test(matched) && menstrualWords.test(nearby) && !injuryOrAcute.test(message);
+
+// Menstrual and hormonal conditions an athlete may ask to have named ("do I have PCOS?", "could
+// this be endometriosis?"): a diagnosis request, answered by the clinical-boundary text.
+const cycleConditionWords = String
+  .raw`pcos|pcod|polycystic ovar\w*|endometriosis|adenomyosis|pmdd|fibroids?|hormon(?:e|al) imbalance|(?:peri-?)?menopause|amenorrh\w*`;
 
 // Listed from the most urgent; a message that matches several gets the first rule here.
 const rules: readonly Rule[] = [
@@ -147,6 +169,7 @@ const rules: readonly Rule[] = [
     "injury_pain",
     String
       .raw`\b(?:sharp|severe|sudden|stabbing|shooting|excruciating|intense|searing|tearing|piercing|unbearable|agonising|agonizing)(?: \w+){0,2} pains?\b|\bpains?\b.{0,25}\b(?:sharp|severe|sudden|stabbing|shooting|excruciating|unbearable|agonis\w+|agoniz\w+)\b|\b(?:heard|felt|got|had) (?:a )?(?:loud )?(?:pop|snap|crack|tear|rip)(?:ping)?\b|\b(?:feel|hear|get|have) (?:a |an )?(?:loud |sudden |sharp )?(?:pop|snap|tear|rip)(?:ping)?\b.{0,40}\b(?:knee|knees|shoulder|elbow|ankle|wrist|hip|back|neck|hamstring|quad|quads|calf|groin|muscle|tendon|ligament|joint|bicep|tricep|pec|achilles|rib|foot|leg|arm|thumb|finger)\b|\b(?:knee|knees|shoulder|elbow|ankle|wrist|hip|back|neck|hamstring|quad|quads|calf|groin|muscle|tendon|ligament|joint|bicep|tricep|pec|achilles|rib|foot|leg|arm|thumb|finger) (?:just |suddenly )?(?:popped|snapped|tore|ripped|gave (?:way|out)|locked(?: up)?|buckled)\b|\b(?:pop|snap|tear|rip)(?:ping)? in (?:my |the )?(?:knee|knees|shoulder|elbow|ankle|wrist|hip|back|neck|hamstring|quad|quads|calf|groin|muscle|tendon|ligament|joint|bicep|tricep|pec|achilles|rib|foot|leg|arm|thumb|finger)\b|\b(?:something|it) (?:just )?(?:popped|snapped|tore|ripped|gave way)\b|\b(?:pulled|tore|torn|ruptured|snapped|dislocated|fractured|broke|broken) (?:a |my )?(?:\w+ ){0,3}(?:muscle|tendon|ligament|acl|mcl|hamstring|quad|bicep|tricep|pec|shoulder|knee|rotator cuff|achilles|meniscus|disc|rib|bone|wrist|ankle|elbow)\b|\b(?:[7-9]|10)\s*(?:/|out of)\s*10\b.{0,20}\bpain\b|\bpain\b.{0,20}\b(?:[7-9]|10)\s*(?:/|out of)\s*10\b|\bcan'?t (?:put weight on|bear weight|move my|lift my arm)\b`,
+    periodPain,
   ),
   rule(
     "numbness",
@@ -161,7 +184,7 @@ const rules: readonly Rule[] = [
     "diagnosis_request",
     "scope",
     String
-      .raw`\bdiagnose\b|\bdiagnosing\b|\bwhat(?:'s| is) wrong with me\b|\bdo i have (?:a |an )?(?:disease|disorder|condition|syndrome|hernia|tear|fracture|cancer|diabetes|arrhythmia|infection)\b`,
+      .raw`\bdiagnose\b|\bdiagnosing\b|\bwhat(?:'s| is) wrong with me\b|\bdo i have (?:a |an )?(?:disease|disorder|condition|syndrome|hernia|tear|fracture|cancer|diabetes|arrhythmia|infection|${cycleConditionWords})\b|\b(?:is|could|might|can) (?:it|this|that|my \w+) (?:be|mean|a sign of) (?:a |an )?(?:sign of )?(?:${cycleConditionWords})\b`,
   ),
   rule(
     "medical_report",
@@ -380,7 +403,7 @@ export function screenMessage(question: string): RedFlagHit | null {
           Math.max(0, match.index - 40),
           match.index + match[0].length + 40,
         );
-        if (candidate.benign?.(match[0], nearby)) continue;
+        if (candidate.benign?.(match[0], nearby, normalized)) continue;
         if (candidate.noExemptions || reported(clause, match.index, match[0].length, normalized)) {
           return { category: candidate.category, rule: candidate.id, source: "message" };
         }

@@ -6,9 +6,10 @@
 //
 // Changing this text changes the cached prompt prefix, so bump `version` with any edit.
 
-export const coachingPrinciplesVersion = 3;
+export const coachingPrinciplesVersion = 4;
 
-export const coachingPrinciplesText = `Coaching principles (Tracend library digest v${coachingPrinciplesVersion}). General guidance for healthy adults. Tracend's rules and the athlete's data set every number in a plan; this digest grounds how to explain and coach.
+export const coachingPrinciplesText =
+  `Coaching principles (Tracend library digest v${coachingPrinciplesVersion}). General guidance for healthy adults. Tracend's rules and the athlete's data set every number in a plan; this digest grounds how to explain and coach.
 
 TRAINING
 - Volume is the main lever for muscle size: more weekly hard sets per muscle tend to give more growth, with diminishing returns; about 10 or more weekly sets per muscle is best supported, and a time-pressed person can still progress on as few as 4. [schoenfeld_2017_weekly_volume; iversen_2021_time_efficient]
@@ -20,7 +21,8 @@ TRAINING
 - Deloads are an expert practice, not a proven requirement: say so. [bell_2023_deloading]
 - Cardio and lifting combine without hurting muscle or maximal strength gains (explosive power may blunt slightly). Full range of motion is the default for legs; a comfortable shorter range suits the arms when a joint complains. [schumann_2022_concurrent_training; schoenfeld_2020_range_of_motion]
 - Time off: strength is readily kept for up to about 4 weeks of inactivity (muscle fibre size and recent gains fade first), so a short break rarely undoes a regular lifter's progress; longer breaks cost more. [mujika_2001_muscular_detraining; bosquet_2013_training_cessation]
-- Home and others: bands built strength about as well as conventional weights; bodyweight alone was not tested. The menstrual cycle may trivially change performance, so follow the athlete's own pattern, not cycle day. Older adults benefit from lifting. [lopes_2019_elastic_resistance; mcnulty_2020_menstrual_cycle; fragala_2019_older_adults]
+- Home and others: bands built strength about as well as conventional weights; bodyweight alone was not tested. Older adults benefit from lifting. [lopes_2019_elastic_resistance; fragala_2019_older_adults]
+- Menstrual cycle: phase changes performance trivially if at all, and phase-based programmes are not evidence-based, so follow how the athlete feels and performs, never cycle day; on the pill performance is steady across the pack. Wearable data (not a library source) shows resting heart rate often a little higher and HRV a little lower in the second half of a natural cycle, and weight runs a little higher around a period (water): explain, never adjust. Period pain that is severe or unusual, very heavy bleeding or an unexpected missed period: see a doctor. Never estimate fertility or ovulation, advise on contraception or name a condition the athlete has not named. [mcnulty_2020_menstrual_cycle; colenso_semple_2023_menstrual_cycle_resistance; elliott_sale_2020_oral_contraceptives_performance]
 
 CARDIO AND DAILY ACTIVITY
 - Adults need 150 to 300 minutes a week of moderate activity (or 75 to 150 of vigorous) plus muscle-strengthening on 2 or more days; something beats nothing; the least active gain most. [who_2020_activity_guidelines; acsm_2011_exercise_quantity]

@@ -399,6 +399,7 @@ void main() {
       );
       for (final name in [
         'ai-coaching-v6',
+        'ai-coaching-v7',
         'meal-photo-ai-v2',
         'progress-photo-ai-v2',
       ]) {

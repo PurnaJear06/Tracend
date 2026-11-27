@@ -426,10 +426,12 @@ export function planText(plan: OnboardingPlan): string {
   ].join("\n");
 }
 
-// A deficit, a cut or weight loss, after the phrases that say there is none are taken out.
-const noDeficit =
-  /\b(?:no|not a|not in a|rather than a|instead of a|without a)\s+(?:calorie\s+)?deficit\b/gi;
-const deficitClaim =
+// A deficit, a cut or weight loss, after the phrases that say there is none are taken out: "no
+// deficit", "rather than in a deficit", "pause the deficit", "no weight loss", "don't eat less". The
+// Coach reply guard reads the same two (coach_safety/reply_guard.ts, deficit_advice_with_long_gap).
+export const noDeficit =
+  /\b(?:no|not a|not in a|rather than (?:in )?a|instead of (?:in )?a|without a|out of (?:a|the|your)|(?:pause|pausing|stop|stopping|end|ending|leave|leaving) (?:a|the|your)|hold off on (?:a|the|your))\s+(?:calorie\s+)?deficit\b|\b(?:no|not|never|don'?t|do not|avoid|instead of|rather than)\s+(?:to\s+)?(?:try(?:ing)? to\s+)?(?:eat(?:ing)? less|los(?:e|ing) weight|weight loss|fat loss)\b/gi;
+export const deficitClaim =
   /\b(?:deficit|fat loss|fat-loss|lose fat|losing fat|burn fat|burning fat|calorie cut|cutting phase|cut phase|lose weight|losing weight|weight loss|weight-loss|eat less|below maintenance|under maintenance|lose (?:about |around |up to )?\d|kg (?:a|per) week)\b/i;
 
 /** The plan's text claims a deficit or weight loss while NutritionPolicy.healthyWeightHold applies. */

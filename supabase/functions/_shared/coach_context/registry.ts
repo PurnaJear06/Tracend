@@ -12,6 +12,7 @@ import { readinessContributor } from "./contributors/readiness.ts";
 import { trainingGuidanceContributor } from "./contributors/training_guidance.ts";
 import { watchOutsContributor } from "./contributors/watch_outs.ts";
 import { heartRateContributor } from "./contributors/heart_rate.ts";
+import { cycleContributor } from "./contributors/cycle.ts";
 import { confirmedFactsContributor } from "./contributors/confirmed_facts.ts";
 import { coachNotesContributor } from "./contributors/coach_notes.ts";
 import { coachingPrinciplesContributor } from "../library/principles.ts";
@@ -26,7 +27,10 @@ import { standingStateContributor } from "./contributors/standing_state.ts";
 // (B4/B5: band, adjustment, safety route and joint areas, read-only, right after the plan), the
 // training guidance (B5-3/B5-4: a lighter week and the week's cardio, read-only, right after the
 // card), the watch-outs (the facts
-// computed across several kinds of record), the heart-rate profile (C3), the athlete's confirmed facts
+// computed across several kinds of record), the heart-rate profile (C3), the menstrual cycle (cycle
+// support v1: only under a notice that names cycle data, and only with tracking on; right after the
+// heart-rate profile, since both explain recovery signals, and before the watch-outs, which read
+// the same state), the athlete's confirmed facts
 // (A10 part 2, stable: they change only when the athlete changes them), the Coach's own notes
 // (A10 part 2, untrusted and capped) and the library (E3: the chunks found for this turn's
 // question) and, last, the standing state (what the athlete approved and said: today's availability,
@@ -50,6 +54,7 @@ export const coachContextContributors: readonly CoachContextContributor[] = Obje
   nutritionStateContributor,
   proposalsContributor,
   heartRateContributor,
+  cycleContributor,
   coachNotesContributor,
   watchOutsContributor,
   coverageBriefContributor,

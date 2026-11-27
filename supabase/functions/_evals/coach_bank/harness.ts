@@ -13,6 +13,8 @@ import { createTrainingPlanContributor } from "../../_shared/coach_context/contr
 import { createScreeningContributor } from "../../_shared/coach_context/contributors/screening.ts";
 import { createCoverageBriefContributor } from "../../_shared/coach_context/contributors/coverage_brief.ts";
 import { createWatchOutsContributor } from "../../_shared/coach_context/contributors/watch_outs.ts";
+import { createCycleContributor } from "../../_shared/coach_context/contributors/cycle.ts";
+import { noticeScopes } from "../../_shared/ai_notice_coverage.ts";
 import {
   createStandingStateContributor,
   parseStandingState,
@@ -46,6 +48,9 @@ import type { Athlete, BankCase, Contributors, DataRequest, Reply, Turn } from "
 export type PreparedRun = Prepared & Readonly<{ firstRound: CoachContributions }>;
 
 const evalUserId = "eval-athlete";
+
+/** The AI coaching notice live in production: what a case's athlete accepted unless it says. */
+export const bankNoticeVersion = "ai-coaching-v6";
 
 /** The chunks of the given sources, as the search would return them, in the order given. */
 export function libraryRowsOf(keys: readonly string[]): LibraryRow[] {
@@ -165,6 +170,12 @@ function contributorsOf(athlete: Athlete, options: TurnOptions = {}): CoachConte
   if (contributors.goalPhase) {
     list.push(createGoalPhaseContributor(() => Promise.resolve(contributors.goalPhase)));
   }
+  // The real cycle block over the case's payload; it renders only under a notice that names cycle
+  // data, as in production.
+  const cycle = contributors.cycle === undefined
+    ? undefined
+    : () => Promise.resolve(contributors.cycle);
+  if (cycle) list.push(createCycleContributor(cycle));
   if (contributors.trainingPlan || contributors.watchFacts || contributors.schedule) {
     // The real watch-outs over the case's payloads: the plan state, the facts, the last weeks' plan.
     list.push(createWatchOutsContributor({
@@ -172,6 +183,7 @@ function contributorsOf(athlete: Athlete, options: TurnOptions = {}): CoachConte
       facts: () => Promise.resolve(contributors.watchFacts ?? null),
       schedule: () => Promise.resolve(contributors.schedule ?? null),
       standing,
+      ...(cycle ? { cycle } : {}),
     }));
   }
   // The real Coverage Brief over the athlete's index (the simulator's personas carry one) or one
@@ -211,6 +223,7 @@ export function renderTurn(
     question,
     localDate: String(athlete.context.coaching_date),
     previousQuestions,
+    noticeScopes: noticeScopes(athlete.contributors.noticeVersion ?? bankNoticeVersion),
   });
 }
 

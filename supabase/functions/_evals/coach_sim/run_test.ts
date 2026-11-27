@@ -4,8 +4,11 @@ import { capShare, estimateRun, fewestTurns, fitRun } from "./run.ts";
 import { conversations } from "./scenarios.ts";
 
 // The sizes below are pinned on the run before the standing-state scenarios (2026-11-01), which
-// change the athlete's records in a setup; a run that includes them is sized by the same rules.
-const all = conversations().filter((conversation) => conversation.scenario.setup === undefined);
+// change the athlete's records in a setup, and before the cycle personas (2026-11-27); a run that
+// includes them is sized by the same rules.
+const all = conversations().filter((conversation) =>
+  conversation.scenario.setup === undefined && !conversation.persona.startsWith("cycle_")
+);
 const base = {
   conversations: all,
   athleteModel: "deepseek-v4-flash",

@@ -35,6 +35,7 @@ Deno.test("the registry is valid and holds the contributors registered so far", 
     "nutrition_state",
     "coach_proposals",
     "heart_rate_profile",
+    "cycle",
     "coach_notes",
     "watch_outs",
     "coverage_brief",
@@ -45,6 +46,7 @@ Deno.test("the registry is valid and holds the contributors registered so far", 
     "stable",
     "stable",
     "stable",
+    "volatile",
     "volatile",
     "volatile",
     "volatile",
@@ -184,6 +186,8 @@ Deno.test("the coverage brief and the library, which need the gateway's answer f
   assertEquals(legacy.includes("library"), false);
   assertEquals(legacy.includes("training_plan"), true);
   assertEquals(legacy.includes("heart_rate_profile"), true);
+  // The cycle block renders only under a notice that names cycle data, on either route.
+  assertEquals(legacy.includes("cycle"), true);
   validateCoachContextContributors(coachContextContributorsFor(false));
 });
 

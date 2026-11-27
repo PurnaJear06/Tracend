@@ -33,6 +33,8 @@ import {
 } from "../coach_safety/reply_guard.ts";
 import { renderSafeRanges, safeRangesOf } from "../coach_safety/safe_ranges.ts";
 import { screeningStateOf } from "../coach_context/contributors/screening.ts";
+import { cycleLongGapIn } from "../coach_context/contributors/cycle.ts";
+import { confirmedFactsContributorId } from "../coach_context/contributors/confirmed_facts.ts";
 import {
   describeLookupCatalogue,
   maxLookupRounds,
@@ -1411,6 +1413,15 @@ export function replyCheckInputsFor(
       Object.entries(contributions?.shown ?? {}).map(([id, source]) => [id, source.label]),
     ),
     athleteText: [question, ...athleteMessages(context)],
+    athleteWords: [
+      question,
+      ...athleteMessages(context),
+      ...(typeof obj(context.profile_context).limitations === "string"
+        ? [obj(context.profile_context).limitations as string]
+        : []),
+      contributions?.texts?.[confirmedFactsContributorId] ?? "",
+    ],
+    cycleLongGap: cycleLongGapIn(contributions),
     ...(previous
       ? {
         repetition: {
@@ -1636,6 +1647,12 @@ function repairRuleHint(rule: CoachChatValidationRule, detail?: string): string 
       return "Remove the advice to train at vigorous or maximal effort (to failure, sprints, intervals, heavy singles). The health check caps this athlete's effort: follow the Rule line of the screening reference data exactly (moderate effort only, or no training prescriptions at all) and recommend getting a professional's clearance.\n";
     case "training_advice_on_pain_day":
       return "Remove all training advice (sets, reps, loads, durations, cardio, workouts, a programme). The athlete's check-in today reported pain of 7 or more: say the pain is too high to train through and recommend a doctor or physio. Food, sleep and recovery questions may still be answered.\n";
+    case "fertility_or_contraception_claim":
+      return 'Remove every estimate of fertile days, ovulation day, "safe days" or the chance of pregnancy, and every piece of contraception advice (starting, stopping, switching or skipping it, or how well it works). Tracend tracks a cycle only to read recovery, weight and energy fairly and makes no fertility or contraception claims: say that, and that a doctor, nurse or pharmacist can help with those questions. General cycle physiology may stay.\n';
+    case "cycle_condition_named":
+      return "Remove the name of every menstrual or hormonal condition the athlete has not named herself (for example PCOS, endometriosis, PMDD, fibroids, perimenopause or a hormonal imbalance), including in a sentence that says she may not have it. Never suggest a cause or a diagnosis. Describe what she noticed in plain words and, if it is unusual, painful or worrying, suggest she talks to a doctor.\n";
+    case "deficit_advice_with_long_gap":
+      return "Remove all advice to eat less, cut calories, keep or deepen a deficit or lose weight faster: the cycle reference data says no period has been logged for a long time. Suggest keeping calories at maintenance or above for now, and say it is worth talking to a doctor if this is not expected for her. Do not say why it happened.\n";
     case "lookup_request_invalid":
       return `The data_requests you returned were refused${
         detail ? `: ${detail}` : ""

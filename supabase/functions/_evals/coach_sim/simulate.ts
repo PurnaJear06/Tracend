@@ -13,7 +13,8 @@ import { screenTurn } from "../../_shared/coach_safety/red_flags.ts";
 import { stateFixture } from "../../_shared/coach_proposals/fixtures.ts";
 import { coachReplyCheckFor } from "../../_shared/providers/coach_chat_provider.ts";
 import { previousQuestionsOf } from "../../_shared/library/query.ts";
-import { answerTurn, renderTurn } from "../coach_bank/harness.ts";
+import { answerTurn, bankNoticeVersion, renderTurn } from "../coach_bank/harness.ts";
+import { noticeScopes } from "../../_shared/ai_notice_coverage.ts";
 import type { DataRequest, GraderResult, Turn } from "../coach_bank/types.ts";
 import { type Generate, priceTokens, runPool } from "../live_model.ts";
 import {
@@ -175,7 +176,12 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
     const persona = personaById(conversation.persona);
     const base = athleteFor(scenario, persona.athlete());
     const search = wordSearch(persona.region);
-    const runner = createLookupRunner(recordsRpc(persona.records, persona.extras), "sim-athlete");
+    // The data the athlete's notice names reaches the rows, as in production (coach-chat).
+    const runner = createLookupRunner(
+      recordsRpc(persona.records, persona.extras),
+      "sim-athlete",
+      noticeScopes(base.contributors.noticeVersion ?? bankNoticeVersion),
+    );
     const proposalState = proposalStateOf(persona.records, stateFixture(), persona.profile);
     let turnTokens: TokenCounts[] = [];
     let turnAnswers: string[] = [];

@@ -75,6 +75,13 @@ export type Contributors = Readonly<{
   lookupRows?: Readonly<Record<string, readonly LookupRow[]>>;
   /** A get_coach_watch_outs_v1 payload for the watch_outs contributor, or none. */
   watchFacts?: unknown;
+  /**
+   * A coach_cycle_state_v1 payload for the cycle contributor and the watch-outs, or none. It reaches
+   * the turn only under a notice that names cycle data (`noticeVersion`).
+   */
+  cycle?: unknown;
+  /** The AI coaching notice the athlete accepted. Default: the live one (`bankNoticeVersion`). */
+  noticeVersion?: string;
   /** A plan_history "schedule" payload for the last four weeks (repeated misses), or none. */
   schedule?: unknown;
   /**

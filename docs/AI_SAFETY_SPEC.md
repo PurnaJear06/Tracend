@@ -537,7 +537,18 @@ window before the match, with no `and`, `but` or comma between. A possessive dir
 symptom ("my chest feels tight"), a self-report in the clause ("I get", "I feel"), or "it happens
 to me" anywhere in the message defeats the conditional and educational exemptions. An exemption inside a symptom rule is a benign phrase next to the match ("breathe through my nose",
 "stuffy nose", "nasal congestion"; tingling next to beta-alanine or niacin), never a word elsewhere in
-the clause; "numb" and "loss of feeling" are never excused. A denial that stops at a point in time
+the clause; "numb" and "loss of feeling" are never excused. Period pain is the one benign phrase of
+the pain rule (cycle support, 2026-11-27): a pain match ("severe period pain", "sharp pains on my
+period", "period pain 8/10") with a menstrual word next to it ("period pain", "my period", "on my
+period", "menstrual"; "period" alone is not one, so "a rest period" is not) reaches Coach, and only
+when nothing anywhere in the message names a body part, an injury (pop, snap, tear, sprain, swelling,
+a fall), a sudden onset, one side or a fever; a pop, a tear or a joint that gave way is never excused.
+"Severe pain in my knee during my period", "sharp pain and a pop" and "severe period pain, I fell"
+are referred, and dizziness, fainting, chest pain, pregnancy and medication keep their own rules
+("heavy bleeding and I feel dizzy" is a dizziness referral, "severe period pain, could I be
+pregnant?" the pregnancy boundary). Coach is told, in the cycle block and the principles digest,
+that severe or unusual period pain, very heavy bleeding or an unexpected missed period is worth a
+doctor's visit. A denial that stops at a point in time
 ("never had chest pain until today's run", "no dizziness until this morning") is a report. Self-harm and
 eating-disorder patterns have no exemption at all: any mention is a hit. A negation counts only when
 its cue is directly before the symptom with a few filler words between ("no", "any", "feel",
@@ -561,8 +572,9 @@ sleep and recovery questions still reach the model, which is told in its Safe Ra
 give no training advice that day. Urgent referrals (heart, fainting, breathing, stroke, blood,
 self-harm, eating) name the emergency number; pain and numbness referrals send the athlete to a
 doctor or physio before the area is trained again; the self-harm answer adds crisis lines. No
-referral diagnoses or reassures. Requests Tracend does not support (diagnosis, medical reports,
-rehabilitation, pregnancy and postpartum, medication advice and interactions) get the fixed
+referral diagnoses or reassures. Requests Tracend does not support (diagnosis, including asking
+whether a cycle condition such as PCOS, endometriosis, PMDD, fibroids or a hormonal imbalance is the
+cause, medical reports, rehabilitation, pregnancy and postpartum, medication advice and interactions) get the fixed
 clinical-boundary answer (`refused`). "I take medication, can I train?" and ordinary soreness are
 not hits. The wider screen behind the data summary (§12) includes every message this one catches.
 The log carries the rule that fired (`coach_chat_red_flag`: category, rule, source), never the
@@ -876,6 +888,17 @@ lookups grew, and `coach-chat` passes the athlete's accepted notice version to t
   HRV (HRV), workout minutes and the watch's workouts (workouts), proposals and daily decisions
   (Tracend's own text about the plan, targets and goals the notice names), and Coach's own earlier
   replies (the conversation memory has always sent them; they carry no new data).
+- **Cycle data (`cycle_data`, cycle support v1, 2026-11-27):** the athlete's cycle answers and the
+  period days she logs or allows from Apple Health (`coach_cycle_state_v1`, service role only). No
+  published notice names it, and no lookup carries it: the `cycle` contributor and the watch-outs'
+  reading of the cycle read nothing and render nothing without the scope, so an athlete under v6
+  gets the turn she got before cycle support, with no "withheld" line (tested). With the scope and
+  tracking off, or after "Delete my cycle data", nothing renders either.
+- **Opened by `ai-coaching-v7`** (`docs/notices/ai-coaching-v7.md`, a draft): it names workout notes,
+  breathing rate, active energy and cycle data, and `firstNoticeNaming` is 7 for the three gated
+  scopes, so they open for an athlete only once the owner publishes v7 and she accepts it. Every
+  later version opens them too, so a later notice (a rollback included, runbook step 6.2, now v8)
+  must name them.
 - **Already sent before this change, not named:** active energy (`health_daily_28d` in the athlete
   file since v8; the Coach list does not name it, the onboarding sentence does). Not gated here
   because it is not new; the next notice should name it.
@@ -1243,7 +1266,19 @@ routes stay available by settings alone for two weeks after the cutover.
   something, or offers to: it has no tools, so the repair says what the athlete can do in the app),
   `training_advice_on_pain_day` (any training prescription on a day of check-in pain of 7 or
   more), `numbers_not_grounded`, `citation_not_retrieved` (a library source id or a named study
-  the turn did not show; §11.2) and `repeats_previous_turn` (§12, "Repeats"). Every rule reads
+  the turn did not show; §11.2), `repeats_previous_turn` (§12, "Repeats"), and three cycle rules
+  (2026-11-27): `fertility_or_contraception_claim` (a fertile window, an ovulation day, "safe days",
+  the chance of pregnancy, natural family planning, or contraception advice: starting, stopping,
+  skipping or switching it, or how well it works; general physiology such as "after ovulation resting
+  heart rate tends to rise" passes, and so does a refusal governed by a prohibition, "I can't tell
+  you your fertile window"; on for every athlete, since it needs no data), `cycle_condition_named` (a
+  menstrual or hormonal condition, by family, that the athlete has not named in this conversation,
+  her onboarding limitations or her confirmed facts; a denial counts, "this doesn't mean you have
+  PCOS"; on for every athlete) and `deficit_advice_with_long_gap` (while the cycle block's
+  `Long gap without a period: yes` line stands, advice to eat less, cut calories, keep or deepen a
+  deficit or lose weight; a prohibition, a pause or a description of what she has been doing governs
+  the match from its window, "keep calories at maintenance" passes, and the onboarding plan check's
+  phrases are shared, `plan_contract.ts`). Every rule reads
   everything the athlete can see: the answer,
   the follow-up chips, the missing-data notes, the evidence labels and the reasoning chain, in one
   pass. Sentences that warn against a thing ("never go below ...") or
@@ -1350,7 +1385,21 @@ adapter still sends no tools.
   already uses (the evidence-code table, the app's "than usual", the goal phase's stale reading, the
   app's stale sync) and none is new; each line states its dates and figures, so the numbers check
   grounds a reply on them. A watch-out is a verified fact, not an instruction: Coach addresses it or
-  says why it does not matter, and a change stays a proposal the athlete approves.
+  says why it does not matter, and a change stays a proposal the athlete approves. Under a notice that
+  names cycle data, in the second half of a regular cycle at medium or high confidence, a resting heart
+  rate or HRV drift of one spread up to (not including) two is stated as what that part of the cycle
+  often brings, as a data line, not a watch-out; two spreads or more stays a watch-out.
+- **The menstrual cycle (`cycle` contributor, cycle support v1).** Volatile, after the heart-rate
+  profile, on both routes, read once a turn with the watch-outs (`coach_cycle_state_v1`, 1.5-second
+  deadline; a failed, late or unreadable read renders nothing and the trace says which). Only with
+  the `cycle_data` scope and tracking on. It states the athlete's status, today's cycle day and
+  phase with its confidence, the expected range, the typical and recent lengths, the long-gap and
+  water-weight flags and the last 14 logged days, all Tracend's calculation (`private.cycle_state`),
+  never the model's, then fixed rules: the evidence does not support changing training or food by
+  phase, so Coach never proposes or advises one and the athlete decides; the expected heart-rate,
+  HRV and water-weight shifts; when a doctor is worth seeing; and never fertility, ovulation,
+  pregnancy odds, contraception advice or a condition she did not name. Its dates, day numbers and
+  lengths are records; the rules' figures ground nothing. No lookup and no schema field were added.
 - **Heart-rate caution in the plan block (C4, D9).** The `training_plan` contributor adds fixed
   sentences, never a figure and never a changed target: on a step up (`add_load` or `add_reps`) "treat
   this step as less certain", worded "slower recovery than usual" only when the recovery trend (the

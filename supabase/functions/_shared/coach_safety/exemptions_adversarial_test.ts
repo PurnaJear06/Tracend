@@ -142,6 +142,39 @@ const messages: readonly MessageRow[] = [
   ["message", "I feel a bit weird today", "pass"],
   ["message", "my chest day workout felt great", "pass"],
   ["message", "What is my protein target?", "pass"],
+  // Period pain is not an injury (the severe_pain rule's benign phrase): it reaches Coach.
+  ["message", "I have severe period pain today, should I still train?", "pass"],
+  ["message", "sharp pains on my period, is lifting ok?", "pass"],
+  ["message", "my period pain is severe this month", "pass"],
+  ["message", "period pain 8/10 today, can I do a light session", "pass"],
+  ["message", "intense menstrual pain, what should I eat", "pass"],
+  ["message", "severe cramps and pain during my period", "pass"],
+  // The exemption opens no real red flag: a body part, an injury, a sudden onset or one side
+  // anywhere in the message, another symptom, or a menstrual word that is not next to the pain.
+  ["message", "severe pain in my knee during my period", "hit"],
+  ["message", "sharp pain and a pop during my period", "hit"],
+  ["message", "sharp pain and a pop", "hit"],
+  ["message", "severe period pain and my lower back hurts too", "hit"],
+  ["message", "sudden severe pain on my period", "hit"],
+  ["message", "sharp pain on my right side during my period", "hit"],
+  ["message", "severe period pain, I fell on the stairs", "hit"],
+  ["message", "severe period pain with a fever", "hit"],
+  ["message", "severe pain in the rest period between sets", "hit"],
+  ["message", "severe pain for a period of two weeks", "hit"],
+  ["message", "my period started. I also have severe pain", "hit"],
+  ["message", "I felt a tear on my period", "hit"],
+  ["message", "period pain so bad I feel dizzy", "hit"],
+  ["message", "I fainted during my period", "hit"],
+  ["message", "heavy bleeding on my period and I feel dizzy", "hit"],
+  ["message", "severe period pain, could I be pregnant?", "hit"],
+  ["message", "severe period pain, how much ibuprofen should I take", "hit"],
+  ["message", "chest pain during my period", "hit"],
+  // Asking for a cycle condition to be named is a diagnosis request; mentioning one is not.
+  ["message", "do I have PCOS?", "hit"],
+  ["message", "could this be endometriosis?", "hit"],
+  ["message", "is it a sign of a hormonal imbalance", "hit"],
+  ["message", "I have PCOS, does that change my training?", "pass"],
+  ["message", "how does training help with endometriosis symptoms", "pass"],
 ];
 
 const replies: readonly ReplyRow[] = [

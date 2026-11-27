@@ -16,7 +16,11 @@
 //
 // Inputs: the plan state (get_coach_plan_state_v1, shared with the training plan block), the facts
 // of get_coach_watch_outs_v1 and the plan laid over the last four weeks (plan_history, filter
-// schedule). Any one of them may fail; the lines that need it are then left out.
+// schedule). Any one of them may fail; the lines that need it are then left out. Under a notice that
+// names cycle data, the cycle state too (coach_cycle_state_v1, shared with the cycle block): in the
+// second half of a natural cycle that Tracend is sure enough of, a mild drift (from one spread up to
+// two) is what that part of the cycle brings, and is stated as that, not as a watch-out. Without
+// the scope it is never read and the lines are what they always were.
 import { minutesText } from "../../duration_text.ts";
 import { goalPhaseThresholds } from "../../training/goal_phase/thresholds.ts";
 import {
@@ -27,7 +31,8 @@ import {
 } from "../../training/schedule/week_ahead.ts";
 import { plain, record } from "../../recorded_text.ts";
 import { readScheduleBody, type ScheduleBody } from "../../training/schedule/lookup_body.ts";
-import { blockOf, type CoachContextContributor, sharedRead } from "../host.ts";
+import { blockOf, type CoachContextContributor, noticeOpens, sharedRead } from "../host.ts";
+import { cycleExplainsDrift, cycleStateFromService, readCycleState } from "./cycle.ts";
 import {
   coachServiceRpc,
   type ServiceRpc,
@@ -84,6 +89,11 @@ export const watchOutThresholds = Object.freeze({
   healthSyncStaleMs: 2 * 86_400_000,
   /** "Repeated" is twice running: the same exercise skipped in each of its last two sessions, the same session missed on its last two planned days. */
   repeatedTimes: 2,
+  /**
+   * Two spreads is "much higher" or "much lower" than usual in the app (driverComparison). In the
+   * second half of a natural cycle a drift under that is stated as expected, not as a watch-out.
+   */
+  cycleDriftSpreads: 2,
 });
 
 type Json = Record<string, unknown>;
@@ -205,6 +215,11 @@ export type WatchOutInputs = Readonly<{
   plan: PlanState | null;
   facts: WatchFacts | null;
   schedule: ScheduleBody | null;
+  /**
+   * The athlete is in the second half of a natural cycle at medium or high confidence, read under
+   * a notice that names cycle data (`cycleExplainsDrift`). Absent or false: no cycle is considered.
+   */
+  cycleSecondHalf?: boolean;
 }>;
 
 const oneDecimal = (value: number) => (Math.round(value * 10) / 10).toFixed(1);
@@ -367,21 +382,44 @@ function skippedExercises(facts: WatchFacts): string | null {
   }.`;
 }
 
-function drift(facts: WatchFacts): string | null {
+/**
+ * The resting heart rate and HRV parts of a drift, split into what is a watch-out and what the
+ * second half of a natural cycle explains (a drift under `cycleDriftSpreads`, when it does).
+ */
+function driftParts(
+  facts: WatchFacts,
+  cycleSecondHalf: boolean,
+): { date: string; watch: string[]; expected: string[] } | null {
   const m = facts.metrics;
   if (m === null) return null;
   const spreads = watchOutThresholds.driftSpreads;
-  const parts: string[] = [];
+  const watch: string[] = [];
+  const expected: string[] = [];
+  const sort = (z: number, part: string) =>
+    (cycleSecondHalf && z > -watchOutThresholds.cycleDriftSpreads ? expected : watch).push(part);
   if (m.rhrZ !== null && !m.missing.includes("resting_hr") && m.rhrZ <= -spreads) {
-    parts.push(`resting heart rate is ${record(oneDecimal(-m.rhrZ))} spreads above their usual`);
+    sort(m.rhrZ, `resting heart rate is ${record(oneDecimal(-m.rhrZ))} spreads above their usual`);
   }
   if (m.hrvZ !== null && !m.missing.includes("hrv_sdnn") && m.hrvZ <= -spreads) {
-    parts.push(`HRV is ${record(oneDecimal(-m.hrvZ))} spreads below their usual`);
+    sort(m.hrvZ, `HRV is ${record(oneDecimal(-m.hrvZ))} spreads below their usual`);
   }
-  if (parts.length === 0) return null;
-  return `On ${record(m.date)}, ${
-    parts.join(" and ")
+  return { date: m.date, watch, expected };
+}
+
+function drift(facts: WatchFacts, cycleSecondHalf: boolean): string | null {
+  const found = driftParts(facts, cycleSecondHalf);
+  if (found === null || found.watch.length === 0) return null;
+  return `On ${record(found.date)}, ${
+    found.watch.join(" and ")
   } (the recovery score's z-scores; the app calls one spread "than usual").`;
+}
+
+function cycleDrift(facts: WatchFacts, cycleSecondHalf: boolean): string | null {
+  const found = driftParts(facts, cycleSecondHalf);
+  if (found === null || found.expected.length === 0) return null;
+  return `On ${record(found.date)}, ${
+    found.expected.join(" and ")
+  }: within what the second half of a natural cycle often brings (see the cycle block), so expected, not a watch-out by itself.`;
 }
 
 function staleWeighIn(facts: WatchFacts): string | null {
@@ -446,6 +484,7 @@ export type WatchOut = Readonly<{ line: string; marked: string; kind: "decision"
  */
 export function computeWatchOuts(inputs: WatchOutInputs): WatchOut[] {
   const { plan, facts, schedule } = inputs;
+  const cycleSecondHalf = inputs.cycleSecondHalf === true;
   const candidates: (readonly [string | null, WatchOut["kind"]])[] = [
     [plan === null ? null : overlapFactLineMarked(weekAheadOf(plan).overlaps), "decision"],
     [plan === null || facts === null ? null : loadCheck(plan, facts), "decision"],
@@ -453,10 +492,11 @@ export function computeWatchOuts(inputs: WatchOutInputs): WatchOut[] {
     [plan === null ? null : behindPlan(plan), "decision"],
     [schedule === null ? null : missedSessions(schedule, plan), "decision"],
     [facts === null ? null : skippedExercises(facts), "decision"],
-    [facts === null ? null : drift(facts), "decision"],
+    [facts === null ? null : drift(facts, cycleSecondHalf), "decision"],
     [facts === null ? null : staleWeighIn(facts), "data"],
     [facts === null ? null : staleSync(facts), "data"],
     [facts === null ? null : planAge(facts), "data"],
+    [facts === null ? null : cycleDrift(facts, cycleSecondHalf), "data"],
   ];
   const found: WatchOut[] = [];
   let used = 0;
@@ -493,6 +533,8 @@ export type WatchOutSources = Readonly<{
   schedule: StateSource;
   /** The standing state (breaks, can't-train days); without it every planned day counts. */
   standing?: StandingStateSource;
+  /** The cycle state, read only under a notice that names cycle data; without it none is read. */
+  cycle?: StateSource;
 }>;
 
 /**
@@ -520,13 +562,17 @@ export function createWatchOutsContributor(
     slot: "volatile",
     budgetChars: watchOutsBudgetChars,
     async render(input) {
-      const [plan, facts, schedule, standing] = await Promise.allSettled([
+      const cycleRead = sources.cycle !== undefined && noticeOpens(input, "cycle_data")
+        ? readCycleState(input, sources.cycle)
+        : null;
+      const [plan, facts, schedule, standing, cycle] = await Promise.allSettled([
         sharedRead(input, planStateReadKey, () => sources.planState(input.userId, input.localDate)),
         within(sources.facts(input.userId, input.localDate), secondaryTimeoutMs),
         within(sources.schedule(input.userId, input.localDate), secondaryTimeoutMs),
         sources.standing === undefined
           ? Promise.resolve(null)
           : readStandingState(input, sources.standing),
+        cycleRead ?? Promise.resolve(null),
       ]);
       const ok = <T>(result: PromiseSettledResult<unknown>, parse: (value: unknown) => T | null) =>
         result.status === "fulfilled" ? parse(result.value) : null;
@@ -541,6 +587,10 @@ export function createWatchOutsContributor(
           schedule,
           (value) => Object.keys(rec(value)).length === 0 ? null : readScheduleBody(value),
         ),
+        ...(cycleRead === null ? {} : {
+          cycleSecondHalf: cycle.status === "fulfilled" && cycle.value !== null &&
+            cycleExplainsDrift(cycle.value.state),
+        }),
       };
       const found = computeWatchOuts(inputs);
       // The counts go to the route (coach_chat_provider_route.ts) whether or not there is text to
@@ -578,4 +628,5 @@ export const watchOutsContributor: CoachContextContributor = createWatchOutsCont
   facts: stateSourceFromRpc(coachServiceRpc, "get_coach_watch_outs_v1"),
   schedule: scheduleSourceFromRpc(coachServiceRpc),
   standing: standingStateFromService,
+  cycle: cycleStateFromService,
 });

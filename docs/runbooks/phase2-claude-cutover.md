@@ -450,9 +450,15 @@ its deterministic fallback.
 Do 6.1 first. Then republish the old text under a **new version** naming the old vendor, so the
 current notice matches the vendor that will receive the data. Every athlete is asked again and must
 re-accept before the old path serves them.
-- Coaching: `private.publish_ai_notice('ai-coaching-v7', 'deepseek', 'DeepSeek',
-  array['coach_chat','daily_coaching','onboarding_plan'], <the ai-coaching-v5 body>)`. The v5 text is
-  in `supabase/migrations/20261009160100_meal_photo_ai_notice.sql`.
+- Coaching: `private.publish_ai_notice('ai-coaching-v8', 'deepseek', 'DeepSeek',
+  array['coach_chat','daily_coaching','onboarding_plan'], <body>)`. v7 is taken by the Anthropic draft
+  in `docs/notices/ai-coaching-v7.md` (cycle support), so a rollback is v8, or the next free number if
+  v8 is taken. Every version from v7 on opens breathing rate, workout notes and cycle data to Coach
+  (`supabase/functions/_shared/ai_notice_coverage.ts` counts versions, not text), so the body must name
+  them: start from the ai-coaching-v5 body (in
+  `supabase/migrations/20261009160100_meal_photo_ai_notice.sql`) and replace its list of what is sent
+  with the list in the v7 draft. Publishing the v5 body unchanged as v8 would send that data under a
+  notice that does not name it.
 - Meal photo: `private.publish_meal_photo_ai_notice('meal-photo-ai-v3', 'groq', 'Groq',
   'qwen/qwen3.8-27b', <the v1 body>)` (text in the same migration).
 - Physique: `private.publish_photo_ai_notice('progress-photo-ai-v3', 'groq', 'Groq',

@@ -107,6 +107,9 @@ export const coachChatValidationRules = [
   "effort_above_screening_cap",
   "training_advice_on_pain_day",
   "claimed_action",
+  "fertility_or_contraception_claim",
+  "cycle_condition_named",
+  "deficit_advice_with_long_gap",
   "lookup_request_invalid",
   "lookup_rounds_exceeded",
 ] as const;

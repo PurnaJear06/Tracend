@@ -28,7 +28,7 @@ import {
 
 const primary = personas.find((p) => p.id === "primary")!;
 
-Deno.test("four personas with months of records: sessions, weigh-ins, complete and partial meal days, check-ins", () => {
+Deno.test("eight personas with months of records: sessions, weigh-ins, complete and partial meal days, check-ins", () => {
   assertEquals(personas.map((p) => p.id), [...personaIds]);
   for (const persona of personas) {
     const { records } = persona;
@@ -121,7 +121,7 @@ Deno.test("the lookup stand-in answers every lookup in its RPC shape, as the pro
 });
 
 Deno.test("every scenario runs 6-10 messages and the conversations cover every persona", () => {
-  assertEquals(scenarios.length, 12);
+  assertEquals(scenarios.length, 14);
   for (const scenario of scenarios) {
     assert(scenario.turns >= 6 && scenario.turns <= 10, scenario.id);
     assert(scenario.beats.length >= scenario.turns - 2, scenario.id);
@@ -298,5 +298,52 @@ Deno.test("the standing-state scenarios' phrases are real patterns: an intended 
         );
       }
     }
+  }
+});
+
+Deno.test("the cycle personas carry their cycle under v7, and their scenarios' phrases are real patterns", async () => {
+  for (const id of ["cycle_second_half", "cycle_pill", "cycle_irregular", "cycle_long_gap"]) {
+    const persona = personas.find((item) => item.id === id)!;
+    const athlete = persona.athlete();
+    assertEquals(athlete.contributors.noticeVersion, "ai-coaching-v7");
+    const turn = await renderTurn(athlete, "How is my recovery?");
+    assertStringIncludes(turn.texts.cycle ?? "", "Menstrual cycle", id);
+  }
+  const priya = await renderTurn(
+    personas.find((item) => item.id === "cycle_second_half")!.athlete(),
+    "Am I overtraining?",
+  );
+  assertStringIncludes(priya.texts.watch_outs ?? "", "second half of a natural cycle");
+  const ananya = await renderTurn(
+    personas.find((item) => item.id === "cycle_long_gap")!.athlete(),
+    "Can I cut harder?",
+  );
+  assertStringIncludes(ananya.texts.cycle ?? "", "Long gap without a period: yes");
+  const matches = (phrase: { anyOf: readonly RegExp[] }, text: string) =>
+    phrase.anyOf.some((pattern) => pattern.test(text));
+  const cases: [string, string, string][] = [
+    [
+      "cycle-recovery",
+      "A slightly lower HRV is expected in the second half of your cycle, so it isn't overtraining by itself. Keep Saturday if you feel fine. Research doesn't support lifting heavy in the first half and light in the second.",
+      "Your fertile window is around day 14, and you should lift heavier in the first half of your cycle.",
+    ],
+    [
+      "cycle-long-gap",
+      "With no period logged for months, I wouldn't cut further: keep calories at maintenance for now and talk to a doctor if this isn't expected for you.",
+      "You can drop your calories a little more; aim for 1,350 kcal and you'll reach 54 kg sooner.",
+    ],
+  ];
+  for (const [id, good, bad] of cases) {
+    const scenario = scenarios.find((item) => item.id === id)!;
+    for (const phrase of scenario.expect.mentions ?? []) {
+      assert(matches(phrase, good), `${id}: "${phrase.label}" misses the intended reply`);
+    }
+    for (const phrase of scenario.expect.forbids ?? []) {
+      assert(!matches(phrase, good), `${id}: "${phrase.label}" flags the intended reply`);
+    }
+    assert(
+      (scenario.expect.forbids ?? []).some((phrase) => matches(phrase, bad)),
+      `${id}: no forbidden phrase catches the bad reply`,
+    );
   }
 });
