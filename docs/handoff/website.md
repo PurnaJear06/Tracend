@@ -1,6 +1,6 @@
 # Website and Waitlist Handoff
 
-**As of:** 2026-11-15
+**As of:** 2026-11-27
 
 ## State
 
@@ -72,6 +72,28 @@
     heading is "Your plan starts with a goal." and the outlined clock there is gone.
   - Page length on a 390 px phone went from about 25,000 px to about 17,800 px.
   - Rules for future edits are in `site/PRODUCT.md`, "Page structure".
+- 2026-11-27 (`claude/landing-v2`): rebuilt before paid Instagram traffic, after six reviews
+  (cold visitors, product truth, competitors, impeccable critique 72%, technical audit, a hands-on
+  teardown of WHOOP, Athlytic, Bevel, Future, Ladder and others).
+  - Hero: "Know what to lift today. And why.", a 16-word lede, the form, and on phones the
+    Coach's call as a notification on the phone's screen inside the first screen. `?v=sleep`,
+    `?v=log`, `?v=coach` swap the headline per reel before first paint.
+  - The hero copy moved outside the pinned stage. Before, it faded from the first pixel of
+    scroll, so on an iPhone the keyboard's own scroll could fade the field someone was typing in.
+    Now it scrolls like the page on phones; the phone rises under it and the stage pins after.
+  - Sam's day has five moments: the morning check-in leads (D9), sleep 5 h 48 m, recovery 34
+    Poor; the demo counts readiness points the app's way.
+  - New: "Nothing changes until you say yes." (a chat plan change with Now/After, Approve, Undo)
+    and "It handles the in-between." (Lock Screen logging, next targets, labels, pain check,
+    memory), each mock rebuilt from the shipped code. Removed: the five-apps bento, the two
+    example athletes, the muscle map, "Other apps stop at the score", the coming-next row and
+    their code. About 18 phone screens, down from 23.
+  - Phones get a docked "Join the beta" button after the hero form scrolls away.
+  - Launch fixes: the form is wired before the motion code (`join-boot.js`) and a pre-JS submit
+    does nothing instead of putting the email in the URL; a failure in `page.js` leaves a static
+    page; Turnstile retries once and then points to the system browser; the waitlist allows 30
+    tries per network per hour (migration `20261127120000`); `/_astro/*` is cached for a year;
+    the privacy page names Cloudflare Web Analytics.
 - Follow-up after the Phase 2 cutover plus its 2-week rollback window: remove DeepSeek and Groq
   from the processor list in `site/src/pages/privacy.astro`, update its date and `LegalNotices.privacyVersion`
   (athletes are asked again). A new AI company
@@ -144,10 +166,15 @@ by changing the secrets, and update the processor list in `site/src/pages/privac
 
 - The first live join needs the owner's own email: confirm the email arrives, the link confirms,
   and unsubscribe works.
-- The redesign was checked in a desktop browser from 1100x720 to 1920x1080 and at 393x852, plus
-  the short and sideways page. It has not been tried on a real iPhone or inside the Instagram in-app browser: do that
-  from the preview link before paying for ads (watch the pinned story while the address bar
-  hides and shows).
+- The 2026-11-27 page was checked in the browser pane at phone and desktop sizes. It has not been
+  tried on a real iPhone or inside the Instagram in-app browser: do that from the preview link
+  before paying for ads (type in the hero form with the keyboard up; watch the pinned story while
+  the address bar hides and shows).
+- Owner steps after merge: turn on Cloudflare Web Analytics for the Pages project (Workers & Pages,
+  tracend, Metrics), and give each reel a link like `?v=sleep&utm_source=instagram&utm_campaign=…&utm_content=sleep`.
+- The physique check is shown on the page but runs only for accounts on
+  `PHYSIQUE_VISION_ALLOWED_USERS` (owner-only). Widen it or relabel the page before testers expect it.
+- The plan-change example uses fixed dates (13 Dec, 30 Nov, 4 Dec); refresh them after mid-December.
 - The page has no founder line, tester count or testimonial, by rule. A true one-line "who built
   this" from the owner would help; it needs the owner's words.
 - Add `Website Build` to the required checks if wanted.
