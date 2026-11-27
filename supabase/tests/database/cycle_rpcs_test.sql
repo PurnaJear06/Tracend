@@ -1,5 +1,5 @@
 begin;
-select plan(133);
+select plan(143);
 
 -- Cycle data access (migrations 20261127141837 and 20261127142651): the consent type, the tables'
 -- privileges and row-level security, every gate of the six functions, the Apple Health merge, the
@@ -310,6 +310,8 @@ select throws_ok($$select public.import_cycle_days_v1(pg_temp.today() - 10, pg_t
   '22023', null, 'a window ending after tomorrow is refused');
 select throws_ok($$select public.import_cycle_days_v1(pg_temp.today() - 401, pg_temp.today(), '[]')$$,
   '22023', null, 'a window over 400 days is refused');
+select throws_ok($$select public.import_cycle_days_v1(pg_temp.today() - 401, pg_temp.today() - 300, '[]')$$,
+  '22023', null, 'a window starting more than 400 days ago is refused, as for logging');
 select throws_ok($$select public.import_cycle_days_v1(pg_temp.today(), pg_temp.today() - 1, '[]')$$,
   '22023', null, 'a window that ends before it starts is refused');
 select throws_ok($$select public.import_cycle_days_v1(null, pg_temp.today(), '[]')$$,
@@ -431,6 +433,54 @@ select throws_ok($$select public.log_cycle_day_v1(pg_temp.today(), 'light', null
   'cycle_consent_required', 'logging without the cycle data consent is refused');
 select throws_ok($$select public.import_cycle_days_v1(pg_temp.today() - 1, pg_temp.today(), '[]')$$,
   'P0403', 'cycle_consent_required', 'importing without it is refused');
+
+-- A withdrawn consent reads as tracking off, for her and for Coach, whatever the settings say.
+select is(public.get_my_cycle_v1() -> 'tracking_enabled', 'false'::jsonb,
+  'without the cycle data consent the answer says tracking is off');
+insert into public.consent_records(user_id, consent_type, notice_version, action, source, created_at) values
+  ('c2000000-0000-4000-8000-000000000003', 'cycle_data', '2026-11-27', 'granted', 'ios_app',
+   now() - interval '30 minutes');
+insert into public.cycle_day_logs(user_id, local_date, flow, source)
+values ('c2000000-0000-4000-8000-000000000003', pg_temp.today(), 'medium', 'manual');
+select is(jsonb_array_length(public.get_my_cycle_v1() -> 'recent_days'), 1,
+  'with a grant her day is shown');
+select is(jsonb_array_length(public.coach_cycle_state_v1('c2000000-0000-4000-8000-000000000003',
+    pg_temp.today()) -> 'recent_days'), 1, 'and Coach reads it');
+insert into public.consent_records(user_id, consent_type, notice_version, action, source, created_at) values
+  ('c2000000-0000-4000-8000-000000000003', 'cycle_data', '2026-11-27', 'withdrawn', 'ios_app',
+   now() - interval '10 minutes');
+select is(public.get_my_cycle_v1(),
+  '{"schema_version":"1.0","tracking_enabled":false,"status":"irregular","typical_cycle_days":null,
+    "apple_health_enabled":false,"state":{"cycle_day":null,"period_day":null,"phase":null,
+    "confidence":null,"expected_from":null,"expected_to":null,"late_days":null,
+    "no_period_long":false,"weight_water_window":false},"recent_days":[],"cycles":[]}'::jsonb,
+  'after she withdraws it (written straight to consent_records) she gets the off answer');
+select is(public.coach_cycle_state_v1('c2000000-0000-4000-8000-000000000003', pg_temp.today()),
+  public.get_my_cycle_v1(),
+  'and Coach gets the off answer too, with none of her days');
+
+-- Every writer locks the account row before it reads her settings or consent, so a delete and a log
+-- or an import cannot interleave.
+select ok((select position('for update' in p.prosrc) > 0
+    and position('for update' in p.prosrc) < position('cycle_data_consent_granted' in p.prosrc)
+    and position('for update' in p.prosrc) < position('from public.cycle_settings' in p.prosrc)
+  from pg_proc p where p.oid = 'public.log_cycle_day_v1(date, text, text, boolean)'::regprocedure),
+  'logging locks the account row before its settings and consent checks');
+select ok((select position('for update' in p.prosrc) > 0
+    and position('for update' in p.prosrc) < position('cycle_data_consent_granted' in p.prosrc)
+    and position('for update' in p.prosrc) < position('from public.cycle_settings' in p.prosrc)
+  from pg_proc p where p.oid = 'public.import_cycle_days_v1(date, date, jsonb)'::regprocedure),
+  'importing locks the account row before its settings and consent checks');
+select ok((select position('for update' in p.prosrc) > 0
+    and position('for update' in p.prosrc) < position('cycle_data_consent_granted' in p.prosrc)
+    and position('for update' in p.prosrc) < position('from public.cycle_settings' in p.prosrc)
+  from pg_proc p
+  where p.oid = 'public.set_my_cycle_settings_v1(boolean, text, integer, boolean)'::regprocedure),
+  'the settings lock the account row first too');
+select ok((select position('for update' in p.prosrc) > 0
+    and position('for update' in p.prosrc) < position('delete from public.cycle_day_logs' in p.prosrc)
+  from pg_proc p where p.oid = 'public.delete_my_cycle_data_v1()'::regprocedure),
+  'deleting locks the account row before it deletes');
 
 -- Row-level security -------------------------------------------------------------------------------
 select pg_temp.as_user('c2000000-0000-4000-8000-000000000002');

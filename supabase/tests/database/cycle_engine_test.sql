@@ -1,14 +1,22 @@
+\set off_fixture `cat /contract-fixtures/my_cycle_v1_0_off.json`
+\set regular_fixture `cat /contract-fixtures/my_cycle_v1_0_regular.json`
+\set late_fixture `cat /contract-fixtures/my_cycle_v1_0_late.json`
+\set contraception_fixture `cat /contract-fixtures/my_cycle_v1_0_contraception.json`
+
 begin;
-select plan(88);
+select plan(102);
 
 -- The cycle engine (migration 20261127142651, docs/ALGORITHMS.md section 9). Every case reads
 -- private.cycle_state on a fixed local date, so nothing here depends on today. Each athlete is one
--- scenario; days are inserted directly (the RPC gates are in cycle_rpcs_test.sql).
+-- scenario with a granted cycle_data consent; days are inserted directly (the RPC gates are in
+-- cycle_rpcs_test.sql). The contract fixtures are compared whole with answers from real seeds.
 
 create function pg_temp.athlete(p_id text, p_status text, p_typical integer default null,
   p_enabled_at timestamptz default '2025-01-01 12:00:00+00', p_tracking boolean default true)
 returns void language sql as $$
   insert into auth.users(id, role) values (p_id::uuid, 'authenticated');
+  insert into public.consent_records(user_id, consent_type, notice_version, action, source, created_at)
+  values (p_id::uuid, 'cycle_data', '2026-11-27', 'granted', 'ios_app', now() - interval '1 day');
   insert into public.cycle_settings(user_id, tracking_enabled, status, typical_cycle_days,
     tracking_enabled_at)
   values (p_id::uuid, p_tracking, p_status, p_typical, p_enabled_at);
@@ -362,6 +370,15 @@ select is(private.cycle_state('c1000000-0000-4000-8000-000000000021', '2026-03-0
   private.cycle_state('c1000000-0000-4000-8000-000000000020', '2026-03-02'),
   'no settings row: the same empty state');
 
+-- A withdrawn consent reads as tracking off.
+select pg_temp.athlete('c1000000-0000-4000-8000-000000000028', 'regular', 28);
+select pg_temp.period('c1000000-0000-4000-8000-000000000028', '2026-03-01', 5);
+insert into public.consent_records(user_id, consent_type, notice_version, action, source)
+values ('c1000000-0000-4000-8000-000000000028', 'cycle_data', '2026-11-27', 'withdrawn', 'ios_app');
+select is(private.cycle_state('c1000000-0000-4000-8000-000000000028', '2026-03-02'),
+  private.cycle_state('c1000000-0000-4000-8000-000000000020', '2026-03-02'),
+  'consent withdrawn: the same empty state as tracking off, though the settings say on');
+
 -- Starts flagged by her or by Apple Health ------------------------------------------------------------
 -- The onboarding answer "my last period started on 10 Mar" is one unspecified day flagged as a start.
 select pg_temp.athlete('c1000000-0000-4000-8000-000000000022', 'regular', 28);
@@ -383,6 +400,46 @@ select is(pg_temp.cycles('c1000000-0000-4000-8000-000000000022', '2026-03-25') -
   'false'::jsonb, 'and its 11-day length is outside 15-60, so it is not used');
 select is(pg_temp.st('c1000000-0000-4000-8000-000000000022', '2026-03-25') ->> 'confidence', 'low',
   'an unused latest length means low confidence');
+
+-- The onboarding guess "my last period started on 28 Oct" (one unspecified day) is replaced by her
+-- real period from Apple Health 6 days later.
+select pg_temp.athlete('c1000000-0000-4000-8000-000000000029', 'regular', 28);
+select pg_temp.period('c1000000-0000-4000-8000-000000000029', '2026-10-01', 5);
+select pg_temp.day('c1000000-0000-4000-8000-000000000029', '2026-10-28', 'unspecified', true);
+insert into public.cycle_day_logs(user_id, local_date, flow, is_start, source)
+select 'c1000000-0000-4000-8000-000000000029', '2026-11-03'::date + g,
+  (array['light', 'medium', 'heavy', 'medium', 'light'])[g + 1], g = 0, 'apple_health'
+from generate_series(0, 4) g;
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000029', '2026-10-30') ->> 'cycle_day', '3',
+  'guessed start: until her real period, the guess is the start');
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000029', '2026-11-03') ->> 'period_day', '1',
+  'guessed start: the first real bleeding day, 6 days later, is period day 1');
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000029', '2026-11-03') ->> 'cycle_day', '1',
+  'guessed start: and cycle day 1');
+select is(pg_temp.cycles('c1000000-0000-4000-8000-000000000029', '2026-11-10'),
+  '[{"start_date":"2026-10-01","length_days":33,"used":true},
+    {"start_date":"2026-11-03","length_days":null,"used":false}]'::jsonb,
+  'guessed start: the cycle is measured to her real start, and the guess is no start');
+-- A guess followed by one light day: a start while it may still be a period, the guess again after.
+select pg_temp.athlete('c1000000-0000-4000-8000-000000000031', 'regular', 28);
+select pg_temp.day('c1000000-0000-4000-8000-000000000031', '2026-10-28', 'unspecified', true);
+select pg_temp.day('c1000000-0000-4000-8000-000000000031', '2026-11-03', 'light');
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000031', '2026-11-03') ->> 'period_day', '1',
+  'guessed start: one light day 6 days later is period day 1 on the day');
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000031', '2026-11-07') ->> 'cycle_day', '11',
+  'guessed start: with no second day the guess is the start again');
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000031', '2026-11-07') -> 'period_day', 'null'::jsonb,
+  'guessed start: and the light day was bleeding inside the cycle');
+-- A flagged run of two or more days is never replaced.
+select pg_temp.athlete('c1000000-0000-4000-8000-000000000030', 'regular', 28);
+select pg_temp.day('c1000000-0000-4000-8000-000000000030', '2026-10-28', 'medium', true);
+select pg_temp.day('c1000000-0000-4000-8000-000000000030', '2026-10-29', 'light');
+select pg_temp.period('c1000000-0000-4000-8000-000000000030', '2026-11-03', 5);
+select is(jsonb_path_query_array(pg_temp.cycles('c1000000-0000-4000-8000-000000000030', '2026-11-10'),
+    '$[*].start_date'), '["2026-10-28"]'::jsonb,
+  'a two-day flagged period stays the start; bleeding 6 days later is inside the cycle');
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000030', '2026-11-03') -> 'period_day', 'null'::jsonb,
+  'and is not a period day');
 
 -- Apple Health days and her own days are read the same way.
 select pg_temp.athlete('c1000000-0000-4000-8000-000000000023', 'regular');
@@ -448,6 +505,53 @@ select is(pg_temp.cycles('c1000000-0000-4000-8000-000000000027', '2026-01-10') -
   'a 96-day length (a long gap in logging) is listed but not used');
 select is(pg_temp.st('c1000000-0000-4000-8000-000000000027', '2026-01-10') ->> 'expected_from',
   '2026-01-31', 'and her stated 28 days give the range');
+
+-- The contract fixtures, whole ----------------------------------------------------------------------
+-- Each fixture is the answer get_my_cycle_v1 gives on 27 Nov 2026 (recent days 29 Sep to 28 Nov) for
+-- the seed below.
+create function pg_temp.answer(p_id text) returns jsonb language sql as $$
+  select private.cycle_answer(p_id::uuid, '2026-11-27', '2026-09-29', '2026-11-28');
+$$;
+
+insert into auth.users(id, role) values ('c1000000-0000-4000-8000-000000000040', 'authenticated');
+select is(pg_temp.answer('c1000000-0000-4000-8000-000000000040'), :'off_fixture'::jsonb,
+  'no settings: exactly my_cycle_v1_0_off.json');
+
+-- Starts 15 Sep, 13 Oct, 10 Nov (4 days each, logged by hand).
+select pg_temp.athlete('c1000000-0000-4000-8000-000000000041', 'regular', 28, '2026-09-01 08:00:00+00');
+insert into public.cycle_day_logs(user_id, local_date, flow, cramps, is_start, source)
+select 'c1000000-0000-4000-8000-000000000041', d.local_date::date, d.flow, d.cramps, d.is_start, 'manual'
+from (values
+  ('2026-09-15', 'medium', 'mild', true), ('2026-09-16', 'medium', null, false),
+  ('2026-09-17', 'light', null, false), ('2026-09-18', 'light', null, false),
+  ('2026-10-13', 'medium', 'mild', true), ('2026-10-14', 'heavy', 'strong', false),
+  ('2026-10-15', 'medium', 'mild', false), ('2026-10-16', 'light', 'none', false),
+  ('2026-11-10', 'medium', 'mild', true), ('2026-11-11', 'heavy', 'strong', false),
+  ('2026-11-12', 'medium', null, false), ('2026-11-13', 'light', 'none', false)
+) d(local_date, flow, cramps, is_start);
+select is(pg_temp.answer('c1000000-0000-4000-8000-000000000041'), :'regular_fixture'::jsonb,
+  'regular, day 18: exactly my_cycle_v1_0_regular.json');
+
+-- Starts 29 Aug, 26 Sep, 24 Oct (4 days each, from Apple Health): 4 days past the range.
+select pg_temp.athlete('c1000000-0000-4000-8000-000000000042', 'regular', 28, '2026-08-01 08:00:00+00');
+update public.cycle_settings set apple_health_enabled = true
+  where user_id = 'c1000000-0000-4000-8000-000000000042';
+insert into public.cycle_day_logs(user_id, local_date, flow, is_start, source)
+select 'c1000000-0000-4000-8000-000000000042', s.first_day + g,
+  (array['medium', 'heavy', 'medium', 'light'])[g + 1], g = 0, 'apple_health'
+from (values ('2026-08-29'::date), ('2026-09-26'::date), ('2026-10-24'::date)) s(first_day),
+  generate_series(0, 3) g;
+select is(pg_temp.answer('c1000000-0000-4000-8000-000000000042'), :'late_fixture'::jsonb,
+  'regular, 4 days late: exactly my_cycle_v1_0_late.json');
+
+-- Hormonal contraception with a bleed on 26 and 27 Nov.
+select pg_temp.athlete('c1000000-0000-4000-8000-000000000043', 'hormonal_contraception', null,
+  '2026-09-01 08:00:00+00');
+insert into public.cycle_day_logs(user_id, local_date, flow, cramps, is_start, source) values
+  ('c1000000-0000-4000-8000-000000000043', '2026-11-26', 'light', 'none', false, 'manual'),
+  ('c1000000-0000-4000-8000-000000000043', '2026-11-27', 'light', null, false, 'manual');
+select is(pg_temp.answer('c1000000-0000-4000-8000-000000000043'), :'contraception_fixture'::jsonb,
+  'contraception, bleed day 2: exactly my_cycle_v1_0_contraception.json');
 
 select * from finish();
 rollback;

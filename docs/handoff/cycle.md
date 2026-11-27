@@ -23,7 +23,9 @@ merged in order: data (PR 1), app (PR 2), Coach (PR 3).
   `import_cycle_days_v1`, `delete_my_cycle_data_v1` (authenticated) and `coach_cycle_state_v1`
   (service role only). All answer the cycle answer, `schema_version` `1.0` (import answers
   `{schema_version, imported, removed}`). Fixtures: `test/contract/fixtures/my_cycle_v1_0_off.json`,
-  `my_cycle_v1_0_regular.json`, `my_cycle_v1_0_contraception.json`.
+  `my_cycle_v1_0_regular.json`, `my_cycle_v1_0_late.json`, `my_cycle_v1_0_contraception.json`; each
+  is the whole answer for a real seed on 2026-11-27, compared in full by `cycle_engine_test.sql`
+  (CI links `test/contract/fixtures` at `/contract-fixtures`; `scripts/test-db.sh` copies it).
 - **Errors the app maps:** `42501` signed out or inactive account; `22023` bad input; `P0403` with
   message `cycle_consent_required`, `health_consent_required`, `cycle_tracking_off` or
   `apple_health_off`.
@@ -45,6 +47,10 @@ merged in order: data (PR 1), app (PR 2), Coach (PR 3).
   - `import_cycle_days_v1` refuses an item with any key besides `local_date`, `flow`, `is_start`;
     `log_cycle_day_v1` treats a null `p_is_start` as false.
   - `coach_cycle_state_v1` is gated by its grant (service role only), like the Coach lookups.
+  - Review round 1: a withdrawn `cycle_data` consent reads as tracking off everywhere; every
+    writer locks the account row first, so a delete cannot race a log or an import; the import
+    window starts no more than 400 days ago; a one-day guessed start is replaced by her real period
+    1–9 days later (ALGORITHMS §11).
 - **Tests:** `supabase/tests/database/cycle_engine_test.sql` (the engine on fixed dates) and
   `cycle_rpcs_test.sql` (gates, privileges, RLS, the Apple Health merge, key sets, deletion);
   `privacy-export` exports both tables.
