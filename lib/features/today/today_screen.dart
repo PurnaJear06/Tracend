@@ -15,6 +15,12 @@ import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/feedback/feedback_rating.dart';
 import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/cycle/cycle_health.dart';
+import 'package:tracend/features/cycle/cycle_labels.dart';
+import 'package:tracend/features/cycle/cycle_repository.dart';
+import 'package:tracend/features/cycle/widgets/cycle_day_sheet.dart';
+import 'package:tracend/features/cycle/widgets/cycle_inputs.dart';
+import 'package:tracend/features/cycle/widgets/period_today_control.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
@@ -37,6 +43,7 @@ import 'package:tracend/features/today/check_in_marks.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/today/check_in_sheet.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/features/today/widgets/cycle_line.dart';
 import 'package:tracend/features/today/widgets/fuel_rail_card.dart';
 import 'package:tracend/features/today/widgets/plan_progress_line.dart';
 import 'package:tracend/features/today/widgets/today_hero.dart';
@@ -87,6 +94,9 @@ class TodayScreen extends StatefulWidget {
     this.userId,
     this.pauses = const FixtureTrainingPauseRepository(),
     this.onResumeWorkout,
+    this.cycle = const FixtureCycleRepository(),
+    this.cycleHealth,
+    this.cycleChanges,
     this.active = true,
     this.clock = DateTime.now,
     super.key,
@@ -165,6 +175,17 @@ class TodayScreen extends StatefulWidget {
   /// Resume card shows only when this is wired.
   final ValueChanged<OpenWorkout>? onResumeWorkout;
 
+  /// The athlete's optional cycle tracking. Today reads it after the brief,
+  /// outside the first paint; a read that fails leaves no cycle line.
+  final CycleRepository cycle;
+
+  /// Reads Apple Health's period days with each health sync. Null where there
+  /// is no Apple Health.
+  final CycleHealthSync? cycleHealth;
+
+  /// Told when the cycle changed elsewhere (Account), so the line follows.
+  final CycleChanges? cycleChanges;
+
   /// Whether this tab is the one on screen. Coming back to it reads the open
   /// workouts again, since a workout may have been finished in Train.
   final bool active;
@@ -225,6 +246,12 @@ class _TodayScreenState extends State<TodayScreen> {
   String? _justSetPauseId;
   DailyBrief? _lastBrief;
 
+  /// The cycle answer, read after the brief. Null until it is read, after a
+  /// read that failed, and for anyone who never turned tracking on.
+  CycleAnswer? _cycle;
+  int _cycleLoads = 0;
+  bool _announcingCycle = false;
+
   /// What the last sync could not refresh, shown on the hero until a sync
   /// succeeds.
   String? _syncIssue;
@@ -262,6 +289,7 @@ class _TodayScreenState extends State<TodayScreen> {
     _reloadIfStale();
     unawaited(_loadOpenWorkouts());
     unawaited(_autoSyncHealthIfNeeded());
+    unawaited(_syncCycleHealth());
     unawaited(_replayPendingCheckIn());
   }
 
@@ -304,6 +332,7 @@ class _TodayScreenState extends State<TodayScreen> {
     widget.widgetTaps?.removeListener(_reloadIfStale);
     widget.aiConsent?.removeListener(_consentChanged);
     widget.planChanges?.removeListener(_planChanged);
+    widget.cycleChanges?.removeListener(_cycleChanged);
     widget.dayAdjustment?.removeListener(_dayAdjustmentChanged);
     super.dispose();
   }
@@ -324,6 +353,7 @@ class _TodayScreenState extends State<TodayScreen> {
     widget.widgetTaps?.addListener(_reloadIfStale);
     widget.aiConsent?.addListener(_consentChanged);
     widget.planChanges?.addListener(_planChanged);
+    widget.cycleChanges?.addListener(_cycleChanged);
     widget.dayAdjustment?.addListener(_dayAdjustmentChanged);
     _reloadHealth();
     unawaited(widget.dayAdjustment?.load());
@@ -729,6 +759,7 @@ class _TodayScreenState extends State<TodayScreen> {
         _briefLoadedAt = widget.clock();
         _updateGate();
         unawaited(_publishWidgets(brief));
+        unawaited(_loadCycle());
       },
       onError: (Object error, StackTrace stackTrace) {
         if (!mounted || load != _briefLoads) return;
@@ -736,6 +767,156 @@ class _TodayScreenState extends State<TodayScreen> {
       },
     );
     return future;
+  }
+
+  /// Reads the cycle answer. It is never part of the first paint and never a
+  /// failure Today reports: an answer that cannot be read leaves no line.
+  Future<void> _loadCycle() async {
+    final load = ++_cycleLoads;
+    CycleAnswer? answer;
+    try {
+      answer = await widget.cycle.load();
+    } catch (error) {
+      logNonCritical(error, 'cycle not read');
+    }
+    if (!mounted || load != _cycleLoads) return;
+    // Tracking that was never on changes nothing on screen.
+    if (_cycle == null && !(answer?.trackingEnabled ?? false)) return;
+    setState(() => _cycle = answer);
+    if (answer != null) unawaited(_syncCycleHealth());
+  }
+
+  /// The cycle changed in Account: read it again.
+  void _cycleChanged() {
+    if (_announcingCycle || !mounted) return;
+    unawaited(_loadCycle());
+  }
+
+  /// A cycle answer Today itself changed (a period logged in the check-in, the
+  /// long-gap card): shown at once and told to Progress.
+  void _cycleSaved(CycleAnswer answer) {
+    if (mounted) setState(() => _cycle = answer);
+    _announcingCycle = true;
+    widget.cycleChanges?.announce();
+    _announcingCycle = false;
+  }
+
+  /// When the cycle's Apple Health read last started. Kept in memory only:
+  /// nothing about the cycle is stored on the phone.
+  DateTime? _cycleHealthAt;
+  bool _cycleHealthSyncing = false;
+  static const _cycleHealthEvery = Duration(hours: 6);
+
+  /// Apple Health's period days, read on their own, apart from the main health
+  /// sync, so an athlete who never connected that one still gets her periods.
+  /// It runs when Today has read the cycle after the brief, and when the app
+  /// comes back to the front, at most once in six hours (a tap on Sync forces
+  /// it). Only while tracking and "Read periods from Apple Health" are on and
+  /// the agreements gate is open (`CycleHealthSync` checks it). It never makes
+  /// a sync fail and says nothing when it does.
+  Future<void> _syncCycleHealth({bool force = false}) async {
+    final sync = widget.cycleHealth;
+    final answer = _cycle;
+    if (sync == null ||
+        answer == null ||
+        !answer.trackingEnabled ||
+        !answer.appleHealthEnabled) {
+      return;
+    }
+    final now = widget.clock();
+    final last = _cycleHealthAt;
+    if (!force && last != null && now.difference(last) < _cycleHealthEvery) {
+      return;
+    }
+    if (_cycleHealthSyncing) return;
+    _cycleHealthSyncing = true;
+    try {
+      final result = await sync.sync(answer: answer);
+      // Only a read that ran spends the six hours: a closed gate, a switch
+      // that is off or a failure leaves the next trigger free to try.
+      if (result != null) {
+        _cycleHealthAt = now;
+        if (mounted) await _loadCycle();
+      }
+    } catch (error) {
+      logNonCritical(error, 'cycle days not read from Apple Health');
+    } finally {
+      _cycleHealthSyncing = false;
+    }
+  }
+
+  CheckInPeriod? _checkInPeriod() {
+    final answer = _cycle;
+    if (answer == null || !asksAboutPeriod(answer)) return null;
+    return CheckInPeriod(
+      repository: widget.cycle,
+      answer: answer,
+      onChanged: _cycleSaved,
+    );
+  }
+
+  /// A cycle sheet from the long-gap card is open or saving, so a double tap
+  /// does not open a second one.
+  bool _cycleAsking = false;
+
+  Future<void> _logPeriod() async {
+    if (_cycleAsking) return;
+    _cycleAsking = true;
+    try {
+      final answer = await showCycleDaySheet(
+        context,
+        repository: widget.cycle,
+        date: widget.clock(),
+        answer: _cycle ?? CycleAnswer.off,
+        startsPeriod: true,
+        canChangeDate: true,
+        now: widget.clock,
+      );
+      if (answer != null) _cycleSaved(answer);
+    } finally {
+      _cycleAsking = false;
+    }
+  }
+
+  Future<void> _updateCycleStatus() async {
+    if (_cycleAsking) return;
+    _cycleAsking = true;
+    try {
+      await _askCycleStatus();
+    } finally {
+      _cycleAsking = false;
+    }
+  }
+
+  Future<void> _askCycleStatus() async {
+    final current = _cycle;
+    final status = await showCycleStatusSheet(
+      context,
+      selected: current?.status,
+    );
+    if (status == null || current == null || !mounted) return;
+    try {
+      _cycleSaved(
+        await widget.cycle.saveSettings(
+          trackingEnabled: true,
+          status: status,
+          typicalCycleDays: current.typicalCycleDays,
+          appleHealthEnabled: current.appleHealthEnabled,
+        ),
+      );
+    } catch (error) {
+      logNonCritical(error, 'cycle status not saved');
+      if (mounted) {
+        TracendToast.show(
+          context,
+          cycleFailureMessage(
+            error,
+            fallback: 'Your cycle status was not saved. Try again.',
+          ),
+          icon: CupertinoIcons.exclamationmark_triangle,
+        );
+      }
+    }
   }
 
   /// The name a run of failed brief loads is reported under.
@@ -877,6 +1058,7 @@ class _TodayScreenState extends State<TodayScreen> {
         failures.add('Apple Health');
       }
       if (!mounted) return;
+      unawaited(_syncCycleHealth(force: true));
       _reloadBriefAndHealth();
       if (widget.environment.hasSupabaseConfiguration) {
         try {
@@ -979,6 +1161,7 @@ class _TodayScreenState extends State<TodayScreen> {
       sender: widget.checkInSender,
       localDate: _serverDay,
       jointStates: widget.dayAdjustment?.current?.jointStates ?? const [],
+      period: _checkInPeriod(),
     );
     if (saved != null && mounted) {
       final day = _dayKey();
@@ -1243,6 +1426,9 @@ class _TodayScreenState extends State<TodayScreen> {
         region: widget.environment.hasSupabaseConfiguration
             ? SupabaseRegionRepository(Supabase.instance.client)
             : const FixtureRegionRepository(),
+        cycle: widget.cycle,
+        cycleHealth: widget.cycleHealth,
+        cycleChanges: widget.cycleChanges,
         aiConsent: widget.aiConsent,
       ),
     ),
@@ -1319,6 +1505,9 @@ class _TodayScreenState extends State<TodayScreen> {
                   justSetPauseId: _justSetPauseId,
                   onTakeBreak: () => _takeBreak(brief),
                   onEndBreak: (pause) => _endBreak(brief, pause),
+                  cycle: _cycle,
+                  onLogPeriod: _logPeriod,
+                  onUpdateCycleStatus: _updateCycleStatus,
                 );
               }
               if (snapshot.connectionState == ConnectionState.waiting) {
@@ -1508,6 +1697,9 @@ class _BriefContent extends StatelessWidget {
     required this.justSetPauseId,
     required this.onTakeBreak,
     required this.onEndBreak,
+    required this.cycle,
+    required this.onLogPeriod,
+    required this.onUpdateCycleStatus,
   });
 
   final DailyBrief brief;
@@ -1543,6 +1735,12 @@ class _BriefContent extends StatelessWidget {
   final VoidCallback onTakeBreak;
   final ValueChanged<TrainingPause> onEndBreak;
 
+  /// The cycle answer, when it was read and tracking is on: the line under
+  /// the plan, the long-gap card and the recovery note.
+  final CycleAnswer? cycle;
+  final VoidCallback onLogPeriod;
+  final VoidCallback onUpdateCycleStatus;
+
   /// Workouts left open on this phone, offered back right under the hero.
   final List<OpenWorkout> open;
   final ValueChanged<OpenWorkout>? onResumeWorkout;
@@ -1572,6 +1770,9 @@ class _BriefContent extends StatelessWidget {
     final onResumeWorkout = this.onResumeWorkout;
     final today = DateTime.tryParse(brief.localDate) ?? DateTime.now();
     final plan = brief.plan;
+    final cycle = this.cycle;
+    final cycleLine = cycle == null ? null : cycleTodayLine(cycle);
+    final longGap = cycle == null ? null : cycleLongGapMessage(cycle);
     var index = 0;
     Widget enter(Widget child) =>
         MicroMotionEntrance(delay: MicroMotion.stagger(index++), child: child);
@@ -1587,6 +1788,7 @@ class _BriefContent extends StatelessWidget {
             checkedIn: checkedIn,
             offerCheckIn: offerCheckIn,
             onCheckIn: onCheckIn,
+            cycleNote: cycle == null ? null : cycleRecoveryNote(cycle),
           ),
         ),
         if (open.isNotEmpty && onResumeWorkout != null) ...[
@@ -1613,6 +1815,20 @@ class _BriefContent extends StatelessWidget {
         if (plan != null) ...[
           const SizedBox(height: TracendSpacing.sm),
           enter(PlanProgressLine(plan: plan)),
+        ],
+        if (cycleLine case final line?) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          enter(CycleLine(text: line)),
+        ],
+        if (longGap case final message?) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          enter(
+            CycleLongGapCard(
+              message: message,
+              onLogPeriod: onLogPeriod,
+              onUpdateStatus: onUpdateCycleStatus,
+            ),
+          ),
         ],
         const SizedBox(height: TracendSpacing.md),
         enter(

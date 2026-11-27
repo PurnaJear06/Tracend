@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -530,6 +531,314 @@ void main() {
       final scrubbed = scrubEvent(event, hint)!;
       expect(scrubbed.message!.formatted, 'Workout synced after a retry');
       expect(scrubbed.breadcrumbs!.single.message, 'Workout started');
+    });
+  });
+
+  group('what Sentry may carry of the cycle', () {
+    Map<String, dynamic> fixture(String name) => Map<String, dynamic>.from(
+      json.decode(File('test/contract/fixtures/$name').readAsStringSync())
+          as Map,
+    );
+
+    // What the app sends the cycle RPCs, by their real parameter names.
+    final rpcParams = <String, Map<String, Object?>>{
+      'log_cycle_day_v1': {
+        'p_local_date': '2026-11-10',
+        'p_flow': 'heavy',
+        'p_cramps': 'strong',
+        'p_is_start': true,
+      },
+      'set_my_cycle_settings_v1': {
+        'p_tracking_enabled': true,
+        'p_status': 'hormonal_contraception',
+        'p_typical_cycle_days': 31,
+        'p_apple_health_enabled': false,
+      },
+      'import_cycle_days_v1': {
+        'p_from': '2026-05-01',
+        'p_to': '2026-11-27',
+        'p_days': [
+          {'local_date': '2026-11-10', 'flow': 'medium', 'is_start': true},
+        ],
+      },
+    };
+
+    test('an answer from the database keeps nothing of the cycle', () {
+      for (final name in const [
+        'my_cycle_v1_0_regular.json',
+        'my_cycle_v1_0_contraception.json',
+        'my_cycle_v1_0_off.json',
+      ]) {
+        final answer = fixture(name);
+        final scrubbed = scrubEvent(
+          SentryEvent(
+            request: SentryRequest(
+              url: 'https://example.supabase.co/rest/v1/rpc/get_my_cycle_v1',
+              data: {'response': answer, 'screen': 'today'},
+            ),
+            // ignore: deprecated_member_use
+            extra: {...answer, 'kept': 'a plain fact'},
+          ),
+          hint,
+        )!;
+        final data = scrubbed.request!.data as Map;
+        final response = data['response'] as Map;
+        for (final key in ['typical_cycle_days', 'recent_days', 'cycles']) {
+          expect(response.containsKey(key), isFalse, reason: '$name $key');
+        }
+        // `state` is too common a key to drop; what is inside it goes.
+        final state = response['state'] as Map;
+        for (final key in [
+          'cycle_day',
+          'period_day',
+          'expected_from',
+          'expected_to',
+          'late_days',
+          'no_period_long',
+          'weight_water_window',
+        ]) {
+          expect(state.containsKey(key), isFalse, reason: '$name $key');
+        }
+        // ignore: deprecated_member_use
+        final extra = scrubbed.extra!;
+        for (final key in ['typical_cycle_days', 'recent_days', 'cycles']) {
+          expect(extra.containsKey(key), isFalse, reason: '$name $key');
+        }
+        expect(extra['kept'], 'a plain fact');
+        expect(data['screen'], 'today');
+        // The event's own timestamp is not the answer's.
+        // ignore: deprecated_member_use
+        final text = '${scrubbed.request!.data} ${scrubbed.extra}';
+        // Every date, flow and phase the answer holds, whatever the fixture.
+        final answerState = answer['state'] as Map;
+        final secrets = <String>[
+          'hormonal_contraception',
+          'second_half',
+          ?answerState['expected_from'] as String?,
+          ?answerState['expected_to'] as String?,
+          for (final day in answer['recent_days'] as List) ...[
+            (day as Map)['local_date'] as String,
+          ],
+          for (final cycle in answer['cycles'] as List)
+            (cycle as Map)['start_date'] as String,
+        ];
+        for (final secret in secrets) {
+          expect(text, isNot(contains(secret)), reason: '$name $secret');
+        }
+      }
+    });
+
+    test('the state keys go whole at any depth', () {
+      final state =
+          fixture('my_cycle_v1_0_regular.json')['state']!
+              as Map<String, dynamic>;
+      final scrubbed =
+          scrubValue({
+                'deep': {'state': state, 'keep': 1},
+              })!
+              as Map;
+      expect(scrubbed, {
+        'deep': {
+          'state': <String, Object?>{
+            // `phase` and `confidence` are too common to drop as keys; the
+            // values that say where she is in her cycle go instead.
+            'phase': redactedValue,
+            'confidence': 'medium',
+          },
+          'keep': 1,
+        },
+      });
+    });
+
+    test('the RPC parameters go whole', () {
+      for (final entry in rpcParams.entries) {
+        final scrubbed = scrubValue({entry.key: entry.value})! as Map;
+        final params = scrubbed.values.single as Map;
+        for (final key in [
+          'p_flow',
+          'p_cramps',
+          'p_status',
+          'p_days',
+          'p_is_start',
+          'p_typical_cycle_days',
+        ]) {
+          expect(params.containsKey(key), isFalse, reason: '${entry.key} $key');
+        }
+        final text = scrubbed.toString();
+        for (final secret in ['heavy', 'strong', 'hormonal_contraception']) {
+          expect(text, isNot(contains(secret)), reason: entry.key);
+        }
+      }
+    });
+
+    test('the values that say how her cycle works go, whatever the key', () {
+      final scrubbed =
+          scrubValue({
+                'status': 'hormonal_contraception',
+                'cycle': 'no_periods',
+                'phase': 'second_half',
+                'where': ' First_Half ',
+                'tags': ['second_half', 'ok'],
+              })!
+              as Map;
+      expect(scrubbed['status'], redactedValue);
+      expect(scrubbed['cycle'], redactedValue);
+      expect(scrubbed['phase'], redactedValue);
+      expect(scrubbed['where'], redactedValue);
+      expect(scrubbed['tags'], [redactedValue, 'ok']);
+    });
+
+    test('plain status and phase keys are not dropped', () {
+      final scrubbed =
+          scrubValue({
+                'status': 'running',
+                'phase': 'upload',
+                'confidence': 'high',
+              })!
+              as Map;
+      expect(scrubbed, {
+        'status': 'running',
+        'phase': 'upload',
+        'confidence': 'high',
+      });
+    });
+
+    test('the cycle RPC names that write answers go from free text', () {
+      for (final name in rpcParams.keys.followedBy([
+        'delete_my_cycle_data_v1',
+      ])) {
+        final text = scrubText('failed in $name after a retry');
+        expect(text, isNot(contains(name)), reason: name);
+        expect(text, contains('after a retry'));
+      }
+      expect(
+        scrubText('https://x.co/rest/v1/rpc/get_my_cycle_v1'),
+        contains('get_my_cycle_v1'),
+      );
+    });
+
+    test('an event keeps no cycle key, flow, period or cramps', () {
+      final event = SentryEvent(
+        request: SentryRequest(
+          url: 'https://example.supabase.co/rest/v1/rpc/log_cycle_day_v1',
+          data: {
+            'body': {
+              'cycle_status': 'regular',
+              'menstrual_flow': 'heavy',
+              'flow': 'heavy',
+              'period': '2026-11-10',
+              'cramps': 'strong',
+              'plain': 'left in',
+            },
+          },
+        ),
+        // ignore: deprecated_member_use
+        extra: {
+          'cycle_state': {'phase': 'second_half'},
+          'flow': 'light',
+          'period': 'yes',
+          'kept': 'a plain fact',
+        },
+        tags: {'cycle_status': 'regular', 'screen': 'today'},
+        breadcrumbs: [
+          Breadcrumb(
+            message: 'log_cycle_day_v1 sent',
+            data: {'cramps': 'mild', 'menstruation_logged': true, 'ok': 1},
+          ),
+        ],
+      );
+
+      final scrubbed = scrubEvent(event, hint)!;
+      final body = (scrubbed.request!.data as Map)['body'] as Map;
+      expect(body.keys, ['plain']);
+      expect(scrubbed.request!.url, isNot(contains('log_cycle_day')));
+      // ignore: deprecated_member_use
+      expect(scrubbed.extra!.keys, ['kept']);
+      expect(scrubbed.tags, {'screen': 'today'});
+      expect(scrubbed.breadcrumbs!.single.data, {'ok': 1});
+      final text = _everything(scrubbed);
+      for (final secret in ['heavy', 'strong', 'regular', '2026-11-10']) {
+        expect(text, isNot(contains(secret)), reason: secret);
+      }
+    });
+
+    test('keys that only contain the words are not touched', () {
+      final scrubbed =
+          scrubValue({
+                'workflow': 'checkout',
+                'lifecycle': 'resumed',
+                'periodDays': 28,
+                'flowers': 'tulips',
+                'recycle_bin': 'empty',
+              })!
+              as Map;
+      expect(scrubbed, {
+        'workflow': 'checkout',
+        'lifecycle': 'resumed',
+        'periodDays': 28,
+        'flowers': 'tulips',
+        'recycle_bin': 'empty',
+      });
+    });
+
+    test(
+      'a training pause keeps its start_date and the cycle list is gone',
+      () {
+        final scrubbed =
+            scrubValue({
+                  'pause': {
+                    'start_date': '2026-12-01',
+                    'end_date': '2026-12-05',
+                    'length_days': 5,
+                  },
+                  'cycles': [
+                    {
+                      'start_date': '2026-10-13',
+                      'length_days': 28,
+                      'used': true,
+                    },
+                  ],
+                })!
+                as Map;
+        expect(scrubbed.containsKey('cycles'), isFalse);
+        expect(scrubbed['pause'], {
+          'start_date': '2026-12-01',
+          'end_date': '2026-12-05',
+          'length_days': 5,
+        });
+      },
+    );
+
+    test('the exact keys flow and period are dropped at any depth', () {
+      final scrubbed =
+          scrubValue({
+                'a': [
+                  {'flow': 'light', 'period': 3, 'workflow': 'x'},
+                ],
+              })!
+              as Map;
+      expect(scrubbed, {
+        'a': [
+          {'workflow': 'x'},
+        ],
+      });
+    });
+
+    test('a cycle key with its value in free text goes whole', () {
+      final text = scrubText(
+        'refused cycle_status=hormonal_contraception and cramps: strong',
+      );
+      expect(text, isNot(contains('hormonal_contraception')));
+      expect(text, isNot(contains('strong')));
+      expect(text, contains('refused'));
+    });
+
+    test('names of other functions and ordinary words are left alone', () {
+      expect(
+        scrubText('get_my_cycle_v1 failed after a lifecycle workflow'),
+        'get_my_cycle_v1 failed after a lifecycle workflow',
+      );
+      expect(scrubText('period of 3 weeks'), 'period of 3 weeks');
     });
   });
 }

@@ -64,7 +64,48 @@ merged in order: data (PR 1), app (PR 2), Coach (PR 3).
 
 ## App
 
-Added by the app PR.
+State: built on `claude/cycle-app` (PR "Cycle in the app"). Product copy and flows are in
+[UX_FLOWS.md](../UX_FLOWS.md) ("Cycle tracking"); privacy rules are in
+[SECURITY_PRIVACY.md](../SECURITY_PRIVACY.md) ("Cycle data in the app").
+
+- **Repository.** `lib/features/cycle/cycle_repository.dart`: `CycleRepository` (Supabase and fixture),
+  `parseCycleAnswer` (refuses anything unreadable, like `parseAccountRegion`) and `CycleConsent` (its own
+  `consent_records` insert, source `ios_app`, notice `2026-11-27`; deliberately not in `LegalConsent`, which
+  is granted and demanded for every athlete). A `P0403` becomes `CycleRefused` and is worded by
+  `cycleFailureMessage`; the code is never shown.
+- **Shared state.** One repository in `AppShell` (`_cycle`) and one `CycleChanges` notifier; Today, Progress
+  and Account listen. Nothing is stored on the phone, and no new file is in `_storingFiles`.
+- **Screens.** Onboarding block (`widgets/cycle_onboarding_block.dart`, only for female or unspecified, only
+  on a first setup, only without settings); Account › Cycle tracking (`account/widgets/cycle_settings.dart`);
+  check-in `PeriodTodayControl` (saves on tap, outside the payload and the unsaved guard); Today line and
+  long-gap card (`today/widgets/cycle_line.dart`), loaded after the brief and hidden on any error; recovery
+  and weight notes (`cycleRecoveryNote`, `cycleWeightNote` in `cycle_labels.dart`).
+- **Apple Health.** `cycle_health.dart`: `HealthKitCycleReader` (menstrual flow only), `cycleHealthDays`
+  (drops "none", never spotting), `CycleHealthSync`. Turning the switch on saves it first, then asks iOS, then
+  reads 180 days (a failed read saves it off again). Today runs the 30-day read on its own, apart from the main
+  health sync: after the brief and on foreground, at most every 6 hours (in-memory timestamp), only when
+  `get_my_cycle_v1` says tracking and `apple_health_enabled`, and only while the agreements gate
+  (`AppShell.healthAllowed`, the gate's `_healthAllowed`) is open. The import sends exactly `local_date`,
+  `flow`, `is_start`. The start flag is read from the raw `HKMenstrualCycleStart` metadata as well as the
+  plugin's `isStartOfCycle`, because plugin 13.3.2 compares the boolean with `1.0`, which `true` never equals
+  (`isCycleStartMetadata`, tested).
+- **Day editor.** `cycle_day_sheet.dart` fills from the answer for the date it is on. A day older than the 59
+  listed days opens with nothing chosen and Save closed, so a day never read is never overwritten; a cycle
+  start in `cycles` presets the first-day switch; moving the date reloads. A first day needs Light, Medium or
+  Heavy: the app never sends `unspecified` with `is_start` (the onboarding date is the one start with no
+  level, which the engine treats as a guess).
+- **Scrubber.** `cycle_`, `menstrua`, `cramp` prefixes and the exact contract keys (`p_flow`, `p_days`,
+  `recent_days`, `cycles`, `period_day` and the rest, plus `flow`, `period`); the values `hormonal_contraception`,
+  `no_periods`, `first_half`, `second_half` are redacted wherever they are; the names of the cycle's writing
+  RPCs go from free text. Tests scrub the real fixtures and RPC parameter maps and pin that `workflow`,
+  `lifecycle`, `periodDays` and plain `status`/`phase` keys are untouched.
+- **Versions.** `LegalNotices.privacyVersion` and the privacy page are `2026-11-27`, so privacy and health
+  data are asked once more for everyone.
+- **Tests.** `test/contract/cycle_contract_test.dart` (the three fixtures), `cycle_*_test.dart`, the
+  onboarding group in `phase_2_flow_test.dart`, scrubber and legal-version tests. The Account page test now
+  scrolls to "Send feedback" because the Cycle row makes the page longer.
+- **Open for the owner.** Install after the merge deploys. On the phone: accept the updated privacy notice,
+  optionally turn Cycle tracking on, log a period, then Delete my cycle data.
 
 ## Coach
 

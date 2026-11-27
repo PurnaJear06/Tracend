@@ -7,6 +7,8 @@ import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/account/widgets/account_sheets.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/consent/legal_consent.dart';
+import 'package:tracend/features/cycle/cycle_repository.dart';
+import 'package:tracend/features/cycle/widgets/cycle_onboarding_block.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
@@ -47,6 +49,7 @@ class OnboardingFlow extends StatefulWidget {
     this.currentSetup,
     this.onSignOut,
     this.deletion,
+    this.cycle,
     this.pollInterval = const Duration(seconds: 3),
     this.pollTimeout = const Duration(seconds: 150),
     this.currentYear,
@@ -79,6 +82,11 @@ class OnboardingFlow extends StatefulWidget {
   /// stops before their plan (screened out, or changing their mind) can
   /// still remove what they saved. Signs out after it settles.
   final AccountDeletionRepository? deletion;
+
+  /// Where the optional "Your cycle" block saves its answers, shown in About
+  /// you to an athlete who is female or did not say, when setting up for the
+  /// first time. Null hides it.
+  final CycleRepository? cycle;
   final Duration pollInterval;
 
   /// Longer than the server's generation lease; after it the app offers a retry.
@@ -2103,8 +2111,21 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         ),
         const SizedBox(height: TracendSpacing.xs),
       ],
+      if (_asksAboutCycle)
+        CycleOnboardingBlock(
+          key: const ValueKey('cycle-onboarding-block'),
+          repository: widget.cycle!,
+        ),
     ],
   );
+
+  /// The optional cycle block is for someone setting up for the first time
+  /// whose sex is female or not given; never when changing a setup that
+  /// exists.
+  bool get _asksAboutCycle =>
+      widget.cycle != null &&
+      widget.currentSetup == null &&
+      (_sex == 'female' || _sex == 'unspecified');
 
   static const _months = [
     'Jan',

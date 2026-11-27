@@ -14,6 +14,7 @@ import 'package:tracend/features/account/widgets/account_widgets.dart';
 import 'package:tracend/features/account/widgets/ai_usage_screen.dart';
 import 'package:tracend/features/account/widgets/coach_threads_sheet.dart';
 import 'package:tracend/features/account/widgets/consent_history_screen.dart';
+import 'package:tracend/features/account/widgets/cycle_settings.dart';
 import 'package:tracend/features/account/widgets/health_check_screen.dart';
 import 'package:tracend/features/account/widgets/notification_settings.dart';
 import 'package:tracend/features/account/widgets/profile_goals_screen.dart';
@@ -24,6 +25,8 @@ import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/consent/legal_consent.dart';
+import 'package:tracend/features/cycle/cycle_health.dart';
+import 'package:tracend/features/cycle/cycle_repository.dart';
 import 'package:tracend/features/feedback/feedback_mail.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_models.dart';
@@ -60,6 +63,9 @@ class AccountScreen extends StatefulWidget {
     this.exports = const FixturePrivacyExportRepository(),
     this.deletion = const FixtureAccountDeletionRepository(),
     this.region = const FixtureRegionRepository(),
+    this.cycle = const FixtureCycleRepository(),
+    this.cycleHealth,
+    this.cycleChanges,
     this.screening,
     this.aiConsent,
     this.widgetPublisher,
@@ -87,6 +93,13 @@ class AccountScreen extends StatefulWidget {
   /// The athlete's optional country, which picks the national guidelines Coach
   /// can cite.
   final RegionRepository region;
+
+  /// The athlete's optional cycle tracking, with the Apple Health reader of
+  /// its period days (null without Apple Health) and the notice Today and
+  /// Progress listen to.
+  final CycleRepository cycle;
+  final CycleHealthSync? cycleHealth;
+  final CycleChanges? cycleChanges;
 
   /// The health check's record. Null uses the signed-in athlete's, and
   /// without a backend the Health check row does not show.
@@ -304,6 +317,12 @@ class _AccountScreenState extends State<AccountScreen> {
             ),
             const SectionLabel('Region'),
             RegionSettings(repository: widget.region),
+            const SectionLabel('Cycle'),
+            CycleSettings(
+              repository: widget.cycle,
+              health: widget.cycleHealth,
+              changes: widget.cycleChanges,
+            ),
             const SectionLabel('Feedback'),
             TracendGroupedList(
               children: [

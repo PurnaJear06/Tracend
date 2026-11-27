@@ -7,6 +7,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/cycle/cycle_labels.dart';
+import 'package:tracend/features/cycle/cycle_repository.dart';
 import 'package:tracend/features/goals/goal_target_repository.dart';
 import 'package:tracend/features/goals/widgets/goal_target_section.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
@@ -22,6 +24,7 @@ import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/app_lifecycle.dart';
 import 'package:tracend/shared/diagnostics.dart';
 import 'package:tracend/shared/formatting.dart';
+import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
@@ -71,6 +74,8 @@ class ProgressScreen extends StatefulWidget {
     this.goalTargets = const FixtureGoalTargetRepository(),
     this.now = DateTime.now,
     this.pickPhoto = _pickWithImagePicker,
+    this.cycle = const FixtureCycleRepository(),
+    this.cycleChanges,
     this.active = true,
     super.key,
   });
@@ -89,6 +94,14 @@ class ProgressScreen extends StatefulWidget {
   /// Clock for the period window and relative dates.
   final DateTime Function() now;
   final ProgressPhotoPicker pickPhoto;
+
+  /// The athlete's optional cycle tracking, read for the note on the weight
+  /// trend around a period. A read that fails shows no note.
+  final CycleRepository cycle;
+
+  /// Told when the cycle changed (Account, a period logged), so the note
+  /// follows.
+  final CycleChanges? cycleChanges;
   @override
   State<ProgressScreen> createState() => _ProgressScreenState();
 }
@@ -120,6 +133,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
   bool _hasConsent = false;
   late Future<DailyBrief> _brief;
   late Future<String?> _goal;
+  late Future<CycleAnswer?> _cycle;
   late Future<_PhysiqueState> _physique;
 
   /// When the screen's data last arrived; the brief and goal behind the
@@ -143,13 +157,28 @@ class _ProgressScreenState extends State<ProgressScreen> {
     _reloadWeightContext();
     _physique = _loadPhysique();
     _resume.attach();
+    widget.cycleChanges?.addListener(_cycleChanged);
   }
 
   @override
   void dispose() {
     _resume.detach();
+    widget.cycleChanges?.removeListener(_cycleChanged);
     super.dispose();
   }
+
+  void _cycleChanged() {
+    if (mounted) setState(() => _cycle = _loadCycle());
+  }
+
+  /// The cycle answer behind the weight note; null when it cannot be read.
+  Future<CycleAnswer?> _loadCycle() => widget.cycle.load().then<CycleAnswer?>(
+    (answer) => answer,
+    onError: (Object error) {
+      logNonCritical(error, 'cycle not read');
+      return null;
+    },
+  );
 
   @override
   void didUpdateWidget(ProgressScreen oldWidget) {
@@ -183,6 +212,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
             (Object _) => null,
           )
         : Future<String?>.value();
+    _cycle = _loadCycle();
   }
 
   void _reload() {
@@ -345,14 +375,20 @@ class _ProgressScreenState extends State<ProgressScreen> {
         future: _brief,
         builder: (context, brief) => FutureBuilder<String?>(
           future: _goal,
-          builder: (context, goal) => WeightHeroCard(
-            measurements: data.measurements,
-            periodMeasurements: periodMeasurements,
-            computed: brief.data?.computed,
-            goal: goal.data,
-            fallbackWeightKg: data.summary.currentWeightKg,
-            onRecord: _record,
-            now: now,
+          builder: (context, goal) => FutureBuilder<CycleAnswer?>(
+            future: _cycle,
+            builder: (context, cycle) => WeightHeroCard(
+              measurements: data.measurements,
+              periodMeasurements: periodMeasurements,
+              computed: brief.data?.computed,
+              goal: goal.data,
+              fallbackWeightKg: data.summary.currentWeightKg,
+              onRecord: _record,
+              now: now,
+              cycleNote: cycle.data == null
+                  ? null
+                  : cycleWeightNote(cycle.data!),
+            ),
           ),
         ),
       ),

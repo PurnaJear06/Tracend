@@ -21,9 +21,13 @@ import 'package:tracend/shared/widgets/tracend_motion.dart';
 ///
 /// Renders nothing when the brief has no recovery breakdown.
 class RecoveryReadoutCard extends StatelessWidget {
-  const RecoveryReadoutCard({required this.computed, super.key});
+  const RecoveryReadoutCard({required this.computed, this.note, super.key});
 
   final ComputedMetrics computed;
+
+  /// A sentence under the drivers that explains a shift in them, such as the
+  /// second half of her cycle. The score and the rows are not changed by it.
+  final String? note;
 
   @override
   Widget build(BuildContext context) {
@@ -57,6 +61,19 @@ class RecoveryReadoutCard extends StatelessWidget {
                 ),
               ),
             _DriverRow(driver: drivers[i]),
+          ],
+          if (note case final note?) ...[
+            Divider(height: 1, thickness: 1, color: colors.borderHairline),
+            Padding(
+              key: const ValueKey('cycle-recovery-note'),
+              padding: const EdgeInsets.symmetric(vertical: TracendSpacing.sm),
+              child: Text(
+                note,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+              ),
+            ),
           ],
           Divider(height: 1, thickness: 1, color: colors.borderHairline),
           _HowCalculated(

@@ -10,33 +10,76 @@ import 'package:tracend/shared/diagnostics.dart';
 // Health values, meal content, photo links and prompts never leave the phone,
 // and neither does anything from the pain check: the area, the strength, the
 // red-flag answers and the referral they led to are among the most private
-// things the app holds. A report says that something failed, never what the
-// athlete answered.
+// things the app holds. The cycle is as private: that she tracks one, a period
+// day, the flow and the cramps are no one else's to know. A report says that
+// something failed, never what the athlete answered.
 
 /// What replaces a value the athlete entered or the phone measured.
 const redactedValue = '[redacted]';
 
-/// The pain check's own keys (B5): answers, areas, severities and the
-/// referral. They go entirely, name and value, because even that a pain
-/// answer was present is nobody else's to know.
+/// The pain check's own keys (B5) and the cycle's: answers, areas,
+/// severities, the referral, the flow and the period. They go entirely, name
+/// and value, because even that such an answer was present is nobody else's to
+/// know. The cycle's are exact keys, the ones of its RPC parameters
+/// (`p_flow`, `p_days`) and of its answer (`period_day`, `recent_days`,
+/// `cycles`): a part of a key would also hit `workflow` and `periodDays`, and
+/// `status` and `phase` alone are too common to drop.
 const _droppedKeys = {
   'area',
   'area_state',
   'cleared_by_clinician',
+  'cycle_day',
+  'cycles',
+  'expected_from',
+  'expected_to',
+  'flow',
   'followups',
   'hold_outcome',
+  'is_start',
+  'late_days',
+  'no_period_long',
+  'p_cramps',
+  'p_days',
+  'p_flow',
+  'p_is_start',
+  'p_status',
+  'p_typical_cycle_days',
+  'period',
+  'period_day',
   'range_note_code',
   'range_note_codes',
+  'recent_days',
   'red_flags',
   'safety_route',
   'severity',
   'swap_to_name',
   'swap_to_slug',
+  'typical_cycle_days',
+  'weight_water_window',
+};
+
+/// Values that say how her cycle works or where she is in it, wherever they
+/// are found: a `status` or `phase` key is too common to drop, so the value
+/// itself goes.
+const _cycleValues = {
+  'hormonal_contraception',
+  'no_periods',
+  'first_half',
+  'second_half',
 };
 
 /// Keys that start with these are the pain check's too: `pain_area`,
-/// `pain_severity`, `pain_red_flags`, `joint_states`, `joint_action`.
-const _droppedPrefixes = ['pain_', 'joint_', 'red_flag'];
+/// `pain_severity`, `pain_red_flags`, `joint_states`, `joint_action`. And the
+/// cycle's: `cycle_day`, `cycle_status`, `menstrual_flow`, `cramps`. Only the
+/// start of a key counts, so `lifecycle` and `workflow` are left alone.
+const _droppedPrefixes = [
+  'pain_',
+  'joint_',
+  'red_flag',
+  'cycle_',
+  'menstrua',
+  'cramp',
+];
 
 bool _dropKey(String key) {
   final lower = key.toLowerCase();
@@ -135,9 +178,11 @@ const _valuePattern =
 
 /// A pain key with its value, in any text: `pain_area=back`,
 /// `pain_severity: 8`, `"red_flags":["night_pain"]`, `area = 'knee'`. The whole
-/// expression goes, so the answer does not stay behind the key.
+/// expression goes, so the answer does not stay behind the key. The cycle's
+/// keys (`cycle_status`, `menstrual_flow`, `cramps`) go the same way.
 final _painPairPattern = RegExp(
-  r'''["']?\b(?:pain_[a-z_]+|joint_[a-z_]+|red_flags?|area|area_state|severity|'''
+  r'''["']?\b(?:pain_[a-z_]+|joint_[a-z_]+|cycle_[a-z_]+|menstrua[a-z_]*|'''
+  r'''cramps?|red_flags?|area|area_state|severity|'''
   r'''cleared_by_clinician|followups|hold_outcome|safety_route|'''
   r'''range_note_codes?|swap_to_(?:name|slug))["']?[ \t]*[:=][ \t]*'''
   '$_valuePattern',
@@ -155,12 +200,15 @@ final _sensitivePairPattern = RegExp(
 /// The words that carry a pain answer or a referral when they appear inside
 /// text: the codes of the red-flag list, the routes and outcomes that name a
 /// referral, the pain check's own `pain_` and `joint_` tokens, and the names
-/// of its table and function (`pain_reports`, `record_pain_check`). Names of
-/// other functions and screens are not among them.
+/// of its table and function (`pain_reports`, `record_pain_check`). The
+/// functions that write her cycle answers (`log_cycle_day_v1` and the others)
+/// go the same way. Names of other functions and screens are not among them.
 final _painWordPattern = RegExp(
   r'(pain_(?:area|severity|pattern|red_flags|followups|cleared_by_clinician|'
   r'referral|flag|mild|moderate|severe|reports)|record_pain_check[a-z0-9_]*|'
   r'red_flag[a-z_:]*|joint_[a-z_]+|'
+  r'log_cycle_day[a-z0-9_]*|import_cycle_days[a-z0-9_]*|'
+  r'set_my_cycle_settings[a-z0-9_]*|delete_my_cycle_data[a-z0-9_]*|'
   r'bladder_bowel_saddle|chest_or_breath|numb_weak_limb|pop_or_sudden|'
   r'cannot_bear_or_move|rapid_swelling|dislocated_or_cannot_lift|'
   r'locks_gives_way|fever_unwell|night_pain|clinician_today|clinician)',
@@ -247,7 +295,10 @@ String? _failureLabel(Object? thrown) {
 Object? scrubValue(Object? value, {String? key}) {
   if (key != null && _isSensitiveKey(key)) return redactedValue;
   return switch (value) {
-    final String text => scrubText(text),
+    final String text =>
+      _cycleValues.contains(text.trim().toLowerCase())
+          ? redactedValue
+          : scrubText(text),
     final Map<dynamic, dynamic> map => {
       for (final entry in map.entries)
         if (!_dropKey('${entry.key}'))

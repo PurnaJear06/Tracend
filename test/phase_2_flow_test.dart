@@ -8,6 +8,7 @@ import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/consent/legal_consent.dart';
+import 'package:tracend/features/cycle/cycle_repository.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
@@ -17,6 +18,7 @@ import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_screening.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/brand/tracend_mark.dart';
+import 'cycle_fakes.dart';
 
 void main() {
   testWidgets('owner auth validates fields before contacting Supabase', (
@@ -2209,6 +2211,134 @@ void main() {
       );
     });
   });
+
+  group('the optional cycle block in About you', () {
+    OnboardingDraft aboutWith(String sex) => OnboardingDraft(
+      path: 'beginner',
+      currentSection: 'about',
+      payload: {..._draft('about').payload, 'sex': sex},
+    );
+
+    Future<void> openAbout(
+      WidgetTester tester,
+      String sex, {
+      CycleRepository? cycle,
+    }) async {
+      await _pump(
+        tester,
+        _FakeOnboardingRepository(draft: aboutWith(sex)),
+        cycle: cycle,
+      );
+      expect(find.text('About you.'), findsOneWidget);
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -2000));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('is asked of someone who is female', (tester) async {
+      await openAbout(tester, 'female', cycle: FakeCycle());
+      expect(find.text('Your cycle'), findsOneWidget);
+      expect(
+        find.text('Take my menstrual cycle into account?'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('is asked of someone who did not say', (tester) async {
+      await openAbout(tester, 'unspecified', cycle: FakeCycle());
+      expect(find.text('Your cycle'), findsOneWidget);
+    });
+
+    testWidgets('is not asked of a man', (tester) async {
+      await openAbout(tester, 'male', cycle: FakeCycle());
+      expect(find.text('Your cycle'), findsNothing);
+    });
+
+    testWidgets('is not there without a place to save the answers', (
+      tester,
+    ) async {
+      await openAbout(tester, 'female');
+      expect(find.text('Your cycle'), findsNothing);
+    });
+
+    testWidgets('is not asked when cycle settings already exist', (
+      tester,
+    ) async {
+      await openAbout(
+        tester,
+        'female',
+        cycle: FakeCycle(answer: trackingAnswer()),
+      );
+      expect(find.text('Your cycle'), findsNothing);
+    });
+
+    testWidgets('is hidden when the cycle cannot be read, and About you '
+        'still goes on', (tester) async {
+      await openAbout(tester, 'female', cycle: FakeCycle()..failLoads = true);
+      expect(find.text('Your cycle'), findsNothing);
+      await _continue(tester);
+      expect(find.text('When do you train?'), findsOneWidget);
+    });
+
+    testWidgets('never blocks the step, answered or not', (tester) async {
+      final cycle = FakeCycle();
+      await openAbout(tester, 'female', cycle: cycle);
+      await _continue(tester);
+      expect(find.text('When do you train?'), findsOneWidget);
+      expect(cycle.settings, isEmpty);
+      expect(cycle.consentGrants, 0);
+    });
+
+    testWidgets('its answers are saved apart from the setup draft', (
+      tester,
+    ) async {
+      final cycle = FakeCycle();
+      final repository = _FakeOnboardingRepository(draft: aboutWith('female'));
+      await _pump(tester, repository, cycle: cycle);
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -2000));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Yes'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Agree'));
+      await tester.pumpAndSettle();
+      final contraception = find.textContaining('Hormonal contraception');
+      await tester.ensureVisible(contraception);
+      await tester.pumpAndSettle();
+      await tester.tap(contraception);
+      await tester.pumpAndSettle();
+      expect(cycle.settings.single.status, CycleStatus.hormonalContraception);
+
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, 2000));
+      await tester.pumpAndSettle();
+      await _continue(tester);
+      expect(
+        repository.savedPayload?.keys.where(
+          (key) => key.contains('cycle') || key.contains('period'),
+        ),
+        isEmpty,
+      );
+    });
+
+    testWidgets('is not shown when changing a setup that exists', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        _FakeOnboardingRepository(draft: aboutWith('female')),
+        cycle: FakeCycle(),
+        currentSetup: _draft('review'),
+      );
+      expect(find.text('Review your setup.'), findsOneWidget);
+      final edit = find.byTooltip('Edit daily activity');
+      await tester.scrollUntilVisible(edit, 200);
+      await tester.pumpAndSettle();
+      await tester.tap(edit);
+      await tester.pumpAndSettle();
+      expect(find.text('About you.'), findsOneWidget);
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -2000));
+      await tester.pumpAndSettle();
+      expect(find.text('Your cycle'), findsNothing);
+    });
+  });
 }
 
 const _connected = HealthSyncStatus(
@@ -2343,6 +2473,8 @@ Future<void> _pump(
   int? currentYear,
   HealthRepository? health,
   HealthBaselineSource? healthBaseline,
+  CycleRepository? cycle,
+  OnboardingDraft? currentSetup,
   double width = 390,
 }) async {
   tester.view.physicalSize = Size(width, 844);
@@ -2362,6 +2494,8 @@ Future<void> _pump(
         deletion: deletion,
         pollInterval: Duration.zero,
         currentYear: currentYear,
+        cycle: cycle,
+        currentSetup: currentSetup,
       ),
     ),
   );
