@@ -190,6 +190,27 @@ void main() {
       expect(repository.imports.single.days, hasLength(1));
     });
 
+    test(
+      'backfill reads nothing while the agreements gate is closed',
+      () async {
+        final repository = FakeCycle();
+        final reader = FakeCycleHealthReader();
+        final sync = CycleHealthSync(
+          repository: repository,
+          reader: reader,
+          allowed: () => false,
+          now: () => now,
+        );
+        expect(sync.allowed, isFalse);
+        await expectLater(
+          sync.backfill(),
+          throwsA(isA<CycleHealthGateClosed>()),
+        );
+        expect(reader.reads, isEmpty);
+        expect(repository.imports, isEmpty);
+      },
+    );
+
     test('a refused permission request means it cannot be turned on', () async {
       final sync = CycleHealthSync(
         repository: FakeCycle(),

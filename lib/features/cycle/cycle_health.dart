@@ -181,6 +181,11 @@ class HealthKitCycleReader implements CycleHealthReader {
   }
 }
 
+/// Apple Health cannot be read now: the agreements are unknown or outdated.
+class CycleHealthGateClosed implements Exception {
+  const CycleHealthGateClosed();
+}
+
 /// Reads Apple Health's period days into the database. 180 days when she turns
 /// the switch on, 30 days on each sync after. Every window replaces what Apple
 /// Health gave before inside it and never touches a day she logged by hand.
@@ -210,7 +215,16 @@ class CycleHealthSync {
 
   /// The first 180 days, read after the switch is on at the database (which
   /// refuses an import before).
-  Future<CycleImport> backfill() => _import(enableWindowDays);
+  ///
+  /// Throws [CycleHealthGateClosed] without reading while the agreements gate
+  /// is closed, like [sync].
+  Future<CycleImport> backfill() async {
+    if (!_allowed()) throw const CycleHealthGateClosed();
+    return _import(enableWindowDays);
+  }
+
+  /// Whether Apple Health may be read and sent now (the agreements gate).
+  bool get allowed => _allowed();
 
   /// The 30-day refresh. Does nothing, and returns null, unless the agreements
   /// gate is open and tracking and "Read periods from Apple Health" are both

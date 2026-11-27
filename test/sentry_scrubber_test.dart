@@ -781,6 +781,34 @@ void main() {
       });
     });
 
+    test(
+      'a training pause keeps its start_date and the cycle list is gone',
+      () {
+        final scrubbed =
+            scrubValue({
+                  'pause': {
+                    'start_date': '2026-12-01',
+                    'end_date': '2026-12-05',
+                    'length_days': 5,
+                  },
+                  'cycles': [
+                    {
+                      'start_date': '2026-10-13',
+                      'length_days': 28,
+                      'used': true,
+                    },
+                  ],
+                })!
+                as Map;
+        expect(scrubbed.containsKey('cycles'), isFalse);
+        expect(scrubbed['pause'], {
+          'start_date': '2026-12-01',
+          'end_date': '2026-12-05',
+          'length_days': 5,
+        });
+      },
+    );
+
     test('the exact keys flow and period are dropped at any depth', () {
       final scrubbed =
           scrubValue({

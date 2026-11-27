@@ -87,6 +87,9 @@ CheckInPeriod _period(
   onChanged: onChanged,
 );
 
+bool _selectedCramps(WidgetTester tester) =>
+    find.bySemanticsLabel('Cramps: Mild').evaluate().isNotEmpty;
+
 void main() {
   test('only an athlete with periods to log is asked', () {
     expect(asksAboutPeriod(CycleAnswer.off), isFalse);
@@ -215,6 +218,29 @@ void main() {
     for (final day in cycle.days) {
       expect(day.flow == PeriodFlow.unspecified && day.isStart, isFalse);
     }
+  });
+
+  testWidgets('choosing a level on a day with none keeps its cramps', (
+    tester,
+  ) async {
+    final cycle = FakeCycle(
+      answer: trackingAnswer(
+        recentDays: [
+          CycleDay(
+            date: _day,
+            flow: PeriodFlow.unspecified,
+            cramps: CycleCramps.mild,
+            isStart: false,
+            source: CycleSource.manual,
+          ),
+        ],
+      ),
+    );
+    await _open(tester, _Sent(), period: _period(cycle));
+    await _tap(tester, 'Flow: Medium');
+    expect(cycle.days.single.flow, PeriodFlow.medium);
+    expect(cycle.days.single.cramps, CycleCramps.mild);
+    expect(_selectedCramps(tester), isTrue);
   });
 
   testWidgets('a tap that did not save says so and shows what is stored', (

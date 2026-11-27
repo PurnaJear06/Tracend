@@ -186,6 +186,27 @@ void main() {
       expect(logged.isStart, isTrue);
     });
 
+    testWidgets('a double tap on the long-gap buttons opens one sheet', (
+      tester,
+    ) async {
+      final cycle = FakeCycle(
+        answer: trackingAnswer(state: const CycleState(noPeriodLong: true)),
+      );
+      await _pump(tester, cycle: cycle);
+      await tester.tap(find.text('Log a period'));
+      await tester.tap(find.text('Log a period'));
+      await tester.pumpAndSettle();
+      expect(find.text('Bleeding'), findsOneWidget);
+      await tester.tap(find.bySemanticsLabel('Close'));
+      await tester.pumpAndSettle();
+      expect(find.text('Bleeding'), findsNothing);
+
+      await tester.tap(find.text('Update my cycle status'));
+      await tester.tap(find.text('Update my cycle status'));
+      await tester.pumpAndSettle();
+      expect(find.text('Which fits you best?'), findsOneWidget);
+    });
+
     testWidgets('"Update my cycle status" saves the new status', (
       tester,
     ) async {
@@ -336,6 +357,44 @@ void main() {
         changes.announce();
         await tester.pumpAndSettle();
         expect(reader.reads, hasLength(2));
+      });
+
+      testWidgets('a closed gate does not spend the six hours', (tester) async {
+        final cycle = enabled();
+        final reader = FakeCycleHealthReader();
+        var open = false;
+        await _pump(
+          tester,
+          cycle: cycle,
+          cycleHealth: sync(cycle, reader, allowed: () => open),
+        );
+        expect(reader.reads, isEmpty);
+
+        open = true;
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pumpAndSettle();
+        expect(reader.reads, hasLength(1));
+        expect(cycle.imports, hasLength(1));
+      });
+
+      testWidgets('a failed read does not spend the six hours either', (
+        tester,
+      ) async {
+        final cycle = enabled();
+        final reader = FakeCycleHealthReader()..failReads = true;
+        await _pump(tester, cycle: cycle, cycleHealth: sync(cycle, reader));
+        expect(reader.reads, hasLength(1));
+        expect(cycle.imports, isEmpty);
+
+        reader.failReads = false;
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pumpAndSettle();
+        expect(reader.reads, hasLength(2));
+        expect(cycle.imports, hasLength(1));
       });
 
       testWidgets('read on their own fail silently', (tester) async {

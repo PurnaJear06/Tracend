@@ -15,6 +15,9 @@ class FakeCycle implements CycleRepository {
   bool failWrites = false;
   Object? writeError;
 
+  /// Saving the settings fails once this many have been saved.
+  int? failSettingsFrom;
+
   int loads = 0;
   int consentGrants = 0;
   final settings =
@@ -45,6 +48,9 @@ class FakeCycle implements CycleRepository {
     required bool appleHealthEnabled,
   }) async {
     _maybeFail();
+    if (failSettingsFrom != null && settings.length >= failSettingsFrom!) {
+      throw Exception('offline');
+    }
     settings.add((
       tracking: trackingEnabled,
       status: status,

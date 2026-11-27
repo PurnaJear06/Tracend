@@ -346,7 +346,7 @@ void main() {
       expect(reader.reads, isEmpty);
       expect(_switch(tester, 1).value, isFalse);
       expect(
-        find.text('Periods could not be read from Apple Health. Try again.'),
+        find.text('Not saved. Check your connection and try again.'),
         findsOneWidget,
       );
     });
@@ -369,6 +369,85 @@ void main() {
       expect(cycle.imports, isEmpty);
       expect(find.text('Apple Health could not be opened.'), findsOneWidget);
       expect(_switch(tester, 1).value, isFalse);
+    });
+
+    testWidgets('a closed agreements gate turns nothing on and asks nothing', (
+      tester,
+    ) async {
+      final cycle = FakeCycle(answer: trackingAnswer());
+      final reader = FakeCycleHealthReader();
+      await _pump(
+        tester,
+        cycle,
+        health: CycleHealthSync(
+          repository: cycle,
+          reader: reader,
+          allowed: () => false,
+        ),
+      );
+      await tester.tap(find.byType(Switch).at(1));
+      await tester.pumpAndSettle();
+      expect(cycle.settings, isEmpty);
+      expect(reader.requests, 0);
+      expect(reader.reads, isEmpty);
+      expect(_switch(tester, 1).value, isFalse);
+      expect(
+        find.text(
+          'Apple Health cannot be read until your agreements are up to date.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a gate that closes after the save reads nothing and saves '
+        'the switch off again', (tester) async {
+      final cycle = FakeCycle(answer: trackingAnswer());
+      final reader = FakeCycleHealthReader();
+      var checks = 0;
+      await _pump(
+        tester,
+        cycle,
+        health: CycleHealthSync(
+          repository: cycle,
+          reader: reader,
+          allowed: () => ++checks == 1,
+        ),
+      );
+      await tester.tap(find.byType(Switch).at(1));
+      await tester.pumpAndSettle();
+      expect(reader.reads, isEmpty);
+      expect(cycle.imports, isEmpty);
+      expect(cycle.settings.map((s) => s.apple), [true, false]);
+      expect(_switch(tester, 1).value, isFalse);
+      expect(
+        find.text(
+          'Apple Health cannot be read until your agreements are up to date.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('when the switch cannot be saved off again the screen shows '
+        'the server\'s answer and the first error', (tester) async {
+      final cycle = FakeCycle(answer: trackingAnswer())..failSettingsFrom = 1;
+      final reader = FakeCycleHealthReader()..failReads = true;
+      await _pump(
+        tester,
+        cycle,
+        health: CycleHealthSync(repository: cycle, reader: reader),
+      );
+      cycle.loads = 0;
+      await tester.tap(find.byType(Switch).at(1));
+      await tester.pumpAndSettle();
+      // The save off failed, so the server still has the switch on, and that
+      // is what the screen shows.
+      expect(cycle.settings.map((s) => s.apple), [true]);
+      expect(cycle.loads, greaterThan(0));
+      expect(_switch(tester, 1).value, isTrue);
+      expect(
+        find.text('Periods could not be read from Apple Health. Try again.'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('a failed first read turns the switch back off', (
@@ -440,6 +519,22 @@ void main() {
     expect(announced, 1);
     expect(_switch(tester, 0).value, isFalse);
     expect(find.text('Delete my cycle data'), findsNothing);
+  });
+
+  testWidgets('a double tap on Delete asks once', (tester) async {
+    await _pump(tester, FakeCycle(answer: trackingAnswer()));
+    await tester.scrollUntilVisible(
+      find.text('Delete my cycle data'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Delete my cycle data'));
+    await tester.tap(find.text('Delete my cycle data'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete my cycle data?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete my cycle data?'), findsNothing);
   });
 
   testWidgets('a failed change says so and leaves the screen as it was', (

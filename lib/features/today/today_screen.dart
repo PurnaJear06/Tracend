@@ -804,6 +804,7 @@ class _TodayScreenState extends State<TodayScreen> {
   /// When the cycle's Apple Health read last started. Kept in memory only:
   /// nothing about the cycle is stored on the phone.
   DateTime? _cycleHealthAt;
+  bool _cycleHealthSyncing = false;
   static const _cycleHealthEvery = Duration(hours: 6);
 
   /// Apple Health's period days, read on their own, apart from the main health
@@ -827,12 +828,20 @@ class _TodayScreenState extends State<TodayScreen> {
     if (!force && last != null && now.difference(last) < _cycleHealthEvery) {
       return;
     }
-    _cycleHealthAt = now;
+    if (_cycleHealthSyncing) return;
+    _cycleHealthSyncing = true;
     try {
       final result = await sync.sync(answer: answer);
-      if (result != null && mounted) await _loadCycle();
+      // Only a read that ran spends the six hours: a closed gate, a switch
+      // that is off or a failure leaves the next trigger free to try.
+      if (result != null) {
+        _cycleHealthAt = now;
+        if (mounted) await _loadCycle();
+      }
     } catch (error) {
       logNonCritical(error, 'cycle days not read from Apple Health');
+    } finally {
+      _cycleHealthSyncing = false;
     }
   }
 
@@ -846,20 +855,40 @@ class _TodayScreenState extends State<TodayScreen> {
     );
   }
 
+  /// A cycle sheet from the long-gap card is open or saving, so a double tap
+  /// does not open a second one.
+  bool _cycleAsking = false;
+
   Future<void> _logPeriod() async {
-    final answer = await showCycleDaySheet(
-      context,
-      repository: widget.cycle,
-      date: widget.clock(),
-      answer: _cycle ?? CycleAnswer.off,
-      startsPeriod: true,
-      canChangeDate: true,
-      now: widget.clock,
-    );
-    if (answer != null) _cycleSaved(answer);
+    if (_cycleAsking) return;
+    _cycleAsking = true;
+    try {
+      final answer = await showCycleDaySheet(
+        context,
+        repository: widget.cycle,
+        date: widget.clock(),
+        answer: _cycle ?? CycleAnswer.off,
+        startsPeriod: true,
+        canChangeDate: true,
+        now: widget.clock,
+      );
+      if (answer != null) _cycleSaved(answer);
+    } finally {
+      _cycleAsking = false;
+    }
   }
 
   Future<void> _updateCycleStatus() async {
+    if (_cycleAsking) return;
+    _cycleAsking = true;
+    try {
+      await _askCycleStatus();
+    } finally {
+      _cycleAsking = false;
+    }
+  }
+
+  Future<void> _askCycleStatus() async {
     final current = _cycle;
     final status = await showCycleStatusSheet(
       context,

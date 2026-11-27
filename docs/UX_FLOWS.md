@@ -1699,12 +1699,15 @@ and nothing is stored on the phone: every screen reads the server's answer
   "Not saved" when it was not. Turning tracking off keeps the days; deleting removes them and withdraws
   the consent.
 - **Apple Health.** **Read periods from Apple Health** saves the switch first; only when the database has
-  accepted it does iOS get asked for menstrual flow, and then 180 days are read. A refused save never shows
-  Apple's sheet, and a failed first read saves the switch off again. Afterwards Today reads the last 30 days
+  accepted it does iOS get asked for menstrual flow, and then 180 days are read. A refused save says it was not saved and never shows
+  Apple's sheet, and a failed first read saves the switch off again (if that fails too, the screen shows the
+  server's answer). Afterwards Today reads the last 30 days
   on its own, apart from the main health sync (so someone who never connected that one still gets her
   periods): when it has read the cycle after the brief and when the app comes back to the front, at most
-  once in six hours (kept in memory only; Sync forces it), only while tracking and the switch are on and the
-  same agreements gate as the main sync is open. Failures say nothing. Days she logged herself always win;
+  once in six hours (kept in memory only; Sync forces it; only a read that ran spends the six hours, so a
+  closed gate or a failure is tried again at the next trigger), only while tracking and the switch are on and
+  the same agreements gate as the main sync is open. Failures say nothing. While the gate is closed the
+  switch is not turned on (it says Apple Health cannot be read until the agreements are up to date). Days she logged herself always win;
   "none" samples are ignored; spotting is logged by hand only.
 - **Days she has not been shown.** The answer lists the last 59 days. Opening an older cycle (or moving the
   date of the day editor to an older day) opens with nothing chosen and Save closed until she chooses what

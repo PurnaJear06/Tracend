@@ -184,9 +184,17 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
       logNonCritical(error, 'cycle change not saved');
       if (mounted) {
         setState(
-          () => _message = error is _AppleHealthClosed
-              ? 'Apple Health could not be opened.'
-              : cycleFailureMessage(error, fallback: failure),
+          () => _message = switch (error) {
+            _AppleHealthClosed() => 'Apple Health could not be opened.',
+            CycleHealthGateClosed() => _gateClosedMessage,
+            _AppleHealthReadFailed(:final cause) => cycleFailureMessage(
+              cause,
+              fallback:
+                  'Periods could not be read from Apple Health. Try '
+                  'again.',
+            ),
+            _ => cycleFailureMessage(error, fallback: failure),
+          },
         );
       }
       return false;
@@ -246,12 +254,18 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
 
   /// Saves the switch first: iOS's permission sheet is shown only once the
   /// database has accepted it, so a refused save never asks. If Apple Health
-  /// cannot be asked or read, the switch is saved off again.
+  /// cannot be asked or read, the switch is saved off again; if that save
+  /// fails too, the screen reads the server's answer so it shows what is real.
+  /// While the agreements gate is closed nothing is turned on.
   Future<void> _setAppleHealth(CycleAnswer current, bool on) async {
     final health = widget.health;
     if (health == null || _locked) return;
     if (!on) {
       await _run(() => _save(current, appleHealth: false));
+      return;
+    }
+    if (!health.allowed) {
+      setState(() => _message = _gateClosedMessage);
       return;
     }
     await _run(() async {
@@ -260,13 +274,33 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
         if (!await health.requestAccess()) throw const _AppleHealthClosed();
         await health.backfill();
       } catch (error) {
-        // The switch is not left on for days that were never read.
         logNonCritical(error, 'cycle days not read from Apple Health');
-        await _save(saved, appleHealth: false);
-        rethrow;
+        await _switchBackOff(saved);
+        // The first failure is the one reported, whatever the clean-up did.
+        if (error is _AppleHealthClosed || error is CycleHealthGateClosed) {
+          rethrow;
+        }
+        throw _AppleHealthReadFailed(error);
       }
       return widget.repository.load();
-    }, failure: 'Periods could not be read from Apple Health. Try again.');
+    });
+  }
+
+  /// The switch is not left on for days that were never read. If it cannot be
+  /// saved off, the server's own answer is shown instead.
+  Future<void> _switchBackOff(CycleAnswer saved) async {
+    try {
+      await _save(saved, appleHealth: false);
+    } catch (error) {
+      logNonCritical(error, 'cycle switch not saved off');
+      try {
+        final real = await widget.repository.load();
+        if (mounted) setState(() => _answer = real);
+        widget.changes?.announce();
+      } catch (loadError) {
+        logNonCritical(loadError, 'cycle not read');
+      }
+    }
   }
 
   Future<void> _editDay(CycleAnswer current, DateTime date) async {
@@ -286,15 +320,17 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
   }
 
   Future<void> _delete() async {
-    final confirmed = await showTracendConfirm(
-      context,
-      title: 'Delete my cycle data?',
-      message:
-          "This removes every period day and cycle answer. It can't be undone.",
-      confirmLabel: 'Delete',
-      destructive: true,
+    final confirmed = await _ask(
+      () => showTracendConfirm(
+        context,
+        title: 'Delete my cycle data?',
+        message:
+            "This removes every period day and cycle answer. It can't be undone.",
+        confirmLabel: 'Delete',
+        destructive: true,
+      ),
     );
-    if (!confirmed || !mounted) return;
+    if (confirmed != true || !mounted) return;
     final deleted = await _run(
       widget.repository.deleteAll,
       failure: 'Your cycle data was not deleted. Try again.',
@@ -305,6 +341,9 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
   }
 
   static const _keep = Object();
+
+  static const _gateClosedMessage =
+      'Apple Health cannot be read until your agreements are up to date.';
 
   @override
   Widget build(BuildContext context) {
@@ -485,4 +524,12 @@ class _SwitchRow extends StatelessWidget {
 /// Apple Health cannot be asked for menstrual flow on this phone.
 class _AppleHealthClosed implements Exception {
   const _AppleHealthClosed();
+}
+
+/// Apple Health was asked and could not be read after the switch was saved;
+/// [cause] is what failed.
+class _AppleHealthReadFailed implements Exception {
+  const _AppleHealthReadFailed(this.cause);
+
+  final Object cause;
 }

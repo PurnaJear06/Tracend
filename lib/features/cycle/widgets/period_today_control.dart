@@ -78,7 +78,8 @@ class _PeriodTodayControlState extends State<PeriodTodayControl> {
     return (
       yes: day.flow != null,
       flow: flow,
-      cramps: flow == null ? null : day.cramps,
+      // The stored cramps are kept: choosing a level saves them with it.
+      cramps: day.cramps,
     );
   }
 
