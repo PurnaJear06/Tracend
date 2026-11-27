@@ -57,7 +57,7 @@ create table public.cycle_day_logs (
   constraint cycle_day_logs_start_is_bleeding
     check (not is_start or (flow is not null and flow <> 'spotting')),
   constraint cycle_day_logs_apple_health_shape check (source = 'manual'
-    or (flow in ('light', 'medium', 'heavy', 'unspecified') and cramps is null))
+    or (flow is not null and flow in ('light', 'medium', 'heavy', 'unspecified') and cramps is null))
 );
 
 comment on table public.cycle_day_logs is
@@ -360,7 +360,7 @@ begin
   today := private.local_date_for(uid);
   return private.cycle_answer(uid, today, today - 59, today + 1);
 end $$;
-revoke all on function public.get_my_cycle_v1() from public, anon;
+revoke all on function public.get_my_cycle_v1() from public, anon, service_role;
 grant execute on function public.get_my_cycle_v1() to authenticated;
 
 -- Turning tracking on needs a granted cycle_data consent and a status; reading Apple Health also
@@ -446,7 +446,7 @@ begin
   return private.cycle_answer(uid, today, today - 59, today + 1);
 end $$;
 revoke all on function public.set_my_cycle_settings_v1(boolean, text, integer, boolean)
-  from public, anon;
+  from public, anon, service_role;
 grant execute on function public.set_my_cycle_settings_v1(boolean, text, integer, boolean)
   to authenticated;
 
@@ -501,7 +501,7 @@ begin
 
   return private.cycle_answer(uid, today, today - 59, today + 1);
 end $$;
-revoke all on function public.log_cycle_day_v1(date, text, text, boolean) from public, anon;
+revoke all on function public.log_cycle_day_v1(date, text, text, boolean) from public, anon, service_role;
 grant execute on function public.log_cycle_day_v1(date, text, text, boolean) to authenticated;
 
 -- The period days Apple Health holds for a window of at most 400 days ending no later than
@@ -605,7 +605,7 @@ begin
 
   return jsonb_build_object('schema_version', '1.0', 'imported', imported, 'removed', removed);
 end $$;
-revoke all on function public.import_cycle_days_v1(date, date, jsonb) from public, anon;
+revoke all on function public.import_cycle_days_v1(date, date, jsonb) from public, anon, service_role;
 grant execute on function public.import_cycle_days_v1(date, date, jsonb) to authenticated;
 
 -- "Delete my cycle data": every logged day and the settings row go, a withdrawal of the cycle_data
@@ -629,7 +629,7 @@ begin
   today := private.local_date_for(uid);
   return private.cycle_answer(uid, today, today - 59, today + 1);
 end $$;
-revoke all on function public.delete_my_cycle_data_v1() from public, anon;
+revoke all on function public.delete_my_cycle_data_v1() from public, anon, service_role;
 grant execute on function public.delete_my_cycle_data_v1() to authenticated;
 
 -- 7. Coach's read ------------------------------------------------------------------------------------
