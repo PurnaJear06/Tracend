@@ -1,6 +1,6 @@
 # Tracend Current State
 
-**As of:** 2026-11-02
+**As of:** 2026-11-28
 
 **Lifecycle:** owner-only private beta; not approved for public production. Production Auth
 sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
@@ -142,6 +142,22 @@ with both v2 photo notices published; Groq receives nothing. Onboarding uses its
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.
   U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
+- cycle: menstrual-cycle support v1 (2026-11-28, three stacked PRs, merge in order #208 → #209 → #211).
+  #208 foundation (migrations `20261127141837` consent type, `20261127142651` tables, engine, RPCs;
+  pgTAP compares every contract fixture in full): opt-in `cycle_settings` and `cycle_day_logs`, a
+  deterministic engine (`private.cycle_state`, ALGORITHMS §11), its own `cycle_data` consent, Apple
+  Health import that never touches manual rows, "Delete my cycle data", privacy export. #209 app:
+  optional "Your cycle" block in onboarding, Account › Cycle tracking, "Period today?" in the
+  check-in (saved on tap, outside the pain check), the Today line and long-gap card, second-half
+  recovery and water-weight notes, Apple Health menstrual reading behind the agreements gate,
+  privacy page and `privacyVersion` 2026-11-27 (everyone re-accepts once). #211 Coach: a `cycle`
+  contributor and second-half watch-out wording that render only under AI notice v7 (drafted in
+  `docs/notices/ai-coaching-v7.md`, not published; publishing switches Coach off for each athlete
+  until they re-accept), plus fertility/contraception and condition-naming reply guards for
+  everyone. The red-flag screen is unchanged: severe period pain typed to Coach still gets the
+  referral (an exemption was tried and dropped after review). Owner steps: merge, install, accept
+  the privacy notice; before publishing v7, run the cycle evals (both eval keys were out of credit
+  on 2026-11-28). Handoff: [`cycle.md`](./handoff/cycle.md).
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 
 **Baseline history dedupe (2026-11-02, branch `claude/baseline-history-dedupe`, migration `20261102041737`, PR open):**

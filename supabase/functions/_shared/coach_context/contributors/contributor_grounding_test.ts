@@ -40,6 +40,8 @@ import runningGuidance from "../../../../../test/contract/fixtures/training_guid
   type: "json",
 };
 import { createScreeningContributor } from "./screening.ts";
+import { createCycleContributor } from "./cycle.ts";
+import { noticeScopes } from "../../ai_notice_coverage.ts";
 import { createTrainingPlanContributor } from "./training_plan.ts";
 import { createWatchOutsContributor } from "./watch_outs.ts";
 import { createStandingStateContributor, parseStandingState } from "./standing_state.ts";
@@ -63,6 +65,7 @@ Deno.test("every contributor that grounds as records has a probe here", () => {
     "nutrition_state",
     "coach_proposals",
     "heart_rate_profile",
+    "cycle",
     "coach_notes",
     "watch_outs",
     "coverage_brief",
@@ -444,6 +447,59 @@ Deno.test("training guidance: its dates, minutes and rule figures ground; no oth
   for (const side of [inputs.ground, inputs.athleteGround!]) {
     // A count of weeks or days the block never states grounds nothing.
     assertEquals(ungroundedNumbers("Your last deload was 14 days ago.", side), ["14"]);
+  }
+});
+
+Deno.test("cycle: its dates, day numbers and lengths ground; the windows and months in its rules do not", async () => {
+  const payload = {
+    schema_version: "1.0",
+    tracking_enabled: true,
+    status: "regular",
+    typical_cycle_days: 29,
+    apple_health_enabled: true,
+    state: {
+      cycle_day: 41,
+      period_day: null,
+      phase: null,
+      confidence: "medium",
+      expected_from: "2026-10-01",
+      expected_to: "2026-10-05",
+      late_days: 13,
+      no_period_long: true,
+      weight_water_window: false,
+    },
+    recent_days: [
+      { local_date: "2026-10-12", flow: null, cramps: null, is_start: false, source: "manual" },
+      {
+        local_date: "2026-10-15",
+        flow: "spotting",
+        cramps: "mild",
+        is_start: false,
+        source: "apple_health",
+      },
+    ],
+    cycles: [
+      { start_date: "2026-07-10", length_days: 27, used: true },
+      { start_date: "2026-08-06", length_days: 31, used: true },
+      { start_date: "2026-09-06", length_days: null, used: false },
+    ],
+  };
+  const rendered = await createCycleContributor(() => Promise.resolve(payload)).render({
+    ...input,
+    noticeScopes: noticeScopes("ai-coaching-v7"),
+  });
+  assert(typeof rendered === "object" && rendered !== null);
+  const inputs = probeContributor({
+    id: "cycle",
+    block: rendered,
+    fixture: payload,
+    calculated: [],
+    // The months of the long-gap rule and the window of the days listed are fixed wording.
+    fixed: ["3|mo", "14|"],
+  });
+  for (const side of [inputs.ground, inputs.athleteGround!]) {
+    assertEquals(ungroundedNumbers("Your cycles run about 14 days.", side), ["14"]);
+    assertEquals(ungroundedNumbers("Your cycle day is 41.", side), []);
   }
 });
 

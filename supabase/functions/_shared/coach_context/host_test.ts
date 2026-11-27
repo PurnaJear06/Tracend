@@ -35,6 +35,7 @@ Deno.test("the registry is valid and holds the contributors registered so far", 
     "nutrition_state",
     "coach_proposals",
     "heart_rate_profile",
+    "cycle",
     "coach_notes",
     "watch_outs",
     "coverage_brief",
@@ -45,6 +46,7 @@ Deno.test("the registry is valid and holds the contributors registered so far", 
     "stable",
     "stable",
     "stable",
+    "volatile",
     "volatile",
     "volatile",
     "volatile",
@@ -184,6 +186,10 @@ Deno.test("the coverage brief and the library, which need the gateway's answer f
   assertEquals(legacy.includes("library"), false);
   assertEquals(legacy.includes("training_plan"), true);
   assertEquals(legacy.includes("heart_rate_profile"), true);
+  // The cycle contributor is registered on the rollback path too, but it renders only under a notice
+  // that names cycle data, and coach-chat reads the notice version on the gateway route only: on the
+  // rollback path no scope is open, so it reads and renders nothing there (it fails closed).
+  assertEquals(legacy.includes("cycle"), true);
   validateCoachContextContributors(coachContextContributorsFor(false));
 });
 

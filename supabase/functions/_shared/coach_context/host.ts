@@ -5,6 +5,7 @@
 // and labels each block as reference data that never overrides Tracend's rules. A figure Tracend
 // calculated from the athlete's own records outranks a stale goal detail or an older note in the
 // athlete file. Stable contributors join the cached prompt prefix; volatile ones follow it.
+import type { NoticeScope } from "../ai_notice_coverage.ts";
 import { pieces, plain } from "../recorded_text.ts";
 
 export type CoachContextSlot = "stable" | "volatile";
@@ -32,7 +33,19 @@ export type CoachContextInput = Readonly<{
    * input; `sharedRead` then reads every time.
    */
   shared?: Map<string, Promise<unknown>>;
+  /**
+   * The data the athlete's accepted AI notice names beyond its basic list (`noticeScopes` in
+   * `../ai_notice_coverage.ts`). A contributor that shows such data reads and renders nothing for
+   * it without the scope. Absent in a hand-built input: no scope is open.
+   */
+  noticeScopes?: ReadonlySet<NoticeScope>;
 }>;
+
+/** Whether the turn's accepted notice names the data. */
+export const noticeOpens = (
+  input: Pick<CoachContextInput, "noticeScopes">,
+  scope: NoticeScope,
+): boolean => input.noticeScopes?.has(scope) ?? false;
 
 /**
  * One read for the turn: the first contributor to ask under `key` starts it, the others get the

@@ -35,6 +35,20 @@ The MVP excludes users who disclose pregnancy, an active eating disorder, a cond
 medical nutrition, a serious or acute injury, or a need for clinical rehabilitation. The app must
 explain the boundary and direct the user to an appropriate qualified professional.
 
+**Menstrual-cycle support (v1, 2026-11-27).** In scope, opt-in and never assumed: an athlete who
+turns on cycle tracking says how her cycle works (regular, irregular or changing, hormonal
+contraception, no periods at the moment), logs periods or reads them from Apple Health, and sees an
+honest cycle line. Recovery, weight and Coach answers then account for her cycle: the cycle explains,
+it never applies a change (the evidence does not support training by phase, and she decides). Coach
+uses cycle data only after she accepts an AI notice that names it (`ai-coaching-v7`, owner step);
+everything else works without it. Period cramps are logged with the period in the check-in, outside the
+pain check; a message to Coach about severe pain, period pain included, keeps the pain referral. No period for 90 days
+(regular) or 180 days (irregular) shows a neutral card suggesting a doctor if unexpected, and Coach
+will not suggest eating less while it stands. Never: fertile windows, ovulation days, "safe days",
+pregnancy likelihood, contraception advice, or a condition name she did not use first. Pregnancy stays
+excluded. Data, engine and screens: `docs/handoff/cycle.md`, `DATA_MODEL.md`, `ALGORITHMS.md`,
+`UX_FLOWS.md`; Coach rules: `AI_SAFETY_SPEC.md` §7, §10.3 and §12.
+
 **Pre-exercise screening (B6).** Before the first plan, four plain questions follow the
 preparticipation logic of the ACSM 2015 guidance, in Tracend's own words: whether the athlete
 exercises regularly now, whether they know of a heart, metabolic or kidney condition, whether they
@@ -496,6 +510,7 @@ principles:
 - HealthKit daily-summary sync;
 - workout prescription and set-level logging;
 - daily check-ins;
+- optional menstrual-cycle tracking (cycle support v1, below);
 - meal-photo proposal, food-catalog matching, and confirmation;
 - nutrition totals and adherence;
 - measurements and private progress photos;
@@ -509,7 +524,8 @@ principles:
 
 - Android and Health Connect;
 - public App Store launch;
-- minors, pregnancy, eating-disorder support, medical diets, and rehabilitation;
+- minors, pregnancy, eating-disorder support, medical diets, and rehabilitation (cycle tracking adds
+  no fertile window, ovulation day, pregnancy likelihood, contraception advice or diagnosis);
 - medical-report analysis;
 - exercise-video form correction or rep counting;
 - subscriptions, payments, ads, trainer marketplace, and social features;

@@ -16,16 +16,27 @@
 // minutes (workouts), the watch's workouts (workouts), proposals and daily decisions (Tracend's own
 // text about the plan, targets and goals the list names), and Coach's own earlier replies (the
 // conversation memory already sends them).
+//
+// Cycle support (2026-11-27) adds one more, which is never part of the list:
+//   cycle_data      the athlete's cycle answers and the period days she logs or allows from Apple
+//                   Health (the cycle contributor, and the watch-outs' reading of her cycle)
+//
+// ai-coaching-v7 (docs/notices/ai-coaching-v7.md, approved by the owner on 2026-10-20 for the first
+// two and drafted with cycle data on 2026-11-27) names all three. Until the owner publishes it, no
+// athlete can hold v7, so nothing opens: every athlete gets what v6 allows. Publishing is the
+// owner's step; a published notice switches Coach off for each athlete until they accept it.
 
-export type NoticeScope = "breathing_rate" | "workout_notes";
+export type NoticeScope = "breathing_rate" | "workout_notes" | "cycle_data";
 
 /**
- * The first `ai-coaching-vN` version whose text names the data, or null when no published version
- * does. To open a scope, publish the notice, then set its number here in the same change.
+ * The first `ai-coaching-vN` version whose text names the data, or null when no version does. Every
+ * later version opens it too, so a later notice has to name the data as well (a rollback notice
+ * included: docs/runbooks/phase2-claude-cutover.md, step 6.2).
  */
 export const firstNoticeNaming: Readonly<Record<NoticeScope, number | null>> = Object.freeze({
-  breathing_rate: null,
-  workout_notes: null,
+  breathing_rate: 7,
+  workout_notes: 7,
+  cycle_data: 7,
 });
 
 const versionPattern = /^ai-coaching-v(\d+)$/;

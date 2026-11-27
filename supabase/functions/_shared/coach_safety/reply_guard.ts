@@ -19,6 +19,15 @@
 //                               refused by parseCoachChatAnswer)
 //   repeats_previous_turn       ends with the same (or nearly the same) question as the previous
 //                               reply, or says again a sentence of it (coach_safety/repeats.ts)
+//   fertility_or_contraception_claim
+//                               estimates fertile days, ovulation or the chance of pregnancy, names
+//                               "safe days", or advises on contraception (a fertility claim makes an
+//                               app a medical device; Tracend makes none)
+//   cycle_condition_named       names a menstrual or hormonal condition (PCOS, endometriosis, a
+//                               hormonal imbalance, ...) that the athlete has not named herself
+//   deficit_advice_with_long_gap
+//                               advises eating less, a deficit or weight loss while the cycle block
+//                               says no period has come for a long time
 //
 // The design rule for every exemption (a warning, a decline, a prohibition, a description of the
 // athlete's past): it applies only when it provably governs the matched figure or prescription.
@@ -50,6 +59,7 @@ import {
 } from "./numbers_check.ts";
 import { type RepeatInputs, repeatsOf } from "./repeats.ts";
 import { asciiDigits } from "../ascii_digits.ts";
+import { deficitClaim } from "../onboarding/plan_contract.ts";
 import type { SafeRanges } from "./safe_ranges.ts";
 
 const sentencesOf = (answer: string) =>
@@ -479,6 +489,216 @@ function claimsAnAction(sentence: string): boolean {
   );
 }
 
+// ---- fertility_or_contraception_claim -------------------------------------------------------
+
+// Tracend tracks a cycle and explains it; it never estimates fertility, ovulation or the chance of
+// pregnancy and never advises on contraception. General physiology passes ("after ovulation resting
+// heart rate tends to rise", "your HRV usually dips in the second half of your cycle"), and so does
+// a refusal governed by a prohibition in its window ("I can't tell you your fertile window"). A
+// pattern whose words have an everyday meaning ("a safe time to add weight", "take the pill with
+// water", "a coil spring collar") counts only when the sentence is about a cycle, pregnancy or
+// contraception (`needs`).
+const contraceptive = String
+  .raw`(?:the pill|your pill|the mini[- ]?pill|contracepti\w+|birth control|(?:an |your |the |hormonal )?iuds?|(?:the |your )?coil|condoms?)\b`;
+// A menstrual period or cycle, not a rest period, a period of time or a training cycle.
+const menstrual = String
+  .raw`menstrua\w*|(?:my|your|her|the|a|next|last) periods?(?! of\b)|periods? (?:pain|cramps?|days?|starts?|started|comes?|came|is due|was due)|on (?:my|your|her) period|(?:menstrual|my|your|her) cycles?(?! of\b)|cycle days?`;
+const aboutCycleOrPregnancy = new RegExp(
+  String
+    .raw`\b(?:pregnan\w*|conceiv\w*|fertil\w*|ovulat\w*|contracepti\w*|birth control|${menstrual})\b`,
+  "i",
+);
+const aboutContraceptionOrCycle = new RegExp(
+  String
+    .raw`\b(?:contracepti\w*|birth control|pregnan\w*|conceiv\w*|${menstrual}|bleeds?|pill[- ]free|pill pack|iuds?|condoms?|mini[- ]?pill)\b`,
+  "i",
+);
+// A day she is told about: "yesterday", "this week", "the 14th", "for you".
+const herDay =
+  /\b(?:yesterday|today|tonight|tomorrow|(?:this|next|last) (?:week|weekend|month)|the \d+(?:st|nd|rd|th)|for you|your)\b/i;
+const dayOrDate =
+  /\b(?:days?|dates?|week|weekend|month|window|tonight|today|tomorrow|\d+(?:st|nd|rd|th)?)\b/i;
+
+/**
+ * A pattern, and the topic the sentence must hold for it to count. `outside`: the topic must be
+ * found outside the matched words ("a safe period of rest" is not about a period by its own word).
+ */
+type FertilityPattern = Readonly<{ pattern: RegExp; needs?: RegExp; outside?: boolean }>;
+const fertility = (pattern: RegExp, needs?: RegExp, outside = false): FertilityPattern => ({
+  pattern: globalCopy(pattern),
+  ...(needs ? { needs } : {}),
+  ...(outside ? { outside } : {}),
+});
+const fertilityPatterns: readonly FertilityPattern[] = [
+  fertility(/\bfertil(?:e|ity) (?:window|days?|period|phase|time|signs?)\b/i),
+  fertility(/\b(?:most|least|more|less|highly|very|peak) fertile\b/i),
+  fertility(/\byou(?:'re| are|'ll be| will be| may be| might be) (?:\w+ )?fertile\b/i),
+  // An ovulation dated or placed for her; "after you ovulate, resting heart rate rises" is physiology.
+  fertility(
+    /\byou(?:'ll| will|'d| would| should| may| might)? (?:probably |likely )?ovulate (?:on|around|about|in|by|near|today|tomorrow|this|next|soon)\b/i,
+  ),
+  fertility(/\byou (?:probably |likely |just |already |have |'ve )?ovulated\b/i),
+  fertility(/\byour ovulation\b|\bovulation (?:day|date|window|calculator)\b/i),
+  fertility(
+    /\bovulation\b[^.!?\n]{0,30}\b(?:occurred|happened|happens|will (?:happen|occur|be)|should be|is due|was|falls?|fell|comes?|came)\b/i,
+    herDay,
+  ),
+  fertility(/\b(?:peak|highest|top) fertility\b|\bexpect (?:your )?(?:peak |most )?fertil\w*/i),
+  fertility(/\bovulat\w* (?:on|around|about|near|by) (?:cycle day|the \d|\d)/i),
+  fertility(/\bsafe (?:days?|period|window|time)\b/i, aboutCycleOrPregnancy, true),
+  fertility(/\bsafe from (?:getting |being |becoming |falling )?pregnan\w*/i),
+  fertility(/\bpregnancy (?:risk|chances?|odds|likelihood)\b/i),
+  fertility(
+    /\b(?:little|no|low|small|high|good|some|any|zero|slim|tiny|real) (?:chance|risk|odds|likelihood)\b[^.!?\n]{0,30}\bpregnan\w*/i,
+  ),
+  fertility(
+    /\b(?:hard|harder|difficult|easy|easier|unlikely|impossible|rare) to (?:get|become|fall) pregnant\b/i,
+  ),
+  // A conception predicted either way: the negation is part of the claim, not a refusal.
+  fertility(
+    /\b(?:likely|probably|unlikely to|won'?t|will not|can'?t|cannot)\s+(?:won'?t\s+|not\s+)?(?:conceive|get pregnant|become pregnant)\b/i,
+  ),
+  fertility(
+    /\b(?:rhythm method|natural family planning|fertility awareness|calendar method)\b/i,
+  ),
+  fertility(
+    /\b(?:chances?|odds|likelihood|probability|risk) (?:of|that|for) (?:you |her )?(?:getting |being |becoming |falling )?(?:pregnant|pregnancy|conceiv\w*)\b/i,
+  ),
+  fertility(
+    /\bpregnancy (?:is |was |becomes |gets )?(?:least |most |less |more |very |highly |almost )?(?:likely|unlikely|possible|impossible)\b/i,
+  ),
+  fertility(
+    /\b(?:likely|unlikely|probably|definitely|certainly) (?:not )?(?:to (?:be|get) |that you'?re |you'?re |be )?pregnant\b/i,
+  ),
+  fertility(/\byou(?:'re| are)(?: not|n't)? pregnant\b/i),
+  fertility(
+    /\b(?:can'?t|cannot|can|could|won'?t|will not|unlikely to) (?:get|become|fall) pregnant\b/i,
+  ),
+  // When she can conceive, placed on a day: "the 10th to the 15th are when you can conceive".
+  fertility(/\bconceiv\w*\b(?! of\b)/i, dayOrDate),
+  // Contraception advice: starting, stopping, skipping or switching it, or how well it works.
+  fertility(
+    new RegExp(
+      String
+        .raw`\b(?:you can|you could|you should|you may|you might want to|try|consider|it'?s (?:fine|safe|ok|okay) to|no need to|you don'?t need to|feel free to)\s+(?:\w+\s+){0,2}?(?:stop|skip|come off|go off|quit|start|switch|change|miss|pause|use|take|try|double)\s+(?:\w+\s+){0,2}?${contraceptive}`,
+      "i",
+    ),
+    aboutContraceptionOrCycle,
+  ),
+  fertility(
+    new RegExp(
+      String
+        .raw`${contraceptive}[^.!?\n]{0,30}\b(?:\d+(?:\.\d+)?\s*(?:%|percent)|(?:is|are|stays?|remains?) (?:still )?(?:effective|reliable|protecting you|working))`,
+      "i",
+    ),
+    aboutContraceptionOrCycle,
+  ),
+];
+const pillPatterns: readonly FertilityPattern[] = [
+  // A missed pill called harmless, or the pill run on to skip a bleed.
+  fertility(
+    /\bmiss(?:ing|ed)? (?:a|one|your|the|two) pills?\b[^.!?\n]{0,40}\b(?:fine|ok|okay|alright|safe|no problem|not a problem|nothing to worry)\b/i,
+  ),
+  fertility(
+    /\bpills?\b[^.!?\n]{0,30}\b(?:continuously|back[- ]to[- ]back|without (?:a|the) break)\b[^.!?\n]{0,50}\b(?:safe|fine|ok|okay|common|normal|skip (?:a |your |the )?(?:bleed|period))\b/i,
+  ),
+  fertility(
+    /\bunprotected (?:sex|intercourse)\b|\b(?:emergency contracepti\w+|morning[- ]after pill)\b/i,
+  ),
+  fertility(
+    /\b(?:skip|skipping|miss|missing|start|stop|run|running)\w* (?:your |the )?(?:placebo|pill[- ]free|sugar[- ]pill|inactive[- ]pill|hormone[- ]free) (?:week|days?|pills?|break)\b/i,
+  ),
+  fertility(
+    /\b(?:no need for|don'?t need|do not need|won'?t need|needn'?t|skip)\s+(?:a |any |the )?(?:backup|back-up|back up) (?:method|contracepti\w*|protection)\b/i,
+  ),
+  fertility(
+    /\b(?:pulling out|withdrawal method|coitus interruptus)\b/i,
+    /\b(?:effective|reliable|safe|works?|method|pregnan\w*|protect\w*)\b/i,
+  ),
+];
+
+/**
+ * A match that no prohibition in its window governs, whose topic (`needs`) the sentence holds
+ * outside the matched words: "a safe period of rest" cannot be about a period by its own word.
+ */
+function claimsFertilityOrContraception(sentence: string): boolean {
+  return clausesOf(sentence).some((clause) =>
+    [...fertilityPatterns, ...pillPatterns].some(({ pattern, needs, outside }) =>
+      [...clause.matchAll(pattern)].some((match) =>
+        (needs === undefined || needs.test(outside ? sentence.replace(match[0], " ") : sentence)) &&
+        !prohibitedBefore(clause.slice(0, match.index))
+      )
+    )
+  );
+}
+
+// ---- cycle_condition_named ------------------------------------------------------------------
+
+// Diagnosis-type menstrual conditions, by family: the athlete who wrote "PCOS" may be answered about
+// polycystic ovary syndrome. Naming one she did not name suggests a diagnosis, so any mention fails,
+// a denial included ("this doesn't mean you have PCOS" still plants it). Only names that the
+// library and the principles digest never use are listed: menopause, REDs (relative energy
+// deficiency) and the like are library content Coach may explain, and asking whether one is the
+// cause is a diagnosis request the red-flag screen answers (red_flags.ts).
+const cycleConditions: readonly Readonly<{ family: string; pattern: RegExp }>[] = [
+  { family: "pcos", pattern: /\b(?:pcos|pcod|polycystic ovar\w*)/i },
+  { family: "endometriosis", pattern: /\bendometriosis\b/i },
+  { family: "adenomyosis", pattern: /\badenomyosis\b/i },
+  { family: "pmdd", pattern: /\b(?:pmdd|premenstrual dysphoric)/i },
+  { family: "fibroids", pattern: /\bfibroids?\b/i },
+  { family: "amenorrhoea", pattern: /\bamenorrh\w*/i },
+];
+
+/** The condition families a text names. */
+const conditionsIn = (text: string): Set<string> =>
+  new Set(cycleConditions.filter((item) => item.pattern.test(text)).map((item) => item.family));
+
+/** The condition families the reply names that the athlete's own words do not. */
+function conditionsNotTheirs(text: string, theirs: ReadonlySet<string>): string[] {
+  return [...conditionsIn(text)].filter((family) => !theirs.has(family));
+}
+
+/** The names the rule refuses, for the test that keeps library words out of it. */
+export const cycleConditionPatterns: readonly RegExp[] = cycleConditions.map((item) =>
+  item.pattern
+);
+
+// ---- deficit_advice_with_long_gap -----------------------------------------------------------
+
+// While the cycle block says no period has come for a long time, Coach never suggests eating less.
+// A clause that advises a deficit, a cut, weight loss or eating less fails unless a denial, a pause
+// or a description of what the athlete has been doing governs the match from its window ("pause the
+// deficit", "don't cut calories", "you've been in a deficit since September"). Keeping calories at
+// maintenance or above names no deficit and passes. The claim words are the onboarding plan check's
+// (plan_contract.ts); the denials are this rule's own. A sentence that brings the deficit back or
+// approves it ("until", "then", "resume", "keep it", "for now", "fine", "working") keeps no denial,
+// pause or description: "you're in a slight deficit, which is fine for now" and "since the deficit
+// is working, keep it" fail.
+const calorieCut =
+  /\b(?:cut|cutting|drop|dropping|reduce|reducing|lower|lowering|trim|trimming|decrease|decreasing|shave|shaving)\s+(?:\w+\s+){0,3}?(?:calories|kcal|intake|portions|carbs|food)\b|\beat(?:ing)? (?:a (?:little|bit|touch) |slightly |somewhat )?less\b|\bskip(?:ping)? (?:the |your |a |an )?(?:\w+ )?(?:snacks?|meals?|breakfast|lunch|dinner)\b|\b(?:go|going|keep|be|stay) (?:a (?:bit|little) |slightly )?light(?:er)? on (?:carbs|food|calories|portions|snacks|fats?|dinner|meals)\b|\b(?:smaller|fewer|lighter) (?:portions|meals|servings|snacks|plates)\b|\blean(?:ing)? out\b|\b(?:shed|shedding|drop|dropping|lose|losing) (?:a (?:couple|few) (?:of )?|some |another |\d+(?:\.\d+)? ?)?(?:kilos?|kgs?|pounds?|lbs?)\b/gi;
+const deficitAdvice = new RegExp(deficitClaim.source, "gi");
+const deficitDenial =
+  /\b(?:no|not a|not in a|rather than (?:in )?a|instead of (?:in )?a|better than (?:in )?a|without a|out of (?:a|the|your)|(?:pause|pausing|stop|stopping|end|ending|leave|leaving|drop|dropping) (?:a|the|your)|hold off on (?:a|the|your))\s+(?:calorie\s+)?deficit\b|\b(?:no|not|never|don'?t|do not|avoid|instead of|rather than)\s+(?:to\s+)?(?:try(?:ing)? to\s+)?(?:eat(?:ing)? (?:a (?:little|bit) )?less|los(?:e|ing) weight|weight loss|fat loss|cut(?:ting)? calories)\b/gi;
+const deficitReturns =
+  /\b(?:until|then|resum\w*|restart\w*|keep (?:it|going|the deficit|your deficit|that)|for now|fine|okay|ok|working|stick with|carry on)\b/i;
+const pauseOrPast =
+  /\b(?:pause|pausing|paused|end|ending|ease off|easing off|come off|coming off|step out of|out of|leave|leaving|drop the|dropping the|you'?ve been|you have been|you were|your (?:current|recent|last|ongoing)|since|so far|currently|recently|over the (?:last|past)|in the (?:last|past)|has been|have been)\b|\byou(?:'re| are) (?:currently |already |still |now )?(?:in|on|eating|running)(?: a| the| your)?(?: [\w,]+){0,2}$/i;
+
+function advisesDeficit(sentence: string): boolean {
+  const returns = deficitReturns.test(sentence);
+  return clausesOf(sentence).some((clause) => {
+    // The denials are blanked, not removed, so the window before a later match stays as written.
+    const text = returns
+      ? clause
+      : clause.replace(deficitDenial, (denial) => " ".repeat(denial.length));
+    return [...text.matchAll(deficitAdvice), ...text.matchAll(calorieCut)].some((match) => {
+      if (returns) return true;
+      const near = windowBefore(text.slice(0, match.index));
+      return !prohibitionWord.test(near) && !pauseOrPast.test(near);
+    });
+  });
+}
+
 // ---- the combined check ---------------------------------------------------------------------
 
 export type ReplyCheckInputs = Readonly<{
@@ -508,6 +728,17 @@ export type ReplyCheckInputs = Readonly<{
    * ask about, so the reply naming it is not a citation of a source Coach was not shown.
    */
   athleteText?: readonly string[];
+  /**
+   * Everything the athlete wrote about themselves: this conversation, their onboarding limitations
+   * and their confirmed facts. A condition named there may be named back (cycle_condition_named).
+   * Default: `athleteText`.
+   */
+  athleteWords?: readonly string[];
+  /**
+   * The cycle block says no period has come for a long time (`cycleLongGapIn`): advice to eat less
+   * fails. False or absent without the block.
+   */
+  cycleLongGap?: boolean;
   /** The previous reply and the turn's need for referral wording; none without a previous reply. */
   repetition?: RepeatInputs;
   /** The goal phase check (training/goal_phase/guard.ts): runs first and keeps its own rules. */
@@ -585,6 +816,9 @@ function unshownNames(inputs: ReplyCheckInputs, text: string, shown: ShownSource
 export function coachReplyCheck(inputs: ReplyCheckInputs): CoachChatAnswerCheck {
   const libraryGround = libraryGrounder(inputs);
   const shown = shownOf(inputs);
+  const theirConditions = conditionsIn(
+    asciiDigits((inputs.athleteWords ?? inputs.athleteText ?? []).join("\n")),
+  );
   return (written, citedLibrarySources = [], writtenReply): CoachChatAnswerBreak | null => {
     // Every rule reads digits of any script as the ASCII digits they stand for ("४५ kg").
     const answer = asciiDigits(written);
@@ -614,6 +848,12 @@ export function coachReplyCheck(inputs: ReplyCheckInputs): CoachChatAnswerCheck 
       (s) => trainingOnPainDay(s, inputs.ranges.painEscalated),
     );
     flag("claimed_action", claimsAnAction);
+    flag("fertility_or_contraception_claim", claimsFertilityOrContraception);
+    flag(
+      "cycle_condition_named",
+      (s) => conditionsNotTheirs(s, theirConditions).length > 0,
+    );
+    if (inputs.cycleLongGap) flag("deficit_advice_with_long_gap", advisesDeficit);
     // A sentence about the athlete's own target or prescription takes its numbers from the
     // athlete's data alone; any other sentence may also use the digest and a library source the
     // reply cites.

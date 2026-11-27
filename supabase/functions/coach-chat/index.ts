@@ -86,6 +86,7 @@ import {
 } from "../_shared/coach_context/registry.ts";
 import { coachServiceRpc } from "../_shared/coach_context/service_source.ts";
 import { noticeScopes } from "../_shared/ai_notice_coverage.ts";
+import { cycleContributorId } from "../_shared/coach_context/contributors/cycle.ts";
 import { createLookupRunner } from "../_shared/coach_lookups/runner.ts";
 import { proposeFromChat } from "../_shared/coach_proposals/chat.ts";
 import { guardFaultsOf, lookupRoundsTrace, lookupTrace, recordTurnTrace } from "./turn_trace.ts";
@@ -741,6 +742,9 @@ export async function handleCoachChat(
     ? loadMemoryContext(memoryRpc, auth.userId)
     : Promise.resolve(null);
 
+  // The data the accepted notice names beyond its basic list (`ai_notice_coverage.ts`): the lookups
+  // and the contributors leave the rest out.
+  const allowed = noticeScopes(noticeVersion);
   const chatStart = performance.now();
   try {
     // Both paths render the contributors (the goal phase review is not tied to the gateway). A
@@ -757,6 +761,7 @@ export async function handleCoachChat(
           localDate: coachingDate,
           previousQuestions: previousQuestionsOf(context, input.question),
           ...(libraryEmbedding ? { queryEmbedding: libraryEmbedding } : {}),
+          noticeScopes: allowed,
         },
       );
     if (contributions.outcomes.length) {
@@ -784,6 +789,9 @@ export async function handleCoachChat(
     // The same for the training guidance (a lighter week, the week's cardio): a word, never a value.
     const guidanceTrace = contributions.traces?.[trainingGuidanceContributorId];
     if (guidanceTrace) log.info("training_guidance_context", { ...guidanceTrace });
+    // Whether the cycle state was read, late or not at all: a word, never anything about the cycle.
+    const cycleTrace = contributions.traces?.[cycleContributorId];
+    if (cycleTrace) log.info("cycle_context", { ...cycleTrace });
     const generation = redFlag
       ? deterministicSafetyGeneration(redFlag)
       : coachRoute
@@ -795,11 +803,10 @@ export async function handleCoachChat(
         consentVendor,
         contributions,
         budget: budget.attemptBudget,
-        // Data the accepted notice does not name (`ai_notice_coverage.ts`) stays out of the rows.
         lookups: createLookupRunner(
           (name, params) => coachServiceRpc(name, params),
           auth.userId,
-          noticeScopes(noticeVersion),
+          allowed,
         ),
         proposals: true,
         factSuggestions: remembered,

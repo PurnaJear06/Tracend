@@ -746,9 +746,13 @@ notice when new data goes to the AI provider, AI_SAFETY_SPEC), and non-judgement
   Medications matter for coaching: beta-blockers, for example, blunt heart rate and break C3's
   zones. Uploading or analysing medical reports stays excluded (CLAUDE.md MVP boundary) unless the
   owner changes that rule.
-- **Candidates for the owner to decide:** menstrual-cycle tracking (Apple Health cycle data;
-  training and recovery effects), caffeine (timing against sleep), illness and sick days, travel
-  and shift work.
+- **Menstrual-cycle tracking: decided and built (cycle support v1, 2026-11-27).** Opt-in tracking,
+  Apple Health period days, an honest cycle line, cycle-aware recovery, weight and Coach notes,
+  three Coach reply rules and the period-pain exemption; Coach sees it from AI notice v7. See
+  `docs/handoff/cycle.md`. Later: per-phase recovery baselines, wrist temperature, symptom patterns,
+  cycle-aware nutrition-change eligibility.
+- **Candidates for the owner to decide:** caffeine (timing against sleep), illness and sick days,
+  travel and shift work.
 
 ## Review loop (every chunk)
 

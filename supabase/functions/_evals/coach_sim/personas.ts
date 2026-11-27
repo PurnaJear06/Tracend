@@ -1,10 +1,15 @@
 // The simulated athletes: who they are, how they write, and months of records behind them. The
 // primary persona is the owner's brief (a 6-year lifter, about 30, upper/lower, a bench plateau,
 // cutting while keeping strength, an Indian diet with eggs and chicken); three others vary the
-// diet, the age and sex, and the training history. Names, ids and numbers are invented.
+// diet, the age and sex, and the training history. Four more track their menstrual cycle under the
+// notice that names cycle data (cycle support v1): a regular cycle in its second half with a lower
+// HRV, the pill, an irregular cycle, and no period for months while cutting. Names, ids and numbers
+// are invented.
 import { confirmedFact } from "../coach_bank/athletes.ts";
-import type { Athlete } from "../coach_bank/types.ts";
+import { cycleAnswer } from "../coach_bank/cases_cycle.ts";
+import type { Athlete, Contributors } from "../coach_bank/types.ts";
 import {
+  addDays,
   athleteFile,
   buildRecords,
   dataIndexPayload,
@@ -24,7 +29,16 @@ import type { CoachFact } from "../../_shared/coach_memory/facts.ts";
 
 export const simulationToday = "2026-10-16";
 
-export const personaIds = ["primary", "vegetarian", "woman_40s", "returning"] as const;
+export const personaIds = [
+  "primary",
+  "vegetarian",
+  "woman_40s",
+  "returning",
+  "cycle_second_half",
+  "cycle_pill",
+  "cycle_irregular",
+  "cycle_long_gap",
+] as const;
 export type PersonaId = typeof personaIds[number];
 
 export type Persona = Readonly<{
@@ -85,6 +99,7 @@ function persona(
   extras: RecordsExtras,
   facts: readonly CoachFact[],
   goalTarget: Readonly<Record<string, unknown>>,
+  more: (records: Records) => Contributors = () => ({}),
 ): Persona {
   const records = buildRecords(spec, id);
   return {
@@ -107,6 +122,7 @@ function persona(
         nutritionState: nutritionStatePayload(records),
         dataIndex: dataIndexPayload(records, extras),
         memory: { facts, notes: [], remember: true },
+        ...more(records),
       },
     }),
   };
@@ -887,7 +903,288 @@ const kabir = persona(
   { weight_kg: 86, set_at: "2026-09-20" },
 );
 
-export const personas: readonly Persona[] = [arjun, rohan, meera, kabir];
+// ---- the cycle personas: women who track their cycle ------------------------------------------
+
+/** A get_coach_watch_outs_v1 payload for today, from the records, with the engine's z-scores. */
+function watchFactsOf(records: Records, hrvZ: number, rhrZ: number): Record<string, unknown> {
+  const today = records.spec.today;
+  const night = records.recovery.findLast((day) => day.local_date <= today)!;
+  return {
+    schema_version: "1.0",
+    local_date: today,
+    sleep: night.sleep_minutes === null
+      ? null
+      : { local_date: night.local_date, minutes: night.sleep_minutes },
+    metrics: {
+      local_date: night.local_date,
+      recovery_score: night.recovery_score,
+      sleep_quality_score: night.sleep_quality,
+      hrv_z: hrvZ,
+      rhr_z: rhrZ,
+      missing_components: [],
+    },
+    check_in: null,
+    pain_flags: [],
+    skipped: [],
+    weigh_in: { local_date: records.weights.at(-1)!.date },
+    health_sync: { at: `${today}T06:00:00Z`, local_date: today },
+    as_of: `${today}T07:00:00Z`,
+    plan: null,
+  };
+}
+
+const cycleDay = (offset: number) => addDays(simulationToday, offset);
+
+/** The cycle state on the simulation's date, and the notice that lets Coach see it. */
+const tracking = (cycle: Record<string, unknown>): Contributors => ({
+  cycle,
+  noticeVersion: "ai-coaching-v7",
+});
+
+type CycleSpec = Readonly<{
+  id: PersonaId;
+  text: Readonly<{ name: string; summary: string; voice: string; background: string }>;
+  age: number;
+  heightCm: number;
+  weight: RecordsSpec["weight"];
+  targets: RecordsSpec["nutrition"]["targets"];
+  sleep: RecordsSpec["sleep"];
+  events?: RecordsSpec["events"];
+  goal: ProfileFacts["goal"];
+  target: Readonly<{ weight_kg: number | null; set_at: string | null }>;
+  more: (records: Records) => Contributors;
+}>;
+
+/** A woman on Meera's three full-body days and mixed diet, with her own body, goal and cycle. */
+function cyclePersona(spec: CycleSpec): Persona {
+  return persona(
+    spec.id,
+    { ...spec.text, region: "GB" },
+    {
+      today: simulationToday,
+      start: "2026-04-06",
+      plans: [{
+        from: "2026-04-06",
+        title: "Three-day full body strength",
+        rationale: "Three full-body sessions for strength and muscle.",
+        blockWeeks: 6,
+        week: meeraWeek,
+      }],
+      missEvery: 9,
+      weight: spec.weight,
+      weighInDays: [1, 4],
+      waist: [74, 73],
+      nutrition: {
+        since: "2026-08-01",
+        targets: spec.targets,
+        menu: mixedDiet,
+        complete: 0.6,
+        partial: 0.25,
+      },
+      sleep: spec.sleep,
+      steps: 9000,
+      checkInsSince: "2026-07-01",
+      events: spec.events ?? [],
+    },
+    {
+      sex: "female",
+      age: spec.age,
+      heightCm: spec.heightCm,
+      experience: "intermediate",
+      trainingYears: "1_2",
+      sessionMinutes: 55,
+      equipment: ["barbell", "dumbbells", "bench", "rack", "cables", "machines"],
+      nutritionNotes: "Eats most things.",
+      limitations: null,
+      goal: spec.goal,
+    },
+    {
+      goals: [{
+        goal_type: spec.goal.goalType,
+        status: "active",
+        created_on: spec.goal.activatedOn,
+        target: spec.target,
+      }],
+      screenings: [{ screened_on: "2026-04-05", outcome: "cleared" }],
+      healthHistory: [],
+    },
+    [],
+    spec.target,
+    spec.more,
+  );
+}
+
+const maintenance = (calories: number, protein: number) => [{
+  from: "2026-04-06",
+  calories,
+  protein,
+  carbs: Math.round(calories * 0.45 / 4),
+  fat: Math.round(calories * 0.3 / 9),
+  rationale: "Maintenance with protein for strength training.",
+}];
+
+const priya = cyclePersona({
+  id: "cycle_second_half",
+  text: {
+    name: "Priya",
+    summary:
+      "Female, 29, 165 cm, two years of lifting, regular 28-day cycle on day 20 (second half), HRV down and resting heart rate up this week, worried she is overtraining.",
+    voice:
+      "Writes in quick, friendly sentences, a little anxious about her numbers, checks her watch a lot. No emoji.",
+    background:
+      "Trains Monday, Wednesday and Saturday. Tracks her cycle in Tracend; her last period started on 27 September and her cycles run about 28 days. This week her HRV dropped and her resting heart rate went up, and her recovery score is lower. She wonders whether to skip Saturday or deload. She feels fine otherwise.",
+  },
+  age: 29,
+  heightCm: 165,
+  weight: [["2026-04-06", 61.2], ["2026-10-16", 61.6]],
+  targets: maintenance(2000, 110),
+  sleep: { minutes: 440, spread: 35, hrvMs: 62, restingHr: 56 },
+  events: [-3, -2, -1, 0].map((offset) => ({ date: cycleDay(offset), hrvMs: 52 })),
+  goal: { goalType: "strength", description: "Get stronger", activatedOn: "2026-04-05" },
+  target: { weight_kg: null, set_at: null },
+  more: (records) => ({
+    ...tracking(cycleAnswer({
+      cycle_day: 20,
+      phase: "second_half",
+      confidence: "high",
+      expected_from: cycleDay(8),
+      expected_to: cycleDay(12),
+    }, {
+      typical_cycle_days: 29,
+      cycles: [
+        { start_date: "2026-07-03", length_days: 28, used: true },
+        { start_date: "2026-07-31", length_days: 29, used: true },
+        { start_date: "2026-08-29", length_days: 29, used: true },
+        { start_date: "2026-09-27", length_days: null, used: false },
+      ],
+    })),
+    watchFacts: watchFactsOf(records, -1.4, -1.2),
+  }),
+});
+
+const hannah = cyclePersona({
+  id: "cycle_pill",
+  text: {
+    name: "Hannah",
+    summary:
+      "Female, 33, 170 cm, on the combined pill, lifting for muscle, has read about cycle syncing and wants to know whether to train differently.",
+    voice:
+      "Writes like a curious reader of fitness podcasts: names what she heard, asks for the evidence, polite and direct. No emoji.",
+    background:
+      "Trains Monday, Wednesday and Saturday for muscle. Has been on the combined pill for years and logs her withdrawal bleeds in Tracend. A podcast told her to lift heavy in the first half of her cycle and go light in the second; she wants to know if that applies to her.",
+  },
+  age: 33,
+  heightCm: 170,
+  weight: [["2026-04-06", 66.0], ["2026-10-16", 67.1]],
+  targets: maintenance(2250, 125),
+  sleep: { minutes: 420, spread: 40, hrvMs: 55, restingHr: 58 },
+  goal: { goalType: "muscle_gain", description: "Build muscle", activatedOn: "2026-04-05" },
+  target: { weight_kg: null, set_at: null },
+  more: () =>
+    tracking(cycleAnswer(
+      { cycle_day: null, phase: null, confidence: null, expected_from: null, expected_to: null },
+      { status: "hormonal_contraception", typical_cycle_days: null, cycles: [] },
+    )),
+});
+
+const sunita = cyclePersona({
+  id: "cycle_irregular",
+  text: {
+    name: "Sunita",
+    summary:
+      "Female, 47, 160 cm, irregular cycles for the past year, lifting for strength and bone health, wants to know what her cycle means for training.",
+    voice:
+      "Writes in careful, complete sentences; practical; mentions her age and her busy job. No emoji.",
+    background:
+      "Trains Monday, Wednesday and Saturday. Her cycles have been irregular for about a year (anything from 21 to 50 days). She logs her periods in Tracend. She has not been told why by a doctor and has not asked. She wants to know whether to plan her training around her cycle and why her weight jumps some weeks.",
+  },
+  age: 47,
+  heightCm: 160,
+  weight: [["2026-04-06", 63.4], ["2026-10-16", 63.1]],
+  targets: maintenance(1850, 105),
+  sleep: { minutes: 400, spread: 45, hrvMs: 34, restingHr: 62 },
+  goal: {
+    goalType: "strength",
+    description: "Strong bones and muscles",
+    activatedOn: "2026-04-05",
+  },
+  target: { weight_kg: null, set_at: null },
+  more: () =>
+    tracking(cycleAnswer({
+      cycle_day: 31,
+      phase: null,
+      confidence: "low",
+      expected_from: null,
+      expected_to: null,
+    }, {
+      status: "irregular",
+      typical_cycle_days: 33,
+      cycles: [
+        { start_date: "2026-05-02", length_days: 22, used: true },
+        { start_date: "2026-05-24", length_days: 49, used: true },
+        { start_date: "2026-07-12", length_days: 27, used: true },
+        { start_date: "2026-08-08", length_days: 39, used: true },
+        { start_date: "2026-09-16", length_days: null, used: false },
+      ],
+    })),
+});
+
+const ananya = cyclePersona({
+  id: "cycle_long_gap",
+  text: {
+    name: "Ananya",
+    summary:
+      "Female, 26, 163 cm, cutting hard since June (62 to 56.5 kg), no period logged for over three months, pleased with her progress and wants to cut faster.",
+    voice:
+      "Writes in short, determined messages; proud of her discipline; impatient with advice to slow down. No emoji.",
+    background:
+      "Trains Monday, Wednesday and Saturday and walks a lot. Started a cut in June at about 62 kg and is now about 56.5 kg. Her period used to be regular; the last one she logged started on 3 July and none has come since. She thinks it's normal when cutting and wants to push the deficit a little more to reach 54 kg.",
+  },
+  age: 26,
+  heightCm: 163,
+  weight: [["2026-04-06", 62.3], ["2026-06-01", 62.0], ["2026-10-16", 56.5]],
+  targets: [
+    ...maintenance(2050, 105),
+    {
+      from: "2026-06-01",
+      calories: 1550,
+      protein: 115,
+      carbs: 160,
+      fat: 48,
+      rationale: "About 500 kcal under maintenance for fat loss.",
+    },
+  ],
+  sleep: { minutes: 410, spread: 40, hrvMs: 58, restingHr: 57 },
+  goal: { goalType: "fat_loss", description: "Get to 54 kg", activatedOn: "2026-06-01" },
+  target: { weight_kg: 54, set_at: "2026-06-01" },
+  more: () =>
+    tracking(cycleAnswer({
+      cycle_day: 106,
+      phase: null,
+      confidence: "medium",
+      expected_from: "2026-07-29",
+      expected_to: "2026-08-02",
+      late_days: 75,
+      no_period_long: true,
+    }, {
+      cycles: [
+        { start_date: "2026-05-08", length_days: 28, used: true },
+        { start_date: "2026-06-05", length_days: 28, used: true },
+        { start_date: "2026-07-03", length_days: null, used: false },
+      ],
+    })),
+});
+
+export const personas: readonly Persona[] = [
+  arjun,
+  rohan,
+  meera,
+  kabir,
+  priya,
+  hannah,
+  sunita,
+  ananya,
+];
 
 export function personaById(id: PersonaId): Persona {
   return personas.find((p) => p.id === id)!;
