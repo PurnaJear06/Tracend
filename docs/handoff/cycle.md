@@ -96,8 +96,9 @@ Added by the app PR.
 - **Evals:** coach_bank `cases_cycle.ts` (five red flags that must still hit, severe period pain that
   must not, five guard cases); coach_sim personas `cycle_second_half`, `cycle_pill`,
   `cycle_irregular`, `cycle_long_gap` with scenarios `cycle-recovery` and `cycle-long-gap`. The live
-  model runs are not done yet: run them with the review key before v7 is published
-  (`--filter cycle`).
+  model runs are not done yet: run them before v7 is published (`EVAL_CASES=cycle` for the bank,
+  `EVAL_SIM_FILTER=cycle` for the simulator). CI runs every case's graders on hand-written good and
+  bad replies and every persona's turn build, with no model.
 - **Owner step (later):** publish v7 with the SQL in `docs/notices/ai-coaching-v7.md`, then accept it
   in the app. A rollback notice is now v8 and must name the same data (runbook step 6.2).
 - **Later, not v1:** a cycle-aware check on Coach's nutrition proposals (the reply rule covers the
