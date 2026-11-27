@@ -13,18 +13,27 @@ import 'package:tracend/shared/widgets/tracend_sheet.dart';
 /// How far back a day can be logged or changed.
 const cycleEditableDays = 365;
 
+/// How many days back the cycle answer lists the days she logged
+/// (`recent_days`, 59 days back through tomorrow). A day older than this is
+/// not read, so the sheet cannot say what is stored for it.
+const cycleRecentDays = 59;
+
 /// Logs or changes one day: bleeding, cramps and whether it began a period.
 /// Completes with the answer the server returned after saving, or null when
 /// she leaves without saving.
 ///
-/// [existing] fills the sheet with what is stored for [date]. With
-/// [startsPeriod] a new day opens as the first day of a period. With
-/// [canChangeDate] the date can be moved.
+/// [answer] fills the sheet with what is stored for [date]. A day older than
+/// the answer lists opens with nothing chosen and cannot be saved until she
+/// chooses what happened, so a day that was never read is never overwritten.
+/// The first day of a cycle in [answer] opens as the first day of a period.
+/// With [startsPeriod] a new day opens as the first day of a period. With
+/// [canChangeDate] the date can be moved, and the sheet then fills itself
+/// again from [answer] for the new date.
 Future<CycleAnswer?> showCycleDaySheet(
   BuildContext context, {
   required CycleRepository repository,
   required DateTime date,
-  CycleDay? existing,
+  required CycleAnswer answer,
   bool startsPeriod = false,
   bool canChangeDate = false,
   DateTime Function() now = DateTime.now,
@@ -36,7 +45,7 @@ Future<CycleAnswer?> showCycleDaySheet(
   builder: (_) => _CycleDaySheet(
     repository: repository,
     date: date,
-    existing: existing,
+    answer: answer,
     startsPeriod: startsPeriod,
     canChangeDate: canChangeDate,
     now: now,
@@ -47,7 +56,7 @@ class _CycleDaySheet extends StatefulWidget {
   const _CycleDaySheet({
     required this.repository,
     required this.date,
-    required this.existing,
+    required this.answer,
     required this.startsPeriod,
     required this.canChangeDate,
     required this.now,
@@ -55,7 +64,7 @@ class _CycleDaySheet extends StatefulWidget {
 
   final CycleRepository repository;
   final DateTime date;
-  final CycleDay? existing;
+  final CycleAnswer answer;
   final bool startsPeriod;
   final bool canChangeDate;
   final DateTime Function() now;
@@ -70,13 +79,53 @@ class _CycleDaySheetState extends State<_CycleDaySheet> {
     widget.date.month,
     widget.date.day,
   );
-  late PeriodFlow? _flow =
-      widget.existing?.flow ??
-      (widget.startsPeriod ? PeriodFlow.unspecified : null);
-  late CycleCramps? _cramps = widget.existing?.cramps;
-  late bool _isStart = widget.existing?.isStart ?? widget.startsPeriod;
+  PeriodFlow? _flow;
+  CycleCramps? _cramps;
+  bool _isStart = false;
+
+  /// Whether the bleeding has been chosen (or read), so it can be saved.
+  bool _chosen = false;
+
+  /// Whether the answer lists this day, or would list it if she logged it.
+  bool _read = true;
   bool _saving = false;
   String? _failure;
+
+  @override
+  void initState() {
+    super.initState();
+    _fill();
+  }
+
+  /// Fills the fields from the answer for [_date], never from an earlier
+  /// date: a day stored, a day read as empty, or a day not read at all.
+  void _fill() {
+    final answer = widget.answer;
+    final today = widget.now();
+    final first = DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).subtract(const Duration(days: cycleRecentDays - 1));
+    final day = answer.dayOn(_date);
+    final startsCycle = answer.cycles.any((cycle) => cycle.startDate == _date);
+    _read = day != null || !_date.isBefore(first);
+    _cramps = day?.cramps;
+    if (day != null) {
+      _flow = day.flow;
+      _chosen = true;
+      _isStart =
+          (day.isStart || startsCycle) && (day.flow?.isPeriodDay ?? false);
+    } else if (_read) {
+      _flow = widget.startsPeriod ? PeriodFlow.unspecified : null;
+      _chosen = true;
+      _isStart = widget.startsPeriod || startsCycle;
+    } else {
+      _flow = null;
+      _chosen = false;
+      _isStart = widget.startsPeriod || startsCycle;
+    }
+  }
 
   bool get _canStart => _flow != null && _flow!.isPeriodDay;
 
@@ -94,12 +143,14 @@ class _CycleDaySheetState extends State<_CycleDaySheet> {
       setState(() {
         _date = DateTime(picked.year, picked.month, picked.day);
         _failure = null;
+        _fill();
       });
     }
   }
 
   void _choose(PeriodFlow? flow) => setState(() {
     _flow = flow;
+    _chosen = true;
     _failure = null;
     if (flow == null) _cramps = null;
     if (flow == null || !flow.isPeriodDay) _isStart = false;
@@ -162,13 +213,23 @@ class _CycleDaySheetState extends State<_CycleDaySheet> {
                     dayAndDate(_date, now: widget.now()),
                     style: textTheme.titleMedium,
                   ),
+                if (!_read) ...[
+                  const SizedBox(height: TracendSpacing.xs),
+                  Text(
+                    'This day is older than the days shown here, so nothing is '
+                    'filled in. You are choosing what happened that day.',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: TracendSpacing.md),
                 ChoiceGroup(
                   title: 'Bleeding',
                   options: [
                     (
                       label: 'No period',
-                      selected: _flow == null,
+                      selected: _chosen && _flow == null,
                       onTap: () => _choose(null),
                     ),
                     for (final flow in const [
@@ -182,7 +243,7 @@ class _CycleDaySheetState extends State<_CycleDaySheet> {
                         label: flow == PeriodFlow.unspecified
                             ? 'Period, flow not noted'
                             : periodFlowLabel(flow),
-                        selected: _flow == flow,
+                        selected: _chosen && _flow == flow,
                         onTap: () => _choose(flow),
                       ),
                   ],
@@ -254,7 +315,7 @@ class _CycleDaySheetState extends State<_CycleDaySheet> {
               0,
             ),
             child: FilledButton(
-              onPressed: _saving ? null : _save,
+              onPressed: _saving || !_chosen ? null : _save,
               child: Text(_saving ? 'Saving…' : 'Save'),
             ),
           ),

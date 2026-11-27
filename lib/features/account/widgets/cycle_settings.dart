@@ -127,7 +127,23 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
   CycleAnswer? _answer;
   bool _loadFailed = false;
   bool _busy = false;
+
+  /// A sheet (the agreement, the cycle type, the length, a day) is open or
+  /// about to open, so no second one opens on a double tap.
+  bool _asking = false;
   String? _message;
+
+  bool get _locked => _busy || _asking;
+
+  Future<T?> _ask<T>(Future<T?> Function() sheet) async {
+    if (_locked) return null;
+    setState(() => _asking = true);
+    try {
+      return await sheet();
+    } finally {
+      if (mounted) setState(() => _asking = false);
+    }
+  }
 
   @override
   void initState() {
@@ -168,7 +184,9 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
       logNonCritical(error, 'cycle change not saved');
       if (mounted) {
         setState(
-          () => _message = cycleFailureMessage(error, fallback: failure),
+          () => _message = error is _AppleHealthClosed
+              ? 'Apple Health could not be opened.'
+              : cycleFailureMessage(error, fallback: failure),
         );
       }
       return false;
@@ -193,32 +211,32 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
   );
 
   Future<void> _setTracking(CycleAnswer current, bool on) async {
-    if (_busy) return;
+    if (_locked) return;
     if (!on) {
       await _run(() => _save(current, tracking: false, appleHealth: false));
       return;
     }
-    if (!await ensureCycleConsent(context, widget.repository) || !mounted) {
-      return;
-    }
-    final status = current.status ?? await showCycleStatusSheet(context);
+    final status = await _ask<CycleStatus>(() async {
+      if (!await ensureCycleConsent(context, widget.repository) || !mounted) {
+        return null;
+      }
+      return current.status ?? await showCycleStatusSheet(context);
+    });
     if (status == null || !mounted) return;
     await _run(() => _save(current, tracking: true, status: status));
   }
 
   Future<void> _chooseStatus(CycleAnswer current) async {
-    final status = await showCycleStatusSheet(
-      context,
-      selected: current.status,
+    final status = await _ask(
+      () => showCycleStatusSheet(context, selected: current.status),
     );
     if (status == null || status == current.status || !mounted) return;
     await _run(() => _save(current, status: status));
   }
 
   Future<void> _chooseLength(CycleAnswer current) async {
-    final pick = await showCycleLengthSheet(
-      context,
-      current: current.typicalCycleDays,
+    final pick = await _ask(
+      () => showCycleLengthSheet(context, current: current.typicalCycleDays),
     );
     if (pick == null || pick.days == current.typicalCycleDays || !mounted) {
       return;
@@ -226,27 +244,25 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
     await _run(() => _save(current, typical: pick.days));
   }
 
+  /// Saves the switch first: iOS's permission sheet is shown only once the
+  /// database has accepted it, so a refused save never asks. If Apple Health
+  /// cannot be asked or read, the switch is saved off again.
   Future<void> _setAppleHealth(CycleAnswer current, bool on) async {
     final health = widget.health;
-    if (health == null || _busy) return;
+    if (health == null || _locked) return;
     if (!on) {
       await _run(() => _save(current, appleHealth: false));
       return;
     }
-    if (!await health.requestAccess()) {
-      if (mounted) {
-        setState(() => _message = 'Apple Health could not be opened.');
-      }
-      return;
-    }
     await _run(() async {
-      await _save(current, appleHealth: true);
+      final saved = await _save(current, appleHealth: true);
       try {
+        if (!await health.requestAccess()) throw const _AppleHealthClosed();
         await health.backfill();
       } catch (error) {
         // The switch is not left on for days that were never read.
         logNonCritical(error, 'cycle days not read from Apple Health');
-        await _save(current, appleHealth: false);
+        await _save(saved, appleHealth: false);
         rethrow;
       }
       return widget.repository.load();
@@ -254,13 +270,15 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
   }
 
   Future<void> _editDay(CycleAnswer current, DateTime date) async {
-    final answer = await showCycleDaySheet(
-      context,
-      repository: widget.repository,
-      date: date,
-      existing: current.dayOn(date),
-      canChangeDate: true,
-      now: widget.now,
+    final answer = await _ask(
+      () => showCycleDaySheet(
+        context,
+        repository: widget.repository,
+        date: date,
+        answer: current,
+        canChangeDate: true,
+        now: widget.now,
+      ),
     );
     if (answer == null || !mounted) return;
     setState(() => _answer = answer);
@@ -346,13 +364,13 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
             title: 'Track my cycle',
             subtitle: 'Period days and how your cycle works',
             value: tracking,
-            onChanged: _busy ? null : (on) => _setTracking(answer, on),
+            onChanged: _locked ? null : (on) => _setTracking(answer, on),
           ),
           if (tracking) ...[
             TracendListRow(
               title: 'Cycle',
               subtitle: cycleStatusLabel(status),
-              onTap: _busy ? null : () => _chooseStatus(answer),
+              onTap: _locked ? null : () => _chooseStatus(answer),
             ),
             if (status.hasCycleDays)
               TracendListRow(
@@ -360,7 +378,7 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
                 subtitle: answer.typicalCycleDays == null
                     ? 'Not set'
                     : '${answer.typicalCycleDays} days',
-                onTap: _busy ? null : () => _chooseLength(answer),
+                onTap: _locked ? null : () => _chooseLength(answer),
               ),
             if (widget.health != null)
               _SwitchRow(
@@ -369,7 +387,7 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
                     'Period days in Apple Health join the ones you log. Days '
                     'you log yourself always win.',
                 value: answer.appleHealthEnabled,
-                onChanged: _busy ? null : (on) => _setAppleHealth(answer, on),
+                onChanged: _locked ? null : (on) => _setAppleHealth(answer, on),
               ),
           ],
         ],
@@ -393,7 +411,7 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
                 title:
                     'Started ${shortDate(cycle.startDate, now: widget.now())}',
                 subtitle: _cycleSubtitle(cycle),
-                onTap: _busy ? null : () => _editDay(answer, cycle.startDate),
+                onTap: _locked ? null : () => _editDay(answer, cycle.startDate),
               ),
           ],
         ),
@@ -406,7 +424,7 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
               title: 'Log or change a day',
               subtitle: 'A period day, spotting or cramps',
               leading: const TracendRowIcon(icon: CupertinoIcons.pencil),
-              onTap: _busy ? null : () => _editDay(answer, widget.now()),
+              onTap: _locked ? null : () => _editDay(answer, widget.now()),
             ),
           ],
         ),
@@ -422,7 +440,7 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
                 icon: CupertinoIcons.delete,
                 color: colors.stateDanger,
               ),
-              onTap: _busy ? null : _delete,
+              onTap: _locked ? null : _delete,
             ),
           ],
         ),
@@ -462,4 +480,9 @@ class _SwitchRow extends StatelessWidget {
       trailing: Switch.adaptive(value: value, onChanged: onChanged),
     ),
   );
+}
+
+/// Apple Health cannot be asked for menstrual flow on this phone.
+class _AppleHealthClosed implements Exception {
+  const _AppleHealthClosed();
 }

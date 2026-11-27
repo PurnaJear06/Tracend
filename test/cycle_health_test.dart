@@ -20,6 +20,37 @@ void main() {
   final from = DateTime(2026, 11, 1);
   final to = DateTime(2026, 11, 30);
 
+  group('isCycleStartMetadata', () {
+    test('reads the raw flag the way Apple Health stores it', () {
+      expect(isCycleStartMetadata({'HKMenstrualCycleStart': true}), isTrue);
+      expect(isCycleStartMetadata({'HKMenstrualCycleStart': 1}), isTrue);
+      expect(isCycleStartMetadata({'HKMenstrualCycleStart': 1.0}), isTrue);
+    });
+
+    test('is false when the flag is off, absent or not a flag', () {
+      expect(isCycleStartMetadata({'HKMenstrualCycleStart': false}), isFalse);
+      expect(isCycleStartMetadata({'HKMenstrualCycleStart': 0}), isFalse);
+      expect(isCycleStartMetadata({'HKMenstrualCycleStart': 'true'}), isFalse);
+      expect(isCycleStartMetadata({'HKWasUserEntered': true}), isFalse);
+      expect(isCycleStartMetadata(const {}), isFalse);
+      expect(isCycleStartMetadata(null), isFalse);
+    });
+
+    test('a start sample becomes a start day', () {
+      final days = cycleHealthDays(
+        [
+          _sample(
+            DateTime(2026, 11, 10, 8),
+            start: isCycleStartMetadata({'HKMenstrualCycleStart': true}),
+          ),
+        ],
+        from: from,
+        to: to,
+      );
+      expect(days.single.isStart, isTrue);
+    });
+  });
+
   group('cycleHealthDays', () {
     test('one day per local day, oldest first, with the start flag', () {
       final days = cycleHealthDays(

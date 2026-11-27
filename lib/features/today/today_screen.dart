@@ -289,6 +289,7 @@ class _TodayScreenState extends State<TodayScreen> {
     _reloadIfStale();
     unawaited(_loadOpenWorkouts());
     unawaited(_autoSyncHealthIfNeeded());
+    unawaited(_syncCycleHealth());
     unawaited(_replayPendingCheckIn());
   }
 
@@ -782,6 +783,7 @@ class _TodayScreenState extends State<TodayScreen> {
     // Tracking that was never on changes nothing on screen.
     if (_cycle == null && !(answer?.trackingEnabled ?? false)) return;
     setState(() => _cycle = answer);
+    if (answer != null) unawaited(_syncCycleHealth());
   }
 
   /// The cycle changed in Account: read it again.
@@ -799,13 +801,35 @@ class _TodayScreenState extends State<TodayScreen> {
     _announcingCycle = false;
   }
 
-  /// Apple Health's period days, read after the health sync and only when she
-  /// turned that on. It never makes a sync fail.
-  Future<void> _syncCycleHealth() async {
+  /// When the cycle's Apple Health read last started. Kept in memory only:
+  /// nothing about the cycle is stored on the phone.
+  DateTime? _cycleHealthAt;
+  static const _cycleHealthEvery = Duration(hours: 6);
+
+  /// Apple Health's period days, read on their own, apart from the main health
+  /// sync, so an athlete who never connected that one still gets her periods.
+  /// It runs when Today has read the cycle after the brief, and when the app
+  /// comes back to the front, at most once in six hours (a tap on Sync forces
+  /// it). Only while tracking and "Read periods from Apple Health" are on and
+  /// the agreements gate is open (`CycleHealthSync` checks it). It never makes
+  /// a sync fail and says nothing when it does.
+  Future<void> _syncCycleHealth({bool force = false}) async {
     final sync = widget.cycleHealth;
-    if (sync == null) return;
+    final answer = _cycle;
+    if (sync == null ||
+        answer == null ||
+        !answer.trackingEnabled ||
+        !answer.appleHealthEnabled) {
+      return;
+    }
+    final now = widget.clock();
+    final last = _cycleHealthAt;
+    if (!force && last != null && now.difference(last) < _cycleHealthEvery) {
+      return;
+    }
+    _cycleHealthAt = now;
     try {
-      final result = await sync.sync();
+      final result = await sync.sync(answer: answer);
       if (result != null && mounted) await _loadCycle();
     } catch (error) {
       logNonCritical(error, 'cycle days not read from Apple Health');
@@ -827,6 +851,7 @@ class _TodayScreenState extends State<TodayScreen> {
       context,
       repository: widget.cycle,
       date: widget.clock(),
+      answer: _cycle ?? CycleAnswer.off,
       startsPeriod: true,
       canChangeDate: true,
       now: widget.clock,
@@ -971,7 +996,6 @@ class _TodayScreenState extends State<TodayScreen> {
       if (last == null) return; // never connected -> manual via profile only
       if (widget.clock().difference(last) < _autoSyncInterval) return;
       await widget.health.sync();
-      unawaited(_syncCycleHealth());
       if (mounted) _reloadBriefAndHealth();
     } catch (_) {
       // Silent: the hero sync button stays available for an explicit retry.
@@ -998,7 +1022,6 @@ class _TodayScreenState extends State<TodayScreen> {
           if (synced.state == HealthConnectionState.unavailable) {
             failures.add('Apple Health');
           }
-          unawaited(_syncCycleHealth());
         } else {
           healthSkipped = true;
         }
@@ -1006,6 +1029,7 @@ class _TodayScreenState extends State<TodayScreen> {
         failures.add('Apple Health');
       }
       if (!mounted) return;
+      unawaited(_syncCycleHealth(force: true));
       _reloadBriefAndHealth();
       if (widget.environment.hasSupabaseConfiguration) {
         try {

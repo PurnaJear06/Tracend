@@ -654,6 +654,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
       userId: _userId,
       offline: _offline,
       onRetryConnection: () => _refresh(quiet: true),
+      healthAllowed: () => _healthAllowed,
     );
   }
 }

@@ -65,11 +65,16 @@ class _CycleOnboardingBlockState extends State<CycleOnboardingBlock> {
 
   Future<void> _yes() async {
     if (_busy) return;
-    setState(() => _error = null);
-    if (!await ensureCycleConsent(context, widget.repository) || !mounted) {
-      return;
-    }
-    setState(() => _stage = _Stage.status);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final agreed = await ensureCycleConsent(context, widget.repository);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      if (agreed) _stage = _Stage.status;
+    });
   }
 
   Future<void> _chooseStatus(CycleStatus status) async {

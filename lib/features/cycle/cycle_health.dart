@@ -22,6 +22,19 @@ class MenstrualFlowSample {
   final bool isStartOfCycle;
 }
 
+/// The key Apple Health stores the start of a cycle under
+/// (`HKMetadataKeyMenstrualCycleStart`).
+const _cycleStartKey = 'HKMenstrualCycleStart';
+
+/// Whether a sample's metadata says it began a cycle. Apple Health keeps the
+/// flag as a boolean, which arrives here as `true`; the health plugin's own
+/// `isStartOfCycle` compares it with `1.0`, which a `true` never equals, so
+/// the raw value is read as well (a number 1 counts too).
+bool isCycleStartMetadata(Map<String, dynamic>? metadata) {
+  final raw = metadata?[_cycleStartKey];
+  return raw == true || raw == 1 || raw == 1.0;
+}
+
 /// The longest run of days one sample may cover. Apple Health writes one
 /// sample a day; a longer one is not read as a period.
 const _maxSampleDays = 10;
@@ -157,7 +170,9 @@ class HealthKitCycleReader implements CycleHealthReader {
                 MenstrualFlow.heavy => PeriodFlow.heavy,
                 _ => null,
               },
-              isStartOfCycle: value.isStartOfCycle ?? false,
+              isStartOfCycle:
+                  (value.isStartOfCycle ?? false) ||
+                  isCycleStartMetadata(point.metadata),
             ),
       ],
       from: from,
@@ -173,11 +188,17 @@ class CycleHealthSync {
   CycleHealthSync({
     required this.repository,
     required this.reader,
+    bool Function()? allowed,
     DateTime Function()? now,
-  }) : _now = now ?? DateTime.now;
+  }) : _allowed = allowed ?? (() => true),
+       _now = now ?? DateTime.now;
 
   final CycleRepository repository;
   final CycleHealthReader reader;
+
+  /// Whether Apple Health may be read and sent now: the same gate as the main
+  /// health sync, closed while the agreements are unknown or outdated.
+  final bool Function() _allowed;
   final DateTime Function() _now;
 
   static const enableWindowDays = 180;
@@ -191,12 +212,16 @@ class CycleHealthSync {
   /// refuses an import before).
   Future<CycleImport> backfill() => _import(enableWindowDays);
 
-  /// The 30-day refresh, run with each health sync. Does nothing unless
-  /// tracking and "Read periods from Apple Health" are both on, and returns
-  /// null then.
-  Future<CycleImport?> sync() async {
-    final answer = await repository.load();
-    if (!answer.trackingEnabled || !answer.appleHealthEnabled) return null;
+  /// The 30-day refresh. Does nothing, and returns null, unless the agreements
+  /// gate is open and tracking and "Read periods from Apple Health" are both
+  /// on. [answer] is the cycle answer the caller just read; without it the
+  /// answer is read first.
+  Future<CycleImport?> sync({CycleAnswer? answer}) async {
+    if (!_allowed()) return null;
+    final current = answer ?? await repository.load();
+    if (!current.trackingEnabled || !current.appleHealthEnabled) return null;
+    // The agreements may have changed while the answer was read.
+    if (!_allowed()) return null;
     return _import(syncWindowDays);
   }
 

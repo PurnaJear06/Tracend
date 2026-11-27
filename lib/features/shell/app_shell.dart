@@ -61,6 +61,7 @@ class AppShell extends StatefulWidget {
     this.userId,
     this.offline = false,
     this.onRetryConnection,
+    this.healthAllowed,
     super.key,
   });
 
@@ -102,6 +103,11 @@ class AppShell extends StatefulWidget {
   /// Checks the connection again; the gate leaves offline mode when it
   /// works. Null where the app is never offline.
   final Future<void> Function()? onRetryConnection;
+
+  /// Whether Apple Health may be read and sent now (the agreements are
+  /// current): the same gate the main health sync follows. The cycle's Apple
+  /// Health read waits on it too. Null means always.
+  final bool Function()? healthAllowed;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -352,6 +358,7 @@ class _AppShellState extends State<AppShell> {
             ? CycleHealthSync(
                 repository: _cycle,
                 reader: HealthKitCycleReader(),
+                allowed: widget.healthAllowed,
               )
             : null);
     _pauses =
