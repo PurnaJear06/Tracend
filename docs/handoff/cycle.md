@@ -59,4 +59,46 @@ Added by the app PR.
 
 ## Coach
 
-Added by the Coach PR.
+- **Branch / PR:** `claude/cycle-coach`. Deno only, no migration. Merge after PR 1: it reads
+  `coach_cycle_state_v1`.
+- **Notice gate:** `NoticeScope` gains `cycle_data`; `firstNoticeNaming` is 7 for `breathing_rate`,
+  `workout_notes` and `cycle_data` (`_shared/ai_notice_coverage.ts`). `coach-chat` passes the
+  athlete's scopes to the contributors (`CoachContextInput.noticeScopes`) and the lookups; the eval
+  harness does the same from the case's `noticeVersion` (default the live `ai-coaching-v6`). Until
+  the owner publishes v7 no athlete holds it, so Coach behaves as before: no cycle read, no cycle
+  block, no "withheld" line, the same watch-outs (`cycle_test.ts`, `cases_cycle_test.ts`).
+- **`cycle` contributor** (`_shared/coach_context/contributors/cycle.ts`): volatile, after the
+  heart-rate profile, both routes, budget 2,800. Reads the cycle answer once per turn through
+  `sharedRead` (key `cycle_state`, shared with the watch-outs, 1.5 s deadline) and parses it strictly
+  (an unknown value is unreadable, never "off"). Renders nothing without the scope, with tracking off
+  (also after "Delete my cycle data") or after a failed read. Otherwise: status, today's cycle day,
+  phase and confidence, expected range, typical and recent lengths, `Long gap without a period:
+  yes|no`, the water-weight window, fixed rules (no training or food change by phase, the expected
+  heart-rate, HRV and water shifts, when to see a doctor, never fertility, ovulation, pregnancy odds,
+  contraception advice or an unnamed condition), then the last 14 logged days. Grounding: `records`
+  (dates, day numbers, lengths). Trace `cycle_context` carries the read status only (`ok`,
+  `unavailable`, `failed`, `timeout`), never whether tracking is on.
+- **Watch-outs:** with the scope, in `second_half` of a regular cycle at medium or high confidence, a
+  resting heart rate or HRV drift with -2 < z <= -1 becomes a data line ("within what the second half
+  of a natural cycle often brings"), not a decision watch-out; z <= -2 stays a watch-out.
+- **Reply rules** (`_shared/coach_safety/reply_guard.ts`, each with a repair hint):
+  `fertility_or_contraception_claim` and `cycle_condition_named` apply to every athlete (they need no
+  data); `deficit_advice_with_long_gap` applies while the cycle block's long-gap line says yes. The
+  onboarding plan check's `deficitClaim` and `noDeficit` are exported and `noDeficit` takes more
+  denials ("rather than in a deficit", "pause the deficit", "no weight loss", "don't eat less").
+- **Red flags:** `severe_pain` has a `benign` exemption for period pain (a pain match with a
+  menstrual word next to it and no body part, injury, sudden onset, one side or fever anywhere in the
+  message); `diagnosis_request` covers asking whether a cycle condition is the cause. Cases in
+  `exemptions_adversarial_test.ts`.
+- **Principles digest v4:** the cycle has its own line (no training by phase, expected shifts, when
+  to see a doctor, what never to say). It changes the cached prefix for every athlete; it holds no
+  athlete data.
+- **Evals:** coach_bank `cases_cycle.ts` (five red flags that must still hit, severe period pain that
+  must not, five guard cases); coach_sim personas `cycle_second_half`, `cycle_pill`,
+  `cycle_irregular`, `cycle_long_gap` with scenarios `cycle-recovery` and `cycle-long-gap`. The live
+  model runs are not done yet: run them with the review key before v7 is published
+  (`--filter cycle`).
+- **Owner step (later):** publish v7 with the SQL in `docs/notices/ai-coaching-v7.md`, then accept it
+  in the app. A rollback notice is now v8 and must name the same data (runbook step 6.2).
+- **Later, not v1:** a cycle-aware check on Coach's nutrition proposals (the reply rule covers the
+  reply text; a proposal to lower calories still goes to the proposal engine's own rules).
