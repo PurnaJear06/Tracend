@@ -8,8 +8,7 @@
    The markup is each card's finished state; scripts/extras.js plays a one-shot on top. */
 ---
 <section class="sec wrap" id="extras" aria-labelledby="extras-h">
-  <h2 class="sec-h disp" id="extras-h">It handles the in-between.</h2>
-  <p class="sec-sub">The small jobs a coach does between sessions, done for you.</p>
+  <h2 class="sec-h disp" id="extras-h">The small jobs a coach does, done for you.</h2>
   <p class="ex-tag-row"><span class="ex-tag">Example screens</span></p>
 
   <ul class="ex-rail" role="list" tabindex="0" aria-label="Five things it handles between sessions" data-ex-rail>
@@ -72,6 +71,25 @@
       <p class="ex-p">Hit the top reps on every set and your next target goes up. Fall short and the weight holds.</p>
     </li>
 
+    <li class="ex-card" data-ex="pain">
+      <div class="ex-mock app ex-pn" aria-hidden="true">
+        <div class="ex-pn-in" data-ex-in>
+          <p class="ex-pn-q">Where?</p>
+          <div class="ex-pn-chips"><span class="on">Knee</span><span>Lower back</span><span>Shoulder</span><span>Somewhere else</span></div>
+          <p class="ex-pn-q">How strong right now?</p>
+          <div class="ex-pn-sev"><span>1</span><span>2</span><span>3</span><span>4</span><span class="on">5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span></div>
+        </div>
+        <div class="ex-pn-card" data-ex-res>
+          <b class="ex-pn-t">Easier on your joints today</b>
+          <p class="ex-pn-l"><span class="ex-pn-old">Barbell back squat</span><svg viewBox="0 0 16 16"><path d="M2.5 8h10M9 4l4 4-4 4"/></svg><span class="ex-pn-new">Goblet squat</span></p>
+          <p class="ex-pn-s">Only today changes. Your plan stays the same.</p>
+        </div>
+      </div>
+      <p class="sr-only">Example pain check. Where: knee. How strong right now: 5 out of 10. The result reads Easier on your joints today: barbell back squat is swapped for goblet squat. Only today changes and the plan stays the same.</p>
+      <h3 class="ex-h">Sore knee? It works around it.</h3>
+      <p class="ex-p">Tell it where it hurts. It swaps or shortens the exercise, and tells you when to see a professional.</p>
+    </li>
+
     <li class="ex-card" data-ex="label">
       <div class="ex-mock app ex-lb" aria-hidden="true">
         <div class="ex-lb-photo" data-ex-photo>
@@ -94,25 +112,6 @@
       <p class="sr-only">Example meal review. A photo of a nutrition label becomes one food: Protein bar, 1 serving of 60 grams, 210 calories, marked From label. A portion chooser offers 1 serving, Whole pack or Grams.</p>
       <h3 class="ex-h">Snap the label, not just the plate.</h3>
       <p class="ex-p">It reads nutrition labels and checks the math. You pick the portion.</p>
-    </li>
-
-    <li class="ex-card" data-ex="pain">
-      <div class="ex-mock app ex-pn" aria-hidden="true">
-        <div class="ex-pn-in" data-ex-in>
-          <p class="ex-pn-q">Where?</p>
-          <div class="ex-pn-chips"><span class="on">Knee</span><span>Lower back</span><span>Shoulder</span><span>Somewhere else</span></div>
-          <p class="ex-pn-q">How strong right now?</p>
-          <div class="ex-pn-sev"><span>1</span><span>2</span><span>3</span><span>4</span><span class="on">5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span></div>
-        </div>
-        <div class="ex-pn-card" data-ex-res>
-          <b class="ex-pn-t">Easier on your joints today</b>
-          <p class="ex-pn-l"><span class="ex-pn-old">Barbell back squat</span><svg viewBox="0 0 16 16"><path d="M2.5 8h10M9 4l4 4-4 4"/></svg><span class="ex-pn-new">Goblet squat</span></p>
-          <p class="ex-pn-s">Only today changes. Your plan stays the same.</p>
-        </div>
-      </div>
-      <p class="sr-only">Example pain check. Where: knee. How strong right now: 5 out of 10. The result reads Easier on your joints today: barbell back squat is swapped for goblet squat. Only today changes and the plan stays the same.</p>
-      <h3 class="ex-h">Sore knee? It works around it.</h3>
-      <p class="ex-p">Tell it where it hurts. It swaps or shortens the exercise, and tells you when to see a professional.</p>
     </li>
 
     <li class="ex-card" data-ex="mem">

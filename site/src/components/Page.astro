@@ -26,13 +26,14 @@ import Extras from './Extras.astro';
         /* one headline per reel (?v=…), swapped before first paint so the page matches the ad that sent the visitor */
         (function () {
           var V = {
-            sleep: ['Slept badly?', 'Today&rsquo;s session <em>already changed.</em>', 'Tracend reads your sets, meals and sleep. Every morning it sets <strong>today&rsquo;s session</strong> for your goal.'],
-            log: ['Log the set.', 'Tomorrow&rsquo;s plan <em>already knows.</em>', 'Log from your Lock Screen. Every morning Tracend reads your sets, meals and sleep and sets <strong>today&rsquo;s session</strong> for your goal.'],
-            coach: ['A coach that read', 'your night <em>before you did.</em>', 'Tracend reads your sets, meals and sleep. Every morning it sets <strong>today&rsquo;s session</strong> for your goal, with the reason.']
+            sleep: ['Slept badly?', 'Know what to <em>lift anyway.</em>', 'Tracend reads your sets, meals and sleep. Every morning it sets <strong>today&rsquo;s session</strong> for your goal.'],
+            log: ['Log the set.', 'The plan <em>already knows.</em>', 'Log from your Lock Screen. Every morning Tracend reads your sets, meals and sleep and sets <strong>today&rsquo;s session</strong> for your goal.'],
+            coach: ['A coach that', 'saw your night <em>first.</em>', 'Tracend reads your sets, meals and sleep. Every morning it sets <strong>today&rsquo;s session</strong> for your goal, with the reason.']
           };
           try {
-            var v = V[new URLSearchParams(location.search).get('v')];
-            if (!v) return;
+            var k = new URLSearchParams(location.search).get('v');
+            if (!k || !Object.prototype.hasOwnProperty.call(V, k)) return;
+            var v = V[k];
             document.querySelector('[data-v-h]').innerHTML = '<span class="line">' + v[0] + '</span><span class="line">' + v[1] + '</span>';
             document.querySelector('[data-v-l]').innerHTML = v[2];
           } catch (e) { /* keep the default headline */ }
@@ -97,6 +98,8 @@ import Extras from './Extras.astro';
           <input id="d-hrv" type="range" min="30" max="80" step="1" value="52" aria-describedby="d-hrv-h"><small id="d-hrv-h">Sam&rsquo;s normal is 54 ms.</small></div>
         <div class="ctl"><label for="d-rhr">Resting heart rate <output for="d-rhr" data-o="rhr">58 bpm</output></label>
           <input id="d-rhr" type="range" min="48" max="72" step="1" value="58" aria-describedby="d-rhr-h"><small id="d-rhr-h">Sam&rsquo;s normal is 57 bpm.</small></div>
+        <fieldset class="ctl"><legend>Your legs at this morning&rsquo;s check-in</legend>
+          <div class="seg" data-seg-ci><button type="button" data-v="0" aria-pressed="false">Not sore</button><button type="button" data-v="1" aria-pressed="true">Sore</button><button type="button" data-v="2" aria-pressed="false">Very sore</button></div></fieldset>
         <fieldset class="ctl"><legend>Yesterday&rsquo;s training</legend>
           <div class="seg" data-seg><button type="button" data-v="rest" aria-pressed="false">Rest</button><button type="button" data-v="easy" aria-pressed="false">Easy</button><button type="button" data-v="moderate" aria-pressed="false">Moderate</button><button type="button" data-v="heavy" aria-pressed="true">Heavy</button></div></fieldset>
       </div></form>
@@ -114,7 +117,7 @@ import Extras from './Extras.astro';
           <p class="reason" data-d="plan-body" style="color:var(--a-text)">Deadlift 3 &times; 3 at 140 kg, effort 7 at most.</p>
           <div class="lvl" aria-hidden="true" data-d="lvl"><i></i><i></i><i></i><i></i></div>
         </div>
-        <p class="demo-note">Simplified example. Sam&rsquo;s check-in this morning: legs sore. In the app, your morning check-in leads, every reading is compared with your own rolling normal, and breathing rate counts too.</p>
+        <p class="demo-note">Simplified example. In the app, the whole morning check-in leads, every reading is compared with your own rolling normal, and breathing rate counts too.</p>
         <p class="sr-only" aria-live="polite" data-d="live"></p>
       </div>
     </div>
@@ -175,7 +178,7 @@ import Extras from './Extras.astro';
   </section>
 
   <section class="sec wrap close" id="join" aria-labelledby="join-h">
-    <h2 class="sec-h disp" id="join-h">Your plan starts with a goal.</h2>
+    <h2 class="sec-h disp" id="join-h">Know what to lift tomorrow.</h2>
     <p class="sec-sub">Join the free beta. For iPhone, best with Apple Watch; Android and other smartwatches are in testing. We&rsquo;ll email you when your spot opens.</p>
     <JoinForm id="e2" />
     <ul class="trust">

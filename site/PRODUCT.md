@@ -79,11 +79,11 @@ Shipped features from docs/PRD.md and docs/UX_FLOWS.md, and where the page shows
 | Sleep and recovery score from five drivers | Story, "You sleep short", "Your body answers"; demo |
 | Today's session adjusted, with the reason | Hero (the Coach's call); story, "Today, adjusted"; demo |
 | Plan changes from chat, Now and After, Approve, Undo 7 days; versions kept | "Nothing changes until you say yes." |
-| Lock Screen / Dynamic Island set logging | "It handles the in-between", card 1 |
-| Next-session targets from logged sets | "It handles the in-between", card 2 |
-| Meal photo and nutrition labels, portion, confirm | "It handles the in-between", card 3 |
-| Pain check, today's swap | "It handles the in-between", card 4 |
-| Remembered facts, "Still true?"; profile limits and preferences | "It handles the in-between", card 5 |
+| Lock Screen / Dynamic Island set logging | "Small jobs", card 1 |
+| Next-session targets from logged sets | "Small jobs", card 2 |
+| Meal photo and nutrition labels, portion, confirm | "Small jobs", card 4 |
+| Pain check, today's swap | "Small jobs", card 3 |
+| Remembered facts, "Still true?"; profile limits and preferences | "Small jobs", card 5 |
 | Coach chat with lookups across history, evidence and data gaps | "Ask your Coach anything. It knows your history." |
 | Weight trend and measurements, strength, weekly review (no AI), physique check (AI visual estimate, not a measurement) | "It checks your progress" |
 | Export and delete your data; AI only after consent, turn AI off | Join section trust lines; privacy page |
@@ -93,7 +93,7 @@ Shipped features from docs/PRD.md and docs/UX_FLOWS.md, and where the page shows
 
 Only ever under a label reading "Coming next. Not in the beta yet.", never with a date. Since
 2026-11-27 the page shows no coming-next row: Live Activity set logging shipped (#161) and is a
-card in "It handles the in-between". Still not built: an Apple Watch app for logging sets.
+card in "Small jobs". Still not built: an Apple Watch app for logging sets.
 
 ## Claims the site must not make
 
@@ -120,7 +120,7 @@ card in "It handles the in-between". Still not built: an Apple Watch app for log
 ## Page structure (2026-11-27)
 
 The page is a pitch, in this order: hero (headline, one line, the form, the Coach's call) → the
-story → try it (the sliders) → "Nothing changes until you say yes." → "It handles the in-between."
+story → try it (the sliders) → "Nothing changes until you say yes." → "The small jobs a coach does, done for you."
 → Coach → progress → three steps → join. About 18 phone screens; keep it from growing.
 
 - The hero headline names the morning moment ("Know what to lift today. And why."). A reel can

@@ -9,6 +9,11 @@
       if (window.gsap) gsap.globalTimeline.clear();
       var f = document.querySelector('.film');
       if (f) f.setAttribute('data-mode', 'flow');
+      var App = window.TracendApp, Day = window.TRACEND_DAY;
+      if (App && Day) Array.prototype.forEach.call(document.querySelectorAll('.beat .b-phone'), function (slot, i) {
+        var b = Day.beats[i];
+        if (b && !slot.firstChild) slot.innerHTML = App.phone({ screens: [b.scr], time: b.sb || b.time, tab: b.tab });
+      });
       Array.prototype.forEach.call(document.querySelectorAll('#main *'), function (el) { el.style.opacity = ''; el.style.visibility = ''; el.style.transform = ''; });
     } catch (e) { /* nothing more to undo */ }
     if (window.console) console.error(err);
@@ -186,7 +191,7 @@
     }
     tl.eventCallback('onUpdate', function () { ui(tl.time()); });
     var trig = ScrollTrigger.create({
-      trigger: '.f-stage', start: 'top top', end: function () { return '+=' + Math.round(window.innerHeight * 0.52 * tl.duration()); },
+      trigger: '.f-stage', start: 'top top', end: function () { return '+=' + Math.round(window.innerHeight * (wide ? 0.52 : 0.44) * tl.duration()); },
       pin: true, scrub: wide ? 0.8 : 0.5, animation: tl, invalidateOnRefresh: true,
       onUpdate: function (self) { if (heroTL.progress() < 1 && self.progress > 0.002) heroTL.progress(1); }
     });
@@ -225,8 +230,8 @@
 
   /* ---------- Coach chat: the answer streams in, then its evidence ---------- */
   var CHAT = [
-    { q: 'Why lighter today?', a: 'You slept 6 h 12 m, about an hour under your normal, right after squats at effort 9. Your HRV and resting heart rate are normal, so it is not a rest day. Deadlift 3 \u00d7 3 at 140 kg keeps the pattern without digging the hole deeper.',
-      ev: [['Sleep 6 h 12 m', 'amber'], ['Squat 5 \u00d7 5, effort 9', 'amber'], ['HRV 52 ms, normal', 'lime'], ['Resting HR 58, normal', 'lime']] },
+    { q: 'Why lighter today?', a: 'You slept 5 h 48 m, about an hour and a half under what you need, right after squats at effort 9, and you said your legs are sore. Recovery is 34. Deadlift 3 \u00d7 3 at 140 kg keeps the pattern without digging the hole deeper.',
+      ev: [['Sleep 5 h 48 m', 'amber'], ['Check-in: legs sore', 'amber'], ['Squat 5 \u00d7 5, effort 9', 'amber'], ['Recovery 34, Poor', 'amber']] },
     { q: 'How is my bench since August?', a: 'Up 5 kg. You pressed 80 kg \u00d7 6 on 4 August and 85 kg \u00d7 6 last Thursday. It held for two weeks in September, the same two weeks your sleep ran short.',
       ev: [['Bench press, 14 sessions', 'lime'], ['Best: 85 kg \u00d7 6', 'lime'], ['Sleep, 8 to 21 Sep', 'amber'], ['Gap: no log 2 Oct', 'mute']] },
     { q: 'Am I still losing weight?', a: 'Yes. Your 28-day trend is down about 0.3 kg a week, 3.3 kg since 21 July. That pace protects your strength, so nothing needs to change.',
@@ -282,7 +287,7 @@
     var s1 = '<section class="scr" data-p="1">' + head + '<p class="sec-label">Strength</p>' +
       '<div class="a-card"><p class="a-kicker">Workouts, last 12 weeks</p><p class="pg-done"><span data-wd>0</span> of 48<small>done</small></p><div class="bar"><i data-wb style="--v:0"></i></div></div>' +
       '<p class="sec-label">Best lifts</p><div class="pg-list pg-lifts"><p><span>Back squat</span><b>120 kg &times; 5<em data-nb>New best</em></b></p><p><span>Deadlift</span><b>160 kg &times; 3</b></p><p><span>Bench press</span><b>85 kg &times; 6</b></p><p><span>Pull-up</span><b>+10 kg &times; 6</b></p></div></section>';
-    var s2 = '<section class="scr" data-p="2"><div class="a-head"><h3>Week 12 review<span class="sub">6 to 12 October</span></h3></div>' +
+    var s2 = '<section class="scr" data-p="2"><div class="a-head"><h3>Week 11 review<span class="sub">6 to 12 October</span></h3></div>' +
       '<span class="pg-noai">Calculated from your logs. No AI.</span>' +
       '<div class="pg-list pg-rv"><p><span>Workouts</span><b>4 of 4</b></p><p><span>Protein target</span><b>6 of 7 days</b></p><p><span>Sleep</span><b>6 h 38 m, 42 m short</b></p><p><span>Weight</span><b>&minus;0.3 kg</b></p><p><span>Waist</span><b>&minus;0.4 cm</b></p><p><span>Unchanged</span><b>Plan and targets</b></p></div>' +
       '<div class="pg-focus"><p class="k">Next week&rsquo;s focus</p><p class="v">Protect sleep before Monday&rsquo;s legs. Keep protein at 160 g.</p></div>' +
@@ -457,11 +462,11 @@
     TK.whenVisible($('.controls-in'), function (on) { seen.ctl = on; dock(); }, { rootMargin: '-150px 0px -40% 0px' });
     TK.whenVisible($('.demo-today .ringbox'), function (on) { seen.res = on; dock(); }, { rootMargin: '-120px 0px -110px 0px' });
     var ring = A.ring($('[data-ring-demo]'), { score: D.morning.score, segments: D.morning.segments });
-    var shown = { s: D.morning.score }, session = 'heavy', liveT = null, prev = null;
+    var shown = { s: D.morning.score }, session = 'heavy', checkin = 1, liveT = null, prev = null;
     function hm(m) { return Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' m'; }
     function fill(r) { r.style.setProperty('--p', ((r.value - r.min) / (r.max - r.min) * 100) + '%'); }
     function update(first) {
-      var v = { sleep: +inp.sleep.value, hrv: +inp.hrv.value, rhr: +inp.rhr.value, session: session };
+      var v = { sleep: +inp.sleep.value, hrv: +inp.hrv.value, rhr: +inp.rhr.value, session: session, checkin: checkin };
       Object.keys(inp).forEach(function (k) { fill(inp[k]); });
       out('sleep').textContent = hm(v.sleep); out('hrv').textContent = v.hrv + ' ms'; out('rhr').textContent = v.rhr + ' bpm';
       inp.sleep.setAttribute('aria-valuetext', hm(v.sleep));
@@ -484,6 +489,13 @@
       prev = r;
     }
     Object.keys(inp).forEach(function (k) { inp[k].addEventListener('input', function () { update(false); }); });
+    var segCi = $('[data-seg-ci]');
+    segCi.addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      checkin = +b.getAttribute('data-v');
+      $$('button', segCi).forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      update(false);
+    });
     seg.addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return;
       session = b.getAttribute('data-v');
@@ -505,7 +517,7 @@
     });
     /* each piece arrives as it comes into view. Pieces that enter together (side by side on a laptop) are staggered;
        on a phone they are stacked, so each gets its own moment instead of one fade for a two-screen block */
-    var items = $$('.sec .sec-sub, .controls, .demo-out > .a-card, .demo-note, .cq, .cc-dev, .nx-steps, .pg-dev, .nx-dev, .close .join-wrap, .trust, .ch-stage, .ch-note, .ex-rail');
+    var items = $$('.sec .sec-sub, .controls, .demo-out > .a-card, .demo-note, .cq, .cc-dev, .nx-steps, .pg-dev, .nx-dev, .close .join-wrap, .trust, .ch-stage, .ex-rail');
     G.set(items, { y: 28, autoAlpha: 0 });
     ScrollTrigger.batch(items, { start: 'top 90%', once: true, onEnter: function (batch) {
       G.to(batch, { y: 0, autoAlpha: 1, duration: TK.T.focal, ease: TK.EASE.out, stagger: 0.08, overwrite: true, clearProps: 'transform' });

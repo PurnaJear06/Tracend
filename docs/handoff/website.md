@@ -84,7 +84,7 @@
   - Sam's day has five moments: the morning check-in leads (D9), sleep 5 h 48 m, recovery 34
     Poor; the demo counts readiness points the app's way.
   - New: "Nothing changes until you say yes." (a chat plan change with Now/After, Approve, Undo)
-    and "It handles the in-between." (Lock Screen logging, next targets, labels, pain check,
+    and "The small jobs a coach does, done for you." (Lock Screen logging, next targets, labels, pain check,
     memory), each mock rebuilt from the shipped code. Removed: the five-apps bento, the two
     example athletes, the muscle map, "Other apps stop at the score", the coming-next row and
     their code. About 18 phone screens, down from 23.
