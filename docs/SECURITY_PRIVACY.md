@@ -42,6 +42,9 @@ review. Tracend remains a working brand pending trademark and App Store clearanc
 - the account's optional country (`user_accounts.country_code`; set only through
   `set_my_country_v1`, exported and deleted with the account; it picks the regional library sources
   inside the database and is not sent to an AI provider, which receives only the chunks chosen);
+- cycle data (`cycle_settings` and `cycle_day_logs`: whether she tracks her cycle, her status and
+  usual length, and the period days, flow and cramps she logs or allows from Apple Health), opt-in
+  under its own `cycle_data` consent, read-only for the athlete and written only by the cycle RPCs;
 - authentication tokens and encrypted contact information; and
 - account exports.
 
@@ -93,6 +96,15 @@ Consent choices are separate and versioned for:
   `health_consent_required`. The app reads nothing from Apple Health while the agreements are
   outdated or could not be checked (a failed lookup opens the app with Apple Health off and checks
   again at the next foreground);
+- cycle data (`cycle_data`, notice version `2026-11-27`, asked only when she turns cycle tracking
+  on; the app inserts the record itself and it is not one of the onboarding agreements). The server
+  enforces it: `set_my_cycle_settings_v1` (turning tracking on), `log_cycle_day_v1` and
+  `import_cycle_days_v1` refuse with `P0403` `cycle_consent_required` when the newest `cycle_data`
+  record is missing or `withdrawn`. Reading period days from Apple Health needs both consents:
+  turning it on and every `import_cycle_days_v1` also need a granted `health_data`
+  (`health_consent_required`). "Delete my cycle data" records `withdrawn`. Coach reads cycle data
+  only through `coach_cycle_state_v1` (service role only), and uses it only under an AI notice that
+  names cycle data;
 - AI coaching: sending the athlete's Tracend data to the AI provider for Coach chat answers, daily
   decisions and the onboarding plan (`ai_coaching`; a decline is stored as `withdrawn`, and a grant
   of an older notice version is asked again);
@@ -776,7 +788,8 @@ history.
   provenance, and timestamps. It includes the onboarding profile fields, `onboarding_generations`,
   `onboarding_questions`, `onboarding_screenings` (the pre-plan health check answers),
   `health_history_months`, `day_adjustments` (the athlete's readiness answers),
-  `pain_reports` (the athlete's pain checks), `feedback_ratings` (the athlete's ratings of
+  `pain_reports` (the athlete's pain checks), `cycle_settings` and `cycle_day_logs` (her cycle
+  answers and logged period days), `feedback_ratings` (the athlete's ratings of
   decisions and Coach replies; they are deleted with the account by the foreign key),
   `ai_usage_events`, physique analyses and every
   set-timing column. `coach_facts` (what the athlete confirmed for Coach) and `coach_notes` (Coach's own
@@ -835,6 +848,12 @@ history.
 - Ratings of the daily decision and of Coach replies are written only by
   `submit_feedback_rating_v1`, which refuses a decision or reply that is not the caller's. The
   table is exported (`feedback_ratings`) and goes with the account on deletion.
+- Cycle data is written only by the cycle RPCs (`set_my_cycle_settings_v1`, `log_cycle_day_v1`,
+  `import_cycle_days_v1`, `delete_my_cycle_data_v1`); the athlete can read her own rows and nothing
+  else, and signed-out callers have no access. Apple Health never overwrites a day she logged or
+  cleared by hand. Audit events for cycle data (`cycle.settings.changed`, `cycle.data.deleted`) name
+  the changed fields only and never carry a status, a flow or a date, because audit rows outlive
+  "Delete my cycle data". Both tables are exported and go with the account on deletion.
 
 ### Deletion
 
@@ -874,7 +893,10 @@ history.
 Withdrawal is narrower than account deletion. Health-data consent (`health_data`) is withdrawn by
 deleting the account or by email, since Tracend cannot coach without it. HealthKit withdrawal stops sync; photo-AI withdrawal
 stops new analysis and removes provider-processing eligibility. Existing source records are handled
-according to the notice and user deletion controls.
+according to the notice and user deletion controls. Cycle data is the exception that is deleted
+at once: "Delete my cycle data" (`delete_my_cycle_data_v1`) removes every logged day and her cycle
+answers and records the `cycle_data` withdrawal; turning tracking off keeps the days until she
+deletes them.
 
 ## 13. Threats and Required Controls
 

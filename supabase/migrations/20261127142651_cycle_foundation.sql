@@ -9,7 +9,7 @@
 --                                     Apple Health reading
 --   2. public.cycle_day_logs          one row per athlete and day: flow, cramps, start flag, source
 --   3. private.cycle_data_consent_granted   her newest `cycle_data` consent record is a grant
---   4. private.cycle_state            the cycle engine (docs/ALGORITHMS.md, section 9): periods,
+--   4. private.cycle_state            the cycle engine (docs/ALGORITHMS.md, section 11): periods,
 --                                     cycle starts, lengths, typical length, expected range, phase,
 --                                     confidence and the two flags, for one athlete on one local date
 --   5. private.cycle_answer           the answer every reader gets (schema_version 1.0)
@@ -98,7 +98,7 @@ revoke all on function private.cycle_median(integer[]) from public, anon, authen
 
 -- The cycle state of one athlete on one local date, from her settings and the days logged up to
 -- that date: {"state": {...}, "cycles": [...]}. The rules and their constants are documented in
--- docs/ALGORITHMS.md, section 9, and pinned by supabase/tests/database/cycle_engine_test.sql.
+-- docs/ALGORITHMS.md, section 11, and pinned by supabase/tests/database/cycle_engine_test.sql.
 create function private.cycle_state(p_user_id uuid, p_local_date date)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
