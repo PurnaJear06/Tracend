@@ -9,7 +9,7 @@
 --                                     Apple Health reading
 --   2. public.cycle_day_logs          one row per athlete and day: flow, cramps, start flag, source
 --   3. private.cycle_data_consent_granted   her newest `cycle_data` consent record is a grant
---   4. private.cycle_state            the cycle engine (docs/ALGORITHMS.md, section 9): periods,
+--   4. private.cycle_state            the cycle engine (docs/ALGORITHMS.md, section 11): periods,
 --                                     cycle starts, lengths, typical length, expected range, phase,
 --                                     confidence and the two flags, for one athlete on one local date
 --   5. private.cycle_answer           the answer every reader gets (schema_version 1.0)
@@ -57,7 +57,7 @@ create table public.cycle_day_logs (
   constraint cycle_day_logs_start_is_bleeding
     check (not is_start or (flow is not null and flow <> 'spotting')),
   constraint cycle_day_logs_apple_health_shape check (source = 'manual'
-    or (flow in ('light', 'medium', 'heavy', 'unspecified') and cramps is null))
+    or (flow is not null and flow in ('light', 'medium', 'heavy', 'unspecified') and cramps is null))
 );
 
 comment on table public.cycle_day_logs is
@@ -98,7 +98,7 @@ revoke all on function private.cycle_median(integer[]) from public, anon, authen
 
 -- The cycle state of one athlete on one local date, from her settings and the days logged up to
 -- that date: {"state": {...}, "cycles": [...]}. The rules and their constants are documented in
--- docs/ALGORITHMS.md, section 9, and pinned by supabase/tests/database/cycle_engine_test.sql.
+-- docs/ALGORITHMS.md, section 11, and pinned by supabase/tests/database/cycle_engine_test.sql.
 create function private.cycle_state(p_user_id uuid, p_local_date date)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
@@ -360,7 +360,7 @@ begin
   today := private.local_date_for(uid);
   return private.cycle_answer(uid, today, today - 59, today + 1);
 end $$;
-revoke all on function public.get_my_cycle_v1() from public, anon;
+revoke all on function public.get_my_cycle_v1() from public, anon, service_role;
 grant execute on function public.get_my_cycle_v1() to authenticated;
 
 -- Turning tracking on needs a granted cycle_data consent and a status; reading Apple Health also
@@ -446,7 +446,7 @@ begin
   return private.cycle_answer(uid, today, today - 59, today + 1);
 end $$;
 revoke all on function public.set_my_cycle_settings_v1(boolean, text, integer, boolean)
-  from public, anon;
+  from public, anon, service_role;
 grant execute on function public.set_my_cycle_settings_v1(boolean, text, integer, boolean)
   to authenticated;
 
@@ -501,7 +501,7 @@ begin
 
   return private.cycle_answer(uid, today, today - 59, today + 1);
 end $$;
-revoke all on function public.log_cycle_day_v1(date, text, text, boolean) from public, anon;
+revoke all on function public.log_cycle_day_v1(date, text, text, boolean) from public, anon, service_role;
 grant execute on function public.log_cycle_day_v1(date, text, text, boolean) to authenticated;
 
 -- The period days Apple Health holds for a window of at most 400 days ending no later than
@@ -605,7 +605,7 @@ begin
 
   return jsonb_build_object('schema_version', '1.0', 'imported', imported, 'removed', removed);
 end $$;
-revoke all on function public.import_cycle_days_v1(date, date, jsonb) from public, anon;
+revoke all on function public.import_cycle_days_v1(date, date, jsonb) from public, anon, service_role;
 grant execute on function public.import_cycle_days_v1(date, date, jsonb) to authenticated;
 
 -- "Delete my cycle data": every logged day and the settings row go, a withdrawal of the cycle_data
@@ -629,7 +629,7 @@ begin
   today := private.local_date_for(uid);
   return private.cycle_answer(uid, today, today - 59, today + 1);
 end $$;
-revoke all on function public.delete_my_cycle_data_v1() from public, anon;
+revoke all on function public.delete_my_cycle_data_v1() from public, anon, service_role;
 grant execute on function public.delete_my_cycle_data_v1() to authenticated;
 
 -- 7. Coach's read ------------------------------------------------------------------------------------

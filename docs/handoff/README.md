@@ -7,7 +7,7 @@ account session and deletion recovery, [`account-session.md`](./account-session.
 owner-only physique check, [`physique-check.md`](./physique-check.md), and the security hardening
 batch, [`security-hardening.md`](./security-hardening.md), the Supabase API key migration,
 [`supabase-key-migration.md`](./supabase-key-migration.md), and the website and its waitlist,
-[`website.md`](./website.md). The coaching platform program
+[`website.md`](./website.md), and menstrual cycle support v1, [`cycle.md`](./cycle.md). The coaching platform program
 ([`docs/plans/coaching-platform-2026-10/`](../plans/coaching-platform-2026-10/README.md)) has five
 streams: [`ai-gateway.md`](./ai-gateway.md), [`training-engine.md`](./training-engine.md),
 [`workout-hr.md`](./workout-hr.md), [`ios-widgets.md`](./ios-widgets.md) and

@@ -58,7 +58,8 @@ onboarding_state             not_started | in_progress | completed
 onboarding_path              beginner | experienced
 experience_level             beginner | intermediate | advanced
 consent_type                 terms | privacy | health_data | progress_photo_storage |
-                             progress_photo_ai | notifications | ai_coaching | meal_photo_ai
+                             progress_photo_ai | notifications | ai_coaching | meal_photo_ai |
+                             cycle_data
 consent_action               granted | withdrawn
 goal_type                    fat_loss | muscle_gain | recomposition | strength | aesthetic
 goal_status                  draft | active | superseded
@@ -150,6 +151,14 @@ Onboarding approval on the server still checks only that `terms` and `privacy` a
 is true when the newest `health_data` record is a grant of any version; the Apple Health write
 functions (`persist_health_sync_v2`, `save_health_history`, `persist_set_heart_rate_v1`,
 `persist_sleeping_heart_rate_v1`) raise SQLSTATE `P0403` without it.
+
+`cycle_data` (migration `20261127141837_cycle_data_consent_type.sql`) is the consent to store cycle
+data: the period days she logs or allows from Apple Health and her cycle answers. The app asks for
+it when she turns cycle tracking on and inserts the record itself with notice version `2026-11-27`
+(the privacy page that describes cycle data). `private.cycle_data_consent_granted(user)` is true
+when the newest `cycle_data` record is a grant of any version; turning tracking on, logging a day
+and importing from Apple Health raise `P0403` without it. "Delete my cycle data"
+(`delete_my_cycle_data_v1`) records a `withdrawn`, so turning tracking on again asks again.
 
 ### `ai_consent_notices` and `ai_notice_current`
 
@@ -387,6 +396,66 @@ One row per user and completed calendar month, from the app (`save_health_histor
 strength workouts, workout minutes, nights of sleep and their average, weigh-in days and their
 average, days with any data, and the first and last date with data. Only months before the
 athlete's current month, at most 12 back. Owner-read RLS; exported and deleted with the account.
+
+### `cycle_settings` and `cycle_day_logs` (cycle support v1, migration `20261127142651`)
+
+Opt-in menstrual-cycle tracking. Both tables are read-only for the athlete (own-row `select` RLS,
+forced); every write goes through the RPCs below. Exported by `privacy-export` and removed with the
+account (`on delete cascade` from `user_accounts`).
+
+- **`cycle_settings`**: one row per athlete (`user_id` primary key): `tracking_enabled`, `status`
+  (`regular` | `irregular` | `hormonal_contraception` | `no_periods`, null until chosen),
+  `typical_cycle_days` (her stated usual length, 15–60, optional), `apple_health_enabled`,
+  `tracking_enabled_at` (the last time tracking was turned on), timestamps. Checks: tracking on
+  needs a status and a `tracking_enabled_at`; Apple Health reading needs tracking on. The stored
+  status is hers; the engine never rewrites it.
+- **`cycle_day_logs`**: one row per athlete and local date (`cycle_day_logs_one_per_day`): `flow`
+  (`spotting` | `light` | `medium` | `heavy` | `unspecified`, null = she said no bleeding that day),
+  `cramps` (`none` | `mild` | `strong`, null = not answered), `is_start` (HealthKit
+  `isStartOfCycle`, or the date she gave for her last period; only with a flow other than
+  spotting), `source` (`manual` | `apple_health`). An Apple Health row always has a flow
+  (light/medium/heavy/unspecified) and no cramps. A manual row wins: it replaces an Apple Health row
+  for that date, and a manual null-flow row keeps Apple Health from writing that date again.
+
+**Functions** (all `security definer`, empty `search_path`; the athlete's raise `42501` signed out
+or for an inactive account, `22023` for bad input, `P0403` with message `cycle_consent_required`,
+`health_consent_required`, `cycle_tracking_off` or `apple_health_off`):
+
+| Function | Who | What |
+| --- | --- | --- |
+| `get_my_cycle_v1()` | authenticated | The cycle answer for her local date; `recent_days` = the last 60 days and tomorrow |
+| `set_my_cycle_settings_v1(p_tracking_enabled, p_status, p_typical_cycle_days, p_apple_health_enabled)` | authenticated | Tracking on needs a granted `cycle_data` consent and a status; Apple Health also needs `health_data`. Off keeps the days and turns Apple Health off. Sets `tracking_enabled_at` on each off → on. Audit `cycle.settings.changed` (field names only) when something changed |
+| `log_cycle_day_v1(p_local_date, p_flow, p_cramps, p_is_start)` | authenticated | Upserts one manual day from 400 days ago to tomorrow (`private.local_date_for`); tracking on and `cycle_data` consent. A null `p_is_start` is false. No audit row |
+| `import_cycle_days_v1(p_from, p_to, p_days)` | authenticated | Apple Health days for a window of ≤ 400 days ending ≤ tomorrow; ≤ 400 items of exactly `{local_date, flow, is_start}`. Needs tracking, Apple Health on, `cycle_data` and `health_data`. The window is the truth for `apple_health` rows (missing ones are deleted); manual rows are never touched. Answers `{schema_version, imported, removed}` (`imported` = rows added or changed) |
+| `delete_my_cycle_data_v1()` | authenticated | Deletes every day and the settings row, records `cycle_data` `withdrawn` (notice `2026-11-27`, source `ios_app`), audit `cycle.data.deleted` (no values); answers the off answer |
+| `coach_cycle_state_v1(p_user_id, p_local_date)` | service role | The cycle answer with the 14 days ending `p_local_date` |
+
+**The cycle answer** (`schema_version` `1.0`, built only by `private.cycle_answer`; fixtures
+`test/contract/fixtures/my_cycle_v1_0_off.json`, `_regular.json`, `_contraception.json`): every key is
+always present.
+
+```json
+{
+  "schema_version": "1.0", "tracking_enabled": true, "status": "regular",
+  "typical_cycle_days": 28, "apple_health_enabled": false,
+  "state": {"cycle_day": 18, "period_day": null, "phase": "second_half", "confidence": "medium",
+    "expected_from": "2026-12-08", "expected_to": "2026-12-12", "late_days": null,
+    "no_period_long": false, "weight_water_window": false},
+  "recent_days": [{"local_date": "2026-11-10", "flow": "medium", "cramps": "mild",
+    "is_start": true, "source": "manual"}],
+  "cycles": [{"start_date": "2026-10-13", "length_days": 28, "used": true},
+    {"start_date": "2026-11-10", "length_days": null, "used": false}]
+}
+```
+
+- `phase`: `period` | `first_half` | `second_half` | null; `confidence`: `low` | `medium` | `high` |
+  null. `recent_days` ascending. `cycles`: the last up to 7 starts ascending; the current one has
+  `length_days` null and `used` false, and `used` false also marks a length the engine left out.
+- Tracking off or no row: `status` and `typical_cycle_days` as stored, every `state` value null
+  except the two flags (false), `recent_days` and `cycles` empty.
+- `hormonal_contraception` / `no_periods`: only `period_day` and `weight_water_window` can be set;
+  `cycles` is empty; `recent_days` is returned.
+- The rules are `private.cycle_state` (docs/ALGORITHMS.md §11).
 
 ### `daily_check_ins`
 

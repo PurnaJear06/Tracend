@@ -80,6 +80,10 @@ select ok(not has_function_privilege('authenticated', 'public.coach_cycle_state_
 select ok(has_function_privilege('service_role', 'public.coach_cycle_state_v1(uuid, date)', 'execute'),
   'the service role can call Coach''s cycle read');
 select ok(not has_function_privilege('service_role', 'public.get_my_cycle_v1()', 'execute')
+  and not has_function_privilege('service_role',
+    'public.set_my_cycle_settings_v1(boolean, text, integer, boolean)', 'execute')
+  and not has_function_privilege('service_role', 'public.log_cycle_day_v1(date, text, text, boolean)', 'execute')
+  and not has_function_privilege('service_role', 'public.import_cycle_days_v1(date, date, jsonb)', 'execute')
   and not has_function_privilege('service_role', 'public.delete_my_cycle_data_v1()', 'execute'),
   'the athlete functions are not granted to the service role');
 select is((select count(*) from pg_proc p
