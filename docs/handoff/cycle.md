@@ -80,12 +80,25 @@ State: built on `claude/cycle-app` (PR "Cycle in the app"). Product copy and flo
   check-in `PeriodTodayControl` (saves on tap, outside the payload and the unsaved guard); Today line and
   long-gap card (`today/widgets/cycle_line.dart`), loaded after the brief and hidden on any error; recovery
   and weight notes (`cycleRecoveryNote`, `cycleWeightNote` in `cycle_labels.dart`).
-- **Apple Health.** `cycle_health.dart`: `HealthKitCycleReader` (menstrual flow only, asked only when she
-  turns the switch on), `cycleHealthDays` (drops "none", never spotting), `CycleHealthSync` (180 days on
-  enable, 30 on each sync when both switches are on). The import sends exactly `local_date`, `flow`,
-  `is_start`.
-- **Scrubber.** `cycle_`, `menstrua`, `cramp` prefixes and the exact keys `flow` and `period`; tests pin that
-  `workflow`, `lifecycle` and `periodDays` are untouched.
+- **Apple Health.** `cycle_health.dart`: `HealthKitCycleReader` (menstrual flow only), `cycleHealthDays`
+  (drops "none", never spotting), `CycleHealthSync`. Turning the switch on saves it first, then asks iOS, then
+  reads 180 days (a failed read saves it off again). Today runs the 30-day read on its own, apart from the main
+  health sync: after the brief and on foreground, at most every 6 hours (in-memory timestamp), only when
+  `get_my_cycle_v1` says tracking and `apple_health_enabled`, and only while the agreements gate
+  (`AppShell.healthAllowed`, the gate's `_healthAllowed`) is open. The import sends exactly `local_date`,
+  `flow`, `is_start`. The start flag is read from the raw `HKMenstrualCycleStart` metadata as well as the
+  plugin's `isStartOfCycle`, because plugin 13.3.2 compares the boolean with `1.0`, which `true` never equals
+  (`isCycleStartMetadata`, tested).
+- **Day editor.** `cycle_day_sheet.dart` fills from the answer for the date it is on. A day older than the 59
+  listed days opens with nothing chosen and Save closed, so a day never read is never overwritten; a cycle
+  start in `cycles` presets the first-day switch; moving the date reloads. A first day needs Light, Medium or
+  Heavy: the app never sends `unspecified` with `is_start` (the onboarding date is the one start with no
+  level, which the engine treats as a guess).
+- **Scrubber.** `cycle_`, `menstrua`, `cramp` prefixes and the exact contract keys (`p_flow`, `p_days`,
+  `recent_days`, `cycles`, `period_day` and the rest, plus `flow`, `period`); the values `hormonal_contraception`,
+  `no_periods`, `first_half`, `second_half` are redacted wherever they are; the names of the cycle's writing
+  RPCs go from free text. Tests scrub the real fixtures and RPC parameter maps and pin that `workflow`,
+  `lifecycle`, `periodDays` and plain `status`/`phase` keys are untouched.
 - **Versions.** `LegalNotices.privacyVersion` and the privacy page are `2026-11-27`, so privacy and health
   data are asked once more for everyone.
 - **Tests.** `test/contract/cycle_contract_test.dart` (the three fixtures), `cycle_*_test.dart`, the
