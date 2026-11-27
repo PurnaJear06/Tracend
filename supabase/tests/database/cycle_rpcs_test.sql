@@ -1,5 +1,5 @@
 begin;
-select plan(143);
+select plan(144);
 
 -- Cycle data access (migrations 20261127141837 and 20261127142651): the consent type, the tables'
 -- privileges and row-level security, every gate of the six functions, the Apple Health merge, the
@@ -140,6 +140,9 @@ select throws_ok($$select public.import_cycle_days_v1(current_date - 1, current_
   'authentication required', 'importing from Apple Health');
 select throws_ok($$select public.delete_my_cycle_data_v1()$$, '42501', 'authentication required',
   'and deleting');
+select pg_temp.as_user('c2000000-0000-4000-8000-0000000000ff');
+select throws_ok($$select public.delete_my_cycle_data_v1()$$, '42501', 'account required',
+  'deleting for a signed-in caller without an account is refused before anything is written');
 
 -- Never set up -------------------------------------------------------------------------------------------
 select pg_temp.as_user('c2000000-0000-4000-8000-000000000001');

@@ -49,8 +49,11 @@ merged in order: data (PR 1), app (PR 2), Coach (PR 3).
   - `coach_cycle_state_v1` is gated by its grant (service role only), like the Coach lookups.
   - Review round 1: a withdrawn `cycle_data` consent reads as tracking off everywhere; every
     writer locks the account row first, so a delete cannot race a log or an import; the import
-    window starts no more than 400 days ago; a one-day guessed start is replaced by her real period
-    1–9 days later (ALGORITHMS §11).
+    window starts no more than 400 days ago.
+  - Review round 2: the onboarding guess (manual, `is_start`, flow `unspecified`) is dropped when a
+    real period lies within 14 days of it (ALGORITHMS §11). PR 2's day editor must never send
+    `unspecified` together with `is_start`. The long-gap count also starts again at her newest
+    `cycle_data` grant, and "Delete my cycle data" refuses (`42501`) a caller without an account.
 - **Tests:** `supabase/tests/database/cycle_engine_test.sql` (the engine on fixed dates) and
   `cycle_rpcs_test.sql` (gates, privileges, RLS, the Apple Health merge, key sets, deletion);
   `privacy-export` exports both tables.

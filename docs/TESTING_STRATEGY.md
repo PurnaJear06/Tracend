@@ -436,8 +436,9 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   and re-enabled tracking (no flag), irregular cycles (wide range, none with fewer than three
   lengths, never late), stated regular read as irregular above a 9-day spread and kept regular at 9,
   hormonal contraception and no periods (no phase, prediction or cycles), tracking off, a withdrawn
-  consent, flagged and duplicate starts, a one-day guessed start replaced by her real period (and a
-  two-day flagged period kept), the four contract fixtures compared whole with real seeds, Apple Health and manual days in one history, gaps inside a period, the median,
+  consent and a re-grant (the long gap counts from it), flagged and duplicate starts, the onboarding
+  guess (dropped by a real period within 14 days before or after, kept on its own or with a lone
+  light day, a flagged light day never treated as one), the four contract fixtures compared whole with real seeds, Apple Health and manual days in one history, gaps inside a period, the median,
   rounding, the six-length window and lengths outside 15–60. `cycle_rpcs_test.sql` covers the
   `cycle_data` consent type, both tables' RLS and privileges (authenticated read-only, anon nothing),
   function grants (`coach_cycle_state_v1` for the service role only; private helpers for no API
