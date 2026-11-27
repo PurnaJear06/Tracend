@@ -413,7 +413,8 @@ account (`on delete cascade` from `user_accounts`).
   (`spotting` | `light` | `medium` | `heavy` | `unspecified`, null = she said no bleeding that day),
   `cramps` (`none` | `mild` | `strong`, null = not answered), `is_start` (HealthKit
   `isStartOfCycle`, or the date she gave for her last period; only with a flow other than
-  spotting), `source` (`manual` | `apple_health`). An Apple Health row always has a flow
+  spotting; a manual flagged day with flow `unspecified` is that onboarding guess, which the engine
+  drops when a real period lies within 14 days of it), `source` (`manual` | `apple_health`). An Apple Health row always has a flow
   (light/medium/heavy/unspecified) and no cramps. A manual row wins: it replaces an Apple Health row
   for that date, and a manual null-flow row keeps Apple Health from writing that date again.
 

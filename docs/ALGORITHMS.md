@@ -1725,14 +1725,16 @@ the answer says tracking is off whatever the settings row holds.
 
   Anything else is bleeding inside the cycle: a one-day light bleed mid-cycle is not a period. The
   first period ever needs only the bleeding-day test or a flag.
-- **A guessed start is replaced by her real period.** A flagged start whose period is a single day
-  (the onboarding answer "my last period started on …", logged as one unspecified day) is replaced
-  when a period starts **1 to 9 days** later that has 2 or more bleeding days or a medium or heavy
-  day, or that is the latest period and still going (it may become one). That later period takes
-  the start flag and becomes the cycle start; the guessed day is never a start, and cycle lengths
-  are measured from the real start. For example a guess of 28 Oct and Apple Health bleeding from
-  3 Nov: 3 Nov is cycle day 1 and period day 1. If the later bleed stays a single light day and
-  ends, the guess is the start again. A flagged period of 2 or more days is never replaced. 15 days is below the shortest cycle
+- **The onboarding guess gives way to a real period.** A *guess* is a manual day flagged as a start
+  with flow `unspecified`: the onboarding answer "my last period started on …" (the app's day editor
+  never sends that combination). Before periods are formed, a guess is dropped (no flow, no flag)
+  when a **real period lies within 14 days before or after it**: a run of the other days with 2 or
+  more bleeding days, a medium or heavy day, or a day flagged as a start. Otherwise the guess is a
+  one-day flagged start under the usual rules. Examples: a guess of 28 Oct and a period 30 Oct–3 Nov
+  → the start is 30 Oct; a guess of 28 Oct and Apple Health from 3 Nov with a medium first day →
+  3 Nov is period day 1; with a light first day the guess stays the start on 3 Nov (cycle day 7) and
+  gives way on 4 Nov, when the second day makes 3 Nov a real period. A lone light day after a guess
+  is bleeding inside the cycle. A flagged day with a known flow is never a guess and never dropped. 15 days is below the shortest cycle
   FIGO counts as normal (24 days) by a wide margin, so a short real cycle is never merged, while
   breakthrough and mid-cycle bleeding a week or two in is not counted as a new cycle.
 
@@ -1789,8 +1791,9 @@ The app and Coach show cycle notes only at medium or high.
 ### Flags
 
 - **`no_period_long`:** status `regular` (**90 days**) or `irregular` (**180 days**), at least 2
-  starts ever, and the days since the later of the last start, a later bleed that could be a start
-  (at least 15 days after it), and the local day tracking was last turned on reach the threshold.
+  starts ever, and the days since the latest of the last start, a later bleed that could be a start
+  (at least 15 days after it), the local day tracking was last turned on and the local day of her
+  newest `cycle_data` grant reach the threshold. Days she had withdrawn consent are not counted.
   90 days is the usual clinical line for an absent period in someone with regular cycles; 180 for
   irregular cycles. One logged period (she may have stopped logging) or a recent switch-on never
   fires it, and nor does a bleed she logged since. It suggests a doctor if unexpected; it is not a
@@ -1806,7 +1809,7 @@ The app and Coach show cycle notes only at medium or high.
 | Gap inside a period | ≤ 2 days | A missed log or a light day does not split a period |
 | Minimum days between starts | 15 | Below any normal cycle; mid-cycle bleeding is not a cycle |
 | Flagged start duplicate guard | 10 days | Two start flags a week apart are one period |
-| Guessed start replaced | a real period 1–9 days after a one-day flagged start | The onboarding date is a guess |
+| Guess dropped | a real period within 14 days of it | The onboarding date is a guess; half a cycle either way |
 | Used length | 15–60 days | Outside it, a gap in logging or a duplicate |
 | Missed-month test | ±5 days of 2 × median of the others (≥ 2 others) | 56 = two 28s |
 | Typical length window | last 6 used lengths | Recent cycles, robust to one outlier |
