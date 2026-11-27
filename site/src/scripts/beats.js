@@ -54,6 +54,21 @@
       $$('.bar i', scr).forEach(function (b, k) { tl.fromTo(b, { '--v': 0 }, { '--v': b.getAttribute('data-bar'), duration: 0.3 }, at + 0.3 + k * 0.06); });
       tl.fromTo($('.debt', scr), { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: 0.2 }, at + 0.6);
     },
+    checkin: function (scr, tl, at) {
+      /* each chosen chip fills lime while the one it replaces empties */
+      function choose(pick, at2) {
+        var was = $('[data-was]', pick.parentNode);
+        tap(tl, pick, at2);
+        tl.fromTo(pick, { backgroundColor: '#232427', color: '#F4F4F1' }, { backgroundColor: '#C8F05A', color: '#141A05', duration: 0.08 }, at2 + 0.02);
+        if (was) tl.fromTo(was, { backgroundColor: '#C8F05A', color: '#141A05' }, { backgroundColor: '#232427', color: '#F4F4F1', duration: 0.08 }, at2 + 0.02);
+      }
+      var picks = $$('[data-pick]', scr), save = $('[data-save]', scr);
+      tl.fromTo($$('.ci-q, .ci-avail', scr), { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, duration: 0.16, stagger: 0.04 }, at + 0.04);
+      choose(picks[0], at + 0.34);
+      choose(picks[1], at + 0.5);
+      tap(tl, save, at + 0.7);
+      tl.fromTo($('.ci-toast', scr), { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.2 }, at + 0.8);
+    },
     read: function (scr, tl, at) {
       var svg = $('[data-ring]', scr), r = svg._ring, p = { v: 0 };
       tl.fromTo(p, { v: 0 }, { v: 1, duration: 0.6, ease: 'power2.out', onUpdate: function () { r.draw(p.v); } }, at + 0.1);
@@ -69,7 +84,7 @@
     }
   };
   /* which app screen each moment plays on */
-  var SCR = { goal: 'goal', learn: 'intake', approve: 'proposal', train: 'workout', sleep: 'sleep', read: 'today', plan: 'session' };
+  var SCR = { goal: 'goal', learn: 'intake', approve: 'proposal', train: 'workout', sleep: 'sleep', checkin: 'checkin', read: 'today', plan: 'session' };
   function beatAnim(id, scope, tl, at) {
     var scr = $('[data-scr="' + SCR[id] + '"]', scope);
     if (scr && ANIM[id]) ANIM[id](scr, tl, at);

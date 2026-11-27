@@ -56,7 +56,7 @@
     var s = D.night.sleep;
     var hyp = [1, 2, 3, 3, 2, 1, 2, 4, 2, 3, 3, 1, 2, 4, 4, 2, 1, 0, 2, 4, 4, 1, 2, 4, 4, 0, 2, 4];
     var cls = ['awake', '', 'deep', 'deep', 'rem'];
-    return '<section class="scr" data-scr="sleep">' + head('Today', 'Tuesday 06:45', true) +
+    return '<section class="scr" data-scr="sleep">' + head('Today', s.when, true) +
       '<p class="sec-label">Sleep</p>' +
       '<div class="a-card"><p class="a-kicker">Last night, ' + s.window + '</p>' +
       '<div class="sq-top"><span class="sq-score a-num" data-count="' + s.score + '">' + s.score + '</span><span class="a-band" style="margin-bottom:6px">' + s.band + '</span></div>' +
@@ -65,6 +65,29 @@
         return '<div class="sub-row"><p class="lab"><span>' + r[0] + '</span><span>' + r[1] + '</span></p><div class="bar' + (r[1] < 60 ? ' lo' : '') + '"><i style="--v:' + (r[1] / 100) + '" data-bar="' + (r[1] / 100) + '"></i></div></div>';
       }).join('') + '</div>' +
       '<p class="debt"><span class="a-chip amber"><i></i><span>' + s.debt + '</span></span></p></div>' +
+      '</section>';
+  }
+  /* the Daily check-in sheet (lib/features/today/check_in_sheet.dart): one titled row of answers per
+     scale with the stored default (OK) chosen, the pain question, the availability switch, Save. The
+     markup is the finished state; the animation starts from the defaults. */
+  function scrCheckin() {
+    var c = D.checkin;
+    function opts(labels, on, pick, was) {
+      return '<div class="ci-row">' + labels.map(function (l, i) {
+        return '<span class="ci-o' + (i === on ? ' on' : '') + '"' + (i === pick ? ' data-pick' : '') + (i === was ? ' data-was' : '') + '>' + l + (i === pick ? TAP : '') + '</span>';
+      }).join('') + '</div>';
+    }
+    return '<section class="scr" data-scr="checkin">' +
+      '<i class="ci-grab"></i><div class="ci-head"><b>Daily check-in</b><span class="ci-x"><svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></span></div>' +
+      '<p class="ci-intro">' + c.intro + '</p>' +
+      c.questions.map(function (q) {
+        var moved = q.from !== q.to;
+        return '<div class="ci-q"><p class="ci-t">' + q.title + '</p>' + opts(q.labels, q.to, moved ? q.to : -1, moved ? q.from : -1) + '</div>';
+      }).join('') +
+      '<div class="ci-q"><p class="ci-t">Pain</p>' + opts(c.pain, 0, -1, -1) + '</div>' +
+      '<div class="ci-avail"><span>Available to train today</span><i class="ci-sw"></i></div>' +
+      '<span class="a-pill lime ci-save" data-save>Save check-in' + TAP + '</span>' +
+      '<span class="ci-toast">Check-in saved</span>' +
       '</section>';
   }
   function scrToday(id) {
@@ -132,7 +155,7 @@
       '<div class="gp-set"><h5>You&rsquo;re set.</h5><p class="gp-row"><span>Next session</span><b>Legs, Monday</b></p><p class="gp-row"><span>Every day</span><b>' + p.kcal + ' kcal &middot; ' + p.protein + ' g protein</b></p><p class="gp-row"><span>Apple Health</span><b>Connected</b></p><span class="a-pill">Go to Today</span></div></section>';
   }
 
-  var BUILD = { goal: scrGoal, intake: scrIntake, proposal: scrProposal, coach: scrCoach, workout: scrWorkout, sleep: scrSleep, today: function () { return scrToday(); }, 'today-hero': function () { return scrToday('today-hero'); }, session: scrSession };
+  var BUILD = { goal: scrGoal, intake: scrIntake, proposal: scrProposal, coach: scrCoach, workout: scrWorkout, sleep: scrSleep, today: function () { return scrToday(); }, 'today-hero': function () { return scrToday('today-hero'); }, session: scrSession, checkin: scrCheckin };
   function phone(opts) {
     opts = opts || {};
     var list = opts.screens || ['workout', 'sleep', 'today', 'session'];
@@ -199,58 +222,5 @@
       '<path fill="' + (opts.arc || '#C8F05A') + '" d="M272 783Q500 480 803 323Q560 520 440 783Z"/><circle fill="' + (opts.arc || '#C8F05A') + '" cx="623" cy="472" r="36"/></svg>';
   }
 
-  /* ---------- Tiles: one per part of the app ---------- */
-  function tileTraining() {
-    var w = D.monday.workout;
-    return '<div class="a-card tl-train"><div><p class="a-kicker" style="color:#4FD1A5;font-weight:600">&#10003; Done on Monday</p><p class="a-title" style="font-size:26px;margin-top:6px">' + w.session + '</p>' +
-      '<p class="a-note" style="margin-top:4px">52 min, 5 exercises</p>' +
-      '<p class="tl-lift"><span class="a-num">' + w.sets[4].kg + '<small>kg</small> &times; ' + w.sets[4].reps + '</span><span class="best">New best</span></p>' +
-      '<p class="a-note">' + w.name + ', set 5 of 5</p></div>' +
-      '<div class="tl-fig" data-fig></div></div>';
-  }
-  function tileFood() {
-    var t = D.monday.meal.totals;
-    return '<div class="a-card"><p class="a-kicker">Monday, from confirmed meals</p>' +
-      '<div class="n-box" style="margin-top:12px;background:var(--a-raised)"><p class="top"><span><i class="p-dot"></i>Protein</span><em>' + (t.protein[2] - t.protein[1]) + 'g left</em></p>' +
-      '<p class="v">' + t.protein[1] + '<small>/ ' + t.protein[2] + 'g</small></p><div class="bar"><i style="--v:' + (t.protein[1] / t.protein[2]).toFixed(3) + '"></i></div></div>' +
-      '<div class="n-two" style="margin-top:8px">' +
-      '<div class="n-box"><p class="top"><span><i class="c-carb"></i>Carbs</span></p><p class="v">' + t.carbs[1] + '<small>/ ' + t.carbs[2] + 'g</small></p><div class="bar"><i class="c-carb" style="--v:' + (t.carbs[1] / t.carbs[2]).toFixed(3) + '"></i></div></div>' +
-      '<div class="n-box"><p class="top"><span><i class="c-fat"></i>Fat</span></p><p class="v">' + t.fat[1] + '<small>/ ' + t.fat[2] + 'g</small></p><div class="bar"><i class="c-fat" style="--v:' + (t.fat[1] / t.fat[2]).toFixed(3) + '"></i></div></div></div></div>';
-  }
-  function tileSleep() {
-    var s = D.night.sleep;
-    return '<div class="a-card"><p class="a-kicker">Last night, ' + s.window + '</p>' +
-      '<div class="sq-top"><span class="sq-score a-num">' + s.score + '</span><span class="a-band" style="margin-bottom:6px">' + s.band + '</span></div>' +
-      '<div class="subs" style="gap:10px;margin-top:14px">' + s.subs.slice(0, 3).map(function (r) {
-        return '<div class="sub-row"><p class="lab"><span>' + r[0] + '</span><span>' + r[1] + '</span></p><div class="bar' + (r[1] < 60 ? ' lo' : '') + '"><i style="--v:' + (r[1] / 100) + '"></i></div></div>';
-      }).join('') + '</div></div>';
-  }
-  function tileRecovery() {
-    var t = D.morning;
-    return '<div class="a-card tl-rec"><p class="a-kicker">Tuesday 06:45</p><p class="verdict" style="font-size:26px;margin-top:4px">' + t.verdict + '</p>' +
-      '<div class="ringbox"><svg data-ring-tile aria-hidden="true"></svg><div class="ring-c"><span class="rl">Recovery</span><span class="sc a-num">' + t.score + '</span><span class="a-band">' + t.band + '</span></div></div>' +
-      '<div class="chips" style="justify-content:center">' + t.chips.slice(2, 4).map(function (c) { return '<span class="a-chip ' + c[1] + '"><i></i><span>' + c[0] + '</span></span>'; }).join('') + '</div></div>';
-  }
-  function tileProgress() {
-    var pts = [80.6, 80.1, 79.9, 79.4, 79.6, 79.0, 78.7, 78.8, 78.2, 77.9, 77.6, 77.8, 77.3];
-    var lo = 76.8, hi = 81, W = 300, H = 120;
-    var xy = pts.map(function (v, i) { return [i / (pts.length - 1) * W, (hi - v) / (hi - lo) * H]; });
-    var path = 'M' + xy.map(function (p) { return p[0].toFixed(1) + ' ' + p[1].toFixed(1); }).join(' L');
-    return '<div class="a-card"><p class="a-kicker">Weight</p><p class="wt-v a-num">77.3<small>kg</small></p>' +
-      '<div class="wt-chips"><span class="a-chip fill">3.3 kg since 21 Jul</span><span class="a-chip">Steady trend</span></div>' +
-      '<div class="wt"><svg viewBox="0 0 300 120" preserveAspectRatio="none" aria-hidden="true">' +
-      '<path d="' + path + '" fill="none" stroke="#F4F4F1" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>' +
-      '<path d="M150 ' + xy[6][1].toFixed(1) + ' L300 ' + (xy[12][1] + 6).toFixed(1) + '" stroke="#F2B544" stroke-width="2.4" vector-effect="non-scaling-stroke" stroke-linecap="round"/>' +
-      '</svg>' + xy.map(function (p) { return '<i class="wt-dot" style="left:' + (p[0] / W * 100).toFixed(2) + '%;top:' + (p[1] / H * 100).toFixed(2) + '%"></i>'; }).join('') + '</div>' +
-      '<p class="wt-key"><span><i></i>Measured</span><span><i class="tr"></i>28-day trend</span></p></div>';
-  }
-  function tileCoach() {
-    return '<div class="a-card tl-coach"><p class="bubble-q">Why lighter today?</p>' +
-      '<ol class="chain"><li><i></i><span><b>Sleep 6 h 12 m.</b> <em>About an hour less than you need.</em></span></li>' +
-      '<li><i></i><span><b>Heavy legs yesterday.</b> <em>Squat 5 &times; 5, last set effort 9.</em></span></li>' +
-      '<li class="end"><i></i><span><b>So: deadlift 3 &times; 3 at 140 kg.</b> <em>Heavy pulls when you are back to your normal.</em></span></li></ol></div>';
-  }
-
-  window.TracendApp = { phone: phone, screen: function (k) { return BUILD[k](); }, ring: ring, sessionCard: sessionCard, icon: ICON, statusBar: statusBar, tabBar: tabBar, mark: mark,
-    tiles: { training: tileTraining, food: tileFood, sleep: tileSleep, recovery: tileRecovery, progress: tileProgress, coach: tileCoach } };
+  window.TracendApp = { phone: phone, screen: function (k) { return BUILD[k](); }, ring: ring, icon: ICON, statusBar: statusBar, tabBar: tabBar, mark: mark };
 })();

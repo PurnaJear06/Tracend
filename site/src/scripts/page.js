@@ -1,12 +1,25 @@
 /* The landing page: hero film, the day story, sections and their motion. */
 (function () {
   'use strict';
+  function recover(err) {
+    try {
+      var sm = window.TK && TK.smoother && TK.smoother();
+      if (sm) sm.kill();
+      if (window.ScrollTrigger) ScrollTrigger.getAll().forEach(function (t) { t.kill(true); });
+      if (window.gsap) gsap.globalTimeline.clear();
+      var f = document.querySelector('.film');
+      if (f) f.setAttribute('data-mode', 'flow');
+      Array.prototype.forEach.call(document.querySelectorAll('#main *'), function (el) { el.style.opacity = ''; el.style.visibility = ''; el.style.transform = ''; });
+    } catch (e) { /* nothing more to undo */ }
+    if (window.console) console.error(err);
+  }
+  try {
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
   var G = TK.G, D = window.TRACEND_DAY, A = window.TracendApp, Body = window.TracendBody;
   var motion = function () { return !!G && !TK.reduced(); };
   /* ambient light per moment: the evening gym, the night, first light, the morning */
-  var AMB = [['#33291F', '#1B1F26'], ['#131A3C', '#0A0E24'], ['#3A2828', '#22304A'], ['#3A3524', '#1C2A22']];
+  var AMB = [['#33291F', '#1B1F26'], ['#131A3C', '#0A0E24'], ['#2A2638', '#141B30'], ['#3A2828', '#22304A'], ['#3A3524', '#1C2A22']];
   var BEATS = D.beats, R = 1.6, S = 1.4; /* timeline units. R: the rewind. S: one moment, its motion in the first unit, then a rest so it reads settled */
   var film = $('.film'), fdev = $('.f-dev'), live = $('[data-day-live]');
   /* wide: copy beside the phone. tall: copy above it (phones and upright tablets). Anything else
@@ -39,24 +52,13 @@
   var dDay = TK.wordReel($('[data-dday]'), BEATS.map(function (b) { return b.day; }).filter(function (d, k, a) { return a.indexOf(d) === k; }));
   TK.setWord(dDay, BEATS[0].day, { instant: true });
 
-  $$('[data-tile]').forEach(function (t) { t.innerHTML = A.tiles[t.getAttribute('data-tile')](); });
-  A.ring($('[data-ring-tile]'), { score: D.morning.score, segments: D.morning.segments });
-  (function () {
-    var fig = $('[data-fig]'), svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    fig.appendChild(svg); Body.build(svg, 'front'); Body.paint(svg, { plan: ['quads', 'glutes', 'core'] });
-  })();
-  A.ring($('[data-ring-vs]'), { score: 36, segments: [{ color: '#6E6F6A', weight: 1 }], mono: '#6E6F6A', track: '#232427' });
-  $('[data-vs-session]').innerHTML = A.sessionCard();
-
-  /* tall: the phone sits under the hero copy, then rises to sit under the day's shorter copy */
-  var fcopy = $('.f-copy'), fstory = $('.f-story');
-  function lift() { return wide || !pinMode ? 0 : Math.min(0, fstory.offsetHeight - fcopy.offsetHeight); }
+  var fcopy = $('.f-copy-in'), stage = $('.f-stage');
   /* phone size follows the viewport: fitted to the height when wide; when tall, to the width,
      and never so large that less than its top three fifths show under the day's copy */
   function sizePhone() {
     var pwn = !pinMode ? Math.round(Math.min(window.innerWidth * 0.64, 290))
       : wide ? Math.round(Math.min(window.innerHeight * 0.8, 790) * 390 / 844)
-        : Math.round(Math.min(window.innerWidth * 0.66, 300, Math.max(window.innerWidth * 0.56, (window.innerHeight - fdev.offsetTop - lift()) / 1.3)));
+        : Math.round(Math.min(window.innerWidth * 0.66, 300, Math.max(window.innerWidth * 0.56, (window.innerHeight - fdev.offsetTop) / 1.3)));
     setPwn(ph, pwn);
     fdev.style.setProperty('--pw', pwn + 'px');
     fdev.style.setProperty('--pu', (pwn / 259).toFixed(4)); /* unitless, for the banner that scales with the phone */
@@ -90,7 +92,7 @@
       return tl;
     }
     /* wide: what it read arrives in the order it happened, then the score, then its call */
-    ['.fc-train', '.fc-food', '.fc-sleep'].forEach(function (c, i) {
+    ['.fc-train', '.fc-sleep', '.fc-check'].forEach(function (c, i) {
       tl.from(c + ' .fc-in', { x: -24, y: 16, autoAlpha: 0, filter: 'blur(8px)', duration: 0.7 }, 0.35 + i * 0.22);
     });
     ring(1.0);
@@ -122,17 +124,23 @@
     G.set(story, { autoAlpha: 0 });
     G.set(bridge, { autoAlpha: 0 });
     G.set(tilt, T0);
+    if (!wide) {
+      /* the phone peeks out under the form, rises a little slower than the page, and lands where the
+         day's copy leaves it room just as the stage pins */
+      G.fromTo(fdev, { y: function () { return -Math.max(0, fdev.offsetTop - 14); } }, { y: 0, ease: 'none',
+        scrollTrigger: { trigger: stage, start: 0, end: 'top top', scrub: true, invalidateOnRefresh: true } });
+    }
     var tl = G.timeline({ defaults: { ease: TK.EASE.out } });
     var NI = { immediateRender: false };
-    /* the answer steps aside, the question takes its place, the phone squares up */
-    tl.fromTo(fcopy, { autoAlpha: 1, y: 0 }, Object.assign({ autoAlpha: 0, y: -40, duration: 0.4, ease: 'power1.inOut' }, NI), 0);
+    /* the answer steps aside, the question takes its place, the phone squares up. On a laptop the copy
+       fades as it scrolls off; on a phone it only scrolls, so a form someone is typing in never fades */
+    if (wide) tl.fromTo(fcopy, { autoAlpha: 1, y: 0 }, Object.assign({ autoAlpha: 0, y: -40, duration: 0.4, ease: 'power1.inOut' }, NI), 0);
     $$('.fc').forEach(function (c, i) {
       var dir = +c.getAttribute('data-fc');
       /* opacity, not autoAlpha: the cards sit inside the phone's wrapper, which is still hidden when this is first measured */
       tl.fromTo(c, { opacity: 1, xPercent: 0, yPercent: 0, scale: 1 }, Object.assign({ opacity: 0, xPercent: wide ? dir * 40 : 0, yPercent: wide ? -30 : -60, scale: 0.92, duration: wide ? 0.45 : 0.3, ease: 'power1.inOut' }, NI), 0.04 + i * 0.04);
     });
     tl.fromTo(tilt, T0, Object.assign({ duration: 1.05, ease: TK.EASE.inOut }, T1, NI), 0.1);
-    if (!wide) tl.fromTo(fdev, { y: 0 }, Object.assign({ y: lift, duration: 0.9, ease: TK.EASE.inOut }, NI), 0.3);
     tl.fromTo(film, { '--amb-a': AMB[AMB.length - 1][0], '--amb-b': AMB[AMB.length - 1][1] }, Object.assign({ '--amb-a': AMB[0][0], '--amb-b': AMB[0][1], duration: 0.9, ease: 'none' }, NI), 0.3);
     tl.fromTo(bridge, { autoAlpha: 0, y: 26 }, Object.assign({ autoAlpha: 1, y: 0, duration: 0.3 }, NI), 0.3)
       .fromTo(bridge, { autoAlpha: 1, y: 0 }, Object.assign({ autoAlpha: 0, y: -22, duration: 0.22, ease: 'power1.inOut' }, NI), R - 0.42);
@@ -215,81 +223,12 @@
       .fromTo(n, { autoAlpha: 0, x: -8 }, { autoAlpha: 1, x: 0, duration: 0.22 }, at + 0.48);
   };
 
-  /* ---------- The app assembles ---------- */
-  function assemble() {
-    var tiles = $$('.bento .tile'), was = $$('.bento .was s'), tags = $$('.bento .was');
-    var ha = $('.cx-h .h-a'), hb = $('.cx-h .h-b');
-    var tl = G.timeline({ scrollTrigger: { trigger: '.bento', start: 'top 92%', end: 'top 20%', scrub: 0.8 } });
-    if (TK.desk.matches) {
-      var from = [[-90, 120, -5], [0, 200, 0], [110, 140, 6], [-140, 40, 4], [140, 60, -4], [0, 160, 2]];
-      tiles.forEach(function (t, i) {
-        tl.fromTo(t, { x: from[i][0], y: from[i][1], rotation: from[i][2], scale: 0.9, autoAlpha: 0.3 }, { x: 0, y: 0, rotation: 0, scale: 1, autoAlpha: 1, duration: 0.7, ease: 'power2.out' }, 0);
-      });
-    } else {
-      tl.fromTo(tiles, { y: 30, autoAlpha: 0.4 }, { y: 0, autoAlpha: 1, duration: 0.5, stagger: 0.05 }, 0);
-    }
-    tl.fromTo(was, { '--s': '0%' }, { '--s': '100%', duration: 0.15, stagger: 0.02, ease: 'none' }, 0.55)
-      .fromTo(tags, { autoAlpha: 1, y: 0 }, { autoAlpha: 0, y: -8, duration: 0.15, stagger: 0.02 }, 0.78)
-      .fromTo(ha, { autoAlpha: 1, y: 0 }, { autoAlpha: 0, y: -20, duration: 0.15 }, 0.62)
-      .fromTo(hb, { autoAlpha: 0, y: 24 }, { autoAlpha: 1, y: 0, duration: 0.2 }, 0.72);
-  }
-
-
-  /* ---------- Body map: the week on the muscle map ---------- */
-  var WEEK = [
-    { day: 'Monday', state: 'done', name: 'Legs', rows: [['glutes', 'Glutes', 'Back squat, Romanian deadlift', 10], ['quads', 'Quads', 'Back squat, Leg press', 8], ['hamstrings', 'Hamstrings', 'Romanian deadlift, Leg curl', 8], ['calves', 'Calves', 'Calf raise', 4]] },
-    { day: 'Tuesday', state: 'today, adjusted', name: 'Pull', rows: [['back', 'Back', 'Deadlift, Pull-up, Row', 9], ['biceps', 'Biceps', 'Pull-up, Curl', 6], ['hamstrings', 'Hamstrings', 'Deadlift', 3]] },
-    { day: 'Thursday', state: 'planned', name: 'Push', rows: [['chest', 'Chest', 'Bench press, Incline press', 10], ['shoulders', 'Shoulders', 'Overhead press, Lateral raise', 8], ['triceps', 'Triceps', 'Dips, Pushdown', 6]] },
-    { day: 'Saturday', state: 'planned', name: 'Arms and core', rows: [['biceps', 'Biceps', 'Hammer curl', 6], ['triceps', 'Triceps', 'Skull crusher', 6], ['core', 'Core', 'Plank, Cable crunch', 6]] }
-  ];
-  function setupBody() {
-    var figs = $$('.bm-figs svg').map(function (s) { Body.build(s, s.getAttribute('data-v')); return s; });
-    var tabs = $$('.wk button'), list = $('[data-bm-list]'), head = $('[data-bm-head]');
-    var cur = -1, timer = null, auto = motion(), bar = null;
-    function show(i, instant) {
-      if (i === cur) return;
-      var prev = cur >= 0 ? WEEK[cur].rows.map(function (r) { return r[0]; }) : [];
-      var next = WEEK[i].rows.map(function (r) { return r[0]; });
-      cur = i;
-      tabs.forEach(function (t, k) { t.setAttribute('aria-selected', String(k === i)); });
-      head.innerHTML = WEEK[i].day + ', ' + WEEK[i].state + '<b>' + WEEK[i].name + '</b>';
-      list.innerHTML = WEEK[i].rows.map(function (r) { return '<li><i></i><span><b>' + r[1] + '</b><small>' + r[2] + '</small></span><em class="a-num"><span data-sets>' + r[3] + '</span> sets</em></li>'; }).join('');
-      figs.forEach(function (s) {
-        var off = prev.filter(function (g) { return next.indexOf(g) < 0; });
-        var on = Body.groupEls(s, 'o-plan', next), glow = Body.groupEls(s, 'o-glow', next);
-        if (instant || !motion()) { Body.paint(s, { plan: next }); return; }
-        G.to(Body.groupEls(s, 'o-plan', off).concat(Body.groupEls(s, 'o-glow', off)), { attr: { opacity: 0 }, duration: 0.35, ease: 'power1.out', overwrite: true });
-        G.to(on, { attr: { opacity: 1 }, duration: 0.5, stagger: 0.02, ease: TK.EASE.out, overwrite: true });
-        G.to(glow, { attr: { opacity: 0.5 }, duration: 0.7, overwrite: true });
-      });
-      if (motion() && !instant) {
-        G.from($$('li', list), { y: 12, autoAlpha: 0, duration: 0.45, stagger: 0.06 });
-        $$('[data-sets]', list).forEach(function (el) { TK.countUp(el, +el.textContent, { dur: 0.7 }); });
-      }
-    }
-    function cycle() {
-      if (!auto) return;
-      if (bar) bar.kill();
-      var b = $('.prog i', tabs[cur]);
-      bar = G.fromTo(b, { scaleX: 0 }, { scaleX: 1, duration: 3.2, ease: 'none', onComplete: function () { show((cur + 1) % WEEK.length); cycle(); } });
-    }
-    tabs.forEach(function (t, k) {
-      t.addEventListener('click', function () { auto = false; if (bar) bar.kill(); G.set($$('.prog i'), { scaleX: 0 }); show(k); });
-      t.addEventListener('keydown', function (e) {
-        var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
-        if (!d) return; e.preventDefault(); var n = (k + d + tabs.length) % tabs.length; tabs[n].focus(); tabs[n].click();
-      });
-    });
-    show(0, true);
-    if (motion()) TK.whenVisible($('.bm'), function (on) { if (on && auto && !bar) cycle(); else if (bar) bar.paused(!on); }, { threshold: 0.4 });
-  }
-
   /* ---------- Coach chat: the answer streams in, then its evidence ---------- */
   var CHAT = [
     { q: 'Why lighter today?', a: 'You slept 6 h 12 m, about an hour under your normal, right after squats at effort 9. Your HRV and resting heart rate are normal, so it is not a rest day. Deadlift 3 \u00d7 3 at 140 kg keeps the pattern without digging the hole deeper.',
       ev: [['Sleep 6 h 12 m', 'amber'], ['Squat 5 \u00d7 5, effort 9', 'amber'], ['HRV 52 ms, normal', 'lime'], ['Resting HR 58, normal', 'lime']] },
-    { q: 'How did I eat yesterday?', a: '148 of 160 g protein and 2,140 kcal, close to both targets. Dinner did the heavy lifting with 52 g of protein, from one photo you confirmed.',
-      ev: [['Protein 148 of 160 g', 'lime'], ['2,140 of 2,600 kcal', 'lime'], ['Dinner, confirmed 20:30', 'lime']] },
+    { q: 'How is my bench since August?', a: 'Up 5 kg. You pressed 80 kg \u00d7 6 on 4 August and 85 kg \u00d7 6 last Thursday. It held for two weeks in September, the same two weeks your sleep ran short.',
+      ev: [['Bench press, 14 sessions', 'lime'], ['Best: 85 kg \u00d7 6', 'lime'], ['Sleep, 8 to 21 Sep', 'amber'], ['Gap: no log 2 Oct', 'mute']] },
     { q: 'Am I still losing weight?', a: 'Yes. Your 28-day trend is down about 0.3 kg a week, 3.3 kg since 21 July. That pace protects your strength, so nothing needs to change.',
       ev: [['Weight trend, 12 weeks', 'lime'], ['77.3 kg this morning', 'lime'], ['Gap: no weigh-in Sunday', 'mute']] }
   ];
@@ -362,7 +301,7 @@
     size(); window.addEventListener('resize', size);
     var figs = $$('.pg-ph svg', pph).map(function (s) { Body.build(s, s.getAttribute('data-v')); return s; });
     var scr = $$('.scr', pph), steps = $$('.pg-steps button'), live = $('[data-pg-live]');
-    var LAB = [0, 4.2, 8.4, 12.6], END = 17.6;
+    var LAB = [0, 4.2, 8.4, 12.6], END = 17.6, held = false;
     if (!G) return;
     var tl = G.timeline({ paused: true, repeat: -1, repeatDelay: 0.4, defaults: { ease: TK.EASE.out, immediateRender: false } });
     function tap(el, at) {
@@ -417,12 +356,15 @@
     tl.eventCallback('onUpdate', function () {
       var t = tl.time(), idx = t >= LAB[3] ? 3 : t >= LAB[2] ? 2 : t >= LAB[1] ? 1 : 0, end = idx < 3 ? LAB[idx + 1] : END;
       steps.forEach(function (bt, k) { $('.prog i', bt).style.transform = 'scaleX(' + (k === idx ? Math.min(1, (t - LAB[k]) / (end - LAB[k])).toFixed(3) : 0) + ')'; });
-      if (idx !== lastIdx) { lastIdx = idx; steps.forEach(function (bt, k) { bt.setAttribute('aria-selected', String(k === idx)); }); }
+      if (idx !== lastIdx) { lastIdx = idx; steps.forEach(function (bt, k) { bt.setAttribute('aria-pressed', String(k === idx)); }); }
     });
     steps.forEach(function (bt, k) {
       bt.addEventListener('click', function () {
         live.textContent = $('span', bt).textContent + ': ' + $('em', bt).textContent;
-        if (motion()) tl.play(LAB[k] + 0.01); else tl.pause(k < 3 ? LAB[k + 1] - 0.05 : END, false);
+        /* a chosen step plays once and holds: the loop stops for good */
+        held = true;
+        var to = k < 3 ? LAB[k + 1] - 0.05 : END;
+        if (motion()) tl.tweenFromTo(LAB[k] + 0.01, to, { ease: 'none' }); else tl.pause(to, false);
       });
       bt.addEventListener('keydown', function (e) {
         var d = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
@@ -431,56 +373,7 @@
     });
     if (!motion()) { tl.pause(END, false); return; }
     tl.pause(0);
-    TK.whenVisible($('.pg'), function (on) { if (on) tl.play(); else tl.pause(); }, { threshold: 0.3 });
-  }
-
-  /* ---------- Made for you: two example athletes, one card that re-plans ---------- */
-  var ATH = [
-    { ini: 'K', name: 'Kabir, 22', sub: '2 years training, gym', tags: [['Build muscle', 'lime'], ['5 days, 75 min', '']], days: [0, 1, 2, 4, 5],
-      rows: [['Mon', 'Bench press', '4 &times; 6 &middot; RPE 8.5'], ['Tue', 'Weighted pull-up', '4 &times; 6'], ['Wed', 'Back squat', '5 &times; 5 &middot; <em>Start at 100 kg</em>'], ['Fri', 'Incline press', '4 &times; 8'], ['Sat', 'Romanian deadlift', '4 &times; 8']],
-      kcal: 3100, protein: 150, why: '<b>Recovers fast, ready for volume.</b> Five days, heavy compounds and a small surplus to build size.' },
-    { ini: 'A', name: 'Anita, 45', sub: 'Back after a long break, home', tags: [['Lose fat', 'lime'], ['3 days, 45 min', ''], ['Avoid: deep squats, knee', 'warn']], days: [0, 2, 4],
-      rows: [['Mon', 'Box squat to a bench', '3 &times; 10 &middot; RPE 7'], ['Wed', 'Dumbbell Romanian deadlift', '3 &times; 10'], ['Fri', 'Split squat, short range', '3 &times; 8 each']],
-      kcal: 1750, protein: 120, why: '<b>Joints first.</b> No deep squats, a rest day between sessions, and high protein to keep muscle while losing fat.' }
-  ];
-  function setupPeople() {
-    var card = $('[data-ys]'), sw = $('.ys-sw'), btns = $$('.ys-sw button'), cur = -1, timer = null, auto = motion();
-    function html(a) {
-      var wk = 'MTWTFSS'.split('').map(function (d, k) { return '<i' + (a.days.indexOf(k) >= 0 ? ' class="on"' : '') + '>' + d + '</i>'; }).join('');
-      return '<div class="ys-in"><div class="ys-who"><span class="ys-av">' + a.ini + '</span><span class="ys-nm"><b>' + a.name + '</b><span>' + a.sub + '</span></span></div>' +
-        '<div class="ys-tags">' + a.tags.map(function (t) { return '<span class="a-chip ' + t[1] + '"><i></i><span>' + t[0] + '</span></span>'; }).join('') + '</div>' +
-        '<div class="ys-week" aria-label="Training days">' + wk + '</div>' +
-        '<div class="ys-rows">' + a.rows.map(function (r) { return '<p><b>' + r[0] + '</b><span>' + r[1] + '</span><small>' + r[2] + '</small></p>'; }).join('') + '</div>' +
-        '<div class="ys-nut"><div><span>Every day</span><b data-k>' + a.kcal.toLocaleString('en-US') + '</b> kcal</div><div><span>Protein</span><b data-pr>' + a.protein + '</b> g</div></div>' +
-        '<p class="ys-why"><i>' + A.icon.spark + '</i><span>' + a.why + '</span></p></div>';
-    }
-    function show(i, user) {
-      if (i === cur) return;
-      var prev = cur >= 0 ? ATH[cur] : null; cur = i;
-      sw.setAttribute('data-on', i);
-      btns.forEach(function (b, k) { b.setAttribute('aria-selected', String(k === i)); });
-      var swap = function () {
-        card.innerHTML = html(ATH[i]);
-        if (!motion() || !prev) return;
-        var inn = $('.ys-in', card);
-        G.from(inn.children, { y: 14, autoAlpha: 0, duration: 0.45, stagger: 0.05 });
-        G.from($$('.ys-week i.on', card), { scale: 0.7, duration: 0.35, stagger: 0.04, ease: TK.EASE.spring });
-        TK.countUp($('[data-k]', card), ATH[i].kcal, { from: prev.kcal, dur: 0.8, fmt: function (v) { return Math.round(v).toLocaleString('en-US'); } });
-        TK.countUp($('[data-pr]', card), ATH[i].protein, { from: prev.protein, dur: 0.8 });
-      };
-      if (motion() && prev) G.to($('.ys-in', card).children, { y: -10, autoAlpha: 0, duration: 0.2, stagger: 0.02, ease: 'power1.in', onComplete: swap, overwrite: true });
-      else swap();
-    }
-    function cycle() { clearTimeout(timer); if (auto) timer = setTimeout(function () { show(1 - cur); cycle(); }, 5200); }
-    btns.forEach(function (b, k) {
-      b.addEventListener('click', function () { auto = false; clearTimeout(timer); show(k, true); });
-      b.addEventListener('keydown', function (e) {
-        var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
-        if (!d) return; e.preventDefault(); var n = (k + d + 2) % 2; btns[n].focus(); btns[n].click();
-      });
-    });
-    show(0);
-    if (motion()) TK.whenVisible($('.ys'), function (on) { if (on && auto) cycle(); else clearTimeout(timer); }, { threshold: 0.4 });
+    TK.whenVisible($('.pg'), function (on) { if (held) return; if (on) tl.play(); else tl.pause(); }, { threshold: 0.3 });
   }
 
   /* ---------- Start: goal, getting to know you, the approved plan, one looping film ---------- */
@@ -493,7 +386,7 @@
     function size() { setPwn(sph, Math.round(Math.min(330, window.innerWidth * 0.7))); }
     size(); window.addEventListener('resize', size);
     if (!G) return;
-    var STEP = 5.2, END = STEP * S.length, NI = { immediateRender: false };
+    var STEP = 5.2, END = STEP * S.length, NI = { immediateRender: false }, held = false;
     var tl = G.timeline({ paused: true, repeat: -1, repeatDelay: 0.4, defaults: { ease: TK.EASE.out } });
     tl.set(scr.slice(1), { autoAlpha: 1, yPercent: 100 }, 0).set(scr[0], { autoAlpha: 1, scale: 1, yPercent: 0 }, 0);
     S.forEach(function (b, k) {
@@ -512,13 +405,15 @@
       steps.forEach(function (bt, k) { $('.prog i', bt).style.transform = 'scaleX(' + (k === idx ? Math.min(1, (t - idx * STEP) / STEP).toFixed(3) : 0) + ')'; });
       if (idx !== lastIdx) {
         lastIdx = idx; sbTime.textContent = S[idx].time;
-        steps.forEach(function (bt, k) { bt.setAttribute('aria-selected', String(k === idx)); });
+        steps.forEach(function (bt, k) { bt.setAttribute('aria-pressed', String(k === idx)); });
       }
     });
     steps.forEach(function (bt, k) {
       bt.addEventListener('click', function () {
         live.textContent = $('span', bt).textContent + ': ' + $('em', bt).textContent;
-        if (motion()) tl.play(k * STEP + 0.01); else tl.pause(k < S.length - 1 ? (k + 1) * STEP - 0.05 : END, false);
+        held = true;
+        var to = k < S.length - 1 ? (k + 1) * STEP - 0.05 : END;
+        if (motion()) tl.tweenFromTo(k * STEP + 0.01, to, { ease: 'none' }); else tl.pause(to, false);
       });
       bt.addEventListener('keydown', function (e) {
         var d = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
@@ -527,7 +422,26 @@
     });
     if (!motion()) { tl.pause(END, false); return; }
     tl.pause(0);
-    TK.whenVisible($('#start .nx'), function (on) { if (on) tl.play(); else tl.pause(); }, { threshold: 0.3 });
+    TK.whenVisible($('#start .nx'), function (on) { if (held) return; if (on) tl.play(); else tl.pause(); }, { threshold: 0.3 });
+  }
+
+  /* ---------- Phones: one Join button in thumb reach once the hero form has scrolled away ---------- */
+  function dockCta() {
+    var btn = $('.dock-cta'), hero = $('.f-copy .join-wrap'), close = $('#join');
+    if (!btn || !hero || !close || !('IntersectionObserver' in window)) return;
+    var seen = { hero: true, close: false }, typing = false;
+    function set() {
+      var on = !seen.hero && !seen.close && !typing;
+      btn.classList.toggle('on', on);
+      document.documentElement.classList.toggle('docked', on);
+      btn.setAttribute('aria-hidden', String(!on));
+      btn.tabIndex = on ? 0 : -1;
+    }
+    TK.whenVisible(hero, function (on) { seen.hero = on; set(); });
+    TK.whenVisible(close, function (on) { seen.close = on; set(); }, { rootMargin: '0px 0px -12% 0px' });
+    /* the keyboard is up: keep the bottom of the screen clear */
+    document.addEventListener('focusin', function (e) { typing = !!(e.target.closest && e.target.closest('input, textarea')); set(); });
+    document.addEventListener('focusout', function () { typing = false; set(); });
   }
 
   /* ---------- Demo ---------- */
@@ -581,7 +495,7 @@
 
   /* ---------- One reveal per section heading ---------- */
   function reveals() {
-    $$('.sec .sec-h:not(.cx-h)').forEach(function (h) {
+    $$('.sec .sec-h').forEach(function (h) {
       if (!window.SplitText) return;
       SplitText.create(h, { type: 'lines', mask: 'lines', autoSplit: true, onSplit: function (self) {
         /* the masks clip, so give descenders (g, y, p) room without moving the lines */
@@ -591,20 +505,15 @@
     });
     /* each piece arrives as it comes into view. Pieces that enter together (side by side on a laptop) are staggered;
        on a phone they are stacked, so each gets its own moment instead of one fade for a two-screen block */
-    var items = $$('.sec .sec-sub, .own > *, .soon-row, .controls, .demo-out > .a-card, .demo-note, .ys-mem, .ys-stage, .cq, .cc-dev, .nx-steps, .pg-dev, .wk, .bm-stage, .versus > *, .nx-dev, .close .join-wrap, .trust, .sec-cta');
+    var items = $$('.sec .sec-sub, .controls, .demo-out > .a-card, .demo-note, .cq, .cc-dev, .nx-steps, .pg-dev, .nx-dev, .close .join-wrap, .trust, .ch-stage, .ch-note, .ex-rail');
     G.set(items, { y: 28, autoAlpha: 0 });
     ScrollTrigger.batch(items, { start: 'top 90%', once: true, onEnter: function (batch) {
       G.to(batch, { y: 0, autoAlpha: 1, duration: TK.T.focal, ease: TK.EASE.out, stagger: 0.08, overwrite: true, clearProps: 'transform' });
     } });
-    var vsRing = $('[data-ring-vs]');
-    ScrollTrigger.create({ trigger: '.versus', start: 'top 75%', once: true, onEnter: function () {
-      G.from('.versus .coach-note', { autoAlpha: 0, y: 12, duration: TK.T.focal, delay: 0.5 });
-      void vsRing;
-    } });
   }
 
   /* ---------- Boot ---------- */
-  setupBody(); setupCoach(); setupProgress(); setupPeople(); setupStart();
+  setupCoach(); setupProgress(); setupStart(); dockCta();
   if (!motion()) {
     setupFlow(); setupDemo();
     return;
@@ -614,11 +523,11 @@
   if (pinMode) setupPin(heroTL); else setupFlow();
   if (window.scrollY > 8) heroTL.progress(1);
   pointerDepth();
-  assemble();
   setupDemo();
   reveals();
   window.addEventListener('resize', sizePhone);
   /* copy heights settle when the fonts land; size the phone again before triggers measure */
   ScrollTrigger.addEventListener('refreshInit', sizePhone);
   TK.refreshOnFonts();
+  } catch (err) { recover(err); }
 })();

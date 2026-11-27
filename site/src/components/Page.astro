@@ -1,28 +1,48 @@
 ---
 import JoinForm from './JoinForm.astro';
+import Change from './Change.astro';
+import Extras from './Extras.astro';
 ---
 <a class="skip" href="#main">Skip to content</a>
 <header class="nav" aria-label="Site">
   <a class="brand" href="#top" aria-label="Tracend, back to top"><span data-mark></span><span translate="no">Tracend</span></a>
-  <nav class="nav-links" aria-label="Sections"><a href="#day" data-day-link>How it works</a><a href="#demo">Try it</a><a href="#complete">The app</a><a href="#progress">Progress</a></nav>
+  <nav class="nav-links" aria-label="Sections"><a href="#day" data-day-link>How it works</a><a href="#demo">Try it</a><a href="#change">Your plan</a><a href="#coach">Coach</a></nav>
   <a class="nav-cta" href="#join" data-focus>Join the beta</a>
 </header>
 <div class="top-fade" aria-hidden="true"></div>
-<div class="demo-mini" aria-hidden="true"><div class="dm-in"><span class="dm-s"><b data-m="score">36</b><em data-m="band">Low</em></span><span class="dm-p" data-m="plan">Go lighter today.</span></div></div>
+<div class="demo-mini" aria-hidden="true"><div class="dm-in"><span class="dm-s"><b data-m="score">34</b><em data-m="band">Poor</em></span><span class="dm-p" data-m="plan">Go lighter today.</span></div></div>
+<a class="dock-cta" href="#join" data-focus tabindex="-1" aria-hidden="true">Join the beta<i aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></i></a>
 
 <div id="smooth-wrapper"><div id="smooth-content">
 <main id="main">
 
   <section class="film" id="top" data-mode="flow" aria-labelledby="hero-h">
+    <!-- the hero copy sits outside the pinned stage: it scrolls away like the page, so the form never fades while someone types -->
+    <div class="f-copy"><div class="f-copy-in">
+      <p class="kicker">Private beta. For iPhone, best with Apple Watch.</p>
+      <h1 id="hero-h" class="disp" data-v-h><span class="line">Know what to lift today.</span><span class="line"><em>And why.</em></span></h1>
+      <p class="lede" data-v-l>Tracend reads your sets, meals and sleep. Every morning it sets <strong>today&rsquo;s session</strong> for your goal.</p>
+      <script is:inline>
+        /* one headline per reel (?v=…), swapped before first paint so the page matches the ad that sent the visitor */
+        (function () {
+          var V = {
+            sleep: ['Slept badly?', 'Today&rsquo;s session <em>already changed.</em>', 'Tracend reads your sets, meals and sleep. Every morning it sets <strong>today&rsquo;s session</strong> for your goal.'],
+            log: ['Log the set.', 'Tomorrow&rsquo;s plan <em>already knows.</em>', 'Log from your Lock Screen. Every morning Tracend reads your sets, meals and sleep and sets <strong>today&rsquo;s session</strong> for your goal.'],
+            coach: ['A coach that read', 'your night <em>before you did.</em>', 'Tracend reads your sets, meals and sleep. Every morning it sets <strong>today&rsquo;s session</strong> for your goal, with the reason.']
+          };
+          try {
+            var v = V[new URLSearchParams(location.search).get('v')];
+            if (!v) return;
+            document.querySelector('[data-v-h]').innerHTML = '<span class="line">' + v[0] + '</span><span class="line">' + v[1] + '</span>';
+            document.querySelector('[data-v-l]').innerHTML = v[2];
+          } catch (e) { /* keep the default headline */ }
+        })();
+      </script>
+      <JoinForm id="e1" />
+    </div></div>
+
     <div class="f-stage">
       <div class="f-amb" aria-hidden="true"></div>
-
-      <div class="f-copy">
-        <p class="kicker"><i></i>Private beta. For iPhone, best with Apple Watch. Android in testing.</p>
-        <h1 id="hero-h" class="disp"><span class="line">Set a goal.</span><span class="line">Tracend plans</span><span class="line">the rest.</span></h1>
-        <p class="lede">A plan for your training and food, adjusted to your recovery <strong>every morning</strong> so you stay on course.<span class="lede-x"> What pros get from a trainer and a nutritionist, from the iPhone and Apple Watch you own.</span></p>
-        <JoinForm id="e1" />
-      </div>
 
       <div class="bridge" aria-hidden="true"><p>Tuesday 07:02. Rewind to Monday evening.</p><h2 class="disp">How did it know to go lighter?</h2></div>
 
@@ -32,35 +52,37 @@ import JoinForm from './JoinForm.astro';
         <!-- the cards live in the phone's own 3D space: what it read sits behind its left edge, its answer in front -->
         <div class="dev-rise"><div class="dev"><div class="dev-tilt">
           <div class="fc fc-train" data-fc="-1"><div class="fc-in"><div class="fc-core"><span class="k mono">Mon 18:40 &middot; Train</span><span class="v">120<small>kg</small> &times; 5<span class="pill">New best</span></span><span class="s">Back squat, set 5 of 5</span></div></div></div>
-          <div class="fc fc-food" data-fc="-1"><div class="fc-in"><div class="fc-core"><span class="k mono">Mon 20:30 &middot; Dinner</span><span class="v">760<small>kcal</small></span><span class="s">52 g protein, from one photo</span></div></div></div>
-          <div class="fc fc-sleep" data-fc="-1"><div class="fc-in"><div class="fc-core"><span class="k mono">Mon 23:10 &middot; Sleep</span><span class="v">6 h 12 m</span><span class="s">About an hour short</span></div></div></div>
+          <div class="fc fc-sleep" data-fc="-1"><div class="fc-in"><div class="fc-core"><span class="k mono">Mon 23:40 &middot; Sleep</span><span class="v">5 h 48 m</span><span class="s">About 1.5 hours short</span></div></div></div>
+          <div class="fc fc-check" data-fc="-1"><div class="fc-in"><div class="fc-core"><span class="k mono">Tue 06:40 &middot; Check-in</span><span class="v">Legs sore</span><span class="s">Everything else OK</span></div></div></div>
           <div data-phone-slot></div>
-          <div class="fc fc-coach" data-fc="1"><div class="fc-in"><div class="fc-core"><span class="k mono"><svg width="12" height="12" viewBox="0 0 12 12"><path fill="#C8F05A" d="M6 .8l1.3 3.4 3.5.4-2.7 2.3.9 3.5L6 8.5 3 10.4l.9-3.5L1.2 4.6l3.5-.4z"/></svg>Tue 07:02 &middot; Coach<em class="fc-ex">Example</em></span><span class="v">Go lighter today.</span><span class="s">Deadlift 3 &times; 3 at 140 kg, effort 7 at most. You slept short after heavy legs.</span></div></div></div>
+          <div class="fc fc-coach" data-fc="1"><div class="fc-in"><div class="fc-core"><span class="k mono"><svg width="12" height="12" viewBox="0 0 12 12"><path fill="#C8F05A" d="M6 .8l1.3 3.4 3.5.4-2.7 2.3.9 3.5L6 8.5 3 10.4l.9-3.5L1.2 4.6l3.5-.4z"/></svg>Tue 07:02 &middot; Coach<em class="fc-ex">Example</em></span><span class="v">Go lighter today.</span><span class="s" data-coach-why>Deadlift 3 &times; 3 at 140 kg, effort 7 at most. Short night, sore legs.</span></div></div></div>
         </div></div></div>
         <div class="callouts">
           <p class="co" data-co="0" style="top:52%"><i></i><span><b>Set 5 of 5</b>New best, logged with its effort.</span></p>
           <p class="co" data-co="1" style="top:40%"><i></i><span><b>While you sleep</b>Your watch reads every stage.</span></p>
-          <p class="co" data-co="2" style="top:42%"><i></i><span><b>Recovery 36</b>Each reading against your own normal.</span></p>
-          <p class="co" data-co="3" style="top:56%"><i></i><span><b>Coach</b>Today&rsquo;s session, adjusted, with the reason.</span></p>
+          <p class="co" data-co="2" style="top:46%"><i></i><span><b>Check-in</b>How you feel leads the call.</span></p>
+          <p class="co" data-co="3" style="top:42%"><i></i><span><b>Recovery</b>Each reading against your own normal.</span></p>
+          <p class="co" data-co="4" style="top:56%"><i></i><span><b>Coach</b>Today&rsquo;s session, adjusted, with the reason.</span></p>
         </div>
       </div>
 
       <div class="f-story" id="day">
         <div class="day-head"><h2 class="sec-h disp" id="day-h">How did it know to go lighter?</h2><p class="sec-sub">One day with Sam, an example athlete. <span>These are the app&rsquo;s own screens, with example numbers.</span></p></div>
         <div class="rail" role="group" aria-label="Jump to a moment">
-          <button type="button" data-go="0"><b>18:40</b><span>Train</span></button><button type="button" data-go="1"><b>23:10</b><span>Sleep</span></button><button type="button" data-go="2"><b>06:45</b><span>Recovery</span></button><button type="button" data-go="3"><b>07:02</b><span>Adjust</span></button>
+          <button type="button" data-go="0"><b>18:40</b><span>Train</span></button><button type="button" data-go="1"><b>23:40</b><span>Sleep</span></button><button type="button" data-go="2"><b>06:40</b><span>Check-in</span></button><button type="button" data-go="3"><b>06:45</b><span>Recovery</span></button><button type="button" data-go="4"><b>07:02</b><span>Adjust</span></button>
         </div>
-        <div class="clockbar" aria-hidden="true"><span class="dc-day" data-dday></span><span class="dc-time" data-dclock></span><span class="dc-ex">Example athlete Sam</span><span class="dc-n"><b data-dn>1</b> of 4</span></div>
+        <div class="clockbar" aria-hidden="true"><span class="dc-day" data-dday></span><span class="dc-time" data-dclock></span><span class="dc-ex">Example athlete Sam</span><span class="dc-n"><b data-dn>1</b> of 5</span></div>
         <ol class="beats">
           <li class="beat" data-i="0"><p class="b-when">Monday 18:40</p><h3>You train hard.</h3><p class="l">Back squat, 5 sets of 5 at 120 kg. The last set is a new best.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">Sets scribbled in a notes app.</span></s></span><span class="pf-now"><em>Tracend</em>Every set logged, with its effort.</span></p><div class="b-phone"></div></li>
-          <li class="beat" data-i="1"><p class="b-when">Monday 23:10</p><h3>You sleep short.</h3><p class="l">6 h 12 m on your watch, about an hour less than you need.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">A sleep score, alone in another app.</span></s></span><span class="pf-now"><em>Tracend</em>Read right next to your training.</span></p><div class="b-phone"></div></li>
-          <li class="beat" data-i="2"><p class="b-when">Tuesday 06:45</p><h3>Your body answers.</h3><p class="l">Recovery 36. Under-recovered, after a short night and a heavy day.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">A recovery number, and no next step.</span></s></span><span class="pf-now"><em>Tracend</em>The reasons, spelled out.</span></p><div class="b-phone"></div></li>
-          <li class="beat" data-i="3"><p class="b-when">Tuesday 07:02</p><h3>Today, adjusted.</h3><p class="l">Deadlift 3 &times; 3 at 140 kg, not 5 &times; 3 at 160. The week still moves Sam toward 75 kg.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">The same plan, however you slept.</span></s></span><span class="pf-now"><em>Tracend</em>Today&rsquo;s session, adjusted, with why. Your plan only changes when you approve it.</span></p><div class="b-phone"></div>
+          <li class="beat" data-i="1"><p class="b-when">Monday 23:40</p><h3>You sleep short.</h3><p class="l" data-beat-line="1">5 h 48 m on your watch, about an hour and a half less than you need.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">A sleep score, alone in another app.</span></s></span><span class="pf-now"><em>Tracend</em>Read right next to your training.</span></p><div class="b-phone"></div></li>
+          <li class="beat" data-i="2"><p class="b-when">Tuesday 06:40</p><h3>You check in.</h3><p class="l" data-beat-line="2">A few quick questions. Your legs are sore, nothing else is off.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">No one asks how you feel.</span></s></span><span class="pf-now"><em>Tracend</em>How you feel leads the call.</span></p><div class="b-phone"></div></li>
+          <li class="beat" data-i="3"><p class="b-when">Tuesday 06:45</p><h3>Your body answers.</h3><p class="l" data-beat-line="3">Recovery 34. Very under-recovered, after a short night and a heavy day.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">A recovery number, and no next step.</span></s></span><span class="pf-now"><em>Tracend</em>The reasons, spelled out.</span></p><div class="b-phone"></div></li>
+          <li class="beat" data-i="4"><p class="b-when">Tuesday 07:02</p><h3>Today, adjusted.</h3><p class="l">Deadlift 3 &times; 3 at 140 kg, not 5 &times; 3 at 160. The week still moves Sam toward 75 kg.</p><p class="pf"><span class="pf-was"><em>Usually</em><s><span class="st">The same plan, however you slept.</span></s></span><span class="pf-now"><em>Tracend</em>Today&rsquo;s session, adjusted, with why.</span></p><div class="b-phone"></div>
             <div class="mini-cta"><a class="btn-primary" href="#join" data-focus>Join the beta<i aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></i></a><p>Free. One email to confirm.</p></div></li>
         </ol>
       </div>
     </div>
-    <p class="sr-only">Illustration: the Tracend Today screen on a phone. Example athlete Sam, week 12 of a 20-week plan to lean down to 75 kilograms and keep strength. Tuesday morning: recovery 36, under-recovered. Around it, Monday's squat session, dinner and sleep, and the Coach's call: go lighter today, deadlift 3 by 3 at 140 kilograms.</p>
+    <p class="sr-only" data-sr-film>Illustration: the Tracend Today screen on a phone. Example athlete Sam, week 12 of a 20-week plan to lean down to 75 kilograms and keep strength. Tuesday morning: a short night, sore legs at the check-in, recovery 34, very under-recovered. Around it, Monday's squat session, the night and the check-in, and the Coach's call: go lighter today, deadlift 3 by 3 at 140 kilograms.</p>
     <p class="sr-only" aria-live="polite" data-day-live></p>
   </section>
 
@@ -69,8 +91,8 @@ import JoinForm from './JoinForm.astro';
     <p class="sec-sub">Move the sliders. This is how the recovery score and today&rsquo;s session respond, simplified for one example athlete.</p>
     <div class="demo-grid">
       <form class="controls"><div class="controls-in">
-        <div class="ctl"><label for="d-sleep">Sleep last night <output for="d-sleep" data-o="sleep">6 h 12 m</output></label>
-          <input id="d-sleep" type="range" min="240" max="540" step="6" value="372" aria-describedby="d-sleep-h"><small id="d-sleep-h">Sam usually needs about 7 h 20 m.</small></div>
+        <div class="ctl"><label for="d-sleep">Sleep last night <output for="d-sleep" data-o="sleep">5 h 48 m</output></label>
+          <input id="d-sleep" type="range" min="240" max="540" step="6" value="348" aria-describedby="d-sleep-h"><small id="d-sleep-h">Sam usually needs about 7 h 20 m.</small></div>
         <div class="ctl"><label for="d-hrv">Morning HRV <output for="d-hrv" data-o="hrv">52 ms</output></label>
           <input id="d-hrv" type="range" min="30" max="80" step="1" value="52" aria-describedby="d-hrv-h"><small id="d-hrv-h">Sam&rsquo;s normal is 54 ms.</small></div>
         <div class="ctl"><label for="d-rhr">Resting heart rate <output for="d-rhr" data-o="rhr">58 bpm</output></label>
@@ -81,9 +103,9 @@ import JoinForm from './JoinForm.astro';
       <div class="demo-out app">
         <div class="a-card demo-today">
           <p class="a-kicker">Today, example</p>
-          <p class="verdict" data-d="verdict">Under-recovered</p>
+          <p class="verdict" data-d="verdict">Very under-recovered</p>
           <p class="reason" data-d="reason">Sleep less than usual, recent training higher than usual. Everything else is normal for you.</p>
-          <div class="ringbox"><svg data-ring-demo aria-hidden="true"></svg><div class="ring-c"><span class="rl">Recovery</span><span class="sc a-num" data-d="score">36</span><span class="a-band" data-d="band">Low</span></div></div>
+          <div class="ringbox"><svg data-ring-demo aria-hidden="true"></svg><div class="ring-c"><span class="rl">Recovery</span><span class="sc a-num" data-d="score">34</span><span class="a-band" data-d="band">Poor</span></div></div>
           <div class="chips" data-d="chips"></div>
         </div>
         <div class="a-card demo-plan">
@@ -92,60 +114,24 @@ import JoinForm from './JoinForm.astro';
           <p class="reason" data-d="plan-body" style="color:var(--a-text)">Deadlift 3 &times; 3 at 140 kg, effort 7 at most.</p>
           <div class="lvl" aria-hidden="true" data-d="lvl"><i></i><i></i><i></i><i></i></div>
         </div>
-        <p class="demo-note">Simplified example. In the app, every reading is compared with your own rolling normal, and breathing rate counts too.</p>
+        <p class="demo-note">Simplified example. Sam&rsquo;s check-in this morning: legs sore. In the app, your morning check-in leads, every reading is compared with your own rolling normal, and breathing rate counts too.</p>
         <p class="sr-only" aria-live="polite" data-d="live"></p>
       </div>
     </div>
-    <div class="mini-cta sec-cta"><a class="btn-primary" href="#join" data-focus>Join the beta<i aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></i></a><p>Free. One email to confirm.</p></div>
   </section>
 
-  <section class="sec wrap" id="complete" aria-labelledby="complete-h">
-    <h2 class="sec-h disp cx-h" id="complete-h"><span class="h-a">Five apps that never talk to each other.</span><span class="h-b">One app that sees your whole day.</span></h2>
-    <p class="sec-sub">A workout log, a food diary, a sleep app, a recovery band. Tracend puts them in one place, reads them together, and adds a Coach that knows all of it.</p>
-    <div class="bento">
-      <figure class="tile t-train"><span class="was" aria-hidden="true"><s>Workout log app</s></span><div class="shell app" data-tile="training"></div><figcaption><b>Training</b>Every set, rep, load and effort. New bests called out.</figcaption></figure>
-      <figure class="tile t-rec"><span class="was" aria-hidden="true"><s>Recovery band app</s></span><div class="shell app" data-tile="recovery"></div><figcaption><b>Recovery</b>HRV, resting heart rate, sleep and breathing, against your own normal.</figcaption></figure>
-      <figure class="tile t-food"><span class="was" aria-hidden="true"><s>Food diary app</s></span><div class="shell app" data-tile="food"></div><figcaption><b>Food</b>Snap a meal. Protein and calories, confirmed by you.</figcaption></figure>
-      <figure class="tile t-sleep"><span class="was" aria-hidden="true"><s>Sleep app</s></span><div class="shell app" data-tile="sleep"></div><figcaption><b>Sleep</b>Read from your watch while you sleep.</figcaption></figure>
-      <figure class="tile t-prog"><span class="was" aria-hidden="true"><s>Weight app</s></span><div class="shell app" data-tile="progress"></div><figcaption><b>Progress</b>Weight and strength over months, not days.</figcaption></figure>
-      <figure class="tile t-coach"><span class="was" aria-hidden="true"><s>Chatbot that never saw your data</s></span><div class="shell app" data-tile="coach"></div><figcaption><b>Coach</b>Ask why. Every answer uses your own numbers.</figcaption></figure>
-    </div>
-    <p class="own"><span><b>Nothing new to buy.</b> It reads the iPhone you already own, and your Apple Watch if you wear one.</span><span><b>Nothing changes without your OK.</b> Every change to your plan shows its evidence and waits for you. Each approved plan is saved as a new version.</span><span><b>Your plan keeps working</b> when the AI, Apple Health or the network is down.</span></p>
-    <div class="soon-row"><p class="soon"><i></i>Coming next. Not in the beta yet.</p><p>Log sets from the Dynamic Island and the Lock Screen while a workout runs. An Apple Watch app for logging sets follows.</p></div>
-  </section>
+  <Change />
 
-  <section class="sec wrap" id="you" aria-labelledby="you-h">
-    <div class="ys">
-      <div class="ys-copy">
-        <h2 class="sec-h disp" id="you-h">Made for you. Never a template.</h2>
-        <p class="sec-sub">Like a coach who has met you: your goal, age, body, training history, limits and your own Apple Health data set every number in the plan. A 22-year-old chasing size and a 45-year-old protecting a knee should never get the same week.</p>
-        <div class="ys-mem">
-          <p class="ys-mem-h">It remembers you</p>
-          <div class="ys-chips"><span>Knee pain on deep squats</span><span>Trains before work</span><span>Vegetarian</span><span>45 minutes, three days</span><span>Dumbbells at home</span></div>
-          <p class="ys-mem-p">Your answers, limits and preferences live in your profile. The plan never programs a movement you asked it to avoid, and the Coach reads your profile and history before every answer.</p>
-        </div>
-      </div>
-      <div class="ys-stage app">
-        <div class="ys-sw" role="tablist" aria-label="Example athletes">
-          <button type="button" role="tab" aria-selected="true" data-a="0">Kabir, 22</button>
-          <button type="button" role="tab" aria-selected="false" data-a="1">Anita, 45</button>
-          <i class="ys-sw-pill" aria-hidden="true"></i>
-        </div>
-        <div class="ys-card" data-ys aria-live="polite"></div>
-        <p class="demo-note">Two example athletes. Plans simplified.</p>
-      </div>
-    </div>
-    <div class="mini-cta sec-cta"><a class="btn-primary" href="#join" data-focus>Join the beta<i aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></i></a><p>Free. One email to confirm.</p></div>
-  </section>
+  <Extras />
 
   <section class="sec wrap" id="coach" aria-labelledby="coach-h">
     <div class="cc">
       <div class="cc-copy">
-        <h2 class="sec-h disp" id="coach-h">Ask your Coach anything.</h2>
-        <p class="sec-sub">It answers with your own numbers: your sets, your meals, your sleep. Then it shows the evidence it used, and what it could not see.</p>
+        <h2 class="sec-h disp" id="coach-h">Ask your Coach anything. It knows your history.</h2>
+        <p class="sec-sub">It can look up any day you have logged: sets, meals, sleep, weight and past plans. Every answer shows the evidence it used, and what it could not see.</p>
         <div class="cq" role="group" aria-label="Example questions">
           <button type="button" aria-pressed="true" data-q="0">Why lighter today?<i><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></i></button>
-          <button type="button" aria-pressed="false" data-q="1">How did I eat yesterday?<i><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></i></button>
+          <button type="button" aria-pressed="false" data-q="1">How is my bench since August?<i><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></i></button>
           <button type="button" aria-pressed="false" data-q="2">Am I still losing weight?<i><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></i></button>
         </div>
         <p class="demo-note" style="margin-top:18px">An example conversation for a made-up athlete.</p>
@@ -160,11 +146,11 @@ import JoinForm from './JoinForm.astro';
       <div class="pg-copy">
         <h2 class="sec-h disp" id="progress-h">It checks your progress, like a coach would.</h2>
         <p class="sec-sub">Every week Tracend looks at the whole picture: your weight and measurements against the goal, your strength, how you trained and recovered. Then it shows where the plan should focus next.</p>
-        <div class="nx-steps pg-steps" role="tablist" aria-label="Progress">
-          <button type="button" role="tab" aria-selected="true" data-s="0"><b>01</b><span>Weight and measurements</span><em>Weigh in, and add your waist, chest, hips, arms and thighs if you like. A trend toward your goal, not daily noise.</em><span class="prog"><i></i></span></button>
-          <button type="button" role="tab" aria-selected="false" data-s="1"><b>02</b><span>Strength, kept</span><em>Workouts done against planned, and your best lifts. On a cut, the proof you are keeping muscle.</em><span class="prog"><i></i></span></button>
-          <button type="button" role="tab" aria-selected="false" data-s="2"><b>03</b><span>A weekly review</span><em>What you did, how you recovered, what stays the same and next week&rsquo;s focus. Calculated from your logs, no AI.</em><span class="prog"><i></i></span></button>
-          <button type="button" role="tab" aria-selected="false" data-s="3"><b>04</b><span>Physique check</span><em>Private photos, front, side and back. An AI visual estimate of which muscles to bring up, which you can make your focus.</em><span class="prog"><i></i></span></button>
+        <div class="nx-steps pg-steps" role="group" aria-label="Progress">
+          <button type="button" aria-pressed="true" data-s="0"><b>01</b><span>Weight and measurements</span><em>Weigh in, and add your waist, chest, hips, arms and thighs if you like. A trend toward your goal, not daily noise.</em><span class="prog"><i></i></span></button>
+          <button type="button" aria-pressed="false" data-s="1"><b>02</b><span>Strength, kept</span><em>Workouts done against planned, and your best lifts. On a cut, the proof you are keeping muscle.</em><span class="prog"><i></i></span></button>
+          <button type="button" aria-pressed="false" data-s="2"><b>03</b><span>A weekly review</span><em>What you did, how you recovered, what stays the same and next week&rsquo;s focus. Calculated from your logs, no AI.</em><span class="prog"><i></i></span></button>
+          <button type="button" aria-pressed="false" data-s="3"><b>04</b><span>Physique check</span><em>Private photos, front, side and back. An AI visual estimate of which muscles to bring up, which you can make your focus.</em><span class="prog"><i></i></span></button>
         </div>
         <p class="sr-only" aria-live="polite" data-pg-live></p>
       </div>
@@ -172,42 +158,15 @@ import JoinForm from './JoinForm.astro';
     </div>
   </section>
 
-  <section class="sec wrap" id="body" aria-labelledby="body-h">
-    <div class="bm">
-      <div class="bm-copy">
-        <h2 class="sec-h disp" id="body-h">Every workout, mapped to your body.</h2>
-        <p class="sec-sub">Your plan, day by day, on the app&rsquo;s muscle map. Every set counts toward the muscles it works, so you see what the week covers and what it skips.</p>
-        <div class="wk" role="tablist" aria-label="Example week">
-          <button type="button" role="tab" aria-selected="true" data-d="0"><b>Mon</b><span>Legs</span><em>Done</em><span class="prog"><i></i></span></button>
-          <button type="button" role="tab" aria-selected="false" data-d="1"><b>Tue</b><span>Pull</span><em>Today</em><span class="prog"><i></i></span></button>
-          <button type="button" role="tab" aria-selected="false" data-d="2"><b>Thu</b><span>Push</span><em>Planned</em><span class="prog"><i></i></span></button>
-          <button type="button" role="tab" aria-selected="false" data-d="3"><b>Sat</b><span>Arms, core</span><em>Planned</em><span class="prog"><i></i></span></button>
-        </div>
-      </div>
-      <div class="bm-stage app" role="tabpanel" aria-labelledby="body-h"><div class="bm-in">
-        <div class="bm-figs" aria-hidden="true"><svg data-v="front"></svg><svg data-v="back"></svg></div>
-        <div><p class="bm-head" data-bm-head>Monday, done<b>Legs</b></p><ul class="bm-list" data-bm-list></ul></div>
-      </div></div>
-    </div>
-  </section>
-
-  <section class="sec wrap" id="why" aria-labelledby="why-h">
-    <h2 class="sec-h disp" id="why-h">Other apps stop at the score. Tracend turns it into today.</h2>
-    <div class="versus">
-      <div class="shell"><div class="a-card vs-in app"><h3>A score</h3><p class="vs-q">You open a recovery app. It says 36.</p><div class="vs-ring"><svg data-ring-vs aria-hidden="true"></svg><b>36</b></div><p class="vs-now">Now what?</p></div></div>
-      <div class="shell"><div class="a-card vs-in app"><h3>Tracend</h3><div data-vs-session></div><p class="vs-ok"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 8.4l3 3 6.6-6.8"/></svg>Your plan only changes when you approve it.</p></div></div>
-    </div>
-  </section>
-
   <section class="sec wrap" id="start" aria-labelledby="start-h">
     <div class="nx">
       <div class="nx-copy">
         <h2 class="sec-h disp" id="start-h">Your plan, in three steps.</h2>
-        <p class="sec-sub">Tell Tracend your goal. It reads your usual months from Apple Health, asks up to three questions, then proposes a plan. Nothing starts until you approve it.</p>
-        <div class="nx-steps" role="tablist" aria-label="Your plan, in three steps">
-          <button type="button" role="tab" aria-selected="true" data-s="0"><b>01</b><span>You set the goal</span><em>Lose fat, build muscle or both. Then the days you can train, your equipment and anything to avoid.</em><span class="prog"><i></i></span></button>
-          <button type="button" role="tab" aria-selected="false" data-s="1"><b>02</b><span>It gets to know you</span><em>Your usual months from Apple Health, your current lifts, and up to three questions from the coach.</em><span class="prog"><i></i></span></button>
-          <button type="button" role="tab" aria-selected="false" data-s="2"><b>03</b><span>You approve the plan</span><em>Training week, starting loads, calories and protein, each with its reason. Nothing starts until you approve it.</em><span class="prog"><i></i></span></button>
+        <p class="sec-sub">Never had a coach? Start here. Tell Tracend your goal. It reads your usual months from Apple Health, asks up to three questions, then proposes a plan with a reason for every number.</p>
+        <div class="nx-steps" role="group" aria-label="Your plan, in three steps">
+          <button type="button" aria-pressed="true" data-s="0"><b>01</b><span>You set the goal</span><em>Lose fat, build muscle or both. Then the days you can train, your equipment and anything to avoid.</em><span class="prog"><i></i></span></button>
+          <button type="button" aria-pressed="false" data-s="1"><b>02</b><span>It gets to know you</span><em>Your usual months from Apple Health, your current lifts, and up to three questions from the coach.</em><span class="prog"><i></i></span></button>
+          <button type="button" aria-pressed="false" data-s="2"><b>03</b><span>You approve the plan</span><em>Training week, starting loads, calories and protein, each with its reason. Nothing starts until you approve it.</em><span class="prog"><i></i></span></button>
         </div>
         <p class="sr-only" aria-live="polite" data-st-live></p>
       </div>
@@ -219,7 +178,11 @@ import JoinForm from './JoinForm.astro';
     <h2 class="sec-h disp" id="join-h">Your plan starts with a goal.</h2>
     <p class="sec-sub">Join the free beta. For iPhone, best with Apple Watch; Android and other smartwatches are in testing. We&rsquo;ll email you when your spot opens.</p>
     <JoinForm id="e2" />
-    <p class="trust"><span><b>Your data stays yours.</b> Progress photos stay private to your account; they go to AI only if you use the physique check and agree. AI features send your data only after you agree, to a company the app names first. Turn AI off, export everything or delete your account from the app, any time.</span></p>
+    <ul class="trust">
+      <li><b>Private photos.</b> Progress photos stay in your account. They go to AI only if you use the physique check and agree.</li>
+      <li><b>AI only with your OK.</b> AI features send data only after you agree, to a company the app names first. Turn AI off any time.</li>
+      <li><b>Yours to take or delete.</b> Export everything or delete your account from the app. <a href="/privacy/">Privacy</a></li>
+    </ul>
   </section>
 </main>
 <footer class="foot wrap"><span>&copy; 2026 Tracend</span><span>Every number on this page is an example for a made-up athlete.</span><nav class="foot-links" aria-label="Legal"><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="/beta-terms/">Beta terms</a></nav></footer>

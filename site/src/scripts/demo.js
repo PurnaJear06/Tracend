@@ -1,11 +1,15 @@
 /* "Change the night": a simplified, labelled version of the recovery composite in
    docs/ALGORITHMS.md §1. Real Tracend compares each reading with your own rolling
-   baseline and spread; here the example athlete's normals and spreads are fixed. */
+   baseline and spread; here the example athlete's normals and spreads are fixed.
+   The session advice follows the same-day adjustment (ALGORITHMS, readiness-v1): the recovery
+   score never adjusts a session alone, so Sam's check-in this morning (legs sore, one point)
+   is counted, plus a point for sleep under 360 minutes and one for a score under 35. */
 (function () {
   'use strict';
   var NORMAL = { hrv: 54, rhr: 57, sleep: 440 };          /* ms, bpm, minutes */
   var SPREAD = { hrv: 0.25, rhr: 4, sleep: 60 };           /* ln-HRV, bpm, minutes */
   var STRAIN = { rest: -0.6, easy: 0, moderate: 0.5, heavy: 1.0 };
+  var CHECKIN = 1;                                         /* readiness points from Sam's check-in */
   var W = { hrv: 0.55, rhr: 0.20, sleep: 0.15, resp: 0.05, strain: 0.05 };
 
   function compute(inp) {
@@ -37,10 +41,12 @@
     }
     var verdict = score >= 80 ? 'Fully recovered' : score >= 65 ? 'Well recovered' : score >= 50 ? 'Partly recovered' : score >= 35 ? 'Under-recovered' : 'Very under-recovered';
     var band = score >= 80 ? 'Excellent' : score >= 65 ? 'Good' : score >= 50 ? 'Moderate' : score >= 35 ? 'Low' : 'Poor';
+    var ci = inp.checkin == null ? CHECKIN : inp.checkin;
+    var points = ci + (inp.sleep < 360 ? 1 : 0) + (ci > 0 && score < 35 ? 1 : 0);
     var plan;
-    if (score >= 65) plan = { head: 'Train as planned.', body: 'Deadlift 5 × 3 at 160 kg. You recovered well.', level: 0 };
-    else if (score >= 50) plan = { head: 'Train as planned, with a cap.', body: 'Deadlift 5 × 3 at 160 kg, effort 8 at most.', level: 1 };
-    else if (score >= 35) plan = { head: 'Go lighter today.', body: 'Deadlift 3 × 3 at 140 kg, effort 7 at most.', level: 2 };
+    if (points === 0) plan = { head: 'Train as planned.', body: 'Deadlift 5 × 3 at 160 kg. Nothing asks for a change.', level: 0 };
+    else if (points === 1) plan = { head: 'Keep the same loads.', body: 'Deadlift 5 × 3, no heavier than last time.', level: 1 };
+    else if (points <= 3) plan = { head: 'Go lighter today.', body: 'Deadlift 3 × 3 at 140 kg, effort 7 at most.', level: 2 };
     else plan = { head: 'Make it an easy day.', body: '30 minutes of walking and mobility. Heavy pulls can wait.', level: 3 };
     return {
       score: score, verdict: verdict, band: band, good: score >= 65, reason: reason, plan: plan,
@@ -48,5 +54,5 @@
       segments: drivers.map(function (d) { return { color: d.down ? '#F2B544' : '#C8F05A', weight: d.weight }; })
     };
   }
-  window.TracendDemo = { compute: compute, NORMAL: NORMAL, DEFAULT: { hrv: 52, rhr: 58, sleep: 372, session: 'heavy' } };
+  window.TracendDemo = { compute: compute, NORMAL: NORMAL, DEFAULT: { hrv: 52, rhr: 58, sleep: 348, session: 'heavy' } };
 })();
