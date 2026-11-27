@@ -28,6 +28,8 @@ export const dataTables = [
   "health_sync_runs",
   "daily_health_summaries",
   "health_history_months",
+  "cycle_settings",
+  "cycle_day_logs",
   "user_foods",
   "media_objects",
   "meals",
@@ -175,6 +177,7 @@ export const selectedColumns: Readonly<Record<string, readonly string[]>> = {
 // The column pages are ordered and continued by. It is unique among one owner's rows: the primary
 // key, or the primary key without user_id. Most tables use `id`.
 export const keyColumns: Readonly<Record<string, string>> = {
+  cycle_settings: "user_id",
   health_history_months: "month",
   sleeping_heart_rate_nights: "local_date",
   exercise_set_heart_rate: "exercise_set_id",

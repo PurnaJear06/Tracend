@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "tracking_enabled": false,
+  "status": null,
+  "typical_cycle_days": null,
+  "apple_health_enabled": false,
+  "state": {
+    "cycle_day": null,
+    "period_day": null,
+    "phase": null,
+    "confidence": null,
+    "expected_from": null,
+    "expected_to": null,
+    "late_days": null,
+    "no_period_long": false,
+    "weight_water_window": false
+  },
+  "recent_days": [],
+  "cycles": []
+}

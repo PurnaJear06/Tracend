@@ -42,6 +42,11 @@ Deno.test("the export includes the ratings the athlete gave Coach", () => {
   assert(dataTables.includes("feedback_ratings"));
 });
 
+Deno.test("the export includes the cycle settings and the period days the athlete logged", () => {
+  assert(dataTables.includes("cycle_settings"));
+  assert(dataTables.includes("cycle_day_logs"));
+});
+
 Deno.test("the export includes the facts the athlete confirmed and the Coach's notes", () => {
   assert(dataTables.includes("coach_facts"));
   assert(dataTables.includes("coach_notes"));
@@ -233,6 +238,8 @@ Deno.test("the export pages in key order and filters on the owner", async () => 
   assertEquals(first("sleeping_heart_rate_nights").order, ["local_date"]);
   assertEquals(first("exercise_set_heart_rate").order, ["exercise_set_id"]);
   assertEquals(first("user_profiles").order, ["user_id"]);
+  assertEquals(first("cycle_settings").order, ["user_id"]);
+  assertEquals(first("cycle_day_logs").order, ["id"]);
 });
 
 Deno.test("the export never downloads the columns it lists as omitted", async () => {

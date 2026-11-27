@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "tracking_enabled": true,
+  "status": "hormonal_contraception",
+  "typical_cycle_days": null,
+  "apple_health_enabled": false,
+  "state": {
+    "cycle_day": null,
+    "period_day": 2,
+    "phase": null,
+    "confidence": null,
+    "expected_from": null,
+    "expected_to": null,
+    "late_days": null,
+    "no_period_long": false,
+    "weight_water_window": true
+  },
+  "recent_days": [
+    {
+      "local_date": "2026-11-26",
+      "flow": "light",
+      "cramps": "none",
+      "is_start": false,
+      "source": "manual"
+    },
+    {
+      "local_date": "2026-11-27",
+      "flow": "light",
+      "cramps": null,
+      "is_start": false,
+      "source": "manual"
+    }
+  ],
+  "cycles": []
+}
