@@ -106,6 +106,21 @@ void main() {
     expect(find.text('Take my menstrual cycle into account?'), findsOneWidget);
   });
 
+  testWidgets('a double tap on Yes opens one agreement sheet', (tester) async {
+    await _pump(tester, FakeCycle());
+    await tester.tap(find.text('Yes'));
+    await tester.tap(find.text('Yes'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cycle data'), findsOneWidget);
+    await tester.tap(find.text('Not now').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Cycle data'), findsNothing);
+    // The question can be answered again once the sheet is closed.
+    await tester.tap(find.text('Yes'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cycle data'), findsOneWidget);
+  });
+
   testWidgets('the four ways her cycle works are offered', (tester) async {
     await _pump(tester, FakeCycle());
     await _yesAndAgree(tester);

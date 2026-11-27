@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:tracend/features/cycle/cycle_health.dart';
 import 'package:tracend/features/cycle/cycle_repository.dart';
 
@@ -159,4 +162,9 @@ CycleAnswer trackingAnswer({
   state: state,
   recentDays: recentDays,
   cycles: cycles,
+);
+
+/// A contract fixture of PR 1 read as the app reads the database's answer.
+CycleAnswer fixtureAnswer(String name) => parseCycleAnswer(
+  json.decode(File('test/contract/fixtures/$name').readAsStringSync()),
 );

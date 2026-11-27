@@ -84,6 +84,37 @@ void main() {
     expect(announced, 1);
   });
 
+  testWidgets('a double tap opens one agreement sheet', (tester) async {
+    await _pump(tester, FakeCycle());
+    await tester.tap(find.byType(Switch));
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+    expect(find.text('Cycle data'), findsOneWidget);
+    await tester.tap(find.text('Not now'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cycle data'), findsNothing);
+  });
+
+  testWidgets('an off answer that kept her status asks for the agreement '
+      'again', (tester) async {
+    final cycle = FakeCycle(answer: fixtureAnswer('my_cycle_v1_0_off.json'));
+    cycle.answer = const CycleAnswer(
+      status: CycleStatus.regular,
+      typicalCycleDays: 28,
+    );
+    await _pump(tester, cycle);
+    expect(_switch(tester, 0).value, isFalse);
+    expect(find.text('Typical cycle length'), findsNothing);
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+    expect(find.text('Cycle data'), findsOneWidget);
+    await tester.tap(find.text('Agree'));
+    await tester.pumpAndSettle();
+    expect(cycle.consentGrants, 1);
+    expect(cycle.settings.single.status, CycleStatus.regular);
+    expect(cycle.settings.single.tracking, isTrue);
+  });
+
   testWidgets('"Not now" on the agreement turns nothing on', (tester) async {
     final cycle = FakeCycle();
     await _pump(tester, cycle);
@@ -230,6 +261,33 @@ void main() {
     expect(logged.isStart, isFalse);
   });
 
+  testWidgets('an older cycle opens without changing the day it never read', (
+    tester,
+  ) async {
+    final cycle = FakeCycle(
+      answer: trackingAnswer(
+        cycles: [
+          CycleRecord(
+            startDate: DateTime(2026, 5, 4),
+            lengthDays: 28,
+            used: true,
+          ),
+        ],
+      ),
+    );
+    await _pump(tester, cycle);
+    await tester.tap(find.text('Started 4 May'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('older than the days shown here'), findsOne);
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
+          .onPressed,
+      isNull,
+    );
+    expect(cycle.days, isEmpty);
+  });
+
   group('Apple Health', () {
     testWidgets('is not offered without a reader', (tester) async {
       await _pump(tester, FakeCycle(answer: trackingAnswer()));
@@ -259,6 +317,40 @@ void main() {
       },
     );
 
+    testWidgets('the switch is saved before iOS is asked', (tester) async {
+      final cycle = FakeCycle(answer: trackingAnswer());
+      final reader = _OrderReader(cycle);
+      await _pump(
+        tester,
+        cycle,
+        health: CycleHealthSync(repository: cycle, reader: reader),
+      );
+      await tester.tap(find.byType(Switch).at(1));
+      await tester.pumpAndSettle();
+      expect(reader.savedWhenAsked, [true]);
+    });
+
+    testWidgets('a refused save never shows the permission sheet', (
+      tester,
+    ) async {
+      final cycle = FakeCycle(answer: trackingAnswer())..failWrites = true;
+      final reader = FakeCycleHealthReader();
+      await _pump(
+        tester,
+        cycle,
+        health: CycleHealthSync(repository: cycle, reader: reader),
+      );
+      await tester.tap(find.byType(Switch).at(1));
+      await tester.pumpAndSettle();
+      expect(reader.requests, 0);
+      expect(reader.reads, isEmpty);
+      expect(_switch(tester, 1).value, isFalse);
+      expect(
+        find.text('Periods could not be read from Apple Health. Try again.'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('Apple Health that cannot be asked leaves it off', (
       tester,
     ) async {
@@ -273,7 +365,8 @@ void main() {
       );
       await tester.tap(find.byType(Switch).at(1));
       await tester.pumpAndSettle();
-      expect(cycle.settings, isEmpty);
+      expect(cycle.settings.map((s) => s.apple), [true, false]);
+      expect(cycle.imports, isEmpty);
       expect(find.text('Apple Health could not be opened.'), findsOneWidget);
       expect(_switch(tester, 1).value, isFalse);
     });
@@ -447,4 +540,18 @@ void main() {
       );
     });
   });
+}
+
+/// Records whether the cycle switch was already saved when iOS was asked.
+class _OrderReader extends FakeCycleHealthReader {
+  _OrderReader(this.cycle);
+
+  final FakeCycle cycle;
+  final savedWhenAsked = <bool>[];
+
+  @override
+  Future<bool> requestAccess() {
+    savedWhenAsked.add(cycle.settings.isNotEmpty && cycle.settings.last.apple);
+    return super.requestAccess();
+  }
 }

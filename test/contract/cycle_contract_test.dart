@@ -48,6 +48,7 @@ void main() {
       'my_cycle_v1_0_off.json',
       'my_cycle_v1_0_regular.json',
       'my_cycle_v1_0_contraception.json',
+      'my_cycle_v1_0_late.json',
     ];
 
     for (final name in names) {
@@ -76,14 +77,20 @@ void main() {
       expect(answer.state.cycleDay, 18);
       expect(answer.state.phase, CyclePhase.secondHalf);
       expect(answer.state.confidence, CycleConfidence.medium);
-      expect(answer.state.expectedFrom, DateTime(2026, 12, 8));
-      expect(answer.state.expectedTo, DateTime(2026, 12, 12));
-      expect(answer.recentDays.single.flow, PeriodFlow.medium);
-      expect(answer.recentDays.single.cramps, CycleCramps.mild);
-      expect(answer.recentDays.single.isStart, isTrue);
-      expect(answer.recentDays.single.source, CycleSource.manual);
-      expect(answer.cycles, hasLength(2));
+      expect(answer.state.expectedFrom, DateTime(2026, 12, 6));
+      expect(answer.state.expectedTo, DateTime(2026, 12, 10));
+      expect(answer.recentDays, hasLength(8));
+      final start = answer.recentDays.first;
+      expect(start.date, DateTime(2026, 10, 13));
+      expect(start.flow, PeriodFlow.medium);
+      expect(start.cramps, CycleCramps.mild);
+      expect(start.isStart, isTrue);
+      expect(start.source, CycleSource.manual);
+      expect(answer.cycles, hasLength(3));
+      expect(answer.cycles.first.startDate, DateTime(2026, 9, 15));
       expect(answer.cycles.first.lengthDays, 28);
+      expect(answer.cycles.first.used, isTrue);
+      expect(answer.cycles.last.startDate, DateTime(2026, 11, 10));
       expect(answer.cycles.last.lengthDays, isNull);
       expect(answer.cycles.last.used, isFalse);
     });
@@ -98,6 +105,22 @@ void main() {
       expect(answer.state.weightWaterWindow, isTrue);
       expect(answer.recentDays, hasLength(2));
       expect(answer.cycles, isEmpty);
+    });
+
+    test('a late period reads with its days from Apple Health', () {
+      final answer = parseCycleAnswer(_fixture('my_cycle_v1_0_late.json'));
+      expect(answer.trackingEnabled, isTrue);
+      expect(answer.appleHealthEnabled, isTrue);
+      expect(answer.state.lateDays, 4);
+      expect(answer.state.phase, isNull);
+      expect(answer.state.cycleDay, 35);
+      expect(answer.state.periodDay, isNull);
+      expect(answer.recentDays, isNotEmpty);
+      for (final day in answer.recentDays) {
+        expect(day.source, CycleSource.appleHealth);
+        expect(day.cramps, isNull);
+      }
+      expect(answer.cycles.last.lengthDays, isNull);
     });
 
     test('a 1.x answer from a later minor version still reads', () {

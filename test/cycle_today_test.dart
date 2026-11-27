@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
+import 'package:tracend/features/cycle/cycle_health.dart';
 import 'package:tracend/features/cycle/cycle_repository.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/features/progress/progress_screen.dart';
@@ -52,6 +53,8 @@ Future<void> _pump(
   CycleRepository cycle = const FixtureCycleRepository(),
   DailyBriefRepository brief = const FixtureDailyBriefRepository(),
   CycleChanges? changes,
+  CycleHealthSync? cycleHealth,
+  DateTime Function()? clock,
 }) async {
   tester.view.physicalSize = const Size(390, 1600);
   tester.view.devicePixelRatio = 1;
@@ -65,8 +68,9 @@ Future<void> _pump(
         brief: brief,
         cycle: cycle,
         cycleChanges: changes,
+        cycleHealth: cycleHealth,
         queueFactory: () => CheckInQueue(const LocalHealthStore()),
-        clock: () => _clock,
+        clock: clock ?? () => _clock,
       ),
     ),
   );
@@ -188,6 +192,162 @@ void main() {
       expect(saved.status, CycleStatus.noPeriods);
       expect(saved.tracking, isTrue);
       expect(saved.typical, 28);
+    });
+
+    testWidgets('the regular fixture reads as its line', (tester) async {
+      await _pump(
+        tester,
+        cycle: FakeCycle(answer: fixtureAnswer('my_cycle_v1_0_regular.json')),
+      );
+      expect(
+        find.text('Cycle day 18 · period expected 6–10 Dec'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the late fixture says how late', (tester) async {
+      await _pump(
+        tester,
+        cycle: FakeCycle(answer: fixtureAnswer('my_cycle_v1_0_late.json')),
+      );
+      expect(find.text('Period is 4 days later than usual'), findsOneWidget);
+    });
+
+    testWidgets('the contraception fixture shows its bleed day', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        cycle: FakeCycle(
+          answer: fixtureAnswer('my_cycle_v1_0_contraception.json'),
+        ),
+      );
+      expect(find.text('Bleed day 2'), findsOneWidget);
+    });
+
+    testWidgets('the off fixture, and an off answer that kept her status, '
+        'show nothing', (tester) async {
+      await _pump(
+        tester,
+        cycle: FakeCycle(answer: fixtureAnswer('my_cycle_v1_0_off.json')),
+      );
+      expect(find.byKey(const ValueKey('cycle-line')), findsNothing);
+      await _pump(
+        tester,
+        cycle: FakeCycle(
+          answer: const CycleAnswer(
+            status: CycleStatus.regular,
+            typicalCycleDays: 28,
+          ),
+        ),
+      );
+      expect(find.byKey(const ValueKey('cycle-line')), findsNothing);
+    });
+
+    group('Apple Health period days', () {
+      FakeCycle enabled() => FakeCycle(answer: trackingAnswer(apple: true));
+
+      CycleHealthSync sync(
+        FakeCycle cycle,
+        FakeCycleHealthReader reader, {
+        bool Function()? allowed,
+        DateTime Function()? now,
+      }) => CycleHealthSync(
+        repository: cycle,
+        reader: reader,
+        allowed: allowed,
+        now: now ?? () => _clock,
+      );
+
+      testWidgets('are read when Today loads, with no main health sync', (
+        tester,
+      ) async {
+        final cycle = enabled();
+        final reader = FakeCycleHealthReader();
+        await _pump(tester, cycle: cycle, cycleHealth: sync(cycle, reader));
+        expect(reader.reads, hasLength(1));
+        expect(cycle.imports, hasLength(1));
+      });
+
+      testWidgets('wait while the agreements gate is closed', (tester) async {
+        final cycle = enabled();
+        final reader = FakeCycleHealthReader();
+        await _pump(
+          tester,
+          cycle: cycle,
+          cycleHealth: sync(cycle, reader, allowed: () => false),
+        );
+        expect(reader.reads, isEmpty);
+        expect(reader.requests, 0);
+        expect(cycle.imports, isEmpty);
+      });
+
+      testWidgets('are not read when Apple Health is off for the cycle', (
+        tester,
+      ) async {
+        final cycle = FakeCycle(answer: trackingAnswer());
+        final reader = FakeCycleHealthReader();
+        await _pump(tester, cycle: cycle, cycleHealth: sync(cycle, reader));
+        expect(reader.reads, isEmpty);
+        expect(cycle.imports, isEmpty);
+      });
+
+      testWidgets('are not read when tracking is off', (tester) async {
+        final cycle = FakeCycle(
+          answer: const CycleAnswer(
+            status: CycleStatus.regular,
+            appleHealthEnabled: true,
+          ),
+        );
+        final reader = FakeCycleHealthReader();
+        await _pump(tester, cycle: cycle, cycleHealth: sync(cycle, reader));
+        expect(reader.reads, isEmpty);
+      });
+
+      testWidgets('are read at most once in six hours', (tester) async {
+        final cycle = enabled();
+        final reader = FakeCycleHealthReader();
+        final changes = CycleChanges();
+        var now = _clock;
+        await _pump(
+          tester,
+          cycle: cycle,
+          changes: changes,
+          clock: () => now,
+          cycleHealth: sync(cycle, reader, now: () => now),
+        );
+        expect(reader.reads, hasLength(1));
+
+        now = now.add(const Duration(hours: 5, minutes: 59));
+        changes.announce();
+        await tester.pumpAndSettle();
+        expect(reader.reads, hasLength(1));
+
+        now = now.add(const Duration(minutes: 2));
+        changes.announce();
+        await tester.pumpAndSettle();
+        expect(reader.reads, hasLength(2));
+      });
+
+      testWidgets('read on their own fail silently', (tester) async {
+        final cycle = enabled();
+        final reader = FakeCycleHealthReader()..failReads = true;
+        await _pump(tester, cycle: cycle, cycleHealth: sync(cycle, reader));
+        expect(tester.takeException(), isNull);
+        expect(find.textContaining('unavailable'), findsNothing);
+        expect(find.textContaining('Could not'), findsNothing);
+        expect(loadFailuresInARow('Today: daily brief'), 0);
+      });
+
+      testWidgets('the cycle is read again when new days arrived', (
+        tester,
+      ) async {
+        final cycle = enabled();
+        final reader = FakeCycleHealthReader();
+        await _pump(tester, cycle: cycle, cycleHealth: sync(cycle, reader));
+        // One read for the brief, one more after the import.
+        expect(cycle.loads, 2);
+      });
     });
 
     testWidgets('the check-in asks "Period today?" only when she tracks', (
