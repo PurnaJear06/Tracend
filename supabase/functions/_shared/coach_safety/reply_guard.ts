@@ -495,13 +495,16 @@ function claimsAnAction(sentence: string): boolean {
 // pregnancy and never advises on contraception. General physiology passes ("after ovulation resting
 // heart rate tends to rise", "your HRV usually dips in the second half of your cycle"), and so does
 // a refusal governed by a prohibition in its window ("I can't tell you your fertile window").
+// Only words that can mean nothing else: "the rings", "a patch", "fish oil pills" are not contraception.
 const contraceptive = String
-  .raw`(?:the pill|your pill|pills|the mini[- ]?pill|contracepti\w+|birth control|(?:an |your |the )?iud|the coil|your coil|(?:the |your )?implant|(?:the |your )?patch|(?:the |your )?ring|(?:the |your )?injection|condoms?)`;
+  .raw`(?:the pill|your pill|the mini[- ]?pill|contracepti\w+|birth control|(?:an |your |the |hormonal )?iuds?|(?:the |your )?coil|condoms?)\b`;
 const fertilityPatterns: readonly RegExp[] = [
   /\bfertil(?:e|ity) (?:window|days?|period|phase|time|signs?)\b/i,
   /\b(?:most|least|more|less|highly|very|peak) fertile\b/i,
   /\byou(?:'re| are|'ll be| will be| may be| might be) (?:\w+ )?fertile\b/i,
-  /\byou(?:'ll| will| probably| likely| should| may| might)? (?:probably |likely )?ovulat(?:e|ed|es|ing)\b/i,
+  // An ovulation dated or placed for her; "after you ovulate, resting heart rate rises" is physiology.
+  /\byou(?:'ll| will| should| may| might)? (?:probably |likely )?ovulate (?:on|around|about|in|by|near|today|tomorrow|this|next|soon)\b/i,
+  /\byou (?:probably |likely |just |already |have |'ve )?ovulated\b/i,
   /\byour ovulation\b|\bovulation (?:day|date|window|calculator)\b/i,
   /\bovulat\w* (?:on|around|about|near|by) (?:day\b|cycle day|the \d|\d)/i,
   /\bsafe (?:days?|period|window|time)\b|\b(?:rhythm method|natural family planning|fertility awareness|calendar method)\b/i,
