@@ -108,6 +108,7 @@ declare
   run_days integer[];
   run_heavy boolean[];
   run_flag boolean[];
+  run_skip boolean[];
   run_count integer;
   starts date[] := '{}';
   start_count integer;
@@ -137,8 +138,10 @@ begin
   if p_user_id is null or p_local_date is null then
     raise exception 'an athlete and a date are required' using errcode = '22023';
   end if;
+  -- Tracking off, never set up, or the cycle_data consent no longer granted: nothing is read.
   select * into settings from public.cycle_settings s where s.user_id = p_user_id;
-  if not found or not settings.tracking_enabled then
+  if not found or not settings.tracking_enabled
+    or not private.cycle_data_consent_granted(p_user_id) then
     return jsonb_build_object(
       'state', jsonb_build_object('cycle_day', null, 'period_day', null, 'phase', null,
         'confidence', null, 'expected_from', null, 'expected_to', null, 'late_days', null,
@@ -189,11 +192,34 @@ begin
       'cycles', '[]'::jsonb);
   end if;
 
+  -- A one-day flagged start (the onboarding guess "my last period started on ...") is replaced by
+  -- her real period when one starts 1 to 9 days later: a run with 2 or more bleeding days or a
+  -- medium or heavy day, or the latest run while it is still going (it may become one). The real
+  -- period takes the start flag; the guessed day is never a start. A flagged run of 2 or more days
+  -- is never replaced.
+  run_skip := array_fill(false, array[run_count]);
+  for i in 1 .. run_count loop
+    if run_flag[i] and run_days[i] = 1 then
+      for j in i + 1 .. run_count loop
+        exit when run_first[j] - run_first[i] > 9;
+        if run_days[j] >= 2 or run_heavy[j]
+          or (j = run_count and run_last[j] >= p_local_date - 2) then
+          run_skip[i] := true;
+          run_flag[j] := true;
+          exit;
+        end if;
+      end loop;
+    end if;
+  end loop;
+
   -- Cycle starts: a period at least 15 days after the previous start with 2 or more bleeding days
   -- or one medium or heavy day; or a period with a day flagged as a start, at least 10 days after
   -- the previous start (closer than that it is a duplicate). Anything else is bleeding inside the
   -- cycle.
   for i in 1 .. run_count loop
+    if run_skip[i] then
+      continue;
+    end if;
     if (previous_start is null and (run_flag[i] or run_days[i] >= 2 or run_heavy[i]))
       or (previous_start is not null and (
         (run_first[i] - previous_start >= 15 and (run_days[i] >= 2 or run_heavy[i]))
@@ -313,23 +339,28 @@ revoke all on function private.cycle_state(uuid, date) from public, anon, authen
 -- 5. The cycle answer --------------------------------------------------------------------------------
 
 -- Every reader gets this shape (test/contract/fixtures/my_cycle_v1_0_*.json): every key always
--- present, recent_days ascending and only the days in [p_recent_from, p_recent_to].
+-- present, recent_days ascending and only the days in [p_recent_from, p_recent_to]. Without a
+-- granted cycle_data consent it is the off answer.
 create function private.cycle_answer(
   p_user_id uuid, p_local_date date, p_recent_from date, p_recent_to date)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
   settings public.cycle_settings%rowtype;
   engine jsonb := private.cycle_state(p_user_id, p_local_date);
+  active boolean;
 begin
   select * into settings from public.cycle_settings s where s.user_id = p_user_id;
+  -- A withdrawn cycle_data consent reads as tracking off, whatever the settings row says.
+  active := coalesce(settings.tracking_enabled, false)
+    and private.cycle_data_consent_granted(p_user_id);
   return jsonb_build_object(
     'schema_version', '1.0',
-    'tracking_enabled', coalesce(settings.tracking_enabled, false),
+    'tracking_enabled', active,
     'status', settings.status,
     'typical_cycle_days', settings.typical_cycle_days,
-    'apple_health_enabled', coalesce(settings.apple_health_enabled, false),
+    'apple_health_enabled', active and coalesce(settings.apple_health_enabled, false),
     'state', engine -> 'state',
-    'recent_days', case when coalesce(settings.tracking_enabled, false) then coalesce((
+    'recent_days', case when active then coalesce((
       select jsonb_agg(jsonb_build_object('local_date', l.local_date, 'flow', l.flow,
           'cramps', l.cramps, 'is_start', l.is_start, 'source', l.source) order by l.local_date)
       from public.cycle_day_logs l
@@ -344,9 +375,13 @@ revoke all on function private.cycle_answer(uuid, date, date, date)
 --
 -- Each answers with the cycle answer for her local date (recent_days: the last 60 days, and
 -- tomorrow, which she may log when her phone's date is ahead of her account's time zone). Errors:
--- 42501 signed out or an inactive account; 22023 a bad input; P0403 a missing consent or a
--- feature that is off (message cycle_consent_required, health_consent_required,
--- cycle_tracking_off or apple_health_off).
+-- 42501 signed out, or (settings, logging and importing only) an inactive account; 22023 a bad
+-- input; P0403 a missing consent or a feature that is off (message cycle_consent_required,
+-- health_consent_required, cycle_tracking_off or apple_health_off).
+--
+-- Every writer locks the athlete's user_accounts row before it reads her settings or consent and
+-- writes, so "Delete my cycle data" and a log or an import run one after the other: no day written
+-- by a log or an import survives a delete that started before it.
 
 create function public.get_my_cycle_v1()
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
@@ -395,16 +430,16 @@ begin
     raise exception 'a cycle length is 15 to 60 days' using errcode = '22023';
   end if;
   apple := p_tracking_enabled and p_apple_health_enabled;
+  perform 1 from public.user_accounts a
+    where a.id = uid and a.account_status = 'active' for update;
+  if not found then
+    raise exception 'active account required' using errcode = '42501';
+  end if;
   if p_tracking_enabled and not private.cycle_data_consent_granted(uid) then
     raise exception 'cycle_consent_required' using errcode = 'P0403';
   end if;
   if apple and not private.health_data_consent_granted(uid) then
     raise exception 'health_consent_required' using errcode = 'P0403';
-  end if;
-  perform 1 from public.user_accounts a
-    where a.id = uid and a.account_status = 'active' for update;
-  if not found then
-    raise exception 'active account required' using errcode = '42501';
   end if;
 
   select * into previous from public.cycle_settings s where s.user_id = uid;
@@ -478,16 +513,17 @@ begin
   if start_flag and (p_flow is null or p_flow = 'spotting') then
     raise exception 'a period starts with bleeding' using errcode = '22023';
   end if;
+  perform 1 from public.user_accounts a
+    where a.id = uid and a.account_status = 'active' for update;
+  if not found then
+    raise exception 'active account required' using errcode = '42501';
+  end if;
   if not exists (select 1 from public.cycle_settings s
     where s.user_id = uid and s.tracking_enabled) then
     raise exception 'cycle_tracking_off' using errcode = 'P0403';
   end if;
   if not private.cycle_data_consent_granted(uid) then
     raise exception 'cycle_consent_required' using errcode = 'P0403';
-  end if;
-  perform 1 from public.user_accounts a where a.id = uid and a.account_status = 'active';
-  if not found then
-    raise exception 'active account required' using errcode = '42501';
   end if;
 
   insert into public.cycle_day_logs (user_id, local_date, flow, cramps, is_start, source)
@@ -504,8 +540,8 @@ end $$;
 revoke all on function public.log_cycle_day_v1(date, text, text, boolean) from public, anon, service_role;
 grant execute on function public.log_cycle_day_v1(date, text, text, boolean) to authenticated;
 
--- The period days Apple Health holds for a window of at most 400 days ending no later than
--- tomorrow. The window is the truth for Apple Health rows: days in p_days are written (cramps
+-- The period days Apple Health holds for a window from at most 400 days ago (log's window) to no
+-- later than tomorrow. The window is the truth for Apple Health rows: days in p_days are written (cramps
 -- null), Apple Health rows in the window that are not in p_days are removed. A manual row is never
 -- touched, so a day she corrected stays corrected. Answers {schema_version, imported, removed}:
 -- imported counts the rows added or changed.
@@ -524,8 +560,9 @@ begin
     raise exception 'authentication required' using errcode = '42501';
   end if;
   today := private.local_date_for(uid);
-  if p_from is null or p_to is null or p_from > p_to or p_to - p_from > 400 or p_to > today + 1 then
-    raise exception 'a window of at most 400 days ending no later than tomorrow'
+  if p_from is null or p_to is null or p_from > p_to or p_from < today - 400
+    or p_to > today + 1 then
+    raise exception 'a window inside the last 400 days, ending no later than tomorrow'
       using errcode = '22023';
   end if;
   if jsonb_typeof(p_days) is distinct from 'array' or jsonb_array_length(p_days) > 400 then
@@ -564,6 +601,12 @@ begin
     raise exception 'a day appears twice' using errcode = '22023';
   end if;
 
+  -- The account row lock also keeps two imports from interleaving their window deletes.
+  perform 1 from public.user_accounts a
+    where a.id = uid and a.account_status = 'active' for update;
+  if not found then
+    raise exception 'active account required' using errcode = '42501';
+  end if;
   select * into settings from public.cycle_settings s where s.user_id = uid;
   if not coalesce(settings.tracking_enabled, false) then
     raise exception 'cycle_tracking_off' using errcode = 'P0403';
@@ -577,13 +620,6 @@ begin
   if not private.health_data_consent_granted(uid) then
     raise exception 'health_consent_required' using errcode = 'P0403';
   end if;
-  perform 1 from public.user_accounts a where a.id = uid and a.account_status = 'active';
-  if not found then
-    raise exception 'active account required' using errcode = '42501';
-  end if;
-
-  -- One import per athlete at a time, so two syncs cannot interleave their window deletes.
-  perform pg_advisory_xact_lock(hashtextextended('tracend.cycle_import:' || uid::text, 0));
 
   delete from public.cycle_day_logs l
   where l.user_id = uid and l.source = 'apple_health' and l.local_date between p_from and p_to
@@ -619,6 +655,7 @@ begin
   if uid is null then
     raise exception 'authentication required' using errcode = '42501';
   end if;
+  perform 1 from public.user_accounts a where a.id = uid for update;
   delete from public.cycle_day_logs l where l.user_id = uid;
   delete from public.cycle_settings s where s.user_id = uid;
   insert into public.consent_records(user_id, consent_type, notice_version, action, source)

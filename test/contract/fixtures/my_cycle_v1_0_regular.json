@@ -9,23 +9,85 @@
     "period_day": null,
     "phase": "second_half",
     "confidence": "medium",
-    "expected_from": "2026-12-08",
-    "expected_to": "2026-12-12",
+    "expected_from": "2026-12-06",
+    "expected_to": "2026-12-10",
     "late_days": null,
     "no_period_long": false,
     "weight_water_window": false
   },
   "recent_days": [
     {
+      "local_date": "2026-10-13",
+      "flow": "medium",
+      "cramps": "mild",
+      "is_start": true,
+      "source": "manual"
+    },
+    {
+      "local_date": "2026-10-14",
+      "flow": "heavy",
+      "cramps": "strong",
+      "is_start": false,
+      "source": "manual"
+    },
+    {
+      "local_date": "2026-10-15",
+      "flow": "medium",
+      "cramps": "mild",
+      "is_start": false,
+      "source": "manual"
+    },
+    {
+      "local_date": "2026-10-16",
+      "flow": "light",
+      "cramps": "none",
+      "is_start": false,
+      "source": "manual"
+    },
+    {
       "local_date": "2026-11-10",
       "flow": "medium",
       "cramps": "mild",
       "is_start": true,
       "source": "manual"
+    },
+    {
+      "local_date": "2026-11-11",
+      "flow": "heavy",
+      "cramps": "strong",
+      "is_start": false,
+      "source": "manual"
+    },
+    {
+      "local_date": "2026-11-12",
+      "flow": "medium",
+      "cramps": null,
+      "is_start": false,
+      "source": "manual"
+    },
+    {
+      "local_date": "2026-11-13",
+      "flow": "light",
+      "cramps": "none",
+      "is_start": false,
+      "source": "manual"
     }
   ],
   "cycles": [
-    { "start_date": "2026-10-13", "length_days": 28, "used": true },
-    { "start_date": "2026-11-10", "length_days": null, "used": false }
+    {
+      "start_date": "2026-09-15",
+      "length_days": 28,
+      "used": true
+    },
+    {
+      "start_date": "2026-10-13",
+      "length_days": 28,
+      "used": true
+    },
+    {
+      "start_date": "2026-11-10",
+      "length_days": null,
+      "used": false
+    }
   ]
 }

@@ -435,8 +435,9 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   long gap at 90 days (regular) and 180 (irregular) and its reset by a later bleed, stopped logging
   and re-enabled tracking (no flag), irregular cycles (wide range, none with fewer than three
   lengths, never late), stated regular read as irregular above a 9-day spread and kept regular at 9,
-  hormonal contraception and no periods (no phase, prediction or cycles), tracking off, flagged and
-  duplicate starts, Apple Health and manual days in one history, gaps inside a period, the median,
+  hormonal contraception and no periods (no phase, prediction or cycles), tracking off, a withdrawn
+  consent, flagged and duplicate starts, a one-day guessed start replaced by her real period (and a
+  two-day flagged period kept), the four contract fixtures compared whole with real seeds, Apple Health and manual days in one history, gaps inside a period, the median,
   rounding, the six-length window and lengths outside 15–60. `cycle_rpcs_test.sql` covers the
   `cycle_data` consent type, both tables' RLS and privileges (authenticated read-only, anon nothing),
   function grants (`coach_cycle_state_v1` for the service role only; private helpers for no API
@@ -445,7 +446,8 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   only, the answer's key sets against `test/contract/fixtures/my_cycle_v1_0_*.json`, the 60-day
   and 14-day windows, the Apple Health merge (manual wins, the window delete, a cleared day blocking
   an import, a manual correction), turning tracking off and on, row-level security across athletes,
-  "Delete my cycle data" (rows gone, withdrawal recorded, consent asked again) and account
+  "Delete my cycle data" (rows gone, withdrawal recorded, consent asked again), a withdrawn consent
+  turning both reads off, the account-row lock coming first in every writer, and account
   deletion. Deno: `privacy-export` lists both tables (`coverage_test.ts`, `index_test.ts`).
 
 ### Supabase boundaries

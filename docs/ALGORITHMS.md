@@ -1706,8 +1706,9 @@ recovery score.
 
 **Inputs:** the athlete's `cycle_settings` (tracking on, status, stated usual length,
 `tracking_enabled_at`) and her `cycle_day_logs` (flow, start flag; manual and Apple Health days are
-read the same way). Tracking off, or no settings row: every value is null, both flags false, no
-cycles.
+read the same way). Tracking off, no settings row, or a `cycle_data` consent that is no longer
+granted (her newest record is a withdrawal): every value is null, both flags false, no cycles, and
+the answer says tracking is off whatever the settings row holds.
 
 ### Periods and cycle starts
 
@@ -1723,7 +1724,15 @@ cycles.
     is a duplicate flag).
 
   Anything else is bleeding inside the cycle: a one-day light bleed mid-cycle is not a period. The
-  first period ever needs only the bleeding-day test or a flag. 15 days is below the shortest cycle
+  first period ever needs only the bleeding-day test or a flag.
+- **A guessed start is replaced by her real period.** A flagged start whose period is a single day
+  (the onboarding answer "my last period started on …", logged as one unspecified day) is replaced
+  when a period starts **1 to 9 days** later that has 2 or more bleeding days or a medium or heavy
+  day, or that is the latest period and still going (it may become one). That later period takes
+  the start flag and becomes the cycle start; the guessed day is never a start, and cycle lengths
+  are measured from the real start. For example a guess of 28 Oct and Apple Health bleeding from
+  3 Nov: 3 Nov is cycle day 1 and period day 1. If the later bleed stays a single light day and
+  ends, the guess is the start again. A flagged period of 2 or more days is never replaced. 15 days is below the shortest cycle
   FIGO counts as normal (24 days) by a wide margin, so a short real cycle is never merged, while
   breakthrough and mid-cycle bleeding a week or two in is not counted as a new cycle.
 
@@ -1797,6 +1806,7 @@ The app and Coach show cycle notes only at medium or high.
 | Gap inside a period | ≤ 2 days | A missed log or a light day does not split a period |
 | Minimum days between starts | 15 | Below any normal cycle; mid-cycle bleeding is not a cycle |
 | Flagged start duplicate guard | 10 days | Two start flags a week apart are one period |
+| Guessed start replaced | a real period 1–9 days after a one-day flagged start | The onboarding date is a guess |
 | Used length | 15–60 days | Outside it, a gap in logging or a duplicate |
 | Missed-month test | ±5 days of 2 × median of the others (≥ 2 others) | 56 = two 28s |
 | Typical length window | last 6 used lengths | Recent cycles, robust to one outlier |
