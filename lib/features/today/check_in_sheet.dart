@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/cycle/widgets/period_today_control.dart';
 import 'package:tracend/features/readiness/day_adjustment.dart';
 import 'package:tracend/features/readiness/choice_widgets.dart';
 import 'package:tracend/features/readiness/pain_check.dart';
@@ -61,12 +62,17 @@ class CheckInNotSaved implements Exception {
 ///
 /// [jointStates] are the areas already held, limited or on watch: the sheet
 /// asks how each is today.
+///
+/// [period] adds "Period today?" for an athlete who tracks her cycle. Each tap
+/// on it is saved at once, on its own, so it is never part of the check-in
+/// that Save sends, queues or asks about when the sheet is closed.
 Future<CheckInSaved?> showCheckInSheet(
   BuildContext context,
   AppEnvironment environment, {
   CheckInSend? sender,
   String? localDate,
   List<JointState> jointStates = const [],
+  CheckInPeriod? period,
 }) => showTracendSheet<CheckInSaved>(
   context,
   title: 'Daily check-in',
@@ -77,6 +83,7 @@ Future<CheckInSaved?> showCheckInSheet(
     sender: sender,
     localDate: localDate,
     jointStates: jointStates,
+    period: period,
   ),
 );
 
@@ -155,12 +162,14 @@ class _CheckInSheet extends StatefulWidget {
     required this.sender,
     required this.localDate,
     required this.jointStates,
+    required this.period,
   });
 
   final AppEnvironment environment;
   final CheckInSend? sender;
   final String? localDate;
   final List<JointState> jointStates;
+  final CheckInPeriod? period;
 
   @override
   State<_CheckInSheet> createState() => _CheckInSheetState();
@@ -479,6 +488,12 @@ class _CheckInSheetState extends State<_CheckInSheet> {
     return true;
   }
 
+  /// The day the check-in is for, as the period answer is dated.
+  DateTime _periodDate() {
+    final day = DateTime.tryParse(widget.localDate ?? '') ?? DateTime.now();
+    return DateTime(day.year, day.month, day.day);
+  }
+
   static bool _isPainKey(String key) =>
       key.startsWith('pain_') && key != 'pain_severity';
 
@@ -534,6 +549,7 @@ class _CheckInSheetState extends State<_CheckInSheet> {
                     const SizedBox(height: TracendSpacing.lg),
                   ],
                   _PainQuestion(
+                    periodBelow: widget.period != null,
                     reported: _painReported,
                     severity: _pain,
                     missing: _painMissing,
@@ -579,6 +595,10 @@ class _CheckInSheetState extends State<_CheckInSheet> {
                     }),
                   ),
                   const SizedBox(height: TracendSpacing.lg),
+                  if (widget.period case final period?) ...[
+                    PeriodTodayControl(period: period, date: _periodDate()),
+                    const SizedBox(height: TracendSpacing.lg),
+                  ],
                   DecoratedBox(
                     decoration: BoxDecoration(
                       color: colors.surface,
@@ -819,6 +839,7 @@ class _FollowUpQuestion extends StatelessWidget {
 /// the red-flag answer are given.
 class _PainQuestion extends StatelessWidget {
   const _PainQuestion({
+    required this.periodBelow,
     required this.reported,
     required this.severity,
     required this.missing,
@@ -836,6 +857,8 @@ class _PainQuestion extends StatelessWidget {
     required this.onNone,
   });
 
+  /// The check-in asks about a period below, so cramps are answered there.
+  final bool periodBelow;
   final bool reported;
   final int severity;
   final bool missing;
@@ -875,6 +898,13 @@ class _PainQuestion extends StatelessWidget {
             ),
           ],
         ),
+        if (periodBelow) ...[
+          const SizedBox(height: TracendSpacing.xs),
+          Text(
+            'For period cramps, use Period below.',
+            style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+          ),
+        ],
         if (reported) ...[
           const SizedBox(height: TracendSpacing.md),
           Text('How strong, from 1 to 10?', style: textTheme.titleSmall),

@@ -46,6 +46,7 @@ class WeightHeroCard extends StatelessWidget {
     this.goal,
     this.fallbackWeightKg,
     this.now,
+    this.cycleNote,
     super.key,
   });
 
@@ -61,6 +62,10 @@ class WeightHeroCard extends StatelessWidget {
   /// Server summary weight, shown only when no weigh-in list is available.
   final double? fallbackWeightKg;
   final DateTime? now;
+
+  /// Says why the trend may read high around a period (water). The numbers
+  /// are shown as they are; the note only explains them.
+  final String? cycleNote;
 
   @override
   Widget build(BuildContext context) {
@@ -176,6 +181,14 @@ class WeightHeroCard extends StatelessWidget {
                     icon: CupertinoIcons.waveform_path,
                   ),
               ],
+            ),
+          ],
+          if (cycleNote case final note?) ...[
+            const SizedBox(height: TracendSpacing.sm),
+            Text(
+              note,
+              key: const ValueKey('cycle-weight-note'),
+              style: theme.bodySmall?.copyWith(color: colors.textSecondary),
             ),
           ],
           if (period.length >= 2) ...[

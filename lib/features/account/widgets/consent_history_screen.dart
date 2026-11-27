@@ -60,6 +60,7 @@ class _ConsentHistoryScreenState extends State<ConsentHistoryScreen> {
     'terms': 'Beta terms',
     'privacy': 'Privacy policy',
     'health_data': 'Health data',
+    'cycle_data': 'Cycle data',
     'ai_coaching': 'AI coaching',
     'progress_photo_storage': 'Progress photo storage',
     'progress_photo_ai': 'Progress photo AI analysis',

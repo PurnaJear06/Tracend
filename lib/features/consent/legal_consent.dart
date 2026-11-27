@@ -21,7 +21,8 @@ abstract final class LegalNotices {
   static const termsVersion = '2026-11-02';
 
   /// `site/src/pages/privacy.astro`; health-data consent is given against it.
-  static const privacyVersion = '2026-11-02';
+  /// 2026-11-27 added the Cycle data section.
+  static const privacyVersion = '2026-11-27';
 
   static final termsUrl = Uri.parse('https://tracend.pages.dev/beta-terms/');
   static final privacyUrl = Uri.parse('https://tracend.pages.dev/privacy/');

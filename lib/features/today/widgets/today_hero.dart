@@ -42,6 +42,7 @@ class TodayHero extends StatefulWidget {
     this.checkedIn = false,
     this.offerCheckIn = false,
     this.onCheckIn,
+    this.cycleNote,
     super.key,
   });
 
@@ -66,6 +67,10 @@ class TodayHero extends StatefulWidget {
 
   /// Opens the check-in; the chips are plain without it.
   final VoidCallback? onCheckIn;
+
+  /// Explains the expected shift in the second half of her cycle, in the
+  /// drivers card. The score is not changed by it.
+  final String? cycleNote;
 
   @override
   State<TodayHero> createState() => _TodayHeroState();
@@ -266,7 +271,10 @@ class _TodayHeroState extends State<TodayHero> {
             child: _open && computed.scores.recoveryBreakdown != null
                 ? Padding(
                     padding: const EdgeInsets.only(top: TracendSpacing.sm),
-                    child: RecoveryReadoutCard(computed: computed),
+                    child: RecoveryReadoutCard(
+                      computed: computed,
+                      note: widget.cycleNote,
+                    ),
                   )
                 : const SizedBox(width: double.infinity),
           ),

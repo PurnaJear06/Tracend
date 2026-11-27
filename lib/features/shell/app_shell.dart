@@ -16,6 +16,8 @@ import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
 import 'package:tracend/features/coach/proposals/coach_proposal_repository.dart';
 import 'package:tracend/features/coach/coach_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/cycle/cycle_health.dart';
+import 'package:tracend/features/cycle/cycle_repository.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_screen.dart';
@@ -123,6 +125,8 @@ class AppShellRepositories {
     this.guidance,
     this.painCheck,
     this.pauses,
+    this.cycle,
+    this.cycleHealth,
   });
 
   final WorkoutRepository? workouts;
@@ -156,6 +160,12 @@ class AppShellRepositories {
 
   /// Sets and ends breaks; built from the environment when not given.
   final TrainingPauseRepository? pauses;
+
+  /// The athlete's optional cycle tracking; built from the environment when
+  /// not given, and the Apple Health reader of its period days (absent without
+  /// a backend).
+  final CycleRepository? cycle;
+  final CycleHealthSync? cycleHealth;
 }
 
 class _AppShellState extends State<AppShell> {
@@ -177,6 +187,16 @@ class _AppShellState extends State<AppShell> {
   late final CoachProposalRepository? _proposals;
   late final CoachMemoryRepository _memory;
   late final TrainingPauseRepository _pauses;
+
+  /// The athlete's optional cycle tracking, shared by Today, Progress and
+  /// Account, and the reader of Apple Health's period days (null without a
+  /// backend).
+  late final CycleRepository _cycle;
+  late final CycleHealthSync? _cycleHealth;
+
+  /// Announces a change to the cycle answers or period days, so Today and
+  /// Progress read the cycle again.
+  final _cycleChanges = CycleChanges();
 
   /// Today's same-day readiness adjustment, shared by Today and Train. Null
   /// without a backend, where there is no readiness to read.
@@ -242,6 +262,7 @@ class _AppShellState extends State<AppShell> {
     unawaited(_widgetPublisher.dispose());
     _checkInGate.dispose();
     _planChanges.dispose();
+    _cycleChanges.dispose();
     _workoutLogs.dispose();
     _showTrainToday.dispose();
     _dayAdjustment?.dispose();
@@ -319,6 +340,19 @@ class _AppShellState extends State<AppShell> {
         injected?.proposals ??
         (live
             ? SupabaseCoachProposalRepository(Supabase.instance.client)
+            : null);
+    _cycle =
+        injected?.cycle ??
+        (live
+            ? SupabaseCycleRepository(Supabase.instance.client)
+            : const FixtureCycleRepository());
+    _cycleHealth =
+        injected?.cycleHealth ??
+        (live
+            ? CycleHealthSync(
+                repository: _cycle,
+                reader: HealthKitCycleReader(),
+              )
             : null);
     _pauses =
         injected?.pauses ??
@@ -450,6 +484,9 @@ class _AppShellState extends State<AppShell> {
         region: widget.environment.hasSupabaseConfiguration
             ? SupabaseRegionRepository(Supabase.instance.client)
             : const FixtureRegionRepository(),
+        cycle: _cycle,
+        cycleHealth: _cycleHealth,
+        cycleChanges: _cycleChanges,
         aiConsent: widget.aiConsent,
         widgetPublisher: _widgetPublisher,
         planChanges: _planChanges,
@@ -513,6 +550,9 @@ class _AppShellState extends State<AppShell> {
               userId: widget.userId,
               pauses: _pauses,
               onResumeWorkout: _resumeInTrain,
+              cycle: _cycle,
+              cycleHealth: _cycleHealth,
+              cycleChanges: _cycleChanges,
               active: _selectedIndex == 0,
             ),
       () => TrainScreen(
@@ -569,6 +609,8 @@ class _AppShellState extends State<AppShell> {
               brief: _brief,
               physique: _physique,
               goalTargets: _goalTargets,
+              cycle: _cycle,
+              cycleChanges: _cycleChanges,
               active: _selectedIndex == 4,
             ),
     ];

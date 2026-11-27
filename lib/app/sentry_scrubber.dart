@@ -10,21 +10,26 @@ import 'package:tracend/shared/diagnostics.dart';
 // Health values, meal content, photo links and prompts never leave the phone,
 // and neither does anything from the pain check: the area, the strength, the
 // red-flag answers and the referral they led to are among the most private
-// things the app holds. A report says that something failed, never what the
-// athlete answered.
+// things the app holds. The cycle is as private: that she tracks one, a period
+// day, the flow and the cramps are no one else's to know. A report says that
+// something failed, never what the athlete answered.
 
 /// What replaces a value the athlete entered or the phone measured.
 const redactedValue = '[redacted]';
 
-/// The pain check's own keys (B5): answers, areas, severities and the
-/// referral. They go entirely, name and value, because even that a pain
-/// answer was present is nobody else's to know.
+/// The pain check's own keys (B5) and the cycle's: answers, areas,
+/// severities, the referral, the flow and the period. They go entirely, name
+/// and value, because even that such an answer was present is nobody else's to
+/// know. `flow` and `period` are exact keys: a part of a key would also hit
+/// `workflow` and `periodDays`.
 const _droppedKeys = {
   'area',
   'area_state',
   'cleared_by_clinician',
+  'flow',
   'followups',
   'hold_outcome',
+  'period',
   'range_note_code',
   'range_note_codes',
   'red_flags',
@@ -35,8 +40,17 @@ const _droppedKeys = {
 };
 
 /// Keys that start with these are the pain check's too: `pain_area`,
-/// `pain_severity`, `pain_red_flags`, `joint_states`, `joint_action`.
-const _droppedPrefixes = ['pain_', 'joint_', 'red_flag'];
+/// `pain_severity`, `pain_red_flags`, `joint_states`, `joint_action`. And the
+/// cycle's: `cycle_day`, `cycle_status`, `menstrual_flow`, `cramps`. Only the
+/// start of a key counts, so `lifecycle` and `workflow` are left alone.
+const _droppedPrefixes = [
+  'pain_',
+  'joint_',
+  'red_flag',
+  'cycle_',
+  'menstrua',
+  'cramp',
+];
 
 bool _dropKey(String key) {
   final lower = key.toLowerCase();
@@ -135,9 +149,11 @@ const _valuePattern =
 
 /// A pain key with its value, in any text: `pain_area=back`,
 /// `pain_severity: 8`, `"red_flags":["night_pain"]`, `area = 'knee'`. The whole
-/// expression goes, so the answer does not stay behind the key.
+/// expression goes, so the answer does not stay behind the key. The cycle's
+/// keys (`cycle_status`, `menstrual_flow`, `cramps`) go the same way.
 final _painPairPattern = RegExp(
-  r'''["']?\b(?:pain_[a-z_]+|joint_[a-z_]+|red_flags?|area|area_state|severity|'''
+  r'''["']?\b(?:pain_[a-z_]+|joint_[a-z_]+|cycle_[a-z_]+|menstrua[a-z_]*|'''
+  r'''cramps?|red_flags?|area|area_state|severity|'''
   r'''cleared_by_clinician|followups|hold_outcome|safety_route|'''
   r'''range_note_codes?|swap_to_(?:name|slug))["']?[ \t]*[:=][ \t]*'''
   '$_valuePattern',

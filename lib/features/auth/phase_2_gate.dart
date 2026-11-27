@@ -14,6 +14,7 @@ import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/auth/password_reset_flow.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/consent/legal_consent.dart';
+import 'package:tracend/features/cycle/cycle_repository.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
@@ -613,6 +614,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
           _client,
           localData: _localData,
         ),
+        cycle: SupabaseCycleRepository(_client),
       );
     }
     // Newer beta terms or privacy notice than the athlete agreed to: they

@@ -13,3 +13,10 @@ class PlanChanges extends ChangeNotifier {
 class WorkoutLogChanges extends ChangeNotifier {
   void announce() => notifyListeners();
 }
+
+/// Announces that the athlete's cycle answers or period days changed (Account,
+/// or a period logged in the check-in), so Today and Progress read the cycle
+/// again.
+class CycleChanges extends ChangeNotifier {
+  void announce() => notifyListeners();
+}
