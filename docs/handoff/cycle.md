@@ -55,7 +55,35 @@ merged in order: data (PR 1), app (PR 2), Coach (PR 3).
 
 ## App
 
-Added by the app PR.
+State: built on `claude/cycle-app` (PR "Cycle in the app"). Product copy and flows are in
+[UX_FLOWS.md](../UX_FLOWS.md) ("Cycle tracking"); privacy rules are in
+[SECURITY_PRIVACY.md](../SECURITY_PRIVACY.md) ("Cycle data in the app").
+
+- **Repository.** `lib/features/cycle/cycle_repository.dart`: `CycleRepository` (Supabase and fixture),
+  `parseCycleAnswer` (refuses anything unreadable, like `parseAccountRegion`) and `CycleConsent` (its own
+  `consent_records` insert, source `ios_app`, notice `2026-11-27`; deliberately not in `LegalConsent`, which
+  is granted and demanded for every athlete). A `P0403` becomes `CycleRefused` and is worded by
+  `cycleFailureMessage`; the code is never shown.
+- **Shared state.** One repository in `AppShell` (`_cycle`) and one `CycleChanges` notifier; Today, Progress
+  and Account listen. Nothing is stored on the phone, and no new file is in `_storingFiles`.
+- **Screens.** Onboarding block (`widgets/cycle_onboarding_block.dart`, only for female or unspecified, only
+  on a first setup, only without settings); Account › Cycle tracking (`account/widgets/cycle_settings.dart`);
+  check-in `PeriodTodayControl` (saves on tap, outside the payload and the unsaved guard); Today line and
+  long-gap card (`today/widgets/cycle_line.dart`), loaded after the brief and hidden on any error; recovery
+  and weight notes (`cycleRecoveryNote`, `cycleWeightNote` in `cycle_labels.dart`).
+- **Apple Health.** `cycle_health.dart`: `HealthKitCycleReader` (menstrual flow only, asked only when she
+  turns the switch on), `cycleHealthDays` (drops "none", never spotting), `CycleHealthSync` (180 days on
+  enable, 30 on each sync when both switches are on). The import sends exactly `local_date`, `flow`,
+  `is_start`.
+- **Scrubber.** `cycle_`, `menstrua`, `cramp` prefixes and the exact keys `flow` and `period`; tests pin that
+  `workflow`, `lifecycle` and `periodDays` are untouched.
+- **Versions.** `LegalNotices.privacyVersion` and the privacy page are `2026-11-27`, so privacy and health
+  data are asked once more for everyone.
+- **Tests.** `test/contract/cycle_contract_test.dart` (the three fixtures), `cycle_*_test.dart`, the
+  onboarding group in `phase_2_flow_test.dart`, scrubber and legal-version tests. The Account page test now
+  scrolls to "Send feedback" because the Cycle row makes the page longer.
+- **Open for the owner.** Install after the merge deploys. On the phone: accept the updated privacy notice,
+  optionally turn Cycle tracking on, log a period, then Delete my cycle data.
 
 ## Coach
 
