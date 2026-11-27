@@ -169,11 +169,20 @@ void main() {
       );
       await tester.tap(find.text('Log a period'));
       await tester.pumpAndSettle();
+      // A first day needs a real level: nothing is chosen for her.
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
+            .onPressed,
+        isNull,
+      );
+      await tester.tap(find.bySemanticsLabel('Bleeding: Medium'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       final logged = cycle.days.single;
       expect(logged.date, DateTime(2026, 11, 27));
-      expect(logged.flow, PeriodFlow.unspecified);
+      expect(logged.flow, PeriodFlow.medium);
       expect(logged.isStart, isTrue);
     });
 

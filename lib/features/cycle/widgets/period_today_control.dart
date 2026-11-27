@@ -72,7 +72,14 @@ class _PeriodTodayControlState extends State<PeriodTodayControl> {
   _Answer _initial() {
     final day = _stored;
     if (day == null) return (yes: null, flow: null, cramps: null);
-    return (yes: day.flow != null, flow: day.flow, cramps: day.cramps);
+    // A day with no level ("period, flow not noted") shows as Yes with the
+    // level still to choose: the control never sends it back as it was.
+    final flow = day.flow == PeriodFlow.unspecified ? null : day.flow;
+    return (
+      yes: day.flow != null,
+      flow: flow,
+      cramps: flow == null ? null : day.cramps,
+    );
   }
 
   void _no() {
@@ -114,7 +121,8 @@ class _PeriodTodayControlState extends State<PeriodTodayControl> {
           cramps: answer.cramps,
           isStart:
               (_stored?.isStart ?? false) &&
-              (answer.flow?.isPeriodDay ?? false),
+              (answer.flow?.isPeriodDay ?? false) &&
+              answer.flow != PeriodFlow.unspecified,
         );
       } catch (error) {
         logNonCritical(error, 'period not saved');

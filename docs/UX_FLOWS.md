@@ -1698,10 +1698,21 @@ and nothing is stored on the phone: every screen reads the server's answer
   every period day and cycle answer. It can't be undone."). Every change is saved at once and says
   "Not saved" when it was not. Turning tracking off keeps the days; deleting removes them and withdraws
   the consent.
-- **Apple Health.** **Read periods from Apple Health** asks iOS for menstrual flow only now, then reads
-  180 days; after each health sync it reads the last 30 days, only while the switch is on. Days she logged
-  herself always win; "none" samples are ignored; spotting is logged by hand only. If the first read fails
-  the switch goes back off.
+- **Apple Health.** **Read periods from Apple Health** saves the switch first; only when the database has
+  accepted it does iOS get asked for menstrual flow, and then 180 days are read. A refused save never shows
+  Apple's sheet, and a failed first read saves the switch off again. Afterwards Today reads the last 30 days
+  on its own, apart from the main health sync (so someone who never connected that one still gets her
+  periods): when it has read the cycle after the brief and when the app comes back to the front, at most
+  once in six hours (kept in memory only; Sync forces it), only while tracking and the switch are on and the
+  same agreements gate as the main sync is open. Failures say nothing. Days she logged herself always win;
+  "none" samples are ignored; spotting is logged by hand only.
+- **Days she has not been shown.** The answer lists the last 59 days. Opening an older cycle (or moving the
+  date of the day editor to an older day) opens with nothing chosen and Save closed until she chooses what
+  happened that day, so a day the app never read is never overwritten; the first day of a cycle in the
+  answer opens with the first-day switch on. Moving the date reloads the fields for the new day.
+- **A first day needs a level.** Marking a first day needs Light, Medium or Heavy ("Period, flow not
+  noted" with the first-day switch on keeps Save closed); spotting is never a start. The onboarding date
+  is the one exception: it is logged as a start with no level, which the database treats as a guess.
 - **Check-in.** With tracking on and a status other than No periods, the check-in has **Period today?**
   (No / Yes; Yes asks the flow: Spotting, Light, Medium, Heavy, then cramps: None, Mild, Strong), placed
   after the pain question, which says "For period cramps, use Period below." Each tap is saved at once and

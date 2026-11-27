@@ -186,6 +186,111 @@ void main() {
     });
   });
 
+  group('a first day needs a real level', () {
+    // Never sent: a first day with no level is a guess the engine drops.
+    void expectNeverUnspecifiedStart(FakeCycle cycle) {
+      for (final day in cycle.days) {
+        expect(
+          day.flow == PeriodFlow.unspecified && day.isStart,
+          isFalse,
+          reason: '${day.flow} ${day.isStart}',
+        );
+      }
+    }
+
+    testWidgets('Log a period opens with Save closed until a level is chosen', (
+      tester,
+    ) async {
+      final cycle = FakeCycle(answer: trackingAnswer());
+      await _open(tester, cycle, date: _today, startsPeriod: true);
+      // The switch shows once a bleeding level is chosen.
+      expect(find.byType(SwitchListTile), findsNothing);
+      expect(_canSave(tester), isFalse);
+
+      await tester.tap(
+        find.bySemanticsLabel('Bleeding: Period, flow not noted'),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value,
+        isTrue,
+      );
+      expect(_canSave(tester), isFalse);
+      expect(
+        find.text(
+          'Choose Light, Medium or Heavy to mark the first day of a period.',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.bySemanticsLabel('Bleeding: Light'));
+      await tester.pumpAndSettle();
+      expect(_canSave(tester), isTrue);
+      expect(
+        find.textContaining('Choose Light, Medium or Heavy'),
+        findsNothing,
+      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(cycle.days.single.flow, PeriodFlow.light);
+      expect(cycle.days.single.isStart, isTrue);
+      expectNeverUnspecifiedStart(cycle);
+    });
+
+    testWidgets('a level with no first day can be saved', (tester) async {
+      final cycle = FakeCycle(answer: trackingAnswer());
+      await _open(tester, cycle, date: _today, startsPeriod: true);
+      await tester.tap(
+        find.bySemanticsLabel('Bleeding: Period, flow not noted'),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+      expect(_canSave(tester), isTrue);
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(cycle.days.single.flow, PeriodFlow.unspecified);
+      expect(cycle.days.single.isStart, isFalse);
+    });
+
+    testWidgets('spotting is never a start', (tester) async {
+      final cycle = FakeCycle(answer: trackingAnswer());
+      await _open(tester, cycle, date: _today, startsPeriod: true);
+      await tester.tap(find.bySemanticsLabel('Bleeding: Spotting'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SwitchListTile), findsNothing);
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(cycle.days.single.flow, PeriodFlow.spotting);
+      expect(cycle.days.single.isStart, isFalse);
+    });
+
+    testWidgets('the onboarding guess opens closed until she picks a level '
+        'or turns the start off', (tester) async {
+      final cycle = FakeCycle(
+        answer: trackingAnswer(
+          recentDays: [
+            _day(
+              DateTime(2026, 11, 20),
+              flow: PeriodFlow.unspecified,
+              isStart: true,
+            ),
+          ],
+        ),
+      );
+      await _open(tester, cycle, date: DateTime(2026, 11, 20));
+      expect(_canSave(tester), isFalse);
+      await tester.tap(find.bySemanticsLabel('Bleeding: Medium'));
+      await tester.pumpAndSettle();
+      expect(_canSave(tester), isTrue);
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(cycle.days.single.flow, PeriodFlow.medium);
+      expect(cycle.days.single.isStart, isTrue);
+      expectNeverUnspecifiedStart(cycle);
+    });
+  });
+
   group('a day inside the days the answer lists', () {
     testWidgets('opens with what is stored', (tester) async {
       final cycle = FakeCycle(

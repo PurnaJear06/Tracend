@@ -189,6 +189,34 @@ void main() {
     expect(cycle.days.single.cramps, CycleCramps.mild);
   });
 
+  testWidgets('a day with no level opens as Yes with the level to choose, '
+      'and never sends a start without one', (tester) async {
+    final cycle = FakeCycle(
+      answer: trackingAnswer(
+        recentDays: [
+          CycleDay(
+            date: _day,
+            flow: PeriodFlow.unspecified,
+            cramps: null,
+            isStart: true,
+            source: CycleSource.manual,
+          ),
+        ],
+      ),
+    );
+    await _open(tester, _Sent(), period: _period(cycle));
+    expect(find.text('Choose how heavy it is to save it.'), findsOneWidget);
+    expect(find.text('Cramps'), findsNothing);
+    expect(cycle.days, isEmpty);
+
+    await _tap(tester, 'Flow: Heavy');
+    expect(cycle.days.single.flow, PeriodFlow.heavy);
+    expect(cycle.days.single.isStart, isTrue);
+    for (final day in cycle.days) {
+      expect(day.flow == PeriodFlow.unspecified && day.isStart, isFalse);
+    }
+  });
+
   testWidgets('a tap that did not save says so and shows what is stored', (
     tester,
   ) async {

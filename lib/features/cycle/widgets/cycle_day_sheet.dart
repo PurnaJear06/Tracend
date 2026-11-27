@@ -116,10 +116,15 @@ class _CycleDaySheetState extends State<_CycleDaySheet> {
       _chosen = true;
       _isStart =
           (day.isStart || startsCycle) && (day.flow?.isPeriodDay ?? false);
+    } else if (widget.startsPeriod) {
+      // A first day needs a real level: nothing is chosen for her.
+      _flow = null;
+      _chosen = false;
+      _isStart = true;
     } else if (_read) {
-      _flow = widget.startsPeriod ? PeriodFlow.unspecified : null;
+      _flow = null;
       _chosen = true;
-      _isStart = widget.startsPeriod || startsCycle;
+      _isStart = startsCycle;
     } else {
       _flow = null;
       _chosen = false;
@@ -128,6 +133,12 @@ class _CycleDaySheetState extends State<_CycleDaySheet> {
   }
 
   bool get _canStart => _flow != null && _flow!.isPeriodDay;
+
+  /// A first day without a level ("period, flow not noted") is a guess the
+  /// engine drops, so it is never sent: marking a start needs light, medium
+  /// or heavy.
+  bool get _startNeedsLevel =>
+      _canStart && _isStart && _flow == PeriodFlow.unspecified;
 
   Future<void> _pickDate() async {
     final today = widget.now();
@@ -287,6 +298,16 @@ class _CycleDaySheetState extends State<_CycleDaySheet> {
                     ),
                   ),
                 ],
+                if (_startNeedsLevel) ...[
+                  const SizedBox(height: TracendSpacing.xs),
+                  Text(
+                    'Choose Light, Medium or Heavy to mark the first day of a '
+                    'period.',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                ],
                 if (_failure case final failure?) ...[
                   const SizedBox(height: TracendSpacing.sm),
                   Semantics(
@@ -315,7 +336,7 @@ class _CycleDaySheetState extends State<_CycleDaySheet> {
               0,
             ),
             child: FilledButton(
-              onPressed: _saving || !_chosen ? null : _save,
+              onPressed: _saving || !_chosen || _startNeedsLevel ? null : _save,
               child: Text(_saving ? 'Saving…' : 'Save'),
             ),
           ),
