@@ -122,6 +122,8 @@ card in "Small jobs". Still not built: an Apple Watch app for logging sets.
 The page is a pitch, in this order: hero (headline, one line, the form, the Coach's call) → the
 story → try it (the sliders) → "Nothing changes until you say yes." → "The small jobs a coach does, done for you."
 → Coach → progress → three steps → join. About 18 phone screens; keep it from growing.
+Every "Small jobs" card uses the same parts (stage, phone top, title, one line); a new job is a
+new card in that rail, never a different layout.
 
 - The hero headline names the morning moment ("Know what to lift today. And why."). A reel can
   link to its own headline with `?v=sleep`, `?v=log` or `?v=coach` (an inline script swaps it

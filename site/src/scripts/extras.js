@@ -1,4 +1,4 @@
-/* Motion for "Nothing changes until you say yes" (#change) and "It handles the in-between" (#extras).
+/* Motion for "Nothing changes until you say yes" (#change) and "The small jobs a coach does" (#extras).
    The markup already holds every finished state, so with no script, or with reduced motion, nothing
    here runs and the page is complete. With motion, each mock is armed (hidden) and plays once, when
    it is mostly in view: transform and opacity only, ease-out, no loops. */
@@ -168,12 +168,32 @@
     if (!rail) return;
     var cards = $$('.ex-card', rail);
 
-    /* wide screens show a grid, not a scroller: it needs no tab stop */
-    if (window.matchMedia) {
-      var mq = window.matchMedia('(min-width: 1024px)');
-      var sync = function () { if (mq.matches) rail.removeAttribute('tabindex'); else rail.setAttribute('tabindex', '0'); };
-      sync();
-      if (mq.addEventListener) mq.addEventListener('change', sync); else if (mq.addListener) mq.addListener(sync);
+    /* arrows on wide screens: one card per press; hidden when every card already fits */
+    var nav = $('[data-ex-nav]'), prev = $('[data-ex-prev]'), next = $('[data-ex-next]');
+    if (nav && prev && next) {
+      var how = function () { return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'; };
+      /* the start of the card before or after the one at the left edge */
+      var go = function (dir) {
+        var x = rail.scrollLeft, max = rail.scrollWidth - rail.clientWidth, to = dir > 0 ? max : 0;
+        var at = cards.map(function (c) { return c.offsetLeft - cards[0].offsetLeft; });
+        for (var i = 0; i < at.length; i++) {
+          var k = dir > 0 ? i : at.length - 1 - i;
+          if (dir > 0 ? at[k] > x + 2 : at[k] < x - 2) { to = at[k]; break; }
+        }
+        rail.scrollTo({ left: Math.min(max, to), behavior: how() });
+      };
+      var edges = function () {
+        var max = rail.scrollWidth - rail.clientWidth;
+        nav.hidden = max <= 2;
+        prev.disabled = rail.scrollLeft <= 2;
+        next.disabled = rail.scrollLeft >= max - 2;
+      };
+      prev.addEventListener('click', function () { go(-1); });
+      next.addEventListener('click', function () { go(1); });
+      var raf = 0;
+      rail.addEventListener('scroll', function () { if (!raf) raf = requestAnimationFrame(function () { raf = 0; edges(); }); }, { passive: true });
+      window.addEventListener('resize', edges);
+      edges();
     }
 
     /* the dots follow whichever card is mostly in view */

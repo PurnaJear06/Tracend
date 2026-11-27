@@ -1,6 +1,6 @@
 # Website and Waitlist Handoff
 
-**As of:** 2026-11-27
+**As of:** 2026-11-28
 
 ## State
 
@@ -85,7 +85,12 @@
     Poor; the demo counts readiness points the app's way.
   - New: "Nothing changes until you say yes." (a chat plan change with Now/After, Approve, Undo)
     and "The small jobs a coach does, done for you." (Lock Screen logging, next targets, labels, pain check,
-    memory), each mock rebuilt from the shipped code. Removed: the five-apps bento, the two
+    memory), each mock rebuilt from the shipped code. 2026-11-28 (`claude/extras-polish`): the
+    small-jobs cards now share one system (the same stage, the top of a phone rising from it, a
+    title, one line) in a swipe rail on every width, with arrows on wide screens and dots on
+    phones; screen copy matches the app ("Pain or discomfort", "What Coach remembers", "Still
+    true"). Fixed: each card's screen-reader text sat outside the rail and let a phone scroll the
+    page sideways. Removed: the five-apps bento, the two
     example athletes, the muscle map, "Other apps stop at the score", the coming-next row and
     their code. About 18 phone screens, down from 23.
   - Phones get a docked "Join the beta" button after the hero form scrolls away.
