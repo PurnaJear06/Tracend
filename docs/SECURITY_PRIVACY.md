@@ -102,7 +102,9 @@ Consent choices are separate and versioned for:
   `import_cycle_days_v1` refuse with `P0403` `cycle_consent_required` when the newest `cycle_data`
   record is missing or `withdrawn`. Reading period days from Apple Health needs both consents:
   turning it on and every `import_cycle_days_v1` also need a granted `health_data`
-  (`health_consent_required`). "Delete my cycle data" records `withdrawn`. Coach reads cycle data
+  (`health_consent_required`). "Delete my cycle data" records `withdrawn`. A withdrawn (or missing)
+  `cycle_data` record reads as tracking off: `get_my_cycle_v1` and `coach_cycle_state_v1` return
+  the off answer with none of her days, even if the settings row still says on. Coach reads cycle data
   only through `coach_cycle_state_v1` (service role only), and uses it only under an AI notice that
   names cycle data;
 - AI coaching: sending the athlete's Tracend data to the AI provider for Coach chat answers, daily

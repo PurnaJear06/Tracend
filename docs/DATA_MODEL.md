@@ -426,24 +426,26 @@ or for an inactive account, `22023` for bad input, `P0403` with message `cycle_c
 | `get_my_cycle_v1()` | authenticated | The cycle answer for her local date; `recent_days` = the last 60 days and tomorrow |
 | `set_my_cycle_settings_v1(p_tracking_enabled, p_status, p_typical_cycle_days, p_apple_health_enabled)` | authenticated | Tracking on needs a granted `cycle_data` consent and a status; Apple Health also needs `health_data`. Off keeps the days and turns Apple Health off. Sets `tracking_enabled_at` on each off → on. Audit `cycle.settings.changed` (field names only) when something changed |
 | `log_cycle_day_v1(p_local_date, p_flow, p_cramps, p_is_start)` | authenticated | Upserts one manual day from 400 days ago to tomorrow (`private.local_date_for`); tracking on and `cycle_data` consent. A null `p_is_start` is false. No audit row |
-| `import_cycle_days_v1(p_from, p_to, p_days)` | authenticated | Apple Health days for a window of ≤ 400 days ending ≤ tomorrow; ≤ 400 items of exactly `{local_date, flow, is_start}`. Needs tracking, Apple Health on, `cycle_data` and `health_data`. The window is the truth for `apple_health` rows (missing ones are deleted); manual rows are never touched. Answers `{schema_version, imported, removed}` (`imported` = rows added or changed) |
+| `import_cycle_days_v1(p_from, p_to, p_days)` | authenticated | Apple Health days for a window from no more than 400 days ago to no later than tomorrow (log's window); ≤ 400 items of exactly `{local_date, flow, is_start}`. Needs tracking, Apple Health on, `cycle_data` and `health_data`. The window is the truth for `apple_health` rows (missing ones are deleted); manual rows are never touched. Answers `{schema_version, imported, removed}` (`imported` = rows added or changed) |
 | `delete_my_cycle_data_v1()` | authenticated | Deletes every day and the settings row, records `cycle_data` `withdrawn` (notice `2026-11-27`, source `ios_app`), audit `cycle.data.deleted` (no values); answers the off answer |
 | `coach_cycle_state_v1(p_user_id, p_local_date)` | service role | The cycle answer with the 14 days ending `p_local_date` |
 
 **The cycle answer** (`schema_version` `1.0`, built only by `private.cycle_answer`; fixtures
-`test/contract/fixtures/my_cycle_v1_0_off.json`, `_regular.json`, `_contraception.json`): every key is
-always present.
+`test/contract/fixtures/my_cycle_v1_0_off.json`, `_regular.json`, `_late.json`,
+`_contraception.json`, each the whole answer for a real seed in `cycle_engine_test.sql`): every key
+is always present.
 
 ```json
 {
   "schema_version": "1.0", "tracking_enabled": true, "status": "regular",
   "typical_cycle_days": 28, "apple_health_enabled": false,
   "state": {"cycle_day": 18, "period_day": null, "phase": "second_half", "confidence": "medium",
-    "expected_from": "2026-12-08", "expected_to": "2026-12-12", "late_days": null,
+    "expected_from": "2026-12-06", "expected_to": "2026-12-10", "late_days": null,
     "no_period_long": false, "weight_water_window": false},
   "recent_days": [{"local_date": "2026-11-10", "flow": "medium", "cramps": "mild",
     "is_start": true, "source": "manual"}],
-  "cycles": [{"start_date": "2026-10-13", "length_days": 28, "used": true},
+  "cycles": [{"start_date": "2026-09-15", "length_days": 28, "used": true},
+    {"start_date": "2026-10-13", "length_days": 28, "used": true},
     {"start_date": "2026-11-10", "length_days": null, "used": false}]
 }
 ```
@@ -451,8 +453,11 @@ always present.
 - `phase`: `period` | `first_half` | `second_half` | null; `confidence`: `low` | `medium` | `high` |
   null. `recent_days` ascending. `cycles`: the last up to 7 starts ascending; the current one has
   `length_days` null and `used` false, and `used` false also marks a length the engine left out.
-- Tracking off or no row: `status` and `typical_cycle_days` as stored, every `state` value null
-  except the two flags (false), `recent_days` and `cycles` empty.
+- Tracking off, no row, or the `cycle_data` consent no longer granted: `tracking_enabled` and
+  `apple_health_enabled` false, `status` and `typical_cycle_days` as stored, every `state` value
+  null except the two flags (false), `recent_days` and `cycles` empty. Coach gets the same.
+- Every writer locks the athlete's `user_accounts` row before reading her settings or consent, so
+  "Delete my cycle data" and a log or an import never interleave.
 - `hormonal_contraception` / `no_periods`: only `period_day` and `weight_water_window` can be set;
   `cycles` is empty; `recent_days` is returned.
 - The rules are `private.cycle_state` (docs/ALGORITHMS.md §11).

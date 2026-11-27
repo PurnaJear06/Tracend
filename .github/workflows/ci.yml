@@ -165,6 +165,11 @@ jobs:
             exit 1
           }
           sudo ln --symbolic "$PWD/test/reference/fixtures" /fixtures
+          test ! -e /contract-fixtures || {
+            echo '::error::Unexpected pre-existing /contract-fixtures path on the clean runner.'
+            exit 1
+          }
+          sudo ln --symbolic "$PWD/test/contract/fixtures" /contract-fixtures
           pg_prove --version
 
       - name: Run pgTAP suite (incl. 223-assertion reference parity oracle)

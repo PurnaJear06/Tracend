@@ -33,4 +33,10 @@ if [[ -d "$fixtures_dir" ]]; then
   "$repo_root/scripts/docker.sh" cp "$fixtures_dir/." "$container_id:/fixtures"
 fi
 
+# Contract fixtures: the cycle tests compare whole answers with them.
+contract_fixtures_dir="$repo_root/test/contract/fixtures"
+if [[ -d "$contract_fixtures_dir" ]]; then
+  "$repo_root/scripts/docker.sh" cp "$contract_fixtures_dir/." "$container_id:/contract-fixtures"
+fi
+
 "$repo_root/scripts/docker.sh" start --attach "$container_id"

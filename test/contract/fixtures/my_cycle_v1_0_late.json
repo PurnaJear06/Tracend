@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0",
+  "tracking_enabled": true,
+  "status": "regular",
+  "typical_cycle_days": 28,
+  "apple_health_enabled": true,
+  "state": {
+    "cycle_day": 35,
+    "period_day": null,
+    "phase": null,
+    "confidence": "medium",
+    "expected_from": "2026-11-19",
+    "expected_to": "2026-11-23",
+    "late_days": 4,
+    "no_period_long": false,
+    "weight_water_window": false
+  },
+  "recent_days": [
+    {
+      "local_date": "2026-09-29",
+      "flow": "light",
+      "cramps": null,
+      "is_start": false,
+      "source": "apple_health"
+    },
+    {
+      "local_date": "2026-10-24",
+      "flow": "medium",
+      "cramps": null,
+      "is_start": true,
+      "source": "apple_health"
+    },
+    {
+      "local_date": "2026-10-25",
+      "flow": "heavy",
+      "cramps": null,
+      "is_start": false,
+      "source": "apple_health"
+    },
+    {
+      "local_date": "2026-10-26",
+      "flow": "medium",
+      "cramps": null,
+      "is_start": false,
+      "source": "apple_health"
+    },
+    {
+      "local_date": "2026-10-27",
+      "flow": "light",
+      "cramps": null,
+      "is_start": false,
+      "source": "apple_health"
+    }
+  ],
+  "cycles": [
+    {
+      "start_date": "2026-08-29",
+      "length_days": 28,
+      "used": true
+    },
+    {
+      "start_date": "2026-09-26",
+      "length_days": 28,
+      "used": true
+    },
+    {
+      "start_date": "2026-10-24",
+      "length_days": null,
+      "used": false
+    }
+  ]
+}
