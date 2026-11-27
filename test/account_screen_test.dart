@@ -117,7 +117,8 @@ void main() {
     }
     await tester.scrollUntilVisible(find.text('Rest timer alerts'), -200);
     expect(find.text('Rest timer alerts'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Feedback'), 200);
+    await tester.scrollUntilVisible(find.text('Send feedback'), 200);
+    expect(find.text('Feedback'), findsOneWidget);
     expect(find.text('Send feedback'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Delete account'), 200);
     expect(find.text('Export data'), findsOneWidget);

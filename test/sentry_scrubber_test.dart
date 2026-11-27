@@ -532,4 +532,102 @@ void main() {
       expect(scrubbed.breadcrumbs!.single.message, 'Workout started');
     });
   });
+
+  group('what Sentry may carry of the cycle', () {
+    test('an event keeps no cycle key, flow, period or cramps', () {
+      final event = SentryEvent(
+        request: SentryRequest(
+          url: 'https://example.supabase.co/rest/v1/rpc/log_cycle_day_v1',
+          data: {
+            'body': {
+              'cycle_status': 'regular',
+              'cycle_day': 18,
+              'menstrual_flow': 'heavy',
+              'flow': 'heavy',
+              'period': '2026-11-10',
+              'cramps': 'strong',
+              'plain': 'left in',
+            },
+          },
+        ),
+        // ignore: deprecated_member_use
+        extra: {
+          'cycle_state': {'phase': 'second_half'},
+          'flow': 'light',
+          'period': 'yes',
+          'kept': 'a plain fact',
+        },
+        tags: {'cycle_status': 'regular', 'screen': 'today'},
+        breadcrumbs: [
+          Breadcrumb(
+            message: 'log_cycle_day_v1 sent',
+            data: {'cramps': 'mild', 'menstruation_logged': true, 'ok': 1},
+          ),
+        ],
+      );
+
+      final scrubbed = scrubEvent(event, hint)!;
+      final body = (scrubbed.request!.data as Map)['body'] as Map;
+      expect(body.keys, ['plain']);
+      // ignore: deprecated_member_use
+      expect(scrubbed.extra!.keys, ['kept']);
+      expect(scrubbed.tags, {'screen': 'today'});
+      expect(scrubbed.breadcrumbs!.single.data, {'ok': 1});
+      final text = _everything(scrubbed);
+      for (final secret in ['heavy', 'strong', 'regular', '2026-11-10']) {
+        expect(text, isNot(contains(secret)), reason: secret);
+      }
+    });
+
+    test('keys that only contain the words are not touched', () {
+      final scrubbed =
+          scrubValue({
+                'workflow': 'checkout',
+                'lifecycle': 'resumed',
+                'periodDays': 28,
+                'flowers': 'tulips',
+                'recycle_bin': 'empty',
+              })!
+              as Map;
+      expect(scrubbed, {
+        'workflow': 'checkout',
+        'lifecycle': 'resumed',
+        'periodDays': 28,
+        'flowers': 'tulips',
+        'recycle_bin': 'empty',
+      });
+    });
+
+    test('the exact keys flow and period are dropped at any depth', () {
+      final scrubbed =
+          scrubValue({
+                'a': [
+                  {'flow': 'light', 'period': 3, 'workflow': 'x'},
+                ],
+              })!
+              as Map;
+      expect(scrubbed, {
+        'a': [
+          {'workflow': 'x'},
+        ],
+      });
+    });
+
+    test('a cycle key with its value in free text goes whole', () {
+      final text = scrubText(
+        'refused cycle_status=hormonal_contraception and cramps: strong',
+      );
+      expect(text, isNot(contains('hormonal_contraception')));
+      expect(text, isNot(contains('strong')));
+      expect(text, contains('refused'));
+    });
+
+    test('names of other functions and ordinary words are left alone', () {
+      expect(
+        scrubText('get_my_cycle_v1 failed after a lifecycle workflow'),
+        'get_my_cycle_v1 failed after a lifecycle workflow',
+      );
+      expect(scrubText('period of 3 weeks'), 'period of 3 weeks');
+    });
+  });
 }

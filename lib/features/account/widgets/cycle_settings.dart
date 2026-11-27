@@ -166,7 +166,11 @@ class _CycleSettingsScreenState extends State<CycleSettingsScreen> {
       return true;
     } catch (error) {
       logNonCritical(error, 'cycle change not saved');
-      if (mounted) setState(() => _message = failure);
+      if (mounted) {
+        setState(
+          () => _message = cycleFailureMessage(error, fallback: failure),
+        );
+      }
       return false;
     } finally {
       if (mounted) setState(() => _busy = false);

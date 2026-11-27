@@ -65,14 +65,18 @@ class _CycleDaySheet extends StatefulWidget {
 }
 
 class _CycleDaySheetState extends State<_CycleDaySheet> {
-  late DateTime _date = widget.date;
+  late DateTime _date = DateTime(
+    widget.date.year,
+    widget.date.month,
+    widget.date.day,
+  );
   late PeriodFlow? _flow =
       widget.existing?.flow ??
       (widget.startsPeriod ? PeriodFlow.unspecified : null);
   late CycleCramps? _cramps = widget.existing?.cramps;
   late bool _isStart = widget.existing?.isStart ?? widget.startsPeriod;
   bool _saving = false;
-  bool _failed = false;
+  String? _failure;
 
   bool get _canStart => _flow != null && _flow!.isPeriodDay;
 
@@ -89,14 +93,14 @@ class _CycleDaySheetState extends State<_CycleDaySheet> {
     if (picked != null && mounted) {
       setState(() {
         _date = DateTime(picked.year, picked.month, picked.day);
-        _failed = false;
+        _failure = null;
       });
     }
   }
 
   void _choose(PeriodFlow? flow) => setState(() {
     _flow = flow;
-    _failed = false;
+    _failure = null;
     if (flow == null) _cramps = null;
     if (flow == null || !flow.isPeriodDay) _isStart = false;
   });
@@ -104,7 +108,7 @@ class _CycleDaySheetState extends State<_CycleDaySheet> {
   Future<void> _save() async {
     setState(() {
       _saving = true;
-      _failed = false;
+      _failure = null;
     });
     try {
       final answer = await widget.repository.logDay(
@@ -119,7 +123,10 @@ class _CycleDaySheetState extends State<_CycleDaySheet> {
       if (mounted) {
         setState(() {
           _saving = false;
-          _failed = true;
+          _failure = cycleFailureMessage(
+            error,
+            fallback: 'Not saved. Try again.',
+          );
         });
       }
     }
@@ -191,7 +198,7 @@ class _CycleDaySheetState extends State<_CycleDaySheet> {
                           selected: _cramps == cramps,
                           onTap: () => setState(() {
                             _cramps = cramps;
-                            _failed = false;
+                            _failure = null;
                           }),
                         ),
                     ],
@@ -219,12 +226,12 @@ class _CycleDaySheetState extends State<_CycleDaySheet> {
                     ),
                   ),
                 ],
-                if (_failed) ...[
+                if (_failure case final failure?) ...[
                   const SizedBox(height: TracendSpacing.sm),
                   Semantics(
                     liveRegion: true,
                     child: Text(
-                      'Not saved. Try again.',
+                      failure,
                       style: textTheme.bodySmall?.copyWith(
                         color: colors.stateDanger,
                       ),

@@ -855,7 +855,10 @@ class _TodayScreenState extends State<TodayScreen> {
       if (mounted) {
         TracendToast.show(
           context,
-          'Your cycle status was not saved. Try again.',
+          cycleFailureMessage(
+            error,
+            fallback: 'Your cycle status was not saved. Try again.',
+          ),
           icon: CupertinoIcons.exclamationmark_triangle,
         );
       }

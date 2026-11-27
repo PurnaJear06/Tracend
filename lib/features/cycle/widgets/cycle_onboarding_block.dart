@@ -93,7 +93,14 @@ class _CycleOnboardingBlockState extends State<CycleOnboardingBlock> {
       }
     } catch (error) {
       logNonCritical(error, 'cycle status not saved');
-      if (mounted) setState(() => _error = 'Not saved. Try again.');
+      if (mounted) {
+        setState(
+          () => _error = cycleFailureMessage(
+            error,
+            fallback: 'Not saved. Try again.',
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -142,7 +149,14 @@ class _CycleOnboardingBlockState extends State<CycleOnboardingBlock> {
       if (mounted) setState(() => _stage = _Stage.done);
     } catch (error) {
       logNonCritical(error, 'cycle answers not saved');
-      if (mounted) setState(() => _error = 'Not saved. Try again.');
+      if (mounted) {
+        setState(
+          () => _error = cycleFailureMessage(
+            error,
+            fallback: 'Not saved. Try again.',
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

@@ -219,6 +219,54 @@ class CycleHealthDay {
   final bool isStart;
 }
 
+/// Why the database refused a cycle call for want of an agreement or a switch
+/// (`P0403`). The raw code never reaches the athlete: [cycleFailureMessage]
+/// words each one.
+enum CycleRefusal {
+  consentRequired('cycle_consent_required'),
+  healthConsentRequired('health_consent_required'),
+  trackingOff('cycle_tracking_off'),
+  appleHealthOff('apple_health_off');
+
+  const CycleRefusal(this.code);
+
+  final String code;
+}
+
+class CycleRefused implements Exception {
+  const CycleRefused(this.reason);
+
+  final CycleRefusal reason;
+
+  @override
+  String toString() => 'CycleRefused(${reason.code})';
+}
+
+/// The refusal a `P0403` error carries, or null for any other error.
+CycleRefused? _refusal(PostgrestException error) {
+  if (error.code != 'P0403') return null;
+  for (final reason in CycleRefusal.values) {
+    if (error.message.contains(reason.code)) return CycleRefused(reason);
+  }
+  return null;
+}
+
+/// What to tell the athlete about a failed cycle call: the reason when the
+/// database refused it for a missing agreement or switch, else [fallback].
+String cycleFailureMessage(Object error, {required String fallback}) {
+  if (error is! CycleRefused) return fallback;
+  return switch (error.reason) {
+    CycleRefusal.consentRequired =>
+      'Agree to the cycle data notice first, then try again.',
+    CycleRefusal.healthConsentRequired =>
+      'Apple Health needs your health data agreement first.',
+    CycleRefusal.trackingOff =>
+      'Cycle tracking is off. Turn it on in Account to log periods.',
+    CycleRefusal.appleHealthOff =>
+      'Reading periods from Apple Health is off. Turn it on in Account.',
+  };
+}
+
 /// `YYYY-MM-DD` for [date], the form the database takes.
 String cycleDateKey(DateTime date) =>
     '${date.year.toString().padLeft(4, '0')}-'
@@ -392,7 +440,7 @@ class SupabaseCycleRepository implements CycleRepository {
       );
     } on PostgrestException catch (error) {
       logNonCritical(error, 'cycle call failed');
-      rethrow;
+      throw _refusal(error) ?? error;
     }
   }
 
@@ -451,7 +499,7 @@ class SupabaseCycleRepository implements CycleRepository {
       );
     } on PostgrestException catch (error) {
       logNonCritical(error, 'cycle import failed');
-      rethrow;
+      throw _refusal(error) ?? error;
     }
   }
 

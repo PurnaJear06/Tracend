@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/features/consent/legal_consent.dart';
+import 'package:tracend/features/cycle/cycle_repository.dart';
 
 const _months = [
   'January',
@@ -54,6 +55,24 @@ void main() {
   test('health-data consent is given against the privacy notice', () {
     expect(LegalConsent.healthData.version, LegalNotices.privacyVersion);
     expect(LegalConsent.healthData.type, 'health_data');
+  });
+
+  test('the privacy page says what cycle tracking stores', () {
+    final page = File('site/src/pages/privacy.astro').readAsStringSync();
+    expect(page, contains('Cycle data, only if you turn it on'));
+    expect(page, contains('Last updated 27 November 2026'));
+  });
+
+  test('cycle consent is its own record against the privacy page date', () {
+    expect(CycleConsent.type, 'cycle_data');
+    expect(CycleConsent.noticeVersion, LegalNotices.privacyVersion);
+    expect(CycleConsent.noticeVersion, '2026-11-27');
+    // It is asked only of someone who turns tracking on, so it is not one of
+    // the agreements every athlete is asked for at launch.
+    expect(
+      LegalConsent.values.map((consent) => consent.type),
+      isNot(contains(CycleConsent.type)),
+    );
   });
 
   test('the app links the pages the versions come from', () {
