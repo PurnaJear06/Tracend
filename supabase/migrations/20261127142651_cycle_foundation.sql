@@ -108,7 +108,6 @@ declare
   run_days integer[];
   run_heavy boolean[];
   run_flag boolean[];
-  run_skip boolean[];
   run_count integer;
   starts date[] := '{}';
   start_count integer;
@@ -149,7 +148,37 @@ begin
       'cycles', '[]'::jsonb);
   end if;
 
+  -- A guess is the onboarding answer "my last period started on ...": a manual day flagged as a start
+  -- with flow unspecified. It is dropped (no flow, no flag) when a real period lies within 14 days
+  -- before or after it: a run of the other days with 2 or more bleeding days, a medium or heavy
+  -- day, or a day flagged as a start. Otherwise it stays a one-day flagged start.
   -- Periods: runs of bleeding days (any flow but spotting) whose gaps are at most 2 days.
+  with bleeding as (
+    select l.local_date, l.flow, l.is_start,
+      (l.source = 'manual' and l.is_start and l.flow = 'unspecified') as is_guess
+    from public.cycle_day_logs l
+    where l.user_id = p_user_id and l.local_date <= p_local_date
+      and l.flow is not null and l.flow <> 'spotting'
+  ), real_periods as (
+    select min(g.local_date) as first_day, max(g.local_date) as last_day
+    from (
+      select m.local_date, m.flow, m.is_start, sum(m.new_run) over (order by m.local_date) as run_no
+      from (
+        select b.local_date, b.flow, b.is_start,
+          case when b.local_date - lag(b.local_date) over (order by b.local_date) <= 3
+            then 0 else 1 end as new_run
+        from bleeding b
+        where not b.is_guess
+      ) m
+    ) g
+    group by g.run_no
+    having count(*) >= 2 or bool_or(g.flow in ('medium', 'heavy')) or bool_or(g.is_start)
+  ), kept as (
+    select b.local_date, b.flow, b.is_start
+    from bleeding b
+    where not b.is_guess or not exists (select 1 from real_periods p
+      where p.first_day <= b.local_date + 14 and p.last_day >= b.local_date - 14)
+  )
   select coalesce(array_agg(r.first_day order by r.first_day), '{}'),
     coalesce(array_agg(r.last_day order by r.first_day), '{}'),
     coalesce(array_agg(r.day_count order by r.first_day), '{}'),
@@ -163,12 +192,10 @@ begin
     from (
       select m.local_date, m.flow, m.is_start, sum(m.new_run) over (order by m.local_date) as run_no
       from (
-        select l.local_date, l.flow, l.is_start,
-          case when l.local_date - lag(l.local_date) over (order by l.local_date) <= 3
+        select k.local_date, k.flow, k.is_start,
+          case when k.local_date - lag(k.local_date) over (order by k.local_date) <= 3
             then 0 else 1 end as new_run
-        from public.cycle_day_logs l
-        where l.user_id = p_user_id and l.local_date <= p_local_date
-          and l.flow is not null and l.flow <> 'spotting'
+        from kept k
       ) m
     ) g
     group by g.run_no
@@ -192,34 +219,11 @@ begin
       'cycles', '[]'::jsonb);
   end if;
 
-  -- A one-day flagged start (the onboarding guess "my last period started on ...") is replaced by
-  -- her real period when one starts 1 to 9 days later: a run with 2 or more bleeding days or a
-  -- medium or heavy day, or the latest run while it is still going (it may become one). The real
-  -- period takes the start flag; the guessed day is never a start. A flagged run of 2 or more days
-  -- is never replaced.
-  run_skip := array_fill(false, array[run_count]);
-  for i in 1 .. run_count loop
-    if run_flag[i] and run_days[i] = 1 then
-      for j in i + 1 .. run_count loop
-        exit when run_first[j] - run_first[i] > 9;
-        if run_days[j] >= 2 or run_heavy[j]
-          or (j = run_count and run_last[j] >= p_local_date - 2) then
-          run_skip[i] := true;
-          run_flag[j] := true;
-          exit;
-        end if;
-      end loop;
-    end if;
-  end loop;
-
   -- Cycle starts: a period at least 15 days after the previous start with 2 or more bleeding days
   -- or one medium or heavy day; or a period with a day flagged as a start, at least 10 days after
   -- the previous start (closer than that it is a duplicate). Anything else is bleeding inside the
   -- cycle.
   for i in 1 .. run_count loop
-    if run_skip[i] then
-      continue;
-    end if;
     if (previous_start is null and (run_flag[i] or run_days[i] >= 2 or run_heavy[i]))
       or (previous_start is not null and (
         (run_first[i] - previous_start >= 15 and (run_days[i] >= 2 or run_heavy[i]))
@@ -304,13 +308,16 @@ begin
     when used_count >= 2 then 'medium'
     else 'low' end;
 
-  -- No period for 90 days (regular) or 180 days (irregular), counted from the later of the last
-  -- start, a later bleed that could be a start, and the day tracking was last turned on; only after
-  -- at least two logged periods.
+  -- No period for 90 days (regular) or 180 days (irregular), counted from the latest of the last
+  -- start, a later bleed that could be a start, the day tracking was last turned on and the day of
+  -- her newest cycle_data grant (days without consent are not counted); only after at least two
+  -- logged periods.
   if start_count >= 2 then
     anchor := greatest(last_start,
       case when run_first[run_count] - last_start >= 15 then run_first[run_count] end,
-      private.local_day_of(p_user_id, settings.tracking_enabled_at));
+      private.local_day_of(p_user_id, settings.tracking_enabled_at),
+      private.local_day_of(p_user_id, (select max(c.created_at) from public.consent_records c
+        where c.user_id = p_user_id and c.consent_type = 'cycle_data' and c.action = 'granted')));
     v_no_period_long := p_local_date - anchor
       >= case settings.status when 'regular' then 90 else 180 end;
   end if;
@@ -656,6 +663,9 @@ begin
     raise exception 'authentication required' using errcode = '42501';
   end if;
   perform 1 from public.user_accounts a where a.id = uid for update;
+  if not found then
+    raise exception 'account required' using errcode = '42501';
+  end if;
   delete from public.cycle_day_logs l where l.user_id = uid;
   delete from public.cycle_settings s where s.user_id = uid;
   insert into public.consent_records(user_id, consent_type, notice_version, action, source)

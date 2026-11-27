@@ -4,7 +4,7 @@
 \set contraception_fixture `cat /contract-fixtures/my_cycle_v1_0_contraception.json`
 
 begin;
-select plan(102);
+select plan(109);
 
 -- The cycle engine (migration 20261127142651, docs/ALGORITHMS.md section 9). Every case reads
 -- private.cycle_state on a fixed local date, so nothing here depends on today. Each athlete is one
@@ -16,7 +16,7 @@ create function pg_temp.athlete(p_id text, p_status text, p_typical integer defa
 returns void language sql as $$
   insert into auth.users(id, role) values (p_id::uuid, 'authenticated');
   insert into public.consent_records(user_id, consent_type, notice_version, action, source, created_at)
-  values (p_id::uuid, 'cycle_data', '2026-11-27', 'granted', 'ios_app', now() - interval '1 day');
+  values (p_id::uuid, 'cycle_data', '2026-11-27', 'granted', 'ios_app', '2025-01-01 12:00:00+00');
   insert into public.cycle_settings(user_id, tracking_enabled, status, typical_cycle_days,
     tracking_enabled_at)
   values (p_id::uuid, p_tracking, p_status, p_typical, p_enabled_at);
@@ -246,6 +246,18 @@ select pg_temp.day('c1000000-0000-4000-8000-000000000010', '2026-05-20', 'light'
 select is(pg_temp.st('c1000000-0000-4000-8000-000000000010', '2026-05-31') -> 'no_period_long',
   'false'::jsonb, 'long gap: a bleed she logged since then (not yet a start) resets the count');
 
+-- Consent withdrawn on 1 Mar and granted again on 9 Jun: the gap counts from the new grant.
+select pg_temp.athlete('c1000000-0000-4000-8000-000000000038', 'regular', 28);
+select pg_temp.period('c1000000-0000-4000-8000-000000000038', '2026-01-05', 5);
+select pg_temp.period('c1000000-0000-4000-8000-000000000038', '2026-02-02', 5);
+insert into public.consent_records(user_id, consent_type, notice_version, action, source, created_at) values
+  ('c1000000-0000-4000-8000-000000000038', 'cycle_data', '2026-11-27', 'withdrawn', 'ios_app', '2026-03-01 12:00:00+00'),
+  ('c1000000-0000-4000-8000-000000000038', 'cycle_data', '2026-11-27', 'granted', 'ios_app', '2026-06-09 12:00:00+00');
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000038', '2026-07-01') -> 'no_period_long', 'false'::jsonb,
+  'long gap: after 100 days withdrawn and a new grant, the days without consent are not counted');
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000038', '2026-09-07') -> 'no_period_long', 'true'::jsonb,
+  'long gap: 90 days after the new grant it is flagged');
+
 -- Irregular: 180 days.
 select pg_temp.athlete('c1000000-0000-4000-8000-000000000011', 'irregular');
 select pg_temp.period('c1000000-0000-4000-8000-000000000011', '2026-01-05', 5);
@@ -380,9 +392,9 @@ select is(private.cycle_state('c1000000-0000-4000-8000-000000000028', '2026-03-0
   'consent withdrawn: the same empty state as tracking off, though the settings say on');
 
 -- Starts flagged by her or by Apple Health ------------------------------------------------------------
--- The onboarding answer "my last period started on 10 Mar" is one unspecified day flagged as a start.
+-- One medium day she flagged as a start (not a guess: its flow is known).
 select pg_temp.athlete('c1000000-0000-4000-8000-000000000022', 'regular', 28);
-select pg_temp.day('c1000000-0000-4000-8000-000000000022', '2026-03-10', 'unspecified', true);
+select pg_temp.day('c1000000-0000-4000-8000-000000000022', '2026-03-10', 'medium', true);
 select is(pg_temp.st('c1000000-0000-4000-8000-000000000022', '2026-03-20'),
   '{"cycle_day":11,"period_day":null,"phase":"first_half","confidence":"low",
     "expected_from":"2026-04-05","expected_to":"2026-04-09","late_days":null,
@@ -401,45 +413,80 @@ select is(pg_temp.cycles('c1000000-0000-4000-8000-000000000022', '2026-03-25') -
 select is(pg_temp.st('c1000000-0000-4000-8000-000000000022', '2026-03-25') ->> 'confidence', 'low',
   'an unused latest length means low confidence');
 
--- The onboarding guess "my last period started on 28 Oct" (one unspecified day) is replaced by her
--- real period from Apple Health 6 days later.
+-- The onboarding guess ---------------------------------------------------------------------------------
+-- "My last period started on ..." is a manual day flagged as a start with flow unspecified. It is
+-- dropped when a real period (2 or more bleeding days, a medium or heavy day, or a flagged day) lies
+-- within 14 days of it; otherwise it is a one-day start.
+create function pg_temp.guess(p_id text, p_date date) returns void language sql as $$
+  select pg_temp.day(p_id, p_date, 'unspecified', true);
+$$;
+create function pg_temp.apple(p_id text, p_first date, p_flows text[]) returns void language sql as $$
+  insert into public.cycle_day_logs(user_id, local_date, flow, source)
+  select p_id::uuid, p_first + (g - 1), p_flows[g], 'apple_health'
+  from generate_series(1, cardinality(p_flows)) g;
+$$;
+
 select pg_temp.athlete('c1000000-0000-4000-8000-000000000029', 'regular', 28);
-select pg_temp.period('c1000000-0000-4000-8000-000000000029', '2026-10-01', 5);
-select pg_temp.day('c1000000-0000-4000-8000-000000000029', '2026-10-28', 'unspecified', true);
-insert into public.cycle_day_logs(user_id, local_date, flow, is_start, source)
-select 'c1000000-0000-4000-8000-000000000029', '2026-11-03'::date + g,
-  (array['light', 'medium', 'heavy', 'medium', 'light'])[g + 1], g = 0, 'apple_health'
-from generate_series(0, 4) g;
-select is(pg_temp.st('c1000000-0000-4000-8000-000000000029', '2026-10-30') ->> 'cycle_day', '3',
-  'guessed start: until her real period, the guess is the start');
-select is(pg_temp.st('c1000000-0000-4000-8000-000000000029', '2026-11-03') ->> 'period_day', '1',
-  'guessed start: the first real bleeding day, 6 days later, is period day 1');
-select is(pg_temp.st('c1000000-0000-4000-8000-000000000029', '2026-11-03') ->> 'cycle_day', '1',
-  'guessed start: and cycle day 1');
-select is(pg_temp.cycles('c1000000-0000-4000-8000-000000000029', '2026-11-10'),
-  '[{"start_date":"2026-10-01","length_days":33,"used":true},
-    {"start_date":"2026-11-03","length_days":null,"used":false}]'::jsonb,
-  'guessed start: the cycle is measured to her real start, and the guess is no start');
--- A guess followed by one light day: a start while it may still be a period, the guess again after.
+select pg_temp.guess('c1000000-0000-4000-8000-000000000029', '2026-10-28');
+select pg_temp.period('c1000000-0000-4000-8000-000000000029', '2026-10-30', 5);
+select is(jsonb_path_query_array(pg_temp.cycles('c1000000-0000-4000-8000-000000000029', '2026-11-05'), '$[*].start_date'),
+  '["2026-10-30"]'::jsonb, 'guess 28 Oct, real period 30 Oct to 3 Nov: the start is 30 Oct');
+
 select pg_temp.athlete('c1000000-0000-4000-8000-000000000031', 'regular', 28);
-select pg_temp.day('c1000000-0000-4000-8000-000000000031', '2026-10-28', 'unspecified', true);
-select pg_temp.day('c1000000-0000-4000-8000-000000000031', '2026-11-03', 'light');
+select pg_temp.guess('c1000000-0000-4000-8000-000000000031', '2026-10-28');
+select pg_temp.apple('c1000000-0000-4000-8000-000000000031', '2026-11-03', array['medium', 'heavy', 'medium', 'light', 'light']);
 select is(pg_temp.st('c1000000-0000-4000-8000-000000000031', '2026-11-03') ->> 'period_day', '1',
-  'guessed start: one light day 6 days later is period day 1 on the day');
-select is(pg_temp.st('c1000000-0000-4000-8000-000000000031', '2026-11-07') ->> 'cycle_day', '11',
-  'guessed start: with no second day the guess is the start again');
-select is(pg_temp.st('c1000000-0000-4000-8000-000000000031', '2026-11-07') -> 'period_day', 'null'::jsonb,
-  'guessed start: and the light day was bleeding inside the cycle');
--- A flagged run of two or more days is never replaced.
-select pg_temp.athlete('c1000000-0000-4000-8000-000000000030', 'regular', 28);
-select pg_temp.day('c1000000-0000-4000-8000-000000000030', '2026-10-28', 'medium', true);
-select pg_temp.day('c1000000-0000-4000-8000-000000000030', '2026-10-29', 'light');
-select pg_temp.period('c1000000-0000-4000-8000-000000000030', '2026-11-03', 5);
-select is(jsonb_path_query_array(pg_temp.cycles('c1000000-0000-4000-8000-000000000030', '2026-11-10'),
-    '$[*].start_date'), '["2026-10-28"]'::jsonb,
-  'a two-day flagged period stays the start; bleeding 6 days later is inside the cycle');
-select is(pg_temp.st('c1000000-0000-4000-8000-000000000030', '2026-11-03') -> 'period_day', 'null'::jsonb,
-  'and is not a period day');
+  'guess 28 Oct, Apple Health from 3 Nov with a medium first day: 3 Nov is period day 1');
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000031', '2026-11-03') ->> 'cycle_day', '1', 'and cycle day 1');
+
+select pg_temp.athlete('c1000000-0000-4000-8000-000000000032', 'regular', 28);
+select pg_temp.guess('c1000000-0000-4000-8000-000000000032', '2026-10-28');
+select pg_temp.apple('c1000000-0000-4000-8000-000000000032', '2026-11-03', array['light', 'medium', 'heavy', 'medium', 'light']);
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000032', '2026-11-03') ->> 'cycle_day', '7',
+  'with a light first day the guess stays the start on 3 Nov (cycle day 7)');
+select is(jsonb_path_query_array(pg_temp.cycles('c1000000-0000-4000-8000-000000000032', '2026-11-04'), '$[*].start_date'),
+  '["2026-11-03"]'::jsonb, 'on 4 Nov the second bleeding day makes 3 Nov the start');
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000032', '2026-11-04') ->> 'period_day', '2', 'and 4 Nov is period day 2');
+
+select pg_temp.athlete('c1000000-0000-4000-8000-000000000033', 'regular', 28);
+select pg_temp.guess('c1000000-0000-4000-8000-000000000033', '2026-10-01');
+select pg_temp.period('c1000000-0000-4000-8000-000000000033', '2026-10-13', 2, 'light');
+select is(jsonb_path_query_array(pg_temp.cycles('c1000000-0000-4000-8000-000000000033', '2026-10-20'), '$[*].start_date'),
+  '["2026-10-13"]'::jsonb, 'a guess 12 days before a real two-day period is dropped');
+
+select pg_temp.athlete('c1000000-0000-4000-8000-000000000034', 'regular', 28);
+select pg_temp.apple('c1000000-0000-4000-8000-000000000034', '2026-10-20', array['medium', 'heavy', 'medium', 'light', 'light']);
+update public.cycle_day_logs set is_start = true
+  where user_id = 'c1000000-0000-4000-8000-000000000034' and local_date = '2026-10-20';
+select pg_temp.guess('c1000000-0000-4000-8000-000000000034', '2026-10-28');
+select is(jsonb_path_query_array(pg_temp.cycles('c1000000-0000-4000-8000-000000000034', '2026-11-01'), '$[*].start_date'),
+  '["2026-10-20"]'::jsonb, 'a guess 8 days after a confirmed Apple Health start is dropped');
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000034', '2026-10-28') -> 'period_day', 'null'::jsonb,
+  'and the guessed day is not a period day');
+
+select pg_temp.athlete('c1000000-0000-4000-8000-000000000035', 'regular', 28);
+select pg_temp.guess('c1000000-0000-4000-8000-000000000035', '2026-03-10');
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000035', '2026-03-20') ->> 'cycle_day', '11',
+  'a guess on its own is a one-day start');
+
+select pg_temp.athlete('c1000000-0000-4000-8000-000000000036', 'regular', 28);
+select pg_temp.guess('c1000000-0000-4000-8000-000000000036', '2026-10-28');
+select pg_temp.day('c1000000-0000-4000-8000-000000000036', '2026-11-03', 'light');
+select pg_temp.day('c1000000-0000-4000-8000-000000000036', '2026-11-04', null);
+select is(jsonb_path_query_array(pg_temp.cycles('c1000000-0000-4000-8000-000000000036', '2026-11-04'), '$[*].start_date'),
+  '["2026-10-28"]'::jsonb, 'guess, a lone light day, then "no bleeding": the guess stays the start');
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000036', '2026-11-04') ->> 'cycle_day', '8', 'cycle day 8');
+select is(pg_temp.st('c1000000-0000-4000-8000-000000000036', '2026-11-04') -> 'period_day', 'null'::jsonb,
+  'and the light day was bleeding inside the cycle');
+
+select pg_temp.athlete('c1000000-0000-4000-8000-000000000037', 'regular', 28);
+select pg_temp.apple('c1000000-0000-4000-8000-000000000037', '2026-10-20', array['medium', 'heavy', 'medium', 'light', 'light']);
+update public.cycle_day_logs set is_start = true
+  where user_id = 'c1000000-0000-4000-8000-000000000037' and local_date = '2026-10-20';
+select pg_temp.day('c1000000-0000-4000-8000-000000000037', '2026-11-01', 'light', true);
+select is(jsonb_path_query_array(pg_temp.cycles('c1000000-0000-4000-8000-000000000037', '2026-11-05'), '$[*].start_date'),
+  '["2026-10-20","2026-11-01"]'::jsonb,
+  'a light day she flagged as a start is not a guess and is never dropped');
 
 -- Apple Health days and her own days are read the same way.
 select pg_temp.athlete('c1000000-0000-4000-8000-000000000023', 'regular');
