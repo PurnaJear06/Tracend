@@ -537,27 +537,7 @@ window before the match, with no `and`, `but` or comma between. A possessive dir
 symptom ("my chest feels tight"), a self-report in the clause ("I get", "I feel"), or "it happens
 to me" anywhere in the message defeats the conditional and educational exemptions. An exemption inside a symptom rule is a benign phrase next to the match ("breathe through my nose",
 "stuffy nose", "nasal congestion"; tingling next to beta-alanine or niacin), never a word elsewhere in
-the clause; "numb" and "loss of feeling" are never excused. Period pain is the one benign phrase of
-the pain rule (cycle support, 2026-11-27), and it is positive attribution only. A pain match ("severe
-pain", "pain 8/10") is excused when the words next to it (the same 40-character window as every
-benign phrase) attribute the pain to her period: "period pain", "period cramps", "menstrual pain"
-or "menstrual cramps", "pain" or "cramps" "on", "during", "with" or "from" "my period", or "on my
-period" / "during my period". That window must hold none of: not, no, never, without, a "n't" word,
-missed, late, after, since, before, like, worse than, positive, test, pregnant; so "severe pain not
-on my period", "severe pain with my period 3 weeks late", "two weeks after my period" and "on my
-period with a positive test" are referred. Anything anywhere in the message voids it: left, right,
-side or one side, any "-sided"; an ovary; a fever or a temperature; vomiting or throwing up; fainting,
-dizziness or light-headedness; soaking, clots, heavy bleeding or bleeding through; "worst"; a sudden
-onset; breathing; a painkiller or pills; any body part ("knee", "back", "groin", "chest", "head" and
-the rest of the pain rule's list) or injury word (pop, snap, tear, sprain, swelling, a fall, a twist,
-can't bear weight). A pop, a tear or a joint that gave way is never excused, since only a pain match
-is. When in doubt it refers. So "severe period pain, should I train?", "sharp pains on my period" and
-"my period pain is severe" reach Coach, which is told in the cycle block and the principles digest
-that severe or unusual period pain, very heavy bleeding or an unexpected missed period is worth a
-doctor's visit; dizziness, fainting, chest pain, pregnancy and medication keep their own rules
-("heavy bleeding and I feel dizzy" is a dizziness referral, "severe period pain, could I be
-pregnant?" the pregnancy boundary). The pain rule's descriptor may now be followed by a hyphenated
-word ("severe one-sided pain"), which it missed before. A denial that stops at a point in time
+the clause; "numb" and "loss of feeling" are never excused. A denial that stops at a point in time
 ("never had chest pain until today's run", "no dizziness until this morning") is a report. Self-harm and
 eating-disorder patterns have no exemption at all: any mention is a hit. A negation counts only when
 its cue is directly before the symptom with a few filler words between ("no", "any", "feel",
@@ -581,9 +561,8 @@ sleep and recovery questions still reach the model, which is told in its Safe Ra
 give no training advice that day. Urgent referrals (heart, fainting, breathing, stroke, blood,
 self-harm, eating) name the emergency number; pain and numbness referrals send the athlete to a
 doctor or physio before the area is trained again; the self-harm answer adds crisis lines. No
-referral diagnoses or reassures. Requests Tracend does not support (diagnosis, including asking
-whether a cycle condition such as PCOS, endometriosis, PMDD, fibroids or a hormonal imbalance is the
-cause, "is this perimenopause?" and "am I going through menopause?", medical reports, rehabilitation, pregnancy and postpartum, medication advice and interactions) get the fixed
+referral diagnoses or reassures. Requests Tracend does not support (diagnosis, medical reports,
+rehabilitation, pregnancy and postpartum, medication advice and interactions) get the fixed
 clinical-boundary answer (`refused`). "I take medication, can I train?" and ordinary soreness are
 not hits. The wider screen behind the data summary (§12) includes every message this one catches.
 The log carries the rule that fired (`coach_chat_red_flag`: category, rule, source), never the
@@ -1278,14 +1257,20 @@ routes stay available by settings alone for two weeks after the cutover.
   the turn did not show; §11.2), `repeats_previous_turn` (§12, "Repeats"), and three cycle rules
   (2026-11-27): `fertility_or_contraception_claim` (a fertile window, the most fertile days, an
   ovulation dated or placed for her ("you'll ovulate around day 14"), "safe days", "safe from
-  pregnancy", the chance of pregnancy or "pregnancy is least likely", when she can conceive placed on
-  a day, natural family planning, contraception advice (starting, stopping, skipping or switching it,
-  how well it works), a missed pill called fine, the pill run back to back to skip a bleed called
-  safe, emergency contraception, unprotected sex. Words with an everyday meaning count only in a
-  sentence about a cycle, pregnancy or contraception: "safe days", "safe window" or "safe time" need
-  pregnan-, conceiv-, fertil-, ovulat-, contracepti-, birth control, period or cycle in the same
-  sentence ("now is a safe time to add weight to your squat" passes), and "the pill", "an IUD" or
-  "the coil" need a contraception or cycle word ("you can take the pill with water" passes). General
+  pregnancy", the chance of pregnancy, "pregnancy risk is low", "little chance you'd get pregnant", "hard to get
+  pregnant", "pregnancy is least likely", a conception predicted either way ("you likely won't
+  conceive this week") or placed on a day, an ovulation placed on her days ("ovulation probably
+  occurred yesterday", "around the 14th for you"), "peak fertility", natural family planning, pulling
+  out called effective, contraception advice (starting, stopping, skipping or switching it, how well
+  it works), a missed or late pill called fine or needing no backup, skipping the placebo week, the
+  pill run back to back to skip a bleed called safe, emergency contraception, unprotected sex. Words
+  with an everyday meaning count only in a sentence about a menstrual cycle, pregnancy or
+  contraception: "safe days", "safe window", "safe time" or "safe period" need pregnan-, conceiv-,
+  fertil-, ovulat-, contracepti-, birth control or a menstrual period or cycle in the sentence
+  outside the matched words ("a safe period of rest after max attempts", "a safe time in your
+  training cycle" and "now is a safe time to add weight to your squat" pass), "the pill", "an IUD" or
+  "the coil" need a contraception or menstrual word ("you can take the pill with water" passes), and
+  "conceive of" is not conception. General
   physiology ("after ovulation resting heart rate tends to rise", "after you ovulate ...") passes, and
   so does a refusal governed by a prohibition, "I can't tell you your fertile window"; on for every
   athlete, since it needs no data), `cycle_condition_named` (a diagnosis-type menstrual condition the
@@ -1294,8 +1279,9 @@ routes stay available by settings alone for two weeks after the cutover.
   "this doesn't mean you have PCOS"; on for every athlete. No word the library or the principles
   digest uses is on the list, tested: menopause, REDs and the like are library content Coach may
   explain) and `deficit_advice_with_long_gap` (while the cycle block's `Long gap without a period:
-  yes` line stands, advice to eat less or "a little less", cut calories or carbs, keep or deepen a
-  deficit or lose weight; a denial, a pause or a description of what she has been doing governs the
+  yes` line stands, advice to eat less or "a little less", smaller portions, skipping a snack or a
+  meal, going lighter on carbs, cutting calories or carbs, leaning out, shedding kilos, keeping or
+  deepening a deficit or losing weight ("a small surplus is better than a deficit" passes); a denial, a pause or a description of what she has been doing governs the
   match from its window, unless the sentence brings the deficit back or approves it (until, then,
   resume, restart, keep it or keep going, for now, fine, okay, working), so "since the deficit is
   working, keep it" and "you're in a slight deficit, which is fine for now" fail; "keep calories at

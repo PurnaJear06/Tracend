@@ -500,17 +500,34 @@ function claimsAnAction(sentence: string): boolean {
 // contraception (`needs`).
 const contraceptive = String
   .raw`(?:the pill|your pill|the mini[- ]?pill|contracepti\w+|birth control|(?:an |your |the |hormonal )?iuds?|(?:the |your )?coil|condoms?)\b`;
-const aboutCycleOrPregnancy =
-  /\b(?:pregnan\w*|conceiv\w*|fertil\w*|ovulat\w*|contracepti\w*|birth control|periods?|cycles?)\b/i;
-const aboutContraceptionOrCycle =
-  /\b(?:contracepti\w*|birth control|pregnan\w*|conceiv\w*|periods?|cycles?|bleeds?|pill[- ]free|pack|iuds?|condoms?|mini[- ]?pill)\b/i;
+// A menstrual period or cycle, not a rest period, a period of time or a training cycle.
+const menstrual = String
+  .raw`menstrua\w*|(?:my|your|her|the|a|next|last) periods?(?! of\b)|periods? (?:pain|cramps?|days?|starts?|started|comes?|came|is due|was due)|on (?:my|your|her) period|(?:menstrual|my|your|her) cycles?(?! of\b)|cycle days?`;
+const aboutCycleOrPregnancy = new RegExp(
+  String
+    .raw`\b(?:pregnan\w*|conceiv\w*|fertil\w*|ovulat\w*|contracepti\w*|birth control|${menstrual})\b`,
+  "i",
+);
+const aboutContraceptionOrCycle = new RegExp(
+  String
+    .raw`\b(?:contracepti\w*|birth control|pregnan\w*|conceiv\w*|${menstrual}|bleeds?|pill[- ]free|pill pack|iuds?|condoms?|mini[- ]?pill)\b`,
+  "i",
+);
+// A day she is told about: "yesterday", "this week", "the 14th", "for you".
+const herDay =
+  /\b(?:yesterday|today|tonight|tomorrow|(?:this|next|last) (?:week|weekend|month)|the \d+(?:st|nd|rd|th)|for you|your)\b/i;
 const dayOrDate =
   /\b(?:days?|dates?|week|weekend|month|window|tonight|today|tomorrow|\d+(?:st|nd|rd|th)?)\b/i;
 
-type FertilityPattern = Readonly<{ pattern: RegExp; needs?: RegExp }>;
-const fertility = (pattern: RegExp, needs?: RegExp): FertilityPattern => ({
+/**
+ * A pattern, and the topic the sentence must hold for it to count. `outside`: the topic must be
+ * found outside the matched words ("a safe period of rest" is not about a period by its own word).
+ */
+type FertilityPattern = Readonly<{ pattern: RegExp; needs?: RegExp; outside?: boolean }>;
+const fertility = (pattern: RegExp, needs?: RegExp, outside = false): FertilityPattern => ({
   pattern: globalCopy(pattern),
   ...(needs ? { needs } : {}),
+  ...(outside ? { outside } : {}),
 });
 const fertilityPatterns: readonly FertilityPattern[] = [
   fertility(/\bfertil(?:e|ity) (?:window|days?|period|phase|time|signs?)\b/i),
@@ -522,9 +539,25 @@ const fertilityPatterns: readonly FertilityPattern[] = [
   ),
   fertility(/\byou (?:probably |likely |just |already |have |'ve )?ovulated\b/i),
   fertility(/\byour ovulation\b|\bovulation (?:day|date|window|calculator)\b/i),
+  fertility(
+    /\bovulation\b[^.!?\n]{0,30}\b(?:occurred|happened|happens|will (?:happen|occur|be)|should be|is due|was|falls?|fell|comes?|came)\b/i,
+    herDay,
+  ),
+  fertility(/\b(?:peak|highest|top) fertility\b|\bexpect (?:your )?(?:peak |most )?fertil\w*/i),
   fertility(/\bovulat\w* (?:on|around|about|near|by) (?:cycle day|the \d|\d)/i),
-  fertility(/\bsafe (?:days?|period|window|time)\b/i, aboutCycleOrPregnancy),
+  fertility(/\bsafe (?:days?|period|window|time)\b/i, aboutCycleOrPregnancy, true),
   fertility(/\bsafe from (?:getting |being |becoming |falling )?pregnan\w*/i),
+  fertility(/\bpregnancy (?:risk|chances?|odds|likelihood)\b/i),
+  fertility(
+    /\b(?:little|no|low|small|high|good|some|any|zero|slim|tiny|real) (?:chance|risk|odds|likelihood)\b[^.!?\n]{0,30}\bpregnan\w*/i,
+  ),
+  fertility(
+    /\b(?:hard|harder|difficult|easy|easier|unlikely|impossible|rare) to (?:get|become|fall) pregnant\b/i,
+  ),
+  // A conception predicted either way: the negation is part of the claim, not a refusal.
+  fertility(
+    /\b(?:likely|probably|unlikely to|won'?t|will not|can'?t|cannot)\s+(?:won'?t\s+|not\s+)?(?:conceive|get pregnant|become pregnant)\b/i,
+  ),
   fertility(
     /\b(?:rhythm method|natural family planning|fertility awareness|calendar method)\b/i,
   ),
@@ -542,7 +575,7 @@ const fertilityPatterns: readonly FertilityPattern[] = [
     /\b(?:can'?t|cannot|can|could|won'?t|will not|unlikely to) (?:get|become|fall) pregnant\b/i,
   ),
   // When she can conceive, placed on a day: "the 10th to the 15th are when you can conceive".
-  fertility(/\bconceiv\w*/i, dayOrDate),
+  fertility(/\bconceiv\w*\b(?! of\b)/i, dayOrDate),
   // Contraception advice: starting, stopping, skipping or switching it, or how well it works.
   fertility(
     new RegExp(
@@ -572,13 +605,31 @@ const pillPatterns: readonly FertilityPattern[] = [
   fertility(
     /\bunprotected (?:sex|intercourse)\b|\b(?:emergency contracepti\w+|morning[- ]after pill)\b/i,
   ),
+  fertility(
+    /\b(?:skip|skipping|miss|missing|start|stop|run|running)\w* (?:your |the )?(?:placebo|pill[- ]free|sugar[- ]pill|inactive[- ]pill|hormone[- ]free) (?:week|days?|pills?|break)\b/i,
+  ),
+  fertility(
+    /\b(?:no need for|don'?t need|do not need|won'?t need|needn'?t|skip)\s+(?:a |any |the )?(?:backup|back-up|back up) (?:method|contracepti\w*|protection)\b/i,
+  ),
+  fertility(
+    /\b(?:pulling out|withdrawal method|coitus interruptus)\b/i,
+    /\b(?:effective|reliable|safe|works?|method|pregnan\w*|protect\w*)\b/i,
+  ),
 ];
 
+/**
+ * A match that no prohibition in its window governs, whose topic (`needs`) the sentence holds
+ * outside the matched words: "a safe period of rest" cannot be about a period by its own word.
+ */
 function claimsFertilityOrContraception(sentence: string): boolean {
-  const apply = [...fertilityPatterns, ...pillPatterns].filter((item) =>
-    item.needs === undefined || item.needs.test(sentence)
-  ).map((item) => item.pattern);
-  return clausesOf(sentence).some((clause) => hasUngovernedMatch(clause, apply));
+  return clausesOf(sentence).some((clause) =>
+    [...fertilityPatterns, ...pillPatterns].some(({ pattern, needs, outside }) =>
+      [...clause.matchAll(pattern)].some((match) =>
+        (needs === undefined || needs.test(outside ? sentence.replace(match[0], " ") : sentence)) &&
+        !prohibitedBefore(clause.slice(0, match.index))
+      )
+    )
+  );
 }
 
 // ---- cycle_condition_named ------------------------------------------------------------------
@@ -624,10 +675,10 @@ export const cycleConditionPatterns: readonly RegExp[] = cycleConditions.map((it
 // pause or description: "you're in a slight deficit, which is fine for now" and "since the deficit
 // is working, keep it" fail.
 const calorieCut =
-  /\b(?:cut|cutting|drop|dropping|reduce|reducing|lower|lowering|trim|trimming|decrease|decreasing|shave|shaving)\s+(?:\w+\s+){0,3}?(?:calories|kcal|intake|portions|carbs|food)\b|\beat(?:ing)? (?:a (?:little|bit|touch) |slightly |somewhat )?less\b/gi;
+  /\b(?:cut|cutting|drop|dropping|reduce|reducing|lower|lowering|trim|trimming|decrease|decreasing|shave|shaving)\s+(?:\w+\s+){0,3}?(?:calories|kcal|intake|portions|carbs|food)\b|\beat(?:ing)? (?:a (?:little|bit|touch) |slightly |somewhat )?less\b|\bskip(?:ping)? (?:the |your |a |an )?(?:\w+ )?(?:snacks?|meals?|breakfast|lunch|dinner)\b|\b(?:go|going|keep|be|stay) (?:a (?:bit|little) |slightly )?light(?:er)? on (?:carbs|food|calories|portions|snacks|fats?|dinner|meals)\b|\b(?:smaller|fewer|lighter) (?:portions|meals|servings|snacks|plates)\b|\blean(?:ing)? out\b|\b(?:shed|shedding|drop|dropping|lose|losing) (?:a (?:couple|few) (?:of )?|some |another |\d+(?:\.\d+)? ?)?(?:kilos?|kgs?|pounds?|lbs?)\b/gi;
 const deficitAdvice = new RegExp(deficitClaim.source, "gi");
 const deficitDenial =
-  /\b(?:no|not a|not in a|rather than (?:in )?a|instead of (?:in )?a|without a|out of (?:a|the|your)|(?:pause|pausing|stop|stopping|end|ending|leave|leaving|drop|dropping) (?:a|the|your)|hold off on (?:a|the|your))\s+(?:calorie\s+)?deficit\b|\b(?:no|not|never|don'?t|do not|avoid|instead of|rather than)\s+(?:to\s+)?(?:try(?:ing)? to\s+)?(?:eat(?:ing)? (?:a (?:little|bit) )?less|los(?:e|ing) weight|weight loss|fat loss|cut(?:ting)? calories)\b/gi;
+  /\b(?:no|not a|not in a|rather than (?:in )?a|instead of (?:in )?a|better than (?:in )?a|without a|out of (?:a|the|your)|(?:pause|pausing|stop|stopping|end|ending|leave|leaving|drop|dropping) (?:a|the|your)|hold off on (?:a|the|your))\s+(?:calorie\s+)?deficit\b|\b(?:no|not|never|don'?t|do not|avoid|instead of|rather than)\s+(?:to\s+)?(?:try(?:ing)? to\s+)?(?:eat(?:ing)? (?:a (?:little|bit) )?less|los(?:e|ing) weight|weight loss|fat loss|cut(?:ting)? calories)\b/gi;
 const deficitReturns =
   /\b(?:until|then|resum\w*|restart\w*|keep (?:it|going|the deficit|your deficit|that)|for now|fine|okay|ok|working|stick with|carry on)\b/i;
 const pauseOrPast =

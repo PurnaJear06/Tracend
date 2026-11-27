@@ -219,6 +219,11 @@ Deno.test("each status says what Tracend shows for it", () => {
     today,
   )!;
   assertStringIncludes(late, "the period is 4 days later than the expected range");
+  const oneDay = renderCycle(
+    parseCycleState(answer({}, { cycle_day: 30, phase: null, late_days: 1 })),
+    today,
+  )!;
+  assertStringIncludes(oneDay, "the period is 1 day later than the expected range");
   const period = renderCycle(
     parseCycleState(answer({}, { cycle_day: 2, period_day: 2, phase: "period" })),
     today,

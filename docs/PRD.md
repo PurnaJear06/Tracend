@@ -41,9 +41,8 @@ contraception, no periods at the moment), logs periods or reads them from Apple 
 honest cycle line. Recovery, weight and Coach answers then account for her cycle: the cycle explains,
 it never applies a change (the evidence does not support training by phase, and she decides). Coach
 uses cycle data only after she accepts an AI notice that names it (`ai-coaching-v7`, owner step);
-everything else works without it. Period cramps are not injury pain: "severe period pain" reaches
-Coach, which says when a doctor is worth seeing, while pain with a body part, a pop or tear,
-dizziness, fainting, pregnancy and medication questions keep their referrals. No period for 90 days
+everything else works without it. Period cramps are logged with the period in the check-in, outside the
+pain check; a message to Coach about severe pain, period pain included, keeps the pain referral. No period for 90 days
 (regular) or 180 days (irregular) shows a neutral card suggesting a doctor if unexpected, and Coach
 will not suggest eating less while it stands. Never: fertile windows, ovulation days, "safe days",
 pregnancy likelihood, contraception advice, or a condition name she did not use first. Pregnancy stays

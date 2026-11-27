@@ -216,9 +216,9 @@ function todayLines(state: CycleState, localDate: string): string[] {
       : state.phase === "first_half"
       ? ", first half of the cycle"
       : state.lateDays !== null
-      ? `; the period is ${
-        record(state.lateDays)
-      } days later than the expected range, so Tracend gives no phase`
+      ? `; the period is ${record(state.lateDays)} ${
+        state.lateDays === 1 ? "day" : "days"
+      } later than the expected range, so Tracend gives no phase`
       : state.status === "irregular"
       ? "; Tracend gives no phase for irregular or changing cycles"
       : "; no phase (not enough data)";

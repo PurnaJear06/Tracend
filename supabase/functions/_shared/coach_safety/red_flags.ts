@@ -34,11 +34,10 @@ type Rule = Readonly<{
   pattern: RegExp;
   /**
    * A phrase-level exemption: true when this match, with the few words around it, is a known
-   * benign phrase ("breathe through my nose", "tingling" from beta-alanine, "severe period pain").
-   * Never a clause-wide exemption: a benign word elsewhere in the clause does not cover a symptom.
-   * `message` is the whole normalized message, for an exemption that a word anywhere in it voids.
+   * benign phrase ("breathe through my nose", "tingling" from beta-alanine). Never a clause-wide
+   * exemption: a benign word elsewhere in the clause does not cover a symptom.
    */
-  benign?: (matched: string, nearby: string, message: string) => boolean;
+  benign?: (matched: string, nearby: string) => boolean;
   /**
    * Any mention that reaches the patterns is a hit: no negation, conditional or educational
    * exemption. Self-harm and eating-disorder behaviour: a false referral is acceptable there.
@@ -50,7 +49,7 @@ const rule = (
   id: string,
   category: RedFlagCategory,
   source: string,
-  benign?: (matched: string, nearby: string, message: string) => boolean,
+  benign?: (matched: string, nearby: string) => boolean,
   noExemptions = false,
 ): Rule => ({ id, category, pattern: new RegExp(source, "g"), benign, noExemptions });
 
@@ -59,32 +58,6 @@ const nasalBlockage =
   /\bbreath(?:e|ing) through (?:my |the |your )?nose\b|\bstuffy nose\b|\bnasal congestion\b|\b(?:blocked|congested|stuffy) nose\b|\bnose (?:is |was )?(?:blocked|stuffy|congested)\b/;
 const supplementTingle = /^(?:tingl|pins and needles)/;
 const tingleSupplement = /beta[- ]?alanine|niacin/;
-// Period pain is not an injury (cycle support, 2026-11-27). The exemption is positive attribution
-// only: the athlete says the pain is her period's ("severe period pain", "menstrual cramps", "sharp
-// pains on my period", "cramps during my period"), next to the pain match, and the few words around
-// it hold nothing that undoes or questions that ("not", "missed", "late", "after", "since", "before",
-// "like", "worse than", "no", "positive", "test", "pregnant"). Anything in the whole message that can
-// mark an emergency voids it: one side, a fever or temperature, vomiting, fainting or dizziness,
-// soaking pads, clots, heavy bleeding or bleeding through, "worst", a sudden onset, breathing, a
-// painkiller, or any body part or injury word. Only a pain match is ever excused (never a pop, a tear
-// or a joint that gave way). When in doubt it refers.
-const painMatch = /\bpains?\b/;
-const periodAttribution =
-  /\b(?:period|menstrual|menstruation) (?:pains?|cramps?|cramping)\b|\b(?:pains?|cramps?|cramping) (?:on|during|with|from) (?:my |her )?periods?\b|\b(?:on|during) (?:my|her) periods?\b/;
-const attributionUndone =
-  /\b(?:not|no|never|without|missed|miss|missing|late|after|since|before|like|worse than|positive|test\w*|pregnan\w*|\w+n't)\b/;
-const emergencyOrInjury = new RegExp(
-  String
-    .raw`\b(?:left|right|side|sides|one side|\w+-sided|sided|ovar\w*|fever\w*|temperature|vomit\w*|throw(?:ing)? up|faint\w*|dizz\w*|light-?headed|soak\w*|clot\w*|heavy bleed\w*|bleeding through|worst|sudden\w*|out of nowhere|breath\w*|ibuprofen|paracetamol|naproxen|painkillers?|tablets|pills)\b|\b(?:knees?|shoulders?|elbows?|ankles?|wrists?|hips?|back|neck|hamstrings?|quads?|calf|calves|groin|muscles?|tendons?|ligaments?|joints?|biceps?|triceps?|pecs?|achilles|ribs?|foot|feet|legs?|arms?|thumbs?|fingers?|toes?|chest|head|eyes?|bones?)\b|\b(?:pop\w*|snap\w*|tear|tore|torn|rip\w*|crack\w*|sprain\w*|swell\w*|swollen|injur\w*|fell|fall(?:en)?|landed|twist\w*|can'?t (?:put weight|bear weight|move|walk|stand))\b`,
-);
-const periodPain = (matched: string, nearby: string, message: string) =>
-  painMatch.test(matched) && periodAttribution.test(nearby) && !attributionUndone.test(nearby) &&
-  !emergencyOrInjury.test(message);
-
-// Menstrual and hormonal conditions an athlete may ask to have named ("do I have PCOS?", "could
-// this be endometriosis?"): a diagnosis request, answered by the clinical-boundary text.
-const cycleConditionWords = String
-  .raw`pcos|pcod|polycystic ovar\w*|endometriosis|adenomyosis|pmdd|fibroids?|hormon(?:e|al) imbalance|(?:peri-?)?menopaus\w*|amenorrh\w*`;
 
 // Listed from the most urgent; a message that matches several gets the first rule here.
 const rules: readonly Rule[] = [
@@ -173,8 +146,7 @@ const rules: readonly Rule[] = [
     "severe_pain",
     "injury_pain",
     String
-      .raw`\b(?:sharp|severe|sudden|stabbing|shooting|excruciating|intense|searing|tearing|piercing|unbearable|agonising|agonizing)(?: [\w-]+){0,2} pains?\b|\bpains?\b.{0,25}\b(?:sharp|severe|sudden|stabbing|shooting|excruciating|unbearable|agonis\w+|agoniz\w+)\b|\b(?:heard|felt|got|had) (?:a )?(?:loud )?(?:pop|snap|crack|tear|rip)(?:ping)?\b|\b(?:feel|hear|get|have) (?:a |an )?(?:loud |sudden |sharp )?(?:pop|snap|tear|rip)(?:ping)?\b.{0,40}\b(?:knee|knees|shoulder|elbow|ankle|wrist|hip|back|neck|hamstring|quad|quads|calf|groin|muscle|tendon|ligament|joint|bicep|tricep|pec|achilles|rib|foot|leg|arm|thumb|finger)\b|\b(?:knee|knees|shoulder|elbow|ankle|wrist|hip|back|neck|hamstring|quad|quads|calf|groin|muscle|tendon|ligament|joint|bicep|tricep|pec|achilles|rib|foot|leg|arm|thumb|finger) (?:just |suddenly )?(?:popped|snapped|tore|ripped|gave (?:way|out)|locked(?: up)?|buckled)\b|\b(?:pop|snap|tear|rip)(?:ping)? in (?:my |the )?(?:knee|knees|shoulder|elbow|ankle|wrist|hip|back|neck|hamstring|quad|quads|calf|groin|muscle|tendon|ligament|joint|bicep|tricep|pec|achilles|rib|foot|leg|arm|thumb|finger)\b|\b(?:something|it) (?:just )?(?:popped|snapped|tore|ripped|gave way)\b|\b(?:pulled|tore|torn|ruptured|snapped|dislocated|fractured|broke|broken) (?:a |my )?(?:\w+ ){0,3}(?:muscle|tendon|ligament|acl|mcl|hamstring|quad|bicep|tricep|pec|shoulder|knee|rotator cuff|achilles|meniscus|disc|rib|bone|wrist|ankle|elbow)\b|\b(?:[7-9]|10)\s*(?:/|out of)\s*10\b.{0,20}\bpain\b|\bpain\b.{0,20}\b(?:[7-9]|10)\s*(?:/|out of)\s*10\b|\bcan'?t (?:put weight on|bear weight|move my|lift my arm)\b`,
-    periodPain,
+      .raw`\b(?:sharp|severe|sudden|stabbing|shooting|excruciating|intense|searing|tearing|piercing|unbearable|agonising|agonizing)(?: \w+){0,2} pains?\b|\bpains?\b.{0,25}\b(?:sharp|severe|sudden|stabbing|shooting|excruciating|unbearable|agonis\w+|agoniz\w+)\b|\b(?:heard|felt|got|had) (?:a )?(?:loud )?(?:pop|snap|crack|tear|rip)(?:ping)?\b|\b(?:feel|hear|get|have) (?:a |an )?(?:loud |sudden |sharp )?(?:pop|snap|tear|rip)(?:ping)?\b.{0,40}\b(?:knee|knees|shoulder|elbow|ankle|wrist|hip|back|neck|hamstring|quad|quads|calf|groin|muscle|tendon|ligament|joint|bicep|tricep|pec|achilles|rib|foot|leg|arm|thumb|finger)\b|\b(?:knee|knees|shoulder|elbow|ankle|wrist|hip|back|neck|hamstring|quad|quads|calf|groin|muscle|tendon|ligament|joint|bicep|tricep|pec|achilles|rib|foot|leg|arm|thumb|finger) (?:just |suddenly )?(?:popped|snapped|tore|ripped|gave (?:way|out)|locked(?: up)?|buckled)\b|\b(?:pop|snap|tear|rip)(?:ping)? in (?:my |the )?(?:knee|knees|shoulder|elbow|ankle|wrist|hip|back|neck|hamstring|quad|quads|calf|groin|muscle|tendon|ligament|joint|bicep|tricep|pec|achilles|rib|foot|leg|arm|thumb|finger)\b|\b(?:something|it) (?:just )?(?:popped|snapped|tore|ripped|gave way)\b|\b(?:pulled|tore|torn|ruptured|snapped|dislocated|fractured|broke|broken) (?:a |my )?(?:\w+ ){0,3}(?:muscle|tendon|ligament|acl|mcl|hamstring|quad|bicep|tricep|pec|shoulder|knee|rotator cuff|achilles|meniscus|disc|rib|bone|wrist|ankle|elbow)\b|\b(?:[7-9]|10)\s*(?:/|out of)\s*10\b.{0,20}\bpain\b|\bpain\b.{0,20}\b(?:[7-9]|10)\s*(?:/|out of)\s*10\b|\bcan'?t (?:put weight on|bear weight|move my|lift my arm)\b`,
   ),
   rule(
     "numbness",
@@ -189,7 +161,7 @@ const rules: readonly Rule[] = [
     "diagnosis_request",
     "scope",
     String
-      .raw`\bdiagnose\b|\bdiagnosing\b|\bwhat(?:'s| is) wrong with me\b|\bdo i have (?:a |an )?(?:disease|disorder|condition|syndrome|hernia|tear|fracture|cancer|diabetes|arrhythmia|infection|${cycleConditionWords})\b|\b(?:is|could|might|can) (?:it|this|that|my \w+) (?:be|mean|a sign of) (?:a |an )?(?:sign of )?(?:${cycleConditionWords})\b|\bis (?:it|this|that) (?:a |an )?(?:sign of )?(?:${cycleConditionWords})\b|\bam i (?:going through|in|starting|hitting|entering|into) (?:the |my )?(?:peri-?)?menopaus\w*`,
+      .raw`\bdiagnose\b|\bdiagnosing\b|\bwhat(?:'s| is) wrong with me\b|\bdo i have (?:a |an )?(?:disease|disorder|condition|syndrome|hernia|tear|fracture|cancer|diabetes|arrhythmia|infection)\b`,
   ),
   rule(
     "medical_report",
@@ -408,7 +380,7 @@ export function screenMessage(question: string): RedFlagHit | null {
           Math.max(0, match.index - 40),
           match.index + match[0].length + 40,
         );
-        if (candidate.benign?.(match[0], nearby, normalized)) continue;
+        if (candidate.benign?.(match[0], nearby)) continue;
         if (candidate.noExemptions || reported(clause, match.index, match[0].length, normalized)) {
           return { category: candidate.category, rule: candidate.id, source: "message" };
         }

@@ -101,23 +101,21 @@ Added by the app PR.
   long-gap rule shares the onboarding plan check's claim words (`deficitClaim`, now exported) with
   its own denials, voided by until, then, resume, keep it, for now, fine or working; the plan
   check's `noDeficit` is unchanged.
-- **Red flags:** `severe_pain` has a `benign` exemption by positive attribution only ("period pain",
-  "menstrual cramps", "pain on my period"), with no undoing word next to it (not, missed, late,
-  after, since, before, like, worse than, no, positive, test, pregnant) and no emergency or injury
-  word anywhere (one side, fever, temperature, vomiting, fainting, dizziness, soaking, clots, heavy
-  bleeding, bleeding through, worst, sudden, breathing, painkillers, any body part or injury).
-  `diagnosis_request` covers asking whether a cycle condition, perimenopause or menopause is the
-  cause. Cases in `exemptions_adversarial_test.ts`.
+- **Red flags:** unchanged (`red_flags.ts` is main's, byte for byte). A message about severe pain,
+  period pain included, keeps the pain referral; every probe of the review rounds is a must-refer
+  case in `exemptions_adversarial_test.ts`.
 - **Principles digest v4:** the cycle has its own line (no training by phase, expected shifts, when
   to see a doctor, what never to say). It changes the cached prefix for every athlete; it holds no
   athlete data.
-- **Evals:** coach_bank `cases_cycle.ts` (five red flags that must still hit, severe period pain that
-  must not, five guard cases); coach_sim personas `cycle_second_half`, `cycle_pill`,
+- **Evals:** coach_bank `cases_cycle.ts` (six red flags that must still hit, severe period pain
+  among them, five guard cases); coach_sim personas `cycle_second_half`, `cycle_pill`,
   `cycle_irregular`, `cycle_long_gap` with scenarios `cycle-recovery` and `cycle-long-gap`. The live
   model runs are not done yet: run them before v7 is published (`EVAL_CASES=cycle` for the bank,
   `EVAL_SIM_FILTER=cycle` for the simulator). CI runs every case's graders on hand-written good and
   bad replies and every persona's turn build, with no model.
 - **Owner step (later):** publish v7 with the SQL in `docs/notices/ai-coaching-v7.md`, then accept it
   in the app. A rollback notice is now v8 and must name the same data (runbook step 6.2).
-- **Later, not v1:** a cycle-aware check on Coach's nutrition proposals (the reply rule covers the
+- **Later, not v1:** Period-pain exemption from the severe_pain referral: deferred, needs a stronger
+  approach than word lists. Period cramps logged in the check-in never reach the pain check. Also
+  a cycle-aware check on Coach's nutrition proposals (the reply rule covers the
   reply text; a proposal to lower calories still goes to the proposal engine's own rules).

@@ -62,6 +62,15 @@ const ordinary = [
   "You can take the pill with water.",
   "Take your creatine pill with breakfast.",
   "Use a coil spring collar for the bar.",
+  "Use a safe period of rest after max attempts.",
+  "Conceive of the session as a skill practice day.",
+  "This is a safe time in your training cycle to deload.",
+  "Your next training cycle starts Monday; it's a safe window to test your squat.",
+  "Cycling is a safe way to warm up before legs.",
+  "Take your magnesium pills with dinner on training days.",
+  "The anabolic window is wider than people think, so a meal within a few hours is fine.",
+  "It's safe to add a little weight to your bench this week.",
+  "Ovulation usually happens around the middle of a natural cycle, and resting heart rate tends to rise after it.",
   // Library content the condition rule leaves alone (the energy_balance and populations sources).
   "Lifting helps protect bone density after menopause.",
   "Relative Energy Deficiency in Sport (REDs) is a syndrome of harmful health and performance effects seen in athletes who take in too little energy for their training.",
@@ -100,6 +109,16 @@ Deno.test("fertility_or_contraception_claim: fertile days, ovulation, safe days,
       "Taking the pill continuously to skip a bleed is common and safe.",
       "You can keep running your pill back to back to skip your period before the meet.",
       "The days from the 10th to the 15th are when you can conceive.",
+      "Pregnancy risk is low this week.",
+      "You likely won't conceive this week.",
+      "There's little chance you'd get pregnant now.",
+      "It's hard to get pregnant during your period.",
+      "Ovulation probably occurred yesterday.",
+      "Ovulation should be around the 14th for you.",
+      "Expect your peak fertility around the 12th.",
+      "It's fine to skip your placebo week.",
+      "You don't need a backup method after one late pill.",
+      "Pulling out is reasonably effective.",
       "It's fine to come off your contraception while you cut.",
       "The pill is 99% effective at preventing pregnancy, so no need to worry.",
       "Your IUD is still effective after hard training.",
@@ -182,6 +201,11 @@ Deno.test("deficit_advice_with_long_gap: advice to eat less fails while the flag
       "You're in a slight deficit, which is fine for now.",
       "Hold off on a deficit until you've spoken to a doctor, then start it again.",
       "Pause the deficit this week and resume it next week.",
+      "Skip the evening snack.",
+      "Go a bit lighter on carbs.",
+      "Eat smaller portions.",
+      "A few more weeks will help you lean out.",
+      "Shed a couple of kilos before the meet.",
     ]
   ) {
     assert(rules(answer, { longGap: true }).includes("deficit_advice_with_long_gap"), answer);
@@ -195,6 +219,7 @@ Deno.test("deficit_advice_with_long_gap: advice to eat less fails while the flag
       "Don't cut calories right now; maintenance or a little above is the safer choice.",
       "You've been in a deficit since September, and no period for 3 months is worth checking with a doctor.",
       "You have been losing weight fast; stop the deficit and eat at maintenance.",
+      "A small surplus is better than a deficit while your period is missing.",
     ]
   ) {
     assertEquals(rules(answer, { longGap: true }), [], answer);
