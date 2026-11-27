@@ -5,11 +5,11 @@ interface Props { id: string }
 const { id } = Astro.props;
 ---
 <div class="join-wrap" data-join>
-  <form class="join" novalidate>
+  <form class="join" novalidate onsubmit="return false">
     <label class="join-label sr-only" for={id}>Email</label>
     <div class="join-row">
       <input class="join-input" id={id} type="email" name="email" autocomplete="email" inputmode="email" spellcheck="false" placeholder="you@email.com" required aria-describedby={`${id}-meta ${id}-err`}>
-      <button class="join-btn" type="submit"><span class="join-btn-t">Join the beta</span><span class="ico"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></span></button>
+      <button class="join-btn" type="submit"><span class="join-btn-t">Join the beta</span><span class="ico"><svg aria-hidden="true" viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></span></button>
     </div>
     <p class="join-err" id={`${id}-err`} role="alert" hidden></p>
     <p class="join-note" role="status" hidden>One quick check: tap the box below to finish joining.</p>

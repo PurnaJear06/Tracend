@@ -42,7 +42,22 @@ is a waitlist signup from someone who understands that loop.
 - Sleep quality, logged workouts (sets, reps, load, effort), training load and its trend, meals
   from a photo with protein and calories, weight trend, progress photos.
 - A daily decision on Today: today's session as planned or adjusted, with the reason in plain words.
-- Coach answers questions using your own numbers.
+  The morning check-in leads; the recovery score alone never changes a session (D9). The page's
+  exact-load call ("Deadlift 3 × 3 at 140 kg, effort 7 at most") is the owner's pre-launch build
+  (owner, 2026-11-27); until it ships the app words the change ("lighter", "one set fewer").
+- Coach answers questions using your own numbers, and can look up any day the athlete logged
+  (sets, meals, sleep, weight, past plans), with the evidence it used and the gaps.
+- Plan changes asked for in chat (away or travel, diet break, swap an exercise, take a break): the
+  Coach card shows Now and After, nothing applies until Approve, and Undo works for 7 days.
+- Lock Screen and Dynamic Island set logging (Live Activity): the next set and a rest timer with
+  +30s and Skip; Log set logs the pre-filled values. Never promise editing weight or reps there.
+- Next-session targets from logged sets (top of the rep range on every set moves the load up),
+  with "Last time" and "Your best".
+- Meal photos that read nutrition labels, check the label's maths, and let the athlete pick the
+  portion; each item says "From label" or "Estimated".
+- The pain check: where, how strong, when; today's exercise is swapped or shortened for that joint,
+  only today changes, and it says when to see a professional. No injury, rehab or medical wording.
+- Facts the athlete confirms are remembered and re-checked later ("Still true?").
 - Plans are approved by you and saved as versions; nothing in the plan changes without that.
 - The plan still works when the AI, Apple Health or the network is down.
 - Platforms: iPhone; Apple Watch recommended, never required; Android in testing. Say "For
@@ -58,31 +73,27 @@ Shipped features from docs/PRD.md and docs/UX_FLOWS.md, and where the page shows
 
 | Feature | Where on the page |
 | --- | --- |
-| Plans shaped by age, sex, history and limits; the profile remembers answers, limits, preferences | "Made for you. Never a template." (and the hero) |
-| Onboarding: goal, about you, schedule, equipment, limits, current lifts, focus | "Your plan, in three steps", step 1 |
-| Apple Health usual months, coach questions (0 to 3), experienced path keeps what works | "Your plan, in three steps", step 2 |
-| Plan proposal: training week, starting loads, nutrition targets, reasoning; approve, request changes, reject | "Your plan, in three steps", step 3 |
-| Set logging with effort, new bests | Story, "You train hard"; bento |
-| Meal photo, then confirm | Bento, "Food"; the hero's dinner card on wide screens |
-| Sleep and recovery score from five drivers, morning check-in | Story, "You sleep short", "Your body answers"; demo |
-| Today's session adjusted, with the reason | Story, "Today, adjusted"; "Other apps stop at the score" |
-| Muscle map for the plan's week | "Every workout, mapped to your body" |
-| Weight trend and body measurements (waist, chest, hip, arm, thigh) toward the goal, strength (workouts done, best lifts) | "It checks your progress" |
-| Weekly review, calculated from logs, no AI | "It checks your progress" |
-| Progress photos (private) and physique check setting focus muscles (owner, 2026-10-13: live, no "testing" label; keep "AI visual estimate, not a measurement"; confirmed 2026-10-15) | "It checks your progress" |
-| Coach chat with evidence and data gaps | "Ask your Coach anything" |
-| Plan changes need approval; versions kept | Bento line; "Other apps stop at the score" |
-| Plan works when AI, Apple Health or network is down | Bento line |
-| Export and delete your data; AI only after consent, turn AI off | Join section trust line; privacy page |
+| Onboarding: goal, about you, schedule, equipment, limits, current lifts; Apple Health usual months; up to three coach questions; proposal with reasons; approve | "Your plan, in three steps" |
+| Set logging with effort, new bests | Story, "You train hard" |
+| Morning check-in leads the daily call | Story, "You check in"; demo note |
+| Sleep and recovery score from five drivers | Story, "You sleep short", "Your body answers"; demo |
+| Today's session adjusted, with the reason | Hero (the Coach's call); story, "Today, adjusted"; demo |
+| Plan changes from chat, Now and After, Approve, Undo 7 days; versions kept | "Nothing changes until you say yes." |
+| Lock Screen / Dynamic Island set logging | "Small jobs", card 1 |
+| Next-session targets from logged sets | "Small jobs", card 2 |
+| Meal photo and nutrition labels, portion, confirm | "Small jobs", card 4 |
+| Pain check, today's swap | "Small jobs", card 3 |
+| Remembered facts, "Still true?"; profile limits and preferences | "Small jobs", card 5 |
+| Coach chat with lookups across history, evidence and data gaps | "Ask your Coach anything. It knows your history." |
+| Weight trend and measurements, strength, weekly review (no AI), physique check (AI visual estimate, not a measurement) | "It checks your progress" |
+| Export and delete your data; AI only after consent, turn AI off | Join section trust lines; privacy page |
+| Plan works when AI, Apple Health or network is down | Not on the page since 2026-11-27 (true; say it again only where it earns its place) |
 
 ## Coming next (owner decision, 2026-10-13)
 
-Shown only under a label reading "Coming next. Not in the beta yet.", never with a date. Since
-2026-11-15 it is one short row at the end of "Five apps that never talk to each other", not a
-section of its own: the page sells what the beta has.
-- Live Activity for a workout in progress: the Dynamic Island keeps the session after you leave
-  the app, and you log sets (weight, reps) from the Dynamic Island or the Lock Screen.
-- An Apple Watch app for logging sets.
+Only ever under a label reading "Coming next. Not in the beta yet.", never with a date. Since
+2026-11-27 the page shows no coming-next row: Live Activity set logging shipped (#161) and is a
+card in "Small jobs". Still not built: an Apple Watch app for logging sets.
 
 ## Claims the site must not make
 
@@ -96,30 +107,45 @@ section of its own: the page sells what the beta has.
   what is planned.
 - Heart rate during sets, per-set response, streaks, or a 3D body model, until they ship. The body
   map is the app's 2D front and back muscle map.
-- Automatic daily plan swaps that need an Approve tap, until persistent proposals ship. Today's
-  adjustment is advice shown with its reason.
+- An Approve tap on today's adjustment: it is advice shown with its reason. Approve belongs to plan
+  changes asked for in chat.
 - Cause and effect between a session and a night ("shown alongside", not "caused").
 - "Tracks 24/7 without a watch", "no subscription", medical or diagnostic wording.
+- The physique check as open to every tester: the server runs it only for accounts on its allow-list
+  (`PHYSIQUE_VISION_ALLOWED_USERS`, owner-only until the AI_SAFETY_SPEC §9 evaluation passes). The
+  page keeps it under "It checks your progress"; widen the allow-list or relabel it before testers
+  expect it (owner, 2026-11-27).
 - Ratings, testimonials, user counts or press that don't exist.
 
-## Page structure (2026-11-15)
+## Page structure (2026-11-27)
 
 The page is a pitch, in this order: hero (headline, one line, the form, the Coach's call) → the
-story → try it (the sliders) → five apps in one → made for you → Coach → progress → muscle map →
-"Other apps stop at the score" → three steps to a plan → join.
+story → try it (the sliders) → "Nothing changes until you say yes." → "The small jobs a coach does, done for you."
+→ Coach → progress → three steps → join. About 18 phone screens; keep it from growing.
 
-- The story answers one question, "How did it know to go lighter?", in four moments of one day:
-  train, sleep, recovery, adjust. Each moment rests long enough to read. Do not add moments that
-  are not part of that answer; other features have their own sections.
-- The hero copy and form never wait for a script, and on a phone the form is on the first screen.
+- The hero headline names the morning moment ("Know what to lift today. And why."). A reel can
+  link to its own headline with `?v=sleep`, `?v=log` or `?v=coach` (an inline script swaps it
+  before first paint; set the reel's `utm_content` to the same word so signups can be compared).
+- The hero copy sits outside the pinned stage. On a phone it scrolls like the page and never
+  fades, so a form someone is typing in stays put; the phone peeks out under it and rises into the
+  stage. On a laptop it lies over the stage's left column and fades as it scrolls off.
+- The story answers one question, "How did it know to go lighter?", in five moments of one day:
+  train, sleep, check in, recovery, adjust. Sam's numbers meet the app's rules (sleep under 6 h,
+  check-in sore, recovery under 35). Do not add moments that are not part of that answer.
+- The hero copy and form never wait for a script, and on a phone the form and the Coach's call are
+  on the first screen.
 - One primary action, "Join the beta", always lime (`.btn-primary`, the nav button, the form
-  button). White is for selected states (tabs, segmented controls) only.
+  button, the docked button). White is for selected states (tabs, segmented controls) only.
+- On phones a docked "Join the beta" button slides up once the hero form has scrolled away and
+  steps aside near the closing form and while the keyboard is up; the nav button hides meanwhile.
 - Time is a small label on each moment, never the largest thing on screen.
 - Anything shown beside the hero phone lives in the phone's own tilt and light (inside
   `.dev-tilt`): what it read sits behind its left edge, its answer in front. Never lay a flat card
   over the tilted phone. On a phone the answer is a notification on the phone's screen.
 - On a phone nothing scrolls visibly behind the menu, and anything that sticks or docks slides in
   and out; it never snaps.
+- Mock UIs in the new sections are rebuilt from the shipped app's code (the file each one follows
+  is listed in Change.astro and Extras.astro); change them when the app changes.
 
 ## Voice
 

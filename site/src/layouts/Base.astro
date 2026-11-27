@@ -4,6 +4,7 @@ import '@fontsource-variable/martian-mono/standard.css';
 import '../styles/base.css';
 import '../styles/app.css';
 import '../styles/page.css';
+import '../styles/extras.css';
 import { SITE_URL } from '../config';
 
 interface Props { title: string; description: string; noindex?: boolean }
@@ -26,7 +27,7 @@ const url = SITE_URL + Astro.url.pathname;
     <meta property="og:image" content={`${SITE_URL}/og.png`}>
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
-    <meta property="og:image:alt" content="Tracend. Set a goal. Tracend plans the rest.">
+    <meta property="og:image:alt" content="Tracend. Know what to lift today. And why.">
     <meta property="og:title" content={title}>
     <meta property="og:description" content={description}>
     <meta name="twitter:card" content="summary_large_image">

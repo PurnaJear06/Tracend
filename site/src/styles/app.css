@@ -146,19 +146,6 @@
 .lg-foot b{color:var(--a-text);font-weight:600}
 .lg-done{margin-top:14px;width:100%}
 
-/* ---------- Nutrition ---------- */
-.n-box{background:var(--a-raised);border-radius:18px;padding:14px 16px}
-.n-box .top{display:flex;justify-content:space-between;align-items:center;font-size:14px;color:var(--a-text2)}
-.n-box .top em{font-style:normal;font-weight:600;color:var(--a-text);font-size:13.5px}
-.n-box .top i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:1px}
-.n-box .v{font-family:var(--a-display);font-weight:700;font-size:28px;letter-spacing:-.01em;margin-top:6px;font-variant-numeric:tabular-nums}
-.n-box .v small{font-family:var(--a-body);font-size:13.5px;font-weight:400;color:var(--a-text2);margin-left:4px}
-.n-box .bar{height:5px;margin-top:10px;background:rgba(255,255,255,.08)}
-.n-two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.n-two .v{font-size:22px}
-.c-carb{background:var(--a-good)!important}
-.c-fat{background:var(--a-amber)!important}
-
 /* ---------- Sleep quality ---------- */
 .sq-top{display:flex;align-items:flex-end;gap:10px;margin-top:8px}
 .sq-score{font-size:60px;font-weight:800;line-height:.88;letter-spacing:-.03em}
@@ -169,6 +156,25 @@
 .hyp{display:flex;align-items:flex-end;gap:2px;height:46px;margin-top:16px}
 .hyp i{flex:1;border-radius:2px;background:#3A3C42}
 .hyp i.deep{background:#7C8CF2}.hyp i.rem{background:#4FD1A5}.hyp i.awake{background:var(--a-amber)}
+
+/* ---------- Daily check-in sheet ---------- */
+.scr[data-scr="checkin"]{padding:52px 20px 150px;gap:0;background:var(--a-sheet);border-radius:30px 30px 0 0}
+.ci-grab{align-self:center;width:36px;height:5px;border-radius:3px;background:var(--a-border);margin-top:4px}
+.ci-head{display:flex;align-items:center;justify-content:space-between;margin-top:12px}
+.ci-head b{font-family:var(--a-display);font-weight:800;font-size:26px;letter-spacing:-.02em}
+.ci-x{width:36px;height:36px;border-radius:50%;background:var(--a-raised);display:grid;place-items:center}
+.ci-x svg{width:16px;height:16px;fill:none;stroke:var(--a-text2);stroke-width:2.2;stroke-linecap:round}
+.ci-intro{font-size:14px;color:var(--a-text2);line-height:1.35;margin-top:8px}
+.ci-q{margin-top:15px}
+.ci-t{font-size:15.5px;font-weight:600}
+.ci-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ci-o{position:relative;display:inline-flex;align-items:center;height:34px;padding:0 13px;border-radius:999px;background:var(--a-raised);color:var(--a-text);font-size:13.5px;font-weight:600;white-space:nowrap}
+.ci-o.on{background:var(--a-lime);color:var(--a-onlime)}
+.ci-avail{display:flex;align-items:center;justify-content:space-between;margin:16px 0 12px;padding:0 16px;height:52px;border-radius:18px;background:var(--a-surface);font-size:15px;font-weight:600}
+.ci-sw{position:relative;width:46px;height:28px;border-radius:14px;background:var(--a-lime)}
+.ci-sw::after{content:"";position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;background:var(--a-onlime)}
+.ci-save{position:relative;width:100%;margin-top:auto}
+.ci-toast{position:absolute;left:0;right:0;bottom:106px;margin:0 auto;width:max-content;display:flex;align-items:center;height:34px;padding:0 16px;border-radius:999px;background:var(--a-raised);box-shadow:inset 0 0 0 1px var(--a-border);font-size:13.5px;font-weight:600;white-space:nowrap;z-index:2}
 
 /* ---------- Session card ---------- */
 .strip{display:flex;gap:5px;height:42px;margin-top:12px}
@@ -188,46 +194,6 @@
 .open-row svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
 
 /* ---------- Coach ---------- */
-.bubble-q{max-width:80%;background:var(--a-raised);border-radius:20px 20px 6px 20px;padding:11px 15px;font-size:15px;margin-left:auto;width:max-content}
-.chain{display:grid;margin-top:14px}
-.chain li{display:grid;grid-template-columns:18px 1fr;gap:12px;position:relative;padding-bottom:14px;font-size:14.5px;line-height:1.4}
-.chain li::before{content:"";position:absolute;left:8.25px;top:18px;bottom:0;width:1.5px;background:var(--a-border)}
-.chain li:last-child::before{display:none}
-.chain li i{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--a-text3);margin-top:1px;background:var(--a-surface);position:relative;z-index:1}
-.chain li.end i{border-color:var(--a-lime);background:var(--a-lime)}
-.chain li span b{font-weight:600}
-.chain li span em{font-style:normal;color:var(--a-text2)}
-
-/* ---------- Weight trend ---------- */
-.wt-v{font-family:var(--a-display);font-weight:800;font-size:44px;letter-spacing:-.03em;line-height:1;margin-top:8px}
-.wt-v small{font-size:18px;font-weight:600;color:var(--a-text2);margin-left:4px}
-.wt-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.wt-chips .a-chip{height:30px;font-size:12.5px;padding:0 12px}
-.wt-chips .a-chip.fill{background:rgba(200,240,90,.14);box-shadow:none;color:var(--a-lime)}
-.wt{position:relative;height:120px;margin-top:14px}
-.wt svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
-.wt-key{display:flex;gap:16px;font-size:12px;color:var(--a-text2);margin-top:8px}
-.wt-key i{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--a-text);margin-right:6px}
-.wt-key i.tr{width:14px;height:2.5px;border-radius:2px;background:var(--a-amber);vertical-align:2px}
-
-/* ---------- Body figure (muscles worked) ---------- */
-.bodymap{display:grid;grid-template-columns:1fr 1fr;gap:4px;justify-items:center}
-.bodymap svg{display:block;width:100%;height:auto;aspect-ratio:228/436;overflow:visible}
-
-/* ---------- Tile extras ---------- */
-.p-dot{background:var(--a-text)}
-.tl-train{display:grid;grid-template-columns:minmax(0,1fr) 84px;gap:8px;align-items:center}
-.tl-lift{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:16px}
-.tl-lift .a-num{white-space:nowrap}
-.best{white-space:nowrap}
-.tl-lift .a-num{font-size:34px;font-weight:800;letter-spacing:-.02em}
-.tl-lift small{font-size:15px;font-weight:600;color:var(--a-text2);margin-left:2px}
-.tl-fig svg{width:100%;height:auto;display:block;aspect-ratio:228/436}
-.tl-rec .ringbox{width:220px;height:220px;margin-top:12px}
-.tl-rec .ring-c .sc{font-size:56px}
-.tl-coach .bubble-q{margin-top:2px}
-.wt-dot{position:absolute;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:var(--a-text);box-shadow:0 0 0 3px rgba(244,244,241,.12)}
-.strip .ex:first-child i{background:rgba(200,240,90,.28)}
 
 /* ---------- Coach chat ---------- */
 .ch-top{display:flex;justify-content:center;align-items:center;height:44px;margin-top:4px;font-family:var(--a-display);font-weight:700;font-size:18px;position:relative}

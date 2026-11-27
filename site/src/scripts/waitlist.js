@@ -92,7 +92,7 @@ export function showShare(box, code) {
   box.hidden = false;
   copy.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(link); copy.textContent = 'Copied'; }
-    catch (e) { input.focus(); input.select(); copy.textContent = 'Press copy'; }
+    catch (e) { input.focus(); input.select(); input.setSelectionRange(0, 9999); copy.textContent = 'Press copy'; }
     setTimeout(() => { copy.textContent = 'Copy'; }, 2200);
   });
   if (navigator.share) {
@@ -110,6 +110,7 @@ const MESSAGES = {
   verification_failed: 'We couldn’t confirm this browser. Try again.',
   rate_limited: 'Too many tries from this network. Try again in an hour.',
   stale_page: 'This page is out of date. Reload it and try again.',
+  check_blocked: 'This browser blocked our quick check. Open this page in Safari or Chrome (tap ••• then Open in browser) and try again.',
   email_failed: 'We couldn’t send your confirmation email just now. Try again in a minute.',
 };
 
@@ -122,6 +123,7 @@ function mount(wrap) {
   const ok = wrap.querySelector('.join-ok');
   const note = form.querySelector('.join-note');
   let busy = false;
+  form.removeAttribute('onsubmit');
   form._interactive = (on) => { note.hidden = !on; };
 
   const fail = (text) => {
@@ -133,7 +135,7 @@ function mount(wrap) {
     busy = on;
     btn.disabled = on;
     btn.setAttribute('aria-busy', String(on));
-    label.textContent = on ? 'Joining' : 'Join the beta';
+    label.textContent = on ? 'Joining…' : 'Join the beta';
   };
 
   /* warm up the check while the visitor types, so submit feels instant */
@@ -157,7 +159,11 @@ function mount(wrap) {
     try {
       let token;
       try { token = await verify(form); }
-      catch (x) { fail('We couldn’t run the quick bot check. Reload the page and try again.'); return; }
+      catch (x) {
+        /* once more, in case the first try was a blip; a second failure usually means an in-app browser */
+        try { token = await verify(form); }
+        catch (y) { fail(MESSAGES.check_blocked); return; }
+      }
       let utm = null;
       try { utm = JSON.parse(recall('tracend.utm') || 'null'); } catch (x) { utm = null; }
       const res = await call('waitlist-join', {

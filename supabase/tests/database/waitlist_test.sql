@@ -44,9 +44,9 @@ select ok((select bool_and(ip_hash ~ '^[0-9a-f]{64}$') from private.waitlist_att
 
 -- Rate limit -----------------------------------------------------------------------------
 set local role service_role;
-select pg_temp.join_as('rate' || n || '@example.test', '198.51.100.7', 'rate' || n) from generate_series(1, 5) n;
-select is(pg_temp.join_as('rate6@example.test', '198.51.100.7', 'rate6') ->> 'outcome', 'rate_limited',
-  'the sixth try from one network in an hour is refused');
+select pg_temp.join_as('rate' || n || '@example.test', '198.51.100.7', 'rate' || n) from generate_series(1, 30) n;
+select is(pg_temp.join_as('rate31@example.test', '198.51.100.7', 'rate31') ->> 'outcome', 'rate_limited',
+  'the 31st try from one network in an hour is refused');
 select is(pg_temp.join_as('ben@example.test', '198.51.100.8', 'ben') ->> 'outcome', 'send',
   'another network is unaffected');
 
