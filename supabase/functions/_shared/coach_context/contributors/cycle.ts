@@ -27,6 +27,7 @@ import {
 } from "../host.ts";
 import { plain, record } from "../../recorded_text.ts";
 import { readWithin } from "../read_within.ts";
+import { addDays } from "../../training/schedule/week_ahead.ts";
 import { coachServiceRpc, type StateSource, stateSourceFromRpc } from "../service_source.ts";
 
 export const cycleContributorId = "cycle";
@@ -226,9 +227,11 @@ function todayLines(state: CycleState, localDate: string): string[] {
     );
   }
   lines.push(
-    state.expectedFrom !== null && state.expectedTo !== null
-      ? `Next period expected ${record(state.expectedFrom)} to ${record(state.expectedTo)}.`
-      : "No expected date for the next period (not enough data).",
+    state.expectedFrom === null || state.expectedTo === null
+      ? "No expected date for the next period (not enough data)."
+      : state.lateDays !== null
+      ? `The expected range was ${record(state.expectedFrom)} to ${record(state.expectedTo)}.`
+      : `Next period expected ${record(state.expectedFrom)} to ${record(state.expectedTo)}.`,
   );
   const used = state.cycles.filter((cycle) => cycle.used && cycle.lengthDays !== null);
   const left = state.cycles.filter((cycle) => !cycle.used && cycle.lengthDays !== null).length;
@@ -300,7 +303,9 @@ export function cycleMarked(
   if (state.status === "regular" || state.status === "irregular") lines.push(`- ${naturalShifts}`);
   if (state.status !== "no_periods") lines.push(`- ${doctorWhen}`);
   lines.push(`- ${neverSay}`);
-  const days = state.recentDays.slice(-cycleDaysListed);
+  // Only the days in the window the line names, whatever the answer holds.
+  const from = addDays(localDate, -(cycleDaysListed - 1));
+  const days = state.recentDays.filter((day) => day.date >= from && day.date <= localDate);
   if (days.length > 0) {
     lines.push(
       `Logged days in the last ${cycleDaysListed}, oldest first: ${days.map(dayLine).join("; ")}.`,

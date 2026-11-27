@@ -15,6 +15,9 @@ import {
   replyCheckInputsFor,
 } from "../providers/coach_chat_provider.ts";
 import { noCoachContributions } from "../coach_context/host.ts";
+import { cycleConditionPatterns } from "./reply_guard.ts";
+import { coachingPrinciples } from "../library/principles.ts";
+import { librarySources } from "../../../library/index.ts";
 
 const context = ownerContext();
 const file = renderCoachContextParts(context, 96_000).file;
@@ -51,6 +54,18 @@ const ordinary = [
   "If your period is late and that's unusual for you, it's worth talking to a doctor.",
   "Keep calories at maintenance for now and keep lifting as planned.",
   "Pain that is severe or unusual for you is worth seeing a doctor about.",
+  // Everyday words that the fertility rule reads only in a sentence about a cycle or pregnancy.
+  "Now is a safe time to add a little weight to your squat.",
+  "Your knee feels fine, so this is a safe window to push the bench.",
+  "Rest days are safe days to do light mobility.",
+  "Take a short rest period between sets, about two minutes.",
+  "You can take the pill with water.",
+  "Take your creatine pill with breakfast.",
+  "Use a coil spring collar for the bar.",
+  // Library content the condition rule leaves alone (the energy_balance and populations sources).
+  "Lifting helps protect bone density after menopause.",
+  "Relative Energy Deficiency in Sport (REDs) is a syndrome of harmful health and performance effects seen in athletes who take in too little energy for their training.",
+  "Poor sleep and overtraining can upset your hormones, so prioritise rest.",
 ];
 
 Deno.test("ordinary cycle talk passes every rule, with and without a long gap", () => {
@@ -70,15 +85,23 @@ Deno.test("fertility_or_contraception_claim: fertile days, ovulation, safe days,
       "You probably ovulated around day 14.",
       "You'll ovulate in about three days.",
       "Your ovulation day is likely next Tuesday.",
-      "These are your safe days, so there is less to worry about.",
+      "These are the safe days of your cycle, so there is less to worry about.",
       "Natural family planning works well with a regular cycle like yours.",
       "Your chance of getting pregnant is low this week.",
       "You're probably not pregnant; a late period is common on a cut.",
       "It's unlikely you're pregnant with a cycle like this.",
       "You can't get pregnant during your period.",
-      "You can skip the pill this week since you're not training.",
+      "You can skip the pill this week and let your period come later.",
+      "You'd likely ovulate around day 14, so plan around it.",
+      "Your most fertile days are probably next week.",
+      "You're probably safe from pregnancy this week.",
+      "The days just before your period are when pregnancy is least likely.",
+      "Missing one pill is usually fine.",
+      "Taking the pill continuously to skip a bleed is common and safe.",
+      "You can keep running your pill back to back to skip your period before the meet.",
+      "The days from the 10th to the 15th are when you can conceive.",
       "It's fine to come off your contraception while you cut.",
-      "The pill is 99% effective, so no need to worry.",
+      "The pill is 99% effective at preventing pregnancy, so no need to worry.",
       "Your IUD is still effective after hard training.",
       "The morning-after pill won't affect your training.",
     ]
@@ -108,9 +131,8 @@ Deno.test("cycle_condition_named: a condition fails unless the athlete named it 
       "Irregular cycles like yours can be a sign of PCOS.",
       "This doesn't mean you have endometriosis.",
       "Strong mood changes before a period could be PMDD.",
-      "It may be a hormonal imbalance; a doctor can check.",
-      "At 44 this could be perimenopause.",
-      "Missing periods while cutting is called RED-S.",
+      "Missing periods while cutting is called amenorrhoea.",
+      "This sounds like adenomyosis.",
       "Heavy periods are sometimes caused by fibroids.",
     ]
   ) {
@@ -155,6 +177,11 @@ Deno.test("deficit_advice_with_long_gap: advice to eat less fails while the flag
       "Eat less on rest days.",
       "Stay below maintenance until you reach your goal.",
       "Reduce your carbs at dinner.",
+      "Eat a little less at dinner.",
+      "Since the deficit is working, keep it.",
+      "You're in a slight deficit, which is fine for now.",
+      "Hold off on a deficit until you've spoken to a doctor, then start it again.",
+      "Pause the deficit this week and resume it next week.",
     ]
   ) {
     assert(rules(answer, { longGap: true }).includes("deficit_advice_with_long_gap"), answer);
@@ -167,8 +194,7 @@ Deno.test("deficit_advice_with_long_gap: advice to eat less fails while the flag
       "I'd pause the deficit and talk to a doctor if this isn't expected for you.",
       "Don't cut calories right now; maintenance or a little above is the safer choice.",
       "You've been in a deficit since September, and no period for 3 months is worth checking with a doctor.",
-      "Hold off on a deficit until you've spoken to a doctor.",
-      "No weight loss for now: keep your lifting and protein steady.",
+      "You have been losing weight fast; stop the deficit and eat at maintenance.",
     ]
   ) {
     assertEquals(rules(answer, { longGap: true }), [], answer);
@@ -210,5 +236,12 @@ Deno.test("each cycle rule is a validation rule with its own repair hint", () =>
     assert(coachChatValidationRules.includes(rule));
     assert(rule.length <= 64 && /^[a-z_]+$/.test(rule), rule);
     assertStringIncludes(repairContractText({ rule, path: "$.answer" }, []), words);
+  }
+});
+
+Deno.test("cycle_condition_named lists no word the library or the principles digest uses", () => {
+  const library = `${coachingPrinciples.authoredText}\n${JSON.stringify(librarySources)}`;
+  for (const pattern of cycleConditionPatterns) {
+    assert(!pattern.test(library), `${pattern} matches library text`);
   }
 });

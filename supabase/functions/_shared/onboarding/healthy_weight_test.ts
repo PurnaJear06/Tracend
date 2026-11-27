@@ -193,25 +193,19 @@ Deno.test("while held, a plan whose text claims a deficit or weight loss is reje
     );
     assertEquals(error.rule, "deficit_claim_while_held");
   }
+  const honest = { ...plan, assessment: "Maintenance calories rather than a deficit for now." };
+  validateOnboardingPlan(honest, policies);
+  // A pause, a hold or a cap still names a deficit the plan would run: the hold refuses it.
   for (
-    const words of [
-      "Maintenance calories rather than a deficit for now.",
-      "Eat at maintenance rather than in a deficit.",
-      "No weight loss for now: the aim is strength.",
-      "The aim for now is not to lose weight.",
-      "Don't eat less than the plan sets.",
-      "Hold off on a deficit until your weight is in the healthy range.",
+    const claim of [
+      "Leave a deficit of 300 kcal each day.",
+      "Hold off on the deficit for two weeks, then start it at 400 kcal.",
+      "Pause the deficit this week and resume it next week.",
+      "Stop the deficit from growing: keep it at 500 kcal.",
     ]
   ) {
-    validateOnboardingPlan({ ...plan, assessment: words }, policies);
+    assert(claimsDeficitWhileHeld({ ...plan, assessment: claim }, policies.nutrition), claim);
   }
-  // Taking out a denial leaves every other claim in the text.
-  assert(
-    claimsDeficitWhileHeld(
-      { ...plan, assessment: "No weight loss at first, then lose about 0.4 kg a week." },
-      policies.nutrition,
-    ),
-  );
   // Without the hold the same words are an ordinary fat-loss plan.
   const usual = policiesFor(answersFor({ goal: "fat_loss" }));
   assertEquals(

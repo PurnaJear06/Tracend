@@ -538,17 +538,26 @@ symptom ("my chest feels tight"), a self-report in the clause ("I get", "I feel"
 to me" anywhere in the message defeats the conditional and educational exemptions. An exemption inside a symptom rule is a benign phrase next to the match ("breathe through my nose",
 "stuffy nose", "nasal congestion"; tingling next to beta-alanine or niacin), never a word elsewhere in
 the clause; "numb" and "loss of feeling" are never excused. Period pain is the one benign phrase of
-the pain rule (cycle support, 2026-11-27): a pain match ("severe period pain", "sharp pains on my
-period", "period pain 8/10") with a menstrual word next to it ("period pain", "my period", "on my
-period", "menstrual"; "period" alone is not one, so "a rest period" is not) reaches Coach, and only
-when nothing anywhere in the message names a body part, an injury (pop, snap, tear, sprain, swelling,
-a fall), a sudden onset, one side or a fever; a pop, a tear or a joint that gave way is never excused.
-"Severe pain in my knee during my period", "sharp pain and a pop" and "severe period pain, I fell"
-are referred, and dizziness, fainting, chest pain, pregnancy and medication keep their own rules
-("heavy bleeding and I feel dizzy" is a dizziness referral, "severe period pain, could I be
-pregnant?" the pregnancy boundary). Coach is told, in the cycle block and the principles digest,
+the pain rule (cycle support, 2026-11-27), and it is positive attribution only. A pain match ("severe
+pain", "pain 8/10") is excused when the words next to it (the same 40-character window as every
+benign phrase) attribute the pain to her period: "period pain", "period cramps", "menstrual pain"
+or "menstrual cramps", "pain" or "cramps" "on", "during", "with" or "from" "my period", or "on my
+period" / "during my period". That window must hold none of: not, no, never, without, a "n't" word,
+missed, late, after, since, before, like, worse than, positive, test, pregnant; so "severe pain not
+on my period", "severe pain with my period 3 weeks late", "two weeks after my period" and "on my
+period with a positive test" are referred. Anything anywhere in the message voids it: left, right,
+side or one side, any "-sided"; an ovary; a fever or a temperature; vomiting or throwing up; fainting,
+dizziness or light-headedness; soaking, clots, heavy bleeding or bleeding through; "worst"; a sudden
+onset; breathing; a painkiller or pills; any body part ("knee", "back", "groin", "chest", "head" and
+the rest of the pain rule's list) or injury word (pop, snap, tear, sprain, swelling, a fall, a twist,
+can't bear weight). A pop, a tear or a joint that gave way is never excused, since only a pain match
+is. When in doubt it refers. So "severe period pain, should I train?", "sharp pains on my period" and
+"my period pain is severe" reach Coach, which is told in the cycle block and the principles digest
 that severe or unusual period pain, very heavy bleeding or an unexpected missed period is worth a
-doctor's visit. A denial that stops at a point in time
+doctor's visit; dizziness, fainting, chest pain, pregnancy and medication keep their own rules
+("heavy bleeding and I feel dizzy" is a dizziness referral, "severe period pain, could I be
+pregnant?" the pregnancy boundary). The pain rule's descriptor may now be followed by a hyphenated
+word ("severe one-sided pain"), which it missed before. A denial that stops at a point in time
 ("never had chest pain until today's run", "no dizziness until this morning") is a report. Self-harm and
 eating-disorder patterns have no exemption at all: any mention is a hit. A negation counts only when
 its cue is directly before the symptom with a few filler words between ("no", "any", "feel",
@@ -574,7 +583,7 @@ self-harm, eating) name the emergency number; pain and numbness referrals send t
 doctor or physio before the area is trained again; the self-harm answer adds crisis lines. No
 referral diagnoses or reassures. Requests Tracend does not support (diagnosis, including asking
 whether a cycle condition such as PCOS, endometriosis, PMDD, fibroids or a hormonal imbalance is the
-cause, medical reports, rehabilitation, pregnancy and postpartum, medication advice and interactions) get the fixed
+cause, "is this perimenopause?" and "am I going through menopause?", medical reports, rehabilitation, pregnancy and postpartum, medication advice and interactions) get the fixed
 clinical-boundary answer (`refused`). "I take medication, can I train?" and ordinary soreness are
 not hits. The wider screen behind the data summary (§12) includes every message this one catches.
 The log carries the rule that fired (`coach_chat_red_flag`: category, rule, source), never the
@@ -1267,18 +1276,31 @@ routes stay available by settings alone for two weeks after the cutover.
   `training_advice_on_pain_day` (any training prescription on a day of check-in pain of 7 or
   more), `numbers_not_grounded`, `citation_not_retrieved` (a library source id or a named study
   the turn did not show; §11.2), `repeats_previous_turn` (§12, "Repeats"), and three cycle rules
-  (2026-11-27): `fertility_or_contraception_claim` (a fertile window, an ovulation day, "safe days",
-  the chance of pregnancy, natural family planning, or contraception advice: starting, stopping,
-  skipping or switching it, or how well it works; general physiology such as "after ovulation resting
-  heart rate tends to rise" passes, and so does a refusal governed by a prohibition, "I can't tell
-  you your fertile window"; on for every athlete, since it needs no data), `cycle_condition_named` (a
-  menstrual or hormonal condition, by family, that the athlete has not named in this conversation,
-  her onboarding limitations or her confirmed facts; a denial counts, "this doesn't mean you have
-  PCOS"; on for every athlete) and `deficit_advice_with_long_gap` (while the cycle block's
-  `Long gap without a period: yes` line stands, advice to eat less, cut calories, keep or deepen a
-  deficit or lose weight; a prohibition, a pause or a description of what she has been doing governs
-  the match from its window, "keep calories at maintenance" passes, and the onboarding plan check's
-  phrases are shared, `plan_contract.ts`). Every rule reads
+  (2026-11-27): `fertility_or_contraception_claim` (a fertile window, the most fertile days, an
+  ovulation dated or placed for her ("you'll ovulate around day 14"), "safe days", "safe from
+  pregnancy", the chance of pregnancy or "pregnancy is least likely", when she can conceive placed on
+  a day, natural family planning, contraception advice (starting, stopping, skipping or switching it,
+  how well it works), a missed pill called fine, the pill run back to back to skip a bleed called
+  safe, emergency contraception, unprotected sex. Words with an everyday meaning count only in a
+  sentence about a cycle, pregnancy or contraception: "safe days", "safe window" or "safe time" need
+  pregnan-, conceiv-, fertil-, ovulat-, contracepti-, birth control, period or cycle in the same
+  sentence ("now is a safe time to add weight to your squat" passes), and "the pill", "an IUD" or
+  "the coil" need a contraception or cycle word ("you can take the pill with water" passes). General
+  physiology ("after ovulation resting heart rate tends to rise", "after you ovulate ...") passes, and
+  so does a refusal governed by a prohibition, "I can't tell you your fertile window"; on for every
+  athlete, since it needs no data), `cycle_condition_named` (a diagnosis-type menstrual condition the
+  athlete has not named in this conversation, her onboarding limitations or her confirmed facts:
+  PCOS or PCOD, endometriosis, PMDD, adenomyosis, fibroids, amenorrhoea, by family; a denial counts,
+  "this doesn't mean you have PCOS"; on for every athlete. No word the library or the principles
+  digest uses is on the list, tested: menopause, REDs and the like are library content Coach may
+  explain) and `deficit_advice_with_long_gap` (while the cycle block's `Long gap without a period:
+  yes` line stands, advice to eat less or "a little less", cut calories or carbs, keep or deepen a
+  deficit or lose weight; a denial, a pause or a description of what she has been doing governs the
+  match from its window, unless the sentence brings the deficit back or approves it (until, then,
+  resume, restart, keep it or keep going, for now, fine, okay, working), so "since the deficit is
+  working, keep it" and "you're in a slight deficit, which is fine for now" fail; "keep calories at
+  maintenance" passes. The claim words are the onboarding plan check's, `plan_contract.ts`; the
+  denials are the rule's own, and the plan check's are unchanged). Every rule reads
   everything the athlete can see: the answer,
   the follow-up chips, the missing-data notes, the evidence labels and the reasoning chain, in one
   pass. Sentences that warn against a thing ("never go below ...") or
@@ -1390,7 +1412,9 @@ adapter still sends no tools.
   rate or HRV drift of one spread up to (not including) two is stated as what that part of the cycle
   often brings, as a data line, not a watch-out; two spreads or more stays a watch-out.
 - **The menstrual cycle (`cycle` contributor, cycle support v1).** Volatile, after the heart-rate
-  profile, on both routes, read once a turn with the watch-outs (`coach_cycle_state_v1`, 1.5-second
+  profile. It is registered on both routes but renders only on the gateway route: `coach-chat`
+  reads the accepted notice version only there, so on the rollback (DeepSeek) path no scope is open
+  and it reads and renders nothing (fails closed). Read once a turn with the watch-outs (`coach_cycle_state_v1`, 1.5-second
   deadline; a failed, late or unreadable read renders nothing and the trace says which). Only with
   the `cycle_data` scope and tracking on. It states the athlete's status, today's cycle day and
   phase with its confidence, the expected range, the typical and recent lengths, the long-gap and

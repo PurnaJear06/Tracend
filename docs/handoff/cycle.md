@@ -74,7 +74,9 @@ Added by the app PR.
   the owner publishes v7 no athlete holds it, so Coach behaves as before: no cycle read, no cycle
   block, no "withheld" line, the same watch-outs (`cycle_test.ts`, `cases_cycle_test.ts`).
 - **`cycle` contributor** (`_shared/coach_context/contributors/cycle.ts`): volatile, after the
-  heart-rate profile, both routes, budget 2,800. Reads the cycle answer once per turn through
+  heart-rate profile, budget 2,800. Registered on both routes, but only the gateway route reads the
+  accepted notice version, so on the rollback (DeepSeek) path no scope is open and it renders
+  nothing (fails closed). Reads the cycle answer once per turn through
   `sharedRead` (key `cycle_state`, shared with the watch-outs, 1.5 s deadline) and parses it strictly
   (an unknown value is unreadable, never "off"). Renders nothing without the scope, with tracking off
   (also after "Delete my cycle data") or after a failed read. Otherwise: status, today's cycle day,
@@ -90,12 +92,19 @@ Added by the app PR.
 - **Reply rules** (`_shared/coach_safety/reply_guard.ts`, each with a repair hint):
   `fertility_or_contraception_claim` and `cycle_condition_named` apply to every athlete (they need no
   data); `deficit_advice_with_long_gap` applies while the cycle block's long-gap line says yes. The
-  onboarding plan check's `deficitClaim` and `noDeficit` are exported and `noDeficit` takes more
-  denials ("rather than in a deficit", "pause the deficit", "no weight loss", "don't eat less").
-- **Red flags:** `severe_pain` has a `benign` exemption for period pain (a pain match with a
-  menstrual word next to it and no body part, injury, sudden onset, one side or fever anywhere in the
-  message); `diagnosis_request` covers asking whether a cycle condition is the cause. Cases in
-  `exemptions_adversarial_test.ts`.
+  fertility rule reads "safe days/window/time" and "the pill" only in a sentence about a cycle,
+  pregnancy or contraception. The condition rule lists only PCOS/PCOD, endometriosis, PMDD,
+  adenomyosis, fibroids and amenorrhoea (a test keeps every library and digest word off it). The
+  long-gap rule shares the onboarding plan check's claim words (`deficitClaim`, now exported) with
+  its own denials, voided by until, then, resume, keep it, for now, fine or working; the plan
+  check's `noDeficit` is unchanged.
+- **Red flags:** `severe_pain` has a `benign` exemption by positive attribution only ("period pain",
+  "menstrual cramps", "pain on my period"), with no undoing word next to it (not, missed, late,
+  after, since, before, like, worse than, no, positive, test, pregnant) and no emergency or injury
+  word anywhere (one side, fever, temperature, vomiting, fainting, dizziness, soaking, clots, heavy
+  bleeding, bleeding through, worst, sudden, breathing, painkillers, any body part or injury).
+  `diagnosis_request` covers asking whether a cycle condition, perimenopause or menopause is the
+  cause. Cases in `exemptions_adversarial_test.ts`.
 - **Principles digest v4:** the cycle has its own line (no training by phase, expected shifts, when
   to see a doctor, what never to say). It changes the cached prefix for every athlete; it holds no
   athlete data.

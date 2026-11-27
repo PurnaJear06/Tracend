@@ -8,6 +8,9 @@ import regularFixture from "../../../../../test/contract/fixtures/my_cycle_v1_0_
 import offFixture from "../../../../../test/contract/fixtures/my_cycle_v1_0_off.json" with {
   type: "json",
 };
+import lateFixture from "../../../../../test/contract/fixtures/my_cycle_v1_0_late.json" with {
+  type: "json",
+};
 import contraceptionFixture from "../../../../../test/contract/fixtures/my_cycle_v1_0_contraception.json" with {
   type: "json",
 };
@@ -56,8 +59,8 @@ Deno.test("PR 1's fixtures parse: regular, off and hormonal contraception", () =
   assertEquals(regular.status, "regular");
   assertEquals(regular.phase, "second_half");
   assertEquals(regular.cycleDay, 18);
-  assertEquals(regular.cycles.length, 2);
-  assertEquals(regular.recentDays[0], {
+  assertEquals(regular.cycles.length, 3);
+  assertEquals(regular.recentDays[4], {
     date: "2026-11-10",
     flow: "medium",
     cramps: "mild",
@@ -135,10 +138,9 @@ Deno.test("a regular cycle in its second half: status, day, phase, range, length
       "Status: regular periods.",
       "Long gap without a period: no",
       "Today (2026-11-27): cycle day 18, second half of the cycle (confidence medium).",
-      "Next period expected 2026-12-08 to 2026-12-12.",
-      "Typical cycle length: 28 days (the athlete's own answer).",
-      "Recent cycle lengths, oldest first: 28 days.",
-      "Logged days in the last 14, oldest first: 2026-11-10 medium flow, mild cramps, start.",
+      "Next period expected 2026-12-06 to 2026-12-10.",
+      "Typical cycle length: 28 days (from the logged cycles).",
+      "Recent cycle lengths, oldest first: 28 days, 28 days.",
     ]
   ) assertStringIncludes(text, line);
   assertStringIncludes(
@@ -155,9 +157,28 @@ Deno.test("a regular cycle in its second half: status, day, phase, range, length
   assert(!text.includes("Weight-water window"));
   assertEquals(rendered.trace, { cycle: "ok" });
   // The values are records: the dates, the cycle day, the typical and recent lengths.
-  for (const value of ["2026-11-27", "18", "2026-12-08", "2026-12-12", "28 days", "2026-11-10"]) {
+  // The fixture holds the app's 60 days; only the last 14 to the coaching date are listed.
+  assert(!text.includes("Logged days"), "no day of the fixture falls in the 14 days to 2026-11-27");
+  for (const value of ["2026-11-27", "18", "2026-12-06", "2026-12-10", "28 days"]) {
     assert((rendered.records ?? []).some((piece) => piece.includes(value)), value);
   }
+});
+
+Deno.test("a late period: the day, how late, the range that passed, and only the last 14 days", () => {
+  const late = renderCycle(parseCycleState(lateFixture), today)!;
+  assertStringIncludes(
+    late,
+    "Today (2026-11-27): cycle day 35; the period is 4 days later than the expected range, so Tracend gives no phase (confidence medium).",
+  );
+  assertStringIncludes(late, "The expected range was 2026-11-19 to 2026-11-23.");
+  assert(!late.includes("Next period expected"));
+  assert(!late.includes("Logged days"), "the logged days are all older than 14 days");
+  const recent = renderCycle(parseCycleState(lateFixture), "2026-11-05")!;
+  assertStringIncludes(
+    recent,
+    "Logged days in the last 14, oldest first: 2026-10-24 medium flow, start; 2026-10-25 heavy flow; 2026-10-26 medium flow; 2026-10-27 light flow.",
+  );
+  assert(!recent.includes("2026-09-29"));
 });
 
 Deno.test("each status says what Tracend shows for it", () => {
@@ -327,11 +348,12 @@ const watchFacts = {
   plan: null,
 };
 
-function turnContributors(withCycle: boolean) {
+function turnContributors(withCycle: boolean, metrics: Json = {}) {
   const { source } = countingSource(regularFixture);
+  const facts = { ...watchFacts, metrics: { ...watchFacts.metrics, ...metrics } };
   const watch = createWatchOutsContributor({
     planState: () => Promise.resolve(splitPlanPayload(3, [])),
-    facts: () => Promise.resolve(watchFacts),
+    facts: () => Promise.resolve(facts),
     schedule: () => Promise.resolve(null),
     ...(withCycle ? { cycle: source } : {}),
   });
@@ -363,6 +385,20 @@ Deno.test("under v7, a mild drift in the second half of her cycle is stated as e
   );
   assert(!watch.includes("(the recovery score's z-scores"));
   assertStringIncludes(after.texts.cycle, "second half of the cycle");
+  // Two spreads or more stays a watch-out, in the second half too.
+  const far = await renderCoachContext(
+    turnContributors(true, { hrv_z: -2.3, rhr_z: -1.2 }),
+    input(open),
+  );
+  assertStringIncludes(
+    far.texts.watch_outs,
+    "HRV is 2.3 spreads below their usual (the recovery score's z-scores",
+  );
+  assertStringIncludes(
+    far.texts.watch_outs,
+    "resting heart rate is 1.2 spreads above their usual: within what the second half",
+  );
+  assert(!/HRV is 2\.3[^\n]*second half/.test(far.texts.watch_outs));
   // The trace counts the line as data, not as a decision.
   const before = await renderCoachContext(turnContributors(false), input());
   assertEquals(
