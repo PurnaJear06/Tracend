@@ -1692,3 +1692,140 @@ the approval flow are in AI_SAFETY_SPEC §6 ("Coach proposals").
   below the logged-set target. Heavier: one load step above the logged-set target, only where B3's
   target is to add load or reps with high confidence. A step is the exercise's catalog load step.
 - **Expiry:** 72 hours; 24 hours for a next-session adjustment. Undo: 7 days.
+
+## 11. Menstrual Cycle Engine (`private.cycle_state`, cycle answer 1.0, 2026-11)
+
+Code: `private.cycle_state(user_id, local_date)` in
+`supabase/migrations/20261127142651_cycle_foundation.sql`. It is the one source of the cycle
+state: `get_my_cycle_v1` (the app) and `coach_cycle_state_v1` (Coach) both read it through
+`private.cycle_answer`, and nothing else computes a cycle day, phase or prediction. It takes the
+local date as an argument and reads only the days logged up to that date, so the same inputs give
+the same answer on any day (`supabase/tests/database/cycle_engine_test.sql` pins every rule with
+fixed dates). The state explains recovery and weight; it never changes a plan, a target or the
+recovery score.
+
+**Inputs:** the athlete's `cycle_settings` (tracking on, status, stated usual length,
+`tracking_enabled_at`) and her `cycle_day_logs` (flow, start flag; manual and Apple Health days are
+read the same way). Tracking off, no settings row, or a `cycle_data` consent that is no longer
+granted (her newest record is a withdrawal): every value is null, both flags false, no cycles, and
+the answer says tracking is off whatever the settings row holds.
+
+### Periods and cycle starts
+
+- **Bleeding day:** a day with a flow other than `spotting`. Spotting and a day she marked "no
+  bleeding" (flow null) are not bleeding days.
+- **Period:** a run of bleeding days whose gaps are at most 2 days (a missed log or a light day
+  between is still the same period; a 3-day gap splits it).
+- **Cycle start:** the first day of a period that is
+  - at least **15 days** after the previous start **and** has 2 or more bleeding days or one
+    `medium`/`heavy` day; or
+  - contains a day flagged `is_start` (HealthKit `isStartOfCycle`, or the onboarding answer "my last
+    period started on …") and is at least **10 days** after the previous start (closer than that it
+    is a duplicate flag).
+
+  Anything else is bleeding inside the cycle: a one-day light bleed mid-cycle is not a period. The
+  first period ever needs only the bleeding-day test or a flag.
+- **The onboarding guess gives way to a real period.** A *guess* is a manual day flagged as a start
+  with flow `unspecified`: the onboarding answer "my last period started on …" (the app's day editor
+  never sends that combination). Before periods are formed, a guess is dropped (no flow, no flag)
+  when a **real period lies within 14 days before or after it**: a run of the other days with 2 or
+  more bleeding days, a medium or heavy day, or a day flagged as a start. Otherwise the guess is a
+  one-day flagged start under the usual rules. Examples: a guess of 28 Oct and a period 30 Oct–3 Nov
+  → the start is 30 Oct; a guess of 28 Oct and Apple Health from 3 Nov with a medium first day →
+  3 Nov is period day 1; with a light first day the guess stays the start on 3 Nov (cycle day 7) and
+  gives way on 4 Nov, when the second day makes 3 Nov a real period. A lone light day after a guess
+  is bleeding inside the cycle. A flagged day with a known flow is never a guess and never dropped. 15 days is below the shortest cycle
+  FIGO counts as normal (24 days) by a wide margin, so a short real cycle is never merged, while
+  breakthrough and mid-cycle bleeding a week or two in is not counted as a new cycle.
+
+### Lengths, typical length and spread
+
+- **Completed length:** the days from one start to the next.
+- **Used length:** 15 to 60 days, and not within **±5 days of twice the median** of her other
+  15–60-day lengths. That second test needs at least two other lengths. It catches a month whose
+  period was not logged: 28, 28, 56 → the 56 is two cycles and is left out. Lengths over 60 days
+  (a long gap in logging) are listed but not used.
+- **Typical length:** the median of the last **6** used lengths (an even count takes the mean of the
+  middle two, rounded half up). With fewer than 2 used lengths, her stated usual length; with none
+  stated, unknown.
+- **Spread:** the largest minus the smallest of those last 6 used lengths (0 with fewer than 2).
+
+### Status in effect
+
+The stored status is hers and never changes. For prediction and phase only, a stated `regular` is
+read as irregular when there are **at least 3 used lengths with a spread over 9 days**: FIGO's 2018
+definition of regular cycles is a variation of 9 days or less between the shortest and longest.
+`hormonal_contraception` and `no_periods` get no cycle day, phase, prediction, confidence,
+long-gap flag or cycle list; a bleed she logs still counts as `period_day` (the app says "Bleed
+day"), and its days 1–3 set the water-weight flag.
+
+### Expected range, phase and late days
+
+- **Expected range** (needs a start and a typical length):
+  - regular in effect: last start + typical ± max(2, ⌈spread ÷ 2⌉);
+  - irregular (stated or in effect): the same with ± max(4, ⌈spread ÷ 2⌉), and only with at least
+    3 used lengths; otherwise no range.
+
+  Predictions are a range, never a day, and every log corrects them.
+- **Cycle day:** today − last start + 1.
+- **Period day:** the day number in the latest period while it is ongoing: its last bleeding day is
+  at most 2 days ago (the same gap a period tolerates) and today is not marked "no bleeding". A bleed
+  that is not a start yet counts only when it is at least 15 days after the last start (a first
+  light day may be a period starting; one 8 days in is not).
+- **Phase** (regular in effect, typical known): `period` on a period day; otherwise `second_half`
+  from cycle day typical − 13 up to the end of the expected range, `first_half` before that. Past
+  the expected range there is no phase and `late_days` = today − the range's last day. The luteal
+  phase is close to 14 days in most cycles while the follicular phase varies, so the second half is
+  counted back from the expected start rather than forward from the period. Irregular: no phase and
+  no late days.
+
+### Confidence
+
+- `high`: at least 3 used lengths with a spread of 5 days or less;
+- `medium`: at least 2 used lengths;
+- `low`: otherwise, and whenever the latest completed length was not used (a missed month, or a
+  length outside 15–60).
+
+The app and Coach show cycle notes only at medium or high.
+
+### Flags
+
+- **`no_period_long`:** status `regular` (**90 days**) or `irregular` (**180 days**), at least 2
+  starts ever, and the days since the latest of the last start, a later bleed that could be a start
+  (at least 15 days after it), the local day tracking was last turned on and the local day of her
+  newest `cycle_data` grant reach the threshold. Days she had withdrawn consent are not counted.
+  90 days is the usual clinical line for an absent period in someone with regular cycles; 180 for
+  irregular cycles. One logged period (she may have stopped logging) or a recent switch-on never
+  fires it, and nor does a bleed she logged since. It suggests a doctor if unexpected; it is not a
+  diagnosis.
+- **`weight_water_window`:** the 5 days before the expected range, or period days 1–3. Body weight
+  often runs about 0.5 kg higher around a period (fluid), so the weight trend explains it instead of
+  reading it as gain.
+
+### Constants
+
+| Constant | Value | Why |
+| --- | --- | --- |
+| Gap inside a period | ≤ 2 days | A missed log or a light day does not split a period |
+| Minimum days between starts | 15 | Below any normal cycle; mid-cycle bleeding is not a cycle |
+| Flagged start duplicate guard | 10 days | Two start flags a week apart are one period |
+| Guess dropped | a real period within 14 days of it | The onboarding date is a guess; half a cycle either way |
+| Used length | 15–60 days | Outside it, a gap in logging or a duplicate |
+| Missed-month test | ±5 days of 2 × median of the others (≥ 2 others) | 56 = two 28s |
+| Typical length window | last 6 used lengths | Recent cycles, robust to one outlier |
+| Regular → irregular | ≥ 3 used, spread > 9 days | FIGO 2018 |
+| Expected range half-width | regular max(2, ⌈spread/2⌉); irregular max(4, ⌈spread/2⌉) | Honest width |
+| Second half | from typical − 13 | Luteal phase ≈ 14 days |
+| High confidence | ≥ 3 used, spread ≤ 5 | |
+| Long gap | 90 days regular, 180 irregular, ≥ 2 starts | |
+| Water-weight window | 5 days before the range, period days 1–3 | |
+
+### Literature
+
+- Munro MG, Critchley HOD, Fraser IS; FIGO Menstrual Disorders Committee. The two FIGO systems for
+  normal and abnormal uterine bleeding symptoms (2018 revision). *Int J Gynaecol Obstet* 2018.
+- Bull JR et al. Real-world menstrual cycle characteristics of more than 600,000 menstrual cycles.
+  *NPJ Digit Med* 2019 (cycle length variation; luteal phase near 14 days, follicular varies).
+- Colenso-Semple LM et al. Current evidence shows no influence of women's menstrual cycle phase on
+  acute strength performance or adaptations to resistance exercise training. *Front Sports Act
+  Living* 2023 (why the engine explains and never changes training).
